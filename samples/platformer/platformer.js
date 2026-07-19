@@ -3,6 +3,8 @@
 //   camera scrolling, parallax backgrounds
 import { Minimotor } from "../../build/index.js";
 
+Minimotor.Engine.use(Minimotor.Perf.plugin());
+
 const vp = Minimotor.Engine.initCanvas("game");
 
 // World
@@ -155,7 +157,7 @@ function bodyOnPlatform(body, px, py, pw, ph) {
 
 // ---------- Game loop ----------
 
-Minimotor.Perf.withHud(Minimotor.Engine)(
+Minimotor.Engine.start(
   () => {
     if (gameOver || levelComplete) return;
     animFrame++;

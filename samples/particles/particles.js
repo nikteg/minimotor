@@ -2,6 +2,8 @@
 // Demonstrates: game loop, physics (gravity), sprites (pre-rendered spark texture)
 import { Minimotor } from "../../build/index.js";
 
+Minimotor.Engine.use(Minimotor.Perf.plugin());
+
 const vp = Minimotor.Engine.initCanvas("game");
 const NUM = 200;
 const SIZE = 8;
@@ -34,7 +36,7 @@ vp.canvas.addEventListener("click", (e) => {
 });
 spawnBurst(vp.w / 2, vp.h / 2);
 
-Minimotor.Perf.withHud(Minimotor.Engine)(
+Minimotor.Engine.start(
   () => {
     const G = Minimotor.Physics.GRAVITY * 0.3;
     for (const s of sparks) {

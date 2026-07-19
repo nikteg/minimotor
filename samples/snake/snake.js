@@ -2,6 +2,8 @@
 // Demonstrates: game loop, input, scoring, storage, grid collision
 import { Minimotor } from "../../build/index.js";
 
+Minimotor.Engine.use(Minimotor.Perf.plugin());
+
 const vp = Minimotor.Engine.initCanvas("game");
 
 const CELL = 20;
@@ -58,7 +60,7 @@ Minimotor.Engine.onKeyDown = (code) => {
   if (gameOver) restart();
 };
 
-Minimotor.Perf.withHud(Minimotor.Engine)(
+Minimotor.Engine.start(
   () => {
     if (gameOver) return;
     tick++;

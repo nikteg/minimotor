@@ -3,6 +3,8 @@
 // Demonstrates: game loop, collision, input, scoring, storage, lives, Perf HUD
 import { Minimotor } from "../../build/index.js";
 
+Minimotor.Engine.use(Minimotor.Perf.plugin());
+
 const vp = Minimotor.Engine.initCanvas("game");
 
 // Fixed game dimensions — scaled to fit viewport, maintaining aspect ratio
@@ -68,7 +70,7 @@ function resetBall() {
 
 spawnBlocks();
 
-Minimotor.Perf.withHud(Minimotor.Engine)(
+Minimotor.Engine.start(
   () => {
     if (gameOver) return;
 

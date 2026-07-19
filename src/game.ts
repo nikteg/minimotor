@@ -3,6 +3,7 @@
 // utilities that every sample was re-implementing.
 
 import * as Storage from "./storage.js";
+import * as Text from "./text.js";
 
 /** Score + best-score tracker with automatic persistence.
  *  `best` is loaded from localStorage and saved whenever score exceeds it. */
@@ -41,17 +42,14 @@ export function drawGameOver(
 ): void {
   ctx.fillStyle = "rgba(0,0,0,0.6)";
   ctx.fillRect(0, 0, w, h);
-  ctx.fillStyle = "#ff6b6b";
-  ctx.font = "bold 28px monospace";
-  ctx.textAlign = "center";
-  ctx.fillText("GAME OVER", w / 2, h / 2 - 16);
-  ctx.fillStyle = "#fff";
-  ctx.font = "16px monospace";
-  ctx.fillText(`Score: ${score}  Best: ${best}`, w / 2, h / 2 + 20);
+  Text.drawCentered(ctx, "GAME OVER", w / 2, h / 2 - 16, {
+    font: "bold 28px monospace",
+    color: "#ff6b6b",
+  });
+  Text.drawCentered(ctx, `Score: ${score}  Best: ${best}`, w / 2, h / 2 + 20);
   if (restartHint) {
-    ctx.fillText(restartHint, w / 2, h / 2 + 48);
+    Text.drawCentered(ctx, restartHint, w / 2, h / 2 + 48);
   }
-  ctx.textAlign = "start";
 }
 
 /** Standard level-complete overlay. */
@@ -65,20 +63,17 @@ export function drawLevelComplete(
 ): void {
   ctx.fillStyle = "rgba(0,0,0,0.5)";
   ctx.fillRect(0, 0, w, h);
-  ctx.fillStyle = "#ffd700";
-  ctx.font = "bold 32px monospace";
-  ctx.textAlign = "center";
-  ctx.fillText("LEVEL COMPLETE! ⭐", w / 2, h / 2 - 30);
-  ctx.fillStyle = "#fff";
-  ctx.font = "16px monospace";
-  ctx.fillText(`Score: ${score}`, w / 2, h / 2 + 10);
+  Text.drawCentered(ctx, "LEVEL COMPLETE! ⭐", w / 2, h / 2 - 30, {
+    font: "bold 32px monospace",
+    color: "#ffd700",
+  });
+  Text.drawCentered(ctx, `Score: ${score}`, w / 2, h / 2 + 10);
   if (subtitle) {
-    ctx.fillText(subtitle, w / 2, h / 2 + 32);
+    Text.drawCentered(ctx, subtitle, w / 2, h / 2 + 32);
   }
   if (restartHint) {
-    ctx.fillText(restartHint, w / 2, h / 2 + 58);
+    Text.drawCentered(ctx, restartHint, w / 2, h / 2 + 58);
   }
-  ctx.textAlign = "start";
 }
 
 /** Letterbox scaling: compute the scale and offset to fit a fixed game

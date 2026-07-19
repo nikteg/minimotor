@@ -1,6 +1,8 @@
 // Absolute minimal game: colored square that moves with arrow keys
 import { Minimotor } from "../../build/index.js";
 
+Minimotor.Engine.use(Minimotor.Perf.plugin());
+
 const vp = Minimotor.Engine.initCanvas("game");
 
 let x = vp.w / 2 - 25;
@@ -10,7 +12,7 @@ const keys = {};
 Minimotor.Engine.onKeyDown = (code) => { keys[code] = true; };
 window.addEventListener("keyup", (e) => { keys[e.code] = false; });
 
-Minimotor.Perf.withHud(Minimotor.Engine)(
+Minimotor.Engine.start(
   () => {
     if (keys["ArrowLeft"]) x -= 3;
     if (keys["ArrowRight"]) x += 3;

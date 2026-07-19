@@ -13,9 +13,10 @@ import * as Perf from "./perf.js";
 import * as Camera from "./camera.js";
 import * as Game from "./game.js";
 import * as Fullscreen from "./fullscreen.js";
+import * as Text from "./text.js";
 
-export { Engine, Audio, Input, Storage, Physics, Sprites, Net, Perf, Camera, Game, Fullscreen };
-export type { Rect, Viewport, EngineShape } from "./engine.js";
+export { Engine, Audio, Input, Storage, Physics, Sprites, Net, Perf, Camera, Game, Fullscreen, Text };
+export type { Rect, Viewport, EngineShape, EnginePlugin } from "./engine.js";
 export type { SfxBuilder, MusicConfig } from "./audio.js";
 export type { PhysicsBody } from "./physics.js";
 export type { SpriteCanvas } from "./sprites.js";
@@ -36,6 +37,7 @@ export const Minimotor = {
   Camera,
   Game,
   Fullscreen,
+  Text,
   Collision,
 };
 

@@ -2,7 +2,7 @@
 // Lightweight FPS / frame-time tracker with optional on-canvas overlay.
 // Tracks rolling min/max/avg over a configurable window.
 
-import type { EngineShape } from "./engine.js";
+import type { EnginePlugin } from "./engine.js";
 
 export interface PerfStats {
   fps: number;
@@ -65,27 +65,21 @@ export function drawPerfHud(ctx: CanvasRenderingContext2D, stats: PerfStats): vo
   ctx.fillText(`max   ${stats.maxMs} ms`, x, y + lineH * 3);
 }
 
-// ---------- HOC ----------
+// ---------- Plugin ----------
 
-export type StartFn = (update: () => void, draw: () => void) => void;
-
-/** Higher-order wrapper around Engine.start — returns a start function
- *  that automatically ticks the perf tracker each frame and draws the
- *  HUD overlay on top of your own draw code.
+/** Create a Perf HUD engine plugin.
+ *  Register with `Engine.use(Perf.plugin())` before `initCanvas`.
  *
- *    const start = Minimotor.Perf.withHud(Minimotor.Engine);
- *    start(update, draw);
- *
- *  or inline:
- *
- *    Minimotor.Perf.withHud(Minimotor.Engine)(update, draw); */
-export function withHud(engine: Pick<EngineShape, "start" | "ctx">): StartFn {
-  return (update, draw) => {
-    let stats: PerfStats = current;
-    engine.start(update, () => {
+ *    Minimotor.Engine.use(Minimotor.Perf.plugin());
+ *    Minimotor.Engine.initCanvas("game");
+ *    Minimotor.Engine.start(update, draw); */
+export function plugin(): EnginePlugin {
+  let stats: PerfStats = current;
+  return {
+    name: "perf",
+    afterDraw(ctx) {
       stats = tickPerf(performance.now());
-      draw();
-      if (engine.ctx) drawPerfHud(engine.ctx, stats);
-    });
+      drawPerfHud(ctx, stats);
+    },
   };
 }

@@ -25,6 +25,23 @@ export interface Viewport {
   safeTop: number;
 }
 
+/** Plugins hook into the engine lifecycle. Register with Engine.use(). */
+export interface EnginePlugin {
+  name: string;
+  /** Called after initCanvas, before the first frame */
+  onInit?: (vp: Viewport) => void;
+  /** Called once per frame, before the user's update step(s) */
+  beforeUpdate?: (elapsedMs: number) => void;
+  /** Called once per frame, after the user's update step(s) */
+  afterUpdate?: (elapsedMs: number) => void;
+  /** Called before the user's draw */
+  beforeDraw?: (ctx: CanvasRenderingContext2D) => void;
+  /** Called after the user's draw */
+  afterDraw?: (ctx: CanvasRenderingContext2D) => void;
+  /** Called after a viewport resize */
+  onResize?: (vp: Viewport) => void;
+}
+
 export interface EngineShape {
   canvas: HTMLCanvasElement | null;
   ctx: CanvasRenderingContext2D | null;
@@ -33,6 +50,8 @@ export interface EngineShape {
   onDraw: (() => void) | null;
   onKeyDown?: (code: string) => void;
   onResize?: (vp: Viewport) => void;
+  plugins: EnginePlugin[];
+  use(plugin: EnginePlugin): void;
   lastTime: number;
   accumulator: number;
   frameScale: number;
@@ -94,11 +113,20 @@ export const Engine: EngineShape = {
   STEP_MS: 1000 / 60,
   paused: false,
 
+  plugins: [],
+
+  use(plugin: EnginePlugin) {
+    this.plugins.push(plugin);
+    if (this.viewport && plugin.onInit) plugin.onInit(this.viewport);
+  },
+
   initCanvas(selector: string): Viewport {
     const canvas = document.getElementById(selector) as HTMLCanvasElement;
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");
     this.viewport = readViewport(canvas);
+
+    for (const p of this.plugins) p.onInit?.(this.viewport);
 
     window.addEventListener("keydown", (e) => {
       if (e.code === "Space") e.preventDefault();
@@ -108,6 +136,7 @@ export const Engine: EngineShape = {
     const onResize = () => {
       this.viewport = readViewport(canvas);
       this.onResize?.(this.viewport);
+      for (const p of this.plugins) p.onResize?.(this.viewport);
     };
     window.addEventListener("resize", onResize);
     // iOS doesn't fire resize on 180° rotation between landscape orientations
@@ -143,7 +172,9 @@ export const Engine: EngineShape = {
       this.lastTime = time;
       this.accumulator = 0;
       this.frameScale = 0;
+      for (const p of this.plugins) p.beforeDraw?.(this.ctx!);
       this.onDraw!();
+      for (const p of this.plugins) p.afterDraw?.(this.ctx!);
       requestAnimationFrame(this.loop);
       return;
     }
@@ -152,11 +183,15 @@ export const Engine: EngineShape = {
     if (elapsed > 250) elapsed = 250;
     this.frameScale = elapsed / this.STEP_MS;
     this.accumulator += elapsed;
+    for (const p of this.plugins) p.beforeUpdate?.(elapsed);
     while (this.accumulator >= this.STEP_MS) {
       this.onUpdate!();
       this.accumulator -= this.STEP_MS;
     }
+    for (const p of this.plugins) p.afterUpdate?.(elapsed);
+    for (const p of this.plugins) p.beforeDraw?.(this.ctx!);
     this.onDraw!();
+    for (const p of this.plugins) p.afterDraw?.(this.ctx!);
     requestAnimationFrame(this.loop);
   },
 

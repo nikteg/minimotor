@@ -2,6 +2,8 @@
 // Demonstrates: Audio (music.start, music.note/kick/noiseHit), playSfx, input, visualizer
 import { Minimotor } from "../../build/index.js";
 
+Minimotor.Engine.use(Minimotor.Perf.plugin());
+
 const vp = Minimotor.Engine.initCanvas("game");
 
 // ---------- Melodies ----------
@@ -99,7 +101,7 @@ Minimotor.Engine.onKeyDown = (code) => {
 
 vp.canvas.addEventListener("click", () => beginAudio());
 
-Minimotor.Perf.withHud(Minimotor.Engine)(
+Minimotor.Engine.start(
   () => {
     stepCount++;
     // Animate bars toward targets

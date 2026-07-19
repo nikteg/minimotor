@@ -3,6 +3,8 @@
 
 import { Minimotor } from "../../build/index.js";
 
+Minimotor.Engine.use(Minimotor.Perf.plugin());
+
 const vp = Minimotor.Engine.initCanvas("game");
 
 const BALL_SIZE = 30;
@@ -66,4 +68,4 @@ function draw() {
   ctx.fillText(`Arrow keys to move ball`, 10, vp.h - 10);
 }
 
-Minimotor.Perf.withHud(Minimotor.Engine)(update, draw);
+Minimotor.Engine.start(update, draw);
