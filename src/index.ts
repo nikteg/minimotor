@@ -8,12 +8,14 @@ import * as Input from "./input.js";
 import * as Storage from "./storage.js";
 import * as Physics from "./physics.js";
 import * as Sprites from "./sprites.js";
+import * as Net from "./net.js";
 
-export { Engine, Audio, Input, Storage, Physics, Sprites };
+export { Engine, Audio, Input, Storage, Physics, Sprites, Net };
 export type { Rect, Viewport, EngineShape } from "./engine.js";
 export type { SfxBuilder, MusicConfig } from "./audio.js";
 export type { PhysicsBody } from "./physics.js";
 export type { SpriteCanvas } from "./sprites.js";
+export type { Transport, WsConfig, RtcConfig, Signal } from "./net.js";
 
 const Collision = { rectsOverlap };
 export { Collision, rectsOverlap };
@@ -25,6 +27,7 @@ export const Minimotor = {
   Storage,
   Physics,
   Sprites,
+  Net,
   Collision,
 };
 
