@@ -1,16 +1,16 @@
 "use strict";
 
-// ---------- Litet minispel-ramverk ----------
-// En enkel "engine" med game loop, entiteter och kollisionshjälp.
+// ---------- Minimal game framework ----------
+// A simple engine with game loop, entities and collision helpers.
 
-interface Rect {
+export interface Rect {
   x: number;
   y: number;
   w: number;
   h: number;
 }
 
-interface EngineShape {
+export interface EngineShape {
   canvas: HTMLCanvasElement | null;
   ctx: CanvasRenderingContext2D | null;
   onUpdate: (() => void) | null;
@@ -18,23 +18,25 @@ interface EngineShape {
   onKeyDown?: (code: string) => void;
   lastTime: number;
   accumulator: number;
-  // Hur lang den senaste bildrutan var relativt ett 60 Hz-steg (0.5 pa en
-  // 120 Hz-skarm). Anvands av rena rit-animationer (t.ex. bakgrundspartiklar
-  // som ska rora sig aven pa startskarmen) sa de gar i samma takt overallt.
+  // How long the latest frame was relative to a 60 Hz step (0.5 on a 120 Hz
+  // display). Used by purely visual animations (e.g. background particles
+  // that should move even on the start screen) so they keep uniform speed.
   frameScale: number;
-  // Fysiken ar tunad i "per frame"-varden for 60 fps. Darfor kors updates i
-  // fasta 60 Hz-steg oavsett skarmens uppdateringsfrekvens (120+ Hz-skarmar
-  // fick annars dubbel spelhastighet). Ritning sker fortfarande varje frame.
+  // Physics are tuned in "per frame" values for 60 fps. Therefore updates
+  // run in fixed 60 Hz steps regardless of display refresh rate (120+ Hz
+  // displays would otherwise get double game speed). Drawing still runs
+  // every display frame.
   readonly STEP_MS: number;
-  // Satts nar spelet inte ska ticka (rotera-skarmen pa mobil i portratt-
-  // lage). Ritningen fortsatter sa vyn inte fryser, men tiden star stilla.
+  // Set when the game should not tick (rotate-screen hint on mobile in
+  // portrait). Drawing continues so the view doesn't freeze, but time
+  // stands still.
   paused: boolean;
   loop: (time: number) => void;
   init(canvas: HTMLCanvasElement): void;
   start(update: () => void, draw: () => void): void;
 }
 
-const Engine: EngineShape = {
+export const Engine: EngineShape = {
   canvas: null,
   ctx: null,
   onUpdate: null,
@@ -57,7 +59,7 @@ const Engine: EngineShape = {
   start(update: () => void, draw: () => void) {
     this.onUpdate = update;
     this.onDraw = draw;
-    this.loop = this.loop.bind(this); // bind en gang i stallet for varje frame
+    this.loop = this.loop.bind(this); // bind once instead of every frame
     requestAnimationFrame(this.loop);
   },
 
@@ -73,8 +75,8 @@ const Engine: EngineShape = {
     }
     let elapsed = time - this.lastTime;
     this.lastTime = time;
-    // Efter t.ex. en flikvaxling kan elapsed vara enormt - hoppa inte ikapp,
-    // det skulle ge en storm av updates (och orattvis dod).
+    // After e.g. a tab switch elapsed can be huge - don't catch up,
+    // it would cause a storm of updates (and unfair death).
     if (elapsed > 250) elapsed = 250;
     this.frameScale = elapsed / this.STEP_MS;
     this.accumulator += elapsed;
@@ -87,6 +89,6 @@ const Engine: EngineShape = {
   },
 };
 
-function rectsOverlap(a: Rect, b: Rect): boolean {
+export function rectsOverlap(a: Rect, b: Rect): boolean {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }

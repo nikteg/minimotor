@@ -1,5 +1,5 @@
 "use strict";
-const Engine = {
+export const Engine = {
     canvas: null,
     ctx: null,
     onUpdate: null,
@@ -52,6 +52,6 @@ const Engine = {
         requestAnimationFrame(this.loop);
     },
 };
-function rectsOverlap(a, b) {
+export function rectsOverlap(a, b) {
     return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }

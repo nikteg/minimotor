@@ -1,10 +1,10 @@
-interface Rect {
+export interface Rect {
     x: number;
     y: number;
     w: number;
     h: number;
 }
-interface EngineShape {
+export interface EngineShape {
     canvas: HTMLCanvasElement | null;
     ctx: CanvasRenderingContext2D | null;
     onUpdate: (() => void) | null;
@@ -19,5 +19,5 @@ interface EngineShape {
     init(canvas: HTMLCanvasElement): void;
     start(update: () => void, draw: () => void): void;
 }
-declare const Engine: EngineShape;
-declare function rectsOverlap(a: Rect, b: Rect): boolean;
+export declare const Engine: EngineShape;
+export declare function rectsOverlap(a: Rect, b: Rect): boolean;

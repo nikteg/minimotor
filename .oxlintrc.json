@@ -13,5 +13,5 @@
     // klassiska script i spelprojekten (ingen modul-gräns).
     "no-unused-vars": "off"
   },
-  "ignorePatterns": ["engine.js", "engine.d.ts"]
+  "ignorePatterns": ["*.js", "*.d.ts", "build/"]
 }

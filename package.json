@@ -1,12 +1,19 @@
 {
   "name": "minimotor",
-  "version": "0.1.0",
-  "description": "Minimal game loop + kollisionshjälp för små 2D-canvas-spel",
+  "version": "0.2.0",
+  "description": "Minimal game loop + collision helpers + audio for small 2D canvas games",
   "license": "MIT",
   "type": "module",
+  "exports": {
+    ".": {
+      "types": "./build/index.d.ts",
+      "default": "./build/index.js"
+    }
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
+    "prepare": "tsc",
     "lint": "oxlint",
     "format": "oxfmt .",
     "verify:tsc": "tsc --noEmit",
