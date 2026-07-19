@@ -100,6 +100,29 @@ describe("SceneManager", () => {
     m.go("s");
     expect(log).toEqual(["second"]);
   });
+
+  it("auto-drives a world-only scene, but a hook takes over", () => {
+    const m = createSceneManager();
+    const fakeCtx = {} as CanvasRenderingContext2D;
+
+    const auto = { update: vi.fn(), draw: vi.fn() };
+    const manual = { update: vi.fn(), draw: vi.fn() };
+    m.define("auto", { world: auto as never });
+    m.define("manual", { world: manual as never, update() {}, draw() {} });
+
+    m.go("auto");
+    m.update();
+    m.draw(fakeCtx);
+    expect(auto.update).toHaveBeenCalledTimes(1);
+    expect(auto.draw).toHaveBeenCalledWith(fakeCtx);
+
+    // A scene that defines its own hooks controls the world itself — no auto-drive.
+    m.go("manual");
+    m.update();
+    m.draw(fakeCtx);
+    expect(manual.update).not.toHaveBeenCalled();
+    expect(manual.draw).not.toHaveBeenCalled();
+  });
 });
 
 describe("Scenes default facade", () => {
@@ -107,7 +130,7 @@ describe("Scenes default facade", () => {
     // Fresh module registry: import the facade and drive it through a fake Loop.
     vi.resetModules();
     const runSpy = vi.fn();
-    vi.doMock("./engine.js", () => ({ Loop: { run: runSpy } }));
+    vi.doMock("./engine.js", () => ({ Loop: { run: runSpy }, Draw: { ctx: {} } }));
     const { Scenes } = await import("./scenes.js");
 
     const log: string[] = [];

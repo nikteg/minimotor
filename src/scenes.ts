@@ -12,11 +12,17 @@
 // The default `Scenes` facade wires itself into the default Loop the first time
 // you `go`/`push`, so game code never calls `Loop.run` when using scenes.
 
-import { Loop } from "./engine.js";
+import { Loop, Draw } from "./engine.js";
+import type { World } from "./ecs.js";
 
 /** A game screen. Every hook is optional. `update` runs on the fixed timestep
  *  for the top scene only; `draw` runs once per frame for every scene in the
- *  stack (bottom-to-top). */
+ *  stack (bottom-to-top).
+ *
+ *  A scene may declare an ECS `world`. If it has no `update`/`draw` hook, the
+ *  world is auto-driven (`world.update()` / `world.draw(ctx)`). If it does have
+ *  a hook, the hook is in full control and calls `world.update()`/`draw(ctx)`
+ *  itself where it wants — so background/entities/HUD ordering stays yours. */
 export interface Scene {
   /** Called when the scene becomes active (pushed, or navigated to). */
   enter?(): void;
@@ -26,6 +32,8 @@ export interface Scene {
   draw?(): void;
   /** Called when the scene leaves the stack (popped, or replaced by `go`). */
   exit?(): void;
+  /** Optional ECS world; auto-driven only when `update`/`draw` are absent. */
+  world?: World;
 }
 
 /** Manages a stack of named scenes. Pure — no Loop/DOM dependency — so the
@@ -46,8 +54,9 @@ export interface SceneManager {
   readonly stack: readonly string[];
   /** Tick the top scene's `update` (call once per fixed step). */
   update(): void;
-  /** Draw every scene bottom-to-top (call once per frame). */
-  draw(): void;
+  /** Draw every scene bottom-to-top (call once per frame). `ctx` is only needed
+   *  for scenes that auto-drive a `world`. */
+  draw(ctx?: CanvasRenderingContext2D): void;
 }
 
 export function createSceneManager(): SceneManager {
@@ -85,10 +94,16 @@ export function createSceneManager(): SceneManager {
       return stack.map((s) => s.name);
     },
     update() {
-      stack[stack.length - 1]?.scene.update?.();
+      const top = stack[stack.length - 1]?.scene;
+      if (!top) return;
+      if (top.update) top.update();
+      else top.world?.update(); // auto-drive a pure-ECS scene
     },
-    draw() {
-      for (const { scene } of stack) scene.draw?.();
+    draw(ctx) {
+      for (const { scene } of stack) {
+        if (scene.draw) scene.draw();
+        else if (scene.world && ctx) scene.world.draw(ctx);
+      }
     },
   };
 }
@@ -103,7 +118,7 @@ function ensureRunning(): void {
   wired = true;
   Loop.run({
     update: () => manager.update(),
-    draw: () => manager.draw(),
+    draw: () => manager.draw(Draw.ctx),
   });
 }
 

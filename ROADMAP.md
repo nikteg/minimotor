@@ -115,7 +115,8 @@ world.renderSystem("sprites", (w, ctx) => {
 ```
 
 You are never *required* to write systems — a `Scene.update` may query inline. Systems
-are just the ordered, named form.
+are just the ordered, named form. ✅ Shipped: `world.system`/`renderSystem` (ordered,
+replace-by-name) and `world.update()`/`draw(ctx)`.
 
 **Determinism & safety.** `world.update()` ticks update systems once per fixed
 step. Structural changes (`spawn`/`despawn`/`add`/`remove`) issued during
@@ -215,8 +216,11 @@ hoppspelet) as proof it actually simplifies code — the discipline used so far.
    generational ids, sparse-set storage, typed variadic queries, iteration-safe
    command buffer. Shipped with `ecs.ts` + tests; **particles** sample rebuilt on
    entities as the proof.
-3. **Systems + Scene/World wiring** — ordered update/render systems; refactor
-   **platformer** sample.
+3. ✅ **Systems + Scene/World wiring** — `world.system`/`renderSystem` (ordered,
+   replace-by-name) + `world.update()`/`draw(ctx)`; a `Scene` may declare a
+   `world` that auto-drives when it has no `update`/`draw` hook. Particles sample
+   upgraded to systems as the proof. (Full platformer→ECS migration deferred to
+   the flagship, milestone 7.)
 4. **Clock + Tween + Signals** — refactor hoppspelet's timers/floating-text/announce.
 5. **Assets + Anim** — a new image-based sample (first game that loads art).
 6. **Tiles** — a tilemap sample.

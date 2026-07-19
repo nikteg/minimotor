@@ -1,5 +1,5 @@
-// Particle system demo: firework sparks built on the ECS.
-// Demonstrates: ECS (components, spawn, query, despawn), sprites, physics.
+// Particle system demo: firework sparks built on the ECS with systems.
+// Demonstrates: ECS components/spawn/query/despawn + update & render systems.
 import { Minimotor } from "minimotor";
 
 const vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
@@ -41,31 +41,39 @@ function spawnBurst(x, y) {
 
 spawnBurst(vp.w / 2, vp.h / 2);
 
+// Simulation system: gravity + fade. Despawning mid-query is safe — the world
+// buffers it until the query finishes, so we never mutate the set we walk.
+world.system("integrate", (w) => {
+  const G = Minimotor.Physics.GRAVITY * 0.3;
+  for (const [e, p, v, life] of w.query(Pos, Vel, Life)) {
+    p.x += v.x;
+    p.y += v.y;
+    v.y += G;
+    life.v -= 0.008;
+    if (life.v <= 0) w.despawn(e);
+  }
+});
+
+// Render system: blit each spark with its remaining life as alpha.
+world.renderSystem("sparks", (w, ctx) => {
+  const half = sparkCanvas.logicalSize / 2;
+  for (const [, p, life] of w.query(Pos, Life)) {
+    ctx.globalAlpha = life.v;
+    ctx.drawImage(sparkCanvas, p.x - half, p.y - half);
+  }
+  ctx.globalAlpha = 1;
+});
+
 Minimotor.Loop.run({
   update() {
     // Click/tap anywhere to spawn sparks (pointer is polled, no listeners).
     if (Pointer.pressed) spawnBurst(Pointer.x, Pointer.y);
-
-    const G = Minimotor.Physics.GRAVITY * 0.3;
-    // Despawning inside the loop is safe — the world buffers it until the
-    // query finishes, so we never mutate the set mid-walk.
-    for (const [e, p, v, life] of world.query(Pos, Vel, Life)) {
-      p.x += v.x;
-      p.y += v.y;
-      v.y += G;
-      life.v -= 0.008;
-      if (life.v <= 0) world.despawn(e);
-    }
+    world.update(); // runs update systems in order, then flushes despawns
   },
   draw() {
     const { ctx } = Draw;
     ctx.clearRect(0, 0, vp.w, vp.h);
-    const half = sparkCanvas.logicalSize / 2;
-    for (const [, p, life] of world.query(Pos, Life)) {
-      ctx.globalAlpha = life.v;
-      ctx.drawImage(sparkCanvas, p.x - half, p.y - half);
-    }
-    ctx.globalAlpha = 1;
+    world.draw(ctx); // runs render systems
     ctx.fillStyle = "#fff";
     ctx.font = "14px monospace";
     ctx.fillText(`Sparks: ${world.count(Pos)}  Click to spawn`, 10, 20);

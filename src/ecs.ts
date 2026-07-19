@@ -43,6 +43,12 @@ type AnyInit = ComponentInit<any>;
  *  a despawned-and-recycled slot is detected as dead by `world.alive()`. */
 export type Entity = number & { readonly __entity: unique symbol };
 
+/** A simulation system: runs in the update phase (via `world.update()`). */
+export type System = (world: World) => void;
+
+/** A render system: runs in the draw phase (via `world.draw(ctx)`). */
+export type RenderSystem = (world: World, ctx: CanvasRenderingContext2D) => void;
+
 let nextComponentId = 0;
 
 /** Define a component type. Call once per component (module scope), then attach
@@ -72,6 +78,13 @@ interface Store {
   dense: unknown[];
   owners: number[]; // entity index for each dense slot
   slotOf: (number | undefined)[]; // entity index -> dense slot
+}
+
+/** Register `fn` under `name`, replacing any existing entry with that name. */
+function upsert<F>(list: { name: string; fn: F }[], name: string, fn: F): void {
+  const existing = list.find((s) => s.name === name);
+  if (existing) existing.fn = fn;
+  else list.push({ name, fn });
 }
 
 /** Swap-remove an entity's slot from a store, keeping the dense arrays packed. */
@@ -113,8 +126,18 @@ export interface World {
   count(c: AnyComponent): number;
   /** Apply any buffered structural changes now (auto-run when queries finish). */
   flush(): void;
-  /** Remove every entity and component. */
+  /** Remove every entity and component (systems are kept). */
   clear(): void;
+
+  /** Register (or replace, by name) an update-phase system. Systems run in
+   *  registration order when `update()` is called. */
+  system(name: string, fn: System): void;
+  /** Register (or replace, by name) a draw-phase system. */
+  renderSystem(name: string, fn: RenderSystem): void;
+  /** Run every update system in order, then flush buffered structural changes. */
+  update(): void;
+  /** Run every render system in order with the given context. */
+  draw(ctx: CanvasRenderingContext2D): void;
 
   query<A>(a: Component<A>): Iterable<[Entity, A]>;
   query<A, B>(a: Component<A>, b: Component<B>): Iterable<[Entity, A, B]>;
@@ -136,6 +159,9 @@ export function world(): World {
 
   let iterating = 0;
   const commands: (() => void)[] = [];
+
+  const updateSystems: { name: string; fn: System }[] = [];
+  const renderSystems: { name: string; fn: RenderSystem }[] = [];
 
   function defer(fn: () => void): void {
     if (iterating > 0) commands.push(fn);
@@ -242,6 +268,23 @@ export function world(): World {
       free.length = 0;
       commands.length = 0;
       iterating = 0;
+    },
+
+    system(name, fn) {
+      upsert(updateSystems, name, fn);
+    },
+
+    renderSystem(name, fn) {
+      upsert(renderSystems, name, fn);
+    },
+
+    update() {
+      for (const s of updateSystems) s.fn(self);
+      flush();
+    },
+
+    draw(ctx) {
+      for (const s of renderSystems) s.fn(self, ctx);
     },
 
     // Implementation is one loose signature; the typed overloads live on the

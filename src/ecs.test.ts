@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { component, world, type Entity } from "./ecs.js";
 
 const Position = component<{ x: number; y: number }>("Position");
@@ -143,5 +143,54 @@ describe("ECS iteration safety (command buffer)", () => {
     expect(w.alive(a)).toBe(false);
     expect(w.alive(b)).toBe(false);
     expect(w.count(Position)).toBe(0);
+  });
+});
+
+describe("ECS systems", () => {
+  it("runs update systems in order then flushes buffered changes", () => {
+    const w = world();
+    const order: string[] = [];
+    w.spawn(Position.with({ x: 0, y: 0 }), Velocity.with({ x: 2, y: 3 }));
+
+    w.system("move", (world) => {
+      order.push("move");
+      for (const [, p, v] of world.query(Position, Velocity)) {
+        p.x += v.x;
+        p.y += v.y;
+      }
+    });
+    w.system("cull", (world) => {
+      order.push("cull");
+      for (const [e, p] of world.query(Position)) if (p.x > 1) world.despawn(e);
+    });
+
+    w.update();
+    expect(order).toEqual(["move", "cull"]);
+    // move ran before cull; the entity moved to x=2 then was despawned on flush
+    expect(w.count(Position)).toBe(0);
+  });
+
+  it("render systems receive the ctx", () => {
+    const w = world();
+    w.spawn(Position.with({ x: 5, y: 7 }));
+    const ctx = {} as CanvasRenderingContext2D;
+    const drawn: Array<[number, number]> = [];
+    w.renderSystem("blit", (world, c) => {
+      expect(c).toBe(ctx);
+      for (const [, p] of world.query(Position)) drawn.push([p.x, p.y]);
+    });
+    w.draw(ctx);
+    expect(drawn).toEqual([[5, 7]]);
+  });
+
+  it("system() replaces a system registered under the same name", () => {
+    const w = world();
+    const first = vi.fn();
+    const second = vi.fn();
+    w.system("s", first);
+    w.system("s", second);
+    w.update();
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledTimes(1);
   });
 });
