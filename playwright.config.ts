@@ -8,8 +8,8 @@ export default defineConfig({
     headless: true,
   },
   webServer: {
-    command: "serve samples -p 8765 --no-clipboard",
-    url: "http://localhost:8765/bounce/",
+    command: "serve . -p 8765 --no-clipboard",
+    url: "http://localhost:8765/samples/",
     reuseExistingServer: true,
   },
   projects: [

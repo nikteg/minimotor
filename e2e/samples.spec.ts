@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 test("minimal sample loads and renders square", async ({ page }) => {
-  await page.goto("/minimal/");
+  await page.goto("/samples/minimal/");
   await expect(page.locator("canvas#game")).toBeVisible();
   await page.waitForTimeout(500);
   // Move the square
@@ -13,7 +13,7 @@ test("minimal sample loads and renders square", async ({ page }) => {
 });
 
 test("pong sample loads and plays", async ({ page }) => {
-  await page.goto("/pong/");
+  await page.goto("/samples/pong/");
   await expect(page.locator("canvas#game")).toBeVisible();
   await page.waitForTimeout(2000);
   // Ball should bounce; move paddle
@@ -24,7 +24,7 @@ test("pong sample loads and plays", async ({ page }) => {
 });
 
 test("particles sample spawns on click", async ({ page }) => {
-  await page.goto("/particles/");
+  await page.goto("/samples/particles/");
   await expect(page.locator("canvas#game")).toBeVisible();
   await page.waitForTimeout(500);
   // Click to spawn particles
