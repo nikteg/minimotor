@@ -9,8 +9,8 @@
     "browser": true
   },
   "rules": {
-    // Engine och rectsOverlap ar medvetna globals som konsumeras av
-    // klassiska script i spelprojekten (ingen modul-gräns).
+    // Engine and rectsOverlap are intentional globals consumed by
+    // classic scripts in game projects (no module boundary).
     "no-unused-vars": "off"
   },
   "ignorePatterns": ["*.js", "*.d.ts", "build/"]
