@@ -1,0 +1,21 @@
+{
+  "name": "minimotor",
+  "version": "0.1.0",
+  "description": "Minimal game loop + kollisionshjälp för små 2D-canvas-spel",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "lint": "oxlint",
+    "format": "oxfmt .",
+    "verify:tsc": "tsc --noEmit",
+    "verify:lint": "oxlint",
+    "verify:format": "oxfmt --check .",
+    "verify": "pnpm run --parallel \"/^verify:.+$/\""
+  },
+  "devDependencies": {
+    "oxfmt": "^0.59.0",
+    "oxlint": "^1.36.0",
+    "typescript": "^5.9.0"
+  }
+}

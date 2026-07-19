@@ -1,0 +1,17 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+    "perf": "warn"
+  },
+  "env": {
+    "browser": true
+  },
+  "rules": {
+    // Engine och rectsOverlap ar medvetna globals som konsumeras av
+    // klassiska script i spelprojekten (ingen modul-gräns).
+    "no-unused-vars": "off"
+  },
+  "ignorePatterns": ["engine.js", "engine.d.ts"]
+}
