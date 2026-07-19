@@ -8,7 +8,7 @@ export default defineConfig({
     headless: true,
   },
   webServer: {
-    command: "npx serve samples -p 8765 --no-clipboard",
+    command: "serve samples -p 8765 --no-clipboard",
     url: "http://localhost:8765/bounce/",
     reuseExistingServer: true,
   },
