@@ -9,8 +9,11 @@ import * as Storage from "./storage.js";
 import * as Physics from "./physics.js";
 import * as Sprites from "./sprites.js";
 import * as Net from "./net.js";
+import * as Perf from "./perf.js";
+import * as Camera from "./camera.js";
+import * as Game from "./game.js";
 
-export { Engine, Audio, Input, Storage, Physics, Sprites, Net };
+export { Engine, Audio, Input, Storage, Physics, Sprites, Net, Perf, Camera, Game };
 export type { Rect, Viewport, EngineShape } from "./engine.js";
 export type { SfxBuilder, MusicConfig } from "./audio.js";
 export type { PhysicsBody } from "./physics.js";
@@ -28,6 +31,9 @@ export const Minimotor = {
   Physics,
   Sprites,
   Net,
+  Perf,
+  Camera,
+  Game,
   Collision,
 };
 

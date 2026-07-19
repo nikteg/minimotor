@@ -40,3 +40,12 @@ export function jump(body: PhysicsBody): boolean {
   body.onGround = false;
   return true;
 }
+
+/** Variable-height jump — call each frame while the jump key is *not* held.
+ *  Shortens upward velocity so the player can tap for a short hop or hold
+ *  for a full jump. No-op when falling or already grounded. */
+export function variableJump(body: PhysicsBody, held: boolean, cutoff = -4): void {
+  if (!held && body.vy < cutoff) {
+    body.vy *= 0.65;
+  }
+}

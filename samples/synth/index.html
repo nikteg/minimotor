@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Synth - Minimotor</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #0a0a0a; font-family: monospace; }
+  canvas { display: block; }
+  #hint { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+    color: #888; font-size: 13px; pointer-events: none; z-index: 10; }
+</style>
+</head>
+<body>
+
+<canvas id="game"></canvas>
+<div id="hint">Click to start music · 1-4 change melody · 5 stops · M toggles mute</div>
+<script type="module" src="./synth.js"></script>
+</body>
+</html>

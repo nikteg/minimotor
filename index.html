@@ -35,7 +35,6 @@
     <h1>Minimotor Samples</h1>
     <p>Small games built with the Minimotor engine</p>
   </header>
-  <p style="color:#e06060;text-align:center;margin-bottom:32px">Run <code>pnpm samples</code>, Then open <code>http://localhost:3000</code></p>
   <div class="grid">
     <a class="card" href=./samples/minimal/>
       <h2>Minimal</h2>
@@ -47,15 +46,30 @@
       <span class="tag">Engine</span><span class="tag">Storage</span><span class="tag">Input</span>
       <p>Ball bounces off walls. Each wall hit earns a point. Best score saved with Storage.</p>
     </a>
-    <a class="card" href=./samples/pong/>
-      <h2>Pong</h2>
-      <span class="tag">Collision</span><span class="tag">Storage</span><span class="tag">Physics</span>
-      <p>Paddle + ball. Uses Collision.rectsOverlap for paddle hits. Ball speed ramps up. Best score persisted.</p>
+    <a class="card" href=./samples/breakout/>
+      <h2>Breakout</h2>
+      <span class="tag">Collision</span><span class="tag">Storage</span>
+      <p>Paddle + ball + rows of destructible blocks. Ball angle deflects off paddle. Score, lives, best score.</p>
+    </a>
+    <a class="card" href=./samples/snake/>
+      <h2>Snake</h2>
+      <span class="tag">Engine</span><span class="tag">Input</span><span class="tag">Storage</span>
+      <p>Classic grid-based snake with growing tail. Collect food, avoid self-collision. Arrow or WASD.</p>
+    </a>
+    <a class="card" href=./samples/platformer/>
+      <h2>Platformer</h2>
+      <span class="tag">Physics</span><span class="tag">Collision</span><span class="tag">Storage</span>
+      <p>Mario-style side-scroller. Platforms, coins, goomba-like enemies you can stomp, flag goal, parallax sky.</p>
     </a>
     <a class="card" href=./samples/particles/>
       <h2>Particles</h2>
       <span class="tag">Sprites</span><span class="tag">Physics</span>
-      <p>200-spark firework effect. Click to spawn. Gravity from Physics pulls sparks down. Spark texture pre-rendered with Sprites.getSprite.</p>
+      <p>200-spark firework effect. Click to spawn. Gravity pulls sparks down. Spark texture pre-rendered with Sprites.getSprite.</p>
+    </a>
+    <a class="card" href=./samples/synth/>
+      <h2>Synth</h2>
+      <span class="tag">Audio</span><span class="tag">Input</span>
+      <p>Music scheduler with four melodies, kick drum, hi-hat, and zap sound effect. Audio bar visualizer.</p>
     </a>
   </div>
 </body>
