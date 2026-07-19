@@ -1,154 +1,236 @@
-# Minimotor — Roadmap & Ideas
+# Minimotor — Engine Architecture & Roadmap
 
-## Functionality from Hoppspelet that could move into Minimotor
+Minimotor is growing from a helper library into a **full-fledged 2D game engine**.
+This document is the agreed shape of that engine. It is a design doc, not a
+commitment to dates — but the layering, the ECS model, and the non-goals are
+decisions we build against.
 
-These are features currently implemented directly in the game that are generic
-enough to become engine utilities.
+## Vision
 
-### 1. Stage / Canvas management (`stage.ts`)
+A small, dependency-free, TypeScript-first 2D engine that scales from "colored
+square that moves with the arrow keys" to a real game with scenes, many
+entities, loaded art, animation and tilemaps — **without ever forcing structure
+you don't need**. You can always drop to a raw `ctx` and a plain
+`Loop.run({ update, draw })`.
 
-- DPR-aware canvas resize with backing-store scaling
-- View dimensions (`viewW`, `viewH`) and safe-area insets (iPhone notch)
-- Ground-line positioning (generalised as a stage-floor helper)
-- Orientation change listener for notch side detection
-- `initParticles()` — background ambient particles are a generic pattern
-- **Suggested API:** `Minimotor.Stage.create(canvas)` → returns `{ viewW, viewH, DPR, resize, onResize(cb) }`
+### Status legend
 
-### 2. Orientation lock / portrait-pause (`input.ts` + `stage.ts`)
+- ✅ shipped  · 🟡 partial  · ⬜ planned
 
-- Media query `(orientation: portrait) and (pointer: coarse)` auto-pause
-- Rotate-hint overlay (DOM element injected by engine, shown/hidden by CSS)
-- `screen.orientation.lock("landscape")` for full-screen PWAs
-- **Suggested API:** `Minimotor.Orientation.requireLandscape({ pauseGame: true })`
+## The layered architecture
 
-### 3. Input helpers (`input.ts`)
+```
+┌─ L4  Content     Assets · Anim · Tiles · Particles · Transitions · UI
+├─ L3  Structure   ECS(World) · Scenes · Clock · Tween · Signals          ← the engine core we're adding
+├─ L2  Primitives  Mathf · Collision · Camera · Sprites · Text · Physics
+└─ L1  Platform    Stage · Loop · Draw · Keys · Pointer · Audio · Storage · Net · Perf · Fullscreen · Input
+```
 
-- Generic button wiring (`wireButton(id, action)` with touch/mouse/click)
-- Keyboard action binding (space-prevents-default + custom keys)
-- Touchstart listener with `preventDefault`
-- **Suggested API:** `Minimotor.Input.key(code, action)`, `Minimotor.Input.tap(element, action)`
+Each layer builds only on the layers below it. Everything above L1 is **opt-in**:
+the structure and content layers are conveniences over the same primitives, not a
+mandatory framework. Immediate-mode drawing (you draw in `draw()`/render systems)
+is preserved at every layer — there is no retained scene graph to keep in sync.
 
-### 4. Sprite cache / off-screen rendering (`sprites.ts`)
+## L1 — Platform ✅
 
-- `getCoinSprite` pattern: render an off-screen canvas once, cache by key+DPR
-- `SpriteCanvas` type extends `HTMLCanvasElement` with `logicalSize` property
-- **Suggested API:** `Minimotor.SpriteCache.get(key, w, h, drawFn)` → cached canvas
+The host and I/O. Reached through PascalCase `Minimotor.*` namespaces backed by
+one default engine built by `Stage.init()`.
 
-### 5. Hazard strip caching (`render-helpers.ts`)
+- ✅ `Stage` — canvas/viewport/DPR, safe-area insets, `onResize`, `pauseOnPortrait`
+- ✅ `Loop` — fixed-step accumulator, per-step edge-clearing, `frameScale`
+- ✅ `Keys` / `Pointer` — polled input (`down`/`pressed`/`released`)
+- ✅ `Draw` — `ctx`, `frameScale`
+- ✅ `Audio` — crash-safe SFX + scheduled `Music`
+- ✅ `Storage`, `Net`, `Perf`, `Fullscreen`, `Input`
+- 🟡 backlog: gamepad polling, haptics (`navigator.vibrate`), audio channels /
+  sampled buffers, orientation lock, service-worker/PWA helper
 
-- Pre-render farozonsremsa (hazard gradient strip) at view width, reuse until theme changes
-- Similar to sprite cache but linear/rect fill, used as `drawImage` source
+## L2 — Primitives 🟡
 
-### 6. Overlay text / HUD helpers (`main.ts`)
+Pure, data-agnostic helpers. No engine state.
 
-- `overlayText(ctx, text, subtext?)` — semi-transparent full-screen overlay with centered text
-- **Suggested API:** `Minimotor.UI.overlay(ctx, msg, sub?)`
+- ✅ `Mathf` — lerp, clamp, remap, pulse, wave (add: randInt/randFloat/randItem,
+  distance, angleBetween, easing set)
+- ✅ `Collision` — rectsOverlap, circleHit, crossedDown (add: circleRect,
+  pointInRect, swept AABB)
+- ✅ `Camera` — `createCamera` (lerp follow + clamp), `scrollColumns` parallax
+  (add: shake)
+- ✅ `Sprites` — `getSprite` (square) + `getLayer` (arbitrary offscreen cache)
+- ✅ `Text`, `Physics` (kinematic helpers/constants)
 
-### 7. Floating text / score popups (`update.ts` + `sprites.ts`)
+## L3 — Structure (the engine core we're adding) ⬜
 
-- Small animated text that floats up and fades out
-- Generic: position, text, velocity, life-span, colour
-- **Suggested API:** `Minimotor.UI.floatingTexts` (array) + `drawAll(ctx)`
+### 3a. ECS — `Minimotor.ECS` / `World`
 
-### 8. LocalStorage best-score helper (`state.ts`)
+The object model is a **minimal-ceremony ECS**: sparse-set storage, plain-data
+components, immediate-mode render systems, deterministic fixed-step. It is *not*
+an archetype/Bevy-weight ECS — the priority is small code and good DX for
+small-to-medium 2D games.
 
-- `getBest(key)` / `setBest(key, score)` with try/catch for private browsing
-- **Suggested API:** `Minimotor.Storage.get(key)`, `.set(key, value)`
+**Components** are plain-data schemas with a typed handle:
 
-### 9. Particle system (generalised)
+```ts
+const Position = Minimotor.ECS.component<{ x: number; y: number }>("Position");
+const Velocity = Minimotor.ECS.component<{ x: number; y: number }>("Velocity");
+const Sprite   = Minimotor.ECS.component<{ img: HTMLCanvasElement }>("Sprite");
+```
 
-- Ambient particles currently in `stage.ts` with fixed set of behaviours:
-  rising (embers), falling (snow, bubbles), orbiting (fireflies), static blink (stars)
-- **Suggested API:** `Minimotor.Particles.emitter(config)` returning update/draw closures
+**Entities** are ids; components are attached/queried through the world:
 
-### 10. Theme application (`main.ts` + `world.ts`)
+```ts
+const world = Minimotor.ECS.world();          // or Minimotor.World (default)
 
-- The pattern: on theme change → apply `canvas.style.background`, show name banner, reset caches
-- Could be a `Minimotor.ThemeApplier` that handles CSS background, announcement timer, cache invalidation
+const e = world.spawn(
+  Position.with({ x: 0, y: 0 }),
+  Velocity.with({ x: 1, y: 0 }),
+);
+world.add(e, Sprite, { img: coinCanvas });
+world.get(e, Position).x += 1;
+world.has(e, Velocity);
+world.remove(e, Sprite);
+world.despawn(e);                             // deferred to end of step
+```
 
-## New functionality not yet used by Hoppspelet
+**Queries** iterate all entities holding a component set (smallest set drives
+iteration; others checked via sparse-set membership). Order is stable by entity id:
 
-### 1. Force landscape mode
+```ts
+for (const [e, pos, vel] of world.query(Position, Velocity)) {
+  pos.x += vel.x;
+  pos.y += vel.y;
+}
+```
 
-- `screen.orientation.lock("landscape")` (works on mobile in fullscreen/PWA)
-- If lock fails (desktop), auto-rotate hint via CSS media query
-- Combine with portrait-pause from point 2 above
-- **Implementation in engine:** `Minimotor.setLandscapeRequired(enabled)`
+**Systems** are named functions run each phase, in registration order. Update
+systems run in the fixed-step `update`; render systems run in `draw` with the ctx —
+keeping drawing immediate-mode:
 
-### 2. FPS / debug overlay
+```ts
+world.system("movement", (w) => {
+  for (const [, p, v] of w.query(Position, Velocity)) { p.x += v.x; p.y += v.y; }
+});
+world.renderSystem("sprites", (w, ctx) => {
+  for (const [, p, s] of w.query(Position, Sprite)) ctx.drawImage(s.img, p.x, p.y);
+});
+```
 
-- Display current FPS, frame timing, update count
-- Toggle with a key combo (F3, backtick)
-- **Value:** helps tune performance across devices
+You are never *required* to write systems — a `Scene.update` may query inline. Systems
+are just the ordered, named form.
 
-### 3. Camera / viewport
+**Determinism & safety.** `world.update()` ticks update systems once per fixed
+step. Structural changes (`spawn`/`despawn`/`add`/`remove`) issued during
+iteration are recorded in a command buffer and applied at end-of-step, so
+iteration never mutates mid-flight and replays stay deterministic.
 
-- `ctx.save(); ctx.translate(-camera.x, -camera.y); ctx.restore()`
-- Shake effect (`camera.offset = random * intensity`)
-- Smooth scrolling / lerp to target
-- **Value:** used by many platformers and action games
+**Storage.** v1: sparse set per component (dense array + id→index map). The public
+API hides this so we can move hot components to typed-array SoA later without
+breaking games.
 
-### 4. Game state machine
+### 3b. Scenes — `Minimotor.Scenes`
 
-- Scene/state transitions (Menu, Playing, Paused, GameOver)
-- Each "scene" gets its own `update()` / `draw()` lifecycle
-- **Value:** stops state-checking boilerplate (`if (state === "playing")`) from spreading
+A scene stack replaces the hand-rolled `game.state = "menu"|"playing"|"gameover"`
++ branching that every current game duplicates.
 
-### 5. Resource preloader
+```ts
+Minimotor.Scenes.define("play", {
+  world: playWorld,                 // optional: a Scene may own a World
+  enter() {}, update() {}, draw() {}, exit() {},
+});
+Minimotor.Scenes.go("menu");        // swap: exit old → enter new
+Minimotor.Scenes.push("pause");     // overlay: 'play' still draws underneath
+Minimotor.Scenes.pop();
+```
 
-- Load images, audio, JSON data with progress callback
-- Cache them in a global resource map
-- **Value:** needed for sprite sheets, level data, sound samples
+Once any scene is defined, `Loop.run()` dispatches to the active stack (top scene
+updates; the stack draws bottom-to-top). If a scene declares a `world`, the scene
+default-wires `world.update()` / `world.draw(ctx)`. Fully backward compatible: the
+plain `Loop.run({ update, draw })` form still works with no scenes.
 
-### 6. Tween / easing library
+### 3c. Clock, Tween, Signals — `Minimotor.Clock` / `Tween` / `Signals`
 
-- `Tween.to(obj, { x: 100 }, 500, Easing.outBounce).onUpdate(...)`
-- Lightweight, no external deps
-- **Value:** smooth camera transitions, menu animations, UI pop-ins
+Deterministic time and decoupling. All tick in fixed-step `update` and pause with
+the loop.
 
-### 7. Circle-rect collision
+```ts
+Minimotor.Clock.after(600, unlockRestart);
+Minimotor.Clock.every(1000, spawnWave);
+Minimotor.Tween.to(text, { y: text.y - 30, alpha: 0 }, 450, Mathf.easeOut);
+Minimotor.Signals.on("score", n => hud.score = n);   Minimotor.Signals.emit("score", 10);
+```
 
-- Engine has `rectsOverlap`; add `circleRectOverlap(circle, rect)`
-- Add helper for circle-circle, point-in-rect, point-in-circle
+## L4 — Content ⬜
 
-### 8. Math utilities
+The gap between "toy" and "full-fledged": loaded art and level data.
 
-- `clamp`, `lerp`, `mapRange`, `randInt`, `randFloat`, `randItem`
-- Angle helpers (`angleBetween`, `distance`, `normalizeAngle`)
-- **Value:** every game needs these; avoids repetition
+```ts
+await Minimotor.Assets.load({ hero: "hero.png", tiles: "tiles.png", jump: "jump.wav" });
+const run = Minimotor.Anim.sheet(Minimotor.Assets.get("hero"), { fw: 32, fh: 32, fps: 12 });
+run.draw(ctx, x, y);                                   // advances by loop dt
 
-### 9. Gamepad API support
+const map = Minimotor.Tiles.grid(levelData, { tw: 16, atlas: Minimotor.Assets.get("tiles") });
+map.draw(ctx, camera);   map.solidAt(x, y);
+```
 
-- Navigator.getGamepads() polling in the game loop
-- Map stick/button events to virtual action names
-- **Value:** controller support for desktop play
+- ⬜ `Assets` — preload images/audio/JSON with progress; cached map
+- ⬜ `Anim` — sprite-sheet frames + timeline, dt-advanced
+- ⬜ `Tiles` — grid tilemap: draw + solidity query, culled to camera
+- ⬜ `Particles` — emitter presets (the ambient/firework patterns), ECS-friendly
+- ⬜ `Transitions` — scene fades/wipes · `UI` — overlay/HUD/floating-text helpers
+  (kept out of the core; opinionated, like the samples' `overlays.js`)
 
-### 10. Haptic feedback
+## Design principles (what keeps it *minimotor*)
 
-- `navigator.vibrate(pattern)` on mobile
-- Optional: short pulse on jump / hit / collect
-- **Value:** feels more responsive on touch devices (where screen taps give no physical feedback)
+1. **Opt-in layers** — raw `ctx` and plain `Loop.run` always work; nothing above
+   L1 is mandatory.
+2. **Plain-data everywhere** — components and tween targets are plain objects.
+   No inheritance requirement; the ECS owns *storage*, never your *types*.
+3. **Immediate-mode drawing, retained-mode state** — render systems draw with
+   `ctx`; no node tree to sync.
+4. **Global-uniform** — `ECS`/`Scenes`/`Clock`/`Assets` are `Minimotor.*`
+   namespaces over the one default engine, exactly like `Stage`/`Loop`. A default
+   `Minimotor.World` exists for the simple case; scenes can own their own worlds.
+5. **Deterministic fixed-step** — systems, timers, tweens and physics tick in
+   `update`; structural changes are deferred via command buffer.
+6. **No bundler required** — must build with plain `tsc`; tree-shakeable so a game
+   pays only for what it imports.
 
-### 11. Simpler PWA setup
+## Non-goals
 
-- Automatically register service worker if `sw.js` is present
-- Provide `cacheFirst` and `networkFirst` strategies
-- **Value:** one-line PWA setup
+- **Archetype/graph ECS, multithreaded systems, worker parallelism** — v1 stays
+  sparse-set and single-threaded; revisit only if a real game needs the throughput.
+- **A full rigid-body physics engine** (joints/solver) — keep light kinematic
+  helpers; integrate an external lib only behind an opt-in adapter if ever needed.
+- **A retained scene graph** with mandatory transform nodes — fights immediate mode.
+- **A serialization/save format** in v1 — the ECS API is designed to allow it later.
 
-### 12. Audio extensions
+## Build milestones
 
-- Sample-based SFX playback (play pre-loaded buffers instead of synth only)
-- Volume control per channel (SFX / Music / Master)
-- Pan / spatial audio helper
-- **Value:** richer audio beyond current procedurally-generated sounds
+Each milestone lands with **tests** and a **refactor of a real game** (a sample or
+hoppspelet) as proof it actually simplifies code — the discipline used so far.
 
-## Design principles for new features
+1. **Scenes** — stack + `Loop` dispatch; refactor one sample's state machine. (No
+   ECS dependency; smallest structural win first.)
+2. **ECS core** — `world.spawn/add/get/has/remove/despawn/query` + command buffer;
+   refactor **particles** sample to entities as the proof.
+3. **Systems + Scene/World wiring** — ordered update/render systems; refactor
+   **platformer** sample.
+4. **Clock + Tween + Signals** — refactor hoppspelet's timers/floating-text/announce.
+5. **Assets + Anim** — a new image-based sample (first game that loads art).
+6. **Tiles** — a tilemap sample.
+7. **Flagship** — migrate hoppspelet fully onto Scenes + ECS.
 
-- **KISS** — each feature should be optional, <100 lines unless complex
-- **No bundler required** — engine must work when built with plain `tsc`
-- **Progressive** — game only pays for what it imports
-- **TypeScript strict** always
+## Open decisions
+
+- **Entity ids:** recycle with packed generation counters (safe stale-handle
+  detection) vs. plain incrementing ids? (Leaning: generations.)
+- **Default world:** ship a single `Minimotor.World` default *and* per-scene worlds,
+  or per-scene only? (Leaning: both — default for simple games.)
+- **Component definition ergonomics:** typed handle (`component<T>("name")`) as
+  sketched, vs. a schema object. (Leaning: typed handle.)
+- **Query caching:** iterate-on-demand vs. cached/incremental query sets. (Leaning:
+  on-demand v1; add caching if profiling warrants.)
 
 ---
 
-_This file is a brainstorming document; nothing here is committed to be implemented._
+_Superseded brainstorm (camera, math, collision, sprite cache, perf, floating text,
+best-score storage, FPS overlay) is now shipped in L1/L2 and removed from this doc._
