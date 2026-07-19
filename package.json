@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
+    "dev": "tsc --watch",
     "lint": "oxlint",
     "format": "oxfmt .",
     "verify:tsc": "tsc --noEmit",
