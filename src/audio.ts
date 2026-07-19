@@ -8,7 +8,7 @@ export type SfxBuilder = (ctx: AudioContext, now: number) => void;
 let audioCtx: AudioContext | null = null;
 
 // Lazy init: AudioContext must not be created before a user gesture,
-// so always call via playSfx/music.start (which runs on first action).
+// so always call via playSfx/Music.start (which runs on first action).
 export function ensureAudio(): AudioContext {
   if (!audioCtx) {
     const AC =
@@ -45,7 +45,7 @@ export interface MusicConfig {
   volume: number;
   // Length of one schedule step in milliseconds (e.g. a sixteenth note).
   stepMs: number;
-  // Called for each step; book notes via music.note/kick/noiseHit.
+  // Called for each step; book notes via Music.note/kick/noiseHit.
   // `when` is the audio clock time (seconds) when the step should play.
   schedule: (step: number, when: number) => void;
   // localStorage key to remember on/off between visits (optional).
@@ -114,7 +114,7 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
-export const music = {
+export const Music = {
   // On/off state is reflected in musicGain, so the scheduler can keep
   // running even when muted - switching is instant and click-free.
   on: true,
@@ -126,7 +126,7 @@ export const music = {
     musicConfig = config;
     if (config.storageKey) {
       try {
-        music.on = localStorage.getItem(config.storageKey) !== "off";
+        Music.on = localStorage.getItem(config.storageKey) !== "off";
       } catch {
         /* private browsing etc. - default on */
       }
@@ -135,7 +135,7 @@ export const music = {
     try {
       const ctx = ensureAudio();
       musicGain = ctx.createGain();
-      musicGain.gain.value = music.on ? config.volume : 0;
+      musicGain.gain.value = Music.on ? config.volume : 0;
       musicGain.connect(ctx.destination);
       musicStarted = true;
       startScheduler();
@@ -145,7 +145,7 @@ export const music = {
   },
 
   setOn(on: boolean): void {
-    music.on = on;
+    Music.on = on;
     if (musicConfig?.storageKey) {
       try {
         localStorage.setItem(musicConfig.storageKey, on ? "on" : "off");

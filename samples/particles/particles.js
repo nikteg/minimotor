@@ -1,10 +1,9 @@
 // Particle system demo: firework sparks with gravity + sprite pre-rendering
 // Demonstrates: game loop, physics (gravity), sprites (pre-rendered spark texture)
-import { Minimotor } from "../../build/index.js";
+import { Minimotor } from "minimotor";
 
-Minimotor.Engine.use(Minimotor.Perf.plugin());
+const vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 
-const vp = Minimotor.Engine.initCanvas("game");
 const NUM = 200;
 const SIZE = 8;
 
@@ -30,14 +29,14 @@ function spawnBurst(x, y) {
   }
 }
 
-// Click anywhere to spawn sparks
-vp.canvas.addEventListener("click", (e) => {
-  spawnBurst(e.offsetX, e.offsetY);
-});
 spawnBurst(vp.w / 2, vp.h / 2);
 
-Minimotor.Engine.start(
-  () => {
+Minimotor.Loop.run({
+  update() {
+    // Click/tap anywhere to spawn sparks (pointer is polled, no listeners).
+    const { Pointer } = Minimotor;
+    if (Pointer.pressed) spawnBurst(Pointer.x, Pointer.y);
+
     const G = Minimotor.Physics.GRAVITY * 0.3;
     for (const s of sparks) {
       s.x += s.vx;
@@ -47,8 +46,8 @@ Minimotor.Engine.start(
     }
     sparks = sparks.filter((s) => s.life > 0);
   },
-  () => {
-    const ctx = Minimotor.Engine.ctx;
+  draw() {
+    const { ctx } = Minimotor.Draw;
     ctx.clearRect(0, 0, vp.w, vp.h);
     for (const s of sparks) {
       ctx.globalAlpha = s.life;
@@ -59,4 +58,4 @@ Minimotor.Engine.start(
     ctx.font = "14px monospace";
     ctx.fillText(`Sparks: ${sparks.length}  Click to spawn`, 10, 20);
   },
-);
+});

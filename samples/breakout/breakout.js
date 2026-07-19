@@ -1,11 +1,10 @@
 // Breakout: paddle + ball + rows of destructible blocks
 // Game runs in a fixed 400×700 logical space, scaled to fit the viewport.
 // Demonstrates: game loop, collision, input, scoring, storage, lives, Perf HUD
-import { Minimotor } from "../../build/index.js";
+import { Minimotor } from "minimotor";
+import { drawGameOver } from "../shared/overlays.js";
 
-Minimotor.Engine.use(Minimotor.Perf.plugin());
-
-const vp = Minimotor.Engine.initCanvas("game");
+const vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 
 // Fixed game dimensions — scaled to fit viewport, maintaining aspect ratio
 const GW = 400;
@@ -40,10 +39,6 @@ let best = Minimotor.Storage.load("breakout_best", 0);
 let gameOver = false;
 let waiting = false;
 
-const keys = {};
-Minimotor.Engine.onKeyDown = (code) => { keys[code] = true; };
-window.addEventListener("keyup", (e) => { keys[e.code] = false; });
-
 function spawnBlocks() {
   blocks = [];
   for (let row = 0; row < ROWS; row++) {
@@ -70,18 +65,19 @@ function resetBall() {
 
 spawnBlocks();
 
-Minimotor.Engine.start(
-  () => {
+Minimotor.Loop.run({
+  update() {
+    const { Keys } = Minimotor;
     if (gameOver) return;
 
     // Paddle
     const speed = 6;
-    if (keys["ArrowLeft"]) paddle.x = Math.max(0, paddle.x - speed);
-    if (keys["ArrowRight"]) paddle.x = Math.min(GW - PADDLE_W, paddle.x + speed);
+    if (Keys.down("ArrowLeft")) paddle.x = Math.max(0, paddle.x - speed);
+    if (Keys.down("ArrowRight")) paddle.x = Math.min(GW - PADDLE_W, paddle.x + speed);
 
     if (waiting) {
       ball.x = paddle.x + paddle.w / 2;
-      if (keys["Space"] || keys["ArrowUp"]) waiting = false;
+      if (Keys.down("Space") || Keys.down("ArrowUp")) waiting = false;
       return;
     }
 
@@ -151,9 +147,8 @@ Minimotor.Engine.start(
 
     if (score > best) { best = score; Minimotor.Storage.save("breakout_best", best); }
   },
-  () => {
-    const ctx = Minimotor.Engine.ctx;
-
+  draw() {
+    const { ctx } = Minimotor.Draw;
     // Clear entire canvas (letterbox background)
     ctx.clearRect(0, 0, vp.w, vp.h);
     ctx.fillStyle = "#0a0a0a";
@@ -199,25 +194,14 @@ Minimotor.Engine.start(
     if (waiting && !gameOver) {
       ctx.fillStyle = "rgba(0,0,0,0.4)";
       ctx.fillRect(0, 0, GW, GH);
-      ctx.fillStyle = "#fff";
-      ctx.font = "20px monospace";
-      ctx.textAlign = "center";
-      ctx.fillText("Press Space to launch", GW / 2, GH / 2);
-      ctx.textAlign = "start";
+      Minimotor.Text.drawCentered(ctx, "Press Space to launch", GW / 2, GH / 2, {
+        font: "20px monospace",
+      });
     }
     if (gameOver) {
-      ctx.fillStyle = "rgba(0,0,0,0.6)";
-      ctx.fillRect(0, 0, GW, GH);
-      ctx.fillStyle = "#ff6b6b";
-      ctx.font = "bold 28px monospace";
-      ctx.textAlign = "center";
-      ctx.fillText("GAME OVER", GW / 2, GH / 2 - 14);
-      ctx.fillStyle = "#fff";
-      ctx.font = "16px monospace";
-      ctx.fillText(`Score: ${score}  Best: ${best}`, GW / 2, GH / 2 + 22);
-      ctx.textAlign = "start";
+      drawGameOver(ctx, GW, GH, score, best);
     }
 
     ctx.restore();
   },
-);
+});

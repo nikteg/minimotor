@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { wireButton, preventTouchFocus } from "./input.js";
 
-beforeEach(() => { document.body.innerHTML = ""; });
+beforeEach(() => {
+  document.body.innerHTML = "";
+});
 
 describe("Input", () => {
   describe("wireButton", () => {

@@ -1,151 +1,283 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { Engine, rectsOverlap } from "./engine.js";
+import {
+  createGame,
+  Stage,
+  Loop,
+  Keys,
+  Pointer,
+  Draw,
+  type Game,
+  type GameCallbacks,
+} from "./engine.js";
 
-// jsdom canvas support
+// jsdom canvas support + a controllable requestAnimationFrame.
+let rafCallback: ((t: number) => void) | null = null;
 const origGc = HTMLCanvasElement.prototype.getContext;
+
 beforeEach(() => {
   HTMLCanvasElement.prototype.getContext = function (type: string) {
     if (type !== "2d") return origGc.call(this, type);
     return { setTransform: vi.fn(), canvas: this } as unknown as CanvasRenderingContext2D;
   };
-  vi.stubGlobal("requestAnimationFrame", vi.fn());
-  Engine.canvas = null;
-  Engine.ctx = null;
-  Engine.viewport = null;
-  Engine.onUpdate = null;
-  Engine.onDraw = null;
-  Engine.onKeyDown = undefined;
-  Engine.onResize = undefined;
-  Engine.lastTime = 0;
-  Engine.accumulator = 0;
-  Engine.paused = false;
-  Engine.frameScale = 1;
-
-  // Restore matchMedia for tests that need it
-  vi.stubGlobal("matchMedia", vi.fn(() => ({
-    matches: false,
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-  })));
+  rafCallback = null;
+  vi.stubGlobal("requestAnimationFrame", (cb: (t: number) => void) => {
+    rafCallback = cb;
+    return 1;
+  });
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn(() => ({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })),
+  );
 });
 
-describe("Engine", () => {
-  describe("rectsOverlap", () => {
-    it("overlapping", () => expect(rectsOverlap({ x: 0, y: 0, w: 10, h: 10 }, { x: 5, y: 5, w: 10, h: 10 })).toBe(true));
-    it("edge x", () => expect(rectsOverlap({ x: 0, y: 0, w: 10, h: 10 }, { x: 10, y: 0, w: 10, h: 10 })).toBe(false));
-    it("edge y", () => expect(rectsOverlap({ x: 0, y: 0, w: 10, h: 10 }, { x: 0, y: 10, w: 10, h: 10 })).toBe(false));
-    it("separated", () => expect(rectsOverlap({ x: 0, y: 0, w: 10, h: 10 }, { x: 20, y: 0, w: 10, h: 10 })).toBe(false));
-    it("contained", () => expect(rectsOverlap({ x: 0, y: 0, w: 100, h: 100 }, { x: 25, y: 25, w: 10, h: 10 })).toBe(true));
+function build(canvasId = "game"): { game: Game; canvas: HTMLCanvasElement } {
+  const canvas = document.createElement("canvas");
+  canvas.id = canvasId;
+  document.body.appendChild(canvas);
+  const game = createGame({ canvas: canvasId }).build();
+  return { game, canvas };
+}
+
+/** Drive one animation frame at the given timestamp. */
+function tick(time: number): void {
+  const cb = rafCallback;
+  rafCallback = null;
+  cb?.(time);
+}
+
+describe("createGame", () => {
+  it("resolves canvas by id and exposes a viewport", () => {
+    const { game, canvas } = build();
+    expect(game.canvas).toBe(canvas);
+    expect(game.ctx).toBeDefined();
+    expect(game.viewport.canvas).toBe(canvas);
   });
 
-  describe("init", () => {
-    it("binds canvas and ctx", () => {
-      const c = document.createElement("canvas");
-      Engine.init(c);
-      expect(Engine.canvas).toBe(c);
-      expect(Engine.ctx).toBeDefined();
-    });
+  it("accepts a canvas element directly", () => {
+    const canvas = document.createElement("canvas");
+    const game = createGame({ canvas }).build();
+    expect(game.canvas).toBe(canvas);
   });
 
-  describe("start", () => {
-    it("registers callbacks and requests frame", () => {
-      Engine.init(document.createElement("canvas"));
-      const u = () => {}, d = () => {};
-      Engine.start(u, d);
-      expect(Engine.onUpdate).toBe(u);
-      expect(Engine.onDraw).toBe(d);
-    });
+  it("throws for a missing canvas id", () => {
+    expect(() => createGame({ canvas: "nope" }).build()).toThrow(/not found/);
   });
 
-  describe("loop", () => {
-    it("draws when paused, no update", () => {
-      const d = vi.fn(), u = vi.fn();
-      Engine.onDraw = d; Engine.onUpdate = u;
-      Engine.loop(16);
-      Engine.paused = true;
-      Engine.loop(32);
-      expect(d).toHaveBeenCalledTimes(2);
-      expect(u).not.toHaveBeenCalled();
-      expect(Engine.frameScale).toBe(0);
-    });
+  it("returns the builder from use() and pauseOnPortrait() for chaining", () => {
+    const canvas = document.createElement("canvas");
+    const builder = createGame({ canvas });
+    expect(builder.use({ name: "x" })).toBe(builder);
+    expect(builder.pauseOnPortrait()).toBe(builder);
+  });
+});
 
-    it("caps elapsed at 250ms", () => {
-      Engine.onDraw = vi.fn(); Engine.onUpdate = vi.fn();
-      Engine.loop(16);
-      Engine.loop(1016);
-      expect(Engine.onUpdate).toHaveBeenCalledTimes(15);
-    });
+describe("run / loop", () => {
+  function withCallbacks(cb: Partial<GameCallbacks> = {}): {
+    game: Game;
+    update: ReturnType<typeof vi.fn>;
+    draw: ReturnType<typeof vi.fn>;
+  } {
+    const { game } = build();
+    const update = vi.fn();
+    const draw = vi.fn();
+    game.run({ update, draw, ...cb });
+    return { game, update, draw };
+  }
 
-    it("< one step runs draw only", () => {
-      Engine.onDraw = vi.fn(); Engine.onUpdate = vi.fn();
-      Engine.loop(16);
-      Engine.loop(26);
-      expect(Engine.onDraw).toHaveBeenCalledTimes(2);
-      expect(Engine.onUpdate).not.toHaveBeenCalled();
-      expect(Engine.accumulator).toBe(10);
-    });
-
-    it("accumulates across frames", () => {
-      Engine.onDraw = vi.fn(); Engine.onUpdate = vi.fn();
-      Engine.loop(16);
-      Engine.loop(26);
-      expect(Engine.accumulator).toBe(10);
-      Engine.onUpdate.mockClear();
-      Engine.loop(40); // 14ms more = 24 accumulated → 1 step, ~7 remainder
-      expect(Engine.onUpdate).toHaveBeenCalledTimes(1);
-    });
-
-    it("multiple steps in one frame", () => {
-      Engine.onDraw = vi.fn(); Engine.onUpdate = vi.fn();
-      Engine.loop(16);
-      Engine.loop(66); // 50ms → 2 steps with remainder
-      expect(Engine.onUpdate).toHaveBeenCalledTimes(2);
-    });
+  it("runs draw but not update while paused", () => {
+    const { game, update, draw } = withCallbacks();
+    tick(16); // primes lastTime
+    game.pause();
+    tick(32);
+    expect(draw).toHaveBeenCalledTimes(2);
+    expect(update).not.toHaveBeenCalled();
   });
 
-  describe("onKeyDown", () => {
-    it("prevents default on space and calls handler", () => {
-      Engine.init(document.createElement("canvas"));
-      const handler = vi.fn();
-      Engine.onKeyDown = handler;
-      const e = new KeyboardEvent("keydown", { code: "Space", cancelable: true });
-      window.dispatchEvent(e);
-      expect(e.defaultPrevented).toBe(true);
-      expect(handler).toHaveBeenCalledWith("Space");
-    });
-
-    it("calls handler for other keys", () => {
-      Engine.init(document.createElement("canvas"));
-      const handler = vi.fn();
-      Engine.onKeyDown = handler;
-      window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyA" }));
-      expect(handler).toHaveBeenCalledWith("KeyA");
-    });
+  it("caps elapsed at 250ms of simulation", () => {
+    const { update } = withCallbacks();
+    tick(16);
+    tick(1016);
+    expect(update).toHaveBeenCalledTimes(15); // 250 / (1000/60)
   });
 
-  describe("pauseOnPortrait", () => {
-    it("pauses when matchMedia matches", () => {
-      const apply = vi.fn();
-      // override: when matchMedia is called, capture the listener
-      vi.stubGlobal("matchMedia", vi.fn(() => {
-        return {
-          get matches() { return true; },
-          addEventListener: (_: string, fn: () => void) => { apply.mockImplementation(fn); },
-        };
-      }));
-      Engine.pauseOnPortrait();
-      // The initial state check should see matches=true
-      expect(Engine.paused).toBe(true);
-    });
+  it("draws without updating when less than one step elapses", () => {
+    const { update, draw } = withCallbacks();
+    tick(16);
+    tick(26); // 10ms < 16.67
+    expect(draw).toHaveBeenCalledTimes(2);
+    expect(update).not.toHaveBeenCalled();
+  });
 
-    it("does not pause when matchMedia does not match", () => {
-      vi.stubGlobal("matchMedia", vi.fn(() => ({
-        matches: false,
-        addEventListener: vi.fn(),
-      })));
-      Engine.paused = false;
-      Engine.pauseOnPortrait();
-      expect(Engine.paused).toBe(false);
+  it("accumulates leftover time across frames", () => {
+    const { update } = withCallbacks();
+    tick(16);
+    tick(26); // 10ms accumulated
+    expect(update).not.toHaveBeenCalled();
+    tick(40); // +14 = 24 → one step
+    expect(update).toHaveBeenCalledTimes(1);
+  });
+
+  it("runs multiple update steps in a busy frame", () => {
+    const { update } = withCallbacks();
+    tick(16);
+    tick(66); // 50ms → 2 steps
+    expect(update).toHaveBeenCalledTimes(2);
+  });
+
+  it("stop() halts the loop", () => {
+    const { game, draw } = withCallbacks();
+    tick(16);
+    game.stop();
+    tick(32);
+    expect(draw).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("input", () => {
+  it("tracks held keys via down()", () => {
+    const { game } = build();
+    window.dispatchEvent(new KeyboardEvent("keydown", { code: "ArrowLeft" }));
+    expect(game.keys.down("ArrowLeft")).toBe(true);
+    window.dispatchEvent(new KeyboardEvent("keyup", { code: "ArrowLeft" }));
+    expect(game.keys.down("ArrowLeft")).toBe(false);
+    expect(game.keys.released("ArrowLeft")).toBe(true);
+  });
+
+  it("pressed() is edge-triggered and observed by update, then cleared", () => {
+    const { game } = build();
+    const seen: boolean[] = [];
+    game.run({ update: () => seen.push(game.keys.pressed("Space")), draw: vi.fn() });
+
+    tick(16); // prime lastTime
+    window.dispatchEvent(new KeyboardEvent("keydown", { code: "Space" }));
+    tick(34); // one update step observes the press
+    expect(seen).toContain(true);
+
+    // Auto-repeat keydown while held must not re-trigger pressed().
+    window.dispatchEvent(new KeyboardEvent("keydown", { code: "Space" }));
+    tick(52);
+    expect(game.keys.pressed("Space")).toBe(false);
+  });
+
+  it("does not clear edges on a render-only frame", () => {
+    const { game } = build();
+    game.run({ update: vi.fn(), draw: vi.fn() });
+    tick(16);
+    window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyR" }));
+    tick(24); // <1 step: draw only, no update → press must survive
+    expect(game.keys.pressed("KeyR")).toBe(true);
+  });
+
+  it("pressed() fires for exactly one step even when a frame runs several", () => {
+    const { game } = build();
+    let firedInPressedState = 0;
+    game.run({
+      update: () => {
+        if (game.keys.pressed("Space")) firedInPressedState++;
+      },
+      draw: vi.fn(),
     });
+    tick(16); // prime
+    window.dispatchEvent(new KeyboardEvent("keydown", { code: "Space" }));
+    tick(66); // ~50ms → 3 update steps in one frame
+    expect(firedInPressedState).toBe(1);
+  });
+
+  it("prevents default on Space", () => {
+    build();
+    const e = new KeyboardEvent("keydown", { code: "Space", cancelable: true });
+    window.dispatchEvent(e);
+    expect(e.defaultPrevented).toBe(true);
+  });
+});
+
+describe("plugins", () => {
+  it("invokes lifecycle hooks around update and draw", () => {
+    const canvas = document.createElement("canvas");
+    const calls: string[] = [];
+    const hook = (name: string) => () => calls.push(name);
+    const game = createGame({ canvas })
+      .use({
+        name: "spy",
+        onInit: hook("init"),
+        beforeUpdate: hook("beforeUpdate"),
+        afterUpdate: hook("afterUpdate"),
+        beforeDraw: hook("beforeDraw"),
+        afterDraw: hook("afterDraw"),
+      })
+      .build();
+    game.run({ update: vi.fn(), draw: vi.fn() });
+    tick(16);
+    tick(48); // enough for one update step
+
+    expect(calls[0]).toBe("init");
+    expect(calls).toContain("beforeUpdate");
+    expect(calls.indexOf("beforeUpdate")).toBeLessThan(calls.indexOf("beforeDraw"));
+    expect(calls.indexOf("beforeDraw")).toBeLessThan(calls.indexOf("afterDraw"));
+  });
+});
+
+describe("pauseOnPortrait", () => {
+  it("pauses when the media query matches", () => {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => ({ matches: true, addEventListener: vi.fn() })),
+    );
+    const canvas = document.createElement("canvas");
+    const game = createGame({ canvas }).pauseOnPortrait().build();
+    expect(game.paused).toBe(true);
+  });
+
+  it("does not pause when the media query does not match", () => {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => ({ matches: false, addEventListener: vi.fn() })),
+    );
+    const canvas = document.createElement("canvas");
+    const game = createGame({ canvas }).pauseOnPortrait().build();
+    expect(game.paused).toBe(false);
+  });
+});
+
+// NOTE: this block must stay LAST — it initialises the module-global default
+// game via Stage.init(); no earlier test touches it, so the "before init" case
+// still observes the null default.
+describe("global facade (Stage / Loop / Keys / Pointer / Draw)", () => {
+  it("throws when a namespace is used before Stage.init", () => {
+    expect(() => Keys.down("Space")).toThrow(/Stage\.init/);
+    expect(() => Loop.run({ update: vi.fn(), draw: vi.fn() })).toThrow(/Stage\.init/);
+    expect(() => Draw.ctx).toThrow(/Stage\.init/);
+  });
+
+  it("Stage.init builds the default game and the namespaces delegate to it", () => {
+    const canvas = document.createElement("canvas");
+    canvas.id = "facade";
+    document.body.appendChild(canvas);
+
+    const vp = Stage.init("facade");
+    expect(vp.canvas).toBe(canvas);
+    expect(Stage.viewport).toBe(vp);
+    expect(Stage.canvas).toBe(canvas);
+    expect(Draw.ctx).toBeDefined();
+
+    const drawn = vi.fn();
+    Loop.run({ update: vi.fn(), draw: drawn });
+    tick(16);
+    expect(drawn).toHaveBeenCalled();
+
+    window.dispatchEvent(new KeyboardEvent("keydown", { code: "ArrowUp" }));
+    expect(Keys.down("ArrowUp")).toBe(true);
+    expect(Pointer.x).toBe(-1);
+  });
+
+  it("passes plugins from Stage.init options through to the default game", () => {
+    const canvas = document.createElement("canvas");
+    const onInit = vi.fn();
+    Stage.init(canvas, { plugins: [{ name: "spy", onInit }] });
+    expect(onInit).toHaveBeenCalledTimes(1);
   });
 });

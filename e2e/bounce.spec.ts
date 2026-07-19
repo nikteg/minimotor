@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 test("bounce sample loads and renders", async ({ page }) => {
-  await page.goto("/samples/bounce/");
+  await page.goto("/bounce/");
 
   // Canvas should be present
   const canvas = page.locator("canvas#game");
@@ -21,7 +21,7 @@ test("bounce sample loads and renders", async ({ page }) => {
 });
 
 test("bounce score increases when ball hits walls", async ({ page }) => {
-  await page.goto("/samples/bounce/");
+  await page.goto("/bounce/");
 
   // Let the game run for a few seconds so the ball bounces
   await page.waitForTimeout(3000);
@@ -33,7 +33,7 @@ test("bounce score increases when ball hits walls", async ({ page }) => {
 });
 
 test("bounce responds to arrow keys", async ({ page }) => {
-  await page.goto("/samples/bounce/");
+  await page.goto("/bounce/");
 
   await page.waitForTimeout(300);
 

@@ -1,11 +1,10 @@
 // Platformer: side-scrolling Mario-like with platforms, coins, enemies, and flag goal.
 // Demonstrates: Physics (gravity, jump), Collision, input, scoring, storage,
 //   camera scrolling, parallax backgrounds
-import { Minimotor } from "../../build/index.js";
+import { Minimotor } from "minimotor";
+import { drawGameOver, drawLevelComplete } from "../shared/overlays.js";
 
-Minimotor.Engine.use(Minimotor.Perf.plugin());
-
-const vp = Minimotor.Engine.initCanvas("game");
+const vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 
 // World
 const WORLD_W = 3600;
@@ -92,15 +91,6 @@ let levelComplete = false;
 let invincible = 0; // frames of invincibility after taking damage
 let animFrame = 0;
 
-// Input
-const keys = {};
-Minimotor.Engine.onKeyDown = (code) => {
-  keys[code] = true;
-  if (gameOver && code === "Space") restart();
-  if ((levelComplete || gameOver) && code === "KeyR") restart();
-};
-window.addEventListener("keyup", (e) => { keys[e.code] = false; });
-
 function restart() {
   player.x = 40; player.y = GROUND_Y - PLAYER_H;
   player.vx = 0; player.vy = 0; player.onGround = false; player.facing = 1;
@@ -157,8 +147,12 @@ function bodyOnPlatform(body, px, py, pw, ph) {
 
 // ---------- Game loop ----------
 
-Minimotor.Engine.start(
-  () => {
+Minimotor.Loop.run({
+  update() {
+    const { Keys } = Minimotor;
+    // Edge-triggered restarts (polled, no key-event callback).
+    if (gameOver && Keys.pressed("Space")) restart();
+    if ((levelComplete || gameOver) && Keys.pressed("KeyR")) restart();
     if (gameOver || levelComplete) return;
     animFrame++;
 
@@ -166,17 +160,20 @@ Minimotor.Engine.start(
     if (invincible > 0) invincible--;
 
     // Player horizontal movement
+    const left = Keys.down("ArrowLeft") || Keys.down("KeyA");
+    const right = Keys.down("ArrowRight") || Keys.down("KeyD");
+    const jumpHeld = Keys.down("Space") || Keys.down("ArrowUp") || Keys.down("KeyW");
     player.vx = 0;
-    if (keys["ArrowLeft"] || keys["KeyA"]) { player.vx = -MOVE_SPEED; player.facing = -1; }
-    if (keys["ArrowRight"] || keys["KeyD"]) { player.vx = MOVE_SPEED; player.facing = 1; }
+    if (left) { player.vx = -MOVE_SPEED; player.facing = -1; }
+    if (right) { player.vx = MOVE_SPEED; player.facing = 1; }
 
     // Jump
-    if ((keys["Space"] || keys["ArrowUp"] || keys["KeyW"]) && player.onGround) {
+    if (jumpHeld && player.onGround) {
       player.vy = JUMP_FORCE;
       player.onGround = false;
     }
     // Variable jump height — release early to shorten
-    if (!keys["Space"] && !keys["ArrowUp"] && !keys["KeyW"] && player.vy < -4) {
+    if (!jumpHeld && player.vy < -4) {
       player.vy *= 0.65;
     }
 
@@ -253,8 +250,8 @@ Minimotor.Engine.start(
     cameraX += (targetCX - cameraX) * 0.1;
     cameraX = Math.max(0, Math.min(WORLD_W - vp.w, cameraX));
   },
-  () => {
-    const ctx = Minimotor.Engine.ctx;
+  draw() {
+    const { ctx } = Minimotor.Draw;
     ctx.clearRect(0, 0, vp.w, vp.h);
 
     // Sky gradient
@@ -422,36 +419,22 @@ Minimotor.Engine.start(
 
     // Game Over overlay
     if (gameOver) {
-      ctx.fillStyle = "rgba(0,0,0,0.6)";
-      ctx.fillRect(0, 0, vp.w, vp.h);
-      ctx.fillStyle = "#e74c3c";
-      ctx.font = "bold 32px monospace";
-      ctx.textAlign = "center";
-      ctx.fillText("GAME OVER", vp.w / 2, vp.h / 2 - 20);
-      ctx.fillStyle = "#fff";
-      ctx.font = "16px monospace";
-      ctx.fillText(`Score: ${score}  Best: ${best}`, vp.w / 2, vp.h / 2 + 16);
-      ctx.fillText("Press Space to restart", vp.w / 2, vp.h / 2 + 42);
-      ctx.textAlign = "start";
+      drawGameOver(ctx, vp.w, vp.h, score, best, "Press Space to restart");
     }
 
     // Level Complete overlay
     if (levelComplete) {
-      ctx.fillStyle = "rgba(0,0,0,0.5)";
-      ctx.fillRect(0, 0, vp.w, vp.h);
-      ctx.fillStyle = "#ffd700";
-      ctx.font = "bold 32px monospace";
-      ctx.textAlign = "center";
-      ctx.fillText("LEVEL COMPLETE! ⭐", vp.w / 2, vp.h / 2 - 30);
-      ctx.fillStyle = "#fff";
-      ctx.font = "16px monospace";
-      ctx.fillText(`Score: ${score}  Coins: ${coinCount}`, vp.w / 2, vp.h / 2 + 10);
-      ctx.fillText(`Bonus: +${1000 + coinCount * 50}`, vp.w / 2, vp.h / 2 + 30);
-      ctx.fillText("Press R to replay", vp.w / 2, vp.h / 2 + 56);
-      ctx.textAlign = "start";
+      drawLevelComplete(
+        ctx,
+        vp.w,
+        vp.h,
+        score,
+        `Coins: ${coinCount}  Bonus: +${1000 + coinCount * 50}`,
+        "Press R to replay",
+      );
     }
   },
-);
+});
 
 function takeDamage() {
   if (invincible > 0) return;

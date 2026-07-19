@@ -13,32 +13,41 @@ export interface PerfStats {
 }
 
 const WINDOW = 60; // frames of history
-const times: number[] = [];
 
-let lastTime = 0;
-let current: PerfStats = { fps: 60, frameMs: 16.7, minMs: 16.7, maxMs: 16.7, avgMs: 16.7 };
+/** A per-frame perf sampler with its own private rolling history.
+ *  Each tracker is independent — no shared module state. */
+export interface PerfTracker {
+  /** Call once per frame with a monotonic timestamp. Returns current stats. */
+  (nowMs: number): PerfStats;
+}
 
-/** Call once per frame (e.g. before draw). Returns current stats. */
-export function tickPerf(nowMs: number): PerfStats {
-  if (lastTime === 0) {
+/** Create an isolated FPS/frame-time tracker. */
+export function createPerfTracker(window = WINDOW): PerfTracker {
+  const times: number[] = [];
+  let lastTime = 0;
+  let current: PerfStats = { fps: 60, frameMs: 16.7, minMs: 16.7, maxMs: 16.7, avgMs: 16.7 };
+
+  return function tick(nowMs: number): PerfStats {
+    if (lastTime === 0) {
+      lastTime = nowMs;
+      return current;
+    }
+    const dt = nowMs - lastTime;
     lastTime = nowMs;
-    return current;
-  }
-  const dt = nowMs - lastTime;
-  lastTime = nowMs;
-  times.push(dt);
-  if (times.length > WINDOW) times.shift();
+    times.push(dt);
+    if (times.length > window) times.shift();
 
-  const sum = times.reduce((a, b) => a + b, 0);
-  const avg = sum / times.length;
-  current = {
-    fps: Math.round(1000 / avg),
-    frameMs: Math.round(dt * 10) / 10,
-    minMs: Math.round(Math.min(...times) * 10) / 10,
-    maxMs: Math.round(Math.max(...times) * 10) / 10,
-    avgMs: Math.round(avg * 10) / 10,
+    const sum = times.reduce((a, b) => a + b, 0);
+    const avg = sum / times.length;
+    current = {
+      fps: Math.round(1000 / avg),
+      frameMs: Math.round(dt * 10) / 10,
+      minMs: Math.round(Math.min(...times) * 10) / 10,
+      maxMs: Math.round(Math.max(...times) * 10) / 10,
+      avgMs: Math.round(avg * 10) / 10,
+    };
+    return current;
   };
-  return current;
 }
 
 /** Draw a compact HUD overlay in the top-left corner.
@@ -67,19 +76,17 @@ export function drawPerfHud(ctx: CanvasRenderingContext2D, stats: PerfStats): vo
 
 // ---------- Plugin ----------
 
-/** Create a Perf HUD engine plugin.
- *  Register with `Engine.use(Perf.plugin())` before `initCanvas`.
+/** Create a Perf HUD game plugin. Each call owns its own tracker state.
+ *  Register via Stage.init options:
  *
- *    Minimotor.Engine.use(Minimotor.Perf.plugin());
- *    Minimotor.Engine.initCanvas("game");
- *    Minimotor.Engine.start(update, draw); */
+ *    Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
+ *    Minimotor.Loop.run({ update, draw }); */
 export function plugin(): EnginePlugin {
-  let stats: PerfStats = current;
+  const tick = createPerfTracker();
   return {
     name: "perf",
-    afterDraw(ctx) {
-      stats = tickPerf(performance.now());
-      drawPerfHud(ctx, stats);
+    afterDraw(game) {
+      drawPerfHud(game.ctx, tick(performance.now()));
     },
   };
 }

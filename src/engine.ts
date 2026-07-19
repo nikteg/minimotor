@@ -1,7 +1,24 @@
 "use strict";
 
 // ---------- Minimal game framework ----------
-// Game loop, canvas setup, collision helpers and viewport management.
+// The engine is reached through PascalCase `Minimotor.*` namespaces, all backed
+// by ONE default game that `Stage.init()` builds. Game code never imports an
+// instance and never threads a per-frame context — it reads the namespaces:
+//
+//     const vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
+//
+//     Minimotor.Loop.run({
+//       update() { if (Minimotor.Keys.pressed("Space")) jump(); },
+//       draw()   { Minimotor.Draw.ctx.clearRect(0, 0, vp.w, vp.h); },
+//     });
+//
+// `createGame()` below returns an isolated `Game` and stays exported for tests
+// (and anyone who genuinely needs multiple independent games). The namespaces
+// are thin facades over the default instance it produces.
+//
+// Convention: read input (`Keys`/`Pointer`) in `update`, draw (`Draw.ctx`) in
+// `draw`. It isn't type-enforced, but edge input (`pressed`/`released`) is only
+// meaningful per fixed update step.
 
 export interface Rect {
   x: number;
@@ -25,44 +42,319 @@ export interface Viewport {
   safeTop: number;
 }
 
-/** Plugins hook into the engine lifecycle. Register with Engine.use(). */
-export interface EnginePlugin {
-  name: string;
-  /** Called after initCanvas, before the first frame */
-  onInit?: (vp: Viewport) => void;
-  /** Called once per frame, before the user's update step(s) */
-  beforeUpdate?: (elapsedMs: number) => void;
-  /** Called once per frame, after the user's update step(s) */
-  afterUpdate?: (elapsedMs: number) => void;
-  /** Called before the user's draw */
-  beforeDraw?: (ctx: CanvasRenderingContext2D) => void;
-  /** Called after the user's draw */
-  afterDraw?: (ctx: CanvasRenderingContext2D) => void;
-  /** Called after a viewport resize */
-  onResize?: (vp: Viewport) => void;
+/** Polled keyboard state. `down` is level-triggered (held); `pressed` and
+ *  `released` are edge-triggered and true for exactly one update step per
+ *  physical transition — that's why no `onKeyDown` callback is needed.
+ *
+ *    if (Minimotor.Keys.down("ArrowLeft")) move();   // held
+ *    if (Minimotor.Keys.pressed("Space"))  jump();   // this step only
+ *    if (Minimotor.Keys.released("KeyR"))  letGo(); */
+export interface Keys {
+  /** True while the key is held. */
+  down(code: string): boolean;
+  /** True for one update step when the key goes down (ignores auto-repeat). */
+  pressed(code: string): boolean;
+  /** True for one update step when the key goes up. */
+  released(code: string): boolean;
 }
 
-export interface EngineShape {
-  canvas: HTMLCanvasElement | null;
-  ctx: CanvasRenderingContext2D | null;
-  viewport: Viewport | null;
-  onUpdate: (() => void) | null;
-  onDraw: (() => void) | null;
-  onKeyDown?: (code: string) => void;
-  onResize?: (vp: Viewport) => void;
-  plugins: EnginePlugin[];
+/** Polled pointer (mouse + touch) in logical CSS pixels, relative to the
+ *  canvas. `pressed`/`released` are edge-triggered like `Keys`. */
+export interface Pointer {
+  /** Logical x within the canvas; -1 before the first event. */
+  readonly x: number;
+  /** Logical y within the canvas; -1 before the first event. */
+  readonly y: number;
+  /** True while a button/touch is held. */
+  readonly down: boolean;
+  /** True for one update step when the press begins. */
+  readonly pressed: boolean;
+  /** True for one update step when the press ends. */
+  readonly released: boolean;
+}
+
+/** Plugins hook into the game lifecycle; each hook receives the `Game`.
+ *  Register with the builder's `use()` or `Loop.use()`. */
+export interface EnginePlugin {
+  name: string;
+  /** Called once after the canvas is ready, before the first frame. */
+  onInit?: (game: Game) => void;
+  /** Called once per frame, before the user's update step(s). */
+  beforeUpdate?: (game: Game) => void;
+  /** Called once per frame, after the user's update step(s). */
+  afterUpdate?: (game: Game) => void;
+  /** Called before the user's draw. */
+  beforeDraw?: (game: Game) => void;
+  /** Called after the user's draw. */
+  afterDraw?: (game: Game) => void;
+  /** Called after a viewport resize. */
+  onResize?: (game: Game) => void;
+}
+
+/** The per-frame callbacks. Both are no-arg; read state from the namespaces
+ *  (`Minimotor.Keys` / `Minimotor.Draw`) or, for an isolated game, its props. */
+export interface GameCallbacks {
+  /** Fixed-timestep simulation. May run 0..N times per rendered frame. */
+  update: () => void;
+  /** Render. Runs once per rendered frame. */
+  draw: () => void;
+}
+
+/** An isolated built game. Its state (`keys`, `ctx`, …) is read directly; the
+ *  `Minimotor.*` namespaces expose the same surface on the default instance. */
+export interface Game {
+  readonly canvas: HTMLCanvasElement;
+  readonly ctx: CanvasRenderingContext2D;
+  readonly viewport: Viewport;
+  readonly keys: Keys;
+  readonly pointer: Pointer;
+  /** Real time since the previous frame, in fixed steps (interpolate in draw). */
+  readonly frameScale: number;
+  readonly paused: boolean;
+  /** Subscribe to viewport changes (resize / orientation); returns unsubscribe. */
+  onResize(handler: (vp: Viewport) => void): () => void;
+  /** Register a plugin after build (calls its `onInit` immediately). */
   use(plugin: EnginePlugin): void;
-  lastTime: number;
-  accumulator: number;
-  frameScale: number;
-  readonly STEP_MS: number;
-  paused: boolean;
-  loop: (time: number) => void;
-  initCanvas(selector: string): Viewport;
-  init(canvas: HTMLCanvasElement): void;
-  start(update: () => void, draw: () => void): void;
-  /** Pause the engine when a mobile device is held in portrait */
-  pauseOnPortrait(): void;
+  /** Register callbacks and start the loop (idempotent restart of callbacks). */
+  run(callbacks: GameCallbacks): Game;
+  /** Freeze updates; `draw` keeps running so overlays can render. */
+  pause(): void;
+  /** Resume from a `pause()`. */
+  resume(): void;
+  /** Stop the loop entirely. */
+  stop(): void;
+}
+
+export interface GameOptions {
+  /** Canvas element id (without `#`) or the element itself. */
+  canvas: string | HTMLCanvasElement;
+}
+
+/** Fluent host-builder. Configure, then `build()` into a `Game`. */
+export interface GameBuilder {
+  /** Register a lifecycle plugin (e.g. `Perf.plugin()`). */
+  use(plugin: EnginePlugin): GameBuilder;
+  /** Auto-pause while a coarse-pointer device is held in portrait. */
+  pauseOnPortrait(): GameBuilder;
+  /** Initialise the canvas and produce a runnable `Game`. */
+  build(): Game;
+}
+
+const STEP_MS = 1000 / 60;
+
+/** Create an isolated game. Prefer `Minimotor.Stage.init()` for app code;
+ *  this stays exported for tests and multi-game scenarios. */
+export function createGame(options: GameOptions): GameBuilder {
+  const plugins: EnginePlugin[] = [];
+  let pauseOnPortrait = false;
+
+  const builder: GameBuilder = {
+    use(plugin) {
+      plugins.push(plugin);
+      return builder;
+    },
+    pauseOnPortrait() {
+      pauseOnPortrait = true;
+      return builder;
+    },
+    build() {
+      return buildGame(options, plugins, pauseOnPortrait);
+    },
+  };
+  return builder;
+}
+
+function resolveCanvas(canvas: string | HTMLCanvasElement): HTMLCanvasElement {
+  if (typeof canvas !== "string") return canvas;
+  const el = document.getElementById(canvas);
+  if (!el) throw new Error(`Minimotor: canvas "#${canvas}" not found in the DOM`);
+  return el as HTMLCanvasElement;
+}
+
+function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrait: boolean): Game {
+  const canvas = resolveCanvas(options.canvas);
+  let viewport = readViewport(canvas);
+  const ctx = viewport.ctx;
+
+  // ---- Input state (polled; edge sets are cleared once a step consumes them) ----
+  const heldKeys = new Set<string>();
+  const pressedKeys = new Set<string>();
+  const releasedKeys = new Set<string>();
+
+  const keys: Keys = {
+    down: (code) => heldKeys.has(code),
+    pressed: (code) => pressedKeys.has(code),
+    released: (code) => releasedKeys.has(code),
+  };
+
+  const ptr = { x: -1, y: -1, down: false, pressed: false, released: false };
+  const pointer: Pointer = {
+    get x() {
+      return ptr.x;
+    },
+    get y() {
+      return ptr.y;
+    },
+    get down() {
+      return ptr.down;
+    },
+    get pressed() {
+      return ptr.pressed;
+    },
+    get released() {
+      return ptr.released;
+    },
+  };
+
+  // ---- Frame state ----
+  let frameScale = 1;
+  let paused = false;
+  let callbacks: GameCallbacks | null = null;
+  let running = false;
+  let lastTime = 0;
+  let accumulator = 0;
+
+  window.addEventListener("keydown", (e) => {
+    if (e.code === "Space") e.preventDefault();
+    if (!heldKeys.has(e.code)) pressedKeys.add(e.code); // ignore auto-repeat
+    heldKeys.add(e.code);
+  });
+  window.addEventListener("keyup", (e) => {
+    heldKeys.delete(e.code);
+    releasedKeys.add(e.code);
+  });
+
+  const setPointer = (e: { clientX: number; clientY: number }) => {
+    const rect = canvas.getBoundingClientRect();
+    ptr.x = e.clientX - rect.left;
+    ptr.y = e.clientY - rect.top;
+  };
+  canvas.addEventListener("pointerdown", (e) => {
+    setPointer(e);
+    ptr.down = true;
+    ptr.pressed = true;
+  });
+  canvas.addEventListener("pointermove", setPointer);
+  window.addEventListener("pointerup", (e) => {
+    setPointer(e);
+    ptr.down = false;
+    ptr.released = true;
+  });
+
+  /** Drop edge-triggered input once the update step it belongs to has run, so a
+   *  press fires for exactly one step (never twice when a slow frame runs
+   *  multiple steps). */
+  function consumeEdges() {
+    pressedKeys.clear();
+    releasedKeys.clear();
+    ptr.pressed = false;
+    ptr.released = false;
+  }
+
+  const resizeHandlers = new Set<(vp: Viewport) => void>();
+  const handleResize = () => {
+    viewport = readViewport(canvas);
+    for (const p of plugins) p.onResize?.(game);
+    for (const h of resizeHandlers) h(viewport);
+  };
+  window.addEventListener("resize", handleResize);
+  // iOS doesn't fire resize on 180° rotation between landscape orientations.
+  const handleOrient = () => {
+    handleResize();
+    setTimeout(handleResize, 300);
+  };
+  window.addEventListener("orientationchange", handleOrient);
+  screen.orientation?.addEventListener?.("change", handleOrient);
+
+  if (pauseOnPortrait) {
+    const mq = window.matchMedia("(orientation: portrait) and (pointer: coarse)");
+    const apply = () => {
+      paused = mq.matches;
+    };
+    mq.addEventListener?.("change", apply);
+    apply();
+  }
+
+  function loop(time: number) {
+    if (!running) return;
+    if (!lastTime) lastTime = time;
+
+    if (paused) {
+      lastTime = time;
+      accumulator = 0;
+      frameScale = 0;
+      for (const p of plugins) p.beforeDraw?.(game);
+      callbacks!.draw();
+      for (const p of plugins) p.afterDraw?.(game);
+      requestAnimationFrame(loop);
+      return;
+    }
+
+    let elapsed = time - lastTime;
+    lastTime = time;
+    if (elapsed > 250) elapsed = 250;
+    frameScale = elapsed / STEP_MS;
+    accumulator += elapsed;
+
+    for (const p of plugins) p.beforeUpdate?.(game);
+    while (accumulator >= STEP_MS) {
+      callbacks!.update();
+      // Each step observes the current press, then it's consumed — so pressed()
+      // is true for exactly one step, even if this frame runs several.
+      consumeEdges();
+      accumulator -= STEP_MS;
+    }
+    for (const p of plugins) p.afterUpdate?.(game);
+
+    for (const p of plugins) p.beforeDraw?.(game);
+    callbacks!.draw();
+    for (const p of plugins) p.afterDraw?.(game);
+    requestAnimationFrame(loop);
+  }
+
+  const game: Game = {
+    canvas,
+    ctx,
+    get viewport() {
+      return viewport;
+    },
+    keys,
+    pointer,
+    get frameScale() {
+      return frameScale;
+    },
+    get paused() {
+      return paused;
+    },
+    onResize(handler) {
+      resizeHandlers.add(handler);
+      return () => resizeHandlers.delete(handler);
+    },
+    use(plugin) {
+      plugins.push(plugin);
+      plugin.onInit?.(game);
+    },
+    run(cb) {
+      callbacks = cb;
+      if (!running) {
+        running = true;
+        requestAnimationFrame(loop);
+      }
+      return game;
+    },
+    pause() {
+      paused = true;
+    },
+    resume() {
+      paused = false;
+    },
+    stop() {
+      running = false;
+    },
+  };
+
+  for (const p of plugins) p.onInit?.(game);
+  return game;
 }
 
 function readViewport(canvas: HTMLCanvasElement): Viewport {
@@ -101,110 +393,105 @@ function readViewport(canvas: HTMLCanvasElement): Viewport {
   return { canvas, ctx, w, h, dpr, safeLeft, safeTop };
 }
 
-export const Engine: EngineShape = {
-  canvas: null,
-  ctx: null,
-  viewport: null,
-  onUpdate: null,
-  onDraw: null,
-  lastTime: 0,
-  accumulator: 0,
-  frameScale: 1,
-  STEP_MS: 1000 / 60,
-  paused: false,
+// ---------- Global default-engine facade ----------
+// The whole engine is reached as `Minimotor.*` namespaces backed by ONE default
+// game built by `Stage.init()`. Game code reads these instead of importing a
+// game instance. `createGame()` above stays for isolated instances (tests).
 
-  plugins: [],
+let defaultGame: Game | null = null;
 
-  use(plugin: EnginePlugin) {
-    this.plugins.push(plugin);
-    if (this.viewport && plugin.onInit) plugin.onInit(this.viewport);
+function requireDefault(): Game {
+  if (!defaultGame) {
+    throw new Error(
+      "Minimotor: call Minimotor.Stage.init(canvas) before using Stage / Loop / Keys / Pointer / Draw",
+    );
+  }
+  return defaultGame;
+}
+
+export interface StageOptions {
+  /** Lifecycle plugins (e.g. `Perf.plugin()`). */
+  plugins?: EnginePlugin[];
+  /** Auto-pause while a coarse-pointer device is held in portrait. */
+  pauseOnPortrait?: boolean;
+}
+
+/** Canvas / viewport / screen. `init` builds the default engine and returns
+ *  its viewport so setup code can read `vp.w` / `vp.h` / `vp.dpr`. */
+export const Stage = {
+  init(canvas: string | HTMLCanvasElement, opts: StageOptions = {}): Viewport {
+    let builder = createGame({ canvas });
+    if (opts.pauseOnPortrait) builder = builder.pauseOnPortrait();
+    for (const p of opts.plugins ?? []) builder = builder.use(p);
+    defaultGame = builder.build();
+    return defaultGame.viewport;
   },
-
-  initCanvas(selector: string): Viewport {
-    const canvas = document.getElementById(selector) as HTMLCanvasElement;
-    this.canvas = canvas;
-    this.ctx = canvas.getContext("2d");
-    this.viewport = readViewport(canvas);
-
-    for (const p of this.plugins) p.onInit?.(this.viewport);
-
-    window.addEventListener("keydown", (e) => {
-      if (e.code === "Space") e.preventDefault();
-      if (this.onKeyDown) this.onKeyDown(e.code);
-    });
-
-    const onResize = () => {
-      this.viewport = readViewport(canvas);
-      this.onResize?.(this.viewport);
-      for (const p of this.plugins) p.onResize?.(this.viewport);
-    };
-    window.addEventListener("resize", onResize);
-    // iOS doesn't fire resize on 180° rotation between landscape orientations
-    const orient = () => {
-      onResize();
-      setTimeout(onResize, 300);
-    };
-    window.addEventListener("orientationchange", orient);
-    if (screen.orientation?.addEventListener) screen.orientation.addEventListener("change", orient);
-
-    return this.viewport;
+  get viewport(): Viewport {
+    return requireDefault().viewport;
   },
-
-  init(canvas: HTMLCanvasElement) {
-    this.canvas = canvas;
-    this.ctx = canvas.getContext("2d");
-    window.addEventListener("keydown", (e) => {
-      if (e.code === "Space") e.preventDefault();
-      if (this.onKeyDown) this.onKeyDown(e.code);
-    });
+  get canvas(): HTMLCanvasElement {
+    return requireDefault().canvas;
   },
-
-  start(update: () => void, draw: () => void) {
-    this.onUpdate = update;
-    this.onDraw = draw;
-    this.loop = this.loop.bind(this);
-    requestAnimationFrame(this.loop);
-  },
-
-  loop(time: number) {
-    if (!this.lastTime) this.lastTime = time;
-    if (this.paused) {
-      this.lastTime = time;
-      this.accumulator = 0;
-      this.frameScale = 0;
-      for (const p of this.plugins) p.beforeDraw?.(this.ctx!);
-      this.onDraw!();
-      for (const p of this.plugins) p.afterDraw?.(this.ctx!);
-      requestAnimationFrame(this.loop);
-      return;
-    }
-    let elapsed = time - this.lastTime;
-    this.lastTime = time;
-    if (elapsed > 250) elapsed = 250;
-    this.frameScale = elapsed / this.STEP_MS;
-    this.accumulator += elapsed;
-    for (const p of this.plugins) p.beforeUpdate?.(elapsed);
-    while (this.accumulator >= this.STEP_MS) {
-      this.onUpdate!();
-      this.accumulator -= this.STEP_MS;
-    }
-    for (const p of this.plugins) p.afterUpdate?.(elapsed);
-    for (const p of this.plugins) p.beforeDraw?.(this.ctx!);
-    this.onDraw!();
-    for (const p of this.plugins) p.afterDraw?.(this.ctx!);
-    requestAnimationFrame(this.loop);
-  },
-
-  pauseOnPortrait() {
-    const mq = window.matchMedia("(orientation: portrait) and (pointer: coarse)");
-    const apply = () => {
-      this.paused = mq.matches;
-    };
-    mq.addEventListener?.("change", apply);
-    apply();
+  onResize(handler: (vp: Viewport) => void): () => void {
+    return requireDefault().onResize(handler);
   },
 };
 
-export function rectsOverlap(a: Rect, b: Rect): boolean {
-  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
-}
+/** The game loop. */
+export const Loop = {
+  run(callbacks: GameCallbacks): void {
+    requireDefault().run(callbacks);
+  },
+  pause(): void {
+    requireDefault().pause();
+  },
+  resume(): void {
+    requireDefault().resume();
+  },
+  stop(): void {
+    requireDefault().stop();
+  },
+  use(plugin: EnginePlugin): void {
+    requireDefault().use(plugin);
+  },
+  /** Fixed update timestep in milliseconds (1000 / 60). */
+  get step(): number {
+    return STEP_MS;
+  },
+};
+
+/** Rendering handle — read inside `draw`. */
+export const Draw = {
+  get ctx(): CanvasRenderingContext2D {
+    return requireDefault().ctx;
+  },
+  get frameScale(): number {
+    return requireDefault().frameScale;
+  },
+};
+
+/** Polled keyboard — read inside `update`. */
+export const Keys: Keys = {
+  down: (code) => requireDefault().keys.down(code),
+  pressed: (code) => requireDefault().keys.pressed(code),
+  released: (code) => requireDefault().keys.released(code),
+};
+
+/** Polled pointer — read inside `update`. */
+export const Pointer: Pointer = {
+  get x() {
+    return requireDefault().pointer.x;
+  },
+  get y() {
+    return requireDefault().pointer.y;
+  },
+  get down() {
+    return requireDefault().pointer.down;
+  },
+  get pressed() {
+    return requireDefault().pointer.pressed;
+  },
+  get released() {
+    return requireDefault().pointer.released;
+  },
+};

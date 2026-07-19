@@ -8,6 +8,7 @@ export interface SpriteCanvas extends HTMLCanvasElement {
 }
 
 const cache = new Map<string, SpriteCanvas>();
+const layerCache = new Map<string, HTMLCanvasElement>();
 
 /** Get or create a pre-rendered sprite canvas keyed by `cacheKey`.
  *  `size` is the logical size in CSS pixels.
@@ -35,7 +36,36 @@ export function getSprite(
   return sprite;
 }
 
-/** Clear the sprite cache (call on resize or theme change if needed). */
+/** Get or create a pre-rendered offscreen canvas of arbitrary width/height,
+ *  keyed by `cacheKey`. Unlike getSprite, the origin stays at the top-left
+ *  (no centering) and width/height are independent — use it for wide strips,
+ *  panels or full backgrounds rather than square sprites. The context is
+ *  DPR-scaled, so `draw` works in logical (CSS) pixels.
+ *
+ *  Cache by everything the baked pixels depend on (e.g. `theme + ":" + w`) so a
+ *  resize or theme change re-bakes instead of returning a stale layer. */
+export function getLayer(
+  cacheKey: string,
+  w: number,
+  h: number,
+  dpr: number,
+  draw: (ctx: CanvasRenderingContext2D) => void,
+): HTMLCanvasElement {
+  let layer = layerCache.get(cacheKey);
+  if (!layer) {
+    layer = document.createElement("canvas");
+    layer.width = Math.max(1, Math.ceil(w * dpr));
+    layer.height = Math.max(1, Math.ceil(h * dpr));
+    const ctx = layer.getContext("2d")!;
+    ctx.scale(dpr, dpr);
+    draw(ctx);
+    layerCache.set(cacheKey, layer);
+  }
+  return layer;
+}
+
+/** Clear the sprite AND layer caches (call on resize or theme change if needed). */
 export function clearSpriteCache(): void {
   cache.clear();
+  layerCache.clear();
 }

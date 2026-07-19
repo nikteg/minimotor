@@ -248,18 +248,21 @@ export function createPeer(config: RtcConfig = {}): {
       setupDataChannel(channel);
       setupPeer(pc);
 
-      pc.createOffer().then((offer) => {
-        return pc!.setLocalDescription(offer);
-      }).then(() => {
-        if (trickle) {
-          // Wait for ICE gathering to complete (or not, if trickling)
-          // For simplicity, we wait for the full offer with candidates.
-          // A real implementation could send candidates incrementally.
-        }
-      }).catch(() => {
-        // ICE gathering happens asynchronously; the offer will be sent
-        // via onicegatheringstatechange or onicecandidate.
-      });
+      pc.createOffer()
+        .then((offer) => {
+          return pc!.setLocalDescription(offer);
+        })
+        .then(() => {
+          if (trickle) {
+            // Wait for ICE gathering to complete (or not, if trickling)
+            // For simplicity, we wait for the full offer with candidates.
+            // A real implementation could send candidates incrementally.
+          }
+        })
+        .catch(() => {
+          // ICE gathering happens asynchronously; the offer will be sent
+          // via onicegatheringstatechange or onicecandidate.
+        });
 
       // Send the offer once ICE gathering is complete (or trickle candidates)
       if (!trickle) {
@@ -300,29 +303,32 @@ export function createPeer(config: RtcConfig = {}): {
 
       if (signal.type === "offer" || signal.type === "answer") {
         const desc = JSON.parse(signal.sdp!);
-        pc.setRemoteDescription(new RTCSessionDescription(desc)).then(() => {
-          if (signal.type === "offer") {
-            return pc!.createAnswer().then((answer) => pc!.setLocalDescription(answer));
-          }
-        }).then(() => {
-          if (signal.type === "offer" && !trickle) {
-            const checkGathering = () => {
-              if (pc!.iceGatheringState === "complete") {
-                const answerSignal: Signal = {
-                  type: "answer",
-                  sdp: JSON.stringify(pc!.localDescription),
-                };
-                if (onSignal) onSignal(answerSignal);
-                else queuedSignals.push(answerSignal);
-              } else {
-                setTimeout(checkGathering, 50);
-              }
-            };
-            checkGathering();
-          }
-        }).catch((err) => {
-          console.warn("WebRTC signaling error:", err);
-        });
+        pc.setRemoteDescription(new RTCSessionDescription(desc))
+          .then(() => {
+            if (signal.type === "offer") {
+              return pc!.createAnswer().then((answer) => pc!.setLocalDescription(answer));
+            }
+          })
+          .then(() => {
+            if (signal.type === "offer" && !trickle) {
+              const checkGathering = () => {
+                if (pc!.iceGatheringState === "complete") {
+                  const answerSignal: Signal = {
+                    type: "answer",
+                    sdp: JSON.stringify(pc!.localDescription),
+                  };
+                  if (onSignal) onSignal(answerSignal);
+                  else queuedSignals.push(answerSignal);
+                } else {
+                  setTimeout(checkGathering, 50);
+                }
+              };
+              checkGathering();
+            }
+          })
+          .catch((err) => {
+            console.warn("WebRTC signaling error:", err);
+          });
       } else if (signal.type === "candidate" && signal.candidate) {
         pc.addIceCandidate(new RTCIceCandidate(signal.candidate)).catch(() => {
           // candidate may arrive before remote description — safe to ignore

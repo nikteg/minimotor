@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 test("minimal sample loads and renders square", async ({ page }) => {
-  await page.goto("/samples/minimal/");
+  await page.goto("/minimal/");
   await expect(page.locator("canvas#game")).toBeVisible();
   await page.waitForTimeout(500);
   await page.keyboard.down("ArrowRight");
@@ -11,7 +11,7 @@ test("minimal sample loads and renders square", async ({ page }) => {
 });
 
 test("breakout sample loads and plays", async ({ page }) => {
-  await page.goto("/samples/breakout/");
+  await page.goto("/breakout/");
   await expect(page.locator("canvas#game")).toBeVisible();
   await page.waitForTimeout(1000);
   // Press space to launch ball
@@ -21,14 +21,14 @@ test("breakout sample loads and plays", async ({ page }) => {
 });
 
 test("snake sample loads and runs", async ({ page }) => {
-  await page.goto("/samples/snake/");
+  await page.goto("/snake/");
   await expect(page.locator("canvas#game")).toBeVisible();
   await page.waitForTimeout(2000);
   await expect(page.locator("canvas#game")).toBeVisible();
 });
 
 test("platformer sample loads and jumps", async ({ page }) => {
-  await page.goto("/samples/platformer/");
+  await page.goto("/platformer/");
   await expect(page.locator("canvas#game")).toBeVisible();
   await page.waitForTimeout(500);
   await page.keyboard.press("Space");
@@ -37,7 +37,7 @@ test("platformer sample loads and jumps", async ({ page }) => {
 });
 
 test("particles sample spawns on click", async ({ page }) => {
-  await page.goto("/samples/particles/");
+  await page.goto("/particles/");
   await expect(page.locator("canvas#game")).toBeVisible();
   await page.waitForTimeout(500);
   const canvas = page.locator("canvas#game");
@@ -47,7 +47,7 @@ test("particles sample spawns on click", async ({ page }) => {
 });
 
 test("synth sample loads and starts audio", async ({ page }) => {
-  await page.goto("/samples/synth/");
+  await page.goto("/synth/");
   await expect(page.locator("canvas#game")).toBeVisible();
   await page.waitForTimeout(500);
   const canvas = page.locator("canvas#game");

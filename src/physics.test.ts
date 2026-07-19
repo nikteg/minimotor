@@ -6,7 +6,10 @@ function body(p: Partial<PhysicsBody> = {}): PhysicsBody {
 }
 
 describe("Physics", () => {
-  it("constants", () => { expect(GRAVITY).toBe(0.7); expect(JUMP_FORCE).toBe(-13.5); });
+  it("constants", () => {
+    expect(GRAVITY).toBe(0.7);
+    expect(JUMP_FORCE).toBe(-13.5);
+  });
 
   describe("applyGravity", () => {
     it("accelerates vy and moves down", () => {

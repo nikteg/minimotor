@@ -1,10 +1,9 @@
 // Snake: classic grid-based snake with growing tail and self-collision
 // Demonstrates: game loop, input, scoring, storage, grid collision
-import { Minimotor } from "../../build/index.js";
+import { Minimotor } from "minimotor";
+import { drawGameOver } from "../shared/overlays.js";
 
-Minimotor.Engine.use(Minimotor.Perf.plugin());
-
-const vp = Minimotor.Engine.initCanvas("game");
+const vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 
 const CELL = 20;
 const COLS = Math.floor(vp.w / CELL);
@@ -51,17 +50,21 @@ const keyMap = {
   KeyA: { x: -1, y: 0 },
   KeyD: { x: 1, y: 0 },
 };
-Minimotor.Engine.onKeyDown = (code) => {
-  const d = keyMap[code];
-  if (!d) return;
-  // Prevent reversing into yourself
-  if (d.x === -dir.x && d.y === -dir.y) return;
-  nextDir = d;
-  if (gameOver) restart();
-};
+function handleInput() {
+  const { Keys } = Minimotor;
+  for (const code in keyMap) {
+    if (!Keys.pressed(code)) continue;
+    const d = keyMap[code];
+    if (gameOver) restart();
+    // Prevent reversing into yourself
+    if (d.x === -dir.x && d.y === -dir.y) continue;
+    nextDir = d;
+  }
+}
 
-Minimotor.Engine.start(
-  () => {
+Minimotor.Loop.run({
+  update() {
+    handleInput();
     if (gameOver) return;
     tick++;
     if (tick % MOVE_INTERVAL !== 0) return;
@@ -92,8 +95,8 @@ Minimotor.Engine.start(
       snake.pop();
     }
   },
-  () => {
-    const ctx = Minimotor.Engine.ctx;
+  draw() {
+    const { ctx } = Minimotor.Draw;
     ctx.clearRect(0, 0, vp.w, vp.h);
 
     // Grid background
@@ -133,17 +136,7 @@ Minimotor.Engine.start(
     ctx.fillText(`Score: ${score}  Best: ${best}  Length: ${snake.length}`, 10, 18);
 
     if (gameOver) {
-      ctx.fillStyle = "rgba(0,0,0,0.6)";
-      ctx.fillRect(0, 0, vp.w, vp.h);
-      ctx.fillStyle = "#ff6b6b";
-      ctx.font = "28px monospace";
-      ctx.textAlign = "center";
-      ctx.fillText("GAME OVER", vp.w / 2, vp.h / 2 - 12);
-      ctx.fillStyle = "#fff";
-      ctx.font = "16px monospace";
-      ctx.fillText(`Score: ${score}  Best: ${best}`, vp.w / 2, vp.h / 2 + 20);
-      ctx.fillText("Press any arrow key to restart", vp.w / 2, vp.h / 2 + 46);
-      ctx.textAlign = "start";
+      drawGameOver(ctx, vp.w, vp.h, score, best, "Press any arrow key to restart");
     }
   },
-);
+});

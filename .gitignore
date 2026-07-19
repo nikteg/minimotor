@@ -3,5 +3,9 @@ build/
 *.js
 *.d.ts
 
-# Sample games are hand-written source, not build output
+# Vite output for the samples showcase
+.vite/
+samples-dist/
+
+# Sample sources are hand-written JS, not build output — keep them tracked.
 !samples/**/*.js

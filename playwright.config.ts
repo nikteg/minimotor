@@ -8,11 +8,11 @@ export default defineConfig({
     headless: true,
   },
   webServer: {
-    command: "serve . -p 8765 --no-clipboard",
-    url: "http://localhost:8765/samples/",
+    // Vite serves the samples folder as root: gallery at "/", games at "/<game>/".
+    // Requires the engine to be built (the `minimotor` alias points at build/).
+    command: "pnpm run samples",
+    url: "http://localhost:8765/",
     reuseExistingServer: true,
   },
-  projects: [
-    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
-  ],
+  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
 });

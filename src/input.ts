@@ -37,7 +37,11 @@ export function preventTouchFocus(canvas: HTMLCanvasElement) {
  *  call anywhere. */
 export function trackKeys(): Record<string, boolean> {
   const keys: Record<string, boolean> = {};
-  window.addEventListener("keydown", (e) => { keys[e.code] = true; });
-  window.addEventListener("keyup", (e) => { keys[e.code] = false; });
+  window.addEventListener("keydown", (e) => {
+    keys[e.code] = true;
+  });
+  window.addEventListener("keyup", (e) => {
+    keys[e.code] = false;
+  });
   return keys;
 }

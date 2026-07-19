@@ -18,13 +18,22 @@ class MockCtx {
   currentTime = 0;
   sampleRate = 44100;
   destination = {} as AudioDestinationNode;
-  createOscillator() { return createOsc() as unknown as OscillatorNode; }
-  createGain() { return createGain() as unknown as GainNode; }
+  createOscillator() {
+    return createOsc() as unknown as OscillatorNode;
+  }
+  createGain() {
+    return createGain() as unknown as GainNode;
+  }
   createBuffer(_c: number, len: number, _sr: number) {
     return { getChannelData: () => new Float32Array(len) } as unknown as AudioBuffer;
   }
-  resume() { this.state = "running"; return Promise.resolve(); }
-  close() { return Promise.resolve(); }
+  resume() {
+    this.state = "running";
+    return Promise.resolve();
+  }
+  close() {
+    return Promise.resolve();
+  }
 }
 
 beforeEach(() => {
@@ -53,7 +62,11 @@ describe("Audio", () => {
     });
     it("survives builder throw", async () => {
       const { playSfx } = await import("./audio.js");
-      expect(() => playSfx(() => { throw Error("x"); })).not.toThrow();
+      expect(() =>
+        playSfx(() => {
+          throw Error("x");
+        }),
+      ).not.toThrow();
     });
     it("survives missing AudioContext", async () => {
       vi.stubGlobal("AudioContext", undefined);
@@ -62,25 +75,25 @@ describe("Audio", () => {
     });
   });
 
-  describe("music", () => {
-    it("music.on defaults to true", async () => {
+  describe("Music", () => {
+    it("Music.on defaults to true", async () => {
       const mod = await import("./audio.js");
-      expect(mod.music.on).toBe(true);
+      expect(mod.Music.on).toBe(true);
     });
 
-    it("music.setOn toggles", async () => {
+    it("Music.setOn toggles", async () => {
       const mod = await import("./audio.js");
-      mod.music.setOn(true);
-      expect(mod.music.on).toBe(true);
-      mod.music.setOn(false);
-      expect(mod.music.on).toBe(false);
+      mod.Music.setOn(true);
+      expect(mod.Music.on).toBe(true);
+      mod.Music.setOn(false);
+      expect(mod.Music.on).toBe(false);
     });
 
-    it("music.start activates", async () => {
+    it("Music.start activates", async () => {
       const mod = await import("./audio.js");
       vi.stubGlobal("setInterval", vi.fn());
-      mod.music.start({ volume: 0.1, stepMs: 100, schedule: vi.fn() });
-      expect(mod.music.on).toBe(true);
+      mod.Music.start({ volume: 0.1, stepMs: 100, schedule: vi.fn() });
+      expect(mod.Music.on).toBe(true);
     });
   });
 });
