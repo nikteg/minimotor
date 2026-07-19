@@ -7,6 +7,7 @@
 import { createGame, Stage, Loop, Draw, Keys, Pointer } from "./engine.js";
 import { rectsOverlap, circleHit, crossedDown } from "./collision.js";
 import { Scenes } from "./scenes.js";
+import * as ECS from "./ecs.js";
 import * as Audio from "./audio.js";
 import * as Mathf from "./mathf.js";
 import * as Input from "./input.js";
@@ -40,6 +41,7 @@ export {
   Text,
   Mathf,
   Scenes,
+  ECS,
 };
 export type {
   Rect,
@@ -52,6 +54,11 @@ export type {
   StageOptions,
 } from "./engine.js";
 export type { Scene, SceneManager } from "./scenes.js";
+export type { Component, ComponentInit, Entity, World } from "./ecs.js";
+
+// A shared default world (`Minimotor.World`) for the common single-world case;
+// games that need isolation or per-scene worlds call `ECS.world()` for their own.
+const defaultWorld = ECS.world();
 export type { SfxBuilder, MusicConfig } from "./audio.js";
 export type { PhysicsBody } from "./physics.js";
 export type { SpriteCanvas } from "./sprites.js";
@@ -80,6 +87,8 @@ export const Minimotor = {
   Text,
   Mathf,
   Scenes,
+  ECS,
+  World: defaultWorld,
   Collision,
 };
 

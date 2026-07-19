@@ -60,7 +60,7 @@ Pure, data-agnostic helpers. No engine state.
 
 ## L3 — Structure (the engine core we're adding) 🟡
 
-### 3a. ECS — `Minimotor.ECS` / `World`
+### 3a. ECS — `Minimotor.ECS` / `World` ✅ (core; systems in 3d/M3)
 
 The object model is a **minimal-ceremony ECS**: sparse-set storage, plain-data
 components, immediate-mode render systems, deterministic fixed-step. It is *not*
@@ -211,8 +211,10 @@ hoppspelet) as proof it actually simplifies code — the discipline used so far.
 1. ✅ **Scenes** — stack + `Loop` dispatch (`define`/`go`/`push`/`pop`, enter/exit
    lifecycle, stacked draw). Shipped with `scenes.ts` + tests and a `scenes` sample
    (menu → play → pause overlay → game over).
-2. **ECS core** — `world.spawn/add/get/has/remove/despawn/query` + command buffer;
-   refactor **particles** sample to entities as the proof.
+2. ✅ **ECS core** — `world.spawn/add/get/has/remove/despawn/query/count/flush`,
+   generational ids, sparse-set storage, typed variadic queries, iteration-safe
+   command buffer. Shipped with `ecs.ts` + tests; **particles** sample rebuilt on
+   entities as the proof.
 3. **Systems + Scene/World wiring** — ordered update/render systems; refactor
    **platformer** sample.
 4. **Clock + Tween + Signals** — refactor hoppspelet's timers/floating-text/announce.
