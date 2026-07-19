@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Minimotor Samples</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #111; color: #eee; min-height: 100vh;
+      display: flex; flex-direction: column; align-items: center;
+    }
+    header { text-align: center; padding: 48px 16px 24px; }
+    h1 { font-size: 2.2rem; margin-bottom: 8px; }
+    header p { color: #888; font-size: 1rem; }
+    .grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 20px; max-width: 880px; width: 100%; padding: 0 20px 48px;
+    }
+    .card {
+      background: #1a1a1a; border: 1px solid #333; border-radius: 12px;
+      padding: 24px; text-decoration: none; color: inherit;
+      transition: border-color .2s, background .2s;
+    }
+    .card:hover { border-color: #4ecdc4; background: #1f1f1f; }
+    .card h2 { font-size: 1.3rem; margin-bottom: 8px; }
+    .card .tag { display: inline-block; background: #2a2a2a; color: #4ecdc4;
+      font-size: .75rem; padding: 2px 8px; border-radius: 4px; margin-right: 4px; }
+    .card p { color: #999; font-size: .9rem; margin-top: 10px; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Minimotor Samples</h1>
+    <p>Small games built with the Minimotor engine</p>
+  </header>
+  <div class="grid">
+    <a class="card" href="/minimal/">
+      <h2>Minimal</h2>
+      <span class="tag">Engine</span><span class="tag">Input</span>
+      <p>Absolute minimum: a colored square that moves with arrow keys. Demonstrates initCanvas, onKeyDown, and the game loop.</p>
+    </a>
+    <a class="card" href="/bounce/">
+      <h2>Bounce</h2>
+      <span class="tag">Engine</span><span class="tag">Storage</span><span class="tag">Input</span>
+      <p>Ball bounces off walls. Each wall hit earns a point. Best score saved with Storage.</p>
+    </a>
+    <a class="card" href="/pong/">
+      <h2>Pong</h2>
+      <span class="tag">Collision</span><span class="tag">Storage</span><span class="tag">Physics</span>
+      <p>Paddle + ball. Uses Collision.rectsOverlap for paddle hits. Ball speed ramps up. Best score persisted.</p>
+    </a>
+    <a class="card" href="/particles/">
+      <h2>Particles</h2>
+      <span class="tag">Sprites</span><span class="tag">Physics</span>
+      <p>200-spark firework effect. Click to spawn. Gravity from Physics pulls sparks down. Spark texture pre-rendered with Sprites.getSprite.</p>
+    </a>
+  </div>
+</body>
+</html>
