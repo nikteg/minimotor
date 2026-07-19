@@ -24,6 +24,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: here("./samples/index.html"),
+        scenes: here("./samples/scenes/index.html"),
         minimal: here("./samples/minimal/index.html"),
         bounce: here("./samples/bounce/index.html"),
         breakout: here("./samples/breakout/index.html"),

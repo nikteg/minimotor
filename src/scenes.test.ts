@@ -1,0 +1,128 @@
+import { describe, it, expect, vi } from "vitest";
+import { createSceneManager, type Scene } from "./scenes.js";
+
+function spyScene(log: string[], name: string): Scene {
+  return {
+    enter: () => log.push(`${name}:enter`),
+    update: () => log.push(`${name}:update`),
+    draw: () => log.push(`${name}:draw`),
+    exit: () => log.push(`${name}:exit`),
+  };
+}
+
+describe("SceneManager", () => {
+  it("go enters the scene and makes it active", () => {
+    const log: string[] = [];
+    const m = createSceneManager();
+    m.define("menu", spyScene(log, "menu"));
+    m.go("menu");
+    expect(m.active).toBe("menu");
+    expect(m.stack).toEqual(["menu"]);
+    expect(log).toEqual(["menu:enter"]);
+  });
+
+  it("go exits the whole current stack before entering the new scene", () => {
+    const log: string[] = [];
+    const m = createSceneManager();
+    m.define("a", spyScene(log, "a"));
+    m.define("b", spyScene(log, "b"));
+    m.define("c", spyScene(log, "c"));
+    m.go("a");
+    m.push("b");
+    log.length = 0;
+    m.go("c");
+    // top-first exit, then enter the new scene
+    expect(log).toEqual(["b:exit", "a:exit", "c:enter"]);
+    expect(m.stack).toEqual(["c"]);
+  });
+
+  it("push overlays: only the top updates, all draw bottom-to-top", () => {
+    const log: string[] = [];
+    const m = createSceneManager();
+    m.define("play", spyScene(log, "play"));
+    m.define("pause", spyScene(log, "pause"));
+    m.go("play");
+    m.push("pause");
+    log.length = 0;
+
+    m.update();
+    m.draw();
+    expect(log).toEqual(["pause:update", "play:draw", "pause:draw"]);
+  });
+
+  it("pop exits the top and resumes the one beneath", () => {
+    const log: string[] = [];
+    const m = createSceneManager();
+    m.define("play", spyScene(log, "play"));
+    m.define("pause", spyScene(log, "pause"));
+    m.go("play");
+    m.push("pause");
+    log.length = 0;
+
+    m.pop();
+    expect(log).toEqual(["pause:exit"]);
+    expect(m.active).toBe("play");
+
+    log.length = 0;
+    m.update();
+    expect(log).toEqual(["play:update"]);
+  });
+
+  it("throws on navigating to an undefined scene", () => {
+    const m = createSceneManager();
+    expect(() => m.go("nope")).toThrow(/no scene defined/);
+    expect(() => m.push("nope")).toThrow(/no scene defined/);
+  });
+
+  it("tolerates empty stack and optional hooks", () => {
+    const m = createSceneManager();
+    expect(m.active).toBeUndefined();
+    expect(() => {
+      m.update();
+      m.draw();
+      m.pop();
+    }).not.toThrow();
+
+    // A scene with no hooks is fine.
+    m.define("bare", {});
+    m.go("bare");
+    expect(() => {
+      m.update();
+      m.draw();
+    }).not.toThrow();
+  });
+
+  it("define replaces an existing scene under the same name", () => {
+    const log: string[] = [];
+    const m = createSceneManager();
+    m.define("s", { enter: () => log.push("first") });
+    m.define("s", { enter: () => log.push("second") });
+    m.go("s");
+    expect(log).toEqual(["second"]);
+  });
+});
+
+describe("Scenes default facade", () => {
+  it("wires into Loop once and drives the manager", async () => {
+    // Fresh module registry: import the facade and drive it through a fake Loop.
+    vi.resetModules();
+    const runSpy = vi.fn();
+    vi.doMock("./engine.js", () => ({ Loop: { run: runSpy } }));
+    const { Scenes } = await import("./scenes.js");
+
+    const log: string[] = [];
+    Scenes.define("play", spyScene(log, "play"));
+    Scenes.go("play");
+    Scenes.push("play"); // second navigation must NOT re-wire the Loop
+
+    expect(runSpy).toHaveBeenCalledTimes(1);
+    const callbacks = runSpy.mock.calls[0][0] as { update(): void; draw(): void };
+    log.length = 0;
+    callbacks.update();
+    callbacks.draw();
+    // stack is [play, play] after go+push → top updates, both draw
+    expect(log).toEqual(["play:update", "play:draw", "play:draw"]);
+
+    vi.doUnmock("./engine.js");
+  });
+});

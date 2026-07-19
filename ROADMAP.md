@@ -58,7 +58,7 @@ Pure, data-agnostic helpers. No engine state.
 - ✅ `Sprites` — `getSprite` (square) + `getLayer` (arbitrary offscreen cache)
 - ✅ `Text`, `Physics` (kinematic helpers/constants)
 
-## L3 — Structure (the engine core we're adding) ⬜
+## L3 — Structure (the engine core we're adding) 🟡
 
 ### 3a. ECS — `Minimotor.ECS` / `World`
 
@@ -126,7 +126,7 @@ iteration never mutates mid-flight and replays stay deterministic.
 API hides this so we can move hot components to typed-array SoA later without
 breaking games.
 
-### 3b. Scenes — `Minimotor.Scenes`
+### 3b. Scenes — `Minimotor.Scenes` ✅
 
 A scene stack replaces the hand-rolled `game.state = "menu"|"playing"|"gameover"`
 + branching that every current game duplicates.
@@ -208,8 +208,9 @@ map.draw(ctx, camera);   map.solidAt(x, y);
 Each milestone lands with **tests** and a **refactor of a real game** (a sample or
 hoppspelet) as proof it actually simplifies code — the discipline used so far.
 
-1. **Scenes** — stack + `Loop` dispatch; refactor one sample's state machine. (No
-   ECS dependency; smallest structural win first.)
+1. ✅ **Scenes** — stack + `Loop` dispatch (`define`/`go`/`push`/`pop`, enter/exit
+   lifecycle, stacked draw). Shipped with `scenes.ts` + tests and a `scenes` sample
+   (menu → play → pause overlay → game over).
 2. **ECS core** — `world.spawn/add/get/has/remove/despawn/query` + command buffer;
    refactor **particles** sample to entities as the proof.
 3. **Systems + Scene/World wiring** — ordered update/render systems; refactor
