@@ -95,11 +95,14 @@ function centeredText(
   cy: number,
   maxW?: number,
 ): void {
+  // measureText's actualBoundingBox values are relative to the CURRENT
+  // textBaseline — pin it before measuring, or state leaked from caller
+  // drawing (e.g. "middle") skews the correction.
+  ctx.textBaseline = "alphabetic";
   const m = ctx.measureText(text);
   const asc = m.actualBoundingBoxAscent ?? 0;
   const desc = m.actualBoundingBoxDescent ?? 0;
   if (asc || desc) {
-    ctx.textBaseline = "alphabetic";
     ctx.fillText(text, x, cy + (asc - desc) / 2, maxW);
   } else {
     // Metrics unavailable (mocked ctx) — middle baseline is the best we have.
@@ -225,6 +228,91 @@ function uiPointer() {
  *  resets it every frame, so it clears the moment nothing is hovered. */
 function hoverCursor(hover: boolean): void {
   if (hover) Loop.setCursor("pointer");
+}
+
+// ---------- Flex (layout) ----------
+
+/** One node in a `flex()` layout tree. In a row, `w` is the main-axis size
+ *  and `h` the cross-axis size (swapped in a column). Give a node a fixed
+ *  main size, or a `flex` share of the leftover; omit both for `flex: 1`.
+ *  A node with `children` is a nested container. */
+export interface FlexSpec {
+  /** Fixed width in px. Cross-axis: omit to fill the container. */
+  w?: number;
+  /** Fixed height in px. Cross-axis: omit to fill the container. */
+  h?: number;
+  /** Share of the leftover main-axis space (flex-grow). Default 1 when no
+   *  fixed main size is given. */
+  flex?: number;
+  /** Container: main axis for the children. Default `"col"`. */
+  dir?: "row" | "col";
+  /** Container: gap between children in px. Default 0. */
+  gap?: number;
+  /** Container: inner padding in px. Default 0. */
+  pad?: number;
+  /** Container: named children, laid out in order. */
+  children?: Record<string, FlexSpec>;
+}
+
+/** Flexbox, minus the parts a game HUD doesn't need (wrap, shrink,
+ *  per-item alignment): split a box into named regions — fixed sizes keep
+ *  theirs, `flex` shares divide the leftover — and get back one flat map of
+ *  rects (nested names must be unique). Recompute per frame from the live
+ *  viewport and resize comes free:
+ *
+ *    const L = UI.flex({ x: 0, y: 0, w: vp.w, h: vp.h }, {
+ *      dir: "col", pad: 12, gap: 8,
+ *      children: {
+ *        toolbar: { h: 30 },
+ *        body: { flex: 1, dir: "row", gap: 4, children: {
+ *          list: { flex: 1 }, scroll: { w: 10 },
+ *        }},
+ *        footer: { h: 40 },
+ *      },
+ *    });
+ *    UI.scrollbar(ctx, { ...L.scroll, view: L.scroll.h, ... });
+ *
+ *  Rects feed straight into widgets (they all take x/y/w/h). For toolbars of
+ *  label-sized widgets, use a `stack` inside a flex rect instead. */
+export function flex(
+  box: { x: number; y: number; w: number; h: number },
+  spec: FlexSpec,
+  out: Record<string, { x: number; y: number; w: number; h: number }> = {},
+): Record<string, { x: number; y: number; w: number; h: number }> {
+  const dir = spec.dir ?? "col";
+  const gap = spec.gap ?? 0;
+  const pad = spec.pad ?? 0;
+  const inner = {
+    x: box.x + pad,
+    y: box.y + pad,
+    w: Math.max(0, box.w - pad * 2),
+    h: Math.max(0, box.h - pad * 2),
+  };
+  const kids = Object.entries(spec.children ?? {});
+  const main = dir === "row" ? inner.w : inner.h;
+
+  let fixed = gap * Math.max(0, kids.length - 1);
+  let shares = 0;
+  for (const [, k] of kids) {
+    const size = dir === "row" ? k.w : k.h;
+    if (size !== undefined) fixed += size;
+    else shares += k.flex ?? 1;
+  }
+  const leftover = Math.max(0, main - fixed);
+
+  let cursor = dir === "row" ? inner.x : inner.y;
+  for (const [name, k] of kids) {
+    const fixedMain = dir === "row" ? k.w : k.h;
+    const size = fixedMain ?? (shares > 0 ? (leftover * (k.flex ?? 1)) / shares : 0);
+    const rect =
+      dir === "row"
+        ? { x: cursor, y: inner.y, w: size, h: k.h ?? inner.h }
+        : { x: inner.x, y: cursor, w: k.w ?? inner.w, h: size };
+    out[name] = rect;
+    cursor += size + gap;
+    if (k.children) flex(rect, k, out);
+  }
+  return out;
 }
 
 // ---------- Floating text ----------

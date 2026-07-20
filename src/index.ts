@@ -129,6 +129,7 @@ export type {
   PanelOptions,
   PopoverOptions,
   RowOptions,
+  FlexSpec,
   ScrollbarOptions,
   SliderOptions,
   SpinnerOptions,

@@ -105,15 +105,41 @@ function join(server) {
 
 const ROW_H = 30;
 
+// Recomputed every frame from the live viewport, so resize comes free: the
+// panel re-centers, fixed rows keep their height, the list flexes to fill.
 function layout() {
-  const w = Math.min(760, vp.w - 40);
-  const h = Math.min(560, vp.h - 40);
-  const x = (vp.w - w) / 2;
-  const y = (vp.h - h) / 2;
-  // Columns: name flexes, the rest are fixed.
-  const cols = { mode: 70, region: 56, players: 80, ping: 60 };
-  const nameW = w - 24 - cols.mode - cols.region - cols.players - cols.ping - 14;
-  return { x, y, w, h, cols, nameW, listY: y + 104, listH: h - 104 - 64 };
+  const w = Math.max(560, Math.min(760, vp.w - 40));
+  const h = Math.max(320, Math.min(560, vp.h - 40));
+  const x = Math.round((vp.w - w) / 2);
+  const y = Math.round((vp.h - h) / 2);
+  // Below the panel's 30px title strip, one flex column: controls, column
+  // headers (a nested row — NAME flexes, the rest are fixed), the list
+  // (rows + scrollbar side by side), footer.
+  const L = UI.flex(
+    { x, y: y + 30, w, h: h - 30 },
+    {
+      dir: "col",
+      pad: 12,
+      gap: 8,
+      children: {
+        controls: { h: 30 },
+        head: {
+          h: 20,
+          dir: "row",
+          children: {
+            name: { flex: 1 },
+            mode: { w: 70 },
+            reg: { w: 56 },
+            players: { w: 80 },
+            ping: { w: 74 },
+          },
+        },
+        list: { flex: 1, dir: "row", gap: 4, children: { rows: { flex: 1 }, scroll: { w: 10 } } },
+        footer: { h: 40 },
+      },
+    },
+  );
+  return { x, y, w, h, ...L };
 }
 
 const pingColor = (ping) => (ping < 60 ? "#6bff9e" : ping < 130 ? "#ffd43b" : "#ff6b6b");
@@ -134,9 +160,9 @@ Minimotor.Loop.run({
     const L = layout();
     UI.panel(ctx, { x: L.x, y: L.y, w: L.w, h: L.h, title: "SERVER BROWSER" });
 
-    // ---- control bar: two stacks — one growing right, one growing left.
-    // Everything auto-sizes to its label, so no theme/font can overflow it.
-    const barL = UI.stack({ x: L.x + 12, y: L.y + 42, gap: 10, h: 30 });
+    // ---- control bar: two stacks in the flex row — one growing right,
+    // one growing left. Everything auto-sizes to its label.
+    const barL = UI.stack({ x: L.controls.x, y: L.controls.y, gap: 10, h: L.controls.h });
     tab = UI.tabs(ctx, { at: barL, items: ["All", ...MODES], active: tab });
     const nFilters = (hideFull ? 1 : 0) + (hideEmpty ? 1 : 0) + (maxPing < 250 ? 1 : 0);
     if (
@@ -150,7 +176,13 @@ Minimotor.Loop.run({
     }
     const filterBtn = barL.last; // the popover anchors under this
 
-    const barR = UI.stack({ x: L.x + L.w - 12, y: L.y + 42, gap: 10, h: 30, align: "end" });
+    const barR = UI.stack({
+      x: L.controls.x + L.controls.w,
+      y: L.controls.y,
+      gap: 10,
+      h: L.controls.h,
+      align: "end",
+    });
     if (
       UI.button(ctx, {
         at: barR,
@@ -166,32 +198,21 @@ Minimotor.Loop.run({
       UI.setTheme(altTheme ? AMBER : {});
     }
     // Busy arc while the mock request is in flight, left of the buttons.
-    if (refreshing) UI.spinner(ctx, barR.last.x - 18, L.y + 57);
+    if (refreshing) UI.spinner(ctx, barR.last.x - 18, L.controls.y + 15);
 
-    // ---- column headers (click to sort) ----
+    // ---- column headers (click to sort) — rects straight from the flex ----
     const list = visibleServers();
-    const headY = L.listY - 22;
     const headers = [
-      { key: "name", label: "NAME", x: L.x + 12, w: L.nameW },
-      { key: "mode", label: "MODE", x: L.x + 12 + L.nameW, w: L.cols.mode },
-      { key: "region", label: "REG", x: L.x + 12 + L.nameW + L.cols.mode, w: L.cols.region },
-      {
-        key: "players",
-        label: "PLAYERS",
-        x: L.x + 12 + L.nameW + L.cols.mode + L.cols.region,
-        w: L.cols.players,
-      },
-      {
-        key: "ping",
-        label: "PING",
-        x: L.x + 12 + L.nameW + L.cols.mode + L.cols.region + L.cols.players,
-        w: L.cols.ping,
-      },
+      { key: "name", label: "NAME", rect: L.name },
+      { key: "mode", label: "MODE", rect: L.mode },
+      { key: "region", label: "REG", rect: L.reg },
+      { key: "players", label: "PLAYERS", rect: L.players },
+      { key: "ping", label: "PING", rect: L.ping },
     ];
     ctx.font = "bold 12px monospace";
     ctx.textBaseline = "middle";
     for (const hd of headers) {
-      if (UI.row(ctx, { x: hd.x, y: headY, w: hd.w - 6, h: 18 })) {
+      if (UI.row(ctx, { ...hd.rect, w: hd.rect.w - 6 })) {
         if (sortKey === hd.key) sortDir = -sortDir;
         else {
           sortKey = hd.key;
@@ -201,35 +222,35 @@ Minimotor.Loop.run({
       ctx.fillStyle = sortKey === hd.key ? "#4ecdc4" : "#7d8894";
       ctx.textAlign = "left";
       const arrow = sortKey === hd.key ? (sortDir === 1 ? " ▲" : " ▼") : "";
-      ctx.fillText(hd.label + arrow, hd.x, headY + 9);
+      ctx.fillText(hd.label + arrow, hd.rect.x, hd.rect.y + hd.rect.h / 2);
     }
 
-    // ---- the list: clipped rows + scrollbar ----
+    // ---- the list: clipped rows + scrollbar, filling the flexed space ----
     const content = list.length * ROW_H;
     scroll = UI.scrollbar(ctx, {
-      x: L.x + L.w - 14,
-      y: L.listY,
-      h: L.listH,
-      view: L.listH,
+      x: L.scroll.x,
+      y: L.scroll.y,
+      h: L.scroll.h,
+      view: L.list.h,
       content,
       offset: scroll,
-      wheelArea: { x: L.x, y: L.listY, w: L.w, h: L.listH },
+      wheelArea: L.list,
     });
 
     ctx.save();
     ctx.beginPath();
-    ctx.rect(L.x + 2, L.listY, L.w - 4, L.listH);
+    ctx.rect(L.rows.x, L.rows.y, L.rows.w, L.rows.h);
     ctx.clip();
 
     const first = Math.floor(scroll / ROW_H);
-    const last = Math.min(list.length - 1, Math.ceil((scroll + L.listH) / ROW_H));
+    const last = Math.min(list.length - 1, Math.ceil((scroll + L.rows.h) / ROW_H));
     for (let i = first; i <= last; i++) {
       const s = list[i];
-      const ry = L.listY + i * ROW_H - scroll;
+      const ry = L.rows.y + i * ROW_H - scroll;
       const clicked = UI.row(ctx, {
-        x: L.x + 2,
+        x: L.rows.x,
         y: ry,
-        w: L.w - 18,
+        w: L.rows.w,
         h: ROW_H,
         selected: s === selected,
       });
@@ -237,46 +258,54 @@ Minimotor.Loop.run({
       ctx.font = "13px monospace";
       ctx.textAlign = "left";
       ctx.fillStyle = "#e8f0f4";
-      ctx.fillText(s.name, headers[0].x, ry + ROW_H / 2, L.nameW - 10);
+      ctx.fillText(s.name, L.name.x + 4, ry + ROW_H / 2, L.name.w - 14);
       ctx.fillStyle = "#9aa7b0";
-      ctx.fillText(s.mode, headers[1].x, ry + ROW_H / 2);
-      ctx.fillText(s.region, headers[2].x, ry + ROW_H / 2);
+      ctx.fillText(s.mode, L.mode.x, ry + ROW_H / 2);
+      ctx.fillText(s.region, L.reg.x, ry + ROW_H / 2);
       ctx.fillStyle = s.players >= s.max ? "#ff6b6b" : "#9aa7b0";
-      ctx.fillText(`${s.players}/${s.max}`, headers[3].x, ry + ROW_H / 2);
+      ctx.fillText(`${s.players}/${s.max}`, L.players.x, ry + ROW_H / 2);
       ctx.fillStyle = pingColor(s.ping);
-      ctx.fillText(`${s.ping}`, headers[4].x, ry + ROW_H / 2);
+      ctx.fillText(`${s.ping}`, L.ping.x, ry + ROW_H / 2);
     }
     if (list.length === 0) {
       ctx.fillStyle = "#5a6a75";
       ctx.textAlign = "center";
-      ctx.fillText("no servers match the filters", L.x + L.w / 2, L.listY + 40);
+      ctx.fillText("no servers match the filters", L.rows.x + L.rows.w / 2, L.rows.y + 40);
     }
     ctx.restore();
 
     // ---- footer: count, status, JOIN ----
-    const footY = L.y + L.h - 52;
     ctx.strokeStyle = "#2a3a48";
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(L.x + 2, footY);
-    ctx.lineTo(L.x + L.w - 2, footY);
+    ctx.moveTo(L.x + 2, L.footer.y - 4);
+    ctx.lineTo(L.x + L.w - 2, L.footer.y - 4);
     ctx.stroke();
     ctx.font = "12px monospace";
     ctx.textAlign = "left";
     ctx.fillStyle = "#7d8894";
     // The join status takes the counter's spot while it's showing.
+    const footTextY = L.footer.y + L.footer.h / 2 + 4;
     if (status) {
       ctx.fillStyle = status.startsWith("Connected") ? "#6bff9e" : "#ffd43b";
-      ctx.fillText(status, L.x + 12, footY + 26);
+      ctx.fillText(status, L.footer.x, footTextY, L.footer.w - 130);
     } else {
-      ctx.fillText(`${list.length}/${servers.length} servers · R to refresh`, L.x + 12, footY + 26);
+      ctx.fillText(
+        `${list.length}/${servers.length} servers · R to refresh`,
+        L.footer.x,
+        footTextY,
+        L.footer.w - 130,
+      );
     }
+    const footBtns = UI.stack({
+      x: L.footer.x + L.footer.w,
+      y: L.footer.y + (L.footer.h - 34) / 2 + 2,
+      h: 34,
+      align: "end",
+    });
     if (
       UI.button(ctx, {
-        x: L.x + L.w - 116,
-        y: footY + 8,
-        w: 104,
-        h: 34,
+        at: footBtns,
         label: "JOIN",
         disabled: !selected || refreshing,
         tooltip: selected ? `Join ${selected.name}` : "Select a server first",

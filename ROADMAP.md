@@ -216,11 +216,13 @@ spec?)` integration (swap fires behind full coverage). Proof: the `scenes`
   `modal` (dimmed backdrop that really blocks background input) and hover
   `tooltip`s with a stability delay. All colors/fonts flow from a `Theme`
   (`setTheme` restyles the whole kit); interactive widgets request the hand
-  cursor via the engine's per-frame `setCursor`. Layout: `stack` — a one-axis
-  cursor (row/col, gap, `align: "end"` for right-aligned bars, `extent`) that
-  widgets place themselves into via `at`, auto-sizing to their labels; all
-  labels clamp to their boxes so no theme/font can overflow. Not flexbox — a
-  cursor. No retained widget tree — everything draws in your draw phase. Game-specific overlays (copy/layout)
+  cursor via the engine's per-frame `setCursor`. Layout, two tools: `flex` —
+  split a box into named regions (nested row/col containers, fixed sizes +
+  flex-grow shares, gap/pad, flat rect map out; recompute per frame and
+  resize comes free) — and `stack`, a one-axis cursor that widgets place
+  themselves into via `at`, auto-sizing to their labels. All labels clamp to
+  their boxes so no theme/font can overflow. No retained widget tree —
+  everything draws in your draw phase. Game-specific overlays (copy/layout)
   stay in the samples' `overlays.js`, where they belong.
 
 ## Opt-in entry points ✅

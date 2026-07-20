@@ -6,6 +6,7 @@ import {
   buttonState,
   createFloats,
   defaultTheme,
+  flex,
   getTheme,
   setTheme,
   stack,
@@ -110,6 +111,51 @@ describe("UI theme", () => {
     expect(getTheme().text).toBe("#0f0");
     _reset();
     expect(getTheme()).toEqual(defaultTheme);
+  });
+});
+
+describe("UI flex", () => {
+  it("splits a column into fixed and flex regions with pad and gap", () => {
+    const L = flex(
+      { x: 0, y: 0, w: 200, h: 300 },
+      {
+        dir: "col",
+        pad: 10,
+        gap: 10,
+        children: {
+          header: { h: 40 },
+          body: { flex: 1 },
+          footer: { h: 30 },
+        },
+      },
+    );
+    expect(L.header).toEqual({ x: 10, y: 10, w: 180, h: 40 });
+    expect(L.body).toEqual({ x: 10, y: 60, w: 180, h: 190 }); // 280 - 40 - 30 - 2 gaps
+    expect(L.footer).toEqual({ x: 10, y: 260, w: 180, h: 30 });
+  });
+
+  it("divides leftover by flex shares in a row and recurses into children", () => {
+    const L = flex(
+      { x: 0, y: 0, w: 420, h: 100 },
+      {
+        dir: "row",
+        gap: 10,
+        children: {
+          side: { w: 100 },
+          main: {
+            flex: 2,
+            dir: "col",
+            children: { top: { h: 20 }, rest: { flex: 1 } },
+          },
+          aside: { flex: 1, h: 50 }, // fixed cross size
+        },
+      },
+    );
+    expect(L.side).toEqual({ x: 0, y: 0, w: 100, h: 100 });
+    expect(L.main.w).toBe(200); // (420 - 100 - 20 gaps) * 2/3
+    expect(L.aside).toEqual({ x: 320, y: 0, w: 100, h: 50 });
+    expect(L.top).toEqual({ x: 110, y: 0, w: 200, h: 20 }); // nested, flat name
+    expect(L.rest.h).toBe(80);
   });
 });
 
