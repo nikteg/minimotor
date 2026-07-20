@@ -118,7 +118,7 @@ export type { Transition, TransitionRender, TransitionRun } from "./transitions.
 // A shared default world (`Minimotor.World`) for the common single-world case;
 // games that need isolation or per-scene worlds call `ECS.world()` for their own.
 const defaultWorld = ECS.world();
-export type { SfxBuilder, MusicConfig } from "./audio.js";
+export type { SfxBuilder, MusicConfig, Bus, Filter, Effect, DelayEffect } from "./audio.js";
 export type { PhysicsBody } from "./physics.js";
 export type { SpriteCanvas, SheetOptions } from "./sprites.js";
 export type {

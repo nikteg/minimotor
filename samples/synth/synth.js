@@ -1,6 +1,7 @@
 // Synth: a playable instrument + a scheduled backing band.
 // Demonstrates: Audio.playSfx (custom voices on the SFX bus), Audio.Music
-// (look-ahead scheduler: note/kick/noiseHit), polled Keys/Pointer input.
+// (look-ahead scheduler: note/kick/noiseHit), the Audio.Mixer (a reverb send
+// on the instrument + a live lowpass muffle on the backing), polled input.
 //
 // Play it: A S D F G H J K L ; are the white keys (C major from C4), W E T Y U
 // O P the black keys. Z/X shift octaves, 1-4 pick the waveform. Click the
@@ -137,6 +138,16 @@ let grooveIdx = 0;
 let backing = false;
 let musicStarted = false;
 
+// ---------- Mixer wiring ----------
+// A reverb the instrument (the "sfx" bus) can aux-send into, and a lowpass on
+// the backing ("music" bus) to muffle it. Declaring these creates no
+// AudioContext — the graph materializes on the first note — so it is safe at
+// load. R toggles the reverb send; F sweeps the muffle filter live.
+Audio.Mixer.reverb("hall", { seconds: 2.4, decay: 2.2, wet: 0.9 });
+const grooveMuffle = Audio.Mixer.bus("music").addFilter("lowpass", 20000);
+let reverbOn = false;
+let muffled = false;
+
 function ensureBacking() {
   if (musicStarted) return;
   musicStarted = true;
@@ -196,6 +207,14 @@ function handleInput() {
   }
   if (Keys.pressed("KeyN")) grooveIdx = (grooveIdx + 1) % GROOVES.length;
   if (Keys.pressed("KeyM")) Audio.Music.setOn(!Audio.Music.on);
+  if (Keys.pressed("KeyR")) {
+    reverbOn = !reverbOn;
+    Audio.Mixer.bus("sfx").send("hall", reverbOn ? 0.4 : 0, 200);
+  }
+  if (Keys.pressed("KeyF")) {
+    muffled = !muffled;
+    grooveMuffle.frequency(muffled ? 380 : 20000, 260);
+  }
 
   // Click/tap the on-screen piano.
   if (Pointer.pressed) {
@@ -260,6 +279,11 @@ Loop.run({
     );
     UI.text(ctx, "A–; white keys · W–P black keys · Z/X octave · 1–4 wave", { x: 12, y: 61, size: 13, color: "dim" });
     UI.text(ctx, "B backing on/off · N next groove · M mute music", { x: 12, y: 79, size: 13, color: "dim" });
+  UI.text(
+    ctx,
+    `R reverb: ${reverbOn ? "on" : "off"} · F muffle backing: ${muffled ? "on" : "off"}`,
+    { x: 12, y: 97, size: 13, color: reverbOn || muffled ? "#6bff9e" : "dim" },
+  );
 
     // Piano — white keys…
     for (let i = 0; i < WHITE_KEYS.length; i++) {
