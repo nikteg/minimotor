@@ -248,7 +248,7 @@ hoppspelet) as proof it actually simplifies code — the discipline used so far.
    ECS (blocks as entities queried for collision & render; play + pushed
    game-over overlay) before extending. The API carried a whole game with **no
    engine changes** — validating the L3 surface.
-4c. ✅ **Built-in Sprite renderer** — standard `ECS.Sprite` component +
+   4c. ✅ **Built-in Sprite renderer** — standard `ECS.Sprite` component +
    `world.drawSprites(ctx)` (z-sorted, anchor/rot/scale/alpha, source sub-rect for
    sheets/atlases). Particles sample dropped its hand-written blit loop.
 5. ✅ **Assets + Anim** — `Assets` preloader (images + JSON) and `Anim.sheet`
