@@ -64,6 +64,20 @@ export interface Animation {
   draw(ctx: CanvasRenderingContext2D, dx: number, dy: number, opts?: AnimDrawOptions): void;
 }
 
+/** A named set of animation clips with a single active state. Switching clips
+ * resets the new clip by default, while repeatedly playing the current state
+ * leaves its timeline uninterrupted. */
+export interface AnimationStates<K extends string = string> extends Animation {
+  /** Name of the active animation state. */
+  readonly state: K;
+  /** The active underlying clip. */
+  readonly animation: Animation;
+  /** Switch state. Returns true only when the state changed. */
+  play(state: K, options?: { restart?: boolean }): boolean;
+  /** Reset every clip and return to the initial state. */
+  resetAll(): void;
+}
+
 type SheetImage = CanvasImageSource & { width: number; height: number };
 
 /** Create an animation over a grid sprite sheet. */
@@ -130,4 +144,61 @@ export function sheet(image: SheetImage, config: SheetConfig): Animation {
     },
   };
   return self;
+}
+
+/** Combine animations into a named state player.
+ *
+ * ```ts
+ * const hero = Anim.states({ idle: Anim.sheet(idle, idleCfg), run: Anim.sheet(run, runCfg) }, "idle");
+ * hero.play(speed === 0 ? "idle" : "run");
+ * hero.update(dt);
+ * hero.draw(ctx, x, y);
+ * ``` */
+export function states<K extends string>(
+  clips: Record<K, Animation>,
+  initial: K,
+): AnimationStates<K> {
+  if (!clips[initial]) throw new Error(`Anim.states: missing initial state "${initial}"`);
+  let current = initial;
+
+  return {
+    update(dtMs) {
+      clips[current].update(dtMs);
+    },
+    get state() {
+      return current;
+    },
+    get animation() {
+      return clips[current];
+    },
+    get frame() {
+      return clips[current].frame;
+    },
+    get rect() {
+      return clips[current].rect;
+    },
+    get done() {
+      return clips[current].done;
+    },
+    play(next, options = {}) {
+      if (!clips[next]) throw new Error(`Anim.states: unknown state "${next}"`);
+      if (next === current) {
+        if (options.restart) clips[current].reset();
+        return false;
+      }
+      current = next;
+      clips[current].reset();
+      return true;
+    },
+    reset() {
+      clips[current].reset();
+    },
+    resetAll() {
+      for (const clip of Object.values<Animation>(clips)) clip.reset();
+      current = initial;
+    },
+    draw(ctx, dx, dy, opts) {
+      clips[current].draw(ctx, dx, dy, opts);
+    },
+  };
 }

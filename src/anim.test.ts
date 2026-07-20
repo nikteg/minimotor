@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { sheet } from "./anim.js";
+import { sheet, states } from "./anim.js";
 
 // A sheet 4 cols × 2 rows of 32×32 cells.
 const img = { width: 128, height: 64 } as HTMLImageElement;
@@ -67,5 +67,40 @@ describe("Anim.sheet frame math", () => {
     a.draw(ctx, 100, 50);
     // drawImage(img, sx, sy, sw, sh, dx-ax*w, dy-ay*h, w, h)
     expect(calls[0]).toEqual([img, 32, 0, 32, 32, 100 - 16, 50 - 16, 32, 32]);
+  });
+});
+
+describe("Anim.states", () => {
+  it("switches named clips, resets on transitions, and delegates playback", () => {
+    const idle = sheet(img, { fw: 32, fh: 32, fps: 10, frames: [0, 1] });
+    const run = sheet(img, { fw: 32, fh: 32, fps: 10, frames: [2, 3] });
+    const hero = states({ idle, run }, "idle");
+
+    hero.update(100);
+    expect(hero.state).toBe("idle");
+    expect(hero.frame).toBe(1);
+    expect(hero.play("run")).toBe(true);
+    expect(hero.frame).toBe(0);
+    hero.update(100);
+    expect(hero.rect.sx).toBe(96);
+
+    // Re-selecting a state does not interrupt it unless explicitly requested.
+    expect(hero.play("run")).toBe(false);
+    expect(hero.frame).toBe(1);
+    hero.play("run", { restart: true });
+    expect(hero.frame).toBe(0);
+  });
+
+  it("can reset all clips and reports invalid states", () => {
+    const idle = sheet(img, { fw: 32, fh: 32, fps: 10 });
+    const run = sheet(img, { fw: 32, fh: 32, fps: 10 });
+    const hero = states({ idle, run }, "idle");
+    hero.play("run");
+    hero.update(100);
+    hero.resetAll();
+    expect(hero.state).toBe("idle");
+    expect(hero.frame).toBe(0);
+    expect(() => hero.play("missing" as "idle")).toThrow(/unknown state/);
+    expect(() => states({ idle }, "missing" as "idle")).toThrow(/missing initial state/);
   });
 });
