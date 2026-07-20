@@ -1,9 +1,10 @@
 // Scenes: menu -> play -> game over, with a pause overlay pushed on top.
-// Demonstrates: Scenes.define/go/push/pop, enter/exit lifecycle, stacked draw.
+// Demonstrates: Scenes.define/go/push/pop, enter/exit lifecycle, stacked draw,
+// and transitions — fade into play, wipe down into game over.
 import { Minimotor } from "minimotor";
 
 const vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
-const { Scenes, Keys, Draw, Text, Mathf } = Minimotor;
+const { Scenes, Transitions, Keys, Draw, Text, Mathf, Audio } = Minimotor;
 
 const center = (text, y, opts) => Text.drawCentered(Draw.ctx, text, vp.w / 2, y, opts);
 const clear = (bg) => {
@@ -34,7 +35,10 @@ Scenes.define("menu", {
     center(`Best: ${best}`, vp.h / 2 + 72, { color: "#888" });
   },
   update() {
-    if (Keys.pressed("Space")) Scenes.go("play");
+    if (Keys.pressed("Space")) {
+      Audio.Sfx.blip(660, 0.08);
+      Scenes.go("play", Transitions.fade(500));
+    }
   },
 });
 
@@ -48,7 +52,10 @@ Scenes.define("play", {
     placeTarget();
   },
   update() {
-    if (Keys.pressed("KeyP")) return Scenes.push("pause");
+    if (Keys.pressed("KeyP")) {
+      Audio.Sfx.blip(440, 0.06);
+      return Scenes.push("pause");
+    }
 
     const speed = 6;
     if (Keys.down("ArrowLeft")) player.x -= speed;
@@ -62,13 +69,15 @@ Scenes.define("play", {
     const py = player.y + player.size / 2;
     if (Minimotor.Collision.circleHit(px, py, player.size / 2, target.x, target.y, target.r)) {
       score++;
+      Audio.Sfx.coin();
       placeTarget();
     }
 
     if (--timeLeft <= 0) {
       best = Math.max(best, score);
       Minimotor.Storage.save("scenes_best", best);
-      Scenes.go("over");
+      Audio.Sfx.blip(140, 0.35);
+      Scenes.go("over", Transitions.wipe(600, "down"));
     }
   },
   draw() {
@@ -98,7 +107,10 @@ Scenes.define("play", {
 // ---------- Pause (overlay: play stays drawn underneath) ----------
 Scenes.define("pause", {
   update() {
-    if (Keys.pressed("KeyP") || Keys.pressed("Space")) Scenes.pop();
+    if (Keys.pressed("KeyP") || Keys.pressed("Space")) {
+      Audio.Sfx.blip(440, 0.06);
+      Scenes.pop();
+    }
   },
   draw() {
     clear("rgba(0,0,0,0.55)");
@@ -116,8 +128,11 @@ Scenes.define("over", {
     center("SPACE to play again · M for menu", vp.h / 2 + 40, { color: "#aaa" });
   },
   update() {
-    if (Keys.pressed("Space")) Scenes.go("play");
-    if (Keys.pressed("KeyM")) Scenes.go("menu");
+    if (Keys.pressed("Space")) {
+      Audio.Sfx.blip(660, 0.08);
+      Scenes.go("play", Transitions.fade(500));
+    }
+    if (Keys.pressed("KeyM")) Scenes.go("menu", Transitions.fade(400));
   },
 });
 

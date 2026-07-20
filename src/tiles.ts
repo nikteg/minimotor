@@ -33,7 +33,11 @@ export interface TilesConfig {
 }
 
 /** A grid tilemap. Draws in world coordinates (translate your ctx by the
- *  camera first); the optional view rect only culls. */
+ *  camera first); the optional view rect only culls.
+ *
+ *  Seams: round the camera translate to whole pixels
+ *  (`ctx.translate(-Math.round(cam.x), …)`) — a fractional offset antialiases
+ *  every tile edge and shows as hairline gaps between tiles. */
 export interface TileMap {
   /** Grid width in cells (longest row). */
   readonly cols: number;

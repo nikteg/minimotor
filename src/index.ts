@@ -26,6 +26,7 @@ import * as Game from "./game.js";
 import * as Fullscreen from "./fullscreen.js";
 import * as Text from "./text.js";
 import * as Tiles from "./tiles.js";
+import * as Transitions from "./transitions.js";
 
 export {
   createGame,
@@ -46,6 +47,7 @@ export {
   Fullscreen,
   Text,
   Tiles,
+  Transitions,
   Mathf,
   Scenes,
   ECS,
@@ -94,6 +96,7 @@ export type {
 } from "./perf.js";
 export type { GamepadState } from "./input.js";
 export type { TileMap, TilesConfig } from "./tiles.js";
+export type { Transition, TransitionRender, TransitionRun } from "./transitions.js";
 
 // A shared default world (`Minimotor.World`) for the common single-world case;
 // games that need isolation or per-scene worlds call `ECS.world()` for their own.
@@ -132,6 +135,7 @@ export const Minimotor = {
   Fullscreen,
   Text,
   Tiles,
+  Transitions,
   Mathf,
   Scenes,
   ECS,

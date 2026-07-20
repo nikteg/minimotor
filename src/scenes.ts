@@ -12,8 +12,9 @@
 // The default `Scenes` facade wires itself into the default Loop the first time
 // you `go`/`push`, so game code never calls `Loop.run` when using scenes.
 
-import { Loop, Draw } from "./engine.js";
+import { Loop, Draw, Stage } from "./engine.js";
 import type { World } from "./ecs.js";
+import { run as runTransition, type Transition, type TransitionRun } from "./transitions.js";
 
 /** A game screen. Every hook is optional. `update` runs on the fixed timestep
  *  for the top scene only; `draw` runs once per frame for every scene in the
@@ -125,13 +126,22 @@ export function createSceneManager(): SceneManager {
 
 let manager = createSceneManager();
 let wired = false;
+let transition: TransitionRun | null = null;
 
 function ensureRunning(): void {
   if (wired) return;
   wired = true;
+  Loop.onStep(() => {
+    if (!transition) return;
+    transition.advance(Loop.step);
+    if (transition.done) transition = null;
+  });
   Loop.run({
     update: () => manager.update(),
-    draw: () => manager.draw(Draw.ctx),
+    draw: () => {
+      manager.draw(Draw.ctx);
+      transition?.draw(Draw.ctx, Stage.viewport);
+    },
   });
 }
 
@@ -139,9 +149,16 @@ export const Scenes = {
   define(name: string, scene: Scene): void {
     manager.define(name, scene);
   },
-  go(name: string): void {
-    manager.go(name);
+  /** Swap to `name`. With a `Transition` (e.g. `Transitions.fade(400)`) the
+   *  overlay covers the screen first and the swap happens behind it; a `go`
+   *  while another transition is in flight swaps immediately instead. */
+  go(name: string, spec?: Transition): void {
     ensureRunning();
+    if (spec && !transition) {
+      transition = runTransition(spec, () => manager.go(name));
+    } else {
+      manager.go(name);
+    }
   },
   push(name: string): void {
     manager.push(name);
@@ -160,5 +177,6 @@ export const Scenes = {
   _reset(): void {
     manager = createSceneManager();
     wired = false;
+    transition = null;
   },
 };

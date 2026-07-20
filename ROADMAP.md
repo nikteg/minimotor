@@ -201,8 +201,13 @@ map.solidAt(x, y);
 - ✅ `Particles` — `Particles.burst(x, y, opts)` CPU emitter (velocity, gravity,
   size/life/color ranges, fade), aged on the fixed step. Pooled flat array, not
   ECS — high churn, no queries. Used for hoppspelet's death burst + coin sparkle.
-- ⬜ `Transitions` — scene fades/wipes · `UI` — overlay/HUD/floating-text helpers
-  (kept out of the core; opinionated, like the samples' `overlays.js`)
+- ✅ `Transitions` — cover → swap → reveal scene transitions: `fade`/`wipe`
+  builders (a `Transition` is plain data — duration + a render(t) — so custom
+  ones are one object literal), pure fixed-step runner, and `Scenes.go(name,
+spec?)` integration (swap fires behind full coverage). Proof: the `scenes`
+  sample fades into play and wipes down into game over.
+- ⬜ `UI` — overlay/HUD/floating-text helpers (kept out of the core;
+  opinionated, like the samples' `overlays.js`)
 
 ## Design principles (what keeps it _minimotor_)
 
@@ -289,6 +294,13 @@ hoppspelet) as proof it actually simplifies code — the discipline used so far.
    `idleTimeoutMs` (half-open link detection feeding the reconnect path), perf
    HUD net throughput (`Perf.createNetMeter` + `plugin({ net })`, top-right
    anchor) proven in the netpeer sample, and screen shake in breakout.
+9. ✅ **Transitions + samples juice pass** — `Transitions` (fade/wipe, pure
+   runner, `Scenes.go(name, spec?)`) demoed in the scenes sample; dev-server
+   WebSocket endpoints (`/ws-echo`, `/ws-relay`) fixing the netws sample and
+   powering the new **netgame** sample (real WebSocket multiplayer: relay
+   broadcast, heartbeat + idle timeout, `Net.createInterpolator` for remote
+   blobs, net meter HUD); `Sfx` audio across the game samples; perf-HUD ctx
+   state-leak fix; tile-seam fix (rounded camera translate).
 
 ## Open decisions
 

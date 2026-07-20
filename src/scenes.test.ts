@@ -145,7 +145,11 @@ describe("Scenes default facade", () => {
     // Fresh module registry: import the facade and drive it through a fake Loop.
     vi.resetModules();
     const runSpy = vi.fn();
-    vi.doMock("./engine.js", () => ({ Loop: { run: runSpy }, Draw: { ctx: {} } }));
+    vi.doMock("./engine.js", () => ({
+      Loop: { run: runSpy, onStep: vi.fn(), step: 1000 / 60 },
+      Draw: { ctx: {} },
+      Stage: { viewport: { w: 800, h: 600 } },
+    }));
     const { Scenes } = await import("./scenes.js");
 
     const log: string[] = [];
@@ -160,6 +164,44 @@ describe("Scenes default facade", () => {
     callbacks.draw();
     // stack is [play, play] after go+push → top updates, both draw
     expect(log).toEqual(["play:update", "play:draw", "play:draw"]);
+
+    vi.doUnmock("./engine.js");
+  });
+
+  it("go with a transition swaps behind full coverage", async () => {
+    vi.resetModules();
+    const runSpy = vi.fn();
+    const onStepSpy = vi.fn();
+    vi.doMock("./engine.js", () => ({
+      Loop: { run: runSpy, onStep: onStepSpy, step: 100 },
+      Draw: { ctx: {} },
+      Stage: { viewport: { w: 800, h: 600 } },
+    }));
+    const { Scenes } = await import("./scenes.js");
+
+    const log: string[] = [];
+    Scenes.define("a", spyScene(log, "a"));
+    Scenes.define("b", spyScene(log, "b"));
+    Scenes.go("a");
+    expect(Scenes.active).toBe("a");
+
+    const render = vi.fn();
+    Scenes.go("b", { durationMs: 400, render });
+    expect(Scenes.active).toBe("a"); // swap is deferred to the midpoint
+
+    const stepTransition = onStepSpy.mock.calls[0][0] as () => void;
+    const { draw } = runSpy.mock.calls[0][0] as { draw(): void };
+    stepTransition(); // 100ms — covering
+    draw();
+    expect(render).toHaveBeenLastCalledWith(expect.anything(), 0.5, { w: 800, h: 600 });
+    expect(Scenes.active).toBe("a");
+    stepTransition(); // 200ms — midpoint: swap fires
+    expect(Scenes.active).toBe("b");
+    stepTransition();
+    stepTransition(); // 400ms — done; overlay no longer draws
+    render.mockClear();
+    draw();
+    expect(render).not.toHaveBeenCalled();
 
     vi.doUnmock("./engine.js");
   });
