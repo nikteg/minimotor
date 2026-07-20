@@ -178,6 +178,10 @@ export function drawPerfHud(
   const x = bgX + 4;
   const y = 8;
 
+  // The HUD changes font/baseline/align/fillStyle; restore so no state leaks
+  // into the next frame's user draw (a leaked textBaseline shifts every
+  // fillText in the whole game).
+  ctx.save();
   ctx.fillStyle = "rgba(0,0,0,0.55)";
   ctx.fillRect(bgX, bgY, boxW, boxH);
 
@@ -199,6 +203,7 @@ export function drawPerfHud(
     ctx.fillStyle = "#ffd43b";
     ctx.fillText(`↓ ${rate(net.downMsgs)}/s  ${kbps(net.downBps)} KB/s`, x, y + lineH * 5);
   }
+  ctx.restore();
 }
 
 // ---------- Plugin ----------

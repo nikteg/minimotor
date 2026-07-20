@@ -49,11 +49,24 @@ describe("drawPerfHud", () => {
       font: "",
       textBaseline: "",
       textAlign: "",
+      save: vi.fn(),
+      restore: vi.fn(),
       fillRect: vi.fn((x: number, y: number, w: number, h: number) => rects.push([x, y, w, h])),
       fillText: vi.fn(),
-    } as unknown as CanvasRenderingContext2D & { fillText: ReturnType<typeof vi.fn> };
+    } as unknown as CanvasRenderingContext2D & {
+      fillText: ReturnType<typeof vi.fn>;
+      save: ReturnType<typeof vi.fn>;
+      restore: ReturnType<typeof vi.fn>;
+    };
     return { ctx, rects };
   }
+
+  it("saves and restores ctx state so nothing leaks into the game's draw", () => {
+    const { ctx } = recorder();
+    drawPerfHud(ctx, stats, { viewW: 800 });
+    expect(ctx.save).toHaveBeenCalledTimes(1);
+    expect(ctx.restore).toHaveBeenCalledTimes(1);
+  });
 
   it("anchors the box to the right edge by default", () => {
     const { ctx, rects } = recorder();
