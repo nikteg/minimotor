@@ -25,6 +25,7 @@ import * as Camera from "./camera.js";
 import * as Game from "./game.js";
 import * as Fullscreen from "./fullscreen.js";
 import * as Text from "./text.js";
+import * as Tiles from "./tiles.js";
 
 export {
   createGame,
@@ -44,6 +45,7 @@ export {
   Game,
   Fullscreen,
   Text,
+  Tiles,
   Mathf,
   Scenes,
   ECS,
@@ -91,6 +93,7 @@ export type {
   PerfOptions,
 } from "./perf.js";
 export type { GamepadState } from "./input.js";
+export type { TileMap, TilesConfig } from "./tiles.js";
 
 // A shared default world (`Minimotor.World`) for the common single-world case;
 // games that need isolation or per-scene worlds call `ECS.world()` for their own.
@@ -128,6 +131,7 @@ export const Minimotor = {
   Game,
   Fullscreen,
   Text,
+  Tiles,
   Mathf,
   Scenes,
   ECS,

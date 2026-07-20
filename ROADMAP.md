@@ -194,7 +194,10 @@ map.solidAt(x, y);
   slicing + dt-advanced timeline (`update`/`rect`/`frame`/`done`/`reset`/`draw`).
   Feeds the ECS `Sprite` source-rect (`sx/sy/sw/sh`), so animated entities render
   through `world.drawSprites`. Proof: the `sprites` sample (procedural sheet).
-- ⬜ `Tiles` — grid tilemap: draw + solidity query, culled to camera
+- ✅ `Tiles` — `Tiles.grid(data, { tw, atlas?, colors?, solid? })`: plain
+  `number[][]` levels, atlas (firstgid=1) or color-table rendering culled to a
+  view rect, `at`/`set`/`tileAt`/`solidAt`/`solidInRect` queries. Proof: the
+  `tiles` sample (scrolling platformer, tile-snap collision, gamepad).
 - ✅ `Particles` — `Particles.burst(x, y, opts)` CPU emitter (velocity, gravity,
   size/life/color ranges, fade), aged on the fixed step. Pooled flat array, not
   ECS — high churn, no queries. Used for hoppspelet's death burst + coin sparkle.
@@ -258,7 +261,10 @@ hoppspelet) as proof it actually simplifies code — the discipline used so far.
    sprite-sheet playback wired into the Sprite source-rect. New **sprites** sample
    animates a procedurally-built sheet through the ECS. (Pure logic unit-tested
    with mocks; visual proof is browser-only — image decode doesn't run headless.)
-6. **Tiles** — a tilemap sample.
+6. ✅ **Tiles** — `Tiles.grid` (draw culled to the camera + solidity queries)
+   with tests; the **tiles** sample is a scrolling platformer proving the
+   collision (`solidInRect` + tile-snap), the culling (drawn-count HUD), and
+   doubling as the `Input.gamepad` showcase.
 7. ✅ **Flagship** — hoppspelet migrated fully onto Scenes + ECS, in two stages
    with **no engine changes**. (a) Game states (`ready|playing|gameover`) became a
    `Scenes` stack; `game.state` is now a mirror set by each scene's `enter()` so

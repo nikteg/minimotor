@@ -32,6 +32,7 @@ export default defineConfig({
         snake: here("./samples/snake/index.html"),
         platformer: here("./samples/platformer/index.html"),
         particles: here("./samples/particles/index.html"),
+        tiles: here("./samples/tiles/index.html"),
         juice: here("./samples/juice/index.html"),
         swept: here("./samples/swept/index.html"),
         netpeer: here("./samples/netpeer/index.html"),
