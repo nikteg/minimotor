@@ -183,13 +183,16 @@ function ensureBacking() {
       if (!backing || !Audio.Music.on) return;
       const g = GROOVES[grooveIdx];
       const i = step % 64;
+      // Transpose the pitched parts with the Octave control (drums stay put),
+      // so the backing follows the same octave as the keys you play.
+      const shift = 12 * (octave - 4);
       const m = g.melody[i];
       if (m) {
-        Audio.Music.note(midiFreq(m), 0.3, g.lead, g.leadVol, when);
-        glow(m);
+        Audio.Music.note(midiFreq(m + shift), 0.3, g.lead, g.leadVol, when);
+        glow(m + shift);
       }
       const b = g.bass[i];
-      if (b) Audio.Music.note(midiFreq(b), 0.34, "sine", 0.4, when);
+      if (b) Audio.Music.note(midiFreq(b + shift), 0.34, "sine", 0.4, when);
       const beat = i % 16;
       if (g.kick.includes(beat)) Audio.Music.kick(when);
       if (g.snare.includes(beat)) Audio.Music.noiseHit(when, 0.12, 0.25, "bandpass", 1800);
