@@ -6,8 +6,12 @@
 // - Works with keyboard (←→/AD + Space) and a gamepad (left stick + A).
 import { Minimotor } from "minimotor";
 
-const vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
+let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 const { Loop, Keys, Draw, Tiles, Camera, Input, Audio } = Minimotor;
+Minimotor.Stage.onResize((next) => {
+  vp = next;
+  cam.setView(vp.w, vp.h); // keep following/clamping to the real screen
+});
 
 const TW = 24;
 const COLS = 120;
@@ -127,8 +131,9 @@ Loop.run({
     ctx.fillRect(0, 0, vp.w, vp.h);
 
     ctx.save();
-    // Round the camera offset: a fractional translate antialiases every tile
-    // edge and shows as hairline seams between them.
+    // Round the camera offset for a crisper image (the map itself is seam-proof
+    // — Tiles composites into an internal buffer — but a whole-pixel translate
+    // avoids resampling blur on the player and map alike).
     const camX = Math.round(cam.x);
     const camY = Math.round(cam.y);
     ctx.translate(-camX, -camY);

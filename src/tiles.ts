@@ -35,9 +35,10 @@ export interface TilesConfig {
 /** A grid tilemap. Draws in world coordinates (translate your ctx by the
  *  camera first); the optional view rect only culls.
  *
- *  Seams: round the camera translate to whole pixels
- *  (`ctx.translate(-Math.round(cam.x), …)`) — a fractional offset antialiases
- *  every tile edge and shows as hairline gaps between tiles. */
+ *  Seams: visible tiles are composited into an internal buffer at integer 1:1
+ *  coordinates and blitted in one drawImage, so a fractional camera offset,
+ *  browser zoom or a non-integer devicePixelRatio can't antialias the edges
+ *  between tiles into hairline gaps. */
 export interface TileMap {
   /** Grid width in cells (longest row). */
   readonly cols: number;
@@ -79,6 +80,55 @@ export function grid(data: number[][], config: TilesConfig): TileMap {
 
   function at(cx: number, cy: number): number {
     return data[cy]?.[cx] ?? 0;
+  }
+
+  // Seam-proofing buffer: tiles land here at integer 1:1 coordinates, then the
+  // whole visible block blits to the target in one drawImage. Tile edges only
+  // ever meet inside the buffer (no antialiasing possible); the single outer
+  // edge that can blend sits at/past the view border. Unavailable in
+  // non-browser environments (jsdom tests) — those draw directly.
+  let buffer: HTMLCanvasElement | null = null;
+  let bufferCtx: CanvasRenderingContext2D | null = null;
+  let bufferBroken = false;
+
+  function getBufferCtx(w: number, h: number): CanvasRenderingContext2D | null {
+    if (bufferBroken) return null;
+    if (!buffer) {
+      if (typeof document === "undefined") {
+        bufferBroken = true;
+        return null;
+      }
+      buffer = document.createElement("canvas");
+    }
+    if (buffer.width < w) buffer.width = w;
+    if (buffer.height < h) buffer.height = h;
+    bufferCtx ??= buffer.getContext("2d");
+    if (!bufferCtx) {
+      bufferBroken = true;
+      return null;
+    }
+    bufferCtx.clearRect(0, 0, w, h);
+    return bufferCtx;
+  }
+
+  function drawTile(ctx: CanvasRenderingContext2D, t: number, x: number, y: number): void {
+    if (atlas) {
+      const cell = t - 1;
+      ctx.drawImage(
+        atlas,
+        (cell % atlasCols) * tw,
+        Math.floor(cell / atlasCols) * th,
+        tw,
+        th,
+        x,
+        y,
+        tw,
+        th,
+      );
+    } else {
+      ctx.fillStyle = colors[t] ?? "#888";
+      ctx.fillRect(x, y, tw, th);
+    }
   }
 
   return {
@@ -127,31 +177,20 @@ export function grid(data: number[][], config: TilesConfig): TileMap {
         cx1 = Math.min(cx1, Math.floor((view.x + view.w) / tw));
         cy1 = Math.min(cy1, Math.floor((view.y + view.h) / th));
       }
+      const bw = (cx1 - cx0 + 1) * tw;
+      const bh = (cy1 - cy0 + 1) * th;
+      const bctx = bw > 0 && bh > 0 ? getBufferCtx(bw, bh) : null;
       let drawn = 0;
       for (let cy = cy0; cy <= cy1; cy++) {
         for (let cx = cx0; cx <= cx1; cx++) {
           const t = at(cx, cy);
           if (t === 0) continue;
-          if (atlas) {
-            const cell = t - 1;
-            ctx.drawImage(
-              atlas,
-              (cell % atlasCols) * tw,
-              Math.floor(cell / atlasCols) * th,
-              tw,
-              th,
-              cx * tw,
-              cy * th,
-              tw,
-              th,
-            );
-          } else {
-            ctx.fillStyle = colors[t] ?? "#888";
-            ctx.fillRect(cx * tw, cy * th, tw, th);
-          }
+          if (bctx) drawTile(bctx, t, (cx - cx0) * tw, (cy - cy0) * th);
+          else drawTile(ctx, t, cx * tw, cy * th);
           drawn++;
         }
       }
+      if (bctx) ctx.drawImage(buffer!, 0, 0, bw, bh, cx0 * tw, cy0 * th, bw, bh);
       return drawn;
     },
   };
