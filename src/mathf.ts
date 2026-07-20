@@ -34,3 +34,23 @@ export function pulse(angle: number): number {
 export function wave(angle: number, amp = 1): number {
   return Math.sin(angle) * amp;
 }
+
+// ---------- Easing (0..1 → 0..1) ----------
+// Suitable as the `ease` argument to Tween.to.
+
+/** No easing — constant rate. */
+export function linear(t: number): number {
+  return t;
+}
+/** Accelerate from zero (quadratic). */
+export function easeIn(t: number): number {
+  return t * t;
+}
+/** Decelerate to zero (quadratic). */
+export function easeOut(t: number): number {
+  return 1 - (1 - t) * (1 - t);
+}
+/** Accelerate then decelerate (quadratic). */
+export function easeInOut(t: number): number {
+  return t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
+}

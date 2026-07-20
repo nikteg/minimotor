@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { lerp, clamp, remap, pulse, wave } from "./mathf.js";
+import { lerp, clamp, remap, pulse, wave, linear, easeIn, easeOut, easeInOut } from "./mathf.js";
 
 describe("Mathf", () => {
   it("lerp interpolates and extrapolates", () => {
@@ -29,5 +29,19 @@ describe("Mathf", () => {
   it("wave scales sine by amplitude", () => {
     expect(wave(Math.PI / 2, 3)).toBeCloseTo(3);
     expect(wave(0)).toBe(0);
+  });
+
+  it("easings hit the 0 and 1 endpoints", () => {
+    for (const e of [linear, easeIn, easeOut, easeInOut]) {
+      expect(e(0)).toBeCloseTo(0);
+      expect(e(1)).toBeCloseTo(1);
+    }
+  });
+
+  it("easing shapes differ at the midpoint", () => {
+    expect(linear(0.5)).toBeCloseTo(0.5);
+    expect(easeIn(0.5)).toBeCloseTo(0.25); // slow start
+    expect(easeOut(0.5)).toBeCloseTo(0.75); // fast start
+    expect(easeInOut(0.5)).toBeCloseTo(0.5);
   });
 });

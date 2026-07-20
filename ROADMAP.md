@@ -15,7 +15,7 @@ you don't need**. You can always drop to a raw `ctx` and a plain
 
 ### Status legend
 
-- ✅ shipped  · 🟡 partial  · ⬜ planned
+- ✅ shipped · 🟡 partial · ⬜ planned
 
 ## The layered architecture
 
@@ -58,12 +58,12 @@ Pure, data-agnostic helpers. No engine state.
 - ✅ `Sprites` — `getSprite` (square) + `getLayer` (arbitrary offscreen cache)
 - ✅ `Text`, `Physics` (kinematic helpers/constants)
 
-## L3 — Structure (the engine core we're adding) 🟡
+## L3 — Structure (the engine core) ✅
 
 ### 3a. ECS — `Minimotor.ECS` / `World` ✅ (core; systems in 3d/M3)
 
 The object model is a **minimal-ceremony ECS**: sparse-set storage, plain-data
-components, immediate-mode render systems, deterministic fixed-step. It is *not*
+components, immediate-mode render systems, deterministic fixed-step. It is _not_
 an archetype/Bevy-weight ECS — the priority is small code and good DX for
 small-to-medium 2D games.
 
@@ -72,23 +72,20 @@ small-to-medium 2D games.
 ```ts
 const Position = Minimotor.ECS.component<{ x: number; y: number }>("Position");
 const Velocity = Minimotor.ECS.component<{ x: number; y: number }>("Velocity");
-const Sprite   = Minimotor.ECS.component<{ img: HTMLCanvasElement }>("Sprite");
+const Sprite = Minimotor.ECS.component<{ img: HTMLCanvasElement }>("Sprite");
 ```
 
 **Entities** are ids; components are attached/queried through the world:
 
 ```ts
-const world = Minimotor.ECS.world();          // or Minimotor.World (default)
+const world = Minimotor.ECS.world(); // or Minimotor.World (default)
 
-const e = world.spawn(
-  Position.with({ x: 0, y: 0 }),
-  Velocity.with({ x: 1, y: 0 }),
-);
+const e = world.spawn(Position.with({ x: 0, y: 0 }), Velocity.with({ x: 1, y: 0 }));
 world.add(e, Sprite, { img: coinCanvas });
 world.get(e, Position).x += 1;
 world.has(e, Velocity);
 world.remove(e, Sprite);
-world.despawn(e);                             // deferred to end of step
+world.despawn(e); // deferred to end of step
 ```
 
 **Queries** iterate all entities holding a component set (smallest set drives
@@ -107,14 +104,17 @@ keeping drawing immediate-mode:
 
 ```ts
 world.system("movement", (w) => {
-  for (const [, p, v] of w.query(Position, Velocity)) { p.x += v.x; p.y += v.y; }
+  for (const [, p, v] of w.query(Position, Velocity)) {
+    p.x += v.x;
+    p.y += v.y;
+  }
 });
 world.renderSystem("sprites", (w, ctx) => {
   for (const [, p, s] of w.query(Position, Sprite)) ctx.drawImage(s.img, p.x, p.y);
 });
 ```
 
-You are never *required* to write systems — a `Scene.update` may query inline. Systems
+You are never _required_ to write systems — a `Scene.update` may query inline. Systems
 are just the ordered, named form. ✅ Shipped: `world.system`/`renderSystem` (ordered,
 replace-by-name) and `world.update()`/`draw(ctx)`.
 
@@ -130,15 +130,19 @@ breaking games.
 ### 3b. Scenes — `Minimotor.Scenes` ✅
 
 A scene stack replaces the hand-rolled `game.state = "menu"|"playing"|"gameover"`
-+ branching that every current game duplicates.
+
+- branching that every current game duplicates.
 
 ```ts
 Minimotor.Scenes.define("play", {
-  world: playWorld,                 // optional: a Scene may own a World
-  enter() {}, update() {}, draw() {}, exit() {},
+  world: playWorld, // optional: a Scene may own a World
+  enter() {},
+  update() {},
+  draw() {},
+  exit() {},
 });
-Minimotor.Scenes.go("menu");        // swap: exit old → enter new
-Minimotor.Scenes.push("pause");     // overlay: 'play' still draws underneath
+Minimotor.Scenes.go("menu"); // swap: exit old → enter new
+Minimotor.Scenes.push("pause"); // overlay: 'play' still draws underneath
 Minimotor.Scenes.pop();
 ```
 
@@ -147,16 +151,17 @@ updates; the stack draws bottom-to-top). If a scene declares a `world`, the scen
 default-wires `world.update()` / `world.draw(ctx)`. Fully backward compatible: the
 plain `Loop.run({ update, draw })` form still works with no scenes.
 
-### 3c. Clock, Tween, Signals — `Minimotor.Clock` / `Tween` / `Signals`
+### 3c. Clock, Tween, Signals — `Minimotor.Clock` / `Tween` / `Signals` ✅
 
-Deterministic time and decoupling. All tick in fixed-step `update` and pause with
-the loop.
+Deterministic time and decoupling. Clock/Tween tick on the fixed update step (via
+`Loop.onStep`) and pause with the loop; Signals is a synchronous bus.
 
 ```ts
 Minimotor.Clock.after(600, unlockRestart);
 Minimotor.Clock.every(1000, spawnWave);
 Minimotor.Tween.to(text, { y: text.y - 30, alpha: 0 }, 450, Mathf.easeOut);
-Minimotor.Signals.on("score", n => hud.score = n);   Minimotor.Signals.emit("score", 10);
+Minimotor.Signals.on("score", (n) => (hud.score = n));
+Minimotor.Signals.emit("score", 10);
 ```
 
 ## L4 — Content ⬜
@@ -166,10 +171,11 @@ The gap between "toy" and "full-fledged": loaded art and level data.
 ```ts
 await Minimotor.Assets.load({ hero: "hero.png", tiles: "tiles.png", jump: "jump.wav" });
 const run = Minimotor.Anim.sheet(Minimotor.Assets.get("hero"), { fw: 32, fh: 32, fps: 12 });
-run.draw(ctx, x, y);                                   // advances by loop dt
+run.draw(ctx, x, y); // advances by loop dt
 
 const map = Minimotor.Tiles.grid(levelData, { tw: 16, atlas: Minimotor.Assets.get("tiles") });
-map.draw(ctx, camera);   map.solidAt(x, y);
+map.draw(ctx, camera);
+map.solidAt(x, y);
 ```
 
 - ⬜ `Assets` — preload images/audio/JSON with progress; cached map
@@ -179,12 +185,12 @@ map.draw(ctx, camera);   map.solidAt(x, y);
 - ⬜ `Transitions` — scene fades/wipes · `UI` — overlay/HUD/floating-text helpers
   (kept out of the core; opinionated, like the samples' `overlays.js`)
 
-## Design principles (what keeps it *minimotor*)
+## Design principles (what keeps it _minimotor_)
 
 1. **Opt-in layers** — raw `ctx` and plain `Loop.run` always work; nothing above
    L1 is mandatory.
 2. **Plain-data everywhere** — components and tween targets are plain objects.
-   No inheritance requirement; the ECS owns *storage*, never your *types*.
+   No inheritance requirement; the ECS owns _storage_, never your _types_.
 3. **Immediate-mode drawing, retained-mode state** — render systems draw with
    `ctx`; no node tree to sync.
 4. **Global-uniform** — `ECS`/`Scenes`/`Clock`/`Assets` are `Minimotor.*`
@@ -221,7 +227,10 @@ hoppspelet) as proof it actually simplifies code — the discipline used so far.
    `world` that auto-drives when it has no `update`/`draw` hook. Particles sample
    upgraded to systems as the proof. (Full platformer→ECS migration deferred to
    the flagship, milestone 7.)
-4. **Clock + Tween + Signals** — refactor hoppspelet's timers/floating-text/announce.
+4. ✅ **Clock + Tween + Signals** — `Clock.after`/`every`, `Tween.to` (fixed-step,
+   pause-safe via `Loop.onStep`), `Signals` synchronous bus, `Mathf` easings.
+   Shipped with tests; hoppspelet's death restart-lock moved off wall-clock onto
+   `Clock.after` as the proof.
 5. **Assets + Anim** — a new image-based sample (first game that loads art).
 6. **Tiles** — a tilemap sample.
 7. **Flagship** — migrate hoppspelet fully onto Scenes + ECS.
@@ -230,7 +239,7 @@ hoppspelet) as proof it actually simplifies code — the discipline used so far.
 
 - **Entity ids:** recycle with packed generation counters (safe stale-handle
   detection) vs. plain incrementing ids? (Leaning: generations.)
-- **Default world:** ship a single `Minimotor.World` default *and* per-scene worlds,
+- **Default world:** ship a single `Minimotor.World` default _and_ per-scene worlds,
   or per-scene only? (Leaning: both — default for simple games.)
 - **Component definition ergonomics:** typed handle (`component<T>("name")`) as
   sketched, vs. a schema object. (Leaning: typed handle.)

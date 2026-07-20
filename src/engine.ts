@@ -113,6 +113,10 @@ export interface Game {
   readonly paused: boolean;
   /** Subscribe to viewport changes (resize / orientation); returns unsubscribe. */
   onResize(handler: (vp: Viewport) => void): () => void;
+  /** Subscribe to each fixed update step (runs after the user's `update`, before
+   *  edge input is cleared). Deterministic — used by Clock/Tween. Returns
+   *  unsubscribe. */
+  onStep(handler: () => void): () => void;
   /** Register a plugin after build (calls its `onInit` immediately). */
   use(plugin: EnginePlugin): void;
   /** Register callbacks and start the loop (idempotent restart of callbacks). */
@@ -251,6 +255,7 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
     ptr.released = false;
   }
 
+  const stepHandlers = new Set<() => void>();
   const resizeHandlers = new Set<(vp: Viewport) => void>();
   const handleResize = () => {
     viewport = readViewport(canvas);
@@ -299,6 +304,7 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
     for (const p of plugins) p.beforeUpdate?.(game);
     while (accumulator >= STEP_MS) {
       callbacks!.update();
+      for (const h of stepHandlers) h(); // timers / tweens advance one step
       // Each step observes the current press, then it's consumed — so pressed()
       // is true for exactly one step, even if this frame runs several.
       consumeEdges();
@@ -329,6 +335,10 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
     onResize(handler) {
       resizeHandlers.add(handler);
       return () => resizeHandlers.delete(handler);
+    },
+    onStep(handler) {
+      stepHandlers.add(handler);
+      return () => stepHandlers.delete(handler);
     },
     use(plugin) {
       plugins.push(plugin);
@@ -453,6 +463,10 @@ export const Loop = {
   },
   use(plugin: EnginePlugin): void {
     requireDefault().use(plugin);
+  },
+  /** Subscribe to each fixed update step; returns unsubscribe. */
+  onStep(handler: () => void): () => void {
+    return requireDefault().onStep(handler);
   },
   /** Fixed update timestep in milliseconds (1000 / 60). */
   get step(): number {

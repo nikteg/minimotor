@@ -120,7 +120,8 @@ describe("ECS iteration safety (command buffer)", () => {
     const w = world();
     w.spawn(Position.with({ x: 0, y: 0 }));
     let visited = 0;
-    for (const [] of w.query(Position)) {
+    for (const _row of w.query(Position)) {
+      void _row;
       visited++;
       if (visited === 1) w.spawn(Position.with({ x: 1, y: 1 })); // appended, not visited now
     }
