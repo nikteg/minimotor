@@ -517,8 +517,11 @@ export function group<R>(opts: GroupOptions, children: LayoutChildren<R>): R {
     bg: opts.bg,
     border: opts.border,
   });
-  const top = opts.title ? 34 : 0;
-  const body = { x: rect.x, y: rect.y + top, w: rect.w, h: rect.h - top };
+  // The title strip is 2px top border + 30px band = 32px. Reserve a matching
+  // 2px below for the bottom border so body content centers in the visible gap
+  // under the strip, not biased low by the unaccounted-for bottom border.
+  const top = opts.title ? 32 : 0;
+  const body = { x: rect.x, y: rect.y + top, w: rect.w, h: rect.h - top - (opts.title ? 2 : 0) };
   return runContainer(
     dir,
     body,
@@ -611,6 +614,10 @@ interface FocusEntry {
 let focusFrame: FocusEntry[] = [];
 let focusRegistry: FocusEntry[] = [];
 let focusedWidget: string | null = null;
+// Mirrors browser :focus-visible behavior: pointer focus remains usable but
+// only keyboard traversal paints the dotted focus indicator.
+let focusVisible = false;
+let focusTrapSeen = false;
 let focusOverlayActive = false;
 let focusBeforeOverlay: string | null = null;
 let keyboardActivation: string | null = null;
@@ -654,6 +661,12 @@ function wireFocusCanvas(ctx: CanvasRenderingContext2D): void {
   if (focusCanvases.has(canvas)) return;
   focusCanvases.add(canvas);
   if (!canvas.hasAttribute("tabindex")) canvas.tabIndex = 0;
+  // The canvas is only a browser focus surface; individual canvas widgets
+  // paint their own focus-visible state.
+  canvas.style.outline = "none";
+  canvas.addEventListener("pointerdown", () => {
+    focusVisible = false;
+  });
   canvas.addEventListener("focus", () => {
     if (!focusedWidget) moveWidgetFocus(1);
   });
@@ -681,7 +694,7 @@ function registerFocusable(
     focus: opts.focus,
     blur: opts.blur,
   });
-  return focusedWidget === opts.id;
+  return focusVisible && focusedWidget === opts.id;
 }
 
 function markFocusableOverlay(id: string): void {
@@ -691,6 +704,7 @@ function markFocusableOverlay(id: string): void {
 
 function focusFromPointer(ctx: CanvasRenderingContext2D, id: string | undefined): void {
   if (!id) return;
+  focusVisible = false;
   focusedWidget = id;
   ctx.canvas.focus({ preventScroll: true });
 }
@@ -723,7 +737,10 @@ function consumeKeyboardCommand(id: string | undefined): string | null {
 
 /** Move keyboard focus to a registered widget. */
 export function focus(id: string): void {
-  if (focusRegistry.some((entry) => entry.id === id && !entry.disabled)) setWidgetFocus(id);
+  if (focusRegistry.some((entry) => entry.id === id && !entry.disabled)) {
+    focusVisible = true;
+    setWidgetFocus(id);
+  }
 }
 
 /** Clear canvas-widget keyboard focus. */
@@ -1900,9 +1917,11 @@ export function listItem(
 
 /** A horizontal value slider. */
 export interface SliderOptions {
-  x: number;
-  y: number;
-  w: number;
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+  at?: Stack;
   /** Value range. Default 0..1. */
   min?: number;
   max?: number;
@@ -1935,11 +1954,15 @@ export function slider(a: CanvasRenderingContext2D | SliderOptions, b?: SliderOp
   const [ctx, opts] = withCtx(a, b);
   const min = opts.min ?? 0;
   const max = opts.max ?? 1;
-  const id = opts.id ?? `${opts.x}:${opts.y}`;
+  const slot = place(opts, opts.w ?? 140, opts.h ?? 30);
+  const sx = slot.x;
+  const sy = slot.y + slot.h / 2;
+  const sw = slot.w;
+  const id = opts.id ?? `${sx}:${sy}`;
   const knobR = 7;
   const p = uiPointer();
   // Generous hit region: the whole track strip, knob included.
-  const hit = { x: opts.x - knobR, y: opts.y - knobR, w: opts.w + knobR * 2, h: knobR * 2 };
+  const hit = { x: sx - knobR, y: sy - knobR, w: sw + knobR * 2, h: knobR * 2 };
   const keyboardFocused = registerFocusable(ctx, {
     id,
     disabled: opts.disabled,
@@ -1961,31 +1984,31 @@ export function slider(a: CanvasRenderingContext2D | SliderOptions, b?: SliderOp
   if (command === "ArrowLeft" || command === "ArrowDown") value -= keyboardStep;
   value = Math.max(min, Math.min(max, value));
   if (sliderDrag === id) {
-    value = min + ((p.x - opts.x) / opts.w) * (max - min);
+    value = min + ((p.x - sx) / sw) * (max - min);
     if (opts.step) value = Math.round(value / opts.step) * opts.step;
     value = Math.max(min, Math.min(max, value));
   }
-  const knobX = opts.x + ((value - min) / (max - min || 1)) * opts.w;
+  const knobX = sx + ((value - min) / (max - min || 1)) * sw;
 
   ctx.save();
   ctx.font = opts.font ?? uiFont();
   if (opts.label) {
     ctx.fillStyle = opts.color ?? theme.text;
     ctx.textAlign = "right";
-    centeredText(ctx, opts.label, opts.x - 10, opts.y);
+    centeredText(ctx, opts.label, sx - 10, sy);
   }
   ctx.fillStyle = theme.track;
-  ctx.fillRect(opts.x, opts.y - 2, opts.w, 4);
+  ctx.fillRect(sx, sy - 2, sw, 4);
   ctx.fillStyle = theme.accent;
-  ctx.fillRect(opts.x, opts.y - 2, knobX - opts.x, 4);
+  ctx.fillRect(sx, sy - 2, knobX - sx, 4);
   ctx.beginPath();
-  ctx.arc(knobX, opts.y, knobR, 0, Math.PI * 2);
+  ctx.arc(knobX, sy, knobR, 0, Math.PI * 2);
   ctx.fillStyle = sliderDrag === id || hover ? theme.accent : theme.accentSoft;
   ctx.fill();
   ctx.fillStyle = opts.color ?? theme.text;
   ctx.textAlign = "left";
   const valueText = opts.format ? opts.format(value) : `${Math.round(value)}`;
-  centeredText(ctx, valueText, opts.x + opts.w + 12, opts.y);
+  centeredText(ctx, valueText, sx + sw + 12, sy);
   ctx.restore();
   if (keyboardFocused) drawFocusRing(ctx, hit);
   return value;
@@ -2205,6 +2228,7 @@ export function popover(a: CanvasRenderingContext2D | PopoverOptions, b?: Popove
   popoverWasOpen.set(id, open);
   if (open) {
     overlaySeen = true;
+    focusTrapSeen = true;
     inOverlayPass = true; // contents drawn after this call get live input
     panel(ctx, opts);
   }
@@ -2243,6 +2267,7 @@ export function modal(
   const [ctx, opts] = withCtx(a, b);
   ensureWired();
   overlaySeen = true;
+  focusTrapSeen = true;
   inOverlayPass = true;
   const vp = Stage.viewport;
   ctx.save();
@@ -2337,6 +2362,7 @@ export function confirm(
     if (
       button(ctx, {
         id: `${opts.id ?? opts.title ?? "confirm"}:button:${i}`,
+        tabIndex: i,
         at: btnBar,
         label: buttons[i],
         variant: variantFor(i),
@@ -2426,6 +2452,7 @@ export function dialog(
       if (
         button(ctx, {
           id: `${opts.id ?? opts.speaker ?? "dialog"}:choice:${i}`,
+          tabIndex: i,
           at: bar,
           label: choices[i],
           variant: i === 0 ? "primary" : "default",
@@ -2500,6 +2527,7 @@ function ensureWired(): void {
     window.addEventListener(
       "keydown",
       (event) => {
+        if (event.key === "Tab") focusVisible = true;
         const target = event.target as HTMLElement | null;
         const onFocusSurface =
           !!focusedWidget ||
@@ -2554,8 +2582,8 @@ function ensureWired(): void {
       focusRegistry = focusFrame;
       focusFrame = [];
       const wasFocusOverlay = focusOverlayActive;
-      if (!wasFocusOverlay && overlaySeen) focusBeforeOverlay = focusedWidget;
-      focusOverlayActive = overlaySeen;
+      if (!wasFocusOverlay && focusTrapSeen) focusBeforeOverlay = focusedWidget;
+      focusOverlayActive = focusTrapSeen;
       const candidates = focusCandidates();
       const focusMissing = !candidates.some((entry) => entry.id === focusedWidget);
       if (focusMissing && (focusedWidget || focusOverlayActive)) {
@@ -2571,6 +2599,7 @@ function ensureWired(): void {
       // Overlay capture: what was drawn this frame gates input next frame.
       overlayActive = overlaySeen;
       overlaySeen = false;
+      focusTrapSeen = false;
       inOverlayPass = false;
       // Tooltip hover-stability: same text keeps its timer; a change restarts.
       if (tipRequest) {
@@ -2636,6 +2665,8 @@ export function _reset(): void {
   focusFrame = [];
   focusRegistry = [];
   focusedWidget = null;
+  focusVisible = false;
+  focusTrapSeen = false;
   focusOverlayActive = false;
   focusBeforeOverlay = null;
   keyboardActivation = null;
