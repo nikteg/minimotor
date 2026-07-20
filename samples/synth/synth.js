@@ -87,7 +87,7 @@ const litUntil = new Map(); // midi → until-timestamp, for key highlights
 const GROOVES = [
   {
     name: "Chill", // C – G – Am – F, lazy arpeggios
-    lead: "triangle", leadVol: 0.16,
+    leadVol: 0.16,
     melody: [
       72, 0, 0, 0,  76, 0, 74, 0,  72, 0, 79, 0,  76, 0, 74, 0,
       71, 0, 0, 0,  74, 0, 71, 0,  67, 0, 74, 0,  79, 0, 74, 0,
@@ -104,7 +104,7 @@ const GROOVES = [
   },
   {
     name: "Night", // Am – F – C – G, sparse and moody
-    lead: "sine", leadVol: 0.2,
+    leadVol: 0.2,
     melody: [
       69, 0, 0, 0,  0, 0, 72, 0,  71, 0, 69, 0,  0, 0, 0, 0,
       72, 0, 0, 0,  0, 0, 76, 0,  74, 0, 72, 0,  0, 0, 0, 0,
@@ -121,7 +121,7 @@ const GROOVES = [
   },
   {
     name: "Bounce", // C – Am – F – G, driving eighths
-    lead: "square", leadVol: 0.12,
+    leadVol: 0.12,
     melody: [
       72, 0, 72, 0,  76, 0, 72, 0,  79, 0, 76, 0,  72, 76, 74, 0,
       72, 0, 72, 0,  76, 0, 72, 0,  81, 0, 79, 0,  76, 0, 74, 0,
