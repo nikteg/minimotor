@@ -555,6 +555,57 @@ export function clip<R>(
   }
 }
 
+// ---------- Widget identity ----------
+
+export type IdPart = string | number;
+
+/** Build stable readable widget ids without repeating a prefix.
+ *
+ * ```ts
+ * const id = UI.ids("server-browser");
+ * UI.button({ id: id("refresh"), label: "REFRESH" });
+ * UI.listItem({ id: id("server", server.id), ...rect });
+ * ``` */
+export function ids(...prefix: IdPart[]): (...parts: IdPart[]) => string {
+  const base = prefix.map(String).join(":");
+  return (...parts) => [base, ...parts.map(String)].filter(Boolean).join(":");
+}
+
+interface IdScopeState {
+  prefix: string;
+  next: number;
+}
+const idScopes: IdScopeState[] = [];
+
+/** Give otherwise-unidentified interactive widgets automatic, frame-stable
+ * ids in callback order. Best for static forms/toolbars. Dynamic or
+ * conditional collections should use explicit ids from `UI.ids()` instead.
+ * Nested scopes compose their prefixes. */
+export function idScope<R>(prefix: IdPart, children: () => R): R {
+  const parent = idScopes[idScopes.length - 1];
+  const full = parent ? `${parent.prefix}:${prefix}` : String(prefix);
+  idScopes.push({ prefix: full, next: 0 });
+  try {
+    return children();
+  } finally {
+    idScopes.pop();
+  }
+}
+
+function widgetId(explicit: string | undefined, kind: string): string | undefined {
+  if (explicit) return explicit;
+  const scope = idScopes[idScopes.length - 1];
+  return scope ? `${scope.prefix}:${kind}:${scope.next++}` : undefined;
+}
+
+function requiredWidgetId(explicit: string | undefined, kind: string): string {
+  const id = widgetId(explicit, kind);
+  if (!id) {
+    throw new Error(`UI.${kind} requires an id, or must be drawn inside UI.idScope()`);
+  }
+  return id;
+}
+
 // ---------- Shared input (overlay capture + hover cursor) ----------
 
 // While an overlay (modal OR open popover) is up, widgets drawn outside its
@@ -593,7 +644,7 @@ let selectEditor: SelectEditor | null = null;
 let selectSeen: string | null = null;
 interface SelectOverlayRequest<T = unknown> {
   ctx: CanvasRenderingContext2D;
-  opts: SelectOptions<T>;
+  opts: SelectOptions<T> & { id: string };
   rect: { x: number; y: number; w: number; h: number };
 }
 let selectOverlayRequest: SelectOverlayRequest | null = null;
@@ -1110,7 +1161,8 @@ export function text(
 // ---------- Text input ----------
 
 export interface TextInputOptions {
-  id: string;
+  /** Stable identity. May be omitted inside `UI.idScope()`. */
+  id?: string;
   value: string;
   x?: number;
   y?: number;
@@ -1141,7 +1193,7 @@ function removeTextEditor(): void {
   textEditor = null;
 }
 
-function openTextEditor(opts: TextInputOptions): void {
+function openTextEditor(opts: TextInputOptions & { id: string }): void {
   removeTextEditor();
   const input = document.createElement("input");
   input.type = opts.type ?? "text";
@@ -1203,31 +1255,33 @@ export function textInput(
 ): TextInputResult {
   const [ctx, opts] = withCtx(a, b);
   ensureWired();
-  textInputSeen = opts.id;
+  const id = requiredWidgetId(opts.id, "textInput");
+  const resolvedOpts = { ...opts, id };
+  textInputSeen = id;
   const rect = place(opts, opts.w ?? 180, opts.h ?? 32);
   const keyboardFocused = registerFocusable(ctx, {
-    id: opts.id,
+    id,
     disabled: opts.disabled,
     tabIndex: opts.tabIndex,
     native: true,
     focus: () => {
-      if (textEditor?.id === opts.id) textEditor.input.focus({ preventScroll: true });
-      else openTextEditor(opts);
+      if (textEditor?.id === id) textEditor.input.focus({ preventScroll: true });
+      else openTextEditor(resolvedOpts);
     },
     blur: () => {
-      if (textEditor?.id === opts.id) textEditor.input.blur();
+      if (textEditor?.id === id) textEditor.input.blur();
     },
   });
   const p = uiPointer();
   const hovered = !opts.disabled && pointInRect(p.x, p.y, rect);
   if (hovered) hoverCursor(true);
   if (hovered && p.released) {
-    focusFromPointer(ctx, opts.id);
-    if (textEditor?.id === opts.id) textEditor.input.focus({ preventScroll: true });
-    else openTextEditor(opts);
-  } else if (p.released && textEditor?.id === opts.id && !hovered) textEditor.input.blur();
+    focusFromPointer(ctx, id);
+    if (textEditor?.id === id) textEditor.input.focus({ preventScroll: true });
+    else openTextEditor(resolvedOpts);
+  } else if (p.released && textEditor?.id === id && !hovered) textEditor.input.blur();
 
-  const active = textEditor?.id === opts.id ? textEditor : null;
+  const active = textEditor?.id === id ? textEditor : null;
   if (active) {
     active.input.disabled = opts.disabled ?? false;
     if (opts.maxLength !== undefined) active.input.maxLength = opts.maxLength;
@@ -1284,7 +1338,8 @@ export interface SelectOption<T> {
 }
 
 export interface SelectOptions<T> {
-  id: string;
+  /** Stable identity. May be omitted inside `UI.idScope()`. */
+  id?: string;
   value: T;
   options: readonly SelectOption<T>[];
   x?: number;
@@ -1311,7 +1366,11 @@ function removeSelectEditor(): void {
   selectEditor = null;
 }
 
-function openSelectEditor<T>(opts: SelectOptions<T>, index: number, menuOpen = true): void {
+function openSelectEditor<T>(
+  opts: SelectOptions<T> & { id: string },
+  index: number,
+  menuOpen = true,
+): void {
   removeSelectEditor();
   const select = document.createElement("select");
   select.setAttribute("aria-label", opts.ariaLabel ?? opts.id);
@@ -1372,39 +1431,41 @@ export function select<T>(
 ): SelectResult<T> {
   const [ctx, opts] = withCtx(a, b);
   ensureWired();
-  selectSeen = opts.id;
+  const id = requiredWidgetId(opts.id, "select");
+  const resolvedOpts = { ...opts, id };
+  selectSeen = id;
   const rect = place(opts, opts.w ?? 180, opts.h ?? 32);
   const currentIndex = opts.options.findIndex((option) => Object.is(option.value, opts.value));
   const keyboardFocused = registerFocusable(ctx, {
-    id: opts.id,
+    id,
     disabled: opts.disabled,
     tabIndex: opts.tabIndex,
     native: true,
     focus: () => {
-      if (selectEditor?.id === opts.id) selectEditor.select.focus({ preventScroll: true });
-      else openSelectEditor(opts, currentIndex, false);
+      if (selectEditor?.id === id) selectEditor.select.focus({ preventScroll: true });
+      else openSelectEditor(resolvedOpts, currentIndex, false);
     },
     blur: () => {
-      if (selectEditor?.id === opts.id) {
+      if (selectEditor?.id === id) {
         selectEditor.open = false;
         selectEditor.select.blur();
       }
     },
   });
-  const p = selectEditor?.id === opts.id ? rawPointer() : uiPointer();
+  const p = selectEditor?.id === id ? rawPointer() : uiPointer();
   const hovered = !opts.disabled && pointInRect(p.x, p.y, rect);
   if (hovered) hoverCursor(true);
 
   if (hovered && p.released && !opts.disabled) {
-    focusFromPointer(ctx, opts.id);
-    if (selectEditor?.id === opts.id) {
+    focusFromPointer(ctx, id);
+    if (selectEditor?.id === id) {
       selectEditor.open = !selectEditor.open;
       selectEditor.justOpened = selectEditor.open;
       selectEditor.select.focus({ preventScroll: true });
-    } else openSelectEditor(opts, currentIndex);
+    } else openSelectEditor(resolvedOpts, currentIndex);
   }
-  let editor = selectEditor?.id === opts.id ? selectEditor : null;
-  const committed = selectCommit?.id === opts.id ? selectCommit.index : -1;
+  let editor = selectEditor?.id === id ? selectEditor : null;
+  const committed = selectCommit?.id === id ? selectCommit.index : -1;
   if (committed >= 0) selectCommit = null;
   let value =
     committed >= 0
@@ -1441,12 +1502,12 @@ export function select<T>(
   if (keyboardFocused) drawFocusRing(ctx, rect);
 
   if (editor?.open) {
-    markFocusableOverlay(opts.id);
+    markFocusableOverlay(id);
     // Defer the menu until frame-end so siblings drawn later in the callback
     // layout cannot paint over it. Input is still captured immediately.
     overlaySeen = true;
     inOverlayPass = true;
-    selectOverlayRequest = { ctx, opts, rect } as SelectOverlayRequest;
+    selectOverlayRequest = { ctx, opts: resolvedOpts, rect } as SelectOverlayRequest;
     editor.changed = false;
   }
   return { value, changed, open: !!editor?.open };
@@ -1617,8 +1678,9 @@ export function button(a: CanvasRenderingContext2D | ButtonOptions, b?: ButtonOp
   // Auto width: the label plus comfortable padding.
   const w = opts.w ?? Math.ceil(ctx.measureText(opts.label).width) + theme.buttonPadX;
   const rect = place(opts, w, opts.h ?? 30);
+  const id = widgetId(opts.id, "button");
   const keyboardFocused = registerFocusable(ctx, {
-    id: opts.id,
+    id,
     disabled: opts.disabled,
     tabIndex: opts.tabIndex,
   });
@@ -1630,8 +1692,8 @@ export function button(a: CanvasRenderingContext2D | ButtonOptions, b?: ButtonOp
     ? { hover: false, active: false, clicked: false }
     : buttonState(rect, p);
   const { hover, active } = state;
-  const clicked = state.clicked || (!opts.disabled && consumeKeyboardActivation(opts.id));
-  if (state.clicked) focusFromPointer(ctx, opts.id);
+  const clicked = state.clicked || (!opts.disabled && consumeKeyboardActivation(id));
+  if (state.clicked) focusFromPointer(ctx, id);
   hoverCursor(hover);
 
   const c = variantColors(opts);
@@ -1745,14 +1807,15 @@ export function toggle(a: CanvasRenderingContext2D | ToggleOptions, b?: ToggleOp
   // layout, the box is vertically centered on the taller slot.
   const slot = place({ x: opts.x, y: opts.y, w, h: opts.h, at: opts.at }, w, size);
   const rect = { x: slot.x, y: slot.y + Math.max(0, (slot.h - size) / 2), w, h: size };
+  const id = widgetId(opts.id, "toggle");
   const keyboardFocused = registerFocusable(ctx, {
-    id: opts.id,
+    id,
     disabled: opts.disabled,
     tabIndex: opts.tabIndex,
   });
   const state = opts.disabled ? { hover: false, clicked: false } : buttonState(rect, uiPointer());
-  const clicked = state.clicked || (!opts.disabled && consumeKeyboardActivation(opts.id));
-  if (state.clicked) focusFromPointer(ctx, opts.id);
+  const clicked = state.clicked || (!opts.disabled && consumeKeyboardActivation(id));
+  if (state.clicked) focusFromPointer(ctx, id);
   hoverCursor(state.hover);
   if (state.hover && opts.tooltip) tooltip(opts.tooltip);
   const on = clicked ? !opts.on : opts.on;
@@ -1815,11 +1878,12 @@ export function tabs(a: CanvasRenderingContext2D | TabsOptions, b?: TabsOptions)
     (Math.ceil(Math.max(...opts.items.map((t) => ctx.measureText(t).width))) + 26) *
       opts.items.length;
   const rect = place(opts, w, opts.h ?? 30);
-  const keyboardFocused = registerFocusable(ctx, { id: opts.id, tabIndex: opts.tabIndex });
+  const id = widgetId(opts.id, "tabs");
+  const keyboardFocused = registerFocusable(ctx, { id, tabIndex: opts.tabIndex });
   const cellW = rect.w / opts.items.length;
   const p = uiPointer();
   let active = opts.active;
-  const command = consumeKeyboardCommand(opts.id);
+  const command = consumeKeyboardCommand(id);
   if (command === "ArrowRight" || command === "ArrowDown")
     active = (active + 1) % opts.items.length;
   if (command === "ArrowLeft" || command === "ArrowUp")
@@ -1836,7 +1900,7 @@ export function tabs(a: CanvasRenderingContext2D | TabsOptions, b?: TabsOptions)
     hoverCursor(hover);
     if (clicked) {
       active = i;
-      focusFromPointer(ctx, opts.id);
+      focusFromPointer(ctx, id);
     }
     const isActive = i === active;
     ctx.fillStyle = isActive ? theme.bg : hover ? theme.bgHover : theme.bgActive;
@@ -1886,14 +1950,15 @@ export function listItem(
   b?: ListItemOptions,
 ): boolean {
   const [ctx, opts] = withCtx(a, b);
+  const id = widgetId(opts.id, "list-item");
   const keyboardFocused = registerFocusable(ctx, {
-    id: opts.id,
+    id,
     disabled: opts.disabled,
     tabIndex: opts.tabIndex,
   });
   const state = opts.disabled ? { hover: false, clicked: false } : buttonState(opts, uiPointer());
-  const clicked = state.clicked || (!opts.disabled && consumeKeyboardActivation(opts.id));
-  if (state.clicked) focusFromPointer(ctx, opts.id);
+  const clicked = state.clicked || (!opts.disabled && consumeKeyboardActivation(id));
+  if (state.clicked) focusFromPointer(ctx, id);
   const { hover } = state;
   hoverCursor(hover);
   if (hover && opts.tooltip) tooltip(opts.tooltip);
@@ -1955,10 +2020,18 @@ export function slider(a: CanvasRenderingContext2D | SliderOptions, b?: SliderOp
   const min = opts.min ?? 0;
   const max = opts.max ?? 1;
   const slot = place(opts, opts.w ?? 140, opts.h ?? 30);
-  const sx = slot.x;
+  // Reserve room for the label inside the slot's left edge so the label and
+  // track stay within the widget's slot even when it's placed flush-left in a
+  // container (a bare left-hung label would spill outside the box). The value
+  // still trails the track on the right, as before.
+  ctx.save();
+  ctx.font = opts.font ?? uiFont();
+  const labelSpace = opts.label ? Math.ceil(ctx.measureText(opts.label).width) + 10 : 0;
+  ctx.restore();
+  const sx = slot.x + labelSpace;
   const sy = slot.y + slot.h / 2;
-  const sw = slot.w;
-  const id = opts.id ?? `${sx}:${sy}`;
+  const sw = Math.max(10, slot.w - labelSpace);
+  const id = widgetId(opts.id, "slider") ?? `${sx}:${sy}`;
   const knobR = 7;
   const p = uiPointer();
   // Generous hit region: the whole track strip, knob included.
@@ -1994,8 +2067,8 @@ export function slider(a: CanvasRenderingContext2D | SliderOptions, b?: SliderOp
   ctx.font = opts.font ?? uiFont();
   if (opts.label) {
     ctx.fillStyle = opts.color ?? theme.text;
-    ctx.textAlign = "right";
-    centeredText(ctx, opts.label, sx - 10, sy);
+    ctx.textAlign = "left";
+    centeredText(ctx, opts.label, slot.x, sy);
   }
   ctx.fillStyle = theme.track;
   ctx.fillRect(sx, sy - 2, sw, 4);
@@ -2671,6 +2744,7 @@ export function _reset(): void {
   focusBeforeOverlay = null;
   keyboardActivation = null;
   keyboardCommand = null;
+  idScopes.length = 0;
   begunCtx = null;
   wired = false;
 }
