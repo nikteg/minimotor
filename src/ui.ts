@@ -1,7 +1,7 @@
 // ---------- UI ----------
 // Immediate-mode interface helpers: floating combat/score text, buttons,
-// toggles, tabs, sliders, scrollbars, panels, popovers, modals, dialogue,
-// drag/drop, confirm dialogs and meter bars. Everything draws in YOUR draw phase — no retained
+// toggles, tabs, text/select inputs, sliders, scrollbars, panels, popovers,
+// modals, dialogue, drag/drop, confirm dialogs and meter bars. Everything draws in YOUR draw phase — no retained
 // widget tree, no layout engine. Floating texts and spinners age on the
 // fixed step (via Loop.onStep), so they pause with the loop like Clock/Tween.
 //
@@ -548,6 +548,26 @@ interface ActiveDrag {
 }
 let activeDrag: ActiveDrag | null = null;
 
+interface TextEditor {
+  id: string;
+  input: HTMLInputElement;
+  value: string;
+  changed: boolean;
+  submitted: boolean;
+}
+let textEditor: TextEditor | null = null;
+let textInputSeen: string | null = null;
+
+interface SelectEditor {
+  id: string;
+  select: HTMLSelectElement;
+  index: number;
+  changed: boolean;
+  justOpened: boolean;
+}
+let selectEditor: SelectEditor | null = null;
+let selectSeen: string | null = null;
+
 const DEAD_POINTER = { x: -1e9, y: -1e9, down: false, released: false, pressed: false, wheel: 0 };
 
 /** The pointer, raw — overlays themselves read this (their close logic must
@@ -866,11 +886,20 @@ export function text(
   const align = opts.align ?? "left";
   ctx.fillStyle = resolveColor(opts.color);
   ctx.textAlign = align;
-  const tx = align === "center" ? bx + bw / 2 : align === "right" ? bx + bw : bx;
   // A known width constrains the text: it flows in a layout, or w/maxWidth was
-  // given. `wrap` breaks into lines within it; otherwise a single line clamps.
+  // given. Then align positions WITHIN the slot [bx, bx+bw] and the width
+  // clamps/wraps. Without a width the position is an anchor point: `x` is where
+  // the text aligns to (canvas-native), so `align:"center", x: W/2` centers on
+  // W/2 rather than starting there.
   const constrained =
     opts.w !== undefined || opts.maxWidth !== undefined || !!currentLayout() || !!opts.at;
+  const tx = constrained
+    ? align === "center"
+      ? bx + bw / 2
+      : align === "right"
+        ? bx + bw
+        : bx
+    : rect.x;
   const maxW = opts.maxWidth ?? (constrained ? bw : undefined);
 
   if (opts.wrap && maxW !== undefined) {
@@ -881,6 +910,301 @@ export function text(
     centeredText(ctx, str, tx, by + bh / 2, maxW);
   }
   ctx.restore();
+}
+
+// ---------- Text input ----------
+
+export interface TextInputOptions {
+  id: string;
+  value: string;
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+  at?: Stack;
+  placeholder?: string;
+  disabled?: boolean;
+  maxLength?: number;
+  type?: "text" | "password" | "email" | "number" | "search";
+  inputMode?: "text" | "decimal" | "numeric" | "tel" | "search" | "email" | "url";
+  ariaLabel?: string;
+  /** Blur after Enter. Default true. */
+  blurOnSubmit?: boolean;
+}
+
+export interface TextInputResult {
+  value: string;
+  changed: boolean;
+  submitted: boolean;
+  focused: boolean;
+}
+
+function removeTextEditor(): void {
+  textEditor?.input.remove();
+  textEditor = null;
+}
+
+function openTextEditor(opts: TextInputOptions): void {
+  removeTextEditor();
+  const input = document.createElement("input");
+  input.type = opts.type ?? "text";
+  input.value = opts.value;
+  input.maxLength = opts.maxLength ?? -1;
+  if (opts.inputMode) input.inputMode = opts.inputMode;
+  input.autocomplete = "off";
+  input.spellcheck = false;
+  input.setAttribute("aria-label", opts.ariaLabel ?? opts.placeholder ?? opts.id);
+  Object.assign(input.style, {
+    position: "fixed",
+    left: "-1000px",
+    top: "0",
+    width: "1px",
+    height: "1px",
+    opacity: "0",
+    pointerEvents: "none",
+  });
+  const editor: TextEditor = { id: opts.id, input, value: opts.value, changed: false, submitted: false };
+  input.addEventListener("input", () => {
+    editor.value = input.value;
+    editor.changed = true;
+  });
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      editor.submitted = true;
+      if (opts.blurOnSubmit ?? true) input.blur();
+    } else if (event.key === "Escape") {
+      input.blur();
+    }
+  });
+  document.body.appendChild(input);
+  textEditor = editor;
+  input.focus({ preventScroll: true });
+  input.setSelectionRange?.(input.value.length, input.value.length);
+}
+
+/** Canvas-rendered single-line input backed by a hidden native `<input>` for
+ * keyboard, clipboard, IME and mobile-keyboard behavior. Returns controlled
+ * value plus one-frame `changed`/`submitted` flags. */
+export function textInput(opts: TextInputOptions): TextInputResult;
+export function textInput(
+  ctx: CanvasRenderingContext2D,
+  opts: TextInputOptions,
+): TextInputResult;
+export function textInput(
+  a: CanvasRenderingContext2D | TextInputOptions,
+  b?: TextInputOptions,
+): TextInputResult {
+  const [ctx, opts] = withCtx(a, b);
+  ensureWired();
+  textInputSeen = opts.id;
+  const rect = place(opts, opts.w ?? 180, opts.h ?? 32);
+  const p = uiPointer();
+  const hovered = !opts.disabled && pointInRect(p.x, p.y, rect);
+  if (hovered) hoverCursor(true);
+  if (hovered && p.released) {
+    if (textEditor?.id === opts.id) textEditor.input.focus({ preventScroll: true });
+    else openTextEditor(opts);
+  } else if (p.released && textEditor?.id === opts.id && !hovered) textEditor.input.blur();
+
+  const active = textEditor?.id === opts.id ? textEditor : null;
+  if (active) {
+    active.input.disabled = opts.disabled ?? false;
+    if (opts.maxLength !== undefined) active.input.maxLength = opts.maxLength;
+    if (document.activeElement !== active.input && opts.value !== active.value) {
+      active.value = opts.value;
+      active.input.value = opts.value;
+    }
+  }
+  const value = active?.value ?? opts.value;
+  const focused = !!active && document.activeElement === active.input;
+  const shown = (opts.type === "password" && value ? "•".repeat(value.length) : value) || opts.placeholder || "";
+
+  ctx.save();
+  drawBox(ctx, rect.x, rect.y, rect.w, rect.h, {
+    fill: opts.disabled ? theme.bgActive : theme.bg,
+    stroke: focused ? theme.accent : hovered ? theme.accentSoft : theme.border,
+  });
+  ctx.beginPath();
+  ctx.rect(rect.x + 7, rect.y + 2, Math.max(0, rect.w - 14), Math.max(0, rect.h - 4));
+  ctx.clip();
+  ctx.font = uiFont();
+  ctx.fillStyle = value ? theme.text : theme.textDim;
+  ctx.textAlign = "left";
+  centeredText(ctx, shown, rect.x + 9, rect.y + rect.h / 2, rect.w - 18);
+  if (focused && Math.floor(performance.now() / 500) % 2 === 0) {
+    const caretX = Math.min(rect.x + rect.w - 9, rect.x + 9 + ctx.measureText(shown).width + 1);
+    ctx.fillStyle = theme.accent;
+    ctx.fillRect(caretX, rect.y + 7, 1, Math.max(4, rect.h - 14));
+  }
+  ctx.restore();
+
+  const changed = active?.changed ?? false;
+  const submitted = active?.submitted ?? false;
+  if (active) {
+    active.changed = false;
+    active.submitted = false;
+  }
+  return { value, changed, submitted, focused };
+}
+
+// ---------- Select dropdown ----------
+
+export interface SelectOption<T> {
+  label: string;
+  value: T;
+  disabled?: boolean;
+}
+
+export interface SelectOptions<T> {
+  id: string;
+  value: T;
+  options: readonly SelectOption<T>[];
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+  at?: Stack;
+  disabled?: boolean;
+  placeholder?: string;
+  maxVisible?: number;
+  ariaLabel?: string;
+}
+
+export interface SelectResult<T> {
+  value: T;
+  changed: boolean;
+  open: boolean;
+}
+
+function removeSelectEditor(): void {
+  selectEditor?.select.remove();
+  selectEditor = null;
+}
+
+function openSelectEditor<T>(opts: SelectOptions<T>, index: number): void {
+  removeSelectEditor();
+  const select = document.createElement("select");
+  select.setAttribute("aria-label", opts.ariaLabel ?? opts.id);
+  Object.assign(select.style, {
+    position: "fixed",
+    left: "-1000px",
+    top: "0",
+    width: "1px",
+    height: "1px",
+    opacity: "0",
+    pointerEvents: "none",
+  });
+  for (let i = 0; i < opts.options.length; i++) {
+    const option = document.createElement("option");
+    option.value = String(i);
+    option.textContent = opts.options[i].label;
+    option.disabled = opts.options[i].disabled ?? false;
+    select.appendChild(option);
+  }
+  select.value = index >= 0 ? String(index) : "";
+  const editor: SelectEditor = { id: opts.id, select, index, changed: false, justOpened: true };
+  select.addEventListener("change", () => {
+    editor.index = Number(select.value);
+    editor.changed = true;
+  });
+  select.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" || event.key === "Enter") select.blur();
+  });
+  document.body.appendChild(select);
+  selectEditor = editor;
+  select.focus({ preventScroll: true });
+}
+
+/** Themed dropdown backed by a hidden native `<select>`. Clicking opens a
+ * canvas option list; focused native arrow-key navigation updates the same
+ * controlled value. */
+export function select<T>(opts: SelectOptions<T>): SelectResult<T>;
+export function select<T>(
+  ctx: CanvasRenderingContext2D,
+  opts: SelectOptions<T>,
+): SelectResult<T>;
+export function select<T>(
+  a: CanvasRenderingContext2D | SelectOptions<T>,
+  b?: SelectOptions<T>,
+): SelectResult<T> {
+  const [ctx, opts] = withCtx(a, b);
+  ensureWired();
+  selectSeen = opts.id;
+  const rect = place(opts, opts.w ?? 180, opts.h ?? 32);
+  const currentIndex = opts.options.findIndex((option) => Object.is(option.value, opts.value));
+  const p = selectEditor?.id === opts.id ? rawPointer() : uiPointer();
+  const hovered = !opts.disabled && pointInRect(p.x, p.y, rect);
+  if (hovered) hoverCursor(true);
+
+  if (hovered && p.released && !opts.disabled) {
+    if (selectEditor?.id === opts.id) removeSelectEditor();
+    else openSelectEditor(opts, currentIndex);
+  }
+  let editor = selectEditor?.id === opts.id ? selectEditor : null;
+  let value = editor && editor.index >= 0 ? opts.options[editor.index]?.value ?? opts.value : opts.value;
+  let changed = editor?.changed ?? false;
+  const selected = opts.options.find((option) => Object.is(option.value, value));
+
+  ctx.save();
+  drawBox(ctx, rect.x, rect.y, rect.w, rect.h, {
+    fill: opts.disabled ? theme.bgActive : theme.bg,
+    stroke: editor ? theme.accent : hovered ? theme.accentSoft : theme.border,
+  });
+  ctx.font = uiFont();
+  ctx.fillStyle = selected ? theme.text : theme.textDim;
+  ctx.textAlign = "left";
+  centeredText(ctx, selected?.label ?? opts.placeholder ?? "Select…", rect.x + 10, rect.y + rect.h / 2, rect.w - 36);
+  ctx.fillStyle = theme.textDim;
+  ctx.beginPath();
+  ctx.moveTo(rect.x + rect.w - 20, rect.y + rect.h / 2 - 3);
+  ctx.lineTo(rect.x + rect.w - 10, rect.y + rect.h / 2 - 3);
+  ctx.lineTo(rect.x + rect.w - 15, rect.y + rect.h / 2 + 3);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  if (editor) {
+    overlaySeen = true;
+    inOverlayPass = true;
+    const visible = Math.max(1, Math.min(opts.options.length, opts.maxVisible ?? 8));
+    const itemH = 30;
+    const menuH = visible * itemH + 4;
+    const vp = Stage.viewport;
+    const menuY = rect.y + rect.h + menuH <= vp.h - 4 ? rect.y + rect.h + 2 : rect.y - menuH - 2;
+    const menu = { x: rect.x, y: menuY, w: rect.w, h: menuH };
+    panel(ctx, menu);
+    const start = Math.max(0, Math.min(opts.options.length - visible, editor.index - Math.floor(visible / 2)));
+    for (let i = start; i < Math.min(opts.options.length, start + visible); i++) {
+      const option = opts.options[i];
+      if (button(ctx, {
+        x: menu.x + 2,
+        y: menu.y + 2 + (i - start) * itemH,
+        w: menu.w - 4,
+        h: itemH,
+        label: option.label,
+        disabled: option.disabled,
+        variant: Object.is(option.value, value) ? "primary" : "ghost",
+      })) {
+        editor.index = i;
+        editor.select.value = String(i);
+        editor.changed = true;
+        value = option.value;
+        changed = true;
+        removeSelectEditor();
+        editor = null;
+        break;
+      }
+    }
+    if (editor && !editor.justOpened && p.released && !pointInRect(p.x, p.y, rect) && !pointInRect(p.x, p.y, menu)) {
+      removeSelectEditor();
+      editor = null;
+    }
+  }
+  if (editor) {
+    editor.changed = false;
+    editor.justOpened = false;
+  }
+  return { value, changed, open: !!editor };
 }
 
 // ---------- Button ----------
@@ -1822,6 +2146,12 @@ function ensureWired(): void {
         tipShown = null;
       }
       tipRequest = null;
+      // Native editing bridges only live while their immediate-mode widget is
+      // still submitted every frame.
+      if (textEditor && textInputSeen !== textEditor.id) removeTextEditor();
+      if (selectEditor && selectSeen !== selectEditor.id) removeSelectEditor();
+      textInputSeen = null;
+      selectSeen = null;
       // A release not consumed by any drop target cancels the drag.
       try {
         if (activeDrag && Pointer.frameReleased) activeDrag = null;
@@ -1862,6 +2192,10 @@ export function _reset(): void {
   overlayActive = false;
   inOverlayPass = false;
   activeDrag = null;
+  removeTextEditor();
+  removeSelectEditor();
+  textInputSeen = null;
+  selectSeen = null;
   begunCtx = null;
   wired = false;
 }

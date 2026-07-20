@@ -177,6 +177,25 @@ describe("UI text", () => {
     _reset();
   });
 
+  it("center/right align anchors at x when no width is given (canvas-native)", () => {
+    const c1 = textCtx();
+    text("hi", { x: 100, y: 0, align: "center" }); // pinned, no width
+    expect(c1.calls.fillText[0][1]).toBe(100); // centered ON x, not x + w/2
+    _reset();
+
+    const c2 = textCtx();
+    text("hi", { x: 100, y: 0, align: "right" });
+    expect(c2.calls.fillText[0][1]).toBe(100); // right edge anchored at x
+    _reset();
+  });
+
+  it("center align positions within the slot when a width IS given", () => {
+    const { calls } = textCtx();
+    text("hi", { x: 0, y: 0, w: 200, align: "center" });
+    expect(calls.fillText[0][1]).toBe(100); // centered in the 200px slot
+    _reset();
+  });
+
   it("wrap breaks a long string into stacked lines within the width", () => {
     const { calls } = textCtx();
     // words are 20px each; "aa bb" = 50 ≤ 55, "aa bb cc" = 80 > 55 → wraps.

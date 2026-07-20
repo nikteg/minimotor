@@ -1,5 +1,5 @@
 // POCKET ASTEROIDS: a complete vector arcade loop in a fixed 16:9 viewport.
-// Focus: Fullscreen, Game.letterbox, named Input.actions and gamepad support.
+// Focus: Fullscreen, Game.letterbox, Goodies torus helpers, Input and gamepad.
 // Controls: left/right rotate, up thrusts, Space fires, H hyperspace.
 import { Minimotor } from "minimotor";
 import * as Sfx from "../shared/sfx.js";
@@ -7,14 +7,9 @@ import * as Sfx from "../shared/sfx.js";
 Minimotor.Fullscreen.applyFullscreen();
 let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 Minimotor.Stage.onResize((next) => (vp = next));
-const { Loop, Input, Game, Mathf, Particles, UI } = Minimotor;
-// Phones get a deliberate 16:9 letterbox (stable touch-friendly framing).
-// Desktop canvases use their full viewport instead of being forced into it.
-const isMobile = typeof navigator !== "undefined" && (
-  navigator.userAgentData?.mobile === true ||
-  /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
-  (navigator.maxTouchPoints > 1 && typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches)
-);
+const { Loop, Input, Game, Goodies, Mathf, Particles, UI } = Minimotor;
+// The fixed 16:9 field is letterboxed (uniform scale + bars) at any window
+// size, so the vector art never distorts.
 const actions = Input.actions({
   left: ["ArrowLeft", "KeyA"],
   right: ["ArrowRight", "KeyD"],
@@ -31,15 +26,8 @@ const bullets = [], asteroids = [];
 const stars = Array.from({ length: 64 }, (_, i) => ({ x: 8 + (i * 71) % (W - 16), y: 8 + (i * 43) % (H - 16), r: i % 9 === 0 ? 1.2 : 0.7 }));
 let sessionScore = 0, lives = 3, level = 1, state = "title", elapsed = 0;
 
-const wrap = (v, max) => ((v % max) + max) % max;
-function wrappedDelta(a, b, size) {
-  let d = a - b;
-  if (d > size / 2) d -= size;
-  if (d < -size / 2) d += size;
-  return d;
-}
 function torusDistance(ax, ay, bx, by) {
-  return Math.hypot(wrappedDelta(ax, bx, W), wrappedDelta(ay, by, H));
+  return Goodies.wrappedDistance(ax, ay, bx, by, W, H);
 }
 function resetShip() {
   ship.x = W / 2; ship.y = H / 2; ship.vx = 0; ship.vy = 0; ship.angle = -Math.PI / 2;
@@ -97,12 +85,12 @@ Loop.run({
     const thrusting = actions.down("thrust") || pad.axis(1) < -.35;
     if (thrusting) { ship.vx += Math.cos(ship.angle) * 110 * dt; ship.vy += Math.sin(ship.angle) * 110 * dt; }
     ship.vx *= Math.pow(.992, dt * 60); ship.vy *= Math.pow(.992, dt * 60);
-    ship.x = wrap(ship.x + ship.vx * dt, W); ship.y = wrap(ship.y + ship.vy * dt, H);
+    ship.x = Goodies.wrap(ship.x + ship.vx * dt, W); ship.y = Goodies.wrap(ship.y + ship.vy * dt, H);
     const firing = actions.down("fire") || pad.down(Input.Buttons.A);
     if (firing) fire();
     if (actions.pressed("hyperspace") || pad.pressed(Input.Buttons.B)) hyperspace();
-    for (let i = bullets.length - 1; i >= 0; i--) { const b = bullets[i]; b.x = wrap(b.x + b.vx * dt, W); b.y = wrap(b.y + b.vy * dt, H); b.ttl -= dt; if (b.ttl <= 0) bullets.splice(i, 1); }
-    for (const a of asteroids) { a.x = wrap(a.x + a.vx * dt, W); a.y = wrap(a.y + a.vy * dt, H); a.angle += a.rot * dt; }
+    for (let i = bullets.length - 1; i >= 0; i--) { const b = bullets[i]; b.x = Goodies.wrap(b.x + b.vx * dt, W); b.y = Goodies.wrap(b.y + b.vy * dt, H); b.ttl -= dt; if (b.ttl <= 0) bullets.splice(i, 1); }
+    for (const a of asteroids) { a.x = Goodies.wrap(a.x + a.vx * dt, W); a.y = Goodies.wrap(a.y + a.vy * dt, H); a.angle += a.rot * dt; }
     for (let bi = bullets.length - 1; bi >= 0; bi--) {
       const b = bullets[bi]; let hit = false;
       for (let ai = asteroids.length - 1; ai >= 0; ai--) {
@@ -120,10 +108,13 @@ Loop.run({
     if (asteroids.length === 0) { level++; Sfx.wave(); newWave(); }
   },
   draw(ctx) {
-    const box = isMobile ? Game.drawLetterbox(ctx, vp.w, vp.h, W, H, "#03050c", "#080d1b") : null;
+    // Uniform letterbox at every size: the play field is a fixed 16:9 torus, so
+    // stretching it to a non-16:9 window would squash the asteroids and ship,
+    // and cropping would hide wrapped objects. Mobile keeps the same policy.
+    const box = Game.drawLetterbox(ctx, vp.w, vp.h, W, H, "#03050c", "#080d1b");
     ctx.save();
-    if (box) { ctx.translate(box.ox, box.oy); ctx.scale(box.scale, box.scale); }
-    else { ctx.scale(vp.w / W, vp.h / H); ctx.fillStyle = "#080d1b"; ctx.fillRect(0, 0, W, H); }
+    ctx.translate(box.ox, box.oy);
+    ctx.scale(box.scale, box.scale);
     for (const s of stars) { ctx.fillStyle = s.r > 1 ? "#d9e6ff" : "#53698f"; ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill(); }
     for (const b of bullets) { ctx.fillStyle = "#ffe066"; ctx.beginPath(); ctx.arc(b.x, b.y, 1.5, 0, Math.PI * 2); ctx.fill(); }
     for (const a of asteroids) { ctx.save(); ctx.translate(a.x, a.y); ctx.rotate(a.angle); ctx.beginPath(); a.verts.forEach((v, i) => { const x = Math.cos(v.a) * v.r, y = Math.sin(v.a) * v.r; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.closePath(); ctx.fillStyle = a.size === 3 ? "#293b5d" : a.size === 2 ? "#33496d" : "#496488"; ctx.fill(); ctx.strokeStyle = "#9fb3d9"; ctx.lineWidth = 1; ctx.stroke(); ctx.restore(); }
