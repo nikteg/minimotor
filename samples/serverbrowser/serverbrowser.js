@@ -110,41 +110,39 @@ function join(server) {
 
 const ROW_H = 30;
 
-// Recomputed every frame from the live viewport, so resize comes free: the
-// panel re-centers, fixed rows keep their height, the list flexes to fill.
+// Recomputed every frame from the live viewport, so resize comes free. The
+// structure is expressed with the callback layout API: a column below the
+// panel's 30px title strip hands out controls / headers / list / footer, the
+// list `fill`s the leftover height, and the header is a nested row whose NAME
+// column fills while the rest are fixed. No arithmetic, no flex spec.
+const SCROLL_W = 10;
+const FOOTER_H = 40;
+
 function layout() {
   const w = Math.max(560, Math.min(760, vp.w - 40));
   const h = Math.max(320, Math.min(560, vp.h - 40));
   const x = Math.round((vp.w - w) / 2);
   const y = Math.round((vp.h - h) / 2);
-  // Below the panel's 30px title strip, one flex column: controls, column
-  // headers (a nested row — NAME flexes, the rest are fixed), the list
-  // (rows + scrollbar side by side), footer.
-  const L = UI.flex(
-    { x, y: y + 30, w, h: h - 30 },
-    {
-      dir: "col",
-      pad: 12,
-      gap: 8,
-      children: {
-        controls: { h: 30 },
-        head: {
-          h: 20,
-          dir: "row",
-          children: {
-            name: { flex: 1 },
-            mode: { w: 70 },
-            reg: { w: 56 },
-            players: { w: 80 },
-            ping: { w: 74 },
-          },
-        },
-        list: { flex: 1, dir: "row", gap: 4, children: { rows: { flex: 1 }, scroll: { w: 10 } } },
-        footer: { h: 40 },
-      },
-    },
-  );
-  return { x, y, w, h, ...L };
+  const L = { x, y, w, h };
+
+  UI.col({ x, y: y + 30, w, h: h - 30, pad: 12, gap: 8 }, (body) => {
+    L.controls = body.next(undefined, 30);
+    const head = body.next(undefined, 20);
+    UI.row({ ...head, gap: 0 }, (cols) => {
+      L.name = cols.fill(70 + 56 + 80 + 74); // NAME grows; the rest are fixed
+      L.mode = cols.next(70);
+      L.reg = cols.next(56);
+      L.players = cols.next(80);
+      L.ping = cols.next(74);
+    });
+    const list = body.fill(FOOTER_H + 8); // fill, reserving the footer + its gap
+    L.list = list;
+    L.rows = { x: list.x, y: list.y, w: list.w - SCROLL_W - 4, h: list.h };
+    L.scroll = { x: list.x + list.w - SCROLL_W, y: list.y, w: SCROLL_W, h: list.h };
+    L.footer = body.next(undefined, FOOTER_H);
+  });
+
+  return L;
 }
 
 const pingColor = (ping) => (ping < 60 ? "#6bff9e" : ping < 130 ? "#ffd43b" : "#ff6b6b");

@@ -69,11 +69,19 @@ small pieces of genre knowledge that otherwise get rewritten in every game.
 Recipes may combine lower-level Minimotor primitives, but remain plain functions
 or tiny state objects—never a mandatory gameplay framework.
 
-**Shipped — wrapping worlds (Snake, Asteroids, arena games):**
+**Shipped recipe shelf:**
 
-- `wrap(value, max)` / `wrap(value, min, max)`
-- `wrappedDelta(from, to, size)`
-- `wrappedDistance(ax, ay, bx, by, worldW, worldH)`
+- **Wrapping worlds:** `wrap`, `wrappedDelta`, `wrappedDistance`.
+- **Loot/cards/procedural:** `weightedPick`, `shuffleBag`, `chance`.
+- **Grid/puzzle/roguelike/tactics:** `gridNeighbors`, `floodFill`, `gridLine`,
+  `lineOfSight`.
+- **Shooter/racing steering:** `approachAngle`, `leadTarget`.
+- **Rhythm:** `timingGrade` with configurable timing windows.
+- **Racing/objectives:** `checkpointRoute` for ordered checkpoints and laps.
+- **RPG/tabletop/combat:** `rollDice`, `damageRoll`.
+- **Inventory/crafting:** `transferStack` for moving, merging and swapping.
+- **Bullet hell/strategy:** `ringFormation`, `gridFormation`.
+- **Arcade/survival/simulation:** `scoreRank`, `waveScale`, `dayCycle`.
 
 **Candidate recipe families:**
 
@@ -270,17 +278,21 @@ spec?)` integration (swap fires behind full coverage). Proof: the `scenes`
   take a children callback, push an ambient layout cursor, and widgets inside
   auto-flow and auto-size — nesting is the layout tree, and a nested widget's
   click bubbles straight out of the callback's return. `listItem` is the
-  selectable list row (renamed from `row`). Layout, two tools: `flex` —
-  split a box into named regions (nested row/col containers, fixed sizes +
-  flex-grow shares, gap/pad, flat rect map out; recompute per frame and
-  resize comes free) — and `stack`, a one-axis cursor that widgets place
-  themselves into via `at`, auto-sizing to their labels (flex sizes may be
-  measure fns for content-fit). All labels clamp to their boxes so no
+  selectable list row (renamed from `row`). Layout is callback-only (the
+  declarative `flex` children-spec was removed — one model, not two): `row`/
+  `col`/`group` closures own the tree, and their cursor does `next` (fixed/
+  auto slots), `fill(reserve)` (grow to the leftover main-axis space, minus
+  room for later fixed slots) and `remaining` — so a resize-safe "toolbar /
+  fill / footer" layout is pure callbacks. `stack` is the same cursor for
+  ad-hoc bars (widgets place into it via `at`, auto-sizing to their labels).
+  All labels clamp to their boxes so no
   theme/font can overflow. The `Theme` covers metrics too — `borderWidth`,
   corner `radius`, `buttonPadX`, plus `primary`/`danger` fills — and buttons
   take a `variant` (`default`/`primary`/`danger`/`ghost`). `confirm()` is a
   whole dialog (title/lines/buttons, content-sized, last button primary by
-  default) in one call. **Implicit ctx** — widgets draw to the default
+  default) in one call. `dialog()` draws bottom-screen speaker/portrait/line/
+  choice boxes for RPGs, adventures and tutorials. Typed `dragSource`/
+  `dropTarget`/`draggedItem` provide immediate-mode inventory/card drag and drop. **Implicit ctx** — widgets draw to the default
   game's `Draw.ctx`, no plumbing (`UI.begin(ctx)` overrides per frame for
   isolated games; every widget also keeps a `(ctx, opts)` form). Overlays
   (modal AND open popover) capture input: widgets drawn before them go dead,
@@ -317,7 +329,10 @@ clearer, and together the gallery must exercise the complete public surface:
 Current proof migrations include `Goodies.wrap` in Snake, toroidal helpers in
 Pocket Asteroids, wrapped ECS sprites in the Sprites sample, `Sprites.getLayer`
 for Pixel Adventure's cached world art, and `UI.panel`/`UI.text` for the legacy
-Platformer HUD.
+Platformer HUD. Focused recipe games—not one mega-demo—prove the broader shelf:
+Guild Trader (dialogue, drag/drop, stacks, loot), Dungeon Scout (grid/fill/sight),
+Lead Defender (leading, formations, damage, waves), and Beat Circuit (timing,
+checkpoints, wrapping and day cycle).
 
 ## Design principles (what keeps it _minimotor_)
 

@@ -9,7 +9,6 @@ import {
   col,
   createFloats,
   defaultTheme,
-  flex,
   getTheme,
   row,
   setTheme,
@@ -148,53 +147,8 @@ describe("UI theme", () => {
   });
 });
 
-describe("UI flex", () => {
-  it("splits a column into fixed and flex regions with pad and gap", () => {
-    const L = flex(
-      { x: 0, y: 0, w: 200, h: 300 },
-      {
-        dir: "col",
-        pad: 10,
-        gap: 10,
-        children: {
-          header: { h: 40 },
-          body: { flex: 1 },
-          footer: { h: 30 },
-        },
-      },
-    );
-    expect(L.header).toEqual({ x: 10, y: 10, w: 180, h: 40 });
-    expect(L.body).toEqual({ x: 10, y: 60, w: 180, h: 190 }); // 280 - 40 - 30 - 2 gaps
-    expect(L.footer).toEqual({ x: 10, y: 260, w: 180, h: 30 });
-  });
-
-  it("divides leftover by flex shares in a row and recurses into children", () => {
-    const L = flex(
-      { x: 0, y: 0, w: 420, h: 100 },
-      {
-        dir: "row",
-        gap: 10,
-        children: {
-          side: { w: 100 },
-          main: {
-            flex: 2,
-            dir: "col",
-            children: { top: { h: 20 }, rest: { flex: 1 } },
-          },
-          aside: { flex: 1, h: 50 }, // fixed cross size
-        },
-      },
-    );
-    expect(L.side).toEqual({ x: 0, y: 0, w: 100, h: 100 });
-    expect(L.main.w).toBe(200); // (420 - 100 - 20 gaps) * 2/3
-    expect(L.aside).toEqual({ x: 320, y: 0, w: 100, h: 50 });
-    expect(L.top).toEqual({ x: 110, y: 0, w: 200, h: 20 }); // nested, flat name
-    expect(L.rest.h).toBe(80);
-  });
-});
-
 describe("UI implicit context", () => {
-  it("begin() routes bar/textWidth to the given ctx; flex resolves fn sizes", () => {
+  it("begin() routes bar and textWidth to the given ctx", () => {
     const { ctx, calls } = mockCtx();
     (ctx as { measureText?: unknown }).measureText = (t: string) => ({ width: t.length * 10 });
     begin(ctx);
@@ -203,19 +157,6 @@ describe("UI implicit context", () => {
     bar(0, 0, 100, 8, 0.5); // ctx-less form draws to the begun ctx
     expect(calls.boxes.length).toBe(1); // track box
     expect(calls.fillRect.length).toBe(1); // fill
-
-    const L = flex(
-      { x: 0, y: 0, w: 300, h: 40 },
-      {
-        dir: "row",
-        children: {
-          label: { w: (m) => m.text("abcd") + 20 }, // content-fit
-          rest: { flex: 1 },
-        },
-      },
-    );
-    expect(L.label.w).toBe(60);
-    expect(L.rest.w).toBe(240);
     _reset();
   });
 });

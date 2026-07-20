@@ -1,7 +1,7 @@
 // ---------- UI ----------
 // Immediate-mode interface helpers: floating combat/score text, buttons,
-// toggles, tabs, sliders, scrollbars, panels, popovers, modals, confirm
-// dialogs and meter bars. Everything draws in YOUR draw phase — no retained
+// toggles, tabs, sliders, scrollbars, panels, popovers, modals, dialogue,
+// drag/drop, confirm dialogs and meter bars. Everything draws in YOUR draw phase — no retained
 // widget tree, no layout engine. Floating texts and spinners age on the
 // fixed step (via Loop.onStep), so they pause with the loop like Clock/Tween.
 //
@@ -233,6 +233,9 @@ export interface StackOptions {
   /** `"end"` lays slots out backwards — right-aligned toolbars, bottom-up
    *  columns. Default `"start"`. */
   align?: "start" | "end";
+  /** Total main-axis length of the container (width for a row, height for a
+   *  column). Enables `fill`/`remaining`. The closure containers set it. */
+  length?: number;
 }
 
 /** A layout cursor from `stack()`: hands out rects along one axis. */
@@ -243,8 +246,14 @@ export interface Stack {
    *  defaults from the stack); for columns pass the height as the second
    *  argument (width defaults from the stack). */
   next(w?: number, h?: number): { x: number; y: number; w: number; h: number };
+  /** Reserve a slot that fills the remaining main-axis space, minus `reserve`
+   *  (leave room for later fixed slots — e.g. a footer's height + gap). Needs
+   *  `length` set on the stack; the closure containers set it for you. */
+  fill(reserve?: number): { x: number; y: number; w: number; h: number };
   /** Extra spacing before the next slot. */
   gap(px: number): void;
+  /** Main-axis space left before the container's end (needs `length`). */
+  readonly remaining: number;
   /** The most recently handed-out slot — anchor popovers/spinners to it. */
   readonly last: { x: number; y: number; w: number; h: number } | null;
   /** Bounding box of everything placed so far. */
@@ -269,32 +278,50 @@ export function stack(opts: StackOptions): Stack {
   let last: { x: number; y: number; w: number; h: number } | null = null;
   let ext: { x: number; y: number; w: number; h: number } | null = null;
 
+  const advance = (w?: number, h?: number) => {
+    const W = w ?? (dir === "col" ? (opts.w ?? 120) : 100);
+    const H = h ?? (dir === "row" ? (opts.h ?? 30) : 30);
+    const rect =
+      dir === "row"
+        ? { x: back ? cx - W : cx, y: cy, w: W, h: H }
+        : { x: cx, y: back ? cy - H : cy, w: W, h: H };
+    if (dir === "row") cx += (back ? -1 : 1) * (W + gapPx);
+    else cy += (back ? -1 : 1) * (H + gapPx);
+    last = rect;
+    if (!ext) ext = { ...rect };
+    else {
+      const x2 = Math.max(ext.x + ext.w, rect.x + rect.w);
+      const y2 = Math.max(ext.y + ext.h, rect.y + rect.h);
+      ext.x = Math.min(ext.x, rect.x);
+      ext.y = Math.min(ext.y, rect.y);
+      ext.w = x2 - ext.x;
+      ext.h = y2 - ext.y;
+    }
+    return rect;
+  };
+
+  // Main-axis space between the cursor and the container's far edge
+  // (start-aligned; fill/remaining aren't used with align:"end").
+  const remaining = () => {
+    if (opts.length === undefined) return 0;
+    const start = dir === "row" ? opts.x : opts.y;
+    const cur = dir === "row" ? cx : cy;
+    return Math.max(0, start + opts.length - cur);
+  };
+
   return {
     dir,
-    next(w, h) {
-      const W = w ?? (dir === "col" ? (opts.w ?? 120) : 100);
-      const H = h ?? (dir === "row" ? (opts.h ?? 30) : 30);
-      const rect =
-        dir === "row"
-          ? { x: back ? cx - W : cx, y: cy, w: W, h: H }
-          : { x: cx, y: back ? cy - H : cy, w: W, h: H };
-      if (dir === "row") cx += (back ? -1 : 1) * (W + gapPx);
-      else cy += (back ? -1 : 1) * (H + gapPx);
-      last = rect;
-      if (!ext) ext = { ...rect };
-      else {
-        const x2 = Math.max(ext.x + ext.w, rect.x + rect.w);
-        const y2 = Math.max(ext.y + ext.h, rect.y + rect.h);
-        ext.x = Math.min(ext.x, rect.x);
-        ext.y = Math.min(ext.y, rect.y);
-        ext.w = x2 - ext.x;
-        ext.h = y2 - ext.y;
-      }
-      return rect;
+    next: advance,
+    fill(reserve = 0) {
+      const avail = Math.max(0, remaining() - reserve);
+      return dir === "row" ? advance(avail) : advance(undefined, avail);
     },
     gap(px) {
       if (dir === "row") cx += (back ? -1 : 1) * px;
       else cy += (back ? -1 : 1) * px;
+    },
+    get remaining() {
+      return remaining();
     },
     get last() {
       return last;
@@ -383,6 +410,8 @@ function runContainer<R>(
     // Cross-axis size the children fill: row → height, col → width.
     h: dir === "row" ? inner.h : undefined,
     w: dir === "col" ? inner.w : undefined,
+    // Main-axis length enables fill()/remaining inside the callback.
+    length: dir === "row" ? inner.w : inner.h,
   });
   layoutStack.push(st);
   try {
@@ -511,6 +540,14 @@ let overlaySeen = false; // an overlay ran this frame
 let overlayActive = false; // an overlay ran last frame → block the background
 let inOverlayPass = false; // the rest of the frame belongs to the overlay
 
+interface ActiveDrag {
+  sourceId: string;
+  payload: unknown;
+  offsetX: number;
+  offsetY: number;
+}
+let activeDrag: ActiveDrag | null = null;
+
 const DEAD_POINTER = { x: -1e9, y: -1e9, down: false, released: false, pressed: false, wheel: 0 };
 
 /** The pointer, raw — overlays themselves read this (their close logic must
@@ -546,100 +583,102 @@ function hoverCursor(hover: boolean): void {
   if (hover) Loop.setCursor("pointer");
 }
 
-// ---------- Flex (layout) ----------
+// ---------- Drag and drop ----------
 
-/** A size in a `FlexSpec`: fixed px, or a function of a text measurer —
- *  content-fit sizing without a second pass:
- *
- *    filters: { w: (m) => m.text("FILTERS (0)") + 28 } */
-export type FlexSize = number | ((m: { text(s: string, font?: string): number }) => number);
-
-/** One node in a `flex()` layout tree. In a row, `w` is the main-axis size
- *  and `h` the cross-axis size (swapped in a column). Give a node a fixed
- *  main size, or a `flex` share of the leftover; omit both for `flex: 1`.
- *  A node with `children` is a nested container. */
-export interface FlexSpec {
-  /** Fixed width in px (or a measure fn). Cross-axis: omit to fill. */
-  w?: FlexSize;
-  /** Fixed height in px (or a measure fn). Cross-axis: omit to fill. */
-  h?: FlexSize;
-  /** Share of the leftover main-axis space (flex-grow). Default 1 when no
-   *  fixed main size is given. */
-  flex?: number;
-  /** Container: main axis for the children. Default `"col"`. */
-  dir?: "row" | "col";
-  /** Container: gap between children in px. Default 0. */
-  gap?: number;
-  /** Container: inner padding in px. Default 0. */
-  pad?: number;
-  /** Container: named children, laid out in order. */
-  children?: Record<string, FlexSpec>;
+export interface DragSourceOptions<T> {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  payload: T;
+  disabled?: boolean;
 }
 
-/** Flexbox, minus the parts a game HUD doesn't need (wrap, shrink,
- *  per-item alignment): split a box into named regions — fixed sizes keep
- *  theirs, `flex` shares divide the leftover — and get back one flat map of
- *  rects (nested names must be unique). Recompute per frame from the live
- *  viewport and resize comes free:
- *
- *    const L = UI.flex({ x: 0, y: 0, w: vp.w, h: vp.h }, {
- *      dir: "col", pad: 12, gap: 8,
- *      children: {
- *        toolbar: { h: 30 },
- *        body: { flex: 1, dir: "row", gap: 4, children: {
- *          list: { flex: 1 }, scroll: { w: 10 },
- *        }},
- *        footer: { h: 40 },
- *      },
- *    });
- *    UI.scrollbar(ctx, { ...L.scroll, view: L.scroll.h, ... });
- *
- *  Rects feed straight into widgets (they all take x/y/w/h). For toolbars of
- *  label-sized widgets, use a `stack` inside a flex rect instead. */
-export function flex(
-  box: { x: number; y: number; w: number; h: number },
-  spec: FlexSpec,
-  out: Record<string, { x: number; y: number; w: number; h: number }> = {},
-): Record<string, { x: number; y: number; w: number; h: number }> {
-  const dir = spec.dir ?? "col";
-  const gap = spec.gap ?? 0;
-  const pad = spec.pad ?? 0;
-  const inner = {
-    x: box.x + pad,
-    y: box.y + pad,
-    w: Math.max(0, box.w - pad * 2),
-    h: Math.max(0, box.h - pad * 2),
+export interface DragSourceState {
+  hovered: boolean;
+  dragging: boolean;
+}
+
+export interface DropTargetOptions<T> {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  accepts?: (payload: T, sourceId: string) => boolean;
+}
+
+export interface DropResult<T> {
+  sourceId: string;
+  targetId: string;
+  payload: T;
+}
+
+export interface DropTargetState<T> {
+  hovered: boolean;
+  canDrop: boolean;
+  dropped: DropResult<T> | null;
+}
+
+export interface DraggedItem<T> {
+  sourceId: string;
+  payload: T;
+  /** Suggested preview top-left, preserving where the source was grabbed. */
+  x: number;
+  y: number;
+}
+
+/** Mark a rectangle as draggable. Call every draw frame for each source. The
+ * payload is retained only while dragging; render the source however you like. */
+export function dragSource<T>(opts: DragSourceOptions<T>): DragSourceState {
+  const p = uiPointer();
+  const hovered = !opts.disabled && pointInRect(p.x, p.y, opts);
+  if (hovered && p.pressed && !activeDrag) {
+    activeDrag = {
+      sourceId: opts.id,
+      payload: opts.payload,
+      offsetX: p.x - opts.x,
+      offsetY: p.y - opts.y,
+    };
+  }
+  const dragging = activeDrag?.sourceId === opts.id;
+  if (hovered || dragging) Loop.setCursor(dragging ? "grabbing" : "grab");
+  return { hovered, dragging };
+}
+
+/** Mark a rectangle as a drop target. On the release frame, `dropped` contains
+ * the source id and typed payload. Targets decide compatibility with `accepts`. */
+export function dropTarget<T>(opts: DropTargetOptions<T>): DropTargetState<T> {
+  const p = uiPointer();
+  const drag = activeDrag as ActiveDrag | null;
+  const accepted = drag ? (opts.accepts?.(drag.payload as T, drag.sourceId) ?? true) : false;
+  const hovered = !!drag && pointInRect(p.x, p.y, opts);
+  const canDrop = hovered && accepted;
+  if (canDrop) Loop.setCursor("copy");
+  let dropped: DropResult<T> | null = null;
+  if (canDrop && p.released && drag) {
+    dropped = { sourceId: drag.sourceId, targetId: opts.id, payload: drag.payload as T };
+    activeDrag = null;
+  }
+  return { hovered, canDrop, dropped };
+}
+
+/** Current drag data for drawing an icon/stack preview above the UI. */
+export function draggedItem<T>(): DraggedItem<T> | null {
+  if (!activeDrag) return null;
+  const p = rawPointer();
+  return {
+    sourceId: activeDrag.sourceId,
+    payload: activeDrag.payload as T,
+    x: p.x - activeDrag.offsetX,
+    y: p.y - activeDrag.offsetY,
   };
-  const kids = Object.entries(spec.children ?? {});
-  const main = dir === "row" ? inner.w : inner.h;
+}
 
-  // Measure-fn sizes resolve against the implicit ctx (content-fit).
-  const measurer = { text: (s: string, font?: string) => textWidth(s, font) };
-  const resolve = (s: FlexSize | undefined): number | undefined =>
-    typeof s === "function" ? s(measurer) : s;
-
-  let fixed = gap * Math.max(0, kids.length - 1);
-  let shares = 0;
-  for (const [, k] of kids) {
-    const size = resolve(dir === "row" ? k.w : k.h);
-    if (size !== undefined) fixed += size;
-    else shares += k.flex ?? 1;
-  }
-  const leftover = Math.max(0, main - fixed);
-
-  let cursor = dir === "row" ? inner.x : inner.y;
-  for (const [name, k] of kids) {
-    const fixedMain = resolve(dir === "row" ? k.w : k.h);
-    const size = fixedMain ?? (shares > 0 ? (leftover * (k.flex ?? 1)) / shares : 0);
-    const rect =
-      dir === "row"
-        ? { x: cursor, y: inner.y, w: size, h: resolve(k.h) ?? inner.h }
-        : { x: inner.x, y: cursor, w: resolve(k.w) ?? inner.w, h: size };
-    out[name] = rect;
-    cursor += size + gap;
-    if (k.children) flex(rect, k, out);
-  }
-  return out;
+/** Cancel the active drag (scene change, inventory close, Escape). */
+export function cancelDrag(): void {
+  activeDrag = null;
 }
 
 // ---------- Floating text ----------
@@ -1574,6 +1613,97 @@ export function confirm(
   return hit;
 }
 
+// ---------- Dialogue box ----------
+
+/** Bottom-screen dialogue used by RPGs, adventures, visual novels and tutorial
+ * conversations. Rendering is immediate-mode; the game owns conversation state. */
+export interface DialogOptions {
+  speaker?: string;
+  lines: string[];
+  /** Optional response/action labels. Returns the clicked label. */
+  choices?: string[];
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+  /** Optional portrait drawn on the left. */
+  portrait?: CanvasImageSource;
+  portraitSize?: number;
+  /** Small footer hint when there are no explicit choices. */
+  hint?: string;
+}
+
+/** Draw a themed dialogue box and return the clicked choice, or `null`.
+ *
+ * ```ts
+ * const answer = UI.dialog({
+ *   speaker: "BLACKSMITH",
+ *   lines: ["The old bridge is unsafe."],
+ *   choices: ["REPAIR IT", "LEAVE"],
+ * });
+ * ``` */
+export function dialog(opts: DialogOptions): string | null;
+export function dialog(ctx: CanvasRenderingContext2D, opts: DialogOptions): string | null;
+export function dialog(
+  a: CanvasRenderingContext2D | DialogOptions,
+  b?: DialogOptions,
+): string | null {
+  const [ctx, opts] = withCtx(a, b);
+  const vp = Stage.viewport;
+  const choices = opts.choices ?? [];
+  const portraitSize = opts.portrait ? (opts.portraitSize ?? 72) : 0;
+  const lineH = theme.fontSize + 8;
+  const choicesH = choices.length ? 42 : 0;
+  const h = opts.h ?? Math.max(104, 34 + opts.lines.length * lineH + choicesH + 16);
+  const w = opts.w ?? Math.min(680, vp.w - 24);
+  const x = opts.x ?? Math.round((vp.w - w) / 2);
+  const y = opts.y ?? vp.h - h - 12;
+  panel(ctx, { x, y, w, h, title: opts.speaker });
+
+  let textX = x + 14;
+  if (opts.portrait) {
+    const py = y + (opts.speaker ? 34 : 12);
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(opts.portrait, x + 12, py, portraitSize, portraitSize);
+    ctx.restore();
+    textX += portraitSize + 12;
+  }
+  let ty = y + (opts.speaker ? 35 : 13);
+  for (const line of opts.lines) {
+    text(ctx, line, {
+      x: textX,
+      y: ty,
+      w: x + w - 14 - textX,
+      h: lineH,
+      maxWidth: x + w - 14 - textX,
+    });
+    ty += lineH;
+  }
+
+  let hit: string | null = null;
+  if (choices.length) {
+    const bar = stack({ x: x + w - 12, y: y + h - 44, h: 32, gap: 8, align: "end" });
+    for (let i = choices.length - 1; i >= 0; i--) {
+      if (
+        button(ctx, { at: bar, label: choices[i], variant: i === 0 ? "primary" : "default", h: 32 })
+      ) {
+        hit = choices[i];
+      }
+    }
+  } else if (opts.hint) {
+    text(ctx, opts.hint, {
+      x: x + 12,
+      y: y + h - 28,
+      w: w - 24,
+      h: 18,
+      align: "right",
+      color: "dim",
+    });
+  }
+  return hit;
+}
+
 // ---------- Tooltip ----------
 
 let tipRequest: string | null = null; // asked for this frame
@@ -1645,6 +1775,12 @@ function ensureWired(): void {
         tipShown = null;
       }
       tipRequest = null;
+      // A release not consumed by any drop target cancels the drag.
+      try {
+        if (activeDrag && Pointer.frameReleased) activeDrag = null;
+      } catch {
+        activeDrag = null;
+      }
     });
     wired = true;
   } catch {
@@ -1678,6 +1814,7 @@ export function _reset(): void {
   overlaySeen = false;
   overlayActive = false;
   inOverlayPass = false;
+  activeDrag = null;
   begunCtx = null;
   wired = false;
 }

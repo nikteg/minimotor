@@ -122,6 +122,19 @@ export type { SfxBuilder, MusicConfig } from "./audio.js";
 export type { PhysicsBody } from "./physics.js";
 export type { SpriteCanvas } from "./sprites.js";
 export type {
+  Weighted,
+  ShuffleBag,
+  GridPoint,
+  GridNeighborOptions,
+  LeadTarget,
+  TimingGrade,
+  CheckpointRoute,
+  DamageRoll,
+  ItemStack,
+  WaveScale,
+  DayPhase,
+} from "./goodies.js";
+export type {
   Transport,
   WsConfig,
   RtcConfig,
@@ -139,8 +152,13 @@ export type {
   ButtonStyle,
   ButtonVariant,
   ConfirmOptions,
-  FlexSize,
-  FlexSpec,
+  DialogOptions,
+  DragSourceOptions,
+  DragSourceState,
+  DraggedItem,
+  DropResult,
+  DropTargetOptions,
+  DropTargetState,
   FloatManager,
   FloatOptions,
   GroupOptions,
