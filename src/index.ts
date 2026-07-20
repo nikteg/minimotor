@@ -14,6 +14,8 @@ import { Signals } from "./signals.js";
 import { Assets } from "./assets.js";
 import * as ECS from "./ecs.js";
 import * as Anim from "./anim.js";
+import * as Fsm from "./fsm.js";
+import * as Timers from "./timers.js";
 import * as Audio from "./audio.js";
 import * as Mathf from "./mathf.js";
 import * as Input from "./input.js";
@@ -24,6 +26,7 @@ import * as Net from "./net.js";
 import * as Perf from "./perf.js";
 import * as Camera from "./camera.js";
 import * as Game from "./game.js";
+import * as Goodies from "./goodies.js";
 import * as Fullscreen from "./fullscreen.js";
 import * as Text from "./text.js";
 import * as Tiles from "./tiles.js";
@@ -45,6 +48,7 @@ export {
   Perf,
   Camera,
   Game,
+  Goodies,
   Fullscreen,
   Text,
   Tiles,
@@ -57,6 +61,8 @@ export {
   Signals,
   Assets,
   Anim,
+  Fsm,
+  Timers,
   Particles,
 };
 export type {
@@ -104,6 +110,8 @@ export type {
   Sparkline,
 } from "./perf.js";
 export type { GamepadState } from "./input.js";
+export type { State, AnimBridge, FsmOptions, Machine } from "./fsm.js";
+export type { Window, Buffer, Cooldown, JumpGate, JumpGateOptions } from "./timers.js";
 export type { TileMap, TilesConfig, MoveOptions, MoveResult, MoveDir } from "./tiles.js";
 export type { Transition, TransitionRender, TransitionRun } from "./transitions.js";
 
@@ -169,6 +177,7 @@ export const Minimotor = {
   Perf,
   Camera,
   Game,
+  Goodies,
   Fullscreen,
   Text,
   Tiles,
@@ -182,6 +191,8 @@ export const Minimotor = {
   Signals,
   Assets,
   Anim,
+  Fsm,
+  Timers,
   Particles,
   Collision,
   UI,

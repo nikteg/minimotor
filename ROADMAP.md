@@ -22,7 +22,7 @@ you don't need**. You can always drop to a raw `ctx` and a plain
 ```
 ┌─ L4  Content     Assets · Anim · Tiles · Particles · Transitions · UI
 ├─ L3  Structure   ECS(World) · Scenes · Clock · Tween · Signals          ← the engine core we're adding
-├─ L2  Primitives  Mathf · Collision · Camera · Sprites · Text · Physics
+├─ L2  Primitives  Mathf · Goodies · Collision · Camera · Sprites · Text · Physics
 └─ L1  Platform    Stage · Loop · Draw · Keys · Pointer · Audio · Storage · Net · Perf · Fullscreen · Input
 ```
 
@@ -52,12 +52,56 @@ Pure, data-agnostic helpers. No engine state.
 
 - ✅ `Mathf` — lerp, clamp, remap, pulse, wave, easing set, `randRange`,
   `randInt`, `randItem`, `distance`, `angleBetween`
+- ✅ `Goodies` — the intentional game-recipe grab bag. It collects essential,
+  tested patterns shared by arcade, grid, platformer, shooter, roguelike and
+  other genres. Shipped: `wrap`, `wrappedDelta` and `wrappedDistance`.
 - ✅ `Collision` — rectsOverlap, circleHit, crossedDown, `sweptAABB` (tunneling)
   (add: circleRect), `pointInRect` (shipped — powers `UI.button` hit-testing)
 - ✅ `Camera` — `createCamera` (lerp follow + clamp), `scrollColumns` parallax,
   `shake` (decaying screen-shake, aged on the fixed step)
 - ✅ `Sprites` — `getSprite` (square) + `getLayer` (arbitrary offscreen cache)
 - ✅ `Text`, `Physics` (kinematic helpers/constants)
+
+### `Goodies` recipe catalog
+
+`Goodies` is deliberately broad. It is where a developer should look for the
+small pieces of genre knowledge that otherwise get rewritten in every game.
+Recipes may combine lower-level Minimotor primitives, but remain plain functions
+or tiny state objects—never a mandatory gameplay framework.
+
+**Shipped — wrapping worlds (Snake, Asteroids, arena games):**
+
+- `wrap(value, max)` / `wrap(value, min, max)`
+- `wrappedDelta(from, to, size)`
+- `wrappedDistance(ax, ay, bx, by, worldW, worldH)`
+
+**Candidate recipe families:**
+
+- **Grid / roguelike:** cardinal and diagonal neighbors, grid keys, flood fill,
+  grid line traversal, random empty-cell selection and shuffle bags.
+- **Arcade / shooter:** target leading, angle approach with wraparound, fire-rate
+  gates, object recycling across arena edges and score/combo chains.
+- **Platformer:** jump intent recipes that compose `Timers.jumpGate`, drop-through
+  intent and reusable patrol/turn-at-edge logic. Collision resolution remains in
+  `Tiles`; gravity and jump tuning remain game policy.
+- **Loot / RPG:** weighted selection, without-replacement bags, bounded stat
+  modifiers and cooldown/charge recipes.
+- **Strategy / simulation:** fixed-rate accumulators, spatial bucket iteration
+  and deterministic seeded selection once a seeded RNG primitive exists.
+- **Camera / presentation:** trauma-style shake accumulation, hit-stop gates and
+  reusable world-to-HUD indicators, composed from `Camera`, `Timers` and `UI`.
+
+**Admission rules:** a recipe should be recognizable to game developers, useful
+across more than one game, significantly easier to get subtly wrong than its API
+suggests, and small enough to explain with one example. It does not need to fit a
+single genre or wait for repeated local implementations before being added.
+Low-level scalar math stays in `Mathf`; geometric tests stay in `Collision`;
+rendering stays in `Sprites`; scheduling stays in `Timers`/`Clock`. `Goodies`
+composes those pieces into common game behavior.
+
+Every shipped recipe needs deterministic unit tests and at least one sample that
+uses it. Recipe families should remain flat and discoverable initially; introduce
+nested namespaces only when name collisions or catalog size make them useful.
 
 ## L3 — Structure (the engine core) ✅
 
@@ -254,6 +298,27 @@ them pay nothing; the plain `minimotor` entry stays dependency-free.
   planck (Box2D): bodies, walls, revolute joints with motors, contacts,
   deferred destroy — addressed in pixels, ticked on the fixed step.
 
+## Sample primitive policy
+
+Every sample should use the highest-level shipped primitive that makes its code
+clearer, and together the gallery must exercise the complete public surface:
+
+- All playable samples use `UI` for HUD text/panels/meters and overlays.
+- Dynamic unordered entity sets use `ECS`; deliberately ordered structures such
+  as a snake body and single-object minimal demos remain plain data.
+- Repeated or expensive raster art uses `Sprites.getSprite`/`getLayer`; direct
+  canvas drawing remains appropriate for unique vector art and teaching raw
+  `draw(ctx)`.
+- Samples use `Camera`, `Tiles`, `Anim`, `Particles`, `Scenes`, `Timers`, `Fsm`,
+  `Assets` and the genre recipes in `Goodies` where gameplay demonstrates them.
+- A migration must delete local infrastructure. Merely wrapping data in ECS or
+  calling an engine helper without reducing code is not considered adoption.
+
+Current proof migrations include `Goodies.wrap` in Snake, toroidal helpers in
+Pocket Asteroids, wrapped ECS sprites in the Sprites sample, `Sprites.getLayer`
+for Pixel Adventure's cached world art, and `UI.panel`/`UI.text` for the legacy
+Platformer HUD.
+
 ## Design principles (what keeps it _minimotor_)
 
 1. **Opt-in layers** — raw `ctx` and plain `Loop.run` always work; nothing above
@@ -447,15 +512,22 @@ collision solver, no manual letterbox/camera transform plumbing, no direct
 current controls, fully solid platforms, animation states, visual effects and
 120 Hz target.
 
-## Character composition — state machines & timing ⬜
+## Character composition — state machines & timing ✅
 
 Games keep asking for "a platformer character": coyote time, jump buffering,
 wall jumps, state-driven animation. A bundled character controller is a stated
 non-goal (it fuses policy — jump heights, impulse directions, gravity — that
 belongs to the game). The engine's job is the small, pure, reusable
-**mechanisms** those characters compose. Same discipline as extraction: ship
-with tests and prove each helper in Pixel Adventure **plus** one other sample
-(`platformer`, `tiles`, `pocket`).
+**mechanisms** those characters compose.
+
+**Shipped:** `Fsm` (general state machine + `Anim.states` bridge) and `Timers`
+(`window`/`buffer`/`cooldown` latches + the composed `jumpGate`). Proven in
+two samples: `platformer` gained coyote time + buffering by feeding its jump
+edge through `Timers.jumpGate` (impulse + variable-height cut still game code);
+`pixel-adventure` drives its player animation through `Fsm.create({...}, { anim })`
+(the hand-mirrored `anim.play()` expression is gone) and jumps through the same
+gate. Wall jumps remain composed from `moveAABB` contacts (see below), with no
+wall-jump util and no `Platform` namespace. Unit tests cover both modules.
 
 ### `Fsm` — a general finite state machine (L3, beside Scenes) ⬜
 
@@ -467,15 +539,15 @@ forces a transition (firing exit → enter). Plain data, no inheritance.
 const sm = Minimotor.Fsm.create(
   {
     idle: { update: () => (moving ? "run" : grounded ? null : "fall") },
-    run:  { update: () => (!grounded ? "fall" : moving ? null : "idle") },
+    run: { update: () => (!grounded ? "fall" : moving ? null : "idle") },
     jump: { enter: () => (vy = -JUMP), update: () => (vy >= 0 ? "fall" : null) },
     fall: { update: () => (grounded ? "idle" : null) },
     hurt: { enter: () => hurtClock.start(), update: () => (hurtClock.done ? "idle" : null) },
   },
   "idle",
 );
-sm.update(dtMs);   // runs the active state; a returned name transitions
-sm.state;          // active name;  sm.is("jump");  sm.go("hurt")
+sm.update(dtMs); // runs the active state; a returned name transitions
+sm.state; // active name;  sm.is("jump");  sm.go("hurt")
 ```
 
 **Maps to `Anim.states`:** they share the named-state shape but are different
@@ -494,16 +566,23 @@ top-down, shmup and action games too. Three tiny pure factories, ticked on the
 fixed step, holding only a countdown:
 
 ```ts
-const coyote = Minimotor.Timers.window(100);   // grace after a condition drops
-const jumpBuf = Minimotor.Timers.buffer(120);  // an input honored slightly early
+const coyote = Minimotor.Timers.window(100); // grace after a condition drops
+const jumpBuf = Minimotor.Timers.buffer(120); // an input honored slightly early
 const dashCd = Minimotor.Timers.cooldown(500); // a reusable-after-delay gate
 
 // each fixed step:
 if (grounded) coyote.charge();
-coyote.tick(stepMs); jumpBuf.tick(stepMs); dashCd.tick(stepMs);
+coyote.tick(stepMs);
+jumpBuf.tick(stepMs);
+dashCd.tick(stepMs);
 if (Keys.pressed("Space")) jumpBuf.trigger();
-if (coyote.active && jumpBuf.consume()) { vy = -JUMP; }   // coyote + buffered jump
-if (dashCd.ready() && dash) { doDash(); dashCd.use(); }
+if (coyote.active && jumpBuf.consume()) {
+  vy = -JUMP;
+} // coyote + buffered jump
+if (dashCd.ready() && dash) {
+  doDash();
+  dashCd.use();
+}
 ```
 
 - `window(ms)`: `charge()` refills; `active` true during `ms` after the last
