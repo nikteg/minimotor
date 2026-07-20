@@ -49,6 +49,40 @@ export type System = (world: World) => void;
 /** A render system: runs in the draw phase (via `world.draw(ctx)`). */
 export type RenderSystem = (world: World, ctx: CanvasRenderingContext2D) => void;
 
+/** An image the built-in sprite renderer can blit. A `SpriteCanvas` from
+ *  `Sprites.getSprite` carries `logicalSize`, so its on-screen size is inferred
+ *  automatically; for other images pass `w`/`h` (or the natural size is used). */
+type SpriteImage = (HTMLCanvasElement | HTMLImageElement | ImageBitmap) & {
+  logicalSize?: number;
+};
+
+/** The engine-standard `Sprite` component: position + texture + presentation.
+ *  Attach it and call `world.drawSprites(ctx)` — no hand-written blit loop.
+ *  Drop to a manual `ctx` query only for custom visuals. */
+export interface SpriteData {
+  /** World position (logical px). */
+  x: number;
+  y: number;
+  /** Texture to blit (canvas / image / bitmap). */
+  img: SpriteImage;
+  /** On-screen size (logical px). Inferred from `img` when omitted. */
+  w?: number;
+  h?: number;
+  /** Anchor as a fraction of size; 0.5/0.5 (default) centers on `x,y`. */
+  ax?: number;
+  ay?: number;
+  /** Rotation in radians (default 0), applied about the anchor. */
+  rot?: number;
+  /** Uniform scale (default 1). */
+  scale?: number;
+  /** Opacity 0..1 (default 1). */
+  alpha?: number;
+  /** Draw order — lower is drawn first (default 0). */
+  z?: number;
+  /** Skip drawing when false (default true). */
+  visible?: boolean;
+}
+
 let nextComponentId = 0;
 
 /** Define a component type. Call once per component (module scope), then attach
@@ -64,6 +98,11 @@ export function component<T>(name: string): Component<T> {
   };
   return self;
 }
+
+/** The engine-standard sprite component. Bake a texture with `Sprites.getSprite`
+ *  (or load an image), attach `Sprite.with({ x, y, img })`, then let
+ *  `world.drawSprites(ctx)` draw it. */
+export const Sprite = component<SpriteData>("Sprite");
 
 // Entity id packing: id = generation * CAP + index. Plain arithmetic (not
 // bit-shifts) to sidestep 32-bit sign issues on large generations.
@@ -138,6 +177,10 @@ export interface World {
   update(): void;
   /** Run every render system in order with the given context. */
   draw(ctx: CanvasRenderingContext2D): void;
+  /** Built-in renderer: blit every entity holding the standard `Sprite`
+   *  component, sorted by `z` (ties keep spawn order). Honors anchor, rotation,
+   *  scale, alpha and visibility. Call from a scene `draw` or a render system. */
+  drawSprites(ctx: CanvasRenderingContext2D): void;
 
   query<A>(a: Component<A>): Iterable<[Entity, A]>;
   query<A, B>(a: Component<A>, b: Component<B>): Iterable<[Entity, A, B]>;
@@ -285,6 +328,35 @@ export function world(): World {
 
     draw(ctx) {
       for (const s of renderSystems) s.fn(self, ctx);
+    },
+
+    drawSprites(ctx) {
+      // Collect, then z-sort (stable) so draw order is predictable.
+      const list: SpriteData[] = [];
+      for (const [, s] of self.query(Sprite)) list.push(s as SpriteData);
+      list.sort((a, b) => (a.z ?? 0) - (b.z ?? 0));
+
+      for (const s of list) {
+        if (s.visible === false) continue;
+        const alpha = s.alpha ?? 1;
+        if (alpha <= 0) continue;
+
+        const img = s.img;
+        const w = s.w ?? img.logicalSize ?? img.width;
+        const h = s.h ?? img.logicalSize ?? img.height;
+        const ax = s.ax ?? 0.5;
+        const ay = s.ay ?? 0.5;
+        const rot = s.rot ?? 0;
+        const scale = s.scale ?? 1;
+
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.translate(s.x, s.y);
+        if (rot !== 0) ctx.rotate(rot);
+        if (scale !== 1) ctx.scale(scale, scale);
+        ctx.drawImage(img, -ax * w, -ay * h, w, h);
+        ctx.restore();
+      }
     },
 
     // Implementation is one loose signature; the typed overloads live on the

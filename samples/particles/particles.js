@@ -1,5 +1,7 @@
-// Particle system demo: firework sparks built on the ECS with systems.
-// Demonstrates: ECS components/spawn/query/despawn + update & render systems.
+// Particle system demo: firework sparks on the ECS with the built-in Sprite
+// component + renderer.
+// Demonstrates: ECS.Sprite (position + texture + alpha), world.drawSprites() —
+// no hand-written blit loop — plus an update system that fades sprites out.
 import { Minimotor } from "minimotor";
 
 const vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
@@ -8,10 +10,10 @@ const { ECS, Pointer, Draw } = Minimotor;
 const NUM = 200;
 const SIZE = 8;
 
-// Components are plain-data; the world owns their storage.
-const Pos = ECS.component("Pos"); //  { x, y }
-const Vel = ECS.component("Vel"); //  { x, y }
-const Life = ECS.component("Life"); // { v }  (1 → 0)
+// The standard Sprite component carries x/y/img/alpha; Vel is our own. The
+// spark's alpha doubles as its remaining life, so no separate Life component.
+const { Sprite } = ECS;
+const Vel = ECS.component("Vel"); // { x, y }
 
 const world = ECS.world();
 
@@ -32,36 +34,25 @@ function spawnBurst(x, y) {
     const a = Math.random() * Math.PI * 2;
     const speed = 1 + Math.random() * 5;
     world.spawn(
-      Pos.with({ x, y }),
+      Sprite.with({ x, y, img: sparkCanvas, alpha: 1 }),
       Vel.with({ x: Math.cos(a) * speed, y: Math.sin(a) * speed }),
-      Life.with({ v: 1 }),
     );
   }
 }
 
 spawnBurst(vp.w / 2, vp.h / 2);
 
-// Simulation system: gravity + fade. Despawning mid-query is safe — the world
-// buffers it until the query finishes, so we never mutate the set we walk.
+// Simulation system: move, gravity, fade the sprite's alpha (= life), despawn at
+// zero. Despawning mid-query is safe — the world buffers it until iteration ends.
 world.system("integrate", (w) => {
   const G = Minimotor.Physics.GRAVITY * 0.3;
-  for (const [e, p, v, life] of w.query(Pos, Vel, Life)) {
-    p.x += v.x;
-    p.y += v.y;
+  for (const [e, s, v] of w.query(Sprite, Vel)) {
+    s.x += v.x;
+    s.y += v.y;
     v.y += G;
-    life.v -= 0.008;
-    if (life.v <= 0) w.despawn(e);
+    s.alpha -= 0.008;
+    if (s.alpha <= 0) w.despawn(e);
   }
-});
-
-// Render system: blit each spark with its remaining life as alpha.
-world.renderSystem("sparks", (w, ctx) => {
-  const half = sparkCanvas.logicalSize / 2;
-  for (const [, p, life] of w.query(Pos, Life)) {
-    ctx.globalAlpha = life.v;
-    ctx.drawImage(sparkCanvas, p.x - half, p.y - half);
-  }
-  ctx.globalAlpha = 1;
 });
 
 Minimotor.Loop.run({
@@ -73,9 +64,9 @@ Minimotor.Loop.run({
   draw() {
     const { ctx } = Draw;
     ctx.clearRect(0, 0, vp.w, vp.h);
-    world.draw(ctx); // runs render systems
+    world.drawSprites(ctx); // built-in: centers + blits every Sprite by z
     ctx.fillStyle = "#fff";
     ctx.font = "14px monospace";
-    ctx.fillText(`Sparks: ${world.count(Pos)}  Click to spawn`, 10, 20);
+    ctx.fillText(`Sparks: ${world.count(Sprite)}  Click to spawn`, 10, 20);
   },
 });

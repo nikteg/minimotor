@@ -59,7 +59,15 @@ export type {
   StageOptions,
 } from "./engine.js";
 export type { Scene, SceneManager } from "./scenes.js";
-export type { Component, ComponentInit, Entity, World, System, RenderSystem } from "./ecs.js";
+export type {
+  Component,
+  ComponentInit,
+  Entity,
+  World,
+  System,
+  RenderSystem,
+  SpriteData,
+} from "./ecs.js";
 export type { ClockManager, Cancel } from "./clock.js";
 export type { SignalBus } from "./signals.js";
 

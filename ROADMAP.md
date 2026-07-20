@@ -127,6 +127,14 @@ iteration never mutates mid-flight and replays stay deterministic.
 API hides this so we can move hot components to typed-array SoA later without
 breaking games.
 
+**Built-in sprite rendering** ✅. The engine ships one standard component,
+`ECS.Sprite` — `{ x, y, img, w?, h?, ax?, ay?, rot?, scale?, alpha?, z?, visible? }`
+— and `world.drawSprites(ctx)`, which z-sorts and blits every sprite (anchor /
+rotation / scale / alpha honored). The common case (entity = position + texture)
+needs **no draw code**; drop to a manual `ctx` query only for custom visuals.
+Proof: the particles sample's hand-written blit loop is gone (`world.drawSprites`),
+and its `Life` component folded into `Sprite.alpha`.
+
 ### 3b. Scenes — `Minimotor.Scenes` ✅
 
 A scene stack replaces the hand-rolled `game.state = "menu"|"playing"|"gameover"`
@@ -231,7 +239,7 @@ hoppspelet) as proof it actually simplifies code — the discipline used so far.
    pause-safe via `Loop.onStep`), `Signals` synchronous bus, `Mathf` easings.
    Shipped with tests; hoppspelet's death restart-lock moved off wall-clock onto
    `Clock.after` as the proof.
-4b. ✅ **L3 battle-test** — migrated the **breakout** sample fully onto Scenes +
+   4b. ✅ **L3 battle-test** — migrated the **breakout** sample fully onto Scenes +
    ECS (blocks as entities queried for collision & render; play + pushed
    game-over overlay) before extending. The API carried a whole game with **no
    engine changes** — validating the L3 surface.

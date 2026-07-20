@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { component, world, type Entity } from "./ecs.js";
+import { component, world, Sprite, type Entity } from "./ecs.js";
 
 const Position = component<{ x: number; y: number }>("Position");
 const Velocity = component<{ x: number; y: number }>("Velocity");
@@ -193,5 +193,80 @@ describe("ECS systems", () => {
     w.update();
     expect(first).not.toHaveBeenCalled();
     expect(second).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("ECS drawSprites", () => {
+  // Minimal 2D-context stand-in that records the calls we assert on.
+  function mockCtx() {
+    const calls: string[] = [];
+    let alpha = 1;
+    const ctx = {
+      calls,
+      set globalAlpha(v: number) {
+        alpha = v;
+      },
+      get globalAlpha() {
+        return alpha;
+      },
+      save: () => calls.push("save"),
+      restore: () => calls.push("restore"),
+      translate: (x: number, y: number) => calls.push(`translate ${x},${y}`),
+      rotate: (r: number) => calls.push(`rotate ${r}`),
+      scale: (x: number, y: number) => calls.push(`scale ${x},${y}`),
+      drawImage: (_img: unknown, dx: number, dy: number, dw: number, dh: number) =>
+        calls.push(`draw ${dx},${dy} ${dw}x${dh} @${alpha}`),
+    };
+    return ctx as unknown as CanvasRenderingContext2D & { calls: string[] };
+  }
+
+  const img = { width: 20, height: 20 } as HTMLCanvasElement;
+
+  it("centers by default and infers size from the image", () => {
+    const w = world();
+    w.spawn(Sprite.with({ x: 100, y: 50, img }));
+    const ctx = mockCtx();
+    w.drawSprites(ctx);
+    expect(ctx.calls).toContain("translate 100,50");
+    // default anchor 0.5 → offset -10,-10; size 20x20; alpha 1
+    expect(ctx.calls).toContain("draw -10,-10 20x20 @1");
+  });
+
+  it("respects explicit size, anchor and alpha", () => {
+    const w = world();
+    w.spawn(Sprite.with({ x: 0, y: 0, img, w: 40, h: 10, ax: 0, ay: 1, alpha: 0.5 }));
+    const ctx = mockCtx();
+    w.drawSprites(ctx);
+    expect(ctx.calls).toContain("draw 0,-10 40x10 @0.5"); // ax0 → 0, ay1 → -10
+  });
+
+  it("draws in ascending z order", () => {
+    const w = world();
+    w.spawn(Sprite.with({ x: 3, y: 0, img, z: 10 }));
+    w.spawn(Sprite.with({ x: 1, y: 0, img, z: -5 }));
+    w.spawn(Sprite.with({ x: 2, y: 0, img, z: 0 }));
+    const ctx = mockCtx();
+    w.drawSprites(ctx);
+    const order = ctx.calls.filter((c) => c.startsWith("translate")).map((c) => c.split(" ")[1]);
+    expect(order).toEqual(["1,0", "2,0", "3,0"]);
+  });
+
+  it("skips invisible and fully transparent sprites", () => {
+    const w = world();
+    w.spawn(Sprite.with({ x: 0, y: 0, img, visible: false }));
+    w.spawn(Sprite.with({ x: 0, y: 0, img, alpha: 0 }));
+    const ctx = mockCtx();
+    w.drawSprites(ctx);
+    expect(ctx.calls.filter((c) => c.startsWith("draw"))).toHaveLength(0);
+  });
+
+  it("applies rotation and scale only when non-default", () => {
+    const w = world();
+    w.spawn(Sprite.with({ x: 0, y: 0, img })); // no rot/scale
+    w.spawn(Sprite.with({ x: 0, y: 0, img, rot: 1, scale: 2 }));
+    const ctx = mockCtx();
+    w.drawSprites(ctx);
+    expect(ctx.calls.filter((c) => c.startsWith("rotate"))).toEqual(["rotate 1"]);
+    expect(ctx.calls.filter((c) => c.startsWith("scale"))).toEqual(["scale 2,2"]);
   });
 });
