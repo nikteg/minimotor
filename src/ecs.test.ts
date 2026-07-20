@@ -39,6 +39,20 @@ describe("ECS entities & components", () => {
     expect(w.count(Position)).toBe(0);
     expect(w.count(Velocity)).toBe(0);
   });
+
+  it("size tracks live entities through spawn/despawn/clear", () => {
+    const w = world();
+    expect(w.size).toBe(0);
+    const a = w.spawn(Position.with({ x: 0, y: 0 }));
+    w.spawn();
+    expect(w.size).toBe(2);
+    w.despawn(a);
+    expect(w.size).toBe(1);
+    w.despawn(a); // stale handle — must not double-count
+    expect(w.size).toBe(1);
+    w.clear();
+    expect(w.size).toBe(0);
+  });
 });
 
 describe("ECS generational ids", () => {

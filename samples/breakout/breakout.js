@@ -8,8 +8,14 @@
 import { Minimotor } from "minimotor";
 import { drawGameOver } from "../shared/overlays.js";
 
-let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 const { Scenes, Keys, Draw, ECS, Collision, Mathf, Camera, Audio } = Minimotor;
+
+// ---- ECS: one component holding a block's rect + presentation ----
+const Block = ECS.component("Block"); // { x, y, w, h, color, row }
+const world = ECS.world();
+
+// The perf HUD shows this world's live entity count (`ents`).
+let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin({ world })] });
 
 // Fixed game dimensions — scaled to fit the viewport, keeping aspect ratio.
 const GW = 400;
@@ -39,10 +45,6 @@ const BLOCK_GAP = 3;
 const BLOCK_TOP = 80;
 const gridW = COLS * (BLOCK_W + BLOCK_GAP) - BLOCK_GAP;
 const ROW_COLORS = ["#ff6b6b", "#ffa94d", "#ffd43b", "#69db7c", "#4ecdc4"];
-
-// ---- ECS: one component holding a block's rect + presentation ----
-const Block = ECS.component("Block"); // { x, y, w, h, color, row }
-const world = ECS.world();
 
 // ---- plain-object state (single instances) ----
 const paddle = { x: GW / 2 - PADDLE_W / 2, y: GH - 60, w: PADDLE_W, h: PADDLE_H };

@@ -4,9 +4,12 @@
 // no hand-written blit loop — plus an update system that fades sprites out.
 import { Minimotor } from "minimotor";
 
-let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
-Minimotor.Stage.onResize((next) => (vp = next)); // clear/HUD read vp live
 const { ECS, Pointer, Draw } = Minimotor;
+const world = ECS.world();
+
+// The perf HUD shows this world's live entity count (`ents`).
+let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin({ world })] });
+Minimotor.Stage.onResize((next) => (vp = next)); // clear/HUD read vp live
 
 const NUM = 200;
 const SIZE = 8;
@@ -15,8 +18,6 @@ const SIZE = 8;
 // spark's alpha doubles as its remaining life, so no separate Life component.
 const { Sprite } = ECS;
 const Vel = ECS.component("Vel"); // { x, y }
-
-const world = ECS.world();
 
 // Pre-render the spark texture once.
 const sparkCanvas = Minimotor.Sprites.getSprite("spark", SIZE * 3, vp.dpr, (ctx) => {

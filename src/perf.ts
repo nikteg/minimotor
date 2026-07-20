@@ -127,11 +127,17 @@ export function createNetMeter(): NetMeter {
       if (dt <= 0) return stats;
       const perSec = (d: number) => (d / dt) * 1000;
       const k = 0.2; // smoothing toward the latest instantaneous rate
+      // Exponential smoothing never reaches zero on its own — snap the tail so
+      // idle links read (and graph) as exactly 0 instead of a noise floor.
+      const smooth = (prev: number, next: number, eps: number) => {
+        const v = lerp(prev, next, k);
+        return v < eps ? 0 : v;
+      };
       stats = {
-        upMsgs: lerp(stats.upMsgs, perSec(mUp - lmUp), k),
-        downMsgs: lerp(stats.downMsgs, perSec(mDown - lmDown), k),
-        upBps: lerp(stats.upBps, perSec(bUp - lbUp), k),
-        downBps: lerp(stats.downBps, perSec(bDown - lbDown), k),
+        upMsgs: smooth(stats.upMsgs, perSec(mUp - lmUp), 0.01),
+        downMsgs: smooth(stats.downMsgs, perSec(mDown - lmDown), 0.01),
+        upBps: smooth(stats.upBps, perSec(bUp - lbUp), 1),
+        downBps: smooth(stats.downBps, perSec(bDown - lbDown), 1),
       };
       lastT = nowMs;
       lmUp = mUp;
@@ -200,6 +206,11 @@ export interface PerfHudOptions {
   /** If given, one extra line shows the engine's update/draw cost and how many
    *  fixed steps ran (`Game.timings` — the `plugin()` passes it for you). */
   timings?: FrameTimings;
+  /** Live entity count to display (pass `world.size`). */
+  entities?: number;
+  /** Used JS heap in MB (Chrome-only `performance.memory`; the `plugin()`
+   *  reads it for you where available). */
+  heapMB?: number;
   /** History graphs drawn as labeled strips under the text: frame time, and
    *  (with `net`) sent/received traffic. Push samples yourself each frame; the
    *  `plugin()` does this for you. */
@@ -221,7 +232,8 @@ export function drawPerfHud(
   const anchor = opts.anchor ?? "top-right";
   const lineH = 14;
   const boxW = net ? 176 : 148;
-  const rows = 4 + (timings ? 1 : 0) + (net ? 2 : 0);
+  const memLine = opts.entities !== undefined || opts.heapMB !== undefined;
+  const rows = 4 + (timings ? 1 : 0) + (memLine ? 1 : 0) + (net ? 2 : 0);
   const frameSpark = opts.graphs?.frame;
   const upSpark = net && opts.graphs?.up;
   const downSpark = net && opts.graphs?.down;
@@ -268,6 +280,13 @@ export function drawPerfHud(
     ctx.fillText(`upd ${upd}  drw ${drw} ms${xn}`, x, y + lineH * row++);
   }
 
+  if (memLine) {
+    const parts: string[] = [];
+    if (opts.entities !== undefined) parts.push(`ents ${opts.entities}`);
+    if (opts.heapMB !== undefined) parts.push(`heap ${Math.round(opts.heapMB)} MB`);
+    ctx.fillText(parts.join("  "), x, y + lineH * row++);
+  }
+
   if (net) {
     ctx.fillStyle = "#4ecdc4";
     ctx.fillText(`↑ ${rate(net.upMsgs)}/s  ${kbps(net.upBps)} KB/s`, x, y + lineH * row++);
@@ -275,17 +294,18 @@ export function drawPerfHud(
     ctx.fillText(`↓ ${rate(net.downMsgs)}/s  ${kbps(net.downBps)} KB/s`, x, y + lineH * row++);
   }
 
-  // Labeled history strips, one metric per graph.
+  // Labeled history strips, one metric per graph — each in its own color so
+  // they can't be confused at a glance.
   let graphY = bgY + lineH * rows + 8;
   const graphW = boxW - 8;
   const strip = (spark: Sparkline, label: string, barColor: string) => {
     ctx.font = "9px monospace";
-    ctx.fillStyle = "#889";
+    ctx.fillStyle = barColor;
     ctx.fillText(label, x, graphY);
     spark.draw(ctx, x, graphY + 10, graphW, graphH, barColor);
     graphY += stripH;
   };
-  if (frameSpark) strip(frameSpark, "frame ms", color);
+  if (frameSpark) strip(frameSpark, "frame ms", "#b197fc");
   if (upSpark) strip(upSpark, "↑ sent KB/s", "#4ecdc4");
   if (downSpark) strip(downSpark, "↓ received KB/s", "#ffd43b");
   ctx.restore();
@@ -299,9 +319,20 @@ export interface PerfOptions {
   anchor?: "top-left" | "top-right";
   /** A `NetMeter` to display network throughput alongside the frame stats. */
   net?: NetMeter;
+  /** An ECS world (anything with a numeric `size`) to show its live entity
+   *  count — e.g. `plugin({ world: Minimotor.World })`. */
+  world?: { readonly size: number };
   /** Draw history sparklines (frame time; up/down traffic with `net`).
    *  Default true. */
   graphs?: boolean;
+}
+
+// Chrome-only heap gauge; everywhere else this stays undefined and the HUD
+// simply omits the number.
+function usedHeapMB(): number | undefined {
+  const mem = (performance as { memory?: { usedJSHeapSize?: number } }).memory;
+  const used = mem?.usedJSHeapSize;
+  return typeof used === "number" ? used / (1024 * 1024) : undefined;
 }
 
 /** Create a Perf HUD game plugin. Each call owns its own tracker state. Draws in
@@ -333,6 +364,8 @@ export function plugin(opts: PerfOptions = {}): EnginePlugin {
         anchor: opts.anchor ?? "top-right",
         net,
         timings: game.timings,
+        entities: opts.world?.size,
+        heapMB: usedHeapMB(),
         graphs,
       });
     },

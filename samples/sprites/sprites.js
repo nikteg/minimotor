@@ -4,9 +4,11 @@
 // so the sample needs no asset files — an 8-frame pulsing/rotating star.
 import { Minimotor } from "minimotor";
 
-let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
-Minimotor.Stage.onResize((next) => (vp = next)); // wrap bounds read vp live
 const { ECS, Anim, Draw, Loop, Pointer, Mathf } = Minimotor;
+const world = ECS.world();
+
+let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin({ world })] });
+Minimotor.Stage.onResize((next) => (vp = next)); // wrap bounds read vp live
 
 const FRAMES = 8;
 const CELL = 64;
@@ -42,7 +44,6 @@ sheetCanvas.height = CELL;
 
 const Vel = ECS.component("Vel");
 const Animated = ECS.component("Anim"); // holds the per-entity Animation
-const world = ECS.world();
 
 function spawnStar(x, y) {
   const anim = Anim.sheet(sheetCanvas, { fw: CELL, fh: CELL, fps: 12 });

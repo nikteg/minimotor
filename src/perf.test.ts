@@ -162,6 +162,17 @@ describe("drawPerfHud", () => {
     expect(labels).toContain("frame ms");
   });
 
+  it("shows entity count and heap when given (and omits the line otherwise)", () => {
+    const { ctx } = recorder();
+    drawPerfHud(ctx, stats, { viewW: 800, entities: 240, heapMB: 117.6 });
+    const lines = ctx.fillText.mock.calls.map((c) => c[0] as string);
+    expect(lines).toContain("ents 240  heap 118 MB");
+
+    const plain = recorder();
+    drawPerfHud(plain.ctx, stats, { viewW: 800 });
+    expect(plain.ctx.fillText.mock.calls.length).toBe(4);
+  });
+
   it("shows the engine's update/draw cost when timings are given", () => {
     const { ctx } = recorder();
     drawPerfHud(ctx, stats, {

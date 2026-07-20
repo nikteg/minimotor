@@ -190,6 +190,8 @@ export interface World {
   remove(e: Entity, c: AnyComponent): void;
   /** How many entities currently have this component. */
   count(c: AnyComponent): number;
+  /** Total live entities (despawns land after the deferred flush). */
+  readonly size: number;
   /** Apply any buffered structural changes now (auto-run when queries finish). */
   flush(): void;
   /** Remove every entity and component (systems are kept). */
@@ -251,6 +253,7 @@ export function world(): World {
   const owned: (Set<number> | undefined)[] = [];
 
   let iterating = 0;
+  let liveCount = 0;
   const commands: (() => void)[] = [];
 
   // Reused per-call scratch (drawSprites list / each row) — hot-path, no allocs.
@@ -303,6 +306,7 @@ export function world(): World {
     }
     generations[index]++;
     alive[index] = false;
+    liveCount--;
     free.push(index);
   }
 
@@ -317,9 +321,14 @@ export function world(): World {
         generations.push(0);
         alive.push(true);
       }
+      liveCount++;
       // Attaching is an append — safe even mid-query (queries snapshot length).
       for (const init of inits) addAt(index, init.component.id, init.data);
       return makeId(index, generations[index]);
+    },
+
+    get size() {
+      return liveCount;
     },
 
     despawn(e) {
@@ -376,6 +385,7 @@ export function world(): World {
       owned.length = 0;
       commands.length = 0;
       iterating = 0;
+      liveCount = 0;
     },
 
     system(name, fn) {
