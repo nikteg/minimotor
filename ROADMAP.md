@@ -220,9 +220,15 @@ spec?)` integration (swap fires behind full coverage). Proof: the `scenes`
   split a box into named regions (nested row/col containers, fixed sizes +
   flex-grow shares, gap/pad, flat rect map out; recompute per frame and
   resize comes free) — and `stack`, a one-axis cursor that widgets place
-  themselves into via `at`, auto-sizing to their labels. All labels clamp to
-  their boxes so no theme/font can overflow. No retained widget tree —
-  everything draws in your draw phase. Game-specific overlays (copy/layout)
+  themselves into via `at`, auto-sizing to their labels (flex sizes may be
+  measure fns for content-fit). All labels clamp to their boxes so no
+  theme/font can overflow. `confirm()` is a whole dialog (title/lines/buttons,
+  content-sized) in one call. **Implicit ctx** — widgets draw to the default
+  game's `Draw.ctx`, no plumbing (`UI.begin(ctx)` overrides per frame for
+  isolated games; every widget also keeps a `(ctx, opts)` form). Overlays
+  (modal AND open popover) capture input: widgets drawn before them go dead,
+  so clicks can't fall through. No retained widget tree — everything draws in
+  your draw phase. Game-specific overlays (copy/layout)
   stay in the samples' `overlays.js`, where they belong.
 
 ## Opt-in entry points ✅

@@ -225,7 +225,7 @@ Scenes.define("play", {
     ctx.fillText(`Score: ${score}  Best: ${best}  ${"♥".repeat(lives)}`, 10, 20);
     ctx.fillText("← → move  Space launch", 10, GH - 14);
 
-    UI.drawFloats(ctx); // score pops, in game space
+    UI.drawFloats(); // score pops, in game space
 
     if (waiting) {
       ctx.fillStyle = "rgba(0,0,0,0.4)";

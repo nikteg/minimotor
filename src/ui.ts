@@ -1,22 +1,57 @@
 // ---------- UI ----------
 // Immediate-mode interface helpers: floating combat/score text, buttons,
-// toggles, tabs, sliders, scrollbars, panels, popovers, modals and meter
-// bars. Everything draws with plain ctx calls in YOUR draw phase — no
-// retained widget tree, no layout engine. Floating texts and spinners age on
-// the fixed step (via Loop.onStep), so they pause with the loop like
-// Clock/Tween.
+// toggles, tabs, sliders, scrollbars, panels, popovers, modals, confirm
+// dialogs and meter bars. Everything draws in YOUR draw phase — no retained
+// widget tree, no layout engine. Floating texts and spinners age on the
+// fixed step (via Loop.onStep), so they pause with the loop like Clock/Tween.
+//
+// The canvas context is implicit: widgets draw to the default game's ctx —
+// no plumbing. Pass one explicitly only for isolated games/offscreen work
+// (`UI.begin(ctx)` per frame, or the `(ctx, opts)` call form):
 //
 //   Minimotor.UI.float("+100", x, y, { color: "#ffd43b" }); // spawn (update)
-//   if (Minimotor.UI.button(ctx, { x, y, w: 160, h: 44, label: "PLAY" })) start();
-//   Minimotor.UI.bar(ctx, 10, 10, 120, 10, hp / maxHp);
-//   Minimotor.UI.drawFloats(ctx); // late in draw: floats, then tooltips
-//   Minimotor.UI.drawTips(ctx);
+//   if (Minimotor.UI.button({ x, y, label: "PLAY" })) start();
+//   Minimotor.UI.bar(10, 10, 120, 10, hp / maxHp);
+//   Minimotor.UI.drawFloats(); // late in draw: floats, then tooltips
+//   Minimotor.UI.drawTips();
 //
 // Colors and fonts come from the active theme — `UI.setTheme({...})` restyles
 // every widget at once; per-widget style options still override.
 
 import { pointInRect } from "./collision.js";
-import { Loop, Pointer, Stage } from "./engine.js";
+import { Draw, Loop, Pointer, Stage } from "./engine.js";
+
+// ---------- Implicit context ----------
+
+let begunCtx: CanvasRenderingContext2D | null = null;
+
+/** Point the widgets at a specific context for this frame (isolated games,
+ *  offscreen canvases). Without it, everything draws to the default game's
+ *  `Draw.ctx`. Cleared at frame end. */
+export function begin(ctx: CanvasRenderingContext2D): void {
+  begunCtx = ctx;
+}
+
+function uiCtx(): CanvasRenderingContext2D {
+  return begunCtx ?? Draw.ctx;
+}
+
+/** Untangle the two call forms: `widget(opts)` (implicit ctx) and
+ *  `widget(ctx, opts)`. */
+function withCtx<T>(a: CanvasRenderingContext2D | T, b?: T): [CanvasRenderingContext2D, T] {
+  return b === undefined ? [uiCtx(), a as T] : [a as CanvasRenderingContext2D, b];
+}
+
+/** Width of `text` in the given font (default: the theme's base font) —
+ *  for sizing custom layouts around labels. */
+export function textWidth(text: string, font?: string): number {
+  const ctx = uiCtx();
+  ctx.save();
+  ctx.font = font ?? uiFont();
+  const w = ctx.measureText(text).width;
+  ctx.restore();
+  return w;
+}
 
 // ---------- Theme ----------
 
@@ -199,21 +234,19 @@ export function stack(opts: StackOptions): Stack {
   };
 }
 
-// ---------- Shared input (modal capture + hover cursor) ----------
+// ---------- Shared input (overlay capture + hover cursor) ----------
 
-// While a modal is open, widgets drawn outside the modal pass must go dead —
-// otherwise a click "through" the backdrop still lands on them.
-let modalSeen = false; // modal() ran this frame
-let modalActive = false; // modal() ran last frame → block the background
-let inModalPass = false; // set by modal(); the rest of the frame is inside it
+// While an overlay (modal OR open popover) is up, widgets drawn outside its
+// pass must go dead — otherwise a click "through" it still lands on them.
+let overlaySeen = false; // an overlay ran this frame
+let overlayActive = false; // an overlay ran last frame → block the background
+let inOverlayPass = false; // the rest of the frame belongs to the overlay
 
 const DEAD_POINTER = { x: -1e9, y: -1e9, down: false, released: false, pressed: false, wheel: 0 };
 
-/** The pointer as widgets see it: frame-scoped edges, and dead while a modal
- *  has the screen (unless we're in the modal's own pass). */
-function uiPointer() {
-  ensureWired(); // per-frame housekeeping keeps modal/tooltip state honest
-  if (modalActive && !inModalPass) return DEAD_POINTER;
+/** The pointer, raw — overlays themselves read this (their close logic must
+ *  see clicks even while they block everyone else). */
+function rawPointer() {
   return {
     x: Pointer.x,
     y: Pointer.y,
@@ -224,6 +257,14 @@ function uiPointer() {
   };
 }
 
+/** The pointer as widgets see it: frame-scoped edges, and dead while an
+ *  overlay has the screen (unless we're in the overlay's own pass). */
+function uiPointer() {
+  ensureWired(); // per-frame housekeeping keeps overlay/tooltip state honest
+  if (overlayActive && !inOverlayPass) return DEAD_POINTER;
+  return rawPointer();
+}
+
 /** Hovering an interactive widget asks for the hand cursor; the engine
  *  resets it every frame, so it clears the moment nothing is hovered. */
 function hoverCursor(hover: boolean): void {
@@ -232,15 +273,21 @@ function hoverCursor(hover: boolean): void {
 
 // ---------- Flex (layout) ----------
 
+/** A size in a `FlexSpec`: fixed px, or a function of a text measurer —
+ *  content-fit sizing without a second pass:
+ *
+ *    filters: { w: (m) => m.text("FILTERS (0)") + 28 } */
+export type FlexSize = number | ((m: { text(s: string, font?: string): number }) => number);
+
 /** One node in a `flex()` layout tree. In a row, `w` is the main-axis size
  *  and `h` the cross-axis size (swapped in a column). Give a node a fixed
  *  main size, or a `flex` share of the leftover; omit both for `flex: 1`.
  *  A node with `children` is a nested container. */
 export interface FlexSpec {
-  /** Fixed width in px. Cross-axis: omit to fill the container. */
-  w?: number;
-  /** Fixed height in px. Cross-axis: omit to fill the container. */
-  h?: number;
+  /** Fixed width in px (or a measure fn). Cross-axis: omit to fill. */
+  w?: FlexSize;
+  /** Fixed height in px (or a measure fn). Cross-axis: omit to fill. */
+  h?: FlexSize;
   /** Share of the leftover main-axis space (flex-grow). Default 1 when no
    *  fixed main size is given. */
   flex?: number;
@@ -291,10 +338,15 @@ export function flex(
   const kids = Object.entries(spec.children ?? {});
   const main = dir === "row" ? inner.w : inner.h;
 
+  // Measure-fn sizes resolve against the implicit ctx (content-fit).
+  const measurer = { text: (s: string, font?: string) => textWidth(s, font) };
+  const resolve = (s: FlexSize | undefined): number | undefined =>
+    typeof s === "function" ? s(measurer) : s;
+
   let fixed = gap * Math.max(0, kids.length - 1);
   let shares = 0;
   for (const [, k] of kids) {
-    const size = dir === "row" ? k.w : k.h;
+    const size = resolve(dir === "row" ? k.w : k.h);
     if (size !== undefined) fixed += size;
     else shares += k.flex ?? 1;
   }
@@ -302,12 +354,12 @@ export function flex(
 
   let cursor = dir === "row" ? inner.x : inner.y;
   for (const [name, k] of kids) {
-    const fixedMain = dir === "row" ? k.w : k.h;
+    const fixedMain = resolve(dir === "row" ? k.w : k.h);
     const size = fixedMain ?? (shares > 0 ? (leftover * (k.flex ?? 1)) / shares : 0);
     const rect =
       dir === "row"
-        ? { x: cursor, y: inner.y, w: size, h: k.h ?? inner.h }
-        : { x: inner.x, y: cursor, w: k.w ?? inner.w, h: size };
+        ? { x: cursor, y: inner.y, w: size, h: resolve(k.h) ?? inner.h }
+        : { x: inner.x, y: cursor, w: resolve(k.w) ?? inner.w, h: size };
     out[name] = rect;
     cursor += size + gap;
     if (k.children) flex(rect, k, out);
@@ -455,7 +507,10 @@ export function buttonState(
  *
  *  Hit-testing uses the polled `Pointer` in canvas coordinates — draw the
  *  button untransformed (outside camera/letterbox transforms). */
-export function button(ctx: CanvasRenderingContext2D, opts: ButtonOptions): boolean {
+export function button(opts: ButtonOptions): boolean;
+export function button(ctx: CanvasRenderingContext2D, opts: ButtonOptions): boolean;
+export function button(a: CanvasRenderingContext2D | ButtonOptions, b?: ButtonOptions): boolean {
+  const [ctx, opts] = withCtx(a, b);
   ctx.save();
   ctx.font = opts.font ?? uiFont(theme.fontSize + 2, true);
   // Auto width: the label plus comfortable padding.
@@ -511,7 +566,10 @@ export interface PanelOptions {
   font?: string;
 }
 
-export function panel(ctx: CanvasRenderingContext2D, opts: PanelOptions): void {
+export function panel(opts: PanelOptions): void;
+export function panel(ctx: CanvasRenderingContext2D, opts: PanelOptions): void;
+export function panel(a: CanvasRenderingContext2D | PanelOptions, b?: PanelOptions): void {
+  const [ctx, opts] = withCtx(a, b);
   ctx.save();
   ctx.fillStyle = opts.bg ?? theme.panelBg;
   ctx.fillRect(opts.x, opts.y, opts.w, opts.h);
@@ -550,7 +608,10 @@ export interface ToggleOptions {
 /** Draw a checkbox + label; returns the (possibly flipped) new value:
  *
  *    hideFull = UI.toggle(ctx, { x, y, label: "Hide full", on: hideFull }); */
-export function toggle(ctx: CanvasRenderingContext2D, opts: ToggleOptions): boolean {
+export function toggle(opts: ToggleOptions): boolean;
+export function toggle(ctx: CanvasRenderingContext2D, opts: ToggleOptions): boolean;
+export function toggle(a: CanvasRenderingContext2D | ToggleOptions, b?: ToggleOptions): boolean {
+  const [ctx, opts] = withCtx(a, b);
   const size = opts.size ?? 16;
   ctx.save();
   ctx.font = opts.font ?? uiFont();
@@ -607,7 +668,10 @@ export interface TabsOptions {
 /** Draw a tab strip; returns the (possibly changed) active index:
  *
  *    tab = UI.tabs(ctx, { x, y, items: ["All", "Coop", "PvP"], active: tab }); */
-export function tabs(ctx: CanvasRenderingContext2D, opts: TabsOptions): number {
+export function tabs(opts: TabsOptions): number;
+export function tabs(ctx: CanvasRenderingContext2D, opts: TabsOptions): number;
+export function tabs(a: CanvasRenderingContext2D | TabsOptions, b?: TabsOptions): number {
+  const [ctx, opts] = withCtx(a, b);
   ctx.save();
   ctx.font = opts.font ?? uiFont(theme.fontSize, true);
   // Auto width: equal cells sized to the widest label.
@@ -661,7 +725,10 @@ export interface RowOptions {
  *  Draw your own content (columns, icons) on top afterwards:
  *
  *    if (UI.row(ctx, { x, y, w, h, selected: i === sel })) sel = i; */
-export function row(ctx: CanvasRenderingContext2D, opts: RowOptions): boolean {
+export function row(opts: RowOptions): boolean;
+export function row(ctx: CanvasRenderingContext2D, opts: RowOptions): boolean;
+export function row(a: CanvasRenderingContext2D | RowOptions, b?: RowOptions): boolean {
+  const [ctx, opts] = withCtx(a, b);
   const { hover, clicked } = buttonState(opts, uiPointer());
   hoverCursor(hover);
   if (hover && opts.tooltip) tooltip(opts.tooltip);
@@ -711,7 +778,10 @@ let sliderDrag: string | null = null;
  *  or click anywhere on the track:
  *
  *    volume = UI.slider(ctx, { x, y, w: 140, value: volume, label: "VOL" }); */
-export function slider(ctx: CanvasRenderingContext2D, opts: SliderOptions): number {
+export function slider(opts: SliderOptions): number;
+export function slider(ctx: CanvasRenderingContext2D, opts: SliderOptions): number;
+export function slider(a: CanvasRenderingContext2D | SliderOptions, b?: SliderOptions): number {
+  const [ctx, opts] = withCtx(a, b);
   const min = opts.min ?? 0;
   const max = opts.max ?? 1;
   const id = opts.id ?? `${opts.x}:${opts.y}`;
@@ -769,12 +839,23 @@ export interface SpinnerOptions {
  *  on the fixed step, so it pauses with the loop:
  *
  *    if (refreshing) UI.spinner(ctx, x, y); */
+export function spinner(x: number, y: number, opts?: SpinnerOptions): void;
 export function spinner(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
-  opts: SpinnerOptions = {},
+  opts?: SpinnerOptions,
+): void;
+export function spinner(
+  a: CanvasRenderingContext2D | number,
+  b: number,
+  c?: number | SpinnerOptions,
+  d?: SpinnerOptions,
 ): void {
+  const [ctx, x, y, opts] =
+    typeof a === "number"
+      ? [uiCtx(), a, b, (c as SpinnerOptions) ?? {}]
+      : [a, b, c as number, d ?? {}];
   ensureWired(); // the shared step hook advances the angle
   ctx.save();
   ctx.strokeStyle = opts.color ?? theme.accent;
@@ -817,7 +898,13 @@ let scrollDrag: { id: string; grab: number } | null = null;
  *  wheel — and draw it. Returns the new offset (clamped to the content):
  *
  *    scroll = UI.scrollbar(ctx, { x, y, h, view, content, offset: scroll, wheelArea }); */
-export function scrollbar(ctx: CanvasRenderingContext2D, opts: ScrollbarOptions): number {
+export function scrollbar(opts: ScrollbarOptions): number;
+export function scrollbar(ctx: CanvasRenderingContext2D, opts: ScrollbarOptions): number;
+export function scrollbar(
+  a: CanvasRenderingContext2D | ScrollbarOptions,
+  b?: ScrollbarOptions,
+): number {
+  const [ctx, opts] = withCtx(a, b);
   const max = Math.max(0, opts.content - opts.view);
   let offset = Math.max(0, Math.min(max, opts.offset));
   if (max <= 0) return 0; // everything fits — draw nothing
@@ -872,14 +959,35 @@ export interface BarStyle {
 /** A horizontal meter (health, progress, charge): a track with `frac` (0..1,
  *  clamped) of it filled from the left. */
 export function bar(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  frac: number,
+  style?: BarStyle,
+): void;
+export function bar(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
   w: number,
   h: number,
   frac: number,
-  style: BarStyle = {},
+  style?: BarStyle,
+): void;
+export function bar(
+  a: CanvasRenderingContext2D | number,
+  b: number,
+  c: number,
+  d: number,
+  e: number,
+  f2?: number | BarStyle,
+  g?: BarStyle,
 ): void {
+  const [ctx, x, y, w, h, frac, style] =
+    typeof a === "number"
+      ? [uiCtx(), a, b, c, d, e, (f2 as BarStyle) ?? {}]
+      : [a, b, c, d, e, f2 as number, g ?? {}];
   const f = Math.max(0, Math.min(1, frac));
   ctx.save();
   ctx.fillStyle = style.bg ?? "rgba(255,255,255,0.15)";
@@ -905,21 +1013,32 @@ export interface PopoverOptions extends PanelOptions {
 // outside its rect and must not immediately close it again.
 const popoverWasOpen = new Map<string, boolean>();
 
-/** Draw a popover panel while open; a click anywhere outside closes it.
- *  Returns the new open state. Draw the contents (any UI widgets) after the
- *  call, inside the rect, when it returns true:
+/** Draw a popover panel while open; a click anywhere outside closes it (and
+ *  is swallowed — it can't also activate whatever sits underneath). While
+ *  open, the popover is an overlay: every widget drawn BEFORE it in the
+ *  frame goes input-dead; widgets drawn after (its contents) work normally.
+ *  Returns the new open state:
  *
- *    if (UI.button(ctx, trigger)) filtersOpen = !filtersOpen;
- *    filtersOpen = UI.popover(ctx, { x, y, w: 240, h: 120, open: filtersOpen });
+ *    if (UI.button(trigger)) filtersOpen = !filtersOpen;
+ *    filtersOpen = UI.popover({ x, y, w: 240, h: 120, open: filtersOpen });
  *    if (filtersOpen) { ...toggles/sliders at x/y... } */
-export function popover(ctx: CanvasRenderingContext2D, opts: PopoverOptions): boolean {
+export function popover(opts: PopoverOptions): boolean;
+export function popover(ctx: CanvasRenderingContext2D, opts: PopoverOptions): boolean;
+export function popover(a: CanvasRenderingContext2D | PopoverOptions, b?: PopoverOptions): boolean {
+  const [ctx, opts] = withCtx(a, b);
+  ensureWired();
   const id = opts.id ?? `${opts.x}:${opts.y}`;
   const was = popoverWasOpen.get(id) ?? false;
   let open = opts.open;
-  const p = uiPointer();
+  // Raw pointer: while open we're the overlay — uiPointer would be dead.
+  const p = rawPointer();
   if (open && was && p.released && !pointInRect(p.x, p.y, opts)) open = false;
   popoverWasOpen.set(id, open);
-  if (open) panel(ctx, opts);
+  if (open) {
+    overlaySeen = true;
+    inOverlayPass = true; // contents drawn after this call get live input
+    panel(ctx, opts);
+  }
   return open;
 }
 
@@ -936,19 +1055,26 @@ export interface ModalOptions {
  *  draw the dialog contents (text, buttons) inside it after the call. While
  *  a modal is up, every widget drawn BEFORE it in the frame ignores the
  *  pointer, so clicks can't land through the backdrop; widgets drawn after
- *  (the dialog's own) work normally. Call it LAST in your draw:
+ *  (the dialog's own) work normally. Call it LAST in your draw. For the
+ *  common title/lines/buttons dialog, `confirm()` does all of this for you:
  *
  *    if (confirming) {
- *      const r = UI.modal(ctx, { w: 340, h: 150, title: "CONFIRM" });
- *      if (UI.button(ctx, { x: r.x + 12, ... label: "OK" })) { ... }
+ *      const r = UI.modal({ w: 340, h: 150, title: "CONFIRM" });
+ *      if (UI.button({ x: r.x + 12, ... label: "OK" })) { ... }
  *    } */
+export function modal(opts: ModalOptions): { x: number; y: number; w: number; h: number };
 export function modal(
   ctx: CanvasRenderingContext2D,
   opts: ModalOptions,
+): { x: number; y: number; w: number; h: number };
+export function modal(
+  a: CanvasRenderingContext2D | ModalOptions,
+  b?: ModalOptions,
 ): { x: number; y: number; w: number; h: number } {
+  const [ctx, opts] = withCtx(a, b);
   ensureWired();
-  modalSeen = true;
-  inModalPass = true;
+  overlaySeen = true;
+  inOverlayPass = true;
   const vp = Stage.viewport;
   ctx.save();
   ctx.fillStyle = theme.dim;
@@ -958,6 +1084,81 @@ export function modal(
   const y = Math.round((vp.h - opts.h) / 2);
   panel(ctx, { x, y, w: opts.w, h: opts.h, title: opts.title });
   return { x, y, w: opts.w, h: opts.h };
+}
+
+// ---------- Confirm (declarative dialog) ----------
+
+/** A whole dialog in one call. */
+export interface ConfirmOptions {
+  title?: string;
+  /** Body lines. The first is drawn in the primary text color, the rest
+   *  dimmed — lead + detail. */
+  lines?: string[];
+  /** Button labels, left to right (the last one sits at the right edge —
+   *  put the primary action last). Default `["OK"]`. */
+  buttons?: string[];
+  /** Minimum dialog width; it grows to fit the content. Default 300. */
+  minW?: number;
+}
+
+/** The declarative modal: title, body lines and buttons in one call, sized
+ *  to its content. Returns the clicked button's label, or `null`:
+ *
+ *    if (confirming) {
+ *      const hit = UI.confirm({
+ *        title: "JOIN SERVER",
+ *        lines: [server.name, details],
+ *        buttons: ["CANCEL", "JOIN"],
+ *      });
+ *      if (hit === "JOIN") join(server);
+ *      if (hit) confirming = null;
+ *    } */
+export function confirm(opts: ConfirmOptions): string | null;
+export function confirm(ctx: CanvasRenderingContext2D, opts: ConfirmOptions): string | null;
+export function confirm(
+  a: CanvasRenderingContext2D | ConfirmOptions,
+  b?: ConfirmOptions,
+): string | null {
+  const [ctx, opts] = withCtx(a, b);
+  const lines = opts.lines ?? [];
+  const buttons = opts.buttons ?? ["OK"];
+  const lineH = theme.fontSize + 8;
+
+  // Size to content: widest of title, lines, and the button row.
+  ctx.save();
+  ctx.font = uiFont(theme.fontSize + 2, true);
+  const buttonsW = buttons.reduce(
+    (sum, l) => sum + Math.ceil(ctx.measureText(l).width) + 28 + 8,
+    0,
+  );
+  ctx.font = uiFont(theme.fontSize + 1, true);
+  const titleW = opts.title ? Math.ceil(ctx.measureText(opts.title).width) : 0;
+  ctx.font = uiFont();
+  const lineW = Math.ceil(Math.max(0, ...lines.map((l) => ctx.measureText(l).width)));
+  ctx.restore();
+  const w = Math.max(opts.minW ?? 300, lineW + 32, buttonsW + 24, titleW + 24);
+  const h = (opts.title ? 30 : 0) + 16 + lines.length * lineH + 16 + 34 + 12;
+
+  const r = modal(ctx, { w, h, title: opts.title });
+
+  ctx.save();
+  ctx.font = uiFont();
+  ctx.textAlign = "left";
+  let ty = r.y + (opts.title ? 30 : 0) + 16 + lineH / 2;
+  lines.forEach((line, i) => {
+    ctx.fillStyle = i === 0 ? theme.text : theme.textDim;
+    centeredText(ctx, line, r.x + 16, ty);
+    ty += lineH;
+  });
+  ctx.restore();
+
+  // Buttons right-aligned; array order reads left → right.
+  const btnBar = stack({ x: r.x + r.w - 12, y: r.y + r.h - 46, gap: 8, h: 34, align: "end" });
+  let hit: string | null = null;
+  for (let i = buttons.length - 1; i >= 0; i--) {
+    if (button(ctx, { at: btnBar, label: buttons[i], h: 34 })) hit = buttons[i];
+  }
+  return hit;
 }
 
 // ---------- Tooltip ----------
@@ -975,7 +1176,8 @@ export function tooltip(text: string): void {
 
 /** Draw the pending tooltip near the pointer, clamped to the viewport. Call
  *  LAST in draw (after `drawFloats`, after any modal) so it sits on top. */
-export function drawTips(ctx: CanvasRenderingContext2D): void {
+export function drawTips(maybeCtx?: CanvasRenderingContext2D): void {
+  const ctx = maybeCtx ?? uiCtx();
   if (!tipShown || performance.now() - tipShown.since < 350) return;
   const text = tipShown.text;
   const vp = Stage.viewport;
@@ -1013,10 +1215,11 @@ function ensureWired(): void {
   });
   // Frame-end housekeeping for the immediate-mode state machines.
   Loop.onFrame(() => {
-    // Modal capture: what was drawn this frame gates input next frame.
-    modalActive = modalSeen;
-    modalSeen = false;
-    inModalPass = false;
+    begunCtx = null; // re-begin() each frame when overriding the ctx
+    // Overlay capture: what was drawn this frame gates input next frame.
+    overlayActive = overlaySeen;
+    overlaySeen = false;
+    inOverlayPass = false;
     // Tooltip hover-stability: same text keeps its timer; a change restarts.
     if (tipRequest) {
       if (tipShown?.text !== tipRequest) {
@@ -1037,8 +1240,8 @@ export function float(text: string, x: number, y: number, opts?: FloatOptions): 
 }
 
 /** Draw all live floating texts. Call late in `draw` so they sit on top. */
-export function drawFloats(ctx: CanvasRenderingContext2D): void {
-  floats.draw(ctx);
+export function drawFloats(ctx?: CanvasRenderingContext2D): void {
+  floats.draw(ctx ?? uiCtx());
 }
 
 /** Remove all floating texts (e.g. on scene change). */
@@ -1052,8 +1255,9 @@ export function _reset(): void {
   theme = { ...defaultTheme };
   tipRequest = null;
   tipShown = null;
-  modalSeen = false;
-  modalActive = false;
-  inModalPass = false;
+  overlaySeen = false;
+  overlayActive = false;
+  inOverlayPass = false;
+  begunCtx = null;
   wired = false;
 }

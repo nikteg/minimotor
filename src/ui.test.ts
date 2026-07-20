@@ -3,6 +3,7 @@ import { pointInRect } from "./collision.js";
 import {
   _reset,
   bar,
+  begin,
   buttonState,
   createFloats,
   defaultTheme,
@@ -10,6 +11,7 @@ import {
   getTheme,
   setTheme,
   stack,
+  textWidth,
 } from "./ui.js";
 
 const mockCtx = () => {
@@ -156,6 +158,32 @@ describe("UI flex", () => {
     expect(L.aside).toEqual({ x: 320, y: 0, w: 100, h: 50 });
     expect(L.top).toEqual({ x: 110, y: 0, w: 200, h: 20 }); // nested, flat name
     expect(L.rest.h).toBe(80);
+  });
+});
+
+describe("UI implicit context", () => {
+  it("begin() routes bar/textWidth to the given ctx; flex resolves fn sizes", () => {
+    const { ctx, calls } = mockCtx();
+    (ctx as { measureText?: unknown }).measureText = (t: string) => ({ width: t.length * 10 });
+    begin(ctx);
+
+    expect(textWidth("abcd")).toBe(40);
+    bar(0, 0, 100, 8, 0.5); // ctx-less form draws to the begun ctx
+    expect(calls.fillRect.length).toBe(2);
+
+    const L = flex(
+      { x: 0, y: 0, w: 300, h: 40 },
+      {
+        dir: "row",
+        children: {
+          label: { w: (m) => m.text("abcd") + 20 }, // content-fit
+          rest: { flex: 1 },
+        },
+      },
+    );
+    expect(L.label.w).toBe(60);
+    expect(L.rest.w).toBe(240);
+    _reset();
   });
 });
 

@@ -42,7 +42,7 @@ Scenes.define("menu", {
     clear("#12141c");
     center("◆ SCENE DEMO ◆", vp.h / 2 - 60, { font: "bold 34px monospace", color: "#4ecdc4" });
     center("Arrow keys to catch the dot", vp.h / 2 - 16, { color: "#aaa" });
-    if (UI.button(ctx, { x: vp.w / 2 - 80, y: vp.h / 2 + 12, w: 160, h: 44, label: "PLAY" })) {
+    if (UI.button({ x: vp.w / 2 - 80, y: vp.h / 2 + 12, w: 160, h: 44, label: "PLAY" })) {
       startClicked();
     }
     center("(or press SPACE)", vp.h / 2 + 78, { color: "#667" });
@@ -113,10 +113,10 @@ Scenes.define("play", {
     ctx.font = "16px monospace";
     ctx.fillText(`Score: ${score}`, 12, 24);
     ctx.fillText(`Time: ${Math.ceil(timeLeft / 60)}s`, 12, 46);
-    UI.bar(ctx, 12, 54, 140, 8, timeLeft / (15 * 60), { fill: "#ffd43b" });
+    UI.bar(12, 54, 140, 8, timeLeft / (15 * 60), { fill: "#ffd43b" });
     ctx.fillText("P to pause", 12, vp.h - 12);
 
-    UI.drawFloats(ctx); // score pops, on top of everything
+    UI.drawFloats(); // score pops, on top of everything
   },
 });
 
@@ -143,11 +143,11 @@ Scenes.define("over", {
     center("GAME OVER", vp.h / 2 - 60, { font: "bold 32px monospace", color: "#ff6b6b" });
     center(`Score: ${score}   Best: ${best}`, vp.h / 2 - 20, { font: "18px monospace" });
     if (
-      UI.button(ctx, { x: vp.w / 2 - 170, y: vp.h / 2 + 16, w: 160, h: 44, label: "PLAY AGAIN" })
+      UI.button({ x: vp.w / 2 - 170, y: vp.h / 2 + 16, w: 160, h: 44, label: "PLAY AGAIN" })
     ) {
       startClicked();
     }
-    if (UI.button(ctx, { x: vp.w / 2 + 10, y: vp.h / 2 + 16, w: 160, h: 44, label: "MENU" })) {
+    if (UI.button({ x: vp.w / 2 + 10, y: vp.h / 2 + 16, w: 160, h: 44, label: "MENU" })) {
       Scenes.go("menu", Transitions.fade(400));
     }
     center("SPACE to play again · M for menu", vp.h / 2 + 88, { color: "#667" });

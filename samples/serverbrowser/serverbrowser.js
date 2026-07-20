@@ -158,15 +158,15 @@ Minimotor.Loop.run({
     ctx.fillRect(0, 0, vp.w, vp.h);
 
     const L = layout();
-    UI.panel(ctx, { x: L.x, y: L.y, w: L.w, h: L.h, title: "SERVER BROWSER" });
+    UI.panel({ x: L.x, y: L.y, w: L.w, h: L.h, title: "SERVER BROWSER" });
 
     // ---- control bar: two stacks in the flex row — one growing right,
     // one growing left. Everything auto-sizes to its label.
     const barL = UI.stack({ x: L.controls.x, y: L.controls.y, gap: 10, h: L.controls.h });
-    tab = UI.tabs(ctx, { at: barL, items: ["All", ...MODES], active: tab });
+    tab = UI.tabs({ at: barL, items: ["All", ...MODES], active: tab });
     const nFilters = (hideFull ? 1 : 0) + (hideEmpty ? 1 : 0) + (maxPing < 250 ? 1 : 0);
     if (
-      UI.button(ctx, {
+      UI.button({
         at: barL,
         label: `FILTERS${nFilters ? ` (${nFilters})` : ""}`,
         tooltip: "Hide full/empty servers, cap the ping",
@@ -184,7 +184,7 @@ Minimotor.Loop.run({
       align: "end",
     });
     if (
-      UI.button(ctx, {
+      UI.button({
         at: barR,
         label: refreshing ? "…" : "REFRESH",
         disabled: refreshing,
@@ -193,12 +193,12 @@ Minimotor.Loop.run({
     ) {
       refresh();
     }
-    if (UI.button(ctx, { at: barR, label: "THEME", tooltip: "Swap the whole UI kit's theme" })) {
+    if (UI.button({ at: barR, label: "THEME", tooltip: "Swap the whole UI kit's theme" })) {
       altTheme = !altTheme;
       UI.setTheme(altTheme ? AMBER : {});
     }
     // Busy arc while the mock request is in flight, left of the buttons.
-    if (refreshing) UI.spinner(ctx, barR.last.x - 18, L.controls.y + 15);
+    if (refreshing) UI.spinner(barR.last.x - 18, L.controls.y + 15);
 
     // ---- column headers (click to sort) — rects straight from the flex ----
     const list = visibleServers();
@@ -212,7 +212,7 @@ Minimotor.Loop.run({
     ctx.font = "bold 12px monospace";
     ctx.textBaseline = "middle";
     for (const hd of headers) {
-      if (UI.row(ctx, { ...hd.rect, w: hd.rect.w - 6 })) {
+      if (UI.row({ ...hd.rect, w: hd.rect.w - 6 })) {
         if (sortKey === hd.key) sortDir = -sortDir;
         else {
           sortKey = hd.key;
@@ -227,7 +227,7 @@ Minimotor.Loop.run({
 
     // ---- the list: clipped rows + scrollbar, filling the flexed space ----
     const content = list.length * ROW_H;
-    scroll = UI.scrollbar(ctx, {
+    scroll = UI.scrollbar({
       x: L.scroll.x,
       y: L.scroll.y,
       h: L.scroll.h,
@@ -247,14 +247,14 @@ Minimotor.Loop.run({
     for (let i = first; i <= last; i++) {
       const s = list[i];
       const ry = L.rows.y + i * ROW_H - scroll;
-      const clicked = UI.row(ctx, {
+      const clicked = UI.row({
         x: L.rows.x,
         y: ry,
         w: L.rows.w,
         h: ROW_H,
         selected: s === selected,
       });
-      if (clicked && !filtersOpen) selected = s; // popover floats over the list
+      if (clicked) selected = s; // an open popover blocks this automatically
       ctx.font = "13px monospace";
       ctx.textAlign = "left";
       ctx.fillStyle = "#e8f0f4";
@@ -304,7 +304,7 @@ Minimotor.Loop.run({
       align: "end",
     });
     if (
-      UI.button(ctx, {
+      UI.button({
         at: footBtns,
         label: "JOIN",
         disabled: !selected || refreshing,
@@ -316,16 +316,16 @@ Minimotor.Loop.run({
 
     // ---- the filters popover, floating over the list ----
     const pop = { x: filterBtn.x, y: filterBtn.y + 36, w: 300, h: 128, title: "FILTERS" };
-    filtersOpen = UI.popover(ctx, { ...pop, open: filtersOpen });
+    filtersOpen = UI.popover({ ...pop, open: filtersOpen });
     if (filtersOpen) {
-      hideFull = UI.toggle(ctx, { x: pop.x + 14, y: pop.y + 44, label: "Hide full", on: hideFull });
-      hideEmpty = UI.toggle(ctx, {
+      hideFull = UI.toggle({ x: pop.x + 14, y: pop.y + 44, label: "Hide full", on: hideFull });
+      hideEmpty = UI.toggle({
         x: pop.x + 150,
         y: pop.y + 44,
         label: "Hide empty",
         on: hideEmpty,
       });
-      maxPing = UI.slider(ctx, {
+      maxPing = UI.slider({
         x: pop.x + 80,
         y: pop.y + 92,
         w: 130,
@@ -338,34 +338,22 @@ Minimotor.Loop.run({
       });
     }
 
-    // ---- join confirmation: a modal blocks everything behind it ----
+    // ---- join confirmation: one declarative call — sized to its content,
+    // blocks everything behind it, returns the clicked button.
     if (confirming) {
-      const info = `${confirming.mode} · ${confirming.region} · ${confirming.players}/${confirming.max} players · ${confirming.ping}ms`;
-      // Size the dialog to its content — no fixed width to overflow.
-      ctx.font = "13px monospace";
-      const mw = Math.max(
-        340,
-        Math.ceil(Math.max(ctx.measureText(info).width, ctx.measureText(confirming.name).width)) +
-          32,
-      );
-      const r = UI.modal(ctx, { w: mw, h: 150, title: "JOIN SERVER" });
-      ctx.fillStyle = "#e8f0f4";
-      ctx.font = "13px monospace";
-      ctx.textAlign = "left";
-      ctx.textBaseline = "middle";
-      ctx.fillText(`${confirming.name}`, r.x + 16, r.y + 56);
-      ctx.fillStyle = "#7d8894";
-      ctx.fillText(info, r.x + 16, r.y + 78);
-      // Dialog buttons: a right-aligned stack in the footer.
-      const btns = UI.stack({ x: r.x + r.w - 12, y: r.y + r.h - 46, gap: 8, h: 34, align: "end" });
-      if (UI.button(ctx, { at: btns, label: "CANCEL" })) confirming = null;
-      if (UI.button(ctx, { at: btns, label: "JOIN" })) {
-        join(confirming);
-        confirming = null;
-      }
+      const hit = UI.confirm({
+        title: "JOIN SERVER",
+        lines: [
+          confirming.name,
+          `${confirming.mode} · ${confirming.region} · ${confirming.players}/${confirming.max} players · ${confirming.ping}ms`,
+        ],
+        buttons: ["CANCEL", "JOIN"],
+      });
+      if (hit === "JOIN") join(confirming);
+      if (hit) confirming = null;
     }
 
-    UI.drawFloats(ctx);
-    UI.drawTips(ctx); // tooltips on the very top
+    UI.drawFloats();
+    UI.drawTips(); // tooltips on the very top
   },
 });
