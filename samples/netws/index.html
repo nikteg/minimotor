@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WebSocket Console - Minimotor</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: "Segoe UI", system-ui, sans-serif;
+        background: #0e1116;
+        color: #dce3ea;
+        min-height: 100vh;
+        display: flex;
+        justify-content: center;
+      }
+      main {
+        width: 100%;
+        max-width: 720px;
+        padding: 28px 20px;
+      }
+      h1 {
+        font-size: 1.4rem;
+        margin: 0 0 4px;
+      }
+      p.sub {
+        color: #7d8894;
+        margin: 0 0 20px;
+        font-size: 0.9rem;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+      input,
+      button {
+        font: inherit;
+        border-radius: 8px;
+        border: 1px solid #2a3340;
+        background: #161c24;
+        color: #dce3ea;
+        padding: 10px 12px;
+      }
+      input {
+        flex: 1;
+        min-width: 0;
+      }
+      button {
+        cursor: pointer;
+        background: #1f2a36;
+        white-space: nowrap;
+      }
+      button:hover {
+        border-color: #4ecdc4;
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.85rem;
+        color: #7d8894;
+        margin-bottom: 12px;
+      }
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #ffb454;
+      }
+      .dot.connected {
+        background: #6bff9e;
+      }
+      .dot.closed {
+        background: #ff5252;
+      }
+      #log {
+        background: #0a0e13;
+        border: 1px solid #2a3340;
+        border-radius: 10px;
+        padding: 12px;
+        height: 320px;
+        overflow-y: auto;
+        margin: 0;
+        font-family: ui-monospace, monospace;
+        font-size: 0.85rem;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .sent {
+        color: #4ecdc4;
+      }
+      .recv {
+        color: #ffe066;
+      }
+      .meta {
+        color: #7d8894;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>WebSocket Console</h1>
+      <p class="sub">
+        Minimotor.Net.connect — a transport with send / sendJson / onMessage / state, outside the
+        game loop. Defaults to a public echo server, so whatever you send comes straight back.
+      </p>
+      <div class="row">
+        <input id="url" value="wss://echo.websocket.events" spellcheck="false" />
+        <button id="toggle">Connect</button>
+      </div>
+      <div class="status"><span id="dot" class="dot"></span><span id="state">idle</span></div>
+      <div class="row">
+        <input id="msg" placeholder="type a message and hit Send…" spellcheck="false" />
+        <button id="send" disabled>Send</button>
+      </div>
+      <pre id="log"></pre>
+    </main>
+    <script type="module" src="./netws.js"></script>
+  </body>
+</html>

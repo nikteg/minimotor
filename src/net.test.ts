@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { connect, createPeer } from "./net.js";
 
 class MockWS {
+  static instances: MockWS[] = [];
   url: string;
   binaryType: BinaryType = "arraybuffer";
   onopen: (() => void) | null = null;
@@ -12,6 +13,7 @@ class MockWS {
   sent: (string | ArrayBuffer)[] = [];
   constructor(url: string) {
     this.url = url;
+    MockWS.instances.push(this);
   }
   _open() {
     this.readyState = 1;
@@ -58,6 +60,7 @@ class MockDC {
 }
 
 class MockPC {
+  static instances: MockPC[] = [];
   iceServers: RTCIceServer[];
   iceGatheringState: RTCGatheringState = "new";
   connectionState: RTCPeerConnectionState = "new";
@@ -69,6 +72,7 @@ class MockPC {
   dc: MockDC | null = null;
   constructor(c?: RTCConfiguration) {
     this.iceServers = c?.iceServers ?? [];
+    MockPC.instances.push(this);
   }
   createDataChannel(label: string) {
     this.dc = new MockDC(label);
@@ -96,6 +100,8 @@ class MockPC {
 }
 
 beforeEach(() => {
+  MockWS.instances = [];
+  MockPC.instances = [];
   vi.stubGlobal("WebSocket", MockWS);
   vi.stubGlobal("RTCPeerConnection", MockPC);
   vi.stubGlobal(
@@ -132,6 +138,24 @@ describe("Net", () => {
       w.close();
       expect(w.state).toBe("closed");
     });
+    it("delivers a binary message to onMessage", () => {
+      const w = connect({ url: "ws://x" });
+      const ws = MockWS.instances[0];
+      ws._open();
+      let got: Uint8Array | null = null;
+      w.onMessage = (d) => (got = d);
+      ws._msg(new Uint8Array([7, 8, 9]).buffer);
+      expect(Array.from(got!)).toEqual([7, 8, 9]);
+    });
+    it("delivers a string frame (sendJson path) to onMessage as bytes", () => {
+      const w = connect({ url: "ws://x" });
+      const ws = MockWS.instances[0];
+      ws._open();
+      let got = "";
+      w.onMessage = (d) => (got = new TextDecoder().decode(d));
+      ws.onmessage?.(new MessageEvent("message", { data: JSON.stringify({ hi: 1 }) }));
+      expect(JSON.parse(got)).toEqual({ hi: 1 });
+    });
   });
 
   describe("WebRTC", () => {
@@ -150,6 +174,16 @@ describe("Net", () => {
       const p = createPeer();
       p.transport.close();
       expect(p.transport.state).toBe("closed");
+    });
+    it("delivers a data-channel string frame (sendJson path) to onMessage", () => {
+      const p = createPeer();
+      p.connect();
+      const dc = MockPC.instances[0].dc!;
+      dc._open();
+      let got = "";
+      p.transport.onMessage = (d) => (got = new TextDecoder().decode(d));
+      dc.onmessage?.(new MessageEvent("message", { data: JSON.stringify({ move: [3, 4] }) }));
+      expect(JSON.parse(got)).toEqual({ move: [3, 4] });
     });
   });
 });

@@ -120,6 +120,9 @@ export function connect(config: WsConfig): Transport {
         e.data.arrayBuffer().then((buf) => {
           handler(new Uint8Array(buf));
         });
+      } else if (typeof e.data === "string") {
+        // Text frames (e.g. from sendJson) arrive as strings — deliver the bytes.
+        handler(new TextEncoder().encode(e.data));
       }
     };
 
@@ -224,8 +227,12 @@ export function createPeer(config: RtcConfig = {}): {
 
     dc.onmessage = (e: MessageEvent) => {
       const handler = transport.onMessage;
-      if (handler && e.data instanceof ArrayBuffer) {
+      if (!handler) return;
+      if (e.data instanceof ArrayBuffer) {
         handler(new Uint8Array(e.data));
+      } else if (typeof e.data === "string") {
+        // Text frames (e.g. from sendJson) arrive as strings — deliver the bytes.
+        handler(new TextEncoder().encode(e.data));
       }
     };
 
