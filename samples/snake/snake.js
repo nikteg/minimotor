@@ -81,6 +81,7 @@ Minimotor.Loop.run({
     // Self collision
     if (snake.some((s) => s.x === head.x && s.y === head.y)) {
       gameOver = true;
+      Minimotor.Audio.Sfx.blip(110, 0.4); // low, long — the death buzz
       if (score > best) { best = score; Minimotor.Storage.save("snake_best", best); }
       return;
     }
@@ -90,6 +91,7 @@ Minimotor.Loop.run({
     // Food
     if (head.x === food.x && head.y === food.y) {
       score += 10;
+      Minimotor.Audio.Sfx.coin();
       food = spawnFood();
     } else {
       snake.pop();

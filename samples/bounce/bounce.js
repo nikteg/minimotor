@@ -34,10 +34,12 @@ Minimotor.Loop.run({
     ball.y += ball.vy;
 
     // Bounce off walls
+    const wasScore = score;
     if (ball.x < 0) { ball.x = 0; ball.vx = -ball.vx; score++; }
     if (ball.x + ball.w > vp.w) { ball.x = vp.w - ball.w; ball.vx = -ball.vx; score++; }
     if (ball.y < 0) { ball.y = 0; ball.vy = -ball.vy; score++; }
     if (ball.y + ball.h > vp.h) { ball.y = vp.h - ball.h; ball.vy = -ball.vy; score++; }
+    if (score > wasScore) Minimotor.Audio.Sfx.blip(440 + (score % 8) * 60, 0.06);
 
     if (score > best) {
       Minimotor.Storage.save("bounce_best", score);

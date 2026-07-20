@@ -7,7 +7,7 @@
 import { Minimotor } from "minimotor";
 
 const vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
-const { Loop, Keys, Draw, Tiles, Camera, Input } = Minimotor;
+const { Loop, Keys, Draw, Tiles, Camera, Input, Audio } = Minimotor;
 
 const TW = 24;
 const COLS = 120;
@@ -102,7 +102,10 @@ Loop.run({
 
     const jump =
       Keys.pressed("Space") || Keys.pressed("KeyW") || pad.pressed(Input.Buttons.A);
-    if (jump && player.onGround) player.vy = -11;
+    if (jump && player.onGround) {
+      player.vy = -11;
+      Audio.Sfx.jump();
+    }
     player.vy = Math.min(player.vy + 0.55, 12);
     moveY(player.vy);
 
@@ -112,6 +115,7 @@ Loop.run({
       player.y = 0;
       player.vy = 0;
       cam.snapTo(player.x, player.y);
+      Audio.Sfx.blip(140, 0.3); // fell — respawn
     }
 
     cam.update(player.x + player.w / 2, player.y + player.h / 2);
@@ -123,8 +127,12 @@ Loop.run({
     ctx.fillRect(0, 0, vp.w, vp.h);
 
     ctx.save();
-    ctx.translate(-cam.x, -cam.y);
-    tilesDrawn = map.draw(ctx, { x: cam.x, y: cam.y, w: vp.w, h: vp.h });
+    // Round the camera offset: a fractional translate antialiases every tile
+    // edge and shows as hairline seams between them.
+    const camX = Math.round(cam.x);
+    const camY = Math.round(cam.y);
+    ctx.translate(-camX, -camY);
+    tilesDrawn = map.draw(ctx, { x: camX, y: camY, w: vp.w, h: vp.h });
 
     ctx.fillStyle = "#ffd43b";
     ctx.fillRect(player.x, player.y, player.w, player.h);

@@ -171,6 +171,7 @@ Minimotor.Loop.run({
     if (jumpHeld && player.onGround) {
       player.vy = JUMP_FORCE;
       player.onGround = false;
+      Minimotor.Audio.Sfx.jump();
     }
     // Variable jump height — release early to shorten
     if (!jumpHeld && player.vy < -4) {
@@ -208,6 +209,7 @@ Minimotor.Loop.run({
         c.collected = true;
         score += 100;
         coinCount++;
+        Minimotor.Audio.Sfx.coin();
       }
     }
 
@@ -229,6 +231,7 @@ Minimotor.Loop.run({
           e.alive = false;
           player.vy = JUMP_FORCE * 0.6;
           score += 200;
+          Minimotor.Audio.Sfx.blip(220, 0.12); // squash
         } else if (invincible === 0) {
           takeDamage();
         }
@@ -242,6 +245,7 @@ Minimotor.Loop.run({
     ) {
       levelComplete = true;
       score += 1000 + coinCount * 50;
+      Minimotor.Audio.Sfx.coin(); // victory sparkle
       if (score > best) { best = score; Minimotor.Storage.save("platformer_best", best); }
     }
 
@@ -415,7 +419,8 @@ Minimotor.Loop.run({
       `Score: ${score}  Best: ${best}  Coins: ${coinCount}  ${"♥".repeat(lives)}`,
       10, 20,
     );
-    ctx.fillText("← → move  Space jump", vp.w - 190, 20);
+    // Bottom-left, clear of the perf HUD that anchors top-right.
+    ctx.fillText("← → move  Space jump", 10, vp.h - 10);
 
     // Game Over overlay
     if (gameOver) {
@@ -440,6 +445,7 @@ function takeDamage() {
   if (invincible > 0) return;
   lives--;
   invincible = 90;
+  Minimotor.Audio.Sfx.blip(140, 0.3); // low ouch
   if (lives <= 0) {
     gameOver = true;
     if (score > best) { best = score; Minimotor.Storage.save("platformer_best", best); }

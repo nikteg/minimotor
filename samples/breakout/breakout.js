@@ -9,7 +9,7 @@ import { Minimotor } from "minimotor";
 import { drawGameOver } from "../shared/overlays.js";
 
 const vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
-const { Scenes, Keys, Draw, ECS, Collision, Mathf, Camera } = Minimotor;
+const { Scenes, Keys, Draw, ECS, Collision, Mathf, Camera, Audio } = Minimotor;
 
 // Fixed game dimensions — scaled to fit the viewport, keeping aspect ratio.
 const GW = 400;
@@ -123,6 +123,7 @@ Scenes.define("play", {
       ball.vx = Math.sin(angle) * spd;
       ball.vy = -Math.cos(angle) * spd;
       ball.y = paddle.y - BALL_R;
+      Audio.Sfx.blip(520, 0.05);
     }
 
     // Blocks — query the ECS, bounce off the first hit and despawn it. Despawn
@@ -135,6 +136,7 @@ Scenes.define("play", {
       if (dx * dx + dy * dy < BALL_R * BALL_R) {
         world.despawn(e);
         Camera.shake(3, 120); // a little kick per broken block
+        Audio.Sfx.blip(880 - b.row * 90, 0.06); // pitch by row — top rows ring higher
         score += (ROWS - b.row) * 10;
         if (Math.abs(dx) > Math.abs(dy)) ball.vx = -ball.vx;
         else ball.vy = -ball.vy;
@@ -148,6 +150,7 @@ Scenes.define("play", {
     if (ball.y > GH) {
       lives--;
       Camera.shake(9, 350); // losing a life hits harder
+      Audio.Sfx.blip(130, 0.35);
       if (lives <= 0) {
         best = Math.max(best, score);
         Minimotor.Storage.save("breakout_best", best);

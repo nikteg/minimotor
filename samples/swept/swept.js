@@ -59,12 +59,14 @@ Loop.run({
       // (start + motion·t); the per-frame test only knows "somewhere overlapping".
       const contactX = swept ? prevX + speed * hit.t : proj.x;
       stats.hits++;
+      Minimotor.Audio.Sfx.blip(880, 0.05); // clean catch
       flash = { x: contactX + proj.w, y: proj.y + proj.h / 2, tunneled: false };
       flashAge = 0;
       reset();
     } else if (trulyCrossed) {
       // The projectile is now past the wall without a hit being registered.
       stats.tunneled++;
+      Minimotor.Audio.Sfx.blip(120, 0.25); // the miss buzz
       flash = { x: w.x + w.w / 2, y: midY(), tunneled: true };
       flashAge = 0;
       reset();

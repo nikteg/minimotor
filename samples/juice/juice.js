@@ -6,7 +6,7 @@
 import { Minimotor } from "minimotor";
 
 const vp = Minimotor.Stage.init("game");
-const { Particles, Camera, Input, Mathf, Pointer, Draw, Loop } = Minimotor;
+const { Particles, Camera, Input, Mathf, Pointer, Draw, Loop, Audio } = Minimotor;
 
 const COLORS = ["#ff6b6b", "#4ecdc4", "#ffe066", "#a06bff", "#6bff9e", "#ff9f43"];
 
@@ -22,6 +22,8 @@ function impact(x, y, power) {
   });
   Camera.shake(5 * power, 200 + 60 * power);
   Input.vibrate(Math.min(80, 12 * power));
+  // Bigger impacts thump lower and longer.
+  Audio.Sfx.blip(320 / power, 0.06 * power, 0.3);
 }
 
 // A ball bouncing around the box — every wall hit fires a small impact at the
