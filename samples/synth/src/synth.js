@@ -24,25 +24,16 @@ let octave = 4; // C4 anchor; Z/X shifts
 // Two slightly-detuned oscillators through a closing low-pass: a warm pluck.
 function playNote(midi) {
   const freq = midiFreq(midi);
-  Audio.playSfx((ctx, now, out) => {
-    const g = ctx.createGain();
-    const f = ctx.createBiquadFilter();
-    f.type = "lowpass";
-    f.frequency.setValueAtTime(Math.min(freq * 8, 9000), now);
-    f.frequency.exponentialRampToValueAtTime(freq * 2, now + 0.5);
-    g.gain.setValueAtTime(0.0001, now);
-    g.gain.linearRampToValueAtTime(0.3, now + 0.012);
-    g.gain.exponentialRampToValueAtTime(0.0001, now + 1.1);
-    f.connect(g).connect(out);
-    for (const cents of [-5, 4]) {
-      const o = ctx.createOscillator();
-      o.type = WAVES[wave];
-      o.frequency.value = freq;
-      o.detune.value = cents;
-      o.connect(f);
-      o.start(now);
-      o.stop(now + 1.2);
-    }
+  // A warm pluck: two slightly-detuned voices through a closing low-pass with a
+  // soft attack and a long tail — described, not hand-wired.
+  Audio.tone({
+    wave: WAVES[wave],
+    freq,
+    detune: [-5, 4],
+    gain: 0.3,
+    attack: 0.012,
+    release: 1.1,
+    filter: { type: "lowpass", freq: { from: Math.min(freq * 8, 9000), to: freq * 2, time: 0.5 } },
   });
   glow(midi);
   litUntil.set(midi, performance.now() + 180);

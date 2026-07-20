@@ -220,84 +220,45 @@ function approach(v, target, delta) {
 }
 
 // ---------------------------------------------------------------------------
-// Sound — hand-built synth SFX through Audio.playSfx (Web Audio). Each preset
-// layers a pitched oscillator with a filtered noise burst for body, so jumps,
-// dashes and impacts read as distinct, punchy sounds rather than plain blips.
+// Sound — layered synth SFX from Audio.tone: a pitched voice plus a filtered
+// noise burst per hit, so jumps, dashes and impacts read punchy rather than
+// like plain blips. `tone`/`noise` used to be hand-wired here; they're now just
+// Audio.tone({ wave: ... }) and Audio.tone({ wave: "noise", filter: ... }).
 // ---------------------------------------------------------------------------
-function tone(ctx, out, now, { type = "sine", f0, f1, dur, gain, delay = 0 }) {
-  const osc = ctx.createOscillator();
-  const g = ctx.createGain();
-  const t = now + delay;
-  osc.type = type;
-  osc.frequency.setValueAtTime(f0, t);
-  if (f1) osc.frequency.exponentialRampToValueAtTime(f1, t + dur);
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(gain, t + 0.008);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  osc.connect(g).connect(out);
-  osc.start(t);
-  osc.stop(t + dur + 0.03);
-}
-
-function noise(ctx, out, now, { type = "bandpass", f0, f1, q = 6, dur, gain }) {
-  const buf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * dur), ctx.sampleRate);
-  const d = buf.getChannelData(0);
-  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-  const src = ctx.createBufferSource();
-  src.buffer = buf;
-  const filt = ctx.createBiquadFilter();
-  filt.type = type;
-  filt.frequency.setValueAtTime(f0, now);
-  filt.Q.value = q;
-  if (f1) filt.frequency.exponentialRampToValueAtTime(f1, now + dur);
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(gain, now);
-  g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
-  src.connect(filt).connect(g).connect(out);
-  src.start(now);
-  src.stop(now + dur);
-}
+const pitched = (wave, f0, f1, dur, gain, delay = 0) =>
+  Audio.tone({ wave, freq: f1 ? { from: f0, to: f1 } : f0, release: dur, gain, delay });
+const burst = (type, f0, f1, q, dur, gain) =>
+  Audio.tone({ wave: "noise", release: dur, gain, filter: { type, freq: f1 ? { from: f0, to: f1 } : f0, q } });
 
 const SFX = {
-  jump: () =>
-    Audio.playSfx((ctx, now, out) => {
-      tone(ctx, out, now, { type: "triangle", f0: 330, f1: 620, dur: 0.13, gain: 0.24 });
-      noise(ctx, out, now, { f0: 900, f1: 1800, q: 4, dur: 0.09, gain: 0.06 });
-    }),
-  wallJump: () =>
-    Audio.playSfx((ctx, now, out) => {
-      tone(ctx, out, now, { type: "square", f0: 420, f1: 760, dur: 0.11, gain: 0.16 });
-      noise(ctx, out, now, { f0: 1400, f1: 500, q: 3, dur: 0.12, gain: 0.09 });
-    }),
-  dash: () =>
-    Audio.playSfx((ctx, now, out) => {
-      noise(ctx, out, now, { f0: 1600, f1: 300, q: 2, dur: 0.2, gain: 0.22 });
-      tone(ctx, out, now, { type: "sawtooth", f0: 220, f1: 90, dur: 0.18, gain: 0.14 });
-    }),
-  land: (impact) =>
-    Audio.playSfx((ctx, now, out) => {
-      const v = Math.min(0.18, 0.05 + impact * 0.02);
-      noise(ctx, out, now, { type: "lowpass", f0: 300, f1: 120, q: 1, dur: 0.09, gain: v });
-      tone(ctx, out, now, { type: "sine", f0: 150, f1: 80, dur: 0.09, gain: v * 0.7 });
-    }),
-  orb: () =>
-    Audio.playSfx((ctx, now, out) => {
-      [880, 1320, 1760].forEach((f, i) =>
-        tone(ctx, out, now, { type: "sine", f0: f, dur: 0.22, gain: 0.14, delay: i * 0.05 }),
-      );
-      noise(ctx, out, now, { f0: 3000, q: 8, dur: 0.18, gain: 0.04 });
-    }),
-  death: () =>
-    Audio.playSfx((ctx, now, out) => {
-      tone(ctx, out, now, { type: "sawtooth", f0: 420, f1: 70, dur: 0.4, gain: 0.22 });
-      noise(ctx, out, now, { type: "lowpass", f0: 800, f1: 120, q: 1, dur: 0.35, gain: 0.14 });
-    }),
-  win: () =>
-    Audio.playSfx((ctx, now, out) => {
-      [523, 659, 784, 1047].forEach((f, i) =>
-        tone(ctx, out, now, { type: "triangle", f0: f, dur: 0.35, gain: 0.2, delay: i * 0.11 }),
-      );
-    }),
+  jump: () => {
+    pitched("triangle", 330, 620, 0.13, 0.24);
+    burst("bandpass", 900, 1800, 4, 0.09, 0.06);
+  },
+  wallJump: () => {
+    pitched("square", 420, 760, 0.11, 0.16);
+    burst("bandpass", 1400, 500, 3, 0.12, 0.09);
+  },
+  dash: () => {
+    burst("bandpass", 1600, 300, 2, 0.2, 0.22);
+    pitched("sawtooth", 220, 90, 0.18, 0.14);
+  },
+  land: (impact) => {
+    const v = Math.min(0.18, 0.05 + impact * 0.02);
+    burst("lowpass", 300, 120, 1, 0.09, v);
+    pitched("sine", 150, 80, 0.09, v * 0.7);
+  },
+  orb: () => {
+    [880, 1320, 1760].forEach((f, i) => pitched("sine", f, 0, 0.22, 0.14, i * 0.05));
+    burst("bandpass", 3000, 0, 8, 0.18, 0.04);
+  },
+  death: () => {
+    pitched("sawtooth", 420, 70, 0.4, 0.22);
+    burst("lowpass", 800, 120, 1, 0.35, 0.14);
+  },
+  win: () => {
+    [523, 659, 784, 1047].forEach((f, i) => pitched("triangle", f, 0, 0.35, 0.2, i * 0.11));
+  },
 };
 
 const player = {
