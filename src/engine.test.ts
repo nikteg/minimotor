@@ -278,6 +278,25 @@ describe("input", () => {
     expect(inDraw.at(-1)).toBe(false);
   });
 
+  it("framePressed and wheel are frame-scoped and cleared at frame end", () => {
+    const { game } = build();
+    const seen: { pressed: boolean; wheel: number }[] = [];
+    game.run({
+      update: () => {},
+      draw: () => seen.push({ pressed: game.pointer.framePressed, wheel: game.pointer.wheel }),
+    });
+
+    tick(16);
+    game.canvas.dispatchEvent(new MouseEvent("pointerdown", { clientX: 5, clientY: 5 }));
+    game.canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: 40 }));
+    game.canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: 25 }));
+    tick(34);
+    expect(seen.at(-1)).toEqual({ pressed: true, wheel: 65 }); // accumulated
+
+    tick(52); // next frame: spent
+    expect(seen.at(-1)).toEqual({ pressed: false, wheel: 0 });
+  });
+
   it("pressed() fires for exactly one step even when a frame runs several", () => {
     const { game } = build();
     let firedInPressedState = 0;

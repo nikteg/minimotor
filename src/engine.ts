@@ -75,6 +75,12 @@ export interface Pointer {
    *  is consumed by the fixed steps before `draw` runs — draw-phase hit
    *  testing (`UI.button`) reads this instead. */
   readonly frameReleased: boolean;
+  /** True for the whole rendered frame in which a press began — the
+   *  draw-phase counterpart of `pressed` (drag starts in `UI.scrollbar`). */
+  readonly framePressed: boolean;
+  /** Wheel scroll this frame in logical px (positive = down). Accumulated
+   *  across the frame's wheel events, cleared at frame end. */
+  readonly wheel: number;
 }
 
 /** Plugins hook into the game lifecycle; each hook receives the `Game`.
@@ -233,7 +239,16 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
     released: (code) => releasedKeys.has(code),
   };
 
-  const ptr = { x: -1, y: -1, down: false, pressed: false, released: false, frameReleased: false };
+  const ptr = {
+    x: -1,
+    y: -1,
+    down: false,
+    pressed: false,
+    released: false,
+    frameReleased: false,
+    framePressed: false,
+    wheel: 0,
+  };
   const pointer: Pointer = {
     get x() {
       return ptr.x;
@@ -252,6 +267,12 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
     },
     get frameReleased() {
       return ptr.frameReleased;
+    },
+    get framePressed() {
+      return ptr.framePressed;
+    },
+    get wheel() {
+      return ptr.wheel;
     },
   };
 
@@ -294,6 +315,10 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
     setPointer(e);
     ptr.down = true;
     ptr.pressed = true;
+    ptr.framePressed = true; // survives the steps; cleared at frame end
+  };
+  const onWheel = (e: WheelEvent) => {
+    ptr.wheel += e.deltaY;
   };
   const onPointerUp = (e: PointerEvent) => {
     setPointer(e);
@@ -303,6 +328,7 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
   };
   canvas.addEventListener("pointerdown", onPointerDown);
   canvas.addEventListener("pointermove", setPointer);
+  canvas.addEventListener("wheel", onWheel, { passive: true });
   window.addEventListener("pointerup", onPointerUp);
   window.addEventListener("scroll", invalidateRect, true);
 
@@ -359,7 +385,10 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
       for (const p of plugins) p.beforeDraw?.(game);
       callbacks!.draw(ctx);
       for (const p of plugins) p.afterDraw?.(game);
-      ptr.frameReleased = false; // pause menus hit-test in draw too
+      // Pause menus hit-test and scroll in draw too.
+      ptr.frameReleased = false;
+      ptr.framePressed = false;
+      ptr.wheel = 0;
       requestAnimationFrame(loop);
       return;
     }
@@ -397,7 +426,10 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
     callbacks!.draw(ctx);
     timings.drawMs = performance.now() - drawStart;
     for (const p of plugins) p.afterDraw?.(game);
-    ptr.frameReleased = false; // this frame's draw has seen it
+    // This frame's draw has seen the frame-scoped input; spend it.
+    ptr.frameReleased = false;
+    ptr.framePressed = false;
+    ptr.wheel = 0;
     requestAnimationFrame(loop);
   }
 
@@ -470,6 +502,7 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
       screen.orientation?.removeEventListener?.("change", handleOrient);
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", setPointer);
+      canvas.removeEventListener("wheel", onWheel);
       if (portraitMq && portraitApply) portraitMq.removeEventListener?.("change", portraitApply);
       stepHandlers.clear();
       stepStartHandlers.clear();
@@ -647,5 +680,11 @@ export const Pointer: Pointer = {
   },
   get frameReleased() {
     return requireDefault().pointer.frameReleased;
+  },
+  get framePressed() {
+    return requireDefault().pointer.framePressed;
+  },
+  get wheel() {
+    return requireDefault().pointer.wheel;
   },
 };
