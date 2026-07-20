@@ -7,6 +7,12 @@ import { drawGameOver, drawLevelComplete } from "../shared/overlays.js";
 let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 Minimotor.Stage.onResize((next) => (vp = next)); // camera + layout read vp live
 
+const { Timers, Loop } = Minimotor;
+// Forgiving jump: still fires ~100ms after running off a ledge (coyote time)
+// and honors a press made ~130ms before landing (buffering). The gate owns the
+// timing; the JUMP_FORCE impulse and variable-height cut stay game policy.
+const jumpGate = Timers.jumpGate({ coyoteMs: 100, bufferMs: 130 });
+
 // World
 const WORLD_W = 3600;
 const WORLD_H = 600; // fixed height
@@ -164,12 +170,14 @@ Minimotor.Loop.run({
     const left = Keys.down("ArrowLeft") || Keys.down("KeyA");
     const right = Keys.down("ArrowRight") || Keys.down("KeyD");
     const jumpHeld = Keys.down("Space") || Keys.down("ArrowUp") || Keys.down("KeyW");
+    const jumpPressed = Keys.pressed("Space") || Keys.pressed("ArrowUp") || Keys.pressed("KeyW");
     player.vx = 0;
     if (left) { player.vx = -MOVE_SPEED; player.facing = -1; }
     if (right) { player.vx = MOVE_SPEED; player.facing = 1; }
 
-    // Jump
-    if (jumpHeld && player.onGround) {
+    // Jump — the gate adds coyote time + buffering to the raw edge; the
+    // impulse and the variable-height cut are still ours.
+    if (jumpGate.update(player.onGround, jumpPressed, Loop.step)) {
       player.vy = JUMP_FORCE;
       player.onGround = false;
       Minimotor.Audio.Sfx.jump();
@@ -421,17 +429,11 @@ Minimotor.Loop.run({
 
     ctx.restore(); // end bottom-anchored world space
 
-    // HUD
-    ctx.fillStyle = "rgba(0,0,0,0.5)";
-    ctx.fillRect(0, 0, vp.w, 28);
-    ctx.fillStyle = "#fff";
-    ctx.font = "14px monospace";
-    ctx.fillText(
-      `Score: ${score}  Best: ${best}  Coins: ${coinCount}  ${"♥".repeat(lives)}`,
-      10, 20,
-    );
-    // Bottom-left, clear of the perf HUD that anchors top-right.
-    ctx.fillText("← → move  Space jump", 10, vp.h - 10);
+    // HUD uses the same immediate-mode UI primitives as the other samples.
+    Minimotor.UI.panel(ctx, { x: 8, y: 8, w: Math.min(430, vp.w - 16), h: 48, title: "PLATFORM RUN" });
+    Minimotor.UI.text(`Score ${score}   Best ${best}   Coins ${coinCount}   ${"♥".repeat(lives)}`, { x: 18, y: 34, size: 13 });
+    Minimotor.UI.panel(ctx, { x: 8, y: vp.h - 42, w: 220, h: 34 });
+    Minimotor.UI.text("← → move   Space jump", { x: 18, y: vp.h - 33, size: 12 });
 
     // Game Over overlay
     if (gameOver) {

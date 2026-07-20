@@ -7,13 +7,18 @@ import { Minimotor } from "minimotor";
 const GAME_W = 480, GAME_H = 270, TILE = 48;
 let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 Minimotor.Stage.onResize((next) => (vp = next));
-const { Assets, Anim, Tiles, Camera, Input, Keys, Draw, Loop, UI, Particles, Game } = Minimotor;
+const { Assets, Anim, Fsm, Timers, Tiles, Camera, Input, Keys, Draw, Loop, UI, Particles, Sprites, Game } =
+  Minimotor;
 const input = Input.actions({
   left: ["ArrowLeft", "KeyA"], right: ["ArrowRight", "KeyD"], jump: ["ArrowUp", "KeyW", "Space"],
 });
 
+// Forgiving jump: coyote grace after running off a ledge + a buffered press
+// just before landing. The gate decides *when*; the impulse below is ours.
+const jumpGate = Timers.jumpGate({ coyoteMs: 90, bufferMs: 120 });
+
 let progress = 0, ready = false, failed = "", level, map, cam, terrain, backdrop, skyLayer, terrainLayer, playerAnim, enemyAnim, fruitAnim, goalAnim;
-let player, enemies = [], coins = [], goal, lives = 3, state = "loading", elapsed = 0;
+let player, playerSm, enemies = [], coins = [], goal, lives = 3, state = "loading", elapsed = 0;
 const sounds = {};
 
 function loadSound(name) {
@@ -142,26 +147,24 @@ function drawFruitPickup(ctx, coin) {
 // Cache the unchanging sky and terrain. The previous renderer rebuilt a
 // pattern/gradient and issued dozens of large, upscaled tile draws every frame.
 function makeStaticLayers() {
-  skyLayer = document.createElement("canvas");
-  skyLayer.width = GAME_W; skyLayer.height = GAME_H;
-  const skyCtx = skyLayer.getContext("2d");
-  skyCtx.imageSmoothingEnabled = false;
-  const pattern = skyCtx.createPattern(backdrop, "repeat");
-  if (pattern) { skyCtx.fillStyle = pattern; skyCtx.fillRect(0, 0, GAME_W, GAME_H); }
-  const sky = skyCtx.createLinearGradient(0, 0, 0, GAME_H);
-  sky.addColorStop(0, "rgba(86,205,225,.3)"); sky.addColorStop(1, "rgba(36,91,155,.35)");
-  skyCtx.fillStyle = sky; skyCtx.fillRect(0, 0, GAME_W, GAME_H);
-  skyCtx.fillStyle = "rgba(255,244,184,.75)"; skyCtx.beginPath(); skyCtx.arc(400, 50, 23, 0, Math.PI * 2); skyCtx.fill();
+  skyLayer = Sprites.getLayer("pixel-adventure:sky", GAME_W, GAME_H, 1, (skyCtx) => {
+    skyCtx.imageSmoothingEnabled = false;
+    const pattern = skyCtx.createPattern(backdrop, "repeat");
+    if (pattern) { skyCtx.fillStyle = pattern; skyCtx.fillRect(0, 0, GAME_W, GAME_H); }
+    const sky = skyCtx.createLinearGradient(0, 0, 0, GAME_H);
+    sky.addColorStop(0, "rgba(86,205,225,.3)"); sky.addColorStop(1, "rgba(36,91,155,.35)");
+    skyCtx.fillStyle = sky; skyCtx.fillRect(0, 0, GAME_W, GAME_H);
+    skyCtx.fillStyle = "rgba(255,244,184,.75)"; skyCtx.beginPath(); skyCtx.arc(400, 50, 23, 0, Math.PI * 2); skyCtx.fill();
+  });
 
-  terrainLayer = document.createElement("canvas");
-  terrainLayer.width = map.worldW; terrainLayer.height = map.worldH;
-  const terrainCtx = terrainLayer.getContext("2d");
-  terrainCtx.imageSmoothingEnabled = false;
-  for (let y = 0; y < map.rows; y++) for (let x = 0; x < map.cols; x++) if (map.at(x, y)) {
-    const px = x * TILE, py = y * TILE;
-    terrainCtx.fillStyle = "rgba(19,45,65,.28)"; terrainCtx.fillRect(px + 4, py + 5, TILE, TILE);
-    terrainCtx.drawImage(terrain, 96, 0, 48, 48, px, py, TILE, TILE);
-  }
+  terrainLayer = Sprites.getLayer("pixel-adventure:terrain", map.worldW, map.worldH, 1, (terrainCtx) => {
+    terrainCtx.imageSmoothingEnabled = false;
+    for (let y = 0; y < map.rows; y++) for (let x = 0; x < map.cols; x++) if (map.at(x, y)) {
+      const px = x * TILE, py = y * TILE;
+      terrainCtx.fillStyle = "rgba(19,45,65,.28)"; terrainCtx.fillRect(px + 4, py + 5, TILE, TILE);
+      terrainCtx.drawImage(terrain, 96, 0, 48, 48, px, py, TILE, TILE);
+    }
+  });
 }
 
 Assets.load({
@@ -186,6 +189,31 @@ Assets.load({
     fall: Anim.sheet(Assets.image("playerFall"), { fw: 32, fh: 32 }),
     hit: Anim.sheet(Assets.image("playerHit"), { fw: 32, fh: 32, fps: 14 }),
   }, "idle");
+  // The player's animation is driven by a state machine whose states map 1:1
+  // to the animation clips — every transition auto-plays the matching clip via
+  // the { anim } bridge, so there's no hand-mirrored play() call. Each state
+  // recomputes the desired state from live physics (a fully-connected machine).
+  const playerState = () =>
+    player.hurtTimer > 0
+      ? "hit"
+      : !player.onGround
+        ? player.vy < 0
+          ? "jump"
+          : "fall"
+        : Math.abs(player.vx) > 18
+          ? "run"
+          : "idle";
+  playerSm = Fsm.create(
+    {
+      idle: { update: playerState },
+      run: { update: playerState },
+      jump: { update: playerState },
+      fall: { update: playerState },
+      hit: { update: playerState },
+    },
+    "idle",
+    { anim: playerAnim },
+  );
   enemyAnim = Anim.sheet(Assets.image("enemy"), { fw: 30, fh: 38, fps: 9 });
   fruitAnim = Anim.sheet(Assets.image("fruit"), { fw: 32, fh: 32, fps: 10 });
   goalAnim = Anim.sheet(Assets.image("goal"), { fw: 64, fh: 64, fps: 5 });
@@ -213,13 +241,18 @@ Loop.run({
     if (direction) { player.vx += direction * 900 * dt; player.facing = direction; }
     else player.vx *= Math.pow(0.0008, dt);
     player.vx = Math.max(-165, Math.min(165, player.vx));
-    // A 96px first ledge needs a 140px jump arc; the old 400px/s impulse
-    // topped out below it, which made the opening route impossible.
-    if (input.pressed("jump") && player.onGround) { player.vy = -525; player.onGround = false; playSound("jump"); }
+    // A 96px first ledge needs a 140px jump arc (the -525 impulse). The impulse
+    // is ours; the coyote-grace + input-buffer timing is the gate's.
+    if (jumpGate.update(player.onGround, input.pressed("jump"), stepMs)) {
+      player.vy = -525;
+      player.onGround = false;
+      playSound("jump");
+    }
     player.vy = Math.min(620, player.vy + 980 * dt);
     movePlayer(player.vx * dt, player.vy * dt);
-    const animState = player.hurtTimer > 0 ? "hit" : !player.onGround ? (player.vy < 0 ? "jump" : "fall") : Math.abs(player.vx) > 18 ? "run" : "idle";
-    playerAnim.play(animState);
+    // The state machine picks the animation clip (auto-played via its bridge);
+    // we just advance the active clip's timeline.
+    playerSm.update(stepMs);
     playerAnim.update(stepMs);
 
     for (const enemy of enemies) {
