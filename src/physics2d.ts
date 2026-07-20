@@ -78,6 +78,9 @@ export interface Body2D {
   spin: number;
   /** False once the solver has put the body to sleep (resting). */
   readonly awake: boolean;
+  /** Rouse a sleeping body. Teleporting (`x`/`y`) doesn't wake by itself —
+   *  call this after moving the world under resting bodies (e.g. on resize). */
+  wake(): void;
   /** The `data` tag passed at creation (mutable). */
   data: unknown;
   /** Instant velocity change, mass-scaled (kg·px/s), applied at the center. */
@@ -186,6 +189,9 @@ export function world(opts: Physics2DOptions = {}): Physics2DWorld {
       },
       get awake() {
         return raw.isAwake();
+      },
+      wake() {
+        raw.setAwake(true);
       },
       data,
       applyImpulse(ix, iy) {

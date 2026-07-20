@@ -17,6 +17,8 @@ describe("Physics2D", () => {
     expect(crate.y).toBeGreaterThan(335);
     expect(crate.y).toBeLessThan(345);
     expect(crate.awake).toBe(false); // solver put it to sleep
+    crate.wake();
+    expect(crate.awake).toBe(true);
   });
 
   it("bounces with restitution and doesn't without", () => {
