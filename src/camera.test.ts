@@ -16,6 +16,39 @@ describe("createCamera", () => {
     cam.update(9999, 0);
     expect(cam.x).toBe(100); // worldW - viewW
   });
+
+  it("centers the world when it is smaller than the view", () => {
+    const cam = createCamera({ worldW: 200, worldH: 100, viewW: 400, viewH: 300, damping: 1 });
+    cam.update(100, 50);
+    expect(cam.x).toBe(-100); // (200 - 400) / 2 → world centered, not corner-pinned
+    expect(cam.y).toBe(-100); // (100 - 300) / 2
+    expect(cam.sx(0)).toBe(100); // left world edge sits 100px into the view
+  });
+
+  it("snapTo jumps straight to the (clamped) target", () => {
+    const cam = createCamera({ worldW: 1000, worldH: 600, viewW: 400, viewH: 300 });
+    cam.snapTo(700, 300);
+    expect(cam.x).toBe(500);
+    expect(cam.y).toBe(150);
+  });
+
+  it("wx/wy invert sx/sy, honoring zoom", () => {
+    const cam = createCamera({ worldW: 1000, worldH: 600, viewW: 400, viewH: 300 });
+    cam.snapTo(700, 300);
+    cam.zoom = 2;
+    expect(cam.wx(cam.sx(123))).toBeCloseTo(123);
+    expect(cam.wy(cam.sy(45))).toBeCloseTo(45);
+  });
+
+  it("dt-corrected damping: one dtScale=2 update equals two dtScale=1 updates", () => {
+    const cfg = { worldW: 1000, worldH: 600, viewW: 400, viewH: 300, damping: 0.3 };
+    const a = createCamera(cfg);
+    const b = createCamera(cfg);
+    a.update(700, 300, 2);
+    b.update(700, 300);
+    b.update(700, 300);
+    expect(a.x).toBeCloseTo(b.x);
+  });
 });
 
 describe("scrollColumns", () => {

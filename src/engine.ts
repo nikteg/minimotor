@@ -108,8 +108,13 @@ export interface Game {
   readonly viewport: Viewport;
   readonly keys: Keys;
   readonly pointer: Pointer;
-  /** Real time since the previous frame, in fixed steps (interpolate in draw). */
+  /** Real time since the previous frame, in fixed steps. */
   readonly frameScale: number;
+  /** Render interpolation factor 0..1: how far the unsimulated remainder of
+   *  real time has progressed into the next fixed step. Draw at
+   *  `prev + (curr - prev) * alpha` for stutter-free motion on non-60 Hz
+   *  displays. */
+  readonly alpha: number;
   readonly paused: boolean;
   /** Subscribe to viewport changes (resize / orientation); returns unsubscribe. */
   onResize(handler: (vp: Viewport) => void): () => void;
@@ -117,6 +122,10 @@ export interface Game {
    *  edge input is cleared). Deterministic — used by Clock/Tween. Returns
    *  unsubscribe. */
   onStep(handler: () => void): () => void;
+  /** Subscribe to the *start* of each fixed step (runs before the user's
+   *  `update`). For sampling poll-only inputs (gamepads) so the same step's
+   *  update sees fresh state. Returns unsubscribe. */
+  onStepStart(handler: () => void): () => void;
   /** Register a plugin after build (calls its `onInit` immediately). */
   use(plugin: EnginePlugin): void;
   /** Register callbacks and start the loop (idempotent restart of callbacks). */
@@ -125,13 +134,21 @@ export interface Game {
   pause(): void;
   /** Resume from a `pause()`. */
   resume(): void;
-  /** Stop the loop entirely. */
+  /** Stop the loop entirely. A later `run()` restarts it with a fresh clock. */
   stop(): void;
+  /** Tear the game down: stop the loop and remove every window/canvas listener
+   *  it registered. The instance is unusable afterwards. Needed for tests,
+   *  hot-reload, and re-running `Stage.init`. */
+  destroy(): void;
 }
 
 export interface GameOptions {
   /** Canvas element id (without `#`) or the element itself. */
   canvas: string | HTMLCanvasElement;
+  /** Key codes whose default browser action (scrolling, etc.) is suppressed
+   *  while the game runs. Default: Space + arrow keys. Pass `[]` to suppress
+   *  nothing. */
+  preventKeys?: string[];
 }
 
 /** Fluent host-builder. Configure, then `build()` into a `Game`. */
@@ -145,6 +162,11 @@ export interface GameBuilder {
 }
 
 const STEP_MS = 1000 / 60;
+/** Spiral-of-death guard: at most this many catch-up steps per frame; any
+ *  further backlog is dropped (better a one-off slow-motion hitch than a
+ *  feedback loop of ever-longer frames). */
+const MAX_CATCHUP_STEPS = 5;
+const DEFAULT_PREVENT_KEYS = ["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"];
 
 /** Create an isolated game. Prefer `Minimotor.Stage.init()` for app code;
  *  this stays exported for tests and multi-game scenarios. */
@@ -215,35 +237,49 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
   let paused = false;
   let callbacks: GameCallbacks | null = null;
   let running = false;
+  let destroyed = false;
   let lastTime = 0;
   let accumulator = 0;
 
-  window.addEventListener("keydown", (e) => {
-    if (e.code === "Space") e.preventDefault();
+  const preventKeys = new Set(options.preventKeys ?? DEFAULT_PREVENT_KEYS);
+
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (preventKeys.has(e.code)) e.preventDefault();
     if (!heldKeys.has(e.code)) pressedKeys.add(e.code); // ignore auto-repeat
     heldKeys.add(e.code);
-  });
-  window.addEventListener("keyup", (e) => {
+  };
+  const onKeyUp = (e: KeyboardEvent) => {
     heldKeys.delete(e.code);
     releasedKeys.add(e.code);
-  });
-
-  const setPointer = (e: { clientX: number; clientY: number }) => {
-    const rect = canvas.getBoundingClientRect();
-    ptr.x = e.clientX - rect.left;
-    ptr.y = e.clientY - rect.top;
   };
-  canvas.addEventListener("pointerdown", (e) => {
+  window.addEventListener("keydown", onKeyDown);
+  window.addEventListener("keyup", onKeyUp);
+
+  // getBoundingClientRect forces a layout read; pointermove fires at 100+ Hz,
+  // so cache the rect and re-read only after resize/scroll.
+  let canvasRect: DOMRect | null = null;
+  const invalidateRect = () => {
+    canvasRect = null;
+  };
+  const setPointer = (e: { clientX: number; clientY: number }) => {
+    if (!canvasRect) canvasRect = canvas.getBoundingClientRect();
+    ptr.x = e.clientX - canvasRect.left;
+    ptr.y = e.clientY - canvasRect.top;
+  };
+  const onPointerDown = (e: PointerEvent) => {
     setPointer(e);
     ptr.down = true;
     ptr.pressed = true;
-  });
-  canvas.addEventListener("pointermove", setPointer);
-  window.addEventListener("pointerup", (e) => {
+  };
+  const onPointerUp = (e: PointerEvent) => {
     setPointer(e);
     ptr.down = false;
     ptr.released = true;
-  });
+  };
+  canvas.addEventListener("pointerdown", onPointerDown);
+  canvas.addEventListener("pointermove", setPointer);
+  window.addEventListener("pointerup", onPointerUp);
+  window.addEventListener("scroll", invalidateRect, true);
 
   /** Drop edge-triggered input once the update step it belongs to has run, so a
    *  press fires for exactly one step (never twice when a slow frame runs
@@ -256,9 +292,11 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
   }
 
   const stepHandlers = new Set<() => void>();
+  const stepStartHandlers = new Set<() => void>();
   const resizeHandlers = new Set<(vp: Viewport) => void>();
   const handleResize = () => {
     viewport = readViewport(canvas);
+    canvasRect = null;
     for (const p of plugins) p.onResize?.(game);
     for (const h of resizeHandlers) h(viewport);
   };
@@ -271,13 +309,15 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
   window.addEventListener("orientationchange", handleOrient);
   screen.orientation?.addEventListener?.("change", handleOrient);
 
+  let portraitMq: MediaQueryList | null = null;
+  let portraitApply: (() => void) | null = null;
   if (pauseOnPortrait) {
-    const mq = window.matchMedia("(orientation: portrait) and (pointer: coarse)");
-    const apply = () => {
-      paused = mq.matches;
+    portraitMq = window.matchMedia("(orientation: portrait) and (pointer: coarse)");
+    portraitApply = () => {
+      paused = portraitMq!.matches;
     };
-    mq.addEventListener?.("change", apply);
-    apply();
+    portraitMq.addEventListener?.("change", portraitApply);
+    portraitApply();
   }
 
   function loop(time: number) {
@@ -288,6 +328,9 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
       lastTime = time;
       accumulator = 0;
       frameScale = 0;
+      // No step will consume edge input while paused — drop it so a key pressed
+      // mid-pause doesn't fire pressed() on the first step after resume().
+      consumeEdges();
       for (const p of plugins) p.beforeDraw?.(game);
       callbacks!.draw();
       for (const p of plugins) p.afterDraw?.(game);
@@ -302,7 +345,15 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
     accumulator += elapsed;
 
     for (const p of plugins) p.beforeUpdate?.(game);
+    let steps = 0;
     while (accumulator >= STEP_MS) {
+      if (++steps > MAX_CATCHUP_STEPS) {
+        // Already this far behind, more catch-up only digs the hole deeper —
+        // drop the backlog and let the game run slow-motion for one frame.
+        accumulator = 0;
+        break;
+      }
+      for (const h of stepStartHandlers) h(); // poll-only inputs sample here
       callbacks!.update();
       for (const h of stepHandlers) h(); // timers / tweens advance one step
       // Each step observes the current press, then it's consumed — so pressed()
@@ -329,6 +380,9 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
     get frameScale() {
       return frameScale;
     },
+    get alpha() {
+      return accumulator / STEP_MS;
+    },
     get paused() {
       return paused;
     },
@@ -340,14 +394,23 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
       stepHandlers.add(handler);
       return () => stepHandlers.delete(handler);
     },
+    onStepStart(handler) {
+      stepStartHandlers.add(handler);
+      return () => stepStartHandlers.delete(handler);
+    },
     use(plugin) {
       plugins.push(plugin);
       plugin.onInit?.(game);
     },
     run(cb) {
+      if (destroyed) throw new Error("Minimotor: this game was destroyed — build a new one");
       callbacks = cb;
       if (!running) {
         running = true;
+        // Fresh clock: without this, a stop() → run() would see a huge elapsed
+        // (up to the 250 ms cap) and fire a burst of catch-up steps.
+        lastTime = 0;
+        accumulator = 0;
         requestAnimationFrame(loop);
       }
       return game;
@@ -361,6 +424,25 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
     stop() {
       running = false;
     },
+    destroy() {
+      if (destroyed) return;
+      destroyed = true;
+      running = false;
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("scroll", invalidateRect, true);
+      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("orientationchange", handleOrient);
+      screen.orientation?.removeEventListener?.("change", handleOrient);
+      canvas.removeEventListener("pointerdown", onPointerDown);
+      canvas.removeEventListener("pointermove", setPointer);
+      if (portraitMq && portraitApply) portraitMq.removeEventListener?.("change", portraitApply);
+      stepHandlers.clear();
+      stepStartHandlers.clear();
+      resizeHandlers.clear();
+      if (defaultGame === game) defaultGame = null;
+    },
   };
 
   for (const p of plugins) p.onInit?.(game);
@@ -368,6 +450,10 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
 }
 
 function readViewport(canvas: HTMLCanvasElement): Viewport {
+  // Known quirk: the canvas is sized to the full window, but fullscreenCSS
+  // offsets it by the safe-area insets — on a notched device the far edge
+  // overflows by the inset. Draw HUD elements inside `safeLeft`/`safeTop`
+  // and keep gameplay away from the extreme edges.
   const w = window.innerWidth;
   const h = window.innerHeight;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -424,13 +510,18 @@ export interface StageOptions {
   plugins?: EnginePlugin[];
   /** Auto-pause while a coarse-pointer device is held in portrait. */
   pauseOnPortrait?: boolean;
+  /** Key codes to `preventDefault()` on. Default: Space + arrow keys. */
+  preventKeys?: string[];
 }
 
 /** Canvas / viewport / screen. `init` builds the default engine and returns
  *  its viewport so setup code can read `vp.w` / `vp.h` / `vp.dpr`. */
 export const Stage = {
   init(canvas: string | HTMLCanvasElement, opts: StageOptions = {}): Viewport {
-    let builder = createGame({ canvas });
+    // Re-init replaces the default game — tear the old one down first so its
+    // rAF loop and window listeners don't leak.
+    defaultGame?.destroy();
+    let builder = createGame({ canvas, preventKeys: opts.preventKeys });
     if (opts.pauseOnPortrait) builder = builder.pauseOnPortrait();
     for (const p of opts.plugins ?? []) builder = builder.use(p);
     defaultGame = builder.build();
@@ -468,9 +559,18 @@ export const Loop = {
   onStep(handler: () => void): () => void {
     return requireDefault().onStep(handler);
   },
+  /** Subscribe to the start of each fixed step (before `update`); returns
+   *  unsubscribe. */
+  onStepStart(handler: () => void): () => void {
+    return requireDefault().onStepStart(handler);
+  },
   /** Fixed update timestep in milliseconds (1000 / 60). */
   get step(): number {
     return STEP_MS;
+  },
+  /** Render interpolation factor 0..1 — see `Game.alpha`. */
+  get alpha(): number {
+    return requireDefault().alpha;
   },
 };
 
@@ -481,6 +581,10 @@ export const Draw = {
   },
   get frameScale(): number {
     return requireDefault().frameScale;
+  },
+  /** Render interpolation factor 0..1 — see `Game.alpha`. */
+  get alpha(): number {
+    return requireDefault().alpha;
   },
 };
 

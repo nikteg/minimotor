@@ -23,6 +23,17 @@ export interface WsConfig {
   binaryType?: BinaryType;
   /** Reconnect delay in ms (0 = no reconnect) */
   reconnectMs?: number;
+  /** Send a keep-alive frame every N ms while connected (0 = off). Keeps
+   *  proxies/load-balancers from dropping a quiet connection. */
+  heartbeatMs?: number;
+  /** The keep-alive frame (default a 0-byte binary frame). Match whatever your
+   *  server ignores/expects — e.g. `"ping"`. */
+  heartbeatPayload?: Uint8Array | string;
+  /** Treat the link as dead when nothing is received for N ms (0 = off): the
+   *  socket is closed, which triggers `reconnectMs` if configured — a half-open
+   *  TCP connection otherwise looks "connected" forever. Pair with a server
+   *  that sends something periodically (or echoes the heartbeat). */
+  idleTimeoutMs?: number;
 }
 
 export interface RtcConfig {
@@ -46,6 +57,10 @@ export interface Transport {
   /** Send binary data over the transport. Throws if not connected. */
   send(data: Uint8Array): void;
 
+  /** Like `send`, but returns false instead of throwing when the transport
+   *  isn't connected — safe to call every frame from a game loop. */
+  trySend(data: Uint8Array): boolean;
+
   /** Send a JSON-serializable object (convenience wrapper around send). */
   sendJson(obj: unknown): void;
 
@@ -67,11 +82,24 @@ export interface Transport {
 export function connect(config: WsConfig): Transport {
   const binaryType: BinaryType = config.binaryType ?? "arraybuffer";
   const reconnectMs = config.reconnectMs ?? 0;
+  const heartbeatMs = config.heartbeatMs ?? 0;
+  const heartbeatPayload = config.heartbeatPayload ?? new Uint8Array(0);
+  const idleTimeoutMs = config.idleTimeoutMs ?? 0;
 
   let ws: WebSocket | null = null;
   let state: Transport["state"] = "connecting";
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  let idleTimer: ReturnType<typeof setInterval> | null = null;
+  let lastRecv = 0;
   let intentionalClose = false;
+
+  function stopTimers() {
+    if (heartbeatTimer !== null) clearInterval(heartbeatTimer);
+    if (idleTimer !== null) clearInterval(idleTimer);
+    heartbeatTimer = null;
+    idleTimer = null;
+  }
 
   const transport: Transport = {
     onMessage: null,
@@ -86,6 +114,16 @@ export function connect(config: WsConfig): Transport {
       ws!.send(data);
     },
 
+    trySend(data: Uint8Array) {
+      if (state !== "connected") return false;
+      try {
+        ws!.send(data);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+
     sendJson(obj: unknown) {
       if (state !== "connected") throw new Error("WebSocket not connected");
       ws!.send(JSON.stringify(obj));
@@ -94,6 +132,7 @@ export function connect(config: WsConfig): Transport {
     close() {
       intentionalClose = true;
       state = "closed";
+      stopTimers();
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (ws) {
         ws.onclose = null;
@@ -109,9 +148,30 @@ export function connect(config: WsConfig): Transport {
 
     ws.onopen = () => {
       state = "connected";
+      lastRecv = Date.now();
+      if (heartbeatMs > 0) {
+        heartbeatTimer = setInterval(() => {
+          try {
+            ws!.send(heartbeatPayload);
+          } catch {
+            /* racing a close — the onclose path cleans up */
+          }
+        }, heartbeatMs);
+      }
+      if (idleTimeoutMs > 0) {
+        // Closing a half-open link routes into the normal onclose path, so
+        // reconnectMs (if set) kicks in.
+        idleTimer = setInterval(
+          () => {
+            if (Date.now() - lastRecv > idleTimeoutMs) ws!.close();
+          },
+          Math.max(250, idleTimeoutMs / 2),
+        );
+      }
     };
 
     ws.onmessage = (e: MessageEvent) => {
+      lastRecv = Date.now();
       const handler = transport.onMessage;
       if (!handler) return;
       if (e.data instanceof ArrayBuffer) {
@@ -128,6 +188,7 @@ export function connect(config: WsConfig): Transport {
 
     ws.onclose = () => {
       state = "closed";
+      stopTimers();
       if (!intentionalClose && reconnectMs > 0) {
         reconnectTimer = setTimeout(doConnect, reconnectMs);
       } else if (transport.onClose) {
@@ -145,6 +206,21 @@ export function connect(config: WsConfig): Transport {
 }
 
 // ---------- WebRTC ----------
+
+/** Run `cb` once ICE gathering finishes (event-driven, no polling). */
+function whenGatheringComplete(conn: RTCPeerConnection, cb: () => void) {
+  if (conn.iceGatheringState === "complete") {
+    cb();
+    return;
+  }
+  const onChange = () => {
+    if (conn.iceGatheringState === "complete") {
+      conn.removeEventListener("icegatheringstatechange", onChange);
+      cb();
+    }
+  };
+  conn.addEventListener("icegatheringstatechange", onChange);
+}
 
 export function createPeer(config: RtcConfig = {}): {
   transport: Transport;
@@ -176,6 +252,16 @@ export function createPeer(config: RtcConfig = {}): {
       dc.send(data as Uint8Array<ArrayBuffer>);
     },
 
+    trySend(data: Uint8Array) {
+      if (state !== "connected" || !dc) return false;
+      try {
+        dc.send(data as Uint8Array<ArrayBuffer>);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+
     sendJson(obj: unknown) {
       if (state !== "connected" || !dc) throw new Error("Data channel not connected");
       dc.send(JSON.stringify(obj));
@@ -194,6 +280,15 @@ export function createPeer(config: RtcConfig = {}): {
     if (!onSignal) return;
     for (const s of queuedSignals) onSignal(s);
     queuedSignals = [];
+  }
+
+  function emitSignal(signal: Signal) {
+    if (onSignal) onSignal(signal);
+    else queuedSignals.push(signal);
+  }
+
+  function emitLocalDescription(type: "offer" | "answer") {
+    emitSignal({ type, sdp: JSON.stringify(pc!.localDescription) });
   }
 
   function setupPeer(pc2: RTCPeerConnection) {
@@ -256,50 +351,19 @@ export function createPeer(config: RtcConfig = {}): {
       setupPeer(pc);
 
       pc.createOffer()
-        .then((offer) => {
-          return pc!.setLocalDescription(offer);
-        })
+        .then((offer) => pc!.setLocalDescription(offer))
         .then(() => {
-          if (trickle) {
-            // Wait for ICE gathering to complete (or not, if trickling)
-            // For simplicity, we wait for the full offer with candidates.
-            // A real implementation could send candidates incrementally.
-          }
+          // Trickle: send the offer as soon as the local description is set;
+          // candidates follow via onicecandidate. Non-trickle: wait for ICE
+          // gathering so the SDP already contains every candidate.
+          if (trickle) emitLocalDescription("offer");
+          else whenGatheringComplete(pc!, () => emitLocalDescription("offer"));
         })
-        .catch(() => {
-          // ICE gathering happens asynchronously; the offer will be sent
-          // via onicegatheringstatechange or onicecandidate.
+        .catch((err) => {
+          console.warn("Minimotor.Net: creating WebRTC offer failed", err);
+          state = "closed";
+          if (transport.onClose) transport.onClose();
         });
-
-      // Send the offer once ICE gathering is complete (or trickle candidates)
-      if (!trickle) {
-        // Wait for gathering to complete
-        const checkGathering = () => {
-          if (pc!.iceGatheringState === "complete") {
-            const signal: Signal = {
-              type: "offer",
-              sdp: JSON.stringify(pc!.localDescription),
-            };
-            if (onSignal) onSignal(signal);
-            else queuedSignals.push(signal);
-          } else {
-            setTimeout(checkGathering, 50);
-          }
-        };
-        checkGathering();
-      } else {
-        // With trickle, send the offer immediately and candidates will follow
-        setTimeout(() => {
-          if (pc!.localDescription) {
-            const signal: Signal = {
-              type: "offer",
-              sdp: JSON.stringify(pc!.localDescription),
-            };
-            if (onSignal) onSignal(signal);
-            else queuedSignals.push(signal);
-          }
-        }, 100);
-      }
     },
 
     applySignal(signal: Signal) {
@@ -317,20 +381,9 @@ export function createPeer(config: RtcConfig = {}): {
             }
           })
           .then(() => {
-            if (signal.type === "offer" && !trickle) {
-              const checkGathering = () => {
-                if (pc!.iceGatheringState === "complete") {
-                  const answerSignal: Signal = {
-                    type: "answer",
-                    sdp: JSON.stringify(pc!.localDescription),
-                  };
-                  if (onSignal) onSignal(answerSignal);
-                  else queuedSignals.push(answerSignal);
-                } else {
-                  setTimeout(checkGathering, 50);
-                }
-              };
-              checkGathering();
+            if (signal.type === "offer") {
+              if (trickle) emitLocalDescription("answer");
+              else whenGatheringComplete(pc!, () => emitLocalDescription("answer"));
             }
           })
           .catch((err) => {
@@ -352,6 +405,107 @@ export function createPeer(config: RtcConfig = {}): {
 
     get onSignal() {
       return onSignal;
+    },
+  };
+}
+
+// ---------- Snapshot interpolation ----------
+// Remote entities look best rendered a little in the past, blended between two
+// *known* states, instead of teleporting to whatever the latest packet said.
+// Buffer incoming snapshots with `push`, then `sample()` each frame to get the
+// state as of (now − delayMs):
+//
+//   const remote = Net.createInterpolator<{ x: number; y: number }>();
+//   transport.onMessage = (data) => remote.push(decode(data));
+//   // in draw():
+//   const s = remote.sample();
+//   if (s) drawPlayer(s.x, s.y);
+
+export interface InterpolatorOptions<T> {
+  /** How far behind real time to render, in ms. Should cover at least one
+   *  packet interval plus jitter; default 100 (two packets at 20 Hz). */
+  delayMs?: number;
+  /** Snapshots kept in the buffer (default 32). */
+  maxSnapshots?: number;
+  /** Blend two states with `t` in 0..1. The default lerps every field that is
+   *  numeric in both states and copies the rest from the newer one — supply
+   *  your own for angles (wrap-around) or nested objects. */
+  lerp?: (a: T, b: T, t: number) => T;
+  /** Millisecond clock — injectable for tests. Default `performance.now`. */
+  now?: () => number;
+}
+
+export interface Interpolator<T> {
+  /** Record a snapshot. `atMs` defaults to arrival time; pass the sender's
+   *  timestamp when the protocol carries one (steadier under receive jitter).
+   *  Out-of-order snapshots (unreliable channels) are dropped. */
+  push(state: T, atMs?: number): void;
+  /** The state as of (now − delayMs). Interpolated between the two surrounding
+   *  snapshots; clamps to the oldest/newest when the target time falls outside
+   *  the buffer (no extrapolation). Null until the first push. */
+  sample(atMs?: number): T | null;
+  /** Buffered snapshot count. */
+  readonly size: number;
+  /** Drop all snapshots (e.g. on respawn/teleport, to avoid a visible sweep). */
+  clear(): void;
+}
+
+function defaultLerp<T>(a: T, b: T, t: number): T {
+  if (typeof a === "number" && typeof b === "number") {
+    return (a + (b - a) * t) as T;
+  }
+  const out = { ...(b as object) } as Record<string, unknown>;
+  const from = a as Record<string, unknown>;
+  for (const k in from) {
+    const av = from[k];
+    const bv = out[k];
+    if (typeof av === "number" && typeof bv === "number") out[k] = av + (bv - av) * t;
+  }
+  return out as T;
+}
+
+export function createInterpolator<T>(opts: InterpolatorOptions<T> = {}): Interpolator<T> {
+  const delay = opts.delayMs ?? 100;
+  const max = opts.maxSnapshots ?? 32;
+  const now = opts.now ?? (() => performance.now());
+  const blend = opts.lerp ?? defaultLerp<T>;
+
+  const times: number[] = [];
+  const states: T[] = [];
+
+  return {
+    push(state, atMs = now()) {
+      // The buffer must stay time-ordered for sampling; late packets from an
+      // unreliable channel are stale by definition — drop them.
+      if (times.length && atMs <= times[times.length - 1]) return;
+      times.push(atMs);
+      states.push(state);
+      if (times.length > max) {
+        times.shift();
+        states.shift();
+      }
+    },
+
+    sample(atMs = now()) {
+      const last = times.length - 1;
+      if (last < 0) return null;
+      const target = atMs - delay;
+      if (target <= times[0]) return states[0];
+      if (target >= times[last]) return states[last]; // buffer ran dry: hold
+      // The target sits near the tail — scan back from the end.
+      let i = last;
+      while (times[i - 1] > target) i--;
+      const t = (target - times[i - 1]) / (times[i] - times[i - 1]);
+      return blend(states[i - 1], states[i], t);
+    },
+
+    get size() {
+      return times.length;
+    },
+
+    clear() {
+      times.length = 0;
+      states.length = 0;
     },
   };
 }

@@ -73,6 +73,7 @@ export type {
   System,
   RenderSystem,
   SpriteData,
+  DrawSpritesOptions,
 } from "./ecs.js";
 export type { ClockManager, Cancel } from "./clock.js";
 export type { SignalBus } from "./signals.js";
@@ -81,6 +82,15 @@ export type { Animation, SheetConfig, FrameRect, AnimDrawOptions } from "./anim.
 export type { Sweep } from "./collision.js";
 export type { ShakeState } from "./camera.js";
 export type { ParticleSystem, BurstOptions, Range } from "./particles.js";
+export type {
+  PerfStats,
+  PerfTracker,
+  NetStats,
+  NetMeter,
+  PerfHudOptions,
+  PerfOptions,
+} from "./perf.js";
+export type { GamepadState } from "./input.js";
 
 // A shared default world (`Minimotor.World`) for the common single-world case;
 // games that need isolation or per-scene worlds call `ECS.world()` for their own.
@@ -88,7 +98,14 @@ const defaultWorld = ECS.world();
 export type { SfxBuilder, MusicConfig } from "./audio.js";
 export type { PhysicsBody } from "./physics.js";
 export type { SpriteCanvas } from "./sprites.js";
-export type { Transport, WsConfig, RtcConfig, Signal } from "./net.js";
+export type {
+  Transport,
+  WsConfig,
+  RtcConfig,
+  Signal,
+  Interpolator,
+  InterpolatorOptions,
+} from "./net.js";
 
 const Collision = { rectsOverlap, circleHit, crossedDown, sweptAABB };
 export { Collision, rectsOverlap, circleHit, crossedDown, sweptAABB };

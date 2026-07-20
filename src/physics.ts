@@ -16,7 +16,12 @@ export interface PhysicsBody {
 }
 
 /** Apply gravity and resolve ground/platform collision.
- *  Returns true if the body landed this frame. */
+ *  Returns true if the body landed this frame.
+ *
+ *  `floorY` is a half-plane, so a fast fall can't tunnel *through it*. Thin
+ *  platforms the game checks itself are a different story: at high `vy` the
+ *  body can skip past one between steps — pair those checks with
+ *  `Collision.sweptAABB` (or `crossedDown` for horizontal ledges). */
 export function applyGravity(body: PhysicsBody, floorY: number): boolean {
   body.vy += GRAVITY;
   body.y += body.vy;

@@ -12,7 +12,9 @@ const layerCache = new Map<string, HTMLCanvasElement>();
 
 /** Get or create a pre-rendered sprite canvas keyed by `cacheKey`.
  *  `size` is the logical size in CSS pixels.
- *  `dpr` is the device pixel ratio for sharp rendering.
+ *  `dpr` is the device pixel ratio for sharp rendering. It is part of the real
+ *  cache key, so dragging the window between 1× and 2× monitors re-bakes
+ *  sharp sprites automatically instead of serving stale ones.
  *  `draw` is called once with the offscreen 2D context (already DPR-scaled
  *  and translated to center). */
 export function getSprite(
@@ -21,6 +23,7 @@ export function getSprite(
   dpr: number,
   draw: (ctx: CanvasRenderingContext2D) => void,
 ): SpriteCanvas {
+  cacheKey += "@" + dpr;
   let sprite = cache.get(cacheKey);
   if (!sprite) {
     sprite = document.createElement("canvas") as SpriteCanvas;
@@ -43,7 +46,8 @@ export function getSprite(
  *  DPR-scaled, so `draw` works in logical (CSS) pixels.
  *
  *  Cache by everything the baked pixels depend on (e.g. `theme + ":" + w`) so a
- *  resize or theme change re-bakes instead of returning a stale layer. */
+ *  resize or theme change re-bakes instead of returning a stale layer. `dpr`
+ *  is folded into the key automatically. */
 export function getLayer(
   cacheKey: string,
   w: number,
@@ -51,6 +55,7 @@ export function getLayer(
   dpr: number,
   draw: (ctx: CanvasRenderingContext2D) => void,
 ): HTMLCanvasElement {
+  cacheKey += "@" + dpr;
   let layer = layerCache.get(cacheKey);
   if (!layer) {
     layer = document.createElement("canvas");

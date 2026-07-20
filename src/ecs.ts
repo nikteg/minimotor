@@ -75,6 +75,9 @@ export interface SpriteData {
   rot?: number;
   /** Uniform scale (default 1). */
   scale?: number;
+  /** Mirror horizontally / vertically about the anchor (default false). */
+  flipX?: boolean;
+  flipY?: boolean;
   /** Opacity 0..1 (default 1). */
   alpha?: number;
   /** Draw order — lower is drawn first (default 0). */
@@ -88,6 +91,23 @@ export interface SpriteData {
   sy?: number;
   sw?: number;
   sh?: number;
+  /** Position at the previous fixed step. Maintained by `world.update()`;
+   *  `drawSprites` uses it to interpolate when given an `alpha` — don't write
+   *  these yourself (but *do* reset them alongside `x`/`y` when teleporting an
+   *  entity, or it will visibly streak for one frame). */
+  px?: number;
+  py?: number;
+}
+
+/** Options for `world.drawSprites`. */
+export interface DrawSpritesOptions {
+  /** Render interpolation factor 0..1 (pass `Loop.alpha`). Sprites whose
+   *  `px`/`py` snapshots exist are drawn between their previous and current
+   *  step positions — smooth motion on 90/120/144 Hz displays. */
+  alpha?: number;
+  /** Visible world rect (camera view). When given, sprites fully outside it are
+   *  skipped before any transform work. */
+  view?: { x: number; y: number; w: number; h: number };
 }
 
 let nextComponentId = 0;
@@ -186,8 +206,28 @@ export interface World {
   draw(ctx: CanvasRenderingContext2D): void;
   /** Built-in renderer: blit every entity holding the standard `Sprite`
    *  component, sorted by `z` (ties keep spawn order). Honors anchor, rotation,
-   *  scale, alpha and visibility. Call from a scene `draw` or a render system. */
-  drawSprites(ctx: CanvasRenderingContext2D): void;
+   *  scale, flip, alpha and visibility. Call from a scene `draw` or a render
+   *  system. Pass `{ alpha: Loop.alpha }` for interpolated positions and/or
+   *  `{ view }` to cull off-screen sprites. */
+  drawSprites(ctx: CanvasRenderingContext2D, opts?: DrawSpritesOptions): void;
+
+  /** Callback-form query for hot systems: no generator, no per-entity tuple
+   *  allocation. Same matching semantics as `query`. */
+  each<A>(a: Component<A>, fn: (e: Entity, a: A) => void): void;
+  each<A, B>(a: Component<A>, b: Component<B>, fn: (e: Entity, a: A, b: B) => void): void;
+  each<A, B, C>(
+    a: Component<A>,
+    b: Component<B>,
+    c: Component<C>,
+    fn: (e: Entity, a: A, b: B, c: C) => void,
+  ): void;
+  each<A, B, C, D>(
+    a: Component<A>,
+    b: Component<B>,
+    c: Component<C>,
+    d: Component<D>,
+    fn: (e: Entity, a: A, b: B, c: C, d: D) => void,
+  ): void;
 
   query<A>(a: Component<A>): Iterable<[Entity, A]>;
   query<A, B>(a: Component<A>, b: Component<B>): Iterable<[Entity, A, B]>;
@@ -206,9 +246,16 @@ export function world(): World {
   const alive: boolean[] = [];
   const free: number[] = [];
   const stores = new Map<number, Store>();
+  // Which component ids each entity index holds — so despawn touches only the
+  // entity's own stores instead of scanning every registered component type.
+  const owned: (Set<number> | undefined)[] = [];
 
   let iterating = 0;
   const commands: (() => void)[] = [];
+
+  // Reused per-call scratch (drawSprites list / each row) — hot-path, no allocs.
+  const scratch: SpriteData[] = [];
+  const eachRow: unknown[] = [];
 
   const updateSystems: { name: string; fn: System }[] = [];
   const renderSystems: { name: string; fn: RenderSystem }[] = [];
@@ -245,10 +292,15 @@ export function world(): World {
     st.slotOf[index] = st.dense.length;
     st.dense.push(data);
     st.owners.push(index);
+    (owned[index] ??= new Set()).add(cid);
   }
 
   function despawnAt(index: number): void {
-    for (const st of stores.values()) removeAt(st, index);
+    const cids = owned[index];
+    if (cids) {
+      for (const cid of cids) removeAt(stores.get(cid)!, index);
+      cids.clear();
+    }
     generations[index]++;
     alive[index] = false;
     free.push(index);
@@ -302,7 +354,12 @@ export function world(): World {
       if (!self.alive(e)) return;
       const index = indexOf(e);
       const st = stores.get(c.id);
-      if (st) defer(() => removeAt(st, index));
+      if (st) {
+        defer(() => {
+          removeAt(st, index);
+          owned[index]?.delete(c.id);
+        });
+      }
     },
 
     count(c) {
@@ -316,6 +373,7 @@ export function world(): World {
       generations.length = 0;
       alive.length = 0;
       free.length = 0;
+      owned.length = 0;
       commands.length = 0;
       iterating = 0;
     },
@@ -329,6 +387,16 @@ export function world(): World {
     },
 
     update() {
+      // Snapshot sprite positions before simulating, so drawSprites can
+      // interpolate between the previous and current step (`Loop.alpha`).
+      const spriteStore = stores.get(Sprite.id);
+      if (spriteStore) {
+        for (const d of spriteStore.dense) {
+          const s = d as SpriteData;
+          s.px = s.x;
+          s.py = s.y;
+        }
+      }
       for (const s of updateSystems) s.fn(self);
       flush();
     },
@@ -337,13 +405,28 @@ export function world(): World {
       for (const s of renderSystems) s.fn(self, ctx);
     },
 
-    drawSprites(ctx) {
-      // Collect, then z-sort (stable) so draw order is predictable.
-      const list: SpriteData[] = [];
-      for (const [, s] of self.query(Sprite)) list.push(s as SpriteData);
-      list.sort((a, b) => (a.z ?? 0) - (b.z ?? 0));
+    drawSprites(ctx, opts) {
+      const lerp = opts?.alpha;
+      const view = opts?.view;
 
-      for (const s of list) {
+      // Reuse the scratch list — a fresh array per frame is pure GC churn.
+      scratch.length = 0;
+      const st = stores.get(Sprite.id);
+      if (!st) return;
+      for (const d of st.dense) scratch.push(d as SpriteData);
+
+      // Sorting an already-ordered list is cheap but not free; check first.
+      let ordered = true;
+      for (let i = 1; i < scratch.length; i++) {
+        if ((scratch[i].z ?? 0) < (scratch[i - 1].z ?? 0)) {
+          ordered = false;
+          break;
+        }
+      }
+      if (!ordered) scratch.sort((a, b) => (a.z ?? 0) - (b.z ?? 0));
+
+      let ctxAlpha = 1; // track instead of save/restore per sprite
+      for (const s of scratch) {
         if (s.visible === false) continue;
         const alpha = s.alpha ?? 1;
         if (alpha <= 0) continue;
@@ -357,20 +440,97 @@ export function world(): World {
         const ay = s.ay ?? 0.5;
         const rot = s.rot ?? 0;
         const scale = s.scale ?? 1;
+        const flipX = s.flipX === true;
+        const flipY = s.flipY === true;
 
-        ctx.save();
-        ctx.globalAlpha = alpha;
-        ctx.translate(s.x, s.y);
-        if (rot !== 0) ctx.rotate(rot);
-        if (scale !== 1) ctx.scale(scale, scale);
-        if (clipped) {
-          ctx.drawImage(img, s.sx ?? 0, s.sy ?? 0, s.sw!, s.sh!, -ax * w, -ay * h, w, h);
-        } else {
-          ctx.drawImage(img, -ax * w, -ay * h, w, h);
+        // Interpolated render position (snapshots come from world.update()).
+        let x = s.x;
+        let y = s.y;
+        if (lerp !== undefined && s.px !== undefined && s.py !== undefined) {
+          x = s.px + (s.x - s.px) * lerp;
+          y = s.py + (s.y - s.py) * lerp;
         }
-        ctx.restore();
+
+        if (view) {
+          // Conservative reject: w+h bounds the diagonal, so this is safe for
+          // any rotation and any anchor in [0,1].
+          const ext = (w + h) * scale;
+          if (
+            x + ext < view.x ||
+            x - ext > view.x + view.w ||
+            y + ext < view.y ||
+            y - ext > view.y + view.h
+          ) {
+            continue;
+          }
+        }
+
+        if (alpha !== ctxAlpha) {
+          ctx.globalAlpha = alpha;
+          ctxAlpha = alpha;
+        }
+
+        if (rot === 0 && scale === 1 && !flipX && !flipY) {
+          // Common case: no transform needed at all.
+          if (clipped) {
+            ctx.drawImage(img, s.sx ?? 0, s.sy ?? 0, s.sw!, s.sh!, x - ax * w, y - ay * h, w, h);
+          } else {
+            ctx.drawImage(img, x - ax * w, y - ay * h, w, h);
+          }
+        } else {
+          ctx.save();
+          ctx.translate(x, y);
+          if (rot !== 0) ctx.rotate(rot);
+          const kx = scale * (flipX ? -1 : 1);
+          const ky = scale * (flipY ? -1 : 1);
+          if (kx !== 1 || ky !== 1) ctx.scale(kx, ky);
+          if (clipped) {
+            ctx.drawImage(img, s.sx ?? 0, s.sy ?? 0, s.sw!, s.sh!, -ax * w, -ay * h, w, h);
+          } else {
+            ctx.drawImage(img, -ax * w, -ay * h, w, h);
+          }
+          ctx.restore();
+        }
       }
+      if (ctxAlpha !== 1) ctx.globalAlpha = 1;
     },
+
+    // Callback query: shares the matching logic shape with `query` but calls
+    // straight through — no generator machinery, no per-entity tuple.
+    each: ((...args: unknown[]): void => {
+      const fn = args.pop() as (...xs: unknown[]) => void;
+      const cs = args as AnyComponent[];
+      if (cs.length === 0) return;
+      let driver: Store | null = null;
+      for (const c of cs) {
+        const st = stores.get(c.id);
+        if (!st || st.dense.length === 0) return;
+        if (!driver || st.dense.length < driver.dense.length) driver = st;
+      }
+      const cols = cs.map((c) => stores.get(c.id)!);
+
+      iterating++;
+      try {
+        const len = driver!.dense.length; // snapshot: new spawns aren't visited
+        outer: for (let i = 0; i < len; i++) {
+          const index = driver!.owners[i];
+          eachRow.length = 0;
+          eachRow.push(makeId(index, generations[index]));
+          for (const col of cols) {
+            if (col === driver) {
+              eachRow.push(col.dense[i]);
+              continue;
+            }
+            const slot = col.slotOf[index];
+            if (slot === undefined) continue outer;
+            eachRow.push(col.dense[slot]);
+          }
+          fn(...eachRow);
+        }
+      } finally {
+        if (--iterating === 0) flush();
+      }
+    }) as World["each"],
 
     // Implementation is one loose signature; the typed overloads live on the
     // World interface, so the cast just bridges impl → declared overloads.
@@ -384,7 +544,7 @@ export function world(): World {
           if (!st || st.dense.length === 0) return;
           if (!driver || st.dense.length < driver.dense.length) driver = st;
         }
-        const rest = cs.map((c) => stores.get(c.id)!);
+        const cols = cs.map((c) => stores.get(c.id)!);
 
         iterating++;
         try {
@@ -393,13 +553,18 @@ export function world(): World {
             const index = driver!.owners[i];
             const row: unknown[] = [makeId(index, generations[index])];
             let ok = true;
-            for (const st of rest) {
-              const slot = st.slotOf[index];
+            for (const col of cols) {
+              // The driver's data is already at hand — no membership re-check.
+              if (col === driver) {
+                row.push(col.dense[i]);
+                continue;
+              }
+              const slot = col.slotOf[index];
               if (slot === undefined) {
                 ok = false;
                 break;
               }
-              row.push(st.dense[slot]);
+              row.push(col.dense[slot]);
             }
             if (ok) yield row as [Entity, ...unknown[]];
           }

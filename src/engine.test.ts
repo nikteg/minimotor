@@ -97,11 +97,13 @@ describe("run / loop", () => {
     expect(update).not.toHaveBeenCalled();
   });
 
-  it("caps elapsed at 250ms of simulation", () => {
+  it("caps catch-up at 5 steps per frame and drops the backlog", () => {
     const { update } = withCallbacks();
     tick(16);
-    tick(1016);
-    expect(update).toHaveBeenCalledTimes(15); // 250 / (1000/60)
+    tick(1016); // a full second behind
+    expect(update).toHaveBeenCalledTimes(5); // spiral-of-death guard
+    tick(1024); // 8ms later: backlog was dropped, <1 step accumulated
+    expect(update).toHaveBeenCalledTimes(5);
   });
 
   it("draws without updating when less than one step elapses", () => {
@@ -134,6 +136,69 @@ describe("run / loop", () => {
     game.stop();
     tick(32);
     expect(draw).toHaveBeenCalledTimes(1);
+  });
+
+  it("restarts with a fresh clock after stop() — no catch-up burst", () => {
+    const { game, update, draw } = withCallbacks();
+    tick(16);
+    game.stop();
+    game.run({ update, draw });
+    tick(5000); // long wall-clock gap while stopped: must only prime the clock
+    expect(update).not.toHaveBeenCalled();
+    tick(5017);
+    expect(update).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops edge input that arrives while paused", () => {
+    const { game } = build();
+    const seen: boolean[] = [];
+    game.run({ update: () => seen.push(game.keys.pressed("Space")), draw: vi.fn() });
+    tick(16);
+    game.pause();
+    window.dispatchEvent(new KeyboardEvent("keydown", { code: "Space" }));
+    tick(32); // paused frame clears the stale edge
+    game.resume();
+    tick(64); // steps run again
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen).not.toContain(true);
+  });
+
+  it("runs onStepStart before update and onStep after, every step", () => {
+    const { game } = build();
+    const order: string[] = [];
+    game.onStepStart(() => order.push("start"));
+    game.onStep(() => order.push("end"));
+    game.run({ update: () => order.push("update"), draw: vi.fn() });
+    tick(16);
+    tick(66); // ~50ms → 3 steps in one frame
+    expect(order.slice(0, 3)).toEqual(["start", "update", "end"]);
+    expect(order.length % 3).toBe(0); // the trio holds for every step
+    for (let i = 0; i < order.length; i += 3) {
+      expect(order.slice(i, i + 3)).toEqual(["start", "update", "end"]);
+    }
+  });
+
+  it("exposes alpha as the unsimulated fraction of a step", () => {
+    const { game } = withCallbacks();
+    tick(16);
+    tick(40); // 24ms → one step consumed, ~7.33ms remains
+    const step = 1000 / 60;
+    expect(game.alpha).toBeCloseTo((24 - step) / step, 2);
+  });
+});
+
+describe("destroy", () => {
+  it("stops the loop, removes listeners and refuses to run again", () => {
+    const { game } = build();
+    const draw = vi.fn();
+    game.run({ update: vi.fn(), draw });
+    tick(16);
+    game.destroy();
+    tick(32);
+    expect(draw).toHaveBeenCalledTimes(1);
+    window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyQ" }));
+    expect(game.keys.down("KeyQ")).toBe(false);
+    expect(() => game.run({ update: vi.fn(), draw })).toThrow(/destroyed/);
   });
 });
 
@@ -192,6 +257,25 @@ describe("input", () => {
     const e = new KeyboardEvent("keydown", { code: "Space", cancelable: true });
     window.dispatchEvent(e);
     expect(e.defaultPrevented).toBe(true);
+  });
+
+  it("prevents default on arrow keys by default (page must not scroll)", () => {
+    build();
+    const e = new KeyboardEvent("keydown", { code: "ArrowDown", cancelable: true });
+    window.dispatchEvent(e);
+    expect(e.defaultPrevented).toBe(true);
+  });
+
+  it("honors a custom preventKeys set", () => {
+    const canvas = document.createElement("canvas");
+    const game = createGame({ canvas, preventKeys: ["KeyZ"] }).build();
+    const ez = new KeyboardEvent("keydown", { code: "KeyZ", cancelable: true });
+    window.dispatchEvent(ez);
+    expect(ez.defaultPrevented).toBe(true);
+    const ex = new KeyboardEvent("keydown", { code: "KeyX", cancelable: true });
+    window.dispatchEvent(ex);
+    expect(ex.defaultPrevented).toBe(false);
+    game.destroy();
   });
 });
 

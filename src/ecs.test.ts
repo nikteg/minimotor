@@ -227,9 +227,10 @@ describe("ECS drawSprites", () => {
     w.spawn(Sprite.with({ x: 100, y: 50, img }));
     const ctx = mockCtx();
     w.drawSprites(ctx);
-    expect(ctx.calls).toContain("translate 100,50");
-    // default anchor 0.5 → offset -10,-10; size 20x20; alpha 1
-    expect(ctx.calls).toContain("draw -10,-10 20x20 @1");
+    // Untransformed fast path: no translate, absolute coords.
+    // Default anchor 0.5 → 100-10, 50-10; size 20x20; alpha 1.
+    expect(ctx.calls).toContain("draw 90,40 20x20 @1");
+    expect(ctx.calls.filter((c) => c === "save")).toHaveLength(0);
   });
 
   it("respects explicit size, anchor and alpha", () => {
@@ -247,8 +248,9 @@ describe("ECS drawSprites", () => {
     w.spawn(Sprite.with({ x: 2, y: 0, img, z: 0 }));
     const ctx = mockCtx();
     w.drawSprites(ctx);
-    const order = ctx.calls.filter((c) => c.startsWith("translate")).map((c) => c.split(" ")[1]);
-    expect(order).toEqual(["1,0", "2,0", "3,0"]);
+    // Fast path draws at x - 10 (anchor 0.5 of the 20px image).
+    const order = ctx.calls.filter((c) => c.startsWith("draw")).map((c) => c.split(" ")[1]);
+    expect(order).toEqual(["-9,-10", "-8,-10", "-7,-10"]);
   });
 
   it("skips invisible and fully transparent sprites", () => {
@@ -268,5 +270,60 @@ describe("ECS drawSprites", () => {
     w.drawSprites(ctx);
     expect(ctx.calls.filter((c) => c.startsWith("rotate"))).toEqual(["rotate 1"]);
     expect(ctx.calls.filter((c) => c.startsWith("scale"))).toEqual(["scale 2,2"]);
+  });
+
+  it("flips about the anchor with a negative scale", () => {
+    const w = world();
+    w.spawn(Sprite.with({ x: 0, y: 0, img, flipX: true }));
+    const ctx = mockCtx();
+    w.drawSprites(ctx);
+    expect(ctx.calls).toContain("scale -1,1");
+    expect(ctx.calls).toContain("draw -10,-10 20x20 @1"); // anchored offset unchanged
+  });
+
+  it("interpolates between the previous and current step positions", () => {
+    const w = world();
+    w.spawn(Sprite.with({ x: 0, y: 0, img }));
+    w.system("move", (wo) => {
+      for (const [, s] of wo.query(Sprite)) s.x += 10;
+    });
+    w.update(); // snapshot px=0, then move to x=10
+    const ctx = mockCtx();
+    w.drawSprites(ctx, { alpha: 0.5 });
+    expect(ctx.calls).toContain("draw -5,-10 20x20 @1"); // rendered at x=5
+  });
+
+  it("culls sprites outside the view rect", () => {
+    const w = world();
+    w.spawn(Sprite.with({ x: 1000, y: 0, img }));
+    w.spawn(Sprite.with({ x: 10, y: 10, img }));
+    const ctx = mockCtx();
+    w.drawSprites(ctx, { view: { x: 0, y: 0, w: 100, h: 100 } });
+    expect(ctx.calls.filter((c) => c.startsWith("draw"))).toHaveLength(1);
+  });
+});
+
+describe("ECS each (callback queries)", () => {
+  it("visits matching entities with the same semantics as query", () => {
+    const w = world();
+    const e1 = w.spawn(Position.with({ x: 1, y: 2 }), Velocity.with({ x: 3, y: 4 }));
+    w.spawn(Position.with({ x: 9, y: 9 })); // no Velocity → not visited
+    const rows: [Entity, number, number][] = [];
+    w.each(Position, Velocity, (e, p, v) => rows.push([e, p.x, v.x]));
+    expect(rows).toEqual([[e1, 1, 3]]);
+  });
+
+  it("defers structural changes issued during iteration", () => {
+    const w = world();
+    w.spawn(Position.with({ x: 0, y: 0 }));
+    w.spawn(Position.with({ x: 1, y: 0 }));
+    let visited = 0;
+    w.each(Position, (e) => {
+      visited++;
+      w.despawn(e); // buffered until the loop completes
+      expect(w.count(Position)).toBeGreaterThan(0);
+    });
+    expect(visited).toBe(2);
+    expect(w.count(Position)).toBe(0); // flushed afterwards
   });
 });

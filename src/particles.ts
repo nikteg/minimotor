@@ -66,11 +66,41 @@ function sample(r: Range, rng: () => number): number {
   return typeof r === "number" ? r : r[0] + rng() * (r[1] - r[0]);
 }
 
+// Pre-baked circle per color: a drawImage blit is much cheaper than a
+// beginPath/arc/fill per particle, and it carries its color (no fillStyle
+// churn). Baked once at 2× the typical size and scaled down when drawn.
+const DOT_R = 16;
+const dotCache = new Map<string, HTMLCanvasElement | null>();
+
+function dotFor(color: string): HTMLCanvasElement | null {
+  let dot = dotCache.get(color);
+  if (dot === undefined) {
+    dot = null;
+    try {
+      const c = document.createElement("canvas");
+      c.width = c.height = DOT_R * 2;
+      const g = c.getContext("2d");
+      if (g) {
+        g.fillStyle = color;
+        g.beginPath();
+        g.arc(DOT_R, DOT_R, DOT_R, 0, Math.PI * 2);
+        g.fill();
+        dot = c;
+      }
+    } catch {
+      dot = null; // no canvas support (tests) — fall back to path fills
+    }
+    dotCache.set(color, dot);
+  }
+  return dot;
+}
+
 /** Create an independent particle system. Pure (drive `advance` yourself); the
  *  default `Particles` wires one to the loop's fixed step. `rng` is injectable
  *  for tests. */
 export function createParticles(rng: () => number = Math.random): ParticleSystem {
   const live: Particle[] = [];
+  const pool: Particle[] = []; // dead particles, reused by the next burst
 
   return {
     burst(x, y, opts = {}) {
@@ -86,17 +116,17 @@ export function createParticles(rng: () => number = Math.random): ParticleSystem
       for (let i = 0; i < count; i++) {
         const dir = angle + (rng() - 0.5) * spread;
         const spd = sample(speed, rng);
-        live.push({
-          x,
-          y,
-          vx: Math.cos(dir) * spd,
-          vy: Math.sin(dir) * spd,
-          age: 0,
-          life: sample(life, rng),
-          size: sample(size, rng),
-          color: typeof colors === "string" ? colors : colors[(rng() * colors.length) | 0],
-          gravity,
-        });
+        const p = pool.pop() ?? ({} as Particle);
+        p.x = x;
+        p.y = y;
+        p.vx = Math.cos(dir) * spd;
+        p.vy = Math.sin(dir) * spd;
+        p.age = 0;
+        p.life = sample(life, rng);
+        p.size = sample(size, rng);
+        p.color = typeof colors === "string" ? colors : colors[(rng() * colors.length) | 0];
+        p.gravity = gravity;
+        live.push(p);
       }
     },
 
@@ -109,6 +139,7 @@ export function createParticles(rng: () => number = Math.random): ParticleSystem
         if (p.age >= p.life) {
           const last = live.pop()!;
           if (i < live.length) live[i] = last;
+          pool.push(p);
           continue;
         }
         p.vy += p.gravity * s;
@@ -120,10 +151,15 @@ export function createParticles(rng: () => number = Math.random): ParticleSystem
     draw(ctx) {
       for (const p of live) {
         ctx.globalAlpha = Math.max(0, 1 - p.age / p.life);
-        ctx.fillStyle = p.color;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        ctx.fill();
+        const dot = dotFor(p.color);
+        if (dot) {
+          ctx.drawImage(dot, p.x - p.size, p.y - p.size, p.size * 2, p.size * 2);
+        } else {
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
       ctx.globalAlpha = 1;
     },

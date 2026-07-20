@@ -31,6 +31,11 @@ export interface SheetConfig {
   /** Loop at the end (default true); when false, holds the last frame and sets
    *  `done`. */
   loop?: boolean;
+  /** Called whenever the visible frame changes, with the new index into
+   *  `frames` — footstep sounds, hit-frame triggers. */
+  onFrame?: (frame: number) => void;
+  /** Called once when a non-looping animation finishes. */
+  onDone?: () => void;
 }
 
 /** Draw options for `Animation.draw`. */
@@ -83,18 +88,23 @@ export function sheet(image: SheetImage, config: SheetConfig): Animation {
     update(dtMs) {
       if (done || frames.length <= 1) return;
       acc += dtMs;
+      let changed = false;
       while (acc >= stepMs) {
         acc -= stepMs;
         if (index + 1 < frames.length) {
           index++;
+          changed = true;
         } else if (loop) {
           index = 0;
+          changed = true;
         } else {
           done = true;
           acc = 0;
+          config.onDone?.();
           break;
         }
       }
+      if (changed) config.onFrame?.(index);
     },
     get frame() {
       return index;

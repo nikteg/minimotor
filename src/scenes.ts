@@ -32,6 +32,10 @@ export interface Scene {
   draw?(): void;
   /** Called when the scene leaves the stack (popped, or replaced by `go`). */
   exit?(): void;
+  /** Declares that this scene paints the full viewport: anything beneath it in
+   *  the stack is invisible, so drawing starts here instead of at the bottom.
+   *  A full-screen play scene under a pause overlay is the typical win. */
+  opaque?: boolean;
   /** Optional ECS world; auto-driven only when `update`/`draw` are absent. */
   world?: World;
 }
@@ -100,7 +104,16 @@ export function createSceneManager(): SceneManager {
       else top.world?.update(); // auto-drive a pure-ECS scene
     },
     draw(ctx) {
-      for (const { scene } of stack) {
+      // Start at the topmost opaque scene — everything below it is covered.
+      let from = 0;
+      for (let i = stack.length - 1; i >= 0; i--) {
+        if (stack[i].scene.opaque) {
+          from = i;
+          break;
+        }
+      }
+      for (let i = from; i < stack.length; i++) {
+        const scene = stack[i].scene;
         if (scene.draw) scene.draw();
         else if (scene.world && ctx) scene.world.draw(ctx);
       }

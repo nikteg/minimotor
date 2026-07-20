@@ -41,9 +41,10 @@ one default engine built by `Stage.init()`.
 - ✅ `Keys` / `Pointer` — polled input (`down`/`pressed`/`released`)
 - ✅ `Draw` — `ctx`, `frameScale`
 - ✅ `Audio` — crash-safe SFX + scheduled `Music`
-- ✅ `Storage`, `Net`, `Perf`, `Fullscreen`, `Input` (incl. `Input.vibrate` haptics)
-- 🟡 backlog: gamepad polling, audio channels / sampled buffers, orientation
-  lock, service-worker/PWA helper
+- ✅ `Storage`, `Net`, `Perf`, `Fullscreen`, `Input` (incl. `Input.vibrate`
+  haptics, `Input.actions` mapping, `Input.gamepad` polling with edge semantics)
+- 🟡 backlog: audio sampled buffers, orientation lock, service-worker/PWA
+  helper, `ImageBitmap` asset decode
 
 ## L2 — Primitives 🟡
 
@@ -266,6 +267,22 @@ hoppspelet) as proof it actually simplifies code — the discipline used so far.
    components); the old `.filter()` rebuild passes are now despawn-while-iterating,
    and drawing stays hand-written (custom per-theme visuals) — the documented
    escape hatch from `world.drawSprites`.
+8. ✅ **Hardening pass (external review)** — _correctness:_ `stop()→run()` clock
+   reset, paused-edge clearing, catch-up step cap (spiral-of-death guard),
+   dt-corrected camera damping + small-world centering, `Game.destroy()` and
+   `Stage.init` re-init teardown, DPR-keyed sprite cache. _Perf:_ allocation-free
+   `drawSprites` fast path (+ view culling), `world.each` callback queries,
+   owned-component despawn, pooled + pre-baked-blit particles, ring-buffer perf
+   tracker, cached pointer rect. _Features:_ `Loop.alpha` render interpolation
+   (with `px`/`py` sprite snapshots), sprite `flipX`/`flipY`, scene `opaque`,
+   camera `snapTo`/`wx`/`wy`/`zoom`, JSON `Storage`, `Input.actions` mapping,
+   SFX bus + presets (`Sfx.blip/jump/coin`), `Net.trySend`, fixed WebRTC
+   offer/answer signaling, and `Net.createInterpolator` — snapshot interpolation
+   for rendering remote entities. _Follow-up:_ `Input.gamepad()` (fixed-step
+   polling, `Keys`-style edges, deadzone), WebSocket `heartbeatMs` +
+   `idleTimeoutMs` (half-open link detection feeding the reconnect path), perf
+   HUD net throughput (`Perf.createNetMeter` + `plugin({ net })`, top-right
+   anchor) proven in the netpeer sample, and screen shake in breakout.
 
 ## Open decisions
 

@@ -50,6 +50,21 @@ describe("SceneManager", () => {
     expect(log).toEqual(["pause:update", "play:draw", "pause:draw"]);
   });
 
+  it("skips scenes covered by an opaque scene when drawing", () => {
+    const log: string[] = [];
+    const m = createSceneManager();
+    m.define("menu", spyScene(log, "menu"));
+    m.define("play", { ...spyScene(log, "play"), opaque: true });
+    m.define("pause", spyScene(log, "pause"));
+    m.go("menu");
+    m.push("play");
+    m.push("pause");
+    log.length = 0;
+    m.draw();
+    // "menu" sits under the opaque "play" — never drawn.
+    expect(log).toEqual(["play:draw", "pause:draw"]);
+  });
+
   it("pop exits the top and resumes the one beneath", () => {
     const log: string[] = [];
     const m = createSceneManager();

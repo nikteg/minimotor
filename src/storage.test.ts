@@ -31,6 +31,17 @@ describe("Storage", () => {
     save("s", 99);
     expect(store.get("s")).toBe("99");
   });
+  it("round-trips objects (settings, unlock flags)", () => {
+    save("cfg", { music: false, unlocked: [1, 2] });
+    expect(load("cfg", { music: true, unlocked: [] as number[] })).toEqual({
+      music: false,
+      unlocked: [1, 2],
+    });
+  });
+  it("reads values written by the old numbers-only version", () => {
+    store.set("legacy", "42"); // String(42) — also valid JSON
+    expect(load("legacy", 0)).toBe(42);
+  });
   it("load fallback on throw", () => {
     vi.stubGlobal("localStorage", {
       getItem: () => {

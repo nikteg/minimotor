@@ -3,7 +3,10 @@
 // player. The game provides melodies/song structure; the engine
 // manages AudioContext, timing, volume and pause on hidden tab.
 
-export type SfxBuilder = (ctx: AudioContext, now: number) => void;
+/** Builds one sound effect. Route nodes into `out` (the master SFX bus, so
+ *  `Sfx.setOn`/`setVolume` apply); older builders that connect straight to
+ *  `ctx.destination` keep working but bypass the bus. */
+export type SfxBuilder = (ctx: AudioContext, now: number, out: AudioNode) => void;
 
 let audioCtx: AudioContext | null = null;
 
@@ -22,6 +25,30 @@ export function ensureAudio(): AudioContext {
   return audioCtx;
 }
 
+// ---------- SFX bus ----------
+// One master gain for all sound effects, so mute/volume is a single knob
+// (mirrors the music channel's gain).
+
+let sfxGain: GainNode | null = null;
+let sfxOn = true;
+let sfxVolume = 1;
+
+function ensureSfxBus(ctx: AudioContext): GainNode {
+  if (!sfxGain) {
+    sfxGain = ctx.createGain();
+    sfxGain.gain.value = sfxOn ? sfxVolume : 0;
+    sfxGain.connect(ctx.destination);
+  }
+  return sfxGain;
+}
+
+function rampSfxGain(): void {
+  if (!sfxGain || !audioCtx) return;
+  const now = audioCtx.currentTime;
+  sfxGain.gain.cancelScheduledValues(now);
+  sfxGain.gain.setTargetAtTime(sfxOn ? sfxVolume : 0, now, 0.02);
+}
+
 // All sound effects should go through this: sound MUST NEVER crash the
 // game (e.g. when AudioContext is missing or blocked by the browser).
 // A thrown error here would otherwise bubble up through update() and
@@ -29,11 +56,77 @@ export function ensureAudio(): AudioContext {
 export function playSfx(build: SfxBuilder): void {
   try {
     const ctx = ensureAudio();
-    build(ctx, ctx.currentTime);
+    build(ctx, ctx.currentTime, ensureSfxBus(ctx));
   } catch {
     /* silent - rather no sound than a frozen game */
   }
 }
+
+/** The SFX channel: master mute/volume plus a few synth presets, so every game
+ *  doesn't re-implement the same blip. All presets are crash-safe (playSfx). */
+export const Sfx = {
+  get on(): boolean {
+    return sfxOn;
+  },
+  setOn(on: boolean): void {
+    sfxOn = on;
+    rampSfxGain();
+  },
+  /** Master SFX volume 0..1 (click-free ramp). */
+  setVolume(v: number): void {
+    sfxVolume = v;
+    rampSfxGain();
+  },
+
+  /** Short square-wave blip — menu ticks, UI feedback. */
+  blip(freq = 880, dur = 0.08, vol = 0.25): void {
+    playSfx((ctx, now, out) => {
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = "square";
+      osc.frequency.value = freq;
+      g.gain.setValueAtTime(vol, now);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+      osc.connect(g).connect(out);
+      osc.start(now);
+      osc.stop(now + dur + 0.02);
+    });
+  },
+
+  /** Rising sweep — the classic jump. */
+  jump(): void {
+    playSfx((ctx, now, out) => {
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(220, now);
+      osc.frequency.exponentialRampToValueAtTime(660, now + 0.12);
+      g.gain.setValueAtTime(0.3, now);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+      osc.connect(g).connect(out);
+      osc.start(now);
+      osc.stop(now + 0.2);
+    });
+  },
+
+  /** Two-note sparkle — pickups, coins. */
+  coin(): void {
+    playSfx((ctx, now, out) => {
+      for (const [i, freq] of [988, 1319].entries()) {
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        const t = now + i * 0.08;
+        osc.type = "sine";
+        osc.frequency.value = freq;
+        g.gain.setValueAtTime(0.25, t);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
+        osc.connect(g).connect(out);
+        osc.start(t);
+        osc.stop(t + 0.3);
+      }
+    });
+  },
+};
 
 // ---------- Music player ----------
 // Web Audio scheduling: the timer wakes us often, but notes are booked
@@ -117,6 +210,8 @@ document.addEventListener("visibilitychange", () => {
 export const Music = {
   // On/off state is reflected in musicGain, so the scheduler can keep
   // running even when muted - switching is instant and click-free.
+  /** Read-only in practice — call `setOn()` to change it, or the gain node and
+   *  the persisted preference silently go out of sync with this flag. */
   on: true,
 
   // Starts the music channel. Call on the first user gesture (browsers

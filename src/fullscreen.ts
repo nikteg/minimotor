@@ -8,18 +8,17 @@ export const fullscreenCSS = `
   html, body {
     width: 100%; height: 100%; overflow: hidden;
     background: #000; touch-action: none;
-    -webkit-overflow-scrolling: none;
     overscroll-behavior: none;
   }
   canvas {
     display: block;
     position: absolute;
+    /* top/left twice on purpose: the first is the fallback for browsers that
+       drop the env() declarations entirely. */
     top: 0; left: 0;
     /* safe-area insets push canvas edges away from notches */
     top: env(safe-area-inset-top, 0px);
     left: env(safe-area-inset-left, 0px);
-    right: env(safe-area-inset-right, 0px);
-    bottom: env(safe-area-inset-bottom, 0px);
   }
 `;
 
