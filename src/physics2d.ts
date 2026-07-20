@@ -27,7 +27,8 @@
 //     }
 //   });
 
-import { type Body as PlanckBody, Box, Circle, Edge, RevoluteJoint, Vec2, World } from "planck";
+import { type Body as PlanckBody, Box, Circle, RevoluteJoint, Vec2, World } from "planck";
+import { component, Sprite, type World as EcsWorld } from "./ecs.js";
 
 /** Options for `Physics2D.world()`. */
 export interface Physics2DOptions {
@@ -94,6 +95,26 @@ export interface Body2D {
   readonly raw: PlanckBody;
 }
 
+/** Options for `walls()`. */
+export interface WallsOptions extends BodyOptions {
+  /** Depth of the solid wall slabs, in px. Default 100. */
+  thickness?: number;
+  /** How fast the walls glide when re-`set()`, in px/s. Default 1200. */
+  sweepSpeed?: number;
+}
+
+/** The containment frame from `walls()`. The four walls are kinematic slabs:
+ *  `set()` makes them glide to the new rect, sweeping bodies ahead of them
+ *  like a bulldozer — bodies push on each other instead of teleporting. */
+export interface Walls2D {
+  /** Re-target the frame (e.g. on window resize). Walls glide there at
+   *  `sweepSpeed`; every dynamic body is woken so sleepers react to the
+   *  floor moving away beneath them. */
+  set(x: number, y: number, w: number, h: number): void;
+  /** Remove all four walls. */
+  destroy(): void;
+}
+
 /** A revolute joint from `pin()`. */
 export interface Pin2D {
   /** Drive the joint like a motor: target speed in rad/s, with the torque
@@ -114,10 +135,11 @@ export interface Physics2DWorld {
   box(x: number, y: number, w: number, h: number, opts?: BodyOptions): Body2D;
   /** A circle body centered at (x, y), radius r px. */
   circle(x: number, y: number, r: number, opts?: BodyOptions): Body2D;
-  /** A static frame of edges around the inside of the rect — walls/floor/
-   *  ceiling for a contained scene. Returns the (static) body so it can be
-   *  destroyed and rebuilt on resize. */
-  walls(x: number, y: number, w: number, h: number, opts?: BodyOptions): Body2D;
+  /** A containment frame around the inside of the rect — walls/floor/ceiling
+   *  for a contained scene. On resize, call `set()` on the returned frame:
+   *  the walls glide to the new rect kinematically, sweeping bodies along
+   *  physically instead of leaving them stranded. */
+  walls(x: number, y: number, w: number, h: number, opts?: WallsOptions): Walls2D;
   /** Hinge two bodies together at a world point (px). Bodies rotate freely
    *  around it — or drive it with `motor()`. */
   pin(a: Body2D, b: Body2D, x: number, y: number): Pin2D;
@@ -140,6 +162,32 @@ export function world(opts: Physics2DOptions = {}): Physics2DWorld {
   const ppm = opts.pixelsPerMeter ?? 50;
   const g = opts.gravity ?? { x: 0, y: 1800 };
   const pw = new World({ gravity: new Vec2(g.x / ppm, g.y / ppm) });
+
+  // Active wall frames whose slabs may be gliding toward new targets.
+  interface WallSweep {
+    slabs: PlanckBody[];
+    targets: Vec2[];
+    speed: number; // m/s
+  }
+  const sweeps = new Set<WallSweep>();
+
+  // Steer each gliding slab: arrive exactly (velocity sized to land on the
+  // target this step) or cruise toward it at sweep speed.
+  const steer = (ws: WallSweep, dt: number) => {
+    ws.slabs.forEach((slab, i) => {
+      const pos = slab.getPosition();
+      const dx = ws.targets[i].x - pos.x;
+      const dy = ws.targets[i].y - pos.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist === 0) {
+        slab.setLinearVelocity(new Vec2(0, 0));
+      } else if (dist <= ws.speed * dt) {
+        slab.setLinearVelocity(new Vec2(dx / dt, dy / dt));
+      } else {
+        slab.setLinearVelocity(new Vec2((dx / dist) * ws.speed, (dy / dist) * ws.speed));
+      }
+    });
+  };
 
   // Box2D locks the world during a step; destroys requested from inside a
   // contact callback are buffered and applied when the step ends.
@@ -231,7 +279,9 @@ export function world(opts: Physics2DOptions = {}): Physics2DWorld {
 
   return {
     step(stepMs) {
-      pw.step(stepMs / 1000, 8, 3);
+      const dt = stepMs / 1000;
+      for (const ws of sweeps) steer(ws, dt);
+      pw.step(dt, 8, 3);
       for (const b of pendingDestroy) pw.destroyBody(b);
       pendingDestroy.length = 0;
     },
@@ -249,17 +299,60 @@ export function world(opts: Physics2DOptions = {}): Physics2DWorld {
     },
 
     walls(x, y, w, h, o = {}) {
-      const raw = pw.createBody({ type: "static" });
+      const t = o.thickness ?? 100;
+      const speed = (o.sweepSpeed ?? 1200) / ppm; // m/s
       const def = fixtureDef(o);
-      const tl = new Vec2(x / ppm, y / ppm);
-      const tr = new Vec2((x + w) / ppm, y / ppm);
-      const br = new Vec2((x + w) / ppm, (y + h) / ppm);
-      const bl = new Vec2(x / ppm, (y + h) / ppm);
-      raw.createFixture(new Edge(tl, tr), def);
-      raw.createFixture(new Edge(tr, br), def);
-      raw.createFixture(new Edge(br, bl), def);
-      raw.createFixture(new Edge(bl, tl), def);
-      return wrap(raw, o.data);
+      // Four kinematic slabs (top, bottom, left, right). Kinematic so they can
+      // sweep to a new rect with real velocity, pushing bodies ahead of them.
+      const slabs = Array.from({ length: 4 }, () => {
+        const slab = pw.createBody({ type: "kinematic" });
+        wrap(slab, o.data); // sets userData, so onContact sees a Body2D
+        return slab;
+      });
+
+      // (Re)build each slab's fixture for the rect's dimensions and return its
+      // target center. Slabs overhang by `t` on both ends so the corners stay
+      // sealed even mid-glide.
+      const layout = (rx: number, ry: number, rw: number, rh: number) => {
+        const sizes = [
+          [rw / 2 + t, t / 2], // top
+          [rw / 2 + t, t / 2], // bottom
+          [t / 2, rh / 2 + t], // left
+          [t / 2, rh / 2 + t], // right
+        ];
+        const targets = [
+          new Vec2((rx + rw / 2) / ppm, (ry - t / 2) / ppm),
+          new Vec2((rx + rw / 2) / ppm, (ry + rh + t / 2) / ppm),
+          new Vec2((rx - t / 2) / ppm, (ry + rh / 2) / ppm),
+          new Vec2((rx + rw + t / 2) / ppm, (ry + rh / 2) / ppm),
+        ];
+        slabs.forEach((slab, i) => {
+          const old = slab.getFixtureList();
+          if (old) slab.destroyFixture(old);
+          slab.createFixture(new Box(sizes[i][0] / ppm, sizes[i][1] / ppm), def);
+        });
+        return targets;
+      };
+
+      const ws: WallSweep = { slabs, targets: layout(x, y, w, h), speed };
+      // First placement snaps into position — nothing to sweep yet.
+      slabs.forEach((slab, i) => slab.setPosition(ws.targets[i]));
+      sweeps.add(ws);
+
+      return {
+        set(nx, ny, nw, nh) {
+          ws.targets = layout(nx, ny, nw, nh);
+          // Wake everything: the floor gliding away under a sleeper is
+          // otherwise unnoticed, and sleepers ignore approaching walls.
+          for (let b = pw.getBodyList(); b; b = b.getNext()) {
+            if (b.isDynamic()) b.setAwake(true);
+          }
+        },
+        destroy() {
+          sweeps.delete(ws);
+          for (const slab of slabs) destroyBody(slab);
+        },
+      };
     },
 
     pin(a, b, x, y) {
@@ -296,6 +389,46 @@ export function world(opts: Physics2DOptions = {}): Physics2DWorld {
   };
 }
 
+// ---------- ECS integration ----------
+
+/** The standard body-holding component: `{ body: Body2D }`. Spawn it next to
+ *  the built-in Sprite and `attach()` keeps the two in sync. */
+export const Phys = component<{ body: Body2D }>("Phys2D");
+
+/** Options for `attach()`. */
+export interface AttachOptions {
+  /** Milliseconds per fixed step. Default 1000/60 — `Loop.step`. */
+  stepMs?: number;
+}
+
+/** Wire a physics world into an ECS world: registers a `phys2d:step` system
+ *  that ticks the simulation and a `phys2d:sync` system that copies each
+ *  body's transform (position, rotation — nothing else) into its Sprite.
+ *  After this, an entity is one spawn call away from being a simulated,
+ *  rendered thing:
+ *
+ *    Physics2D.attach(world, phys);
+ *    world.spawn(
+ *      ECS.Sprite.with({ x, y, img: crateTex, w: s, h: s }),
+ *      Physics2D.Phys.with({ body: phys.box(x, y, s, s) }),
+ *    );
+ *
+ *  Presentation stays yours — want sleeping bodies dimmed, or speed tinting?
+ *  Register your own system after this one and set `alpha`/whatever there.
+ *  Despawning is also yours: destroy the body, then despawn the entity —
+ *  the sync system can't know an entity is about to go. */
+export function attach(ecs: EcsWorld, phys: Physics2DWorld, opts: AttachOptions = {}): void {
+  const stepMs = opts.stepMs ?? 1000 / 60;
+  ecs.system("phys2d:step", () => phys.step(stepMs));
+  ecs.system("phys2d:sync", (w) => {
+    for (const [, s, p] of w.query(Sprite, Phys)) {
+      s.x = p.body.x;
+      s.y = p.body.y;
+      s.rot = p.body.rot;
+    }
+  });
+}
+
 /** Namespace-style export, matching `Minimotor.*` ergonomics:
  *  `import { Physics2D } from "minimotor/physics2d"` → `Physics2D.world()`. */
-export const Physics2D = { world };
+export const Physics2D = { world, attach, Phys };

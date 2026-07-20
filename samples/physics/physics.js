@@ -12,7 +12,7 @@ import { Physics2D } from "minimotor/physics2d";
 const { ECS, Pointer, Keys, Mathf, Camera, Audio, Sprites, Loop } = Minimotor;
 
 const world = ECS.world();
-const Phys = ECS.component("Phys"); // { body: Body2D }
+const { Phys } = Physics2D; // the standard body-holding component
 
 let vp = Minimotor.Stage.init("game", {
   plugins: [Minimotor.Perf.plugin({ world })],
@@ -43,7 +43,7 @@ const ballTex = Sprites.getSprite("phys-ball", TEX, vp.dpr, (c) => {
 });
 
 // ---- static scene: walls + a motorized paddle hinged mid-screen ----
-let frame = phys.walls(0, 0, vp.w, vp.h, { friction: 0.4 });
+const frame = phys.walls(0, 0, vp.w, vp.h, { friction: 0.4 });
 
 const paddle = { w: 220, h: 14 };
 const anchor = phys.box(vp.w / 2, vp.h * 0.55, 10, 10, { type: "static" });
@@ -56,23 +56,16 @@ hinge.motor(1.5, 80000); // slow constant spin — flings whatever lands on it
 
 Minimotor.Stage.onResize((next) => {
   vp = next;
-  // Rebuild the frame for the new size…
-  frame.destroy();
-  frame = phys.walls(0, 0, vp.w, vp.h, { friction: 0.4 });
-  // …keep the paddle hinged at the same relative spot (the joint's anchors are
-  // body-local, so teleporting both bodies by the same delta moves the hinge)…
+  // Re-target the frame: the kinematic walls glide to the new rect, sweeping
+  // bodies ahead of them — everything pushes on everything else, no teleports.
+  frame.set(0, 0, vp.w, vp.h);
+  // Keep the paddle hinged at the same relative spot (the joint's anchors are
+  // body-local, so moving both bodies by the same delta moves the hinge).
   const dx = vp.w / 2 - anchor.x;
   const dy = vp.h * 0.55 - anchor.y;
   for (const b of [anchor, plank]) {
     b.x += dx;
     b.y += dy;
-  }
-  // …and pull anything stranded outside back in. Everything gets a wake():
-  // sleeping bodies don't notice the floor moving underneath them.
-  for (const [, p] of world.query(Phys)) {
-    p.body.x = Mathf.clamp(p.body.x, 30, vp.w - 30);
-    p.body.y = Math.min(p.body.y, vp.h - 30);
-    p.body.wake();
   }
 });
 
@@ -120,20 +113,13 @@ phys.onContact((a, b) => {
   }
 });
 
-// Physics ticks inside the ECS system order: step, then copy transforms into
-// the sprites (position, rotation; sleeping bodies dim).
-world.system("physics", () => phys.step(Loop.step));
-world.system("sync", (w) => {
-  for (const [e, s, p] of w.query(ECS.Sprite, Phys)) {
-    s.x = p.body.x;
-    s.y = p.body.y;
-    s.rot = p.body.rot;
+// The ready-made binding: registers the step + sprite-sync systems (position
+// and rotation — transforms only). Presentation is our own system on top:
+// dim sleeping bodies so the solver's rest detection is visible.
+Physics2D.attach(world, phys, { stepMs: Loop.step });
+world.system("dim-sleepers", (w) => {
+  for (const [, s, p] of w.query(ECS.Sprite, Phys)) {
     s.alpha = p.body.awake ? 1 : 0.55;
-    if (p.body.y > vp.h + 200) {
-      // Resizing smaller can strand a body outside the frame — cull it.
-      p.body.destroy();
-      w.despawn(e);
-    }
   }
 });
 

@@ -330,11 +330,14 @@ hoppspelet) as proof it actually simplifies code — the discipline used so far.
 11. ✅ **Physics2D** — rigid-body adapter over planck (Box2D): `world`/`box`/
     `circle`/`walls`/`pin` (revolute + motor), `onContact`, deferred destroy
     (world-lock safe), px↔m conversion at the boundary, fixed-step `step(ms)`.
-    Own entry point `minimotor/physics2d` — the only module with a dependency;
-    the core import graph stays dependency-free. Composes with the ECS as
-    plain data (body-in-a-component + sync system). Proof: the **physics**
-    sample (stacking/sleeping crates, bouncy balls, motorized paddle,
-    impact-gated shake/sfx).
+    `walls` is a kinematic containment frame: `set()` glides the slabs to a
+    new rect, sweeping bodies ahead of them — resize without teleports. ECS
+    glue ships as the `Phys` component + `attach(world, phys)` (step + sprite
+    transform sync — presentation stays a game system). Own entry point
+    `minimotor/physics2d` — the only module with a dependency; the core import
+    graph stays dependency-free. Proof: the **physics** sample
+    (stacking/sleeping crates, bouncy balls, motorized paddle, impact-gated
+    shake/sfx, sweep-resize).
 
 ## Open decisions
 

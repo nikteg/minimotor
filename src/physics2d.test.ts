@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { world } from "./physics2d.js";
+import { world as ecsWorld, Sprite } from "./ecs.js";
+import { attach, Phys, world } from "./physics2d.js";
 
 const STEP = 1000 / 60;
 const run = (phys: ReturnType<typeof world>, steps: number) => {
@@ -43,10 +44,14 @@ describe("Physics2D", () => {
     expect(roseDead).toBe(false);
   });
 
-  it("walls contain a fast body", () => {
+  it("walls contain a fast body and appear as Body2D in contacts", () => {
     const phys = world({ gravity: { x: 0, y: 0 } });
     phys.walls(0, 0, 400, 300);
     const ball = phys.circle(200, 150, 10, { restitution: 1, bullet: true });
+    let sawNull = false;
+    phys.onContact((a, b) => {
+      if (!a || !b || typeof a.vx !== "number" || typeof b.vx !== "number") sawNull = true;
+    });
     ball.vx = 900;
     ball.vy = 700;
     for (let i = 0; i < 600; i++) {
@@ -56,6 +61,7 @@ describe("Physics2D", () => {
       expect(ball.y).toBeGreaterThan(0);
       expect(ball.y).toBeLessThan(300);
     }
+    expect(sawNull).toBe(false);
   });
 
   it("positions and velocities round-trip in pixels", () => {
@@ -125,6 +131,45 @@ describe("Physics2D", () => {
     expect(plank.x).toBeCloseTo(200, 0); // but not going anywhere
     hinge.destroy();
     expect(() => run(phys, 10)).not.toThrow();
+  });
+
+  it("walls.set() sweeps stranded bodies back inside instead of teleporting", () => {
+    const phys = world();
+    const frame = phys.walls(0, 0, 800, 300);
+    const stray = phys.circle(700, 150, 12); // beyond the future right wall
+    const resident = phys.circle(350, 150, 12); // already inside, stays
+    run(phys, 180); // both settle on the floor and fall asleep
+    expect(stray.x).toBeCloseTo(700, 0);
+    expect(stray.awake).toBe(false);
+
+    frame.set(0, 0, 400, 300); // window shrank — right wall glides 400px left
+    // 400px at 1200px/s ≈ 0.33s; give it 2s to sweep and re-settle.
+    run(phys, 120);
+    expect(stray.x).toBeLessThan(400 - 11); // pushed inside the new arena
+    expect(stray.x).toBeGreaterThan(0);
+    expect(resident.x).toBeGreaterThan(0); // neighbor shoved, not overlapped
+    expect(resident.x).toBeLessThan(400);
+    // No two bodies interpenetrate once settled.
+    run(phys, 120);
+    const gap = Math.abs(stray.x - resident.x);
+    expect(gap).toBeGreaterThan(22); // sum of radii minus slop
+  });
+
+  it("attach() steps the sim and syncs Sprite transforms via the ECS", () => {
+    const ecs = ecsWorld();
+    const phys = world();
+    attach(ecs, phys);
+    phys.box(200, 380, 400, 40, { type: "static" });
+    const body = phys.box(200, 100, 40, 40);
+    const img = {} as CanvasImageSource;
+    ecs.spawn(Sprite.with({ x: 0, y: 0, img }), Phys.with({ body }));
+
+    for (let i = 0; i < 180; i++) ecs.update(); // systems drive phys.step
+    const [[, sprite]] = [...ecs.query(Sprite)];
+    expect(sprite.y).toBeCloseTo(body.y);
+    expect(sprite.y).toBeGreaterThan(335); // fell and rests on the floor
+    expect(sprite.rot).toBe(body.rot);
+    expect(sprite.alpha).toBeUndefined(); // transforms only — styling is yours
   });
 
   it("scales gravity by pixelsPerMeter consistently", () => {
