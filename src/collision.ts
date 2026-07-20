@@ -24,6 +24,12 @@ export function circleHit(
   return dx * dx + dy * dy < r * r;
 }
 
+/** Is the point inside the rect? Edges count as inside — the natural choice
+ *  for pointer hit-testing (a click on a button's border should register). */
+export function pointInRect(px: number, py: number, r: Rect): boolean {
+  return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+}
+
 /** Did a downward-moving edge cross a horizontal threshold this step? True when
  *  `prev` was at/above `threshold` and `next` is at/below it. One-way (guard
  *  with velocity if you only want descents) — the test for landing on a

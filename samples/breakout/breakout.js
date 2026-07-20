@@ -8,7 +8,7 @@
 import { Minimotor } from "minimotor";
 import { drawGameOver } from "../shared/overlays.js";
 
-const { Scenes, Keys, Draw, ECS, Collision, Mathf, Camera, Audio } = Minimotor;
+const { Scenes, Keys, Draw, ECS, Collision, Mathf, Camera, Audio, UI } = Minimotor;
 
 // ---- ECS: one component holding a block's rect + presentation ----
 const Block = ECS.component("Block"); // { x, y, w, h, color, row }
@@ -87,6 +87,7 @@ Scenes.define("play", {
     score = 0;
     lives = 3;
     paddle.x = GW / 2 - PADDLE_W / 2;
+    UI.clearFloats();
     resetBall();
   },
 
@@ -147,7 +148,11 @@ Scenes.define("play", {
         world.despawn(e);
         Camera.shake(3, 120); // a little kick per broken block
         Audio.Sfx.blip(880 - b.row * 90, 0.06); // pitch by row — top rows ring higher
-        score += (ROWS - b.row) * 10;
+        const points = (ROWS - b.row) * 10;
+        score += points;
+        // Floats live in game space (inside the letterbox transform), so they
+        // scale and shake with the board.
+        UI.float(`+${points}`, b.x + b.w / 2, b.y, { color: b.color });
         if (Math.abs(dx) > Math.abs(dy)) ball.vx = -ball.vx;
         else ball.vy = -ball.vy;
         ball.vx *= 1.02;
@@ -219,6 +224,8 @@ Scenes.define("play", {
     ctx.font = "14px monospace";
     ctx.fillText(`Score: ${score}  Best: ${best}  ${"♥".repeat(lives)}`, 10, 20);
     ctx.fillText("← → move  Space launch", 10, GH - 14);
+
+    UI.drawFloats(ctx); // score pops, in game space
 
     if (waiting) {
       ctx.fillStyle = "rgba(0,0,0,0.4)";

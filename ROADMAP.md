@@ -53,7 +53,7 @@ Pure, data-agnostic helpers. No engine state.
 - ✅ `Mathf` — lerp, clamp, remap, pulse, wave, easing set, `randRange`,
   `randInt`, `randItem`, `distance`, `angleBetween`
 - ✅ `Collision` — rectsOverlap, circleHit, crossedDown, `sweptAABB` (tunneling)
-  (add: circleRect, pointInRect)
+  (add: circleRect), `pointInRect` (shipped — powers `UI.button` hit-testing)
 - ✅ `Camera` — `createCamera` (lerp follow + clamp), `scrollColumns` parallax,
   `shake` (decaying screen-shake, aged on the fixed step)
 - ✅ `Sprites` — `getSprite` (square) + `getLayer` (arbitrary offscreen cache)
@@ -206,8 +206,12 @@ map.solidAt(x, y);
   ones are one object literal), pure fixed-step runner, and `Scenes.go(name,
 spec?)` integration (swap fires behind full coverage). Proof: the `scenes`
   sample fades into play and wipes down into game over.
-- ⬜ `UI` — overlay/HUD/floating-text helpers (kept out of the core;
-  opinionated, like the samples' `overlays.js`)
+- ✅ `UI` — immediate-mode interface helpers: `float`/`drawFloats` (rising,
+  fading score/damage text, aged on the fixed step), `button` (drawn +
+  hit-tested by one call, `buttonState` exported for custom looks), `bar`
+  (clamped meter). No retained widget tree — everything draws in your draw
+  phase. Game-specific overlays (copy/layout) stay in the samples'
+  `overlays.js`, where they belong.
 
 ## Opt-in entry points ✅
 
@@ -338,6 +342,10 @@ hoppspelet) as proof it actually simplifies code — the discipline used so far.
     graph stays dependency-free. Proof: the **physics** sample
     (stacking/sleeping crates, bouncy balls, motorized paddle, impact-gated
     shake/sfx, sweep-resize).
+12. ✅ **UI** — immediate-mode `float`/`button`/`bar` (+ `Collision.
+pointInRect` for the hit-testing). Proof: the scenes sample's clickable
+    menu/game-over buttons and time bar, and breakout's per-block score pops
+    living inside the letterbox transform.
 
 ## Open decisions
 

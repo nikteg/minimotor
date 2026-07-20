@@ -5,7 +5,8 @@
 // `createGame` is exported for isolated instances (tests / multiple games).
 
 import { createGame, Stage, Loop, Draw, Keys, Pointer } from "./engine.js";
-import { rectsOverlap, circleHit, crossedDown, sweptAABB } from "./collision.js";
+import { rectsOverlap, circleHit, crossedDown, pointInRect, sweptAABB } from "./collision.js";
+import * as UI from "./ui.js";
 import { Particles } from "./particles.js";
 import { Scenes } from "./scenes.js";
 import { Clock, Tween } from "./clock.js";
@@ -115,8 +116,10 @@ export type {
   InterpolatorOptions,
 } from "./net.js";
 
-const Collision = { rectsOverlap, circleHit, crossedDown, sweptAABB };
-export { Collision, rectsOverlap, circleHit, crossedDown, sweptAABB };
+const Collision = { rectsOverlap, circleHit, crossedDown, pointInRect, sweptAABB };
+export { Collision, rectsOverlap, circleHit, crossedDown, pointInRect, sweptAABB };
+export { UI };
+export type { ButtonOptions, ButtonStyle, BarStyle, FloatManager, FloatOptions } from "./ui.js";
 
 export const Minimotor = {
   createGame,
@@ -149,6 +152,7 @@ export const Minimotor = {
   Anim,
   Particles,
   Collision,
+  UI,
 };
 
 export default Minimotor;
