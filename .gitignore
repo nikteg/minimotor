@@ -7,5 +7,8 @@ build/
 .vite/
 samples-dist/
 
+# Playwright run artifacts
+test-results/
+
 # Sample sources are hand-written JS, not build output — keep them tracked.
 !samples/**/*.js

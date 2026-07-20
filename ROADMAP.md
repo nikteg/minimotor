@@ -192,8 +192,11 @@ map.solidAt(x, y);
   preloading deferred — the WebAudio path lives in `Audio`.)
 - ✅ `Anim` — `Anim.sheet(img, { fw, fh, fps, frames?, cols?, loop? })`: grid
   slicing + dt-advanced timeline (`update`/`rect`/`frame`/`done`/`reset`/`draw`).
-  Feeds the ECS `Sprite` source-rect (`sx/sy/sw/sh`), so animated entities render
-  through `world.drawSprites`. Proof: the `sprites` sample (procedural sheet).
+  `Anim.states({ idle, run, jump }, "idle")` combines clips behind a named
+  state player without restarting the current clip every update. Feeds the ECS
+  `Sprite` source-rect (`sx/sy/sw/sh`), so animated entities render through
+  `world.drawSprites`. Proof: the `sprites` sample (procedural sheet) and Pixel
+  Adventure (idle/run/jump/fall/hit state transitions).
 - ✅ `Tiles` — `Tiles.grid(data, { tw, atlas?, colors?, solid? })`: plain
   `number[][]` levels, atlas (firstgid=1) or color-table rendering culled to a
   view rect, `at`/`set`/`tileAt`/`solidAt`/`solidInRect` queries. Proof: the
@@ -281,6 +284,161 @@ them pay nothing; the plain `minimotor` entry stays dependency-free.
   canvas throughput, a GL sprite batcher could slot in behind `world.drawSprites`
   without changing the plain-data API — but not before profiling demands it.
 - **A serialization/save format** in v1 — the ECS API is designed to allow it later.
+
+## Pixel Adventure engine-extraction plan
+
+Pixel Adventure is the proving ground for the next engine additions. Extraction
+must remove duplicated, error-prone infrastructure without moving game rules or
+art direction into Minimotor. Each phase lands independently with unit tests and
+a sample migration; no phase is accepted merely because an API exists.
+
+### Extraction rules
+
+1. **Generalize only demonstrated pain.** A helper must solve the same class of
+   problem in Pixel Adventure and at least one other sample (normally `tiles`,
+   `platformer` or `assetquest`).
+2. **Keep policy explicit.** Full-solid collision is the default. One-way
+   platforms, slopes and special tiles are opt-in policies, never inferred from
+   level shape.
+3. **Keep data plain.** Helpers consume/return rectangles, deltas and flags;
+   they do not require ECS entities, inheritance or a retained scene graph.
+4. **Preserve escape hatches.** Raw tile queries, canvas transforms and browser
+   audio remain available when a game needs custom behavior.
+5. **Profile before expanding rendering APIs.** Existing primitives are reused
+   before adding another cache or renderer abstraction.
+
+### Phase 1 — kinematic tile movement (highest priority)
+
+**Problem:** samples repeatedly implement move-one-axis/test/snap logic. Small
+mistakes cause underside sticking, corner jitter, tunneling or accidental
+one-way behavior.
+
+**Proposed API:** add a pure `Tiles.moveAABB(map, rect, dx, dy, options?)`
+primitive returning the resolved rectangle plus contact flags:
+
+```ts
+const hit = Tiles.moveAABB(map, playerRect, vx * dt, vy * dt);
+playerRect = hit.rect;
+if (hit.bottom) vy = 0;
+if (hit.top) vy = Math.max(0, vy);
+```
+
+The exact name may change during implementation, but the contract is fixed:
+
+- X and Y resolve independently to exact tile boundaries.
+- Every solid tile blocks from every direction by default.
+- The result reports `left`, `right`, `top` and `bottom` contacts.
+- Large deltas sweep through crossed cells instead of tunneling.
+- Optional collision filtering receives tile id/cell/direction.
+- One-way behavior, if added, requires an explicit option or tile predicate and
+  uses previous-position crossing tests.
+- The helper does not own velocity, gravity, input or character state.
+
+**Tests:** floor landing, ceiling hit, both side walls, diagonal corner slide,
+large-delta sweep, exact edge contact, spawn-overlap recovery, ragged rows,
+out-of-map behavior, filtered/non-solid tiles, and explicit one-way platforms.
+
+**Proof migrations:** Pixel Adventure first; then the `tiles` sample. Delete the
+sample-local cell iteration/resolution code after parity is verified.
+
+### Phase 2 — virtual viewport and camera presentation
+
+**Problem:** fixed-resolution samples duplicate letterbox calculation, save /
+translate / scale / restore sequences, camera zoom math, pixel rounding and
+screen-to-world pointer conversion. It is easy for terrain, entities, effects
+and input to end up in different coordinate spaces.
+
+**Proposed API:** evolve `Game.letterbox` into a small virtual-view object rather
+than a hidden renderer:
+
+```ts
+const view = Game.virtualView({ w: 480, h: 270, pixelPerfect: true });
+const frame = view.begin(ctx, Stage.viewport, camera);
+// draw world in world coordinates
+frame.end();
+const worldPoint = frame.toWorld(Pointer.x, Pointer.y);
+```
+
+**Required behavior:** balanced canvas state, fit/fill modes, optional integer
+scaling, camera zoom around the visible world region, stable pixel rounding,
+`toWorld`/`toScreen`, resize-safe metrics and a separate stable HUD transform.
+The API must not clear or choose colors unless requested.
+
+**Tests:** common aspect ratios, ultrawide/tall viewports, fractional DPR,
+zoom below/above 1, camera offsets, coordinate round-trips and transform-state
+restoration.
+
+**Proof migrations:** Pixel Adventure and Pocket Asteroids. Pocket must retain
+its mobile-only letterbox policy.
+
+### Phase 3 — loaded sampled audio
+
+**Problem:** Pixel Adventure bypasses Minimotor and creates browser `Audio`
+elements manually. That loses the engine SFX bus and makes overlapping pickups,
+preload progress and first-gesture behavior inconsistent.
+
+**Proposed split:** `Assets` fetches/caches audio bytes as part of the manifest;
+`Audio` owns decode, playback and voice pooling:
+
+```ts
+await Assets.load({ coin: "coin.wav" });
+const coin = Audio.sample(Assets.audio("coin"), { voices: 4, volume: 0.4 });
+coin.play();
+```
+
+**Required behavior:** progress reporting, lazy WebAudio decode when gesture
+rules require it, polyphonic playback, bus volume/mute, safe no-audio fallback,
+retriggering without resetting another active voice, and cleanup on engine
+destroy. Loading bytes must not itself require a user gesture.
+
+**Tests:** asset kind detection, fetch/decode failures, concurrent voices,
+voice reuse, bus gain, muted playback, unsupported browser APIs and teardown.
+
+**Proof migrations:** Pixel Adventure pickup/jump/hurt effects, followed by one
+synthesized-SFX sample to demonstrate sampled and generated audio coexistence.
+
+### Phase 4 — reuse and assess static render layers
+
+Pixel Adventure's sky and terrain caches should migrate from hand-created
+canvases to the already-shipped `Sprites.getLayer`. This is initially a sample
+refactor, **not a new engine feature**.
+
+After migration, profile cache creation, memory, DPR changes, resize invalidation
+and 120 Hz rendering. Extend `getLayer` only if profiling demonstrates a missing
+capability, likely one of:
+
+- explicit invalidation by cache key,
+- byte/pixel budget with least-recently-used eviction,
+- an unscaled pixel-art mode,
+- or an `OffscreenCanvas` backend where supported.
+
+Do not add a second render-target abstraction unless `getLayer` cannot satisfy
+both Pixel Adventure and another sample.
+
+### Features that stay in game code
+
+- Fruit pickup choreography, colors, star layout and timing.
+- Player acceleration, gravity, jump height, damage and stomp rules.
+- Level-specific tile meaning, enemy patrol behavior and win conditions.
+- HUD copy/composition and camera-follow tuning.
+
+A generic "pickup effect" or "platformer character" object would bundle policy
+and presentation, work for one sample, and fight Minimotor's opt-in primitives.
+The engine should provide shake, particles, floats, animation, collision and
+timing; the game composes them.
+
+### Delivery order and completion gate
+
+1. Ship and migrate kinematic tile movement.
+2. Ship and migrate virtual viewport transforms.
+3. Ship sampled-audio loading/playback.
+4. Migrate static caches to `Sprites.getLayer`, then profile before extending.
+
+The extraction wave is complete when Pixel Adventure contains no custom generic
+collision solver, no manual letterbox/camera transform plumbing, no direct
+`new Audio()`, and no manual offscreen-canvas creation—while preserving its
+current controls, fully solid platforms, animation states, visual effects and
+120 Hz target.
 
 ## Build milestones
 
