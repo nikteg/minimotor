@@ -297,6 +297,24 @@ describe("input", () => {
     expect(seen.at(-1)).toEqual({ pressed: false, wheel: 0 });
   });
 
+  it("setCursor applies for one frame and onFrame runs each rendered frame", () => {
+    const { game } = build();
+    let frames = 0;
+    game.onFrame(() => frames++);
+    game.run({
+      update: () => {},
+      draw: () => game.setCursor("pointer"),
+    });
+    tick(16);
+    expect(frames).toBe(1);
+    expect(game.canvas.style.cursor).toBe("pointer");
+
+    game.run({ update: () => {}, draw: () => {} }); // stop requesting
+    tick(32);
+    expect(frames).toBe(2);
+    expect(game.canvas.style.cursor).toBe(""); // reset itself
+  });
+
   it("pressed() fires for exactly one step even when a frame runs several", () => {
     const { game } = build();
     let firedInPressedState = 0;

@@ -152,6 +152,15 @@ export interface Game {
    *  `update`). For sampling poll-only inputs (gamepads) so the same step's
    *  update sees fresh state. Returns unsubscribe. */
   onStepStart(handler: () => void): () => void;
+  /** Subscribe to the end of each rendered frame (after `draw`, while the
+   *  frame-scoped input flags are still readable). Runs on paused frames too.
+   *  For per-frame housekeeping (immediate-mode UI state). Returns
+   *  unsubscribe. */
+  onFrame(handler: () => void): () => void;
+  /** Request a CSS cursor for THIS frame (e.g. `"pointer"` over a clickable).
+   *  Applied at frame end and reset every frame, so hover cursors clear
+   *  themselves — call it each frame the hover holds. */
+  setCursor(cursor: string): void;
   /** Register a plugin after build (calls its `onInit` immediately). */
   use(plugin: EnginePlugin): void;
   /** Register callbacks and start the loop (idempotent restart of callbacks). */
@@ -344,7 +353,21 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
 
   const stepHandlers = new Set<() => void>();
   const stepStartHandlers = new Set<() => void>();
+  const frameHandlers = new Set<() => void>();
   const resizeHandlers = new Set<(vp: Viewport) => void>();
+
+  // Per-frame cursor request (setCursor): applied at frame end, then reset —
+  // a hover cursor clears itself the frame the hover stops.
+  let cursorRequest: string | null = null;
+  const endFrame = () => {
+    for (const h of frameHandlers) h();
+    const cursor = cursorRequest ?? "";
+    if (canvas.style.cursor !== cursor) canvas.style.cursor = cursor;
+    cursorRequest = null;
+    ptr.frameReleased = false;
+    ptr.framePressed = false;
+    ptr.wheel = 0;
+  };
   const handleResize = () => {
     viewport = readViewport(canvas);
     canvasRect = null;
@@ -385,10 +408,7 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
       for (const p of plugins) p.beforeDraw?.(game);
       callbacks!.draw(ctx);
       for (const p of plugins) p.afterDraw?.(game);
-      // Pause menus hit-test and scroll in draw too.
-      ptr.frameReleased = false;
-      ptr.framePressed = false;
-      ptr.wheel = 0;
+      endFrame(); // pause menus hit-test and scroll in draw too
       requestAnimationFrame(loop);
       return;
     }
@@ -426,10 +446,7 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
     callbacks!.draw(ctx);
     timings.drawMs = performance.now() - drawStart;
     for (const p of plugins) p.afterDraw?.(game);
-    // This frame's draw has seen the frame-scoped input; spend it.
-    ptr.frameReleased = false;
-    ptr.framePressed = false;
-    ptr.wheel = 0;
+    endFrame();
     requestAnimationFrame(loop);
   }
 
@@ -463,6 +480,13 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
       stepStartHandlers.add(handler);
       return () => stepStartHandlers.delete(handler);
     },
+    onFrame(handler) {
+      frameHandlers.add(handler);
+      return () => frameHandlers.delete(handler);
+    },
+    setCursor(cursor) {
+      cursorRequest = cursor;
+    },
     use(plugin) {
       plugins.push(plugin);
       plugin.onInit?.(game);
@@ -493,6 +517,7 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
       if (destroyed) return;
       destroyed = true;
       running = false;
+      canvas.style.cursor = "";
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("pointerup", onPointerUp);
@@ -629,6 +654,15 @@ export const Loop = {
    *  unsubscribe. */
   onStepStart(handler: () => void): () => void {
     return requireDefault().onStepStart(handler);
+  },
+  /** Subscribe to the end of each rendered frame; returns unsubscribe. */
+  onFrame(handler: () => void): () => void {
+    return requireDefault().onFrame(handler);
+  },
+  /** Request a CSS cursor for this frame (reset every frame) — see
+   *  `Game.setCursor`. */
+  setCursor(cursor: string): void {
+    requireDefault().setCursor(cursor);
   },
   /** Fixed update timestep in milliseconds (1000 / 60). */
   get step(): number {
