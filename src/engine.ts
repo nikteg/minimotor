@@ -71,6 +71,10 @@ export interface Pointer {
   readonly pressed: boolean;
   /** True for one update step when the press ends. */
   readonly released: boolean;
+  /** True for the whole rendered frame in which the press ended. `released`
+   *  is consumed by the fixed steps before `draw` runs — draw-phase hit
+   *  testing (`UI.button`) reads this instead. */
+  readonly frameReleased: boolean;
 }
 
 /** Plugins hook into the game lifecycle; each hook receives the `Game`.
@@ -229,7 +233,7 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
     released: (code) => releasedKeys.has(code),
   };
 
-  const ptr = { x: -1, y: -1, down: false, pressed: false, released: false };
+  const ptr = { x: -1, y: -1, down: false, pressed: false, released: false, frameReleased: false };
   const pointer: Pointer = {
     get x() {
       return ptr.x;
@@ -245,6 +249,9 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
     },
     get released() {
       return ptr.released;
+    },
+    get frameReleased() {
+      return ptr.frameReleased;
     },
   };
 
@@ -292,6 +299,7 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
     setPointer(e);
     ptr.down = false;
     ptr.released = true;
+    ptr.frameReleased = true; // survives the steps; cleared at frame end
   };
   canvas.addEventListener("pointerdown", onPointerDown);
   canvas.addEventListener("pointermove", setPointer);
@@ -351,6 +359,7 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
       for (const p of plugins) p.beforeDraw?.(game);
       callbacks!.draw(ctx);
       for (const p of plugins) p.afterDraw?.(game);
+      ptr.frameReleased = false; // pause menus hit-test in draw too
       requestAnimationFrame(loop);
       return;
     }
@@ -388,6 +397,7 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
     callbacks!.draw(ctx);
     timings.drawMs = performance.now() - drawStart;
     for (const p of plugins) p.afterDraw?.(game);
+    ptr.frameReleased = false; // this frame's draw has seen it
     requestAnimationFrame(loop);
   }
 
@@ -634,5 +644,8 @@ export const Pointer: Pointer = {
   },
   get released() {
     return requireDefault().pointer.released;
+  },
+  get frameReleased() {
+    return requireDefault().pointer.frameReleased;
   },
 };

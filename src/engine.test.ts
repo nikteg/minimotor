@@ -258,6 +258,26 @@ describe("input", () => {
     expect(game.keys.pressed("KeyR")).toBe(true);
   });
 
+  it("frameReleased survives the steps into draw, then clears at frame end", () => {
+    const { game, canvas } = build();
+    const inDraw: boolean[] = [];
+    const inUpdate: boolean[] = [];
+    game.run({
+      update: () => inUpdate.push(game.pointer.released),
+      draw: () => inDraw.push(game.pointer.frameReleased),
+    });
+
+    tick(16); // prime lastTime
+    canvas.dispatchEvent(new MouseEvent("pointerdown", { clientX: 5, clientY: 5 }));
+    window.dispatchEvent(new MouseEvent("pointerup", { clientX: 5, clientY: 5 }));
+    tick(34); // one step consumes released; draw still sees frameReleased
+    expect(inUpdate).toContain(true);
+    expect(inDraw.at(-1)).toBe(true);
+
+    tick(52); // next frame: the click is spent
+    expect(inDraw.at(-1)).toBe(false);
+  });
+
   it("pressed() fires for exactly one step even when a frame runs several", () => {
     const { game } = build();
     let firedInPressedState = 0;
