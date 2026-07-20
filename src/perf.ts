@@ -2,7 +2,7 @@
 // Lightweight FPS / frame-time tracker with optional on-canvas overlay, plus an
 // optional network throughput meter. Tracks rolling min/max/avg over a window.
 
-import type { EnginePlugin } from "./engine.js";
+import type { EnginePlugin, FrameTimings } from "./engine.js";
 import { lerp } from "./mathf.js";
 
 export interface PerfStats {
@@ -197,8 +197,12 @@ export interface PerfHudOptions {
   anchor?: "top-left" | "top-right";
   /** If given, two extra lines show up/down message and byte rates. */
   net?: NetStats;
-  /** History graphs drawn under the text: frame time, and (with `net`) traffic.
-   *  Push samples yourself each frame; the `plugin()` does this for you. */
+  /** If given, one extra line shows the engine's update/draw cost and how many
+   *  fixed steps ran (`Game.timings` — the `plugin()` passes it for you). */
+  timings?: FrameTimings;
+  /** History graphs drawn as labeled strips under the text: frame time, and
+   *  (with `net`) sent/received traffic. Push samples yourself each frame; the
+   *  `plugin()` does this for you. */
   graphs?: { frame?: Sparkline; up?: Sparkline; down?: Sparkline };
 }
 
@@ -213,17 +217,21 @@ export function drawPerfHud(
   opts: PerfHudOptions = {},
 ): void {
   const net = opts.net;
+  const timings = opts.timings;
   const anchor = opts.anchor ?? "top-right";
   const lineH = 14;
-  const boxW = net ? 176 : 130;
-  const rows = net ? 6 : 4;
+  const boxW = net ? 176 : 148;
+  const rows = 4 + (timings ? 1 : 0) + (net ? 2 : 0);
   const frameSpark = opts.graphs?.frame;
   const upSpark = net && opts.graphs?.up;
   const downSpark = net && opts.graphs?.down;
-  const graphH = 18;
+  // Each graph is a labeled strip: 10px caption + 16px bars + 4px gap.
+  const graphH = 16;
+  const stripH = 10 + graphH + 4;
   let boxH = lineH * rows + 8;
-  if (frameSpark) boxH += graphH + 4;
-  if (upSpark || downSpark) boxH += graphH + 4;
+  if (frameSpark) boxH += stripH;
+  if (upSpark) boxH += stripH;
+  if (downSpark) boxH += stripH;
 
   // Anchor to the right edge when we know the width; otherwise fall back to left.
   const bgX = anchor === "top-right" && opts.viewW !== undefined ? opts.viewW - 4 - boxW : 4;
@@ -249,28 +257,37 @@ export function drawPerfHud(
   ctx.fillText(`frame  ${stats.frameMs} ms`, x, y + lineH);
   ctx.fillText(`min   ${stats.minMs} ms`, x, y + lineH * 2);
   ctx.fillText(`max   ${stats.maxMs} ms`, x, y + lineH * 3);
+  let row = 4;
+
+  if (timings) {
+    // What the frame time was spent on: your update steps vs your draw. `×N`
+    // marks catch-up frames that ran more than one fixed step.
+    const upd = timings.updateMs.toFixed(1);
+    const drw = timings.drawMs.toFixed(1);
+    const xn = timings.steps > 1 ? `  ×${timings.steps}` : "";
+    ctx.fillText(`upd ${upd}  drw ${drw} ms${xn}`, x, y + lineH * row++);
+  }
 
   if (net) {
     ctx.fillStyle = "#4ecdc4";
-    ctx.fillText(`↑ ${rate(net.upMsgs)}/s  ${kbps(net.upBps)} KB/s`, x, y + lineH * 4);
+    ctx.fillText(`↑ ${rate(net.upMsgs)}/s  ${kbps(net.upBps)} KB/s`, x, y + lineH * row++);
     ctx.fillStyle = "#ffd43b";
-    ctx.fillText(`↓ ${rate(net.downMsgs)}/s  ${kbps(net.downBps)} KB/s`, x, y + lineH * 5);
+    ctx.fillText(`↓ ${rate(net.downMsgs)}/s  ${kbps(net.downBps)} KB/s`, x, y + lineH * row++);
   }
 
+  // Labeled history strips, one metric per graph.
   let graphY = bgY + lineH * rows + 8;
   const graphW = boxW - 8;
-  if (frameSpark) {
-    frameSpark.draw(ctx, x, graphY, graphW, graphH, color);
-    graphY += graphH + 4;
-  }
-  if (upSpark || downSpark) {
-    // Up and down traffic overlaid in the same strip, each scaled to its own
-    // max — the shapes matter here, the absolute numbers are in the text.
-    ctx.globalAlpha = 0.75;
-    upSpark?.draw(ctx, x, graphY, graphW, graphH, "#4ecdc4");
-    downSpark?.draw(ctx, x, graphY, graphW, graphH, "#ffd43b");
-    ctx.globalAlpha = 1;
-  }
+  const strip = (spark: Sparkline, label: string, barColor: string) => {
+    ctx.font = "9px monospace";
+    ctx.fillStyle = "#889";
+    ctx.fillText(label, x, graphY);
+    spark.draw(ctx, x, graphY + 10, graphW, graphH, barColor);
+    graphY += stripH;
+  };
+  if (frameSpark) strip(frameSpark, "frame ms", color);
+  if (upSpark) strip(upSpark, "↑ sent KB/s", "#4ecdc4");
+  if (downSpark) strip(downSpark, "↓ received KB/s", "#ffd43b");
   ctx.restore();
 }
 
@@ -315,6 +332,7 @@ export function plugin(opts: PerfOptions = {}): EnginePlugin {
         viewW: game.viewport.w,
         anchor: opts.anchor ?? "top-right",
         net,
+        timings: game.timings,
         graphs,
       });
     },

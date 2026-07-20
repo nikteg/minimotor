@@ -117,8 +117,8 @@ describe("drawPerfHud", () => {
   it("anchors the box to the right edge by default", () => {
     const { ctx, rects } = recorder();
     drawPerfHud(ctx, stats, { viewW: 800 });
-    // box width 130, right-anchored: bgX = 800 - 4 - 130 = 666
-    expect(rects[0][0]).toBe(666);
+    // box width 148, right-anchored: bgX = 800 - 4 - 148 = 648
+    expect(rects[0][0]).toBe(648);
   });
 
   it("draws in the top-left when asked", () => {
@@ -145,7 +145,7 @@ describe("drawPerfHud", () => {
     expect(upLine).toContain("2.0 KB/s");
   });
 
-  it("grows the box and draws bars when sparkline graphs are attached", () => {
+  it("grows the box and draws a labeled strip when a sparkline is attached", () => {
     const plain = recorder();
     drawPerfHud(plain.ctx, stats, { viewW: 800 });
 
@@ -154,8 +154,21 @@ describe("drawPerfHud", () => {
     frame.push(16);
     frame.push(17);
     drawPerfHud(ctx, stats, { viewW: 800, graphs: { frame } });
-    // Taller background box (graph strip added) + the two history bars.
-    expect(rects[0][3]).toBe(plain.rects[0][3] + 22);
+    // Taller background box (label 10 + graph 16 + gap 4) + the two bars.
+    expect(rects[0][3]).toBe(plain.rects[0][3] + 30);
     expect(rects.length).toBe(1 + 2);
+    // The strip is captioned.
+    const labels = ctx.fillText.mock.calls.map((c) => c[0] as string);
+    expect(labels).toContain("frame ms");
+  });
+
+  it("shows the engine's update/draw cost when timings are given", () => {
+    const { ctx } = recorder();
+    drawPerfHud(ctx, stats, {
+      viewW: 800,
+      timings: { updateMs: 0.42, drawMs: 1.26, steps: 2 },
+    });
+    const lines = ctx.fillText.mock.calls.map((c) => c[0] as string);
+    expect(lines).toContain("upd 0.4  drw 1.3 ms  ×2");
   });
 });
