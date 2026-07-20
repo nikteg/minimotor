@@ -120,7 +120,7 @@ export type { Transition, TransitionRender, TransitionRun } from "./transitions.
 const defaultWorld = ECS.world();
 export type { SfxBuilder, MusicConfig } from "./audio.js";
 export type { PhysicsBody } from "./physics.js";
-export type { SpriteCanvas } from "./sprites.js";
+export type { SpriteCanvas, SheetOptions } from "./sprites.js";
 export type {
   Weighted,
   ShuffleBag,
@@ -162,6 +162,7 @@ export type {
   FloatManager,
   FloatOptions,
   GroupOptions,
+  IdPart,
   LayoutChildren,
   LayoutOptions,
   ListItemOptions,
@@ -175,6 +176,11 @@ export type {
   StackOptions,
   TabsOptions,
   TextOptions,
+  TextInputOptions,
+  TextInputResult,
+  SelectOption,
+  SelectOptions,
+  SelectResult,
   Theme,
   ToggleOptions,
 } from "./ui.js";

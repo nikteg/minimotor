@@ -344,6 +344,27 @@ describe("input", () => {
     expect(e.defaultPrevented).toBe(true);
   });
 
+  it("leaves native text/select editing keys alone", () => {
+    const { game } = build();
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+    const space = new KeyboardEvent("keydown", { code: "Space", bubbles: true, cancelable: true });
+    input.dispatchEvent(space);
+    expect(space.defaultPrevented).toBe(false);
+    expect(game.keys.down("Space")).toBe(false);
+
+    const select = document.createElement("select");
+    document.body.appendChild(select);
+    const arrow = new KeyboardEvent("keydown", {
+      code: "ArrowDown",
+      bubbles: true,
+      cancelable: true,
+    });
+    select.dispatchEvent(arrow);
+    expect(arrow.defaultPrevented).toBe(false);
+    expect(game.keys.down("ArrowDown")).toBe(false);
+  });
+
   it("honors a custom preventKeys set", () => {
     const canvas = document.createElement("canvas");
     const game = createGame({ canvas, preventKeys: ["KeyZ"] }).build();

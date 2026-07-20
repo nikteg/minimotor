@@ -1,13 +1,13 @@
 // Snake: classic grid-based snake with growing tail and self-collision
-// Demonstrates: game loop, input, scoring, storage, grid collision
+// Demonstrates: game loop, input, UI, storage and Goodies.wrap grid movement
 import { Minimotor } from "minimotor";
 import { drawGameOver } from "../shared/overlays.js";
 
 let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 
 const CELL = 20;
-let COLS = Math.floor(vp.w / CELL);
-let ROWS = Math.floor(vp.h / CELL);
+let COLS = Math.max(2, Math.floor(vp.w / CELL));
+let ROWS = Math.max(2, Math.floor(vp.h / CELL));
 const MOVE_INTERVAL = 6; // frames between moves
 
 let snake = [{ x: Math.floor(COLS / 2), y: Math.floor(ROWS / 2) }];
@@ -30,8 +30,8 @@ function spawnFood() {
 
 Minimotor.Stage.onResize((next) => {
   vp = next;
-  COLS = Math.floor(vp.w / CELL);
-  ROWS = Math.floor(vp.h / CELL);
+  COLS = Math.max(2, Math.floor(vp.w / CELL));
+  ROWS = Math.max(2, Math.floor(vp.h / CELL));
   // Segments outside the new grid wrap on their next move; food must stay
   // reachable, so respawn it if the grid shrank past it.
   if (food.x >= COLS || food.y >= ROWS) food = spawnFood();
@@ -79,13 +79,10 @@ Minimotor.Loop.run({
     if (tick % MOVE_INTERVAL !== 0) return;
     dir = nextDir;
 
-    const head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
-
-    // Wall collision (wraps for a twist)
-    if (head.x < 0) head.x = COLS - 1;
-    if (head.x >= COLS) head.x = 0;
-    if (head.y < 0) head.y = ROWS - 1;
-    if (head.y >= ROWS) head.y = 0;
+    const head = {
+      x: Minimotor.Goodies.wrap(snake[0].x + dir.x, COLS),
+      y: Minimotor.Goodies.wrap(snake[0].y + dir.y, ROWS),
+    };
 
     // Self collision
     if (snake.some((s) => s.x === head.x && s.y === head.y)) {

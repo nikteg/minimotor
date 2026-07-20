@@ -59,7 +59,9 @@ Pure, data-agnostic helpers. No engine state.
   (add: circleRect), `pointInRect` (shipped — powers `UI.button` hit-testing)
 - ✅ `Camera` — `createCamera` (lerp follow + clamp), `scrollColumns` parallax,
   `shake` (decaying screen-shake, aged on the fixed step)
-- ✅ `Sprites` — `getSprite` (square) + `getLayer` (arbitrary offscreen cache)
+- ✅ `Sprites` — `getSprite` (square) + `getLayer` (arbitrary offscreen cache);
+  sheet baking: `bakeSheet` (procedural frames → grid sheet for `Anim.sheet`),
+  `composeSheet` (pack frame images), `contentBounds` (opaque box / trim padding)
 - ✅ `Text`, `Physics` (kinematic helpers/constants)
 
 ### `Goodies` recipe catalog
@@ -291,7 +293,15 @@ spec?)` integration (swap fires behind full coverage). Proof: the `scenes`
   take a `variant` (`default`/`primary`/`danger`/`ghost`). `confirm()` is a
   whole dialog (title/lines/buttons, content-sized, last button primary by
   default) in one call. `dialog()` draws bottom-screen speaker/portrait/line/
-  choice boxes for RPGs, adventures and tutorials. Typed `dragSource`/
+  choice boxes for RPGs, adventures and tutorials. `textInput()` and typed
+  `select()` flow through callback layouts while hidden native controls retain
+  keyboard, clipboard, IME and accessibility behavior. Stable widget `id`s
+  opt buttons, toggles, tabs, list items and sliders into a frame-registered
+  focus order: Tab/Shift+Tab traverse, Enter/Space activate, arrows adjust,
+  focus rings follow browser-style keyboard-only `:focus-visible` behavior,
+  and modal/popover overlays trap then restore focus. `idScope(prefix, fn)`
+  auto-identifies static callback forms; `ids(prefix)` builds stable keyed ids
+  for conditional controls and dynamic collections. Typed `dragSource`/
   `dropTarget`/`draggedItem` provide immediate-mode inventory/card drag and drop. **Implicit ctx** — widgets draw to the default
   game's `Draw.ctx`, no plumbing (`UI.begin(ctx)` overrides per frame for
   isolated games; every widget also keeps a `(ctx, opts)` form). Overlays

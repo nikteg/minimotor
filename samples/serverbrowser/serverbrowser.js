@@ -44,6 +44,8 @@ let tab = 0; // 0 = All, then MODES
 let hideFull = false;
 let hideEmpty = false;
 let maxPing = 250; // 250 = no limit
+let search = "";
+let region = "ALL";
 let sortKey = "ping";
 let sortDir = 1;
 let scroll = 0;
@@ -53,6 +55,7 @@ let status = "";
 let filtersOpen = false; // the FILTERS popover
 let confirming = null; // server awaiting the join-confirm modal
 let altTheme = false;
+const uiId = UI.ids("server-browser");
 
 // A second look for the whole kit — one setTheme call restyles every widget.
 // Also shows off the metric knobs: rounded corners and a thicker border.
@@ -80,6 +83,11 @@ function visibleServers() {
   if (hideFull) list = list.filter((s) => s.players < s.max);
   if (hideEmpty) list = list.filter((s) => s.players > 0);
   if (maxPing < 250) list = list.filter((s) => s.ping <= maxPing);
+  if (region !== "ALL") list = list.filter((s) => s.region === region);
+  if (search.trim()) {
+    const needle = search.trim().toLowerCase();
+    list = list.filter((s) => s.name.toLowerCase().includes(needle));
+  }
   const dir = sortDir;
   return [...list].sort((a, b) => {
     const av = a[sortKey];
@@ -166,12 +174,14 @@ Minimotor.Loop.run({
     // ---- control bar: two closure rows over the same slot — the left one
     // flows from the left, the right one (align:"end") grows from the right.
     // Widgets inside auto-flow and auto-size; no rects threaded by hand.
-    const nFilters = (hideFull ? 1 : 0) + (hideEmpty ? 1 : 0) + (maxPing < 250 ? 1 : 0);
+    const nFilters = (hideFull ? 1 : 0) + (hideEmpty ? 1 : 0) + (maxPing < 250 ? 1 : 0) + (search ? 1 : 0) + (region !== "ALL" ? 1 : 0);
     let filterBtn;
     UI.row({ ...L.controls, gap: 10 }, (bar) => {
-      tab = UI.tabs({ items: ["All", ...MODES], active: tab });
+      tab = UI.tabs({ id: uiId("mode-tabs"), tabIndex: 10, items: ["All", ...MODES], active: tab });
       if (
         UI.button({
+          id: uiId("filters-button"),
+          tabIndex: 20,
           label: `FILTERS${nFilters ? ` (${nFilters})` : ""}`,
           tooltip: "Hide full/empty servers, cap the ping",
         })
@@ -184,6 +194,8 @@ Minimotor.Loop.run({
     UI.row({ ...L.controls, gap: 10, align: "end" }, (bar) => {
       if (
         UI.button({
+          id: uiId("refresh-button"),
+          tabIndex: 40,
           label: refreshing ? "…" : "REFRESH",
           disabled: refreshing,
           tooltip: "Re-query the master server (R)",
@@ -191,7 +203,14 @@ Minimotor.Loop.run({
       ) {
         refresh();
       }
-      if (UI.button({ label: "THEME", tooltip: "Swap the whole UI kit's theme" })) {
+      if (
+        UI.button({
+          id: uiId("theme-button"),
+          tabIndex: 30,
+          label: "THEME",
+          tooltip: "Swap the whole UI kit's theme",
+        })
+      ) {
         altTheme = !altTheme;
         UI.setTheme(altTheme ? AMBER : {});
       }
@@ -281,13 +300,15 @@ Minimotor.Loop.run({
     }
     const footBtns = UI.stack({
       x: L.footer.x + L.footer.w,
-      y: L.footer.y + (L.footer.h - 34) / 2 + 2,
+      y: L.footer.y + (L.footer.h - 34) / 2,
       h: 34,
       align: "end",
     });
     if (
       UI.button({
         at: footBtns,
+        id: uiId("join-button"),
+        tabIndex: 50,
         label: "JOIN",
         variant: "primary", // the call to action
         disabled: !selected || refreshing,
@@ -298,26 +319,52 @@ Minimotor.Loop.run({
     }
 
     // ---- the filters popover, floating over the list ----
-    const pop = { x: filterBtn.x, y: filterBtn.y + 36, w: 300, h: 128, title: "FILTERS" };
+    const pop = { x: filterBtn.x, y: filterBtn.y + 36, w: 300, h: 250, title: "FILTERS" };
     filtersOpen = UI.popover({ ...pop, open: filtersOpen });
     if (filtersOpen) {
-      hideFull = UI.toggle({ x: pop.x + 14, y: pop.y + 44, label: "Hide full", on: hideFull });
-      hideEmpty = UI.toggle({
-        x: pop.x + 150,
-        y: pop.y + 44,
-        label: "Hide empty",
-        on: hideEmpty,
-      });
-      maxPing = UI.slider({
-        x: pop.x + 80,
-        y: pop.y + 92,
-        w: 130,
-        min: 20,
-        max: 250,
-        step: 10,
-        value: maxPing,
-        label: "ping",
-        format: (v) => (v >= 250 ? "any" : `≤${v}`),
+      UI.idScope("server-browser:filters", () => {
+        UI.col({ x: pop.x + 14, y: pop.y + 38, w: pop.w - 28, h: pop.h - 50, gap: 8 }, () => {
+        search = UI.textInput({
+          tabIndex: 10,
+          value: search,
+          h: 30,
+          placeholder: "Search server names…",
+          ariaLabel: "Search servers",
+        }).value;
+        region = UI.select({
+          tabIndex: 20,
+          value: region,
+          h: 30,
+          maxVisible: 4,
+          options: ["ALL", ...REGIONS].map((value) => ({
+            label: value === "ALL" ? "All regions" : value,
+            value,
+          })),
+          ariaLabel: "Server region",
+        }).value;
+        UI.row({ h: 30, gap: 24 }, () => {
+          hideFull = UI.toggle({
+            tabIndex: 30,
+            label: "Hide full",
+            on: hideFull,
+          });
+          hideEmpty = UI.toggle({
+            tabIndex: 40,
+            label: "Hide empty",
+            on: hideEmpty,
+          });
+        });
+        maxPing = UI.slider({
+          tabIndex: 50,
+          w: 180,
+          min: 20,
+          max: 250,
+          step: 10,
+          value: maxPing,
+          label: "ping",
+          format: (v) => (v >= 250 ? "any" : `≤${v}`),
+          });
+        });
       });
     }
 

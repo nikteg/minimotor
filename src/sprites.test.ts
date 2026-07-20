@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { getSprite, getLayer, clearSpriteCache } from "./sprites.js";
+import {
+  getSprite,
+  getLayer,
+  clearSpriteCache,
+  bakeSheet,
+  composeSheet,
+  contentBounds,
+} from "./sprites.js";
 
 beforeEach(() => {
   clearSpriteCache();
@@ -87,5 +94,84 @@ describe("Sprites.getLayer", () => {
     clearSpriteCache();
     getLayer("x", 10, 10, 1, () => n++);
     expect(n).toBe(2);
+  });
+});
+
+describe("Sprites.bakeSheet", () => {
+  it("sizes the canvas to the frame grid and draws each frame once, in order", () => {
+    const seen: number[] = [];
+    const sheet = bakeSheet(16, 12, 5, (_ctx, i) => seen.push(i), { cols: 2 });
+    expect(sheet.width).toBe(32); // 2 cols × 16
+    expect(sheet.height).toBe(36); // ceil(5/2) = 3 rows × 12
+    expect(seen).toEqual([0, 1, 2, 3, 4]);
+  });
+  it("defaults to a single row", () => {
+    const sheet = bakeSheet(10, 10, 4, () => {});
+    expect(sheet.width).toBe(40);
+    expect(sheet.height).toBe(10);
+  });
+  it("centres the context on each cell (save/translate/restore per frame)", () => {
+    let ctxRef: Record<string, ReturnType<typeof vi.fn>> | undefined;
+    bakeSheet(20, 20, 3, (ctx) => {
+      ctxRef = ctx as unknown as Record<string, ReturnType<typeof vi.fn>>;
+    });
+    expect(ctxRef!.save).toHaveBeenCalledTimes(3);
+    expect(ctxRef!.restore).toHaveBeenCalledTimes(3);
+    // First frame centre = (fw/2, fh/2) = (10, 10).
+    expect(ctxRef!.translate).toHaveBeenNthCalledWith(1, 10, 10);
+    // Third frame (single row) centre x = 2*20 + 10 = 50.
+    expect(ctxRef!.translate).toHaveBeenNthCalledWith(3, 50, 10);
+  });
+});
+
+describe("Sprites.composeSheet", () => {
+  const img = (w: number, h: number) =>
+    ({ width: w, height: h }) as unknown as CanvasImageSource & { width: number; height: number };
+
+  it("packs frames into one row, inferring frame size from the first image", () => {
+    const sheet = composeSheet([img(24, 32), img(24, 32), img(24, 32)]);
+    expect(sheet.width).toBe(72);
+    expect(sheet.height).toBe(32);
+  });
+  it("honours explicit frame size and cols", () => {
+    const sheet = composeSheet([img(8, 8), img(8, 8), img(8, 8), img(8, 8)], {
+      fw: 8,
+      fh: 8,
+      cols: 2,
+    });
+    expect(sheet.width).toBe(16);
+    expect(sheet.height).toBe(16);
+  });
+  it("throws when given no frames", () => {
+    expect(() => composeSheet([])).toThrow(/no frames/);
+  });
+});
+
+describe("Sprites.contentBounds", () => {
+  // Install a getContext whose getImageData returns a crafted RGBA buffer.
+  function withPixels(w: number, h: number, opaque: Array<[number, number]>) {
+    const data = new Uint8ClampedArray(w * h * 4);
+    for (const [x, y] of opaque) data[(y * w + x) * 4 + 3] = 255;
+    HTMLCanvasElement.prototype.getContext = function () {
+      return {
+        drawImage: vi.fn(),
+        getImageData: () => ({ data, width: w, height: h }),
+      } as unknown as CanvasRenderingContext2D;
+    };
+  }
+
+  it("returns the opaque bounding box, trimming transparent padding", () => {
+    withPixels(4, 4, [
+      [1, 2],
+      [2, 2],
+      [2, 3],
+    ]);
+    const box = contentBounds({ width: 4, height: 4 } as HTMLImageElement);
+    expect(box).toEqual({ x: 1, y: 2, w: 2, h: 2 });
+  });
+  it("returns the full rect when nothing clears the threshold", () => {
+    withPixels(6, 5, []);
+    const box = contentBounds({ width: 6, height: 5 } as HTMLImageElement);
+    expect(box).toEqual({ x: 0, y: 0, w: 6, h: 5 });
   });
 });

@@ -296,14 +296,28 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
   let accumulator = 0;
 
   const preventKeys = new Set(options.preventKeys ?? DEFAULT_PREVENT_KEYS);
+  const editingText = (target: EventTarget | null) => {
+    const el = target as HTMLElement | null;
+    return (
+      !!el &&
+      (el.tagName === "INPUT" ||
+        el.tagName === "TEXTAREA" ||
+        el.tagName === "SELECT" ||
+        el.isContentEditable)
+    );
+  };
 
   const onKeyDown = (e: KeyboardEvent) => {
+    // Native controls backing UI.textInput/UI.select own their keystrokes.
+    // Do not prevent Space/arrows or leak typing into game actions.
+    if (editingText(e.target)) return;
     if (preventKeys.has(e.code)) e.preventDefault();
     if (!heldKeys.has(e.code)) pressedKeys.add(e.code); // ignore auto-repeat
     heldKeys.add(e.code);
   };
   const onKeyUp = (e: KeyboardEvent) => {
-    heldKeys.delete(e.code);
+    heldKeys.delete(e.code); // also clear a game key if focus changed mid-hold
+    if (editingText(e.target)) return;
     releasedKeys.add(e.code);
   };
   window.addEventListener("keydown", onKeyDown);

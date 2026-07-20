@@ -17,7 +17,7 @@
 
 import { Minimotor } from "minimotor";
 
-const { Assets, Fsm, Anim, Timers, Particles, Camera, Audio, Storage, Mathf, Draw, Loop, Keys, UI } =
+const { Assets, ECS, Fsm, Anim, Sprites, Timers, Particles, Camera, Audio, Storage, Mathf, Draw, Loop, Keys, UI } =
   Minimotor;
 
 let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
@@ -159,14 +159,10 @@ function buildLevel(def) {
   for (const [c, r, len, dir] of def.spikes)
     for (let x = 0; x < len; x++) set(c + x, r, dir === "down" ? "V" : "^");
 
-  const orbs = def.orbs.map(([c, r]) => ({
-    x: c * CELL + CELL / 2,
-    y: r * CELL + CELL / 2,
-    cd: 0,
-  }));
+  const orbDefs = def.orbs.map(([c, r]) => ({ x: c * CELL + CELL / 2, y: r * CELL + CELL / 2 }));
   const spawn = { x: def.spawn[0] * CELL + (CELL - PW) / 2, y: (def.spawn[1] + 1) * CELL - PH };
   const exit = { x: def.exit[0] * CELL, y: def.exit[1] * CELL };
-  return { grid, orbs, spawn, exit, goal: def.goal, sky: def.sky, name: def.name, props: def.props };
+  return { grid, orbDefs, spawn, exit, goal: def.goal, sky: def.sky, name: def.name, props: def.props };
 }
 
 function tileAt(grid, c, r) {
@@ -246,33 +242,57 @@ const FEET_Y = 23; // frame-y of the character's feet (content ends ~here)
 let anim; // Anim.states for the player
 let sm; // player Fsm
 let deathAnim = null; // one-shot Lore death burst
-let orbAnim; // shared animated dash orb
 const tex = {}; // decoded tile / prop images by key
 
-// Fraction (0..1) of image height at which opaque pixels stop — used to seat
-// a sprite's real base on a surface, ignoring transparent bottom padding.
-function opaqueBottomFrac(img) {
-  const c = document.createElement("canvas");
-  c.width = img.width;
-  c.height = img.height;
-  const g = c.getContext("2d");
-  g.drawImage(img, 0, 0);
-  const data = g.getImageData(0, 0, img.width, img.height).data;
-  for (let y = img.height - 1; y >= 0; y--)
-    for (let x = 0; x < img.width; x++)
-      if (data[(y * img.width + x) * 4 + 3] > 8) return (y + 1) / img.height;
-  return 1;
-}
+// Collectibles live on the ECS: one entity per dash orb, drawn by the built-in
+// sprite renderer. The crystal art is procedural, so we bake it ONCE into an
+// offscreen sheet (a spinning cyan "ready" row + a dim "spent" row) and play it
+// like any loaded sprite sheet — no per-frame path drawing.
+const CRYSTAL_FR = 16; // rotation frames
+const CRYSTAL_FS = 40; // baked frame size (px, includes glow)
+let crystalSheet; // the cached canvas
+let crystalAnim; // shared Anim.sheet over the "ready" row (drives sx)
+const orbWorld = ECS.world();
+const Orb = ECS.component("Orb"); // { cd, baseX, baseY }
 
-// Compose N same-size frame images side by side into one sheet canvas.
-function composeSheet(images) {
-  const cv = document.createElement("canvas");
-  cv.width = FRAME * images.length;
-  cv.height = FRAME;
-  const g = cv.getContext("2d");
-  g.imageSmoothingEnabled = false;
-  images.forEach((img, i) => g.drawImage(img, i * FRAME, 0));
-  return cv;
+// Bake the spinning dash-crystal with Sprites.bakeSheet: CRYSTAL_FR rotation
+// frames per row × 2 rows (row 0 = "ready" cyan + glow, row 1 = "spent" grey).
+// bakeSheet translates to each cell's centre, so the diamond rotates in place.
+function bakeCrystalSheet() {
+  const s = 8;
+  return Sprites.bakeSheet(
+    CRYSTAL_FS,
+    CRYSTAL_FS,
+    CRYSTAL_FR * 2,
+    (g, i) => {
+      const ready = i < CRYSTAL_FR;
+      if (ready) {
+        const glow = g.createRadialGradient(0, 0, 2, 0, 0, s * 2.4);
+        glow.addColorStop(0, "rgba(160,240,255,0.55)");
+        glow.addColorStop(1, "rgba(160,240,255,0)");
+        g.fillStyle = glow;
+        g.fillRect(-s * 2.4, -s * 2.4, s * 4.8, s * 4.8);
+      }
+      g.rotate(((i % CRYSTAL_FR) / CRYSTAL_FR) * Math.PI * 2);
+      g.beginPath();
+      g.moveTo(0, -s);
+      g.lineTo(s * 0.72, 0);
+      g.lineTo(0, s);
+      g.lineTo(-s * 0.72, 0);
+      g.closePath();
+      g.fillStyle = ready ? "#5fd8ff" : "#7f95a6";
+      g.fill();
+      g.beginPath();
+      g.moveTo(0, -s * 0.55);
+      g.lineTo(s * 0.34, 0);
+      g.lineTo(0, s * 0.2);
+      g.lineTo(-s * 0.34, 0);
+      g.closePath();
+      g.fillStyle = ready ? "#eafcff" : "#c4d2dc";
+      g.fill();
+    },
+    { cols: CRYSTAL_FR },
+  );
 }
 
 const TILE_KEYS = [
@@ -290,7 +310,6 @@ function manifest() {
   for (let i = 0; i < 4; i++) add(`run${i}`);
   for (let i = 0; i < 3; i++) add(`jump${i}`);
   for (let i = 0; i < 4; i++) add(`death${i}`);
-  for (let i = 0; i < 4; i++) add(`orb${i}`);
   for (let i = 0; i < 4; i++) add(`climb${i}`);
   for (const k of TILE_KEYS) add(k);
   return m;
@@ -298,10 +317,11 @@ function manifest() {
 
 function buildAnimations() {
   const img = (n) => Assets.image(n);
-  const idleSheet = composeSheet([img("idle0"), img("idle1"), img("idle2"), img("idle3")]);
-  const runSheet = composeSheet([img("run0"), img("run1"), img("run2"), img("run3")]);
-  const jumpSheet = composeSheet([img("jump0"), img("jump1"), img("jump2")]);
-  const climbSheet = composeSheet([img("climb0"), img("climb1"), img("climb2"), img("climb3")]);
+  const compose = (...names) => Sprites.composeSheet(names.map(img));
+  const idleSheet = compose("idle0", "idle1", "idle2", "idle3");
+  const runSheet = compose("run0", "run1", "run2", "run3");
+  const jumpSheet = compose("jump0", "jump1", "jump2");
+  const climbSheet = compose("climb0", "climb1", "climb2", "climb3");
   // `cols` must equal each sheet's real frame count (single row) so the default
   // frame list and the source-rect math line up.
   const s = (sheet, cols, extra = {}) => Anim.sheet(sheet, { fw: FRAME, fh: FRAME, cols, ...extra });
@@ -322,16 +342,22 @@ function buildAnimations() {
   // here we draw them directly, scaling in draw calls).
   for (const k of TILE_KEYS) tex[k] = img(k);
 
-  // Store the death sheet + orb sheet for one-shot / looped playback.
-  tex._deathSheet = composeSheet([img("death0"), img("death1"), img("death2"), img("death3")]);
-  const orbSheet = composeSheet([img("orb0"), img("orb1"), img("orb2"), img("orb3")]);
-  tex._orbSheet = orbSheet;
-  orbAnim = Anim.sheet(orbSheet, { fw: FRAME, fh: FRAME, cols: 4, fps: 8 });
+  // The Lore "Death" frames are the scatter-burst effect, played once on death.
+  tex._deathSheet = compose("death0", "death1", "death2", "death3");
 
-  // Fraction of image height where opaque content ends, so the goal props seat
-  // on the ledge regardless of transparent padding at the bottom of the sprite.
-  tex._signBase = opaqueBottomFrac(img("sign"));
-  tex._houseBase = opaqueBottomFrac(img("house"));
+  // Measure each prop/goal's real opaque base (fraction of height) so it seats
+  // on its surface regardless of transparent padding at the bottom of the art.
+  tex._base = {};
+  for (const k of ["sign", "house", "tree", "rock"]) {
+    const b = Sprites.contentBounds(img(k));
+    tex._base[k] = (b.y + b.h) / img(k).height;
+  }
+
+  // Bake the crystal collectible once; the shared anim advances the "ready" row.
+  crystalSheet = bakeCrystalSheet();
+  crystalAnim = Anim.sheet(crystalSheet, {
+    fw: CRYSTAL_FS, fh: CRYSTAL_FS, cols: CRYSTAL_FR, fps: 14,
+  });
 
   sm = makeFsm();
 }
@@ -401,6 +427,19 @@ let fade = 1;
 
 function loadLevel(i) {
   level = buildLevel(LEVELS[i]);
+  // Reset the collectible world and spawn one Orb entity per dash orb.
+  const stale = [];
+  for (const [e] of orbWorld.query(Orb)) stale.push(e);
+  for (const e of stale) orbWorld.despawn(e);
+  for (const { x, y } of level.orbDefs) {
+    orbWorld.spawn(
+      ECS.Sprite.with({
+        x, y, img: crystalSheet,
+        sx: 0, sy: 0, sw: CRYSTAL_FS, sh: CRYSTAL_FS, w: 34, h: 34, z: 1,
+      }),
+      Orb.with({ cd: 0, baseX: x, baseY: y }),
+    );
+  }
   respawn(true);
 }
 
@@ -559,8 +598,6 @@ Loop.run({
   update() {
     if (!ready) return;
     const step = Loop.step;
-    if (orbAnim) orbAnim.update(step);
-    level.orbs.forEach((o) => (o.cd = Math.max(0, o.cd - 1)));
 
     if (won) {
       if (Keys.pressed("KeyR")) restartGame();
@@ -689,15 +726,27 @@ Loop.run({
     // -------- Hazards --------
     if (spikeHit(level.grid, player.x, player.y, PW, PH) || player.y > WORLD_H + 40) die();
 
-    // -------- Orbs (refill dash) --------
-    for (const o of level.orbs) {
-      if (o.cd > 0) continue;
-      if (Math.abs(o.x - (player.x + PW / 2)) < 13 && Math.abs(o.y - (player.y + PH / 2)) < 15) {
+    // -------- Orbs (ECS): animate the shared crystal, bob, and refill on touch.
+    crystalAnim.update(step);
+    const cr = crystalAnim.rect;
+    const bt = performance.now() * 0.004;
+    const pcx = player.x + PW / 2;
+    const pcy = player.y + PH / 2;
+    for (const [, s, o] of orbWorld.query(ECS.Sprite, Orb)) {
+      if (o.cd > 0) o.cd--;
+      const readyOrb = o.cd === 0;
+      s.sx = cr.sx;
+      s.sy = readyOrb ? 0 : CRYSTAL_FS; // ready row vs. spent row
+      s.sw = cr.sw;
+      s.sh = cr.sh;
+      s.alpha = readyOrb ? 1 : 0.35;
+      s.y = o.baseY + Math.sin(bt + o.baseX) * 2;
+      if (readyOrb && Math.abs(o.baseX - pcx) < 13 && Math.abs(o.baseY - pcy) < 15) {
         player.hasDash = true;
         o.cd = 90;
         Audio.Sfx.blip(520, 0.08, 0.2);
         Audio.Sfx.blip(820, 0.08, 0.2);
-        Particles.burst(o.x, o.y, {
+        Particles.burst(o.baseX, o.baseY, {
           count: 12, speed: [40, 120], size: [2, 4], life: [220, 420],
           colors: ["#a0f0ff", "#fff", "#7fd6ff"],
         });
@@ -740,7 +789,7 @@ Loop.run({
     drawBackground(ctx);
     drawProps(ctx);
     drawTiles(ctx);
-    drawOrbs(ctx);
+    orbWorld.drawSprites(ctx); // ECS-owned dash crystals
     drawExit(ctx);
     Particles.draw(ctx);
     drawPlayer(ctx);
@@ -777,14 +826,6 @@ function drawBackground(ctx) {
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, WORLD_W, WORLD_H);
 
-  // Tiled dark texture (the 8px bg tile), faint.
-  ctx.globalAlpha = 0.25;
-  const bg = tex.bg;
-  for (let y = 0; y < WORLD_H; y += TILE * 2)
-    for (let x = 0; x < WORLD_W; x += TILE * 2)
-      ctx.drawImage(bg, x, y, TILE * 2, TILE * 2);
-  ctx.globalAlpha = 1;
-
   // God rays overlay (additive), gently drifting.
   const t = performance.now() * 0.0002;
   ctx.globalAlpha = 0.12;
@@ -813,7 +854,10 @@ function drawProps(ctx) {
     const img = tex[kind];
     const w = img.width * 1.4;
     const h = img.height * 1.4;
-    ctx.drawImage(img, c * CELL, r * CELL - h, w, h); // base rests on the row's surface
+    // Seat the sprite's real (opaque) base on the row's surface, ignoring any
+    // transparent padding below the art.
+    const drawY = r * CELL - tex._base[kind] * h;
+    ctx.drawImage(img, c * CELL, drawY, w, h);
   }
   ctx.globalAlpha = 1;
 }
@@ -829,6 +873,8 @@ function tileFor(g, c, r) {
   return openL ? tex.dirtML : openR ? tex.dirtMR : tex.dirtMM;
 }
 
+const DIRT_BASE = "#2a2027"; // fill under solid cells so no tile has a see-through seam
+
 function drawTiles(ctx) {
   const g = level.grid;
   for (let r = 0; r < ROWS; r++) {
@@ -836,20 +882,15 @@ function drawTiles(ctx) {
       const t = g[r][c];
       const x = c * CELL;
       const y = r * CELL;
-      if (t === "#") ctx.drawImage(tileFor(g, c, r), x, y, CELL, CELL);
-      else if (t === "^") ctx.drawImage(tex.spikeUp, x, y, CELL, CELL);
+      if (t === "#") {
+        // Base fill first — some dirt tiles are not fully opaque, which would
+        // otherwise let the sky show through as a grid between cells.
+        ctx.fillStyle = DIRT_BASE;
+        ctx.fillRect(x, y, CELL, CELL);
+        ctx.drawImage(tileFor(g, c, r), x, y, CELL, CELL);
+      } else if (t === "^") ctx.drawImage(tex.spikeUp, x, y, CELL, CELL);
       else if (t === "V") ctx.drawImage(tex.spikeDown, x, y, CELL, CELL);
     }
-  }
-}
-
-function drawOrbs(ctx) {
-  const t = performance.now() * 0.004;
-  for (const o of level.orbs) {
-    const bob = Math.sin(t + o.x) * 2;
-    ctx.globalAlpha = o.cd > 0 ? 0.28 : 1;
-    orbAnim.draw(ctx, o.x, o.y + bob, { w: 26, h: 26 });
-    ctx.globalAlpha = 1;
   }
 }
 
@@ -862,12 +903,12 @@ function drawExit(ctx) {
     const img = tex.house;
     const w = img.width * 1.2;
     const h = img.height * 1.2;
-    const drawY = surface - tex._houseBase * h; // real base on the ledge
+    const drawY = surface - tex._base.house * h; // real base on the ledge
     ctx.drawImage(img, x + CELL / 2 - w / 2, drawY, w, h);
     glowY = drawY + h * 0.7;
   } else {
     const sw = CELL * 1.6;
-    const drawY = surface - tex._signBase * sw;
+    const drawY = surface - tex._base.sign * sw;
     ctx.drawImage(tex.sign, x + (CELL - sw) / 2, drawY, sw, sw);
     glowY = drawY + sw * 0.4;
   }

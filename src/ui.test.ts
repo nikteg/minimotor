@@ -10,6 +10,8 @@ import {
   createFloats,
   defaultTheme,
   getTheme,
+  idScope,
+  ids,
   row,
   setTheme,
   stack,
@@ -147,6 +149,14 @@ describe("UI theme", () => {
     expect(getTheme().borderWidth).toBe(3);
     expect(getTheme().buttonPadX).toBe(defaultTheme.buttonPadX); // untouched
     _reset();
+  });
+});
+
+describe("UI widget identity", () => {
+  it("builds stable keyed ids and returns scoped callback values", () => {
+    const id = ids("inventory", "player");
+    expect(id("slot", 3)).toBe("inventory:player:slot:3");
+    expect(idScope("menu", () => 42)).toBe(42);
   });
 });
 
