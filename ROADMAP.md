@@ -209,6 +209,16 @@ spec?)` integration (swap fires behind full coverage). Proof: the `scenes`
 - ⬜ `UI` — overlay/HUD/floating-text helpers (kept out of the core;
   opinionated, like the samples' `overlays.js`)
 
+## Opt-in entry points ✅
+
+Modules behind their own `exports` subpath, outside the core import graph —
+the only place third-party dependencies are allowed. Games that don't import
+them pay nothing; the plain `minimotor` entry stays dependency-free.
+
+- ✅ `Physics2D` (`minimotor/physics2d`) — rigid-body physics adapter over
+  planck (Box2D): bodies, walls, revolute joints with motors, contacts,
+  deferred destroy — addressed in pixels, ticked on the fixed step.
+
 ## Design principles (what keeps it _minimotor_)
 
 1. **Opt-in layers** — raw `ctx` and plain `Loop.run` always work; nothing above
@@ -229,8 +239,10 @@ spec?)` integration (swap fires behind full coverage). Proof: the `scenes`
 
 - **Archetype/graph ECS, multithreaded systems, worker parallelism** — v1 stays
   sparse-set and single-threaded; revisit only if a real game needs the throughput.
-- **A full rigid-body physics engine** (joints/solver) — keep light kinematic
-  helpers; integrate an external lib only behind an opt-in adapter if ever needed.
+- **Writing our own rigid-body solver** — the core keeps light kinematic
+  helpers only. Real rigid-body physics ships as the opt-in `Physics2D`
+  adapter over planck (Box2D) behind its own `minimotor/physics2d` entry, so
+  the core bundle stays dependency-free (see milestone 11).
 - **A retained scene graph** with mandatory transform nodes — fights immediate mode.
 - **WebGL/WebGPU rendering** in v1 — the whole draw surface is Canvas2D
   (`Draw.ctx`, sprites, tiles, particles). If a real game ever outgrows 2D
@@ -304,7 +316,25 @@ hoppspelet) as proof it actually simplifies code — the discipline used so far.
    powering the new **netgame** sample (real WebSocket multiplayer: relay
    broadcast, heartbeat + idle timeout, `Net.createInterpolator` for remote
    blobs, net meter HUD); `Sfx` audio across the game samples; perf-HUD ctx
-   state-leak fix; tile-seam fix (rounded camera translate).
+   state-leak fix.
+10. ✅ **Perf/UX wave** — perf HUD grew engine stats (`Game.timings`
+    update/draw ms + catch-up `×N`, opt-in ECS entity count via `world.size` +
+    `plugin({ world })`, Chrome-only heap MB) and per-metric colored sparkline
+    strips; `NetMeter` zero-snap. Callbacks now receive their context —
+    `update(stepMs)` / `draw(ctx)` (backward compatible). Window-resize support
+    across all samples (`Stage.onResize`, `camera.setView`). Tile-seam fix done
+    right: an integer-scale compositing buffer in `Tiles` (fractional-DPR
+    antialiasing was the real culprit, not camera rounding). Samples: playable
+    synth (waveforms, octave shift, backing grooves), netpeer interpolation
+    toggle + idle send suppression, juice held-spray.
+11. ✅ **Physics2D** — rigid-body adapter over planck (Box2D): `world`/`box`/
+    `circle`/`walls`/`pin` (revolute + motor), `onContact`, deferred destroy
+    (world-lock safe), px↔m conversion at the boundary, fixed-step `step(ms)`.
+    Own entry point `minimotor/physics2d` — the only module with a dependency;
+    the core import graph stays dependency-free. Composes with the ECS as
+    plain data (body-in-a-component + sync system). Proof: the **physics**
+    sample (stacking/sleeping crates, bouncy balls, motorized paddle,
+    impact-gated shake/sfx).
 
 ## Open decisions
 
