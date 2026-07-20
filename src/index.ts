@@ -129,6 +129,7 @@ export type {
   PanelOptions,
   PopoverOptions,
   RowOptions,
+  ButtonVariant,
   ConfirmOptions,
   FlexSize,
   FlexSpec,

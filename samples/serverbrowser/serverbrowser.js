@@ -55,6 +55,7 @@ let confirming = null; // server awaiting the join-confirm modal
 let altTheme = false;
 
 // A second look for the whole kit — one setTheme call restyles every widget.
+// Also shows off the metric knobs: rounded corners and a thicker border.
 const AMBER = {
   font: "Verdana, sans-serif",
   fontSize: 12,
@@ -67,6 +68,10 @@ const AMBER = {
   bgActive: "#2a2214",
   border: "#5a4a2e",
   panelBg: "rgba(24,18,8,0.94)",
+  primary: "#ffb454",
+  danger: "#e8663d",
+  radius: 8,
+  borderWidth: 3,
 };
 
 function visibleServers() {
@@ -307,6 +312,7 @@ Minimotor.Loop.run({
       UI.button({
         at: footBtns,
         label: "JOIN",
+        variant: "primary", // the call to action
         disabled: !selected || refreshing,
         tooltip: selected ? `Join ${selected.name}` : "Select a server first",
       })

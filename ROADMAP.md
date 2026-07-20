@@ -222,8 +222,11 @@ spec?)` integration (swap fires behind full coverage). Proof: the `scenes`
   resize comes free) — and `stack`, a one-axis cursor that widgets place
   themselves into via `at`, auto-sizing to their labels (flex sizes may be
   measure fns for content-fit). All labels clamp to their boxes so no
-  theme/font can overflow. `confirm()` is a whole dialog (title/lines/buttons,
-  content-sized) in one call. **Implicit ctx** — widgets draw to the default
+  theme/font can overflow. The `Theme` covers metrics too — `borderWidth`,
+  corner `radius`, `buttonPadX`, plus `primary`/`danger` fills — and buttons
+  take a `variant` (`default`/`primary`/`danger`/`ghost`). `confirm()` is a
+  whole dialog (title/lines/buttons, content-sized, last button primary by
+  default) in one call. **Implicit ctx** — widgets draw to the default
   game's `Draw.ctx`, no plumbing (`UI.begin(ctx)` overrides per frame for
   isolated games; every widget also keeps a `(ctx, opts)` form). Overlays
   (modal AND open popover) capture input: widgets drawn before them go dead,

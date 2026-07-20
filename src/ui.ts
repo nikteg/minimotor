@@ -55,7 +55,7 @@ export function textWidth(text: string, font?: string): number {
 
 // ---------- Theme ----------
 
-/** Every color and font the widgets use. Override any subset with
+/** Every color, font and metric the widgets use. Override any subset with
  *  `setTheme`; per-widget style options still win over the theme. */
 export interface Theme {
   /** Font family for all widget text. */
@@ -84,6 +84,16 @@ export interface Theme {
   track: string;
   /** The modal backdrop. */
   dim: string;
+  /** Fill of a `variant: "primary"` button (its label is `bgActive`). */
+  primary: string;
+  /** Fill of a `variant: "danger"` button (its label is `text`). */
+  danger: string;
+  /** Border thickness in px for buttons/panels/toggles/tabs. Default 2. */
+  borderWidth: number;
+  /** Corner radius in px (0 = square). Default 0. */
+  radius: number;
+  /** Horizontal padding added around auto-sized button labels. Default 28. */
+  buttonPadX: number;
 }
 
 export const defaultTheme: Theme = {
@@ -101,6 +111,11 @@ export const defaultTheme: Theme = {
   panelBg: "rgba(13,18,26,0.92)",
   track: "rgba(255,255,255,0.12)",
   dim: "rgba(0,0,0,0.55)",
+  primary: "#4ecdc4",
+  danger: "#ff6b6b",
+  borderWidth: 2,
+  radius: 0,
+  buttonPadX: 28,
 };
 
 let theme: Theme = { ...defaultTheme };
@@ -118,6 +133,59 @@ export function getTheme(): Theme {
 
 const uiFont = (size = theme.fontSize, bold = false) =>
   `${bold ? "bold " : ""}${size}px ${theme.font}`;
+
+/** Trace a rounded-rect path (square when `r <= 0`). Radius is clamped to
+ *  half the shorter side so small widgets stay sane. */
+function roundRectPath(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+): void {
+  const rr = Math.max(0, Math.min(r, w / 2, h / 2));
+  ctx.beginPath();
+  if (rr <= 0) {
+    ctx.rect(x, y, w, h);
+    return;
+  }
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}
+
+/** Fill (and optionally stroke) a themed box: rounded per `theme.radius`,
+ *  stroked at `theme.borderWidth` inset so the outline stays inside the rect.
+ *  `radius`/`border` override the theme for one call. */
+function drawBox(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  opts: { fill?: string; stroke?: string; radius?: number; border?: number },
+): void {
+  const r = opts.radius ?? theme.radius;
+  if (opts.fill) {
+    ctx.fillStyle = opts.fill;
+    roundRectPath(ctx, x, y, w, h, r);
+    ctx.fill();
+  }
+  if (opts.stroke) {
+    const bw = opts.border ?? theme.borderWidth;
+    if (bw > 0) {
+      ctx.strokeStyle = opts.stroke;
+      ctx.lineWidth = bw;
+      const half = bw / 2;
+      roundRectPath(ctx, x + half, y + half, w - bw, h - bw, Math.max(0, r - half));
+      ctx.stroke();
+    }
+  }
+}
 
 /** Vertically centered text using real glyph metrics — the canvas "middle"
  *  baseline sits visibly high for most fonts. Honors the current textAlign.
@@ -459,15 +527,24 @@ export function createFloats(): FloatManager {
 
 // ---------- Button ----------
 
+/** Button look. `"default"` is the neutral filled button; `"primary"` fills
+ *  with the theme accent (calls to action); `"danger"` fills red (destructive
+ *  actions); `"ghost"` is text-only with no fill/border until hovered. */
+export type ButtonVariant = "default" | "primary" | "danger" | "ghost";
+
 /** Style knobs for `button()`. Every color defaults from the theme. */
 export interface ButtonStyle {
   font?: string;
+  /** Preset look — see `ButtonVariant`. Default `"default"`. */
+  variant?: ButtonVariant;
   /** Label color. */
   color?: string;
   /** Fill when idle / hovered / held down. */
   bg?: string;
   bgHover?: string;
   bgActive?: string;
+  /** Corner radius override (px). Defaults to `theme.radius`. */
+  radius?: number;
 }
 
 /** A button's geometry + label. Position it yourself (`x`/`y` required,
@@ -487,6 +564,41 @@ export interface ButtonOptions extends ButtonStyle {
   /** Shown near the pointer after hovering a moment (see `drawTips`). Works
    *  on disabled buttons too — the place to say WHY it's disabled. */
   tooltip?: string;
+}
+
+/** Resolve a variant into (idle, hover, active) fills, border and label
+ *  colors — mixing in the theme and any per-button overrides. */
+// Nudge a color toward black/white without parsing it — CSS color-mix is
+// understood by canvas fillStyle in every browser we target.
+const shade = (c: string, dark: boolean) =>
+  `color-mix(in srgb, ${c} ${dark ? 82 : 88}%, ${dark ? "#000" : "#fff"})`;
+
+function variantColors(opts: ButtonStyle): {
+  bg: string;
+  bgHover: string;
+  bgActive: string;
+  border: string;
+  label: string;
+} {
+  const v = opts.variant ?? "default";
+  let base;
+  if (v === "primary") {
+    base = { bg: theme.primary, label: theme.bgActive, border: theme.primary };
+  } else if (v === "danger") {
+    base = { bg: theme.danger, label: theme.text, border: theme.danger };
+  } else if (v === "ghost") {
+    base = { bg: "transparent", label: theme.text, border: "transparent" };
+  } else {
+    base = { bg: theme.bg, label: theme.text, border: theme.border };
+  }
+  const solid = v === "primary" || v === "danger";
+  return {
+    bg: opts.bg ?? base.bg,
+    bgHover: opts.bgHover ?? (v === "ghost" ? theme.bgHover : shade(base.bg, false)),
+    bgActive: opts.bgActive ?? (solid ? shade(base.bg, true) : theme.bgActive),
+    border: base.border,
+    label: opts.color ?? base.label,
+  };
 }
 
 /** The interaction state `button()` derives from a pointer. Pure — exported
@@ -514,7 +626,7 @@ export function button(a: CanvasRenderingContext2D | ButtonOptions, b?: ButtonOp
   ctx.save();
   ctx.font = opts.font ?? uiFont(theme.fontSize + 2, true);
   // Auto width: the label plus comfortable padding.
-  const w = opts.w ?? Math.ceil(ctx.measureText(opts.label).width) + 28;
+  const w = opts.w ?? Math.ceil(ctx.measureText(opts.label).width) + theme.buttonPadX;
   const rect = opts.at
     ? opts.at.next(w, opts.h)
     : { x: opts.x ?? 0, y: opts.y ?? 0, w, h: opts.h ?? 30 };
@@ -527,16 +639,19 @@ export function button(a: CanvasRenderingContext2D | ButtonOptions, b?: ButtonOp
     : buttonState(rect, p);
   hoverCursor(hover);
 
-  ctx.fillStyle = active
-    ? (opts.bgActive ?? theme.bgActive)
-    : hover
-      ? (opts.bgHover ?? theme.bgHover)
-      : (opts.bg ?? theme.bg);
-  ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
-  ctx.strokeStyle = hover ? theme.accent : theme.border;
-  ctx.lineWidth = 2;
-  ctx.strokeRect(rect.x + 1, rect.y + 1, rect.w - 2, rect.h - 2);
-  ctx.fillStyle = opts.disabled ? theme.textDisabled : (opts.color ?? theme.text);
+  const c = variantColors(opts);
+  const fill = opts.disabled ? theme.bgActive : active ? c.bgActive : hover ? c.bgHover : c.bg;
+  // Hover lifts the border to the accent, except on filled variants (their
+  // border already matches the fill — an accent ring would clash).
+  const filled = c.bg !== "transparent" && c.border === c.bg;
+  const stroke =
+    c.border === "transparent" && !hover ? undefined : hover && !filled ? theme.accent : c.border;
+  drawBox(ctx, rect.x, rect.y, rect.w, rect.h, {
+    fill: fill === "transparent" ? undefined : fill,
+    stroke,
+    radius: opts.radius,
+  });
+  ctx.fillStyle = opts.disabled ? theme.textDisabled : c.label;
   ctx.textAlign = "center";
   centeredText(
     ctx,
@@ -571,14 +686,19 @@ export function panel(ctx: CanvasRenderingContext2D, opts: PanelOptions): void;
 export function panel(a: CanvasRenderingContext2D | PanelOptions, b?: PanelOptions): void {
   const [ctx, opts] = withCtx(a, b);
   ctx.save();
-  ctx.fillStyle = opts.bg ?? theme.panelBg;
-  ctx.fillRect(opts.x, opts.y, opts.w, opts.h);
-  ctx.strokeStyle = opts.border ?? theme.border;
-  ctx.lineWidth = 2;
-  ctx.strokeRect(opts.x + 1, opts.y + 1, opts.w - 2, opts.h - 2);
+  drawBox(ctx, opts.x, opts.y, opts.w, opts.h, {
+    fill: opts.bg ?? theme.panelBg,
+    stroke: opts.border ?? theme.border,
+  });
   if (opts.title) {
+    // Title strip clipped to the panel's rounded top so it doesn't poke past
+    // the corners.
+    ctx.save();
+    roundRectPath(ctx, opts.x, opts.y, opts.w, opts.h, theme.radius);
+    ctx.clip();
     ctx.fillStyle = "rgba(255,255,255,0.06)";
     ctx.fillRect(opts.x + 2, opts.y + 2, opts.w - 4, 30);
+    ctx.restore();
     ctx.fillStyle = opts.titleColor ?? theme.accent;
     ctx.font = opts.font ?? uiFont(theme.fontSize + 1, true);
     ctx.textAlign = "left";
@@ -631,14 +751,19 @@ export function toggle(a: CanvasRenderingContext2D | ToggleOptions, b?: ToggleOp
   if (hover && opts.tooltip) tooltip(opts.tooltip);
   const on = clicked ? !opts.on : opts.on;
 
-  ctx.fillStyle = theme.bgActive;
-  ctx.fillRect(rect.x, rect.y, size, size);
-  ctx.strokeStyle = hover ? theme.accent : theme.border;
-  ctx.lineWidth = 2;
-  ctx.strokeRect(rect.x + 1, rect.y + 1, size - 2, size - 2);
+  // Checkbox radius scales down with the theme so a big radius doesn't turn
+  // the little box into a circle.
+  const boxR = Math.min(theme.radius, 4);
+  drawBox(ctx, rect.x, rect.y, size, size, {
+    fill: theme.bgActive,
+    stroke: hover ? theme.accent : theme.border,
+    radius: boxR,
+  });
   if (on) {
-    ctx.fillStyle = theme.accent;
-    ctx.fillRect(rect.x + 4, rect.y + 4, size - 8, size - 8);
+    drawBox(ctx, rect.x + 4, rect.y + 4, size - 8, size - 8, {
+      fill: theme.accent,
+      radius: Math.max(0, boxR - 2),
+    });
   }
   ctx.fillStyle = opts.color ?? theme.text;
   ctx.textAlign = "left";
@@ -686,6 +811,11 @@ export function tabs(a: CanvasRenderingContext2D | TabsOptions, b?: TabsOptions)
   const p = uiPointer();
   let active = opts.active;
   ctx.textAlign = "center";
+  // Round only the strip's outer corners: clip the whole strip, fill cells
+  // square inside it.
+  ctx.save();
+  roundRectPath(ctx, rect.x, rect.y, rect.w, rect.h, theme.radius);
+  ctx.clip();
   opts.items.forEach((label, i) => {
     const x = rect.x + i * cellW;
     const { hover, clicked } = buttonState({ x, y: rect.y, w: cellW, h: rect.h }, p);
@@ -701,6 +831,7 @@ export function tabs(a: CanvasRenderingContext2D | TabsOptions, b?: TabsOptions)
     ctx.fillStyle = isActive ? theme.text : theme.textDim;
     centeredText(ctx, label, x + cellW / 2, rect.y + rect.h / 2, cellW - 10);
   });
+  ctx.restore();
   ctx.restore();
   return active;
 }
@@ -989,10 +1120,14 @@ export function bar(
       ? [uiCtx(), a, b, c, d, e, (f2 as BarStyle) ?? {}]
       : [a, b, c, d, e, f2 as number, g ?? {}];
   const f = Math.max(0, Math.min(1, frac));
+  const r = Math.min(theme.radius, h / 2);
   ctx.save();
-  ctx.fillStyle = style.bg ?? "rgba(255,255,255,0.15)";
-  ctx.fillRect(x, y, w, h);
+  drawBox(ctx, x, y, w, h, { fill: style.bg ?? "rgba(255,255,255,0.15)", radius: r });
   if (f > 0) {
+    // Clip the fill to the rounded track so the corners stay round even at a
+    // partial fill.
+    roundRectPath(ctx, x, y, w, h, r);
+    ctx.clip();
     ctx.fillStyle = style.fill ?? theme.accent;
     ctx.fillRect(x, y, w * f, h);
   }
@@ -1097,6 +1232,10 @@ export interface ConfirmOptions {
   /** Button labels, left to right (the last one sits at the right edge —
    *  put the primary action last). Default `["OK"]`. */
   buttons?: string[];
+  /** Per-button variants, aligned with `buttons`. Omit an entry for the
+   *  default look. E.g. `["default", "danger"]` for a Cancel/Delete pair.
+   *  When omitted entirely, the LAST button defaults to `"primary"`. */
+  variants?: ButtonVariant[];
   /** Minimum dialog width; it grows to fit the content. Default 300. */
   minW?: number;
 }
@@ -1152,11 +1291,16 @@ export function confirm(
   });
   ctx.restore();
 
-  // Buttons right-aligned; array order reads left → right.
+  // Buttons right-aligned; array order reads left → right. Without explicit
+  // variants, the last (rightmost, primary-action) button goes accent.
+  const variantFor = (i: number): ButtonVariant =>
+    opts.variants?.[i] ?? (i === buttons.length - 1 ? "primary" : "default");
   const btnBar = stack({ x: r.x + r.w - 12, y: r.y + r.h - 46, gap: 8, h: 34, align: "end" });
   let hit: string | null = null;
   for (let i = buttons.length - 1; i >= 0; i--) {
-    if (button(ctx, { at: btnBar, label: buttons[i], h: 34 })) hit = buttons[i];
+    if (button(ctx, { at: btnBar, label: buttons[i], variant: variantFor(i), h: 34 })) {
+      hit = buttons[i];
+    }
   }
   return hit;
 }
@@ -1189,11 +1333,12 @@ export function drawTips(maybeCtx?: CanvasRenderingContext2D): void {
   let y = Pointer.y + 20;
   if (x + w > vp.w - 4) x = vp.w - 4 - w;
   if (y + h > vp.h - 4) y = Pointer.y - 8 - h;
-  ctx.fillStyle = theme.panelBg;
-  ctx.fillRect(x, y, w, h);
-  ctx.strokeStyle = theme.border;
-  ctx.lineWidth = 1;
-  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  drawBox(ctx, x, y, w, h, {
+    fill: theme.panelBg,
+    stroke: theme.border,
+    border: 1,
+    radius: Math.min(theme.radius, 6),
+  });
   ctx.fillStyle = theme.text;
   ctx.textAlign = "left";
   centeredText(ctx, text, x + 8, y + h / 2);

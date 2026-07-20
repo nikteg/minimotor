@@ -18,12 +18,29 @@ const mockCtx = () => {
   const calls: {
     fillText: [string, number, number][];
     fillRect: [number, number, number, number][];
-  } = { fillText: [], fillRect: [] };
+    // Rounded boxes trace a path (rect() then fill()); record the last
+    // rect() so `drawBox` output is observable too.
+    boxes: [number, number, number, number][];
+  } = { fillText: [], fillRect: [], boxes: [] };
+  let pending: [number, number, number, number] | null = null;
   const ctx = {
     save: vi.fn(),
     restore: vi.fn(),
+    beginPath: vi.fn(),
+    closePath: vi.fn(),
+    moveTo: vi.fn(),
+    arcTo: vi.fn(),
+    clip: vi.fn(),
+    stroke: vi.fn(),
     fillText: (t: string, x: number, y: number) => calls.fillText.push([t, x, y]),
     fillRect: (x: number, y: number, w: number, h: number) => calls.fillRect.push([x, y, w, h]),
+    rect: (x: number, y: number, w: number, h: number) => {
+      pending = [x, y, w, h];
+    },
+    fill: () => {
+      if (pending) calls.boxes.push(pending);
+      pending = null;
+    },
     strokeRect: vi.fn(),
     set globalAlpha(_v: number) {},
     get globalAlpha() {
@@ -85,21 +102,20 @@ describe("UI buttonState", () => {
 });
 
 describe("UI bar", () => {
-  it("draws the track plus a clamped fill", () => {
+  it("draws the track (box) plus a clamped fill", () => {
     const { ctx, calls } = mockCtx();
     bar(ctx, 10, 20, 100, 8, 0.5);
-    expect(calls.fillRect).toEqual([
-      [10, 20, 100, 8],
-      [10, 20, 50, 8],
-    ]);
+    expect(calls.boxes).toEqual([[10, 20, 100, 8]]); // track, via drawBox
+    expect(calls.fillRect).toEqual([[10, 20, 50, 8]]); // half fill
 
     const over = mockCtx();
     bar(over.ctx, 0, 0, 100, 8, 1.7); // clamped to full
-    expect(over.calls.fillRect[1]).toEqual([0, 0, 100, 8]);
+    expect(over.calls.fillRect[0]).toEqual([0, 0, 100, 8]);
 
     const empty = mockCtx();
-    bar(empty.ctx, 0, 0, 100, 8, -2); // clamped to none — no fill rect at all
-    expect(empty.calls.fillRect).toEqual([[0, 0, 100, 8]]);
+    bar(empty.ctx, 0, 0, 100, 8, -2); // clamped to none — track only, no fill
+    expect(empty.calls.boxes).toEqual([[0, 0, 100, 8]]);
+    expect(empty.calls.fillRect).toEqual([]);
   });
 });
 
@@ -113,6 +129,19 @@ describe("UI theme", () => {
     expect(getTheme().text).toBe("#0f0");
     _reset();
     expect(getTheme()).toEqual(defaultTheme);
+  });
+
+  it("exposes the new metric and variant-color fields with defaults", () => {
+    expect(defaultTheme.borderWidth).toBe(2);
+    expect(defaultTheme.radius).toBe(0);
+    expect(defaultTheme.buttonPadX).toBe(28);
+    expect(defaultTheme.primary).toBe(defaultTheme.accent);
+    expect(defaultTheme.danger).toBeDefined();
+    setTheme({ radius: 8, borderWidth: 3 });
+    expect(getTheme().radius).toBe(8);
+    expect(getTheme().borderWidth).toBe(3);
+    expect(getTheme().buttonPadX).toBe(defaultTheme.buttonPadX); // untouched
+    _reset();
   });
 });
 
@@ -169,7 +198,8 @@ describe("UI implicit context", () => {
 
     expect(textWidth("abcd")).toBe(40);
     bar(0, 0, 100, 8, 0.5); // ctx-less form draws to the begun ctx
-    expect(calls.fillRect.length).toBe(2);
+    expect(calls.boxes.length).toBe(1); // track box
+    expect(calls.fillRect.length).toBe(1); // fill
 
     const L = flex(
       { x: 0, y: 0, w: 300, h: 40 },
