@@ -40,6 +40,16 @@ describe("createCamera", () => {
     expect(cam.wy(cam.sy(45))).toBeCloseTo(45);
   });
 
+  it("setView updates follow/clamp to the new viewport size", () => {
+    const cam = createCamera({ worldW: 1000, worldH: 600, viewW: 400, viewH: 300 });
+    cam.snapTo(700, 300);
+    expect(cam.x).toBe(500);
+    cam.setView(800, 600);
+    cam.snapTo(700, 300);
+    expect(cam.x).toBe(200); // wants 700 - 800/2, now clamped to worldW - 800
+    expect(cam.y).toBe(0);
+  });
+
   it("dt-corrected damping: one dtScale=2 update equals two dtScale=1 updates", () => {
     const cfg = { worldW: 1000, worldH: 600, viewW: 400, viewH: 300, damping: 0.3 };
     const a = createCamera(cfg);

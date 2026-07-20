@@ -143,6 +143,50 @@ export function createNetMeter(): NetMeter {
   };
 }
 
+// ---------- Sparkline ----------
+
+/** A tiny fixed-capacity history graph: `push` a sample per frame, `draw`
+ *  renders right-aligned bars scaled to the window's max. Ring buffer —
+ *  no allocations after creation. */
+export interface Sparkline {
+  push(v: number): void;
+  draw(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    color: string,
+  ): void;
+}
+
+export function createSparkline(capacity = WINDOW): Sparkline {
+  const vals = new Float64Array(capacity);
+  let head = 0; // next slot to overwrite
+  let count = 0;
+  return {
+    push(v) {
+      vals[head] = v;
+      head = (head + 1) % capacity;
+      if (count < capacity) count++;
+    },
+    draw(ctx, x, y, w, h, color) {
+      if (count === 0) return;
+      let max = 0;
+      for (let i = 0; i < count; i++) if (vals[i] > max) max = vals[i];
+      if (max <= 0) max = 1;
+      const bw = w / capacity;
+      ctx.fillStyle = color;
+      // Oldest sample first, newest ending flush with the right edge.
+      for (let i = 0; i < count; i++) {
+        const v = vals[(head - count + i + 2 * capacity) % capacity];
+        const bh = Math.max(1, (v / max) * h);
+        ctx.fillRect(x + (capacity - count + i) * bw, y + h - bh, Math.max(1, bw - 1), bh);
+      }
+    },
+  };
+}
+
 // ---------- HUD ----------
 
 /** Where the HUD sits, plus optional network stats to include. */
@@ -153,6 +197,9 @@ export interface PerfHudOptions {
   anchor?: "top-left" | "top-right";
   /** If given, two extra lines show up/down message and byte rates. */
   net?: NetStats;
+  /** History graphs drawn under the text: frame time, and (with `net`) traffic.
+   *  Push samples yourself each frame; the `plugin()` does this for you. */
+  graphs?: { frame?: Sparkline; up?: Sparkline; down?: Sparkline };
 }
 
 const rate = (perSec: number) => Math.round(perSec);
@@ -170,7 +217,13 @@ export function drawPerfHud(
   const lineH = 14;
   const boxW = net ? 176 : 130;
   const rows = net ? 6 : 4;
-  const boxH = lineH * rows + 8;
+  const frameSpark = opts.graphs?.frame;
+  const upSpark = net && opts.graphs?.up;
+  const downSpark = net && opts.graphs?.down;
+  const graphH = 18;
+  let boxH = lineH * rows + 8;
+  if (frameSpark) boxH += graphH + 4;
+  if (upSpark || downSpark) boxH += graphH + 4;
 
   // Anchor to the right edge when we know the width; otherwise fall back to left.
   const bgX = anchor === "top-right" && opts.viewW !== undefined ? opts.viewW - 4 - boxW : 4;
@@ -203,6 +256,21 @@ export function drawPerfHud(
     ctx.fillStyle = "#ffd43b";
     ctx.fillText(`↓ ${rate(net.downMsgs)}/s  ${kbps(net.downBps)} KB/s`, x, y + lineH * 5);
   }
+
+  let graphY = bgY + lineH * rows + 8;
+  const graphW = boxW - 8;
+  if (frameSpark) {
+    frameSpark.draw(ctx, x, graphY, graphW, graphH, color);
+    graphY += graphH + 4;
+  }
+  if (upSpark || downSpark) {
+    // Up and down traffic overlaid in the same strip, each scaled to its own
+    // max — the shapes matter here, the absolute numbers are in the text.
+    ctx.globalAlpha = 0.75;
+    upSpark?.draw(ctx, x, graphY, graphW, graphH, "#4ecdc4");
+    downSpark?.draw(ctx, x, graphY, graphW, graphH, "#ffd43b");
+    ctx.globalAlpha = 1;
+  }
   ctx.restore();
 }
 
@@ -214,6 +282,9 @@ export interface PerfOptions {
   anchor?: "top-left" | "top-right";
   /** A `NetMeter` to display network throughput alongside the frame stats. */
   net?: NetMeter;
+  /** Draw history sparklines (frame time; up/down traffic with `net`).
+   *  Default true. */
+  graphs?: boolean;
 }
 
 /** Create a Perf HUD game plugin. Each call owns its own tracker state. Draws in
@@ -224,14 +295,27 @@ export interface PerfOptions {
  *    Minimotor.Loop.run({ update, draw }); */
 export function plugin(opts: PerfOptions = {}): EnginePlugin {
   const tick = createPerfTracker();
+  const wantGraphs = opts.graphs ?? true;
+  const frameSpark = wantGraphs ? createSparkline() : undefined;
+  const upSpark = wantGraphs && opts.net ? createSparkline() : undefined;
+  const downSpark = wantGraphs && opts.net ? createSparkline() : undefined;
+  const graphs = wantGraphs ? { frame: frameSpark, up: upSpark, down: downSpark } : undefined;
   return {
     name: "perf",
     afterDraw(game) {
       const now = performance.now();
-      drawPerfHud(game.ctx, tick(now), {
+      const stats = tick(now);
+      const net = opts.net ? opts.net.sample(now) : undefined;
+      frameSpark?.push(stats.frameMs);
+      if (net) {
+        upSpark?.push(net.upBps);
+        downSpark?.push(net.downBps);
+      }
+      drawPerfHud(game.ctx, stats, {
         viewW: game.viewport.w,
         anchor: opts.anchor ?? "top-right",
-        net: opts.net ? opts.net.sample(now) : undefined,
+        net,
+        graphs,
       });
     },
   };

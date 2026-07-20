@@ -93,6 +93,7 @@ export type {
   NetMeter,
   PerfHudOptions,
   PerfOptions,
+  Sparkline,
 } from "./perf.js";
 export type { GamepadState } from "./input.js";
 export type { TileMap, TilesConfig } from "./tiles.js";

@@ -53,6 +53,9 @@ export function createCamera(config: CameraConfig): Camera & {
   wx(screenX: number): number;
   /** Convert screen Y back to world Y. */
   wy(screenY: number): number;
+  /** Update the viewport size (call from `Stage.onResize`) so following and
+   *  clamping keep matching the screen. */
+  setView(viewW: number, viewH: number): void;
 } {
   const damp = config.damping ?? 0.08;
 
@@ -103,7 +106,12 @@ export function createCamera(config: CameraConfig): Camera & {
     return screenY / cam.zoom + cam.y;
   }
 
-  return Object.assign(cam, { update, snapTo, sx, sy, wx: toWorldX, wy: toWorldY });
+  function setView(viewW: number, viewH: number): void {
+    config.viewW = viewW;
+    config.viewH = viewH;
+  }
+
+  return Object.assign(cam, { update, snapTo, sx, sy, wx: toWorldX, wy: toWorldY, setView });
 }
 
 // ---------- Parallax scroll iterator ----------

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { createPerfTracker, createNetMeter, drawPerfHud } from "./perf.js";
+import { createPerfTracker, createNetMeter, createSparkline, drawPerfHud } from "./perf.js";
 
 describe("createPerfTracker", () => {
   it("primes on the first call, then reports fps from frame deltas", () => {
@@ -36,6 +36,52 @@ describe("createNetMeter", () => {
     m.sent(10);
     const s = m.sample(500); // dt = 0
     expect(s.upMsgs).toBe(0);
+  });
+});
+
+describe("createSparkline", () => {
+  function recorder() {
+    const rects: number[][] = [];
+    const ctx = {
+      fillStyle: "",
+      fillRect: (x: number, y: number, w: number, h: number) => rects.push([x, y, w, h]),
+    } as unknown as CanvasRenderingContext2D;
+    return { ctx, rects };
+  }
+
+  it("draws nothing before any sample", () => {
+    const { ctx, rects } = recorder();
+    createSparkline().draw(ctx, 0, 0, 120, 18, "#fff");
+    expect(rects).toEqual([]);
+  });
+
+  it("draws one bar per sample, right-aligned, scaled to the max", () => {
+    const { ctx, rects } = recorder();
+    const spark = createSparkline(4);
+    spark.push(10);
+    spark.push(20);
+    spark.draw(ctx, 0, 0, 40, 20, "#fff");
+    expect(rects.length).toBe(2);
+    // bw = 40/4 = 10; two samples occupy the two rightmost slots.
+    expect(rects[0][0]).toBe(20);
+    expect(rects[1][0]).toBe(30);
+    // 10 scales to half height (max 20), newest fills the full 20.
+    expect(rects[0][3]).toBe(10);
+    expect(rects[1][3]).toBe(20);
+    // Bars grow up from the bottom edge.
+    expect(rects[0][1]).toBe(10);
+    expect(rects[1][1]).toBe(0);
+  });
+
+  it("overwrites oldest samples once capacity is reached", () => {
+    const { ctx, rects } = recorder();
+    const spark = createSparkline(2);
+    spark.push(100); // evicted
+    spark.push(10);
+    spark.push(40);
+    spark.draw(ctx, 0, 0, 20, 20, "#fff");
+    expect(rects.length).toBe(2);
+    expect(rects.map((r) => r[3])).toEqual([5, 20]); // scaled to max 40, not 100
   });
 });
 
@@ -97,5 +143,19 @@ describe("drawPerfHud", () => {
     const upLine = ctx.fillText.mock.calls[4][0] as string;
     expect(upLine).toContain("↑ 30/s");
     expect(upLine).toContain("2.0 KB/s");
+  });
+
+  it("grows the box and draws bars when sparkline graphs are attached", () => {
+    const plain = recorder();
+    drawPerfHud(plain.ctx, stats, { viewW: 800 });
+
+    const { ctx, rects } = recorder();
+    const frame = createSparkline(4);
+    frame.push(16);
+    frame.push(17);
+    drawPerfHud(ctx, stats, { viewW: 800, graphs: { frame } });
+    // Taller background box (graph strip added) + the two history bars.
+    expect(rects[0][3]).toBe(plain.rects[0][3] + 22);
+    expect(rects.length).toBe(1 + 2);
   });
 });
