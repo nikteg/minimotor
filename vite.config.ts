@@ -82,6 +82,7 @@ export default defineConfig({
         platformer: here("./samples/platformer/index.html"),
         particles: here("./samples/particles/index.html"),
         physics: here("./samples/physics/index.html"),
+        serverbrowser: here("./samples/serverbrowser/index.html"),
         tiles: here("./samples/tiles/index.html"),
         juice: here("./samples/juice/index.html"),
         swept: here("./samples/swept/index.html"),

@@ -208,8 +208,11 @@ spec?)` integration (swap fires behind full coverage). Proof: the `scenes`
   sample fades into play and wipes down into game over.
 - ✅ `UI` — immediate-mode interface helpers: `float`/`drawFloats` (rising,
   fading score/damage text, aged on the fixed step), `button` (drawn +
-  hit-tested by one call, `buttonState` exported for custom looks), `bar`
-  (clamped meter). No retained widget tree — everything draws in your draw
+  hit-tested by one call, `disabled` state, `buttonState` exported for custom
+  looks), `bar` (clamped meter), `panel` (framed/titled box), `toggle`
+  (checkbox), `tabs` (strip), `row` (selectable list row) and `scrollbar`
+  (wheel + thumb drag + track paging, backed by `Pointer.wheel`/
+  `framePressed`). No retained widget tree — everything draws in your draw
   phase. Game-specific overlays (copy/layout) stay in the samples'
   `overlays.js`, where they belong.
 
@@ -345,7 +348,11 @@ hoppspelet) as proof it actually simplifies code — the discipline used so far.
 12. ✅ **UI** — immediate-mode `float`/`button`/`bar` (+ `Collision.
 pointInRect` for the hit-testing). Proof: the scenes sample's clickable
     menu/game-over buttons and time bar, and breakout's per-block score pops
-    living inside the letterbox transform.
+    living inside the letterbox transform. Extended with `panel`/`toggle`/
+    `tabs`/`row`/`scrollbar` and the frame-scoped pointer inputs they need
+    (`Pointer.framePressed`, `Pointer.wheel`). Proof: the **serverbrowser**
+    sample — a complete no-DOM GUI screen (filter tabs, toggles, sortable
+    columns, wheel/drag scrolling list, disabled buttons, mock refresh/join).
 
 ## Open decisions
 

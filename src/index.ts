@@ -119,7 +119,18 @@ export type {
 const Collision = { rectsOverlap, circleHit, crossedDown, pointInRect, sweptAABB };
 export { Collision, rectsOverlap, circleHit, crossedDown, pointInRect, sweptAABB };
 export { UI };
-export type { ButtonOptions, ButtonStyle, BarStyle, FloatManager, FloatOptions } from "./ui.js";
+export type {
+  BarStyle,
+  ButtonOptions,
+  ButtonStyle,
+  FloatManager,
+  FloatOptions,
+  PanelOptions,
+  RowOptions,
+  ScrollbarOptions,
+  TabsOptions,
+  ToggleOptions,
+} from "./ui.js";
 
 export const Minimotor = {
   createGame,

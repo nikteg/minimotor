@@ -122,6 +122,8 @@ export interface ButtonOptions extends ButtonStyle {
   w: number;
   h: number;
   label: string;
+  /** Grayed out and unclickable. */
+  disabled?: boolean;
 }
 
 /** The interaction state `button()` derives from a pointer. Pure — exported
@@ -145,12 +147,15 @@ export function buttonState(
 export function button(ctx: CanvasRenderingContext2D, opts: ButtonOptions): boolean {
   // frameReleased, not released: the per-step edge is consumed by the fixed
   // steps before draw runs; the frame-scoped one is held for us until then.
-  const { hover, active, clicked } = buttonState(opts, {
-    x: Pointer.x,
-    y: Pointer.y,
-    down: Pointer.down,
-    released: Pointer.frameReleased,
-  });
+  const state = opts.disabled
+    ? { hover: false, active: false, clicked: false }
+    : buttonState(opts, {
+        x: Pointer.x,
+        y: Pointer.y,
+        down: Pointer.down,
+        released: Pointer.frameReleased,
+      });
+  const { hover, active, clicked } = state;
 
   ctx.save();
   ctx.fillStyle = active
@@ -162,7 +167,7 @@ export function button(ctx: CanvasRenderingContext2D, opts: ButtonOptions): bool
   ctx.strokeStyle = hover ? "#4ecdc4" : "#3a5568";
   ctx.lineWidth = 2;
   ctx.strokeRect(opts.x + 1, opts.y + 1, opts.w - 2, opts.h - 2);
-  ctx.fillStyle = opts.color ?? "#e8f0f4";
+  ctx.fillStyle = opts.disabled ? "#5a6a75" : (opts.color ?? "#e8f0f4");
   ctx.font = opts.font ?? "bold 15px monospace";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
@@ -170,6 +175,251 @@ export function button(ctx: CanvasRenderingContext2D, opts: ButtonOptions): bool
   ctx.restore();
 
   return clicked;
+}
+
+// ---------- Panel ----------
+
+/** A framed box with an optional title strip — visual grouping for menus,
+ *  dialogs and HUD clusters. Purely decorative; it captures no input. */
+export interface PanelOptions {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  title?: string;
+  bg?: string;
+  border?: string;
+  titleColor?: string;
+  font?: string;
+}
+
+export function panel(ctx: CanvasRenderingContext2D, opts: PanelOptions): void {
+  ctx.save();
+  ctx.fillStyle = opts.bg ?? "rgba(13,18,26,0.92)";
+  ctx.fillRect(opts.x, opts.y, opts.w, opts.h);
+  ctx.strokeStyle = opts.border ?? "#3a5568";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(opts.x + 1, opts.y + 1, opts.w - 2, opts.h - 2);
+  if (opts.title) {
+    ctx.fillStyle = "rgba(255,255,255,0.06)";
+    ctx.fillRect(opts.x + 2, opts.y + 2, opts.w - 4, 30);
+    ctx.fillStyle = opts.titleColor ?? "#4ecdc4";
+    ctx.font = opts.font ?? "bold 14px monospace";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText(opts.title, opts.x + 12, opts.y + 17);
+  }
+  ctx.restore();
+}
+
+// ---------- Toggle ----------
+
+/** A labeled checkbox. */
+export interface ToggleOptions {
+  x: number;
+  y: number;
+  label: string;
+  /** Current value — pass your state in, assign the return value back. */
+  on: boolean;
+  size?: number;
+  font?: string;
+  color?: string;
+}
+
+/** Draw a checkbox + label; returns the (possibly flipped) new value:
+ *
+ *    hideFull = UI.toggle(ctx, { x, y, label: "Hide full", on: hideFull }); */
+export function toggle(ctx: CanvasRenderingContext2D, opts: ToggleOptions): boolean {
+  const size = opts.size ?? 16;
+  const font = opts.font ?? "13px monospace";
+  ctx.save();
+  ctx.font = font;
+  const labelW = ctx.measureText(opts.label).width;
+  // Hit region spans box + label, so the text is clickable too.
+  const rect = { x: opts.x, y: opts.y, w: size + 8 + labelW, h: size };
+  const { hover, clicked } = buttonState(rect, {
+    x: Pointer.x,
+    y: Pointer.y,
+    down: Pointer.down,
+    released: Pointer.frameReleased,
+  });
+  const on = clicked ? !opts.on : opts.on;
+
+  ctx.fillStyle = "#1d2b36";
+  ctx.fillRect(opts.x, opts.y, size, size);
+  ctx.strokeStyle = hover ? "#4ecdc4" : "#3a5568";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(opts.x + 1, opts.y + 1, size - 2, size - 2);
+  if (on) {
+    ctx.fillStyle = "#4ecdc4";
+    ctx.fillRect(opts.x + 4, opts.y + 4, size - 8, size - 8);
+  }
+  ctx.fillStyle = opts.color ?? "#c6d4dc";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText(opts.label, opts.x + size + 8, opts.y + size / 2 + 1);
+  ctx.restore();
+  return on;
+}
+
+// ---------- Tabs ----------
+
+/** A horizontal tab strip. */
+export interface TabsOptions {
+  x: number;
+  y: number;
+  /** Total width, split equally between the tabs. */
+  w: number;
+  h?: number;
+  items: string[];
+  /** Current tab index — pass your state in, assign the return value back. */
+  active: number;
+  font?: string;
+}
+
+/** Draw a tab strip; returns the (possibly changed) active index:
+ *
+ *    tab = UI.tabs(ctx, { x, y, w: 320, items: ["All", "Coop", "PvP"], active: tab }); */
+export function tabs(ctx: CanvasRenderingContext2D, opts: TabsOptions): number {
+  const h = opts.h ?? 30;
+  const cellW = opts.w / opts.items.length;
+  let active = opts.active;
+  ctx.save();
+  ctx.font = opts.font ?? "bold 13px monospace";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  opts.items.forEach((label, i) => {
+    const x = opts.x + i * cellW;
+    const { hover, clicked } = buttonState(
+      { x, y: opts.y, w: cellW, h },
+      { x: Pointer.x, y: Pointer.y, down: Pointer.down, released: Pointer.frameReleased },
+    );
+    if (clicked) active = i;
+    const isActive = i === active;
+    ctx.fillStyle = isActive ? "#24384a" : hover ? "#1a2732" : "#141d26";
+    ctx.fillRect(x, opts.y, cellW - 2, h);
+    if (isActive) {
+      ctx.fillStyle = "#4ecdc4";
+      ctx.fillRect(x, opts.y + h - 3, cellW - 2, 3);
+    }
+    ctx.fillStyle = isActive ? "#e8f0f4" : "#7d8894";
+    ctx.fillText(label, x + cellW / 2, opts.y + h / 2 + 1);
+  });
+  ctx.restore();
+  return active;
+}
+
+// ---------- Row ----------
+
+/** A selectable list row. */
+export interface RowOptions {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  selected?: boolean;
+  bg?: string;
+  bgHover?: string;
+  bgSelected?: string;
+}
+
+/** Draw a row background with hover/selected states and report a click.
+ *  Draw your own content (columns, icons) on top afterwards:
+ *
+ *    if (UI.row(ctx, { x, y, w, h, selected: i === sel })) sel = i; */
+export function row(ctx: CanvasRenderingContext2D, opts: RowOptions): boolean {
+  const { hover, clicked } = buttonState(opts, {
+    x: Pointer.x,
+    y: Pointer.y,
+    down: Pointer.down,
+    released: Pointer.frameReleased,
+  });
+  ctx.save();
+  ctx.fillStyle = opts.selected
+    ? (opts.bgSelected ?? "rgba(78,205,196,0.18)")
+    : hover
+      ? (opts.bgHover ?? "rgba(255,255,255,0.05)")
+      : (opts.bg ?? "transparent");
+  if (ctx.fillStyle !== "transparent") ctx.fillRect(opts.x, opts.y, opts.w, opts.h);
+  if (opts.selected) {
+    ctx.fillStyle = "#4ecdc4";
+    ctx.fillRect(opts.x, opts.y, 3, opts.h);
+  }
+  ctx.restore();
+  return clicked;
+}
+
+// ---------- Scrollbar ----------
+
+/** A vertical scrollbar bound to a content/view extent. */
+export interface ScrollbarOptions {
+  /** Track position + height (the bar is vertical). */
+  x: number;
+  y: number;
+  h: number;
+  /** Track width. Default 10. */
+  w?: number;
+  /** Visible extent, in content px. */
+  view: number;
+  /** Total content extent, in content px. */
+  content: number;
+  /** Current scroll offset — pass your state in, assign the return back. */
+  offset: number;
+  /** Rect that reacts to the mouse wheel (usually the list area). */
+  wheelArea?: { x: number; y: number; w: number; h: number };
+  /** Identity for drag tracking across frames. Defaults to the track
+   *  position — pass an explicit id if the bar moves while dragged. */
+  id?: string;
+  track?: string;
+  thumb?: string;
+}
+
+// One drag at a time, tracked across frames by the scrollbar's id.
+let scrollDrag: { id: string; grab: number } | null = null;
+
+/** Compute the next offset for a scrollbar — thumb drag, track paging and
+ *  wheel — and draw it. Returns the new offset (clamped to the content):
+ *
+ *    scroll = UI.scrollbar(ctx, { x, y, h, view, content, offset: scroll, wheelArea }); */
+export function scrollbar(ctx: CanvasRenderingContext2D, opts: ScrollbarOptions): number {
+  const max = Math.max(0, opts.content - opts.view);
+  let offset = Math.max(0, Math.min(max, opts.offset));
+  if (max <= 0) return 0; // everything fits — draw nothing
+
+  const id = opts.id ?? `${opts.x}:${opts.y}`;
+  const w = opts.w ?? 10;
+  const thumbH = Math.max(24, (opts.view / opts.content) * opts.h);
+  const range = opts.h - thumbH;
+  let thumbY = opts.y + (offset / max) * range;
+
+  const overThumb = pointInRect(Pointer.x, Pointer.y, { x: opts.x, y: thumbY, w, h: thumbH });
+  const overTrack = pointInRect(Pointer.x, Pointer.y, { x: opts.x, y: opts.y, w, h: opts.h });
+
+  if (!Pointer.down) scrollDrag = null;
+  if (Pointer.framePressed && overThumb && !scrollDrag) {
+    scrollDrag = { id, grab: Pointer.y - thumbY };
+  } else if (Pointer.frameReleased && overTrack && !overThumb && scrollDrag?.id !== id) {
+    // Track click: page toward the click.
+    offset += Pointer.y < thumbY ? -opts.view : opts.view;
+  }
+  if (scrollDrag?.id === id && range > 0) {
+    offset = ((Pointer.y - scrollDrag.grab - opts.y) / range) * max;
+  }
+  if (opts.wheelArea && pointInRect(Pointer.x, Pointer.y, opts.wheelArea)) {
+    offset += Pointer.wheel;
+  }
+
+  offset = Math.max(0, Math.min(max, offset));
+  thumbY = opts.y + (offset / max) * range;
+
+  ctx.save();
+  ctx.fillStyle = opts.track ?? "rgba(255,255,255,0.07)";
+  ctx.fillRect(opts.x, opts.y, w, opts.h);
+  ctx.fillStyle =
+    scrollDrag?.id === id ? "#4ecdc4" : overThumb ? "#6adfd7" : (opts.thumb ?? "#3a5568");
+  ctx.fillRect(opts.x + 1, thumbY, w - 2, thumbH);
+  ctx.restore();
+  return offset;
 }
 
 // ---------- Bar ----------
