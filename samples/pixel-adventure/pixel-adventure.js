@@ -36,20 +36,12 @@ function playSound(name) {
 function rect(body) { return { x: body.x - body.w / 2, y: body.y - body.h, w: body.w, h: body.h }; }
 function solid(body) { return map.solidInRect(rect(body)); }
 
-function eachSolidCell(body, visit) {
-  const r = rect(body);
-  const x0 = Math.floor(r.x / TILE), x1 = Math.ceil((r.x + r.w) / TILE) - 1;
-  const y0 = Math.floor(r.y / TILE), y1 = Math.ceil((r.y + r.h) / TILE) - 1;
-  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
-    if (map.at(x, y)) visit(x, y);
-  }
-}
 function drawFlipped(anim, ctx, x, y, facing, opts) {
   ctx.save(); ctx.translate(x, y); ctx.scale(facing, 1); anim.draw(ctx, 0, 0, opts); ctx.restore();
 }
 function resetRun() {
   state = "play"; lives = 3; elapsed = 0;
-  player = { x: 96, y: 10 * TILE, w: 25, h: 35, vx: 0, vy: 0, onGround: false, facing: 1, invuln: 1.25, hurtTimer: 0 };
+  player = { x: 96, y: 10 * TILE, w: 25, h: 35, vx: 0, vy: 0, onGround: false, wall: 0, facing: 1, invuln: 1.25, hurtTimer: 0 };
   coins.forEach((coin) => { coin.got = false; coin.pop = 0; });
   enemies.forEach((enemy, i) => Object.assign(enemy, { x: level.enemies[i][0] * TILE + TILE / 2, y: level.enemies[i][1] * TILE, vx: i % 2 ? -45 : 45, dead: false }));
   cam.snapTo(player.x, player.y - player.h / 2);
@@ -65,30 +57,16 @@ function hurt() {
   if (lives === 0) { state = "gameover"; playSound("explosion"); } else respawn();
 }
 function movePlayer(dx, dy) {
-  // Resolve each axis to the exact tile boundary. Platforms are fully solid;
-  // an upward hit places the player's head flush below the platform instead of
-  // leaving the body overlapping it (the source of the previous sticking).
-  player.x += dx;
-  if (solid(player)) {
-    let resolved = player.x;
-    eachSolidCell(player, (x) => {
-      const edge = dx > 0 ? x * TILE - player.w / 2 : (x + 1) * TILE + player.w / 2;
-      resolved = dx > 0 ? Math.min(resolved, edge) : Math.max(resolved, edge);
-    });
-    player.x = resolved; player.vx = 0;
-  }
-
-  player.y += dy;
-  player.onGround = false;
-  if (!solid(player)) return;
-  let resolved = player.y;
-  eachSolidCell(player, (_x, y) => {
-    const edge = dy > 0 ? y * TILE : (y + 1) * TILE + player.h;
-    resolved = dy > 0 ? Math.min(resolved, edge) : Math.max(resolved, edge);
-  });
-  player.y = resolved;
-  player.onGround = dy > 0;
-  player.vy = 0;
+  // Sweep the bottom-center-anchored body as a top-left rect against the solid
+  // tiles with the engine's kinematic solver, then write the resolved position
+  // back and record the contacts (onGround / wall for the wall jump below).
+  const hit = map.moveAABB(rect(player), dx, dy);
+  player.x = hit.rect.x + player.w / 2;
+  player.y = hit.rect.y + player.h;
+  if (hit.left || hit.right) player.vx = 0;
+  if (hit.top || hit.bottom) player.vy = 0;
+  player.onGround = hit.bottom;
+  player.wall = hit.left ? -1 : hit.right ? 1 : 0; // side of a wall we're pressing
 }
 
 function pixelStar(ctx, x, y, size, color, alpha) {
@@ -243,12 +221,30 @@ Loop.run({
     player.vx = Math.max(-165, Math.min(165, player.vx));
     // A 96px first ledge needs a 140px jump arc (the -525 impulse). The impulse
     // is ours; the coyote-grace + input-buffer timing is the gate's.
-    if (jumpGate.update(player.onGround, input.pressed("jump"), stepMs)) {
+    const pressedJump = input.pressed("jump");
+    // Wall-cling only when airborne AND actively holding toward the wall, so a
+    // brush past a ledge never feels sticky — the classic wall-slide condition.
+    const intoWall =
+      (player.wall === -1 && input.down("left")) || (player.wall === 1 && input.down("right"));
+    const onWall = !player.onGround && intoWall;
+    if (jumpGate.update(player.onGround, pressedJump, stepMs)) {
       player.vy = -525;
       player.onGround = false;
       playSound("jump");
+    } else if (pressedJump && onWall) {
+      // Wall jump — composed straight from moveAABB's wall contact + a chosen
+      // impulse (up and away). No wall-jump helper: the engine reports the
+      // contact, the game decides the launch.
+      player.vy = -470;
+      player.vx = -player.wall * 235;
+      player.facing = -player.wall;
+      jumpGate.buffer.consume(); // don't let this press also fire a ground jump on landing
+      playSound("jump");
     }
     player.vy = Math.min(620, player.vy + 980 * dt);
+    // Wall slide: cling and drift down slowly while pressing a wall midair, so
+    // the wall jump has a window to trigger.
+    if (onWall && player.vy > 110) player.vy = 110;
     movePlayer(player.vx * dt, player.vy * dt);
     // The state machine picks the animation clip (auto-played via its bridge);
     // we just advance the active clip's timeline.
