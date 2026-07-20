@@ -56,16 +56,36 @@ interface CompSpec {
 }
 let compSpec: CompSpec | null = null;
 let masterComp: DynamicsCompressorNode | null = null;
+const masterFilters: FilterState[] = [];
 
-// Route the master gain to the destination — through the compressor/limiter if
-// one is configured. Called on master creation and whenever the compressor is
-// (re)configured, so it can be inserted after the graph already exists.
+// Route the master gain to the destination through any master filters and the
+// compressor/limiter: masterGain → [filters] → [compressor] → destination.
+// Called on master creation and whenever a filter/compressor is (re)configured,
+// so they can be inserted after the graph already exists.
 function wireMasterOut(ctx: AudioContext): void {
   if (!masterGain) return;
   try {
     masterGain.disconnect();
   } catch {
     /* not yet connected */
+  }
+  let node: AudioNode = masterGain;
+  for (const f of masterFilters) {
+    if (!f.node) {
+      f.node = ctx.createBiquadFilter();
+      f.node.type = f.type;
+      f.node.frequency.value = f.frequency;
+      f.node.Q.value = f.q;
+      f.node.gain.value = f.gain;
+    } else {
+      try {
+        f.node.disconnect();
+      } catch {
+        /* ok */
+      }
+    }
+    node.connect(f.node);
+    node = f.node;
   }
   if (compSpec) {
     if (!masterComp) masterComp = ctx.createDynamicsCompressor();
@@ -79,10 +99,10 @@ function wireMasterOut(ctx: AudioContext): void {
     } catch {
       /* ok */
     }
-    masterGain.connect(masterComp);
+    node.connect(masterComp);
     masterComp.connect(ctx.destination);
   } else {
-    masterGain.connect(ctx.destination);
+    node.connect(ctx.destination);
   }
 }
 
@@ -464,6 +484,31 @@ export const Mixer = {
       knee: opts.knee ?? 6,
     };
     if (masterGain && audioCtx) wireMasterOut(audioCtx);
+  },
+  /** Insert a dynamic biquad filter on the master bus (post-mix, before the
+   *  compressor/destination), so it filters EVERYTHING — every bus and effect
+   *  at once. Returns a handle to sweep it live (a master low-pass / EQ). */
+  masterFilter(type: BiquadFilterType, frequency = 1000, q = 1): Filter {
+    const state: FilterState = { type, frequency, q, gain: 0, node: null };
+    masterFilters.push(state);
+    if (masterGain && audioCtx) wireMasterOut(audioCtx);
+    return {
+      get node() {
+        return state.node;
+      },
+      frequency(hz, rampMs = 0) {
+        state.frequency = hz;
+        if (state.node) rampParam(state.node.frequency, hz, rampMs);
+      },
+      q(value, rampMs = 0) {
+        state.q = value;
+        if (state.node) rampParam(state.node.Q, value, rampMs);
+      },
+      gain(db, rampMs = 0) {
+        state.gain = db;
+        if (state.node) rampParam(state.node.gain, db, rampMs);
+      },
+    };
   },
   /** Momentarily duck a named bus by `amount` then restore — e.g. dip the
    *  music while a big SFX plays. Shorthand for `Mixer.bus(name).duck(...)`. */

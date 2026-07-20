@@ -149,6 +149,17 @@ describe("Audio.Mixer", () => {
     expect(connections.some((c) => c.toKind === "compressor")).toBe(true);
   });
 
+  it("inserts a master filter into the master out chain", () => {
+    const f = Mixer.masterFilter("lowpass", 500);
+    void Mixer.bus("chan6").input; // materialize the master path
+    const node = f.node as unknown as (MockNode & { type: string }) | null;
+    expect(node).not.toBeNull();
+    expect(node!.type).toBe("lowpass");
+    // The filter feeds onward (→ compressor/destination), so it carries the mix.
+    expect(connections.some((c) => c.from === node!.__id)).toBe(true);
+    f.frequency(800); // crash-safe sweep
+  });
+
   it("duck() is crash-safe and independent of channel volume", () => {
     const bus = Mixer.bus("chan5");
     bus.setVolume(0.7);

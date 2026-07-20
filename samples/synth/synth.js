@@ -147,10 +147,10 @@ let musicStarted = false;
 // the backing ("music" bus) to muffle it. Declaring these creates no
 // AudioContext — the graph materializes on the first note — so it is safe at
 // load. R toggles the reverb send; F sweeps the muffle filter live.
-// Reverb the instrument can send into, and a low-pass on the instrument (sfx)
-// bus for a sweepable tone/cutoff — both shape the notes you play.
+// Reverb the instrument sends into, and a MASTER low-pass (Cutoff) that filters
+// the whole mix — the played notes and the backing groove together.
 Audio.Mixer.reverb("hall", { seconds: 2.4, decay: 2.2, wet: 0.9 });
-const toneFilter = Audio.Mixer.bus("sfx").addFilter("lowpass", 20000);
+const toneFilter = Audio.Mixer.masterFilter("lowpass", 20000);
 // A limiter on the master glues the mix and keeps peaks from clipping when you
 // roll the keys and notes stack up.
 Audio.Mixer.compressor();
