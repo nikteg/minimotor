@@ -1,0 +1,126 @@
+// GUILD TRADER: RPG inventory drag/drop, stack merging, dialogue and loot recipes.
+import { Minimotor } from "minimotor";
+
+const { Goodies, Loop, UI, Pointer } = Minimotor;
+let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
+Minimotor.Stage.onResize((next) => (vp = next));
+
+const items = {
+  potion: { name: "POTION", color: "#ff6b6b", max: 5 },
+  bomb: { name: "BOMB", color: "#ffad3d", max: 3 },
+  rune: { name: "RUNE", color: "#b197fc", max: 2 },
+  sword: { name: "SWORD", color: "#9ad1d4", max: 1 },
+};
+const loot = [
+  { value: items.potion, weight: 5 },
+  { value: items.bomb, weight: 3 },
+  { value: items.rune, weight: 1 },
+];
+const encounterBag = Goodies.shuffleBag(["SLIME", "BAT", "MIMIC", "WISP"]);
+const slots = [
+  { item: items.potion, count: 3, max: 5 },
+  { item: items.bomb, count: 2, max: 3 },
+  null,
+  { item: items.sword, count: 1, max: 1 },
+  { item: items.rune, count: 1, max: 2 },
+  null,
+  null,
+  null,
+];
+let dialogue = true;
+let message = "Drag matching stacks together, or swap different items.";
+let encounter = "—";
+
+function addItem(item) {
+  let index = slots.findIndex((slot) => slot?.item === item && slot.count < slot.max);
+  if (index < 0) index = slots.indexOf(null);
+  if (index < 0) { message = "Inventory full."; return; }
+  if (slots[index]) slots[index].count++;
+  else slots[index] = { item, count: 1, max: item.max };
+  message = `Received ${item.name}.`;
+}
+
+function drawInventory(ctx, contentW) {
+  const slotW = (contentW - 24) / 4;
+  for (let row = 0; row < 2; row++) {
+    UI.row({ h: 48, gap: 8 }, (layout) => {
+      for (let column = 0; column < 4; column++) {
+        const i = row * 4 + column;
+        const rect = layout.next(slotW, 48);
+        ctx.fillStyle = "#182536"; ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+        ctx.strokeStyle = "#3a5568"; ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1);
+        const stack = slots[i];
+        if (stack) UI.dragSource({ id: `slot:${i}`, ...rect, payload: { index: i } });
+        const target = UI.dropTarget({ id: `slot:${i}`, ...rect });
+        if (target.canDrop) {
+          ctx.strokeStyle = "#4ecdc4"; ctx.lineWidth = 3; ctx.strokeRect(rect.x + 2, rect.y + 2, rect.w - 4, rect.h - 4);
+        }
+        if (target.dropped) {
+          const from = target.dropped.payload.index;
+          if (Goodies.transferStack(slots, from, i)) message = "Inventory reorganized.";
+        }
+        if (stack && UI.draggedItem()?.sourceId !== `slot:${i}`) {
+          const icon = Math.min(22, rect.h - 20);
+          ctx.fillStyle = stack.item.color; ctx.fillRect(rect.x + (rect.w - icon) / 2, rect.y + 5, icon, icon);
+          UI.text(ctx, stack.item.name, { x: rect.x + 3, y: rect.y + rect.h - 18, w: rect.w - 6, h: 14, size: 9, align: "center" });
+          UI.text(ctx, `×${stack.count}`, { x: rect.x + rect.w - 22, y: rect.y + 3, w: 18, h: 14, size: 9, align: "right" });
+        }
+      }
+    });
+  }
+}
+
+Loop.run({
+  update() {},
+  draw(ctx) {
+    ctx.fillStyle = "#101722"; ctx.fillRect(0, 0, vp.w, vp.h);
+    const frame = { x: Math.max(12, (vp.w - 640) / 2), y: 12, w: Math.min(640, vp.w - 24), h: 292 };
+    const half = (frame.w - 12) / 2;
+
+    // Callback containers are the layout tree: widgets flow through the
+    // ambient row/column cursor and still return clicks inline.
+    UI.col({ ...frame, gap: 12 }, () => {
+      UI.group({ h: 66, title: "GUILD TRADER", pad: 4 }, () => {
+        UI.text(ctx, "RPG recipes: typed drag/drop · stack transfer · weighted loot · shuffle bags", { h: 18, size: 11, padX: 8, color: "dim" });
+      });
+
+      UI.row({ h: 166, gap: 12 }, () => {
+        UI.group({ w: half, h: 166, title: "ADVENTURER INVENTORY", gap: 8 }, () => {
+          drawInventory(ctx, half - 16);
+        });
+        UI.group({ w: half, h: 166, title: "MARA'S COUNTER", gap: 7 }, () => {
+          UI.row({ h: 32, gap: 10 }, (actions) => {
+            if (UI.button(ctx, { at: actions, w: (half - 26) / 2, label: "ROLL LOOT" })) {
+              const item = Goodies.weightedPick(loot); if (item) addItem(item);
+            }
+            if (UI.button(ctx, { at: actions, w: (half - 26) / 2, label: "NEXT ENCOUNTER" })) encounter = encounterBag.next() ?? "—";
+          });
+          UI.text(ctx, `Next: ${encounter}`, { h: 20, align: "center", color: "accent" });
+          // Wrap instead of squeezing: the message is wider than the counter panel.
+          UI.text(ctx, message, { h: 44, align: "center", color: "dim", wrap: true, padX: 6 });
+        });
+      });
+
+      UI.row({ h: 36 }, () => {
+        UI.spacer((frame.w - 150) / 2);
+        if (UI.button(ctx, { w: 150, h: 36, label: "TALK TO MARA", variant: "primary" })) dialogue = true;
+      });
+    });
+
+    const drag = UI.draggedItem();
+    if (drag) {
+      const stack = slots[drag.payload.index];
+      if (stack) { ctx.save(); ctx.globalAlpha = 0.9; ctx.fillStyle = stack.item.color; ctx.fillRect(Pointer.x - 14, Pointer.y - 14, 28, 28); ctx.restore(); }
+    }
+
+    if (dialogue) {
+      const answer = UI.dialog(ctx, {
+        speaker: "MARA THE MERCHANT",
+        lines: ["Welcome to the guild. Need supplies for your next run?"],
+        choices: ["GIVE ME LOOT", "GOODBYE"],
+      });
+      if (answer === "GIVE ME LOOT") { const item = Goodies.weightedPick(loot); if (item) addItem(item); dialogue = false; }
+      if (answer === "GOODBYE") dialogue = false;
+    }
+  },
+});

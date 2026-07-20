@@ -794,8 +794,17 @@ export interface TextOptions {
   color?: string;
   /** Horizontal alignment within the slot. Default `"left"`. */
   align?: "left" | "center" | "right";
-  /** Clamp width (px) — the glyphs squeeze rather than spill. In a layout the
-   *  slot width is used automatically. */
+  /** Inset the text inside its slot, in px. `pad` sets both axes; `padX`/
+   *  `padY` override one. Handy for insetting a label from a panel edge. */
+  pad?: number;
+  padX?: number;
+  padY?: number;
+  /** Word-wrap to multiple lines within the available width instead of
+   *  squeezing one line to fit. The lines are stacked and vertically centered
+   *  in the slot — give the slot enough `h` for them (≈ `size + 6` per line). */
+  wrap?: boolean;
+  /** Clamp width (px) for a single line — the glyphs squeeze rather than
+   *  spill. In a layout the slot width is used automatically (unless `wrap`). */
   maxWidth?: number;
 }
 
@@ -803,6 +812,26 @@ function resolveColor(c: string | undefined): string {
   if (c === "dim") return theme.textDim;
   if (c === "accent") return theme.accent;
   return c ?? theme.text;
+}
+
+/** Greedy word-wrap `str` into lines no wider than `maxW` (font must be set
+ *  on `ctx`). A single word wider than `maxW` gets its own line (drawn clamped
+ *  by the caller). */
+function wrapLines(ctx: CanvasRenderingContext2D, str: string, maxW: number): string[] {
+  const words = str.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    const candidate = line ? `${line} ${word}` : word;
+    if (line && ctx.measureText(candidate).width > maxW) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = candidate;
+    }
+  }
+  if (line) lines.push(line);
+  return lines.length > 0 ? lines : [""];
 }
 
 /** Draw a line of themed text. Uses the theme font/size/color so a screen
@@ -825,14 +854,32 @@ export function text(
   const natural = Math.ceil(ctx.measureText(str).width);
   const lineH = (opts.size ?? theme.fontSize) + 6;
   const rect = place(opts, natural, opts.h ?? lineH);
+
+  // Inset within the slot (pad shorthand + per-axis overrides).
+  const padX = opts.padX ?? opts.pad ?? 0;
+  const padY = opts.padY ?? opts.pad ?? 0;
+  const bx = rect.x + padX;
+  const bw = rect.w - padX * 2;
+  const by = rect.y + padY;
+  const bh = rect.h - padY * 2;
+
   const align = opts.align ?? "left";
   ctx.fillStyle = resolveColor(opts.color);
   ctx.textAlign = align;
-  const tx =
-    align === "center" ? rect.x + rect.w / 2 : align === "right" ? rect.x + rect.w : rect.x;
-  const maxW =
-    opts.maxWidth ?? (opts.w !== undefined || currentLayout() || opts.at ? rect.w : undefined);
-  centeredText(ctx, str, tx, rect.y + rect.h / 2, maxW);
+  const tx = align === "center" ? bx + bw / 2 : align === "right" ? bx + bw : bx;
+  // A known width constrains the text: it flows in a layout, or w/maxWidth was
+  // given. `wrap` breaks into lines within it; otherwise a single line clamps.
+  const constrained =
+    opts.w !== undefined || opts.maxWidth !== undefined || !!currentLayout() || !!opts.at;
+  const maxW = opts.maxWidth ?? (constrained ? bw : undefined);
+
+  if (opts.wrap && maxW !== undefined) {
+    const lines = wrapLines(ctx, str, maxW);
+    const blockTop = by + (bh - lines.length * lineH) / 2;
+    lines.forEach((line, i) => centeredText(ctx, line, tx, blockTop + i * lineH + lineH / 2, maxW));
+  } else {
+    centeredText(ctx, str, tx, by + bh / 2, maxW);
+  }
   ctx.restore();
 }
 

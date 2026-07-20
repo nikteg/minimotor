@@ -13,6 +13,7 @@ import {
   row,
   setTheme,
   stack,
+  text,
   textWidth,
 } from "./ui.js";
 
@@ -157,6 +158,32 @@ describe("UI implicit context", () => {
     bar(0, 0, 100, 8, 0.5); // ctx-less form draws to the begun ctx
     expect(calls.boxes.length).toBe(1); // track box
     expect(calls.fillRect.length).toBe(1); // fill
+    _reset();
+  });
+});
+
+describe("UI text", () => {
+  const textCtx = () => {
+    const { ctx, calls } = mockCtx();
+    (ctx as { measureText?: unknown }).measureText = (t: string) => ({ width: t.length * 10 });
+    begin(ctx);
+    return { calls };
+  };
+
+  it("padX insets a left-aligned label from its slot edge", () => {
+    const { calls } = textCtx();
+    text("x", { x: 10, y: 0, w: 100, h: 20, padX: 8 });
+    expect(calls.fillText[0][1]).toBe(18); // rect.x(10) + padX(8)
+    _reset();
+  });
+
+  it("wrap breaks a long string into stacked lines within the width", () => {
+    const { calls } = textCtx();
+    // words are 20px each; "aa bb" = 50 ≤ 55, "aa bb cc" = 80 > 55 → wraps.
+    text("aa bb cc", { x: 0, y: 0, w: 55, h: 60, wrap: true });
+    expect(calls.fillText.map((f) => f[0])).toEqual(["aa bb", "cc"]);
+    // the two lines have different y (stacked, not overprinted)
+    expect(calls.fillText[0][2]).not.toBe(calls.fillText[1][2]);
     _reset();
   });
 });
