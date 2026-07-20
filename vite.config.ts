@@ -53,7 +53,14 @@ function sampleSockets(): Plugin {
 export default defineConfig({
   root: here("./samples"),
   plugins: [sampleSockets()],
-  resolve: { alias: { minimotor: here("./build/index.js") } },
+  resolve: {
+    // Most-specific first: the plain "minimotor" entry must not swallow the
+    // "/physics2d" subpath (string aliases also match "<find>/…" prefixes).
+    alias: [
+      { find: "minimotor/physics2d", replacement: here("./build/physics2d.js") },
+      { find: "minimotor", replacement: here("./build/index.js") },
+    ],
+  },
   // Don't pre-bundle the engine so edits to its build output show up without
   // clearing Vite's dep cache.
   optimizeDeps: { exclude: ["minimotor"] },
@@ -74,6 +81,7 @@ export default defineConfig({
         snake: here("./samples/snake/index.html"),
         platformer: here("./samples/platformer/index.html"),
         particles: here("./samples/particles/index.html"),
+        physics: here("./samples/physics/index.html"),
         tiles: here("./samples/tiles/index.html"),
         juice: here("./samples/juice/index.html"),
         swept: here("./samples/swept/index.html"),

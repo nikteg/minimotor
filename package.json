@@ -8,6 +8,10 @@
     ".": {
       "types": "./build/index.d.ts",
       "default": "./build/index.js"
+    },
+    "./physics2d": {
+      "types": "./build/physics2d.d.ts",
+      "default": "./build/physics2d.js"
     }
   },
   "scripts": {
@@ -27,6 +31,9 @@
     "verify:lint": "oxlint",
     "verify:format": "oxfmt --check .",
     "verify": "pnpm run --parallel \"/^verify:.+$/\""
+  },
+  "dependencies": {
+    "planck": "^1.5.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.50.0",
