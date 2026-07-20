@@ -231,6 +231,10 @@ hoppspelet) as proof it actually simplifies code — the discipline used so far.
    pause-safe via `Loop.onStep`), `Signals` synchronous bus, `Mathf` easings.
    Shipped with tests; hoppspelet's death restart-lock moved off wall-clock onto
    `Clock.after` as the proof.
+4b. ✅ **L3 battle-test** — migrated the **breakout** sample fully onto Scenes +
+   ECS (blocks as entities queried for collision & render; play + pushed
+   game-over overlay) before extending. The API carried a whole game with **no
+   engine changes** — validating the L3 surface.
 5. **Assets + Anim** — a new image-based sample (first game that loads art).
 6. **Tiles** — a tilemap sample.
 7. **Flagship** — migrate hoppspelet fully onto Scenes + ECS.
