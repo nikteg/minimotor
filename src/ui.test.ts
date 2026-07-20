@@ -1,6 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import { pointInRect } from "./collision.js";
-import { _reset, bar, buttonState, createFloats, defaultTheme, getTheme, setTheme } from "./ui.js";
+import {
+  _reset,
+  bar,
+  buttonState,
+  createFloats,
+  defaultTheme,
+  getTheme,
+  setTheme,
+  stack,
+} from "./ui.js";
 
 const mockCtx = () => {
   const calls: {
@@ -101,6 +110,31 @@ describe("UI theme", () => {
     expect(getTheme().text).toBe("#0f0");
     _reset();
     expect(getTheme()).toEqual(defaultTheme);
+  });
+});
+
+describe("UI stack", () => {
+  it("hands out row slots with gaps and tracks last/extent", () => {
+    const s = stack({ x: 10, y: 20, gap: 5, h: 30 });
+    expect(s.next(100)).toEqual({ x: 10, y: 20, w: 100, h: 30 });
+    expect(s.next(50, 20)).toEqual({ x: 115, y: 20, w: 50, h: 20 });
+    expect(s.last).toEqual({ x: 115, y: 20, w: 50, h: 20 });
+    expect(s.extent).toEqual({ x: 10, y: 20, w: 155, h: 30 });
+    s.gap(10);
+    expect(s.next(10).x).toBe(180);
+  });
+
+  it("align end grows backwards from the far edge", () => {
+    const s = stack({ x: 300, y: 0, gap: 5, align: "end" });
+    expect(s.next(100)).toEqual({ x: 200, y: 0, w: 100, h: 30 });
+    expect(s.next(50)).toEqual({ x: 145, y: 0, w: 50, h: 30 });
+  });
+
+  it("columns advance vertically with the cross width", () => {
+    const s = stack({ x: 0, y: 0, dir: "col", gap: 4, w: 80 });
+    expect(s.next(undefined, 30)).toEqual({ x: 0, y: 0, w: 80, h: 30 });
+    expect(s.next(undefined, 20).y).toBe(34);
+    expect(s.extent).toEqual({ x: 0, y: 0, w: 80, h: 54 });
   });
 });
 

@@ -85,19 +85,115 @@ const uiFont = (size = theme.fontSize, bold = false) =>
   `${bold ? "bold " : ""}${size}px ${theme.font}`;
 
 /** Vertically centered text using real glyph metrics — the canvas "middle"
- *  baseline sits visibly high for most fonts. Honors the current textAlign. */
-function centeredText(ctx: CanvasRenderingContext2D, text: string, x: number, cy: number): void {
+ *  baseline sits visibly high for most fonts. Honors the current textAlign.
+ *  `maxW` clamps rendering (canvas squeezes the glyphs) so a label can never
+ *  spill out of its widget. */
+function centeredText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  cy: number,
+  maxW?: number,
+): void {
   const m = ctx.measureText(text);
   const asc = m.actualBoundingBoxAscent ?? 0;
   const desc = m.actualBoundingBoxDescent ?? 0;
   if (asc || desc) {
     ctx.textBaseline = "alphabetic";
-    ctx.fillText(text, x, cy + (asc - desc) / 2);
+    ctx.fillText(text, x, cy + (asc - desc) / 2, maxW);
   } else {
     // Metrics unavailable (mocked ctx) — middle baseline is the best we have.
     ctx.textBaseline = "middle";
-    ctx.fillText(text, x, cy);
+    ctx.fillText(text, x, cy, maxW);
   }
+}
+
+// ---------- Stack (layout) ----------
+
+/** Options for `stack()` — a one-axis layout cursor. */
+export interface StackOptions {
+  /** Starting corner. With `align: "end"` this is the FAR edge (right edge
+   *  for rows, bottom for columns) and slots grow backwards from it. */
+  x: number;
+  y: number;
+  /** Main axis. Default `"row"`. */
+  dir?: "row" | "col";
+  /** Gap between slots in px. Default 8. */
+  gap?: number;
+  /** Default cross-axis size for `next()`: slot height for rows. Default 30. */
+  h?: number;
+  /** Default cross-axis size for columns: slot width. Default 120. */
+  w?: number;
+  /** `"end"` lays slots out backwards — right-aligned toolbars, bottom-up
+   *  columns. Default `"start"`. */
+  align?: "start" | "end";
+}
+
+/** A layout cursor from `stack()`: hands out rects along one axis. */
+export interface Stack {
+  /** Reserve the next slot and advance. For rows pass the width (height
+   *  defaults from the stack); for columns pass the height as the second
+   *  argument (width defaults from the stack). */
+  next(w?: number, h?: number): { x: number; y: number; w: number; h: number };
+  /** Extra spacing before the next slot. */
+  gap(px: number): void;
+  /** The most recently handed-out slot — anchor popovers/spinners to it. */
+  readonly last: { x: number; y: number; w: number; h: number } | null;
+  /** Bounding box of everything placed so far. */
+  readonly extent: { x: number; y: number; w: number; h: number };
+}
+
+/** Not flexbox — a cursor. Lay widgets along a row or column with a gap,
+ *  letting them auto-size to their labels (`at` option on button/toggle/
+ *  tabs), and read back `extent` to size backdrops:
+ *
+ *    const bar = UI.stack({ x: 12, y: 12, gap: 10 });          // a row
+ *    if (UI.button(ctx, { at: bar, label: "SAVE" })) save();   // auto width
+ *    on = UI.toggle(ctx, { at: bar, label: "Autosave", on });
+ *
+ *    const right = UI.stack({ x: vp.w - 12, y: 12, align: "end" }); // ← grows left */
+export function stack(opts: StackOptions): Stack {
+  const dir = opts.dir ?? "row";
+  const gapPx = opts.gap ?? 8;
+  const back = opts.align === "end";
+  let cx = opts.x;
+  let cy = opts.y;
+  let last: { x: number; y: number; w: number; h: number } | null = null;
+  let ext: { x: number; y: number; w: number; h: number } | null = null;
+
+  return {
+    next(w, h) {
+      const W = w ?? (dir === "col" ? (opts.w ?? 120) : 100);
+      const H = h ?? (dir === "row" ? (opts.h ?? 30) : 30);
+      const rect =
+        dir === "row"
+          ? { x: back ? cx - W : cx, y: cy, w: W, h: H }
+          : { x: cx, y: back ? cy - H : cy, w: W, h: H };
+      if (dir === "row") cx += (back ? -1 : 1) * (W + gapPx);
+      else cy += (back ? -1 : 1) * (H + gapPx);
+      last = rect;
+      if (!ext) ext = { ...rect };
+      else {
+        const x2 = Math.max(ext.x + ext.w, rect.x + rect.w);
+        const y2 = Math.max(ext.y + ext.h, rect.y + rect.h);
+        ext.x = Math.min(ext.x, rect.x);
+        ext.y = Math.min(ext.y, rect.y);
+        ext.w = x2 - ext.x;
+        ext.h = y2 - ext.y;
+      }
+      return rect;
+    },
+    gap(px) {
+      if (dir === "row") cx += (back ? -1 : 1) * px;
+      else cy += (back ? -1 : 1) * px;
+    },
+    get last() {
+      return last;
+    },
+    get extent() {
+      return ext ?? { x: opts.x, y: opts.y, w: 0, h: 0 };
+    },
+  };
 }
 
 // ---------- Shared input (modal capture + hover cursor) ----------
@@ -234,13 +330,18 @@ export interface ButtonStyle {
   bgActive?: string;
 }
 
-/** A button's geometry + label. */
+/** A button's geometry + label. Position it yourself (`x`/`y` required,
+ *  `w` optional — auto-sized to the label when omitted), or hand it a
+ *  layout `Stack` via `at` and skip the geometry entirely. */
 export interface ButtonOptions extends ButtonStyle {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
+  x?: number;
+  y?: number;
+  /** Omit to auto-size to the label (+ padding). */
+  w?: number;
+  h?: number;
   label: string;
+  /** Place in this layout stack — supplies x/y (and h); auto width. */
+  at?: Stack;
   /** Grayed out and unclickable. */
   disabled?: boolean;
   /** Shown near the pointer after hovering a moment (see `drawTips`). Works
@@ -267,28 +368,40 @@ export function buttonState(
  *  Hit-testing uses the polled `Pointer` in canvas coordinates — draw the
  *  button untransformed (outside camera/letterbox transforms). */
 export function button(ctx: CanvasRenderingContext2D, opts: ButtonOptions): boolean {
+  ctx.save();
+  ctx.font = opts.font ?? uiFont(theme.fontSize + 2, true);
+  // Auto width: the label plus comfortable padding.
+  const w = opts.w ?? Math.ceil(ctx.measureText(opts.label).width) + 28;
+  const rect = opts.at
+    ? opts.at.next(w, opts.h)
+    : { x: opts.x ?? 0, y: opts.y ?? 0, w, h: opts.h ?? 30 };
+
   const p = uiPointer();
-  const over = pointInRect(p.x, p.y, opts);
+  const over = pointInRect(p.x, p.y, rect);
   if (over && opts.tooltip) tooltip(opts.tooltip);
   const { hover, active, clicked } = opts.disabled
     ? { hover: false, active: false, clicked: false }
-    : buttonState(opts, p);
+    : buttonState(rect, p);
   hoverCursor(hover);
 
-  ctx.save();
   ctx.fillStyle = active
     ? (opts.bgActive ?? theme.bgActive)
     : hover
       ? (opts.bgHover ?? theme.bgHover)
       : (opts.bg ?? theme.bg);
-  ctx.fillRect(opts.x, opts.y, opts.w, opts.h);
+  ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
   ctx.strokeStyle = hover ? theme.accent : theme.border;
   ctx.lineWidth = 2;
-  ctx.strokeRect(opts.x + 1, opts.y + 1, opts.w - 2, opts.h - 2);
+  ctx.strokeRect(rect.x + 1, rect.y + 1, rect.w - 2, rect.h - 2);
   ctx.fillStyle = opts.disabled ? theme.textDisabled : (opts.color ?? theme.text);
-  ctx.font = opts.font ?? uiFont(theme.fontSize + 2, true);
   ctx.textAlign = "center";
-  centeredText(ctx, opts.label, opts.x + opts.w / 2, opts.y + opts.h / 2 + (active ? 1 : 0));
+  centeredText(
+    ctx,
+    opts.label,
+    rect.x + rect.w / 2,
+    rect.y + rect.h / 2 + (active ? 1 : 0),
+    rect.w - 12, // labels squeeze rather than spill
+  );
   ctx.restore();
 
   return clicked;
@@ -323,7 +436,7 @@ export function panel(ctx: CanvasRenderingContext2D, opts: PanelOptions): void {
     ctx.fillStyle = opts.titleColor ?? theme.accent;
     ctx.font = opts.font ?? uiFont(theme.fontSize + 1, true);
     ctx.textAlign = "left";
-    centeredText(ctx, opts.title, opts.x + 12, opts.y + 17);
+    centeredText(ctx, opts.title, opts.x + 12, opts.y + 17, opts.w - 24);
   }
   ctx.restore();
 }
@@ -332,11 +445,13 @@ export function panel(ctx: CanvasRenderingContext2D, opts: PanelOptions): void {
 
 /** A labeled checkbox. */
 export interface ToggleOptions {
-  x: number;
-  y: number;
+  x?: number;
+  y?: number;
   label: string;
   /** Current value — pass your state in, assign the return value back. */
   on: boolean;
+  /** Place in this layout stack — supplies x/y; width is the box + label. */
+  at?: Stack;
   size?: number;
   font?: string;
   color?: string;
@@ -352,25 +467,33 @@ export function toggle(ctx: CanvasRenderingContext2D, opts: ToggleOptions): bool
   ctx.save();
   ctx.font = opts.font ?? uiFont();
   const labelW = ctx.measureText(opts.label).width;
-  // Hit region spans box + label, so the text is clickable too.
-  const rect = { x: opts.x, y: opts.y, w: size + 8 + labelW, h: size };
+  const w = size + 8 + Math.ceil(labelW);
+  // Hit region spans box + label, so the text is clickable too. In a stack
+  // the slot is vertically centered on the cross axis.
+  let rect;
+  if (opts.at) {
+    const slot = opts.at.next(w);
+    rect = { x: slot.x, y: slot.y + (slot.h - size) / 2, w, h: size };
+  } else {
+    rect = { x: opts.x ?? 0, y: opts.y ?? 0, w, h: size };
+  }
   const { hover, clicked } = buttonState(rect, uiPointer());
   hoverCursor(hover);
   if (hover && opts.tooltip) tooltip(opts.tooltip);
   const on = clicked ? !opts.on : opts.on;
 
   ctx.fillStyle = theme.bgActive;
-  ctx.fillRect(opts.x, opts.y, size, size);
+  ctx.fillRect(rect.x, rect.y, size, size);
   ctx.strokeStyle = hover ? theme.accent : theme.border;
   ctx.lineWidth = 2;
-  ctx.strokeRect(opts.x + 1, opts.y + 1, size - 2, size - 2);
+  ctx.strokeRect(rect.x + 1, rect.y + 1, size - 2, size - 2);
   if (on) {
     ctx.fillStyle = theme.accent;
-    ctx.fillRect(opts.x + 4, opts.y + 4, size - 8, size - 8);
+    ctx.fillRect(rect.x + 4, rect.y + 4, size - 8, size - 8);
   }
   ctx.fillStyle = opts.color ?? theme.text;
   ctx.textAlign = "left";
-  centeredText(ctx, opts.label, opts.x + size + 8, opts.y + size / 2);
+  centeredText(ctx, opts.label, rect.x + size + 8, rect.y + size / 2);
   ctx.restore();
   return on;
 }
@@ -379,42 +502,52 @@ export function toggle(ctx: CanvasRenderingContext2D, opts: ToggleOptions): bool
 
 /** A horizontal tab strip. */
 export interface TabsOptions {
-  x: number;
-  y: number;
-  /** Total width, split equally between the tabs. */
-  w: number;
+  x?: number;
+  y?: number;
+  /** Total width, split equally between the tabs. Omit to auto-size every
+   *  cell to the widest label. */
+  w?: number;
   h?: number;
   items: string[];
   /** Current tab index — pass your state in, assign the return value back. */
   active: number;
+  /** Place in this layout stack — supplies x/y (and h); auto width. */
+  at?: Stack;
   font?: string;
 }
 
 /** Draw a tab strip; returns the (possibly changed) active index:
  *
- *    tab = UI.tabs(ctx, { x, y, w: 320, items: ["All", "Coop", "PvP"], active: tab }); */
+ *    tab = UI.tabs(ctx, { x, y, items: ["All", "Coop", "PvP"], active: tab }); */
 export function tabs(ctx: CanvasRenderingContext2D, opts: TabsOptions): number {
-  const h = opts.h ?? 30;
-  const cellW = opts.w / opts.items.length;
-  const p = uiPointer();
-  let active = opts.active;
   ctx.save();
   ctx.font = opts.font ?? uiFont(theme.fontSize, true);
+  // Auto width: equal cells sized to the widest label.
+  const w =
+    opts.w ??
+    (Math.ceil(Math.max(...opts.items.map((t) => ctx.measureText(t).width))) + 26) *
+      opts.items.length;
+  const rect = opts.at
+    ? opts.at.next(w, opts.h)
+    : { x: opts.x ?? 0, y: opts.y ?? 0, w, h: opts.h ?? 30 };
+  const cellW = rect.w / opts.items.length;
+  const p = uiPointer();
+  let active = opts.active;
   ctx.textAlign = "center";
   opts.items.forEach((label, i) => {
-    const x = opts.x + i * cellW;
-    const { hover, clicked } = buttonState({ x, y: opts.y, w: cellW, h }, p);
+    const x = rect.x + i * cellW;
+    const { hover, clicked } = buttonState({ x, y: rect.y, w: cellW, h: rect.h }, p);
     hoverCursor(hover);
     if (clicked) active = i;
     const isActive = i === active;
     ctx.fillStyle = isActive ? theme.bg : hover ? theme.bgHover : theme.bgActive;
-    ctx.fillRect(x, opts.y, cellW - 2, h);
+    ctx.fillRect(x, rect.y, cellW - 2, rect.h);
     if (isActive) {
       ctx.fillStyle = theme.accent;
-      ctx.fillRect(x, opts.y + h - 3, cellW - 2, 3);
+      ctx.fillRect(x, rect.y + rect.h - 3, cellW - 2, 3);
     }
     ctx.fillStyle = isActive ? theme.text : theme.textDim;
-    centeredText(ctx, label, x + cellW / 2, opts.y + h / 2);
+    centeredText(ctx, label, x + cellW / 2, rect.y + rect.h / 2, cellW - 10);
   });
   ctx.restore();
   return active;

@@ -132,6 +132,8 @@ export type {
   ScrollbarOptions,
   SliderOptions,
   SpinnerOptions,
+  Stack,
+  StackOptions,
   TabsOptions,
   Theme,
   ToggleOptions,

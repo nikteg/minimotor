@@ -134,26 +134,26 @@ Minimotor.Loop.run({
     const L = layout();
     UI.panel(ctx, { x: L.x, y: L.y, w: L.w, h: L.h, title: "SERVER BROWSER" });
 
-    // ---- control bar: tabs + filters popover trigger + theme + refresh ----
-    const tabsW = Math.min(300, L.w - 320);
-    tab = UI.tabs(ctx, { x: L.x + 12, y: L.y + 42, w: tabsW, items: ["All", ...MODES], active: tab });
+    // ---- control bar: two stacks — one growing right, one growing left.
+    // Everything auto-sizes to its label, so no theme/font can overflow it.
+    const barL = UI.stack({ x: L.x + 12, y: L.y + 42, gap: 10, h: 30 });
+    tab = UI.tabs(ctx, { at: barL, items: ["All", ...MODES], active: tab });
     const nFilters = (hideFull ? 1 : 0) + (hideEmpty ? 1 : 0) + (maxPing < 250 ? 1 : 0);
-    const filterBtn = { x: L.x + tabsW + 22, y: L.y + 42, w: 110, h: 30 };
     if (
       UI.button(ctx, {
-        ...filterBtn,
+        at: barL,
         label: `FILTERS${nFilters ? ` (${nFilters})` : ""}`,
         tooltip: "Hide full/empty servers, cap the ping",
       })
     ) {
       filtersOpen = !filtersOpen;
     }
+    const filterBtn = barL.last; // the popover anchors under this
+
+    const barR = UI.stack({ x: L.x + L.w - 12, y: L.y + 42, gap: 10, h: 30, align: "end" });
     if (
       UI.button(ctx, {
-        x: L.x + L.w - 116,
-        y: L.y + 42,
-        w: 104,
-        h: 30,
+        at: barR,
         label: refreshing ? "…" : "REFRESH",
         disabled: refreshing,
         tooltip: "Re-query the master server (R)",
@@ -161,21 +161,12 @@ Minimotor.Loop.run({
     ) {
       refresh();
     }
-    // Busy arc while the mock request is in flight.
-    if (refreshing) UI.spinner(ctx, L.x + L.w - 134, L.y + 57);
-    if (
-      UI.button(ctx, {
-        x: L.x + L.w - 196,
-        y: L.y + 42,
-        w: 70,
-        h: 30,
-        label: "THEME",
-        tooltip: "Swap the whole UI kit's theme",
-      })
-    ) {
+    if (UI.button(ctx, { at: barR, label: "THEME", tooltip: "Swap the whole UI kit's theme" })) {
       altTheme = !altTheme;
       UI.setTheme(altTheme ? AMBER : {});
     }
+    // Busy arc while the mock request is in flight, left of the buttons.
+    if (refreshing) UI.spinner(ctx, barR.last.x - 18, L.y + 57);
 
     // ---- column headers (click to sort) ----
     const list = visibleServers();
@@ -320,25 +311,27 @@ Minimotor.Loop.run({
 
     // ---- join confirmation: a modal blocks everything behind it ----
     if (confirming) {
-      const r = UI.modal(ctx, { w: 380, h: 150, title: "JOIN SERVER" });
+      const info = `${confirming.mode} · ${confirming.region} · ${confirming.players}/${confirming.max} players · ${confirming.ping}ms`;
+      // Size the dialog to its content — no fixed width to overflow.
+      ctx.font = "13px monospace";
+      const mw = Math.max(
+        340,
+        Math.ceil(Math.max(ctx.measureText(info).width, ctx.measureText(confirming.name).width)) +
+          32,
+      );
+      const r = UI.modal(ctx, { w: mw, h: 150, title: "JOIN SERVER" });
       ctx.fillStyle = "#e8f0f4";
       ctx.font = "13px monospace";
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
       ctx.fillText(`${confirming.name}`, r.x + 16, r.y + 56);
       ctx.fillStyle = "#7d8894";
-      ctx.fillText(
-        `${confirming.mode} · ${confirming.region} · ${confirming.players}/${confirming.max} players · ${confirming.ping}ms`,
-        r.x + 16,
-        r.y + 78,
-      );
-      if (UI.button(ctx, { x: r.x + r.w - 208, y: r.y + r.h - 46, w: 96, h: 34, label: "JOIN" })) {
+      ctx.fillText(info, r.x + 16, r.y + 78);
+      // Dialog buttons: a right-aligned stack in the footer.
+      const btns = UI.stack({ x: r.x + r.w - 12, y: r.y + r.h - 46, gap: 8, h: 34, align: "end" });
+      if (UI.button(ctx, { at: btns, label: "CANCEL" })) confirming = null;
+      if (UI.button(ctx, { at: btns, label: "JOIN" })) {
         join(confirming);
-        confirming = null;
-      }
-      if (
-        UI.button(ctx, { x: r.x + r.w - 104, y: r.y + r.h - 46, w: 92, h: 34, label: "CANCEL" })
-      ) {
         confirming = null;
       }
     }
