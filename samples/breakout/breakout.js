@@ -9,7 +9,7 @@ import { Minimotor } from "minimotor";
 import { drawGameOver } from "../shared/overlays.js";
 
 const vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
-const { Scenes, Keys, Draw, ECS, Collision, Mathf } = Minimotor;
+const { Scenes, Keys, Draw, ECS, Collision, Mathf, Camera } = Minimotor;
 
 // Fixed game dimensions — scaled to fit the viewport, keeping aspect ratio.
 const GW = 400;
@@ -134,6 +134,7 @@ Scenes.define("play", {
       const dy = ball.y - closestY;
       if (dx * dx + dy * dy < BALL_R * BALL_R) {
         world.despawn(e);
+        Camera.shake(3, 120); // a little kick per broken block
         score += (ROWS - b.row) * 10;
         if (Math.abs(dx) > Math.abs(dy)) ball.vx = -ball.vx;
         else ball.vy = -ball.vy;
@@ -146,6 +147,7 @@ Scenes.define("play", {
     // Ball lost
     if (ball.y > GH) {
       lives--;
+      Camera.shake(9, 350); // losing a life hits harder
       if (lives <= 0) {
         best = Math.max(best, score);
         Minimotor.Storage.save("breakout_best", best);
@@ -179,6 +181,8 @@ Scenes.define("play", {
     ctx.save();
     ctx.translate(ox, oy);
     ctx.scale(scale, scale);
+    // Shake the playfield only — the letterbox backdrop stays put.
+    ctx.translate(Camera.shakeX(), Camera.shakeY());
 
     // Blocks (render straight from the ECS query)
     for (const [, b] of world.query(Block)) {

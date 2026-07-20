@@ -10,7 +10,12 @@
 // RIGHT is drawn only from bytes that traveled peer→peer over the channel.
 import { Minimotor } from "minimotor";
 
-const vp = Minimotor.Stage.init("game");
+// Host-side network meter, shown in the Perf HUD (top-right): message and byte
+// rates for the cursor stream going out and the acks coming back.
+const meter = Minimotor.Perf.createNetMeter();
+const vp = Minimotor.Stage.init("game", {
+  plugins: [Minimotor.Perf.plugin({ net: meter })],
+});
 const { Net, Pointer, Draw, Loop } = Minimotor;
 
 const dec = new TextDecoder();
@@ -41,6 +46,7 @@ peer.transport.onMessage = (bytes) => {
 you.transport.onMessage = (bytes) => {
   JSON.parse(dec.decode(bytes)); // ack
   recvByYou++;
+  meter.recv(bytes.length);
 };
 
 you.connect(); // create the offer → loopback → answer → channel opens
@@ -55,6 +61,7 @@ Loop.run({
     if (you.transport.state === "connected") {
       you.transport.sendJson(localN);
       sent++;
+      meter.sent(JSON.stringify(localN).length);
     }
   },
 
