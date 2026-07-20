@@ -2,7 +2,7 @@
 // Focus: Fullscreen, Game.letterbox, Goodies torus helpers, Input and gamepad.
 // Controls: left/right rotate, up thrusts, Space fires, H hyperspace.
 import { Minimotor } from "minimotor";
-import * as Sfx from "../shared/sfx.js";
+import * as Sfx from "../../shared/src/sfx.js";
 
 Minimotor.Fullscreen.applyFullscreen();
 let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });

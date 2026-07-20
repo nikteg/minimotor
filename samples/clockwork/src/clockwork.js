@@ -1,7 +1,7 @@
 // CLOCKWORK: a tiny arcade garden where everything is scheduled, animated and
 // decoupled by engine services. Focus: Clock, Tween and Signals.
 import { Minimotor } from "minimotor";
-import * as Sfx from "../shared/sfx.js";
+import * as Sfx from "../../shared/src/sfx.js";
 
 let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 Minimotor.Stage.onResize((next) => (vp = next));

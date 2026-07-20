@@ -1,7 +1,7 @@
 // ASSET QUEST: a tiny playable archive loaded from a manifest at runtime.
 // Focus: Assets.load/progress/json/image and Anim.sheet, with plain JSON level data.
 import { Minimotor } from "minimotor";
-import * as Sfx from "../shared/sfx.js";
+import * as Sfx from "../../shared/src/sfx.js";
 
 let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 Minimotor.Stage.onResize((next) => (vp = next));
@@ -37,7 +37,7 @@ function makeHeroSheet() {
 }
 
 // JSON and image are loaded in parallel; the loading screen itself uses no DOM UI.
-Assets.load({ level: new URL("./level.json", import.meta.url).href, icon: new URL("./icon.png", import.meta.url).href }, (done, total) => { progress = done / total; })
+Assets.load({ level: new URL("../level.json", import.meta.url).href, icon: new URL("../icon.png", import.meta.url).href }, (done, total) => { progress = done / total; })
   .then(() => {
     level = Assets.json("level");
     seal = Assets.image("icon");

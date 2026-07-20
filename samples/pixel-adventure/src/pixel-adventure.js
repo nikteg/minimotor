@@ -7,7 +7,7 @@ import { Minimotor } from "minimotor";
 const GAME_W = 480, GAME_H = 270, TILE = 48;
 let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 Minimotor.Stage.onResize((next) => (vp = next));
-const { Assets, Anim, Fsm, Timers, Tiles, Camera, Input, Keys, Draw, Loop, UI, Particles, Sprites, Game } =
+const { Assets, Anim, Fsm, Timers, Tiles, Camera, Input, Keys, Draw, Loop, UI, Particles, Sprites, Game, Audio } =
   Minimotor;
 const input = Input.actions({
   left: ["ArrowLeft", "KeyA"], right: ["ArrowRight", "KeyD"], jump: ["ArrowUp", "KeyW", "Space"],
@@ -19,20 +19,104 @@ const jumpGate = Timers.jumpGate({ coyoteMs: 90, bufferMs: 120 });
 
 let progress = 0, ready = false, failed = "", level, map, cam, terrain, backdrop, skyLayer, terrainLayer, playerAnim, enemyAnim, fruitAnim, goalAnim;
 let player, playerSm, enemies = [], coins = [], goal, lives = 3, state = "loading", elapsed = 0;
-const sounds = {};
 
-function loadSound(name) {
-  const sound = new globalThis.Audio(new URL(`./assets/${name}.wav`, import.meta.url).href);
-  sound.preload = "auto";
-  sound.volume = name === "explosion" ? 0.25 : 0.42;
-  sounds[name] = sound;
+// ---------------------------------------------------------------------------
+// Sound — synthesized SFX routed through the engine mixer, replacing the old
+// WAV samples. Everything plays on the built-in "sfx" bus (Audio.playSfx),
+// which we glue with a master compressor and feed a touch of reverb for air.
+// Each preset layers a pitched oscillator with a filtered noise transient so
+// hits read clearly and never clip when several stack.
+// ---------------------------------------------------------------------------
+let mixerReady = false;
+function setupMixer() {
+  if (mixerReady) return;
+  mixerReady = true;
+  Audio.Mixer.compressor({ threshold: -14, ratio: 8 }); // stop stacked SFX clipping
+  Audio.Mixer.bus("sfx").setVolume(0.8);
+  Audio.Mixer.reverb("air", { seconds: 0.6, decay: 2.2, wet: 0.3 });
+  Audio.Mixer.bus("sfx").send("air", 0.03); // just a hair of air, not a wash
 }
-function playSound(name) {
-  const sound = sounds[name];
-  if (!sound) return;
-  sound.currentTime = 0;
-  sound.play().catch(() => {}); // browsers require the first game input gesture
+function sfx(build) {
+  setupMixer();
+  Audio.playSfx(build);
 }
+function tone(ctx, out, now, { type = "sine", f0, f1, dur, gain, delay = 0 }) {
+  const osc = ctx.createOscillator();
+  const g = ctx.createGain();
+  const t = now + delay;
+  osc.type = type;
+  osc.frequency.setValueAtTime(f0, t);
+  if (f1) osc.frequency.exponentialRampToValueAtTime(f1, t + dur);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(gain, t + 0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  osc.connect(g).connect(out);
+  osc.start(t);
+  osc.stop(t + dur + 0.03);
+}
+function noise(ctx, out, now, { type = "bandpass", f0, f1, q = 6, dur, gain, delay = 0 }) {
+  const t = now + delay;
+  const buf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * dur), ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  const filt = ctx.createBiquadFilter();
+  filt.type = type;
+  filt.frequency.setValueAtTime(f0, t);
+  filt.Q.value = q;
+  if (f1) filt.frequency.exponentialRampToValueAtTime(f1, t + dur);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(gain, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(filt).connect(g).connect(out);
+  src.start(t);
+  src.stop(t + dur);
+}
+const SFX = {
+  jump: () =>
+    sfx((ctx, now, out) => {
+      tone(ctx, out, now, { type: "triangle", f0: 300, f1: 640, dur: 0.13, gain: 0.22 });
+      noise(ctx, out, now, { f0: 900, f1: 1800, q: 4, dur: 0.08, gain: 0.05 });
+    }),
+  coin: () =>
+    sfx((ctx, now, out) => {
+      [1046, 1318, 1568].forEach((f, i) =>
+        tone(ctx, out, now, { type: "sine", f0: f, dur: 0.2, gain: 0.16, delay: i * 0.05 }),
+      );
+      noise(ctx, out, now, { f0: 3200, q: 9, dur: 0.16, gain: 0.04 });
+    }),
+  stomp: () =>
+    sfx((ctx, now, out) => {
+      noise(ctx, out, now, { type: "lowpass", f0: 700, f1: 140, q: 1, dur: 0.14, gain: 0.18 });
+      tone(ctx, out, now, { type: "square", f0: 240, f1: 70, dur: 0.13, gain: 0.14 });
+    }),
+  hurt: () =>
+    sfx((ctx, now, out) => {
+      tone(ctx, out, now, { type: "sawtooth", f0: 400, f1: 90, dur: 0.3, gain: 0.2 });
+      noise(ctx, out, now, { type: "lowpass", f0: 1200, f1: 200, q: 1, dur: 0.28, gain: 0.09 });
+    }),
+  death: () =>
+    sfx((ctx, now, out) => {
+      tone(ctx, out, now, { type: "sawtooth", f0: 320, f1: 50, dur: 0.6, gain: 0.22 });
+      noise(ctx, out, now, { type: "lowpass", f0: 900, f1: 120, q: 1, dur: 0.5, gain: 0.12 });
+    }),
+  // Played the moment the last fruit is collected and the goal unlocks — a
+  // brighter, fuller major arpeggio than a single pickup so the milestone reads.
+  unlock: () =>
+    sfx((ctx, now, out) => {
+      [659, 831, 988, 1319].forEach((f, i) =>
+        tone(ctx, out, now, { type: "triangle", f0: f, dur: 0.28, gain: 0.16, delay: i * 0.07 }),
+      );
+      noise(ctx, out, now, { f0: 3600, q: 8, dur: 0.4, gain: 0.05, delay: 0.05 });
+    }),
+  win: () =>
+    sfx((ctx, now, out) => {
+      [523, 659, 784, 1047].forEach((f, i) =>
+        tone(ctx, out, now, { type: "triangle", f0: f, dur: 0.32, gain: 0.18, delay: i * 0.1 }),
+      );
+    }),
+};
 function rect(body) { return { x: body.x - body.w / 2, y: body.y - body.h, w: body.w, h: body.h }; }
 function solid(body) { return map.solidInRect(rect(body)); }
 
@@ -51,10 +135,10 @@ function respawn() {
 }
 function hurt() {
   if (player.invuln > 0) return;
-  lives--; player.invuln = 1.5; player.hurtTimer = 0.35; playSound("hurt");
+  lives--; player.invuln = 1.5; player.hurtTimer = 0.35; SFX.hurt();
   Particles.burst(player.x, player.y - 20, { count: 20, colors: ["#ff6b6b", "#ffe066"], speed: [55, 180], life: [280, 700], gravity: 280 });
   UI.float("OUCH!", player.x, player.y - 50, { color: "#ff6b6b" });
-  if (lives === 0) { state = "gameover"; playSound("explosion"); } else respawn();
+  if (lives === 0) { state = "gameover"; SFX.death(); } else respawn();
 }
 function movePlayer(dx, dy) {
   // Sweep the bottom-center-anchored body as a top-left rect against the solid
@@ -135,28 +219,46 @@ function makeStaticLayers() {
     skyCtx.fillStyle = "rgba(255,244,184,.75)"; skyCtx.beginPath(); skyCtx.arc(400, 50, 23, 0, Math.PI * 2); skyCtx.fill();
   });
 
+  // Real tiling at native atlas resolution. The atlas holds a 3×3 grass block
+  // of 16px sub-tiles at pixel (96,0): grass-top row / dirt-middle / dirt-bottom,
+  // each with left / mid / right variants. Each 48px collision cell is paved
+  // with a 3×3 grid of these 16px tiles drawn 1:1 (crisp — no upscaling, so the
+  // ground matches the sprite resolution), and every sub-tile picks its edge
+  // from the cell's open neighbours. Result: grassy lips on top, dirt sides and
+  // proper corners, instead of one blurry block stamped everywhere.
+  const SUB = 16, BX = 96, BY = 0, N = TILE / SUB; // N = 3 sub-tiles per cell
   terrainLayer = Sprites.getLayer("pixel-adventure:terrain", map.worldW, map.worldH, 1, (terrainCtx) => {
     terrainCtx.imageSmoothingEnabled = false;
     for (let y = 0; y < map.rows; y++) for (let x = 0; x < map.cols; x++) if (map.at(x, y)) {
       const px = x * TILE, py = y * TILE;
+      const openU = !map.at(x, y - 1), openD = !map.at(x, y + 1);
+      const openL = !map.at(x - 1, y), openR = !map.at(x + 1, y);
       terrainCtx.fillStyle = "rgba(19,45,65,.28)"; terrainCtx.fillRect(px + 4, py + 5, TILE, TILE);
-      terrainCtx.drawImage(terrain, 96, 0, 48, 48, px, py, TILE, TILE);
+      for (let sr = 0; sr < N; sr++) for (let sc = 0; sc < N; sc++) {
+        // Only the outer ring of sub-tiles reflects an exposed edge; the rest is
+        // solid dirt-middle. Corners fall out naturally where two edges meet.
+        const eU = openU && sr === 0, eD = openD && sr === N - 1;
+        const eL = openL && sc === 0, eR = openR && sc === N - 1;
+        const srcX = BX + (eL ? 0 : eR ? 2 : 1) * SUB;
+        const srcY = BY + (eU ? 0 : eD ? 2 : 1) * SUB;
+        terrainCtx.drawImage(terrain, srcX, srcY, SUB, SUB, px + sc * SUB, py + sr * SUB, SUB, SUB);
+      }
     }
   });
 }
 
 Assets.load({
-  level: new URL("./level.json", import.meta.url).href,
-  terrain: new URL("./assets/terrain.png", import.meta.url).href,
-  background: new URL("./assets/background.png", import.meta.url).href,
-  playerIdle: new URL("./assets/player-idle.png", import.meta.url).href,
-  playerRun: new URL("./assets/player-run.png", import.meta.url).href,
-  playerJump: new URL("./assets/player-jump.png", import.meta.url).href,
-  playerFall: new URL("./assets/player-fall.png", import.meta.url).href,
-  playerHit: new URL("./assets/player-hit.png", import.meta.url).href,
-  enemy: new URL("./assets/radish-run.png", import.meta.url).href,
-  fruit: new URL("./assets/bananas.png", import.meta.url).href,
-  goal: new URL("./assets/goal.png", import.meta.url).href,
+  level: new URL("../level.json", import.meta.url).href,
+  terrain: new URL("../assets/terrain.png", import.meta.url).href,
+  background: new URL("../assets/background.png", import.meta.url).href,
+  playerIdle: new URL("../assets/player-idle.png", import.meta.url).href,
+  playerRun: new URL("../assets/player-run.png", import.meta.url).href,
+  playerJump: new URL("../assets/player-jump.png", import.meta.url).href,
+  playerFall: new URL("../assets/player-fall.png", import.meta.url).href,
+  playerHit: new URL("../assets/player-hit.png", import.meta.url).href,
+  enemy: new URL("../assets/radish-run.png", import.meta.url).href,
+  fruit: new URL("../assets/bananas.png", import.meta.url).href,
+  goal: new URL("../assets/goal.png", import.meta.url).href,
 }, (done, total) => (progress = done / total)).then(() => {
   level = Assets.json("level"); terrain = Assets.image("terrain"); backdrop = Assets.image("background");
   map = Tiles.grid(level.tiles, { tw: TILE, atlas: terrain, cols: Math.floor(terrain.width / TILE), solid: (tile) => tile === 1 });
@@ -201,7 +303,6 @@ Assets.load({
   makeStaticLayers();
   cam = Camera.createCamera({ worldW: map.worldW, worldH: map.worldH, viewW: GAME_W, viewH: GAME_H, damping: 0.1, deadZoneX: 0.14, deadZoneY: 0.1 });
   cam.zoom = 0.8;
-  ["coin", "jump", "hurt", "explosion"].forEach(loadSound);
   resetRun(); ready = true;
 }).catch((error) => (failed = String(error)));
 
@@ -230,7 +331,7 @@ Loop.run({
     if (jumpGate.update(player.onGround, pressedJump, stepMs)) {
       player.vy = -525;
       player.onGround = false;
-      playSound("jump");
+      SFX.jump();
     } else if (pressedJump && onWall) {
       // Wall jump — composed straight from moveAABB's wall contact + a chosen
       // impulse (up and away). No wall-jump helper: the engine reports the
@@ -239,7 +340,7 @@ Loop.run({
       player.vx = -player.wall * 235;
       player.facing = -player.wall;
       jumpGate.buffer.consume(); // don't let this press also fire a ground jump on landing
-      playSound("jump");
+      SFX.jump();
     }
     player.vy = Math.min(620, player.vy + 980 * dt);
     // Wall slide: cling and drift down slowly while pressing a wall midair, so
@@ -259,7 +360,7 @@ Loop.run({
       const overlapY = Math.abs((player.y - player.h / 2) - (enemy.y - enemy.h / 2)) < (player.h + enemy.h) / 2;
       if (overlapX && overlapY) {
         if (player.vy > 55 && player.y - player.h / 2 < enemy.y - enemy.h / 2) {
-          enemy.dead = true; player.vy = -270; playSound("explosion");
+          enemy.dead = true; player.vy = -270; SFX.stomp(); Camera.shake(3.5, 190); // punch on a kill
           UI.float("+100", enemy.x, enemy.y - 45, { color: "#ffe066" });
           Particles.burst(enemy.x, enemy.y - 20, { count: 18, colors: ["#ff9f43", "#ffe066"], speed: [45, 160], life: [260, 620], gravity: 180 });
         } else hurt();
@@ -268,13 +369,14 @@ Loop.run({
     for (const coin of coins) {
       if (coin.got) { coin.pop += dt; continue; }
       if (Math.hypot(player.x - coin.x, player.y - coin.y) >= 27) continue;
-      coin.got = true; coin.pop = 0; playSound("coin"); Camera.shake(2.2, 130);
+      coin.got = true; coin.pop = 0; SFX.coin(); // no shake on a pickup
       UI.float("FRUIT!", coin.x, coin.y - 26, { color: "#fff3a3" });
       Particles.burst(coin.x, coin.y, { count: 24, colors: ["#fff", "#fff3a3", "#ffe066", "#ffb347"], size: [2, 5], speed: [55, 205], life: [300, 680], gravity: 105 });
       Particles.burst(coin.x, coin.y, { count: 8, angle: -Math.PI / 2, spread: 0.55, colors: "#ffffff", size: [2, 4], speed: [115, 210], life: [190, 370] });
+      if (coins.every((c) => c.got)) { SFX.unlock(); UI.float("GOAL UNLOCKED!", player.x, player.y - 60, { color: "#64f0c8" }); }
     }
     if (player.y > map.worldH + 70) hurt();
-    if (coins.every((coin) => coin.got) && Math.hypot(player.x - goal.x, player.y - goal.y) < 38) { state = "won"; playSound("coin"); }
+    if (coins.every((coin) => coin.got) && Math.hypot(player.x - goal.x, player.y - goal.y) < 38) { state = "won"; SFX.win(); }
     cam.update(player.x, player.y - player.h / 2, Draw.frameScale);
   },
 
@@ -305,22 +407,32 @@ Loop.run({
       if (!coin.got) fruitAnim.draw(ctx, coin.x, coin.y, { w: 32, h: 32 });
       else if (coin.pop < 0.68) drawFruitPickup(ctx, coin);
     }
-    for (const enemy of enemies) if (!enemy.dead) drawFlipped(enemyAnim, ctx, enemy.x, enemy.y - 20, enemy.vx < 0 ? -1 : 1, { w: 42, h: 53 });
+    // The radish art faces left by default, so face = +1 when moving left.
+    for (const enemy of enemies) if (!enemy.dead) drawFlipped(enemyAnim, ctx, enemy.x, enemy.y - 20, enemy.vx < 0 ? 1 : -1, { w: 42, h: 53 });
     if (player.invuln <= 0 || Math.floor(elapsed * 12) % 2) drawFlipped(playerAnim, ctx, player.x, player.y - 18, player.facing, { w: 48, h: 48 });
     UI.drawFloats(ctx); Particles.draw(ctx); ctx.restore();
-    ctx.restore(); // camera shake; HUD stays stable
+    ctx.restore(); // camera shake
+    ctx.restore(); // end letterbox — the HUD below is drawn in SCREEN space at a
+    // fixed pixel size, so the world can be scaled/zoomed independently of it.
 
-    UI.panel(ctx, { x: 8, y: 8, w: 282, h: 48, title: "SUNNY RUN" });
-    ctx.fillStyle = "#fff"; ctx.font = "12px monospace"; ctx.fillText(`FRUIT ${coins.filter((coin) => coin.got).length}/${coins.length}   LIVES ${"◆".repeat(lives)}`, 18, 42);
-    UI.panel(ctx, { x: 354, y: 8, w: 118, h: 48, title: "PROGRESS" });
-    UI.bar(ctx, 365, 37, 96, 9, player.x / goal.x, { fill: "#64f0c8", bg: "#203b59" });
-    ctx.fillStyle = "#e9f8ff"; ctx.font = "11px monospace"; ctx.fillText(unlocked ? "GOAL UNLOCKED!" : "Find all fruit", 12, GAME_H - 12);
+    UI.group({ x: 12, y: 12, w: 236, h: 60, title: "SUNNY RUN" }, (body) => {
+      UI.text(`FRUIT ${coins.filter((coin) => coin.got).length}/${coins.length}   LIVES ${"◆".repeat(lives)}`,
+        { h: body.remaining, size: 13, color: "#fff" });
+    });
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#e9f8ff"; ctx.font = "12px monospace";
+    ctx.fillText(unlocked ? "GOAL UNLOCKED!" : "Find all fruit", 14, vp.h - 14);
     if (state === "won" || state === "gameover") {
-      ctx.fillStyle = "rgba(7,15,30,.78)"; ctx.fillRect(0, 0, GAME_W, GAME_H);
-      UI.panel(ctx, { x: 105, y: 86, w: 270, h: 100, title: state === "won" ? "ADVENTURE COMPLETE" : "TRY AGAIN", border: state === "won" ? "#64f0c8" : "#ff6b6b" });
-      ctx.fillStyle = state === "won" ? "#64f0c8" : "#ff6b6b"; ctx.font = "bold 22px monospace"; ctx.textAlign = "center"; ctx.fillText(state === "won" ? "YOU FOUND THE WAY!" : "OUT OF LIVES", 240, 132);
-      ctx.fillStyle = "#fff"; ctx.font = "12px monospace"; ctx.fillText("Press R to restart", 240, 160); ctx.textAlign = "left";
+      const won = state === "won";
+      const cx = vp.w / 2, cy = vp.h / 2;
+      ctx.fillStyle = "rgba(7,15,30,.78)"; ctx.fillRect(0, 0, vp.w, vp.h);
+      UI.group(
+        { x: cx - 140, y: cy - 58, w: 280, h: 116, title: won ? "ADVENTURE COMPLETE" : "TRY AGAIN", border: won ? "#64f0c8" : "#ff6b6b" },
+        () => {
+          UI.text(won ? "YOU FOUND THE WAY!" : "OUT OF LIVES", { h: 44, size: 18, bold: true, align: "center", color: won ? "#64f0c8" : "#ff6b6b" });
+          UI.text("Press R to restart", { h: 24, size: 12, align: "center", color: "#fff" });
+        },
+      );
     }
-    ctx.restore();
   },
 });

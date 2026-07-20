@@ -6,7 +6,7 @@
 //   the final board still shows underneath the game-over text.
 // Game runs in a fixed 400×700 logical space, letterboxed to the viewport.
 import { Minimotor } from "minimotor";
-import { drawGameOver } from "../shared/overlays.js";
+import { drawGameOver } from "../../shared/src/overlays.js";
 
 const { Scenes, Keys, Draw, ECS, Collision, Mathf, Camera, Audio, UI } = Minimotor;
 

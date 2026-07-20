@@ -3,20 +3,23 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Net Game - Minimotor</title>
+    <title>Multiplayer Blobs - Minimotor</title>
     <style>
-      body {
-        margin: 0;
-        overflow: hidden;
-        background: #14141c;
-      }
-      canvas {
-        display: block;
-      }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; background: #0c0c12; color: #e7e7ef; font-family: system-ui, sans-serif; }
+      header { height: 50px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; border-bottom: 1px solid #30303d; }
+      h1 { margin: 0; font-size: 16px; letter-spacing: .06em; }
+      p { margin: 0; color: #8d8d9d; font-size: 12px; }
+      main { height: calc(100vh - 50px); display: grid; grid-template-columns: 1fr 1fr; gap: 2px; background: #30303d; }
+      iframe { width: 100%; height: 100%; border: 0; background: #14141c; }
+      @media (max-width: 760px) { main { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; } header p { display: none; } }
     </style>
   </head>
   <body>
-    <canvas id="game"></canvas>
-    <script type="module" src="./netgame.js"></script>
+    <header><h1>MULTIPLAYER BLOBS · TWO CLIENTS</h1><p>Click either side, then move with WASD or arrows</p></header>
+    <main>
+      <iframe src="./client.html?client=1" title="Multiplayer blob client one"></iframe>
+      <iframe src="./client.html?client=2" title="Multiplayer blob client two"></iframe>
+    </main>
   </body>
 </html>

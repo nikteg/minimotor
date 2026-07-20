@@ -2,6 +2,7 @@ import type { Server } from "node:http";
 import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
 import { WebSocketServer } from "ws";
+import { createRoadRivalsServer } from "./samples/road-rivals/src/server/index.js";
 
 const here = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
@@ -14,6 +15,7 @@ function attach(httpServer: Server | null): void {
   if (!httpServer) return;
   const echo = new WebSocketServer({ noServer: true });
   const relay = new WebSocketServer({ noServer: true });
+  const road = createRoadRivalsServer();
   echo.on("connection", (sock) => {
     sock.on("message", (data, isBinary) => sock.send(data, { binary: isBinary }));
   });
@@ -24,9 +26,17 @@ function attach(httpServer: Server | null): void {
       }
     });
   });
+
   httpServer.on("upgrade", (req, socket, head) => {
     const path = req.url?.split("?")[0];
-    const wss = path === "/ws-echo" ? echo : path === "/ws-relay" ? relay : null;
+    const wss =
+      path === "/ws-echo"
+        ? echo
+        : path === "/ws-relay"
+          ? relay
+          : path === "/ws-road-rivals"
+            ? road
+            : null;
     if (!wss) return;
     wss.handleUpgrade(req, socket, head, (sock) => wss.emit("connection", sock, req));
   });
@@ -87,6 +97,9 @@ export default defineConfig({
         juice: here("./samples/juice/index.html"),
         swept: here("./samples/swept/index.html"),
         netgame: here("./samples/netgame/index.html"),
+        netgameClient: here("./samples/netgame/client.html"),
+        roadRivals: here("./samples/road-rivals/index.html"),
+        roadRivalsClient: here("./samples/road-rivals/client.html"),
         netpeer: here("./samples/netpeer/index.html"),
         netws: here("./samples/netws/index.html"),
         synth: here("./samples/synth/index.html"),

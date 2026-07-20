@@ -2,7 +2,7 @@
 // Focus: Camera.createCamera (follow, dead-zone, zoom, screen↔world mapping)
 // and Camera.scrollColumns for stable procedural parallax scenery.
 import { Minimotor } from "minimotor";
-import * as Sfx from "../shared/sfx.js";
+import * as Sfx from "../../shared/src/sfx.js";
 
 let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 const { Camera, Input, Mathf, Pointer, Draw, Loop, Particles, UI } = Minimotor;

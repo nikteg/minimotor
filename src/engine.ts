@@ -65,6 +65,8 @@ export interface Pointer {
   readonly x: number;
   /** Logical y within the canvas; -1 before the first event. */
   readonly y: number;
+  /** True when the latest pointer position lies inside the canvas. */
+  readonly inside: boolean;
   /** True while a button/touch is held. */
   readonly down: boolean;
   /** True for one update step when the press begins. */
@@ -251,6 +253,7 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
   const ptr = {
     x: -1,
     y: -1,
+    inside: false,
     down: false,
     pressed: false,
     released: false,
@@ -264,6 +267,9 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
     },
     get y() {
       return ptr.y;
+    },
+    get inside() {
+      return ptr.inside;
     },
     get down() {
       return ptr.down;
@@ -331,8 +337,11 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
   };
   const setPointer = (e: { clientX: number; clientY: number }) => {
     if (!canvasRect) canvasRect = canvas.getBoundingClientRect();
-    ptr.x = e.clientX - canvasRect.left;
-    ptr.y = e.clientY - canvasRect.top;
+    const cssX = e.clientX - canvasRect.left;
+    const cssY = e.clientY - canvasRect.top;
+    ptr.x = canvasRect.width > 0 ? (cssX * viewport.w) / canvasRect.width : cssX;
+    ptr.y = canvasRect.height > 0 ? (cssY * viewport.h) / canvasRect.height : cssY;
+    ptr.inside = cssX >= 0 && cssY >= 0 && cssX <= canvasRect.width && cssY <= canvasRect.height;
   };
   const onPointerDown = (e: PointerEvent) => {
     setPointer(e);
@@ -350,7 +359,7 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
     ptr.frameReleased = true; // survives the steps; cleared at frame end
   };
   canvas.addEventListener("pointerdown", onPointerDown);
-  canvas.addEventListener("pointermove", setPointer);
+  window.addEventListener("pointermove", setPointer);
   canvas.addEventListener("wheel", onWheel, { passive: true });
   window.addEventListener("pointerup", onPointerUp);
   window.addEventListener("scroll", invalidateRect, true);
@@ -535,12 +544,12 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointermove", setPointer);
       window.removeEventListener("scroll", invalidateRect, true);
       window.removeEventListener("resize", handleResize);
       window.removeEventListener("orientationchange", handleOrient);
       screen.orientation?.removeEventListener?.("change", handleOrient);
       canvas.removeEventListener("pointerdown", onPointerDown);
-      canvas.removeEventListener("pointermove", setPointer);
       canvas.removeEventListener("wheel", onWheel);
       if (portraitMq && portraitApply) portraitMq.removeEventListener?.("change", portraitApply);
       stepHandlers.clear();
@@ -717,6 +726,9 @@ export const Pointer: Pointer = {
   get y() {
     return requireDefault().pointer.y;
   },
+  get inside() {
+    return requireDefault().pointer.inside;
+  },
   get down() {
     return requireDefault().pointer.down;
   },
@@ -736,3 +748,6 @@ export const Pointer: Pointer = {
     return requireDefault().pointer.wheel;
   },
 };
+
+/** Mouse-oriented alias for the normalized canvas-relative pointer position. */
+export const Mouse: Pointer = Pointer;

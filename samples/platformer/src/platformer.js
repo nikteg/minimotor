@@ -2,7 +2,7 @@
 // Demonstrates: Physics (gravity, jump), Collision, input, scoring, storage,
 //   camera scrolling, parallax backgrounds
 import { Minimotor } from "minimotor";
-import { drawGameOver, drawLevelComplete } from "../shared/overlays.js";
+import { drawGameOver, drawLevelComplete } from "../../shared/src/overlays.js";
 
 let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 Minimotor.Stage.onResize((next) => (vp = next)); // camera + layout read vp live
@@ -196,11 +196,20 @@ Minimotor.Loop.run({
     player.x = Math.max(0, Math.min(WORLD_W - PLAYER_W, player.x));
 
     // Platform collision
+    const wasGrounded = player.onGround;
+    const landVy = player.vy;
     player.onGround = false;
     for (const [px, py, pw, ph] of platforms) {
       if (bodyOnPlatform(player, px, py, pw, ph)) {
         platformCollisionY(player, py, ph);
       }
+    }
+    // Landing dust when we touch down from a real fall.
+    if (player.onGround && !wasGrounded && landVy > 6) {
+      Minimotor.Particles.burst(player.x + player.w / 2 - cameraX, player.y + player.h, {
+        count: 8, angle: -Math.PI / 2, spread: Math.PI * 0.8,
+        colors: ["#d9c7a3", "#b7a07a"], size: [1, 3], speed: [20, 70], life: [180, 360],
+      });
     }
 
     // Fell into pit
@@ -219,6 +228,10 @@ Minimotor.Loop.run({
         score += 100;
         coinCount++;
         Minimotor.Audio.Sfx.coin();
+        Minimotor.Particles.burst(c.x - cameraX, c.y, {
+          count: 12, colors: ["#fff", "#ffec80", "#ffd700"], size: [2, 4], speed: [40, 150], life: [220, 480], gravity: 60,
+        });
+        Minimotor.UI.float("+100", c.x - cameraX, c.y + (vp.h - WORLD_H) - 10, { color: "#ffec80" });
       }
     }
 
@@ -241,6 +254,11 @@ Minimotor.Loop.run({
           player.vy = JUMP_FORCE * 0.6;
           score += 200;
           Minimotor.Audio.Sfx.blip(220, 0.12); // squash
+          Minimotor.Camera.shake(4, 160);
+          Minimotor.Particles.burst(e.x + e.w / 2 - cameraX, e.y, {
+            count: 16, colors: ["#c0392b", "#ff9f43", "#fff"], size: [2, 5], speed: [50, 180], life: [260, 600], gravity: 120,
+          });
+          Minimotor.UI.float("+200", e.x + e.w / 2 - cameraX, e.y + (vp.h - WORLD_H) - 10, { color: "#ff9f43" });
         } else if (invincible === 0) {
           takeDamage();
         }
@@ -255,6 +273,12 @@ Minimotor.Loop.run({
       levelComplete = true;
       score += 1000 + coinCount * 50;
       Minimotor.Audio.Sfx.coin(); // victory sparkle
+      Minimotor.Camera.shake(3, 220);
+      for (let i = 0; i < 3; i++) {
+        Minimotor.Particles.burst(FLAG_X - cameraX, FLAG_Y + i * 20, {
+          count: 14, colors: ["#2ecc71", "#ffd700", "#fff", "#5c94fc"], size: [2, 5], speed: [60, 220], life: [500, 1100], gravity: 120,
+        });
+      }
       if (score > best) { best = score; Minimotor.Storage.save("platformer_best", best); }
     }
 
@@ -295,7 +319,7 @@ Minimotor.Loop.run({
     // The world is a fixed 600px tall — anchor it to the bottom of the screen
     // so the ground hugs the window edge at any size (HUD stays screen-space).
     ctx.save();
-    ctx.translate(0, vp.h - WORLD_H);
+    ctx.translate(Minimotor.Camera.shakeX(), vp.h - WORLD_H + Minimotor.Camera.shakeY());
 
     // Hills (parallax)
     ctx.fillStyle = "#7ec850";
@@ -341,13 +365,16 @@ Minimotor.Loop.run({
       if (c.collected) continue;
       const sx = c.x - cameraX;
       if (sx < -10 || sx > vp.w + 10) continue;
+      // Spin: the coin's width breathes so it reads as a rotating disc.
+      const spin = Math.abs(Math.cos(animFrame * 0.1 + c.x * 0.05));
+      const cw = Math.max(1.5, 7 * spin);
       ctx.fillStyle = "#ffd700";
       ctx.beginPath();
-      ctx.arc(sx, c.y + coinBob, 7, 0, Math.PI * 2);
+      ctx.ellipse(sx, c.y + coinBob, cw, 7, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = "#ffec80";
       ctx.beginPath();
-      ctx.arc(sx, c.y + coinBob, 4, 0, Math.PI * 2);
+      ctx.ellipse(sx, c.y + coinBob, cw * 0.55, 4, 0, 0, Math.PI * 2);
       ctx.fill();
     }
 
@@ -427,6 +454,8 @@ Minimotor.Loop.run({
       }
     }
 
+    Minimotor.Particles.draw(ctx); // coin sparkles, dust, stomp bursts
+
     ctx.restore(); // end bottom-anchored world space
 
     // HUD uses the same immediate-mode UI primitives as the other samples. A
@@ -438,6 +467,7 @@ Minimotor.Loop.run({
     Minimotor.UI.group({ x: 8, y: vp.h - 46, w: 220, h: 34 }, (body) => {
       Minimotor.UI.text("← → move   Space jump", { h: body.remaining, size: 12, color: "dim" });
     });
+    Minimotor.UI.drawFloats(ctx); // rising +100 / +200 score pops
 
     // Game Over overlay
     if (gameOver) {
@@ -463,6 +493,10 @@ function takeDamage() {
   lives--;
   invincible = 90;
   Minimotor.Audio.Sfx.blip(140, 0.3); // low ouch
+  Minimotor.Camera.shake(7, 300);
+  Minimotor.Particles.burst(player.x + player.w / 2 - cameraX, player.y + player.h / 2, {
+    count: 18, colors: ["#ff6b6b", "#ffe066", "#fff"], size: [2, 4], speed: [50, 180], life: [280, 650], gravity: 150,
+  });
   if (lives <= 0) {
     gameOver = true;
     if (score > best) { best = score; Minimotor.Storage.save("platformer_best", best); }

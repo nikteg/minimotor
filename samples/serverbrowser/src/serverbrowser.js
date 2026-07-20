@@ -147,7 +147,10 @@ function layout() {
     L.list = list;
     L.rows = { x: list.x, y: list.y, w: list.w - SCROLL_W - 4, h: list.h };
     L.scroll = { x: list.x + list.w - SCROLL_W, y: list.y, w: SCROLL_W, h: list.h };
-    L.footer = body.next(undefined, FOOTER_H);
+    const footer = body.next(undefined, FOOTER_H);
+    // Let the footer occupy the column's bottom padding so the action row
+    // visually anchors to the panel edge instead of floating above it.
+    L.footer = { ...footer, y: footer.y + 8 };
   });
 
   return L;
@@ -289,7 +292,14 @@ Minimotor.Loop.run({
 
     // ---- footer: count, status, JOIN ----
     // The join status takes the counter's spot while it's showing.
-    const footText = { x: L.footer.x, y: L.footer.y, w: L.footer.w - 130, h: L.footer.h, size: 12 };
+    const footerTextH = 18;
+    const footText = {
+      x: L.footer.x,
+      y: L.y + L.h - 8 - footerTextH,
+      w: L.footer.w - 130,
+      h: footerTextH,
+      size: 12,
+    };
     if (status) {
       UI.text(status, { ...footText, color: status.startsWith("Connected") ? "#6bff9e" : "#ffd43b" });
     } else {

@@ -5,6 +5,7 @@ import {
   Loop,
   Keys,
   Pointer,
+  Mouse,
   Draw,
   type Game,
   type GameCallbacks,
@@ -278,6 +279,34 @@ describe("input", () => {
     expect(inDraw.at(-1)).toBe(false);
   });
 
+  it("normalizes window mouse movement through a CSS-scaled canvas rect", () => {
+    const { game } = build();
+    vi.spyOn(game.canvas, "getBoundingClientRect").mockReturnValue({
+      left: 10,
+      top: 20,
+      width: game.viewport.w / 2,
+      height: game.viewport.h / 2,
+      right: 10 + game.viewport.w / 2,
+      bottom: 20 + game.viewport.h / 2,
+      x: 10,
+      y: 20,
+      toJSON: () => ({}),
+    });
+
+    window.dispatchEvent(
+      new MouseEvent("pointermove", {
+        clientX: 10 + game.viewport.w / 4,
+        clientY: 20 + game.viewport.h / 4,
+      }),
+    );
+    expect(game.pointer.x).toBe(game.viewport.w / 2);
+    expect(game.pointer.y).toBe(game.viewport.h / 2);
+    expect(game.pointer.inside).toBe(true);
+
+    window.dispatchEvent(new MouseEvent("pointermove", { clientX: 0, clientY: 0 }));
+    expect(game.pointer.inside).toBe(false);
+  });
+
   it("framePressed and wheel are frame-scoped and cleared at frame end", () => {
     const { game } = build();
     const seen: { pressed: boolean; wheel: number }[] = [];
@@ -455,6 +484,8 @@ describe("global facade (Stage / Loop / Keys / Pointer / Draw)", () => {
     window.dispatchEvent(new KeyboardEvent("keydown", { code: "ArrowUp" }));
     expect(Keys.down("ArrowUp")).toBe(true);
     expect(Pointer.x).toBe(-1);
+    expect(Mouse.x).toBe(Pointer.x);
+    expect(Mouse.inside).toBe(false);
   });
 
   it("passes plugins from Stage.init options through to the default game", () => {

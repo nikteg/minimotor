@@ -23,6 +23,15 @@ test("server browser supports canvas Tab focus and native editors", async ({ pag
   await expect.poll(() => page.evaluate(() => document.activeElement?.tagName)).toBe("SELECT");
 });
 
+for (const sample of ["netgame", "road-rivals"]) {
+  test(`${sample} opens two live clients`, async ({ page }) => {
+    await page.goto(`/${sample}/`);
+    await expect(page.locator("iframe")).toHaveCount(2);
+    await expect(page.frameLocator("iframe").first().locator("canvas#game")).toBeVisible();
+    await expect(page.frameLocator("iframe").nth(1).locator("canvas#game")).toBeVisible();
+  });
+}
+
 test("breakout sample loads and plays", async ({ page }) => {
   await page.goto("/breakout/");
   await expect(page.locator("canvas#game")).toBeVisible();

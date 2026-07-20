@@ -39,6 +39,7 @@ transport.onMessage = (bytes) => {
   if (bytes.length === 0) return; // someone's heartbeat frame — not gameplay
   meter.recv(bytes.length);
   const msg = JSON.parse(new TextDecoder().decode(bytes));
+  if (msg.game !== "netgame") return; // /ws-relay hosts several samples
   if (msg.bye) {
     others.delete(msg.id);
     return;
@@ -55,7 +56,7 @@ transport.onMessage = (bytes) => {
 
 // Tell the others we're leaving (best effort — the 5s prune catches crashes).
 addEventListener("pagehide", () => {
-  transport.trySend(new TextEncoder().encode(JSON.stringify({ id, bye: true })));
+  transport.trySend(new TextEncoder().encode(JSON.stringify({ game: "netgame", id, bye: true })));
 });
 
 const SEND_EVERY = 3; // fixed steps → 20 Hz, so the interpolation visibly works
@@ -72,7 +73,7 @@ Loop.run({
     me.y = Mathf.clamp(me.y, 20, vp.h - 20);
 
     if (++step % SEND_EVERY === 0) {
-      const payload = JSON.stringify({ id, color, x: me.x, y: me.y });
+      const payload = JSON.stringify({ game: "netgame", id, color, x: me.x, y: me.y });
       // trySend: false while (re)connecting — never throws in the game loop.
       if (transport.trySend(new TextEncoder().encode(payload))) meter.sent(payload.length);
     }

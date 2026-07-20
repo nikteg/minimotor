@@ -43,94 +43,89 @@ const WORLD_H = ROWS * CELL;
 //   goal   : "sign" | "house"
 // A solid border is added around every room automatically.
 // ---------------------------------------------------------------------------
+// Difficulty comes from Celeste's core idea: wide spike voids with NO ground to
+// land on, so the only way across is to chain dashes through floating crystals —
+// each crystal is a mandatory mid-air refill. Voids are sized well beyond a
+// single jump+dash (~10–11 cells), so skipping a crystal means falling onto
+// spikes. Ground still refills, but you never touch it inside a gauntlet.
 const LEVELS = [
   {
+    // One forced 2-crystal chain over a 16-cell void, then a staircase climb.
     name: "Foothills",
     sky: ["#26314f", "#3b4a72", "#6f83a8"],
     goal: "sign",
     spawn: [3, 20],
-    exit: [34, 5],
+    exit: [35, 8],
     plats: [
-      [1, 21, 38], // ground
-      [5, 18, 4],
-      [11, 15, 4],
-      [17, 17, 4],
-      [22, 14, 4],
-      [27, 11, 5],
-      [32, 8, 5],
-      [30, 6, 8], // exit ledge
+      [1, 21, 10], // start ground (cols 1–9)
+      [26, 21, 13], // far ground (cols 26–38)
+      [34, 18, 3], // staircase up to the sign
+      [30, 15, 3],
+      [34, 12, 3],
+      [33, 9, 5], // exit ledge
     ],
-    spikes: [[13, 20, 5, "up"]],
-    orbs: [[19, 12]],
+    spikes: [
+      [6, 20, 2, "up"], // a spike to hop on the start ledge
+      [10, 21, 16, "up"], // the void floor (cols 10–25) — lethal
+    ],
+    orbs: [
+      [14, 17], // grab to refill mid-flight…
+      [20, 17], // …then again to reach the far ground
+    ],
     props: [
       ["tree", 2, 21],
-      ["rock", 24, 21],
+      ["rock", 27, 21],
     ],
   },
   {
+    // A 2-crystal void, then a wall-jump chimney up to the exit.
     name: "The Crevice",
     sky: ["#1b2436", "#2c3d4a", "#5a7d6a"],
     goal: "sign",
     spawn: [3, 20],
-    exit: [36, 5],
+    exit: [35, 4],
     plats: [
-      [1, 21, 10], // start ground
-      [1, 1, 2, 21], // left wall pillar (chimney start)
-      [7, 17, 4],
-      [13, 21, 6], // mid floor over a spike pit
-      [13, 14, 4],
-      [19, 11, 3],
-      [24, 21, 16], // right ground
-      [24, 15, 2, 6], // right chimney wall
-      [30, 15, 2, 6], // right chimney wall (wall-jump up)
-      [24, 8, 8], // top ledge
-      [33, 6, 7], // exit ledge
+      [1, 21, 8], // start ground (cols 1–7)
+      [21, 20, 10], // chimney base landing (cols 21–30)
+      [24, 9, 2, 10], // left chimney wall (cols 24–25, rows 9–18)
+      [29, 9, 2, 10], // right chimney wall (cols 29–30, rows 9–18)
+      [29, 8, 9], // top-right platform, caps the right wall
+      [33, 5, 5], // exit ledge
     ],
-    spikes: [
-      [11, 22, 2, "up"], // pit under the mid gap (bottom border area)
-      [17, 20, 6, "up"],
-      [26, 20, 4, "up"],
-    ],
+    spikes: [[8, 21, 13, "up"]], // void floor (cols 8–20)
     orbs: [
-      [10, 14],
-      [21, 18],
+      [13, 17],
+      [19, 15], // chain lifts you onto the chimney landing
     ],
-    props: [["rock", 5, 21]],
+    props: [["rock", 4, 21]],
   },
   {
+    // The gauntlet: a 20-cell void crossed by a rising 3-crystal chain, then a
+    // zig-zag climb (dodging a spike) to the house.
     name: "Summit",
     sky: ["#241640", "#43306e", "#c06a9a"],
     goal: "house",
     spawn: [3, 20],
-    exit: [34, 4],
+    exit: [34, 3],
     plats: [
-      [1, 21, 12],
-      [15, 21, 8],
-      [26, 21, 13],
-      [6, 17, 4],
-      [12, 14, 3],
-      [17, 12, 3],
-      [10, 10, 3],
-      [4, 8, 4],
-      [22, 15, 4],
-      [28, 13, 2, 8], // right chimney
-      [34, 13, 2, 8],
-      [28, 7, 8], // upper ledge before house
-      [31, 5, 8], // house ledge
+      [1, 21, 7], // start ground (cols 1–6)
+      [27, 13, 6], // landing after the chain (cols 27–32)
+      [22, 10, 3], // zig
+      [28, 7, 4], // zag
+      [31, 4, 7], // house ledge
     ],
     spikes: [
-      [13, 20, 2, "up"],
-      [23, 20, 3, "up"],
+      [7, 21, 20, "up"], // the long void (cols 7–26)
+      [29, 12, 2, "up"], // a spike on the landing to dodge
     ],
     orbs: [
-      [9, 12],
-      [20, 13],
-      [26, 17],
-      [31, 10],
+      [11, 18], // rising crystal staircase across the void
+      [16, 16],
+      [21, 14],
     ],
     props: [
-      ["tree", 1, 21],
-      ["rock", 24, 21],
+      ["tree", 2, 21],
+      ["rock", 31, 13],
     ],
   },
 ];
@@ -193,14 +188,22 @@ function spikeHit(grid, x, y, w, h) {
 const PW = 11;
 const PH = 20;
 
+// Celeste-style tight movement: LINEAR accel/decel (constant per-frame deltas
+// via `approach`, not mushy multiplicative friction), a turn-around boost so
+// reversing direction is near-instant, and half-gravity near the jump apex for
+// a controllable float. All values are px per 60 Hz fixed step.
 const GRAVITY = 0.55;
+const APEX_VY = 1.2; // |vy| under which gravity is halved (the apex "hang")
+const APEX_MULT = 0.5;
 const MAX_FALL = 8.5;
-const RUN_MAX = 3.4;
-const RUN_ACCEL = 0.65;
-const AIR_ACCEL = 0.45;
-const GROUND_FRICTION = 0.5;
-const AIR_FRICTION = 0.75;
-const JUMP_V = -9.2;
+const RUN_MAX = 3.6;
+const RUN_ACCEL = 0.9; // → max run in ~4 frames
+const AIR_ACCEL = 0.65; // responsive air control
+const GROUND_DECEL = 1.3; // snappy stop (~3 frames)
+const AIR_DECEL = 0.5; // bleed air momentum without a dead stop
+const TURN_MULT = 2.2; // extra accel when input opposes velocity (fast flips)
+const JUMP_V = -8.1;
+const DEATH_POP = -7.5; // Mario-style upward launch on death, then a free fall
 const WALL_SLIDE_MAX = 1.7;
 const WALL_JUMP_VX = 5.6;
 const WALL_JUMP_VY = -8.8;
@@ -209,6 +212,93 @@ const DASH_END_SPEED = 3.6;
 const DASH_FRAMES = 11;
 const DASH_FREEZE = 3;
 const INV_SQRT2 = 0.7071;
+
+// Move `v` toward `target` by at most `delta` (linear approach) — the basis of
+// tight, predictable accel/decel.
+function approach(v, target, delta) {
+  return v < target ? Math.min(v + delta, target) : Math.max(v - delta, target);
+}
+
+// ---------------------------------------------------------------------------
+// Sound — hand-built synth SFX through Audio.playSfx (Web Audio). Each preset
+// layers a pitched oscillator with a filtered noise burst for body, so jumps,
+// dashes and impacts read as distinct, punchy sounds rather than plain blips.
+// ---------------------------------------------------------------------------
+function tone(ctx, out, now, { type = "sine", f0, f1, dur, gain, delay = 0 }) {
+  const osc = ctx.createOscillator();
+  const g = ctx.createGain();
+  const t = now + delay;
+  osc.type = type;
+  osc.frequency.setValueAtTime(f0, t);
+  if (f1) osc.frequency.exponentialRampToValueAtTime(f1, t + dur);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(gain, t + 0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  osc.connect(g).connect(out);
+  osc.start(t);
+  osc.stop(t + dur + 0.03);
+}
+
+function noise(ctx, out, now, { type = "bandpass", f0, f1, q = 6, dur, gain }) {
+  const buf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * dur), ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  const filt = ctx.createBiquadFilter();
+  filt.type = type;
+  filt.frequency.setValueAtTime(f0, now);
+  filt.Q.value = q;
+  if (f1) filt.frequency.exponentialRampToValueAtTime(f1, now + dur);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(gain, now);
+  g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+  src.connect(filt).connect(g).connect(out);
+  src.start(now);
+  src.stop(now + dur);
+}
+
+const SFX = {
+  jump: () =>
+    Audio.playSfx((ctx, now, out) => {
+      tone(ctx, out, now, { type: "triangle", f0: 330, f1: 620, dur: 0.13, gain: 0.24 });
+      noise(ctx, out, now, { f0: 900, f1: 1800, q: 4, dur: 0.09, gain: 0.06 });
+    }),
+  wallJump: () =>
+    Audio.playSfx((ctx, now, out) => {
+      tone(ctx, out, now, { type: "square", f0: 420, f1: 760, dur: 0.11, gain: 0.16 });
+      noise(ctx, out, now, { f0: 1400, f1: 500, q: 3, dur: 0.12, gain: 0.09 });
+    }),
+  dash: () =>
+    Audio.playSfx((ctx, now, out) => {
+      noise(ctx, out, now, { f0: 1600, f1: 300, q: 2, dur: 0.2, gain: 0.22 });
+      tone(ctx, out, now, { type: "sawtooth", f0: 220, f1: 90, dur: 0.18, gain: 0.14 });
+    }),
+  land: (impact) =>
+    Audio.playSfx((ctx, now, out) => {
+      const v = Math.min(0.18, 0.05 + impact * 0.02);
+      noise(ctx, out, now, { type: "lowpass", f0: 300, f1: 120, q: 1, dur: 0.09, gain: v });
+      tone(ctx, out, now, { type: "sine", f0: 150, f1: 80, dur: 0.09, gain: v * 0.7 });
+    }),
+  orb: () =>
+    Audio.playSfx((ctx, now, out) => {
+      [880, 1320, 1760].forEach((f, i) =>
+        tone(ctx, out, now, { type: "sine", f0: f, dur: 0.22, gain: 0.14, delay: i * 0.05 }),
+      );
+      noise(ctx, out, now, { f0: 3000, q: 8, dur: 0.18, gain: 0.04 });
+    }),
+  death: () =>
+    Audio.playSfx((ctx, now, out) => {
+      tone(ctx, out, now, { type: "sawtooth", f0: 420, f1: 70, dur: 0.4, gain: 0.22 });
+      noise(ctx, out, now, { type: "lowpass", f0: 800, f1: 120, q: 1, dur: 0.35, gain: 0.14 });
+    }),
+  win: () =>
+    Audio.playSfx((ctx, now, out) => {
+      [523, 659, 784, 1047].forEach((f, i) =>
+        tone(ctx, out, now, { type: "triangle", f0: f, dur: 0.35, gain: 0.2, delay: i * 0.11 }),
+      );
+    }),
+};
 
 const player = {
   x: 0,
@@ -225,7 +315,7 @@ const player = {
   freeze: 0,
   wallLock: 0,
   dead: false,
-  deadTimer: 0,
+  deathSpin: 0,
 };
 
 const jumpGate = Timers.jumpGate({ coyoteMs: 100, bufferMs: 130 });
@@ -235,13 +325,12 @@ let wallCoyoteDir = 0;
 // ---------------------------------------------------------------------------
 // Assets & animation (built after load)
 // ---------------------------------------------------------------------------
-const url = (name) => new URL(`./assets/${name}.png`, import.meta.url).href;
+const url = (name) => new URL(`../assets/${name}.png`, import.meta.url).href;
 const FRAME = 32; // player frame size
 const FEET_Y = 23; // frame-y of the character's feet (content ends ~here)
 
 let anim; // Anim.states for the player
 let sm; // player Fsm
-let deathAnim = null; // one-shot Lore death burst
 const tex = {}; // decoded tile / prop images by key
 
 // Collectibles live on the ECS: one entity per dash orb, drawn by the built-in
@@ -309,7 +398,6 @@ function manifest() {
   for (let i = 0; i < 4; i++) add(`idle${i}`);
   for (let i = 0; i < 4; i++) add(`run${i}`);
   for (let i = 0; i < 3; i++) add(`jump${i}`);
-  for (let i = 0; i < 4; i++) add(`death${i}`);
   for (let i = 0; i < 4; i++) add(`climb${i}`);
   for (const k of TILE_KEYS) add(k);
   return m;
@@ -334,6 +422,8 @@ function buildAnimations() {
       fall: s(jumpSheet, 3, { fps: 1, frames: [2] }),
       wall: s(climbSheet, 4, { fps: 8 }),
       dash: s(jumpSheet, 3, { fps: 1, frames: [0] }),
+      // Death: hold the arms-up launch pose while the body tumbles off-screen.
+      dead: s(jumpSheet, 3, { fps: 1, frames: [0] }),
     },
     "idle",
   );
@@ -341,9 +431,6 @@ function buildAnimations() {
   // Cache decoded tile/prop images (the ECS/Anim path wants canvases scaled;
   // here we draw them directly, scaling in draw calls).
   for (const k of TILE_KEYS) tex[k] = img(k);
-
-  // The Lore "Death" frames are the scatter-burst effect, played once on death.
-  tex._deathSheet = compose("death0", "death1", "death2", "death3");
 
   // Measure each prop/goal's real opaque base (fraction of height) so it seats
   // on its surface regardless of transparent padding at the bottom of the art.
@@ -408,6 +495,9 @@ function makeFsm() {
           : player.wallDir !== 0 ? "wall"
           : "fall",
       },
+      // Terminal state: entered via sm.go("dead"); the update loop drives the
+      // pop-and-fall physics directly and resets us out on respawn.
+      dead: { update: () => null },
     },
     "idle",
     { anim },
@@ -451,27 +541,26 @@ function respawn(hard) {
   player.hasDash = true;
   player.dashTime = player.freeze = player.wallLock = 0;
   player.dead = false;
-  player.deadTimer = 0;
-  deathAnim = null;
-  if (hard && sm) sm.go("idle");
+  player.deathSpin = 0;
+  if (sm) sm.go("idle");
 }
 
 function die() {
   if (player.dead) return;
   player.dead = true;
-  player.deadTimer = 40;
   deaths++;
-  Camera.shake(6, 300);
-  Audio.Sfx.blip(150, 0.28, 0.3);
-  Audio.Sfx.blip(90, 0.4, 0.25);
-  deathAnim = Anim.sheet(tex._deathSheet, {
-    fw: FRAME, fh: FRAME, cols: 4, fps: 16, loop: false,
-  });
+  // Mario-style death: a brief upward pop, then the body free-falls (spinning)
+  // through everything and off the bottom of the screen. The Fsm holds the
+  // launch pose; the update loop integrates the arc.
+  player.vx = 0;
+  player.vy = DEATH_POP;
+  player.deathSpin = 0;
+  player.facing = 1;
+  if (sm) sm.go("dead");
+  Camera.shake(6, 260);
+  SFX.death();
   Particles.burst(player.x + PW / 2, player.y + PH / 2, {
-    count: 22,
-    speed: [80, 220],
-    size: [2, 4],
-    life: [400, 800],
+    count: 14, speed: [40, 140], size: [2, 4], life: [300, 600],
     colors: ["#ffffff", "#c9d0e0", "#7d8598"],
   });
 }
@@ -483,12 +572,13 @@ function nextLevel() {
       bestDeaths = deaths;
       Storage.save("ascent_best", bestDeaths);
     }
+    SFX.win();
     return;
   }
   levelIndex++;
   loadLevel(levelIndex);
   fade = 1;
-  Audio.Sfx.coin();
+  SFX.orb();
 }
 
 function restartGame() {
@@ -607,9 +697,14 @@ Loop.run({
     if (fade > 0) fade = Math.max(0, fade - 0.05);
 
     if (player.dead) {
-      player.deadTimer--;
-      if (deathAnim) deathAnim.update(step);
-      if (player.deadTimer <= 0) respawn(false);
+      // Free-fall arc — no collision, so the corpse drops straight through the
+      // level and off the bottom, then we respawn. Spin for the tumble.
+      player.vy = Math.min(player.vy + GRAVITY, MAX_FALL * 1.6);
+      player.y += player.vy;
+      player.x += player.vx;
+      player.deathSpin += 0.32;
+      anim.update(step);
+      if (player.y > WORLD_H + 80) respawn(false);
       return;
     }
     if (player.freeze > 0) {
@@ -634,22 +729,27 @@ Loop.run({
         player.vy = player.dashDy < 0 ? DASH_END_SPEED * -0.4 : 0;
       }
     } else {
-      const accel = player.onGround ? RUN_ACCEL : AIR_ACCEL;
-      const control = player.wallLock > 0 ? 0.35 : 1;
+      // Horizontal: move vx toward its target by a constant delta each frame.
       if (dir !== 0) {
         player.facing = dir;
-        player.vx = Mathf.clamp(player.vx + dir * accel * control, -RUN_MAX, RUN_MAX);
-      } else {
-        const brake = player.onGround ? GROUND_FRICTION : player.wallLock > 0 ? 1 : AIR_FRICTION;
-        player.vx *= brake;
-        if (Math.abs(player.vx) < 0.35) player.vx = 0;
+        const turning = player.vx !== 0 && Math.sign(player.vx) !== dir;
+        let acc = (player.onGround ? RUN_ACCEL : AIR_ACCEL) * (turning ? TURN_MULT : 1);
+        if (player.wallLock > 0) acc *= 0.4; // brief reduced control after a wall jump
+        player.vx = approach(player.vx, dir * RUN_MAX, acc);
+      } else if (player.wallLock === 0) {
+        player.vx = approach(player.vx, 0, player.onGround ? GROUND_DECEL : AIR_DECEL);
       }
 
+      // Vertical: gravity, with a half-gravity "hang" near the apex and the
+      // gentler wall-slide clamp when pressing into a wall.
       const sliding =
         !player.onGround && player.wallDir !== 0 && player.vy > 0 && dir === player.wallDir;
-      player.vy = sliding
-        ? Math.min(player.vy + GRAVITY * 0.5, WALL_SLIDE_MAX)
-        : Math.min(player.vy + GRAVITY, MAX_FALL);
+      if (sliding) {
+        player.vy = Math.min(player.vy + GRAVITY * 0.5, WALL_SLIDE_MAX);
+      } else {
+        const g = Math.abs(player.vy) < APEX_VY ? GRAVITY * APEX_MULT : GRAVITY;
+        player.vy = Math.min(player.vy + g, MAX_FALL);
+      }
     }
 
     if (player.wallLock > 0) player.wallLock--;
@@ -666,7 +766,7 @@ Loop.run({
       player.vy = JUMP_V;
       player.onGround = false;
       dust(player.x + PW / 2, player.y + PH, "#e8e2ff");
-      Audio.Sfx.jump();
+      SFX.jump();
     } else if (pressedJump && !player.onGround && wallCoyote.active) {
       const away = -wallCoyoteDir;
       player.vx = away * WALL_JUMP_VX;
@@ -675,7 +775,7 @@ Loop.run({
       player.wallLock = 9;
       wallCoyote.expire();
       dust(player.x + (wallCoyoteDir > 0 ? PW : 0), player.y + PH / 2, "#e8e2ff");
-      Audio.Sfx.jump();
+      SFX.wallJump();
     }
     if (!key.jumpHeld() && player.vy < JUMP_V * 0.45) player.vy *= 0.55;
 
@@ -698,8 +798,7 @@ Loop.run({
       player.hasDash = false;
       if (dx !== 0) player.facing = Math.sign(dx);
       Camera.shake(4, 180);
-      Audio.Sfx.blip(660, 0.1, 0.25);
-      Audio.Sfx.blip(880, 0.08, 0.2);
+      SFX.dash();
       Particles.burst(player.x + PW / 2, player.y + PH / 2, {
         count: 14, speed: [40, 130], size: [2, 4], life: [220, 420],
         colors: ["#d8e2ff", "#fff", "#a0c8ff"],
@@ -708,6 +807,7 @@ Loop.run({
 
     // -------- Integrate --------
     const wasAir = !player.onGround;
+    const impactVy = player.vy; // fall speed before grounding zeroes it
     player.onGround = false;
     moveX(player.vx);
     moveY(player.vy);
@@ -717,8 +817,11 @@ Loop.run({
       player.vy = 0;
       player.onGround = true;
     }
-    // Landing dust only — no screen shake on touchdown.
-    if (player.onGround && wasAir) dust(player.x + PW / 2, player.y + PH, "#d8d2f0");
+    // Landing: dust + a soft thud scaled to impact (no screen shake on touchdown).
+    if (player.onGround && wasAir) {
+      dust(player.x + PW / 2, player.y + PH, "#d8d2f0");
+      if (impactVy > 2.5) SFX.land(impactVy);
+    }
 
     player.wallDir = wallOn(1) ? 1 : wallOn(-1) ? -1 : 0;
     if (player.onGround) player.hasDash = true;
@@ -741,11 +844,10 @@ Loop.run({
       s.sh = cr.sh;
       s.alpha = readyOrb ? 1 : 0.35;
       s.y = o.baseY + Math.sin(bt + o.baseX) * 2;
-      if (readyOrb && Math.abs(o.baseX - pcx) < 13 && Math.abs(o.baseY - pcy) < 15) {
+      if (readyOrb && Math.abs(o.baseX - pcx) < 17 && Math.abs(o.baseY - pcy) < 18) {
         player.hasDash = true;
         o.cd = 90;
-        Audio.Sfx.blip(520, 0.08, 0.2);
-        Audio.Sfx.blip(820, 0.08, 0.2);
+        SFX.orb();
         Particles.burst(o.baseX, o.baseY, {
           count: 12, speed: [40, 120], size: [2, 4], life: [220, 420],
           colors: ["#a0f0ff", "#fff", "#7fd6ff"],
@@ -926,7 +1028,12 @@ function drawPlayer(ctx) {
   const feet = player.y + PH;
 
   if (player.dead) {
-    if (deathAnim) deathAnim.draw(ctx, cx, player.y + PH / 2, { w: FRAME, h: FRAME });
+    // Tumbling launch pose, rotated around the body centre.
+    ctx.save();
+    ctx.translate(cx, player.y + PH / 2);
+    ctx.rotate(player.deathSpin);
+    anim.draw(ctx, 0, 0, { w: FRAME, h: FRAME, ax: 0.5, ay: 0.5 });
+    ctx.restore();
     return;
   }
 
@@ -962,9 +1069,44 @@ function drawHud(ctx) {
   UI.group({ x: 8, y: 8, w: Math.min(360, vp.w - 16), h: 58, title: level.name }, (body) => {
     UI.text(`Room ${levelIndex + 1}/${LEVELS.length}    Deaths ${deaths}    Best ${best}`, { h: body.remaining, size: 12 });
   });
+  drawDashPip(ctx);
   UI.group({ x: 8, y: vp.h - 40, w: Math.min(360, vp.w - 16), h: 32 }, (body) => {
     UI.text("←→ move · C/Space jump · X dash · R restart", { h: body.remaining, size: 11, color: "dim" });
   });
+}
+
+// Dash charge indicator — a small diamond, bright cyan when dash is ready and
+// dim/hollow when spent, so the player can read their charge at a glance.
+function drawDashPip(ctx) {
+  const cx = 8 + 12;
+  const cy = 8 + 58 + 16; // just below the info group box
+  const s = 8;
+  const ready = player.hasDash;
+  ctx.save();
+  ctx.translate(cx, cy);
+  if (ready) {
+    ctx.shadowColor = "#5fd8ff";
+    ctx.shadowBlur = 10;
+  }
+  ctx.beginPath();
+  ctx.moveTo(0, -s);
+  ctx.lineTo(s * 0.72, 0);
+  ctx.lineTo(0, s);
+  ctx.lineTo(-s * 0.72, 0);
+  ctx.closePath();
+  if (ready) {
+    ctx.fillStyle = "#5fd8ff";
+    ctx.fill();
+  } else {
+    ctx.strokeStyle = "rgba(127,149,166,0.7)";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+  ctx.restore();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = ready ? "#cbeefb" : "#7f95a6";
+  ctx.font = "11px system-ui, sans-serif";
+  ctx.fillText("DASH", cx + 12, cy + 4);
 }
 
 function drawWin(ctx) {
