@@ -10,7 +10,7 @@ import { Minimotor } from "minimotor";
 
 let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 Minimotor.Stage.onResize((next) => (vp = next)); // piano + bars lay out from vp
-const { Audio, Pointer, Text, Mathf, Loop, UI } = Minimotor;
+const { Audio, Keys, Pointer, Text, Mathf, Loop, UI } = Minimotor;
 
 const midiFreq = (m) => 440 * 2 ** ((m - 69) / 12);
 
@@ -147,26 +147,28 @@ let musicStarted = false;
 // the backing ("music" bus) to muffle it. Declaring these creates no
 // AudioContext — the graph materializes on the first note — so it is safe at
 // load. R toggles the reverb send; F sweeps the muffle filter live.
+// Reverb the instrument can send into, and a low-pass on the instrument (sfx)
+// bus for a sweepable tone/cutoff — both shape the notes you play.
 Audio.Mixer.reverb("hall", { seconds: 2.4, decay: 2.2, wet: 0.9 });
-const grooveMuffle = Audio.Mixer.bus("music").addFilter("lowpass", 20000);
+const toneFilter = Audio.Mixer.bus("sfx").addFilter("lowpass", 20000);
 // A limiter on the master glues the mix and keeps peaks from clipping when you
 // roll the keys and notes stack up.
 Audio.Mixer.compressor();
 let reverbOn = false;
-let muffled = false;
+let filterOn = false;
 let lastPointerMidi = null; // for hold-and-roll on the piano
 // Continuous mix/filter amounts, driven by the on-screen sliders.
 let masterVol = 1;
 let reverbWet = 0.4;
-let cutoff = 700; // muffle low-pass cutoff (Hz) when engaged
+let cutoff = 1200; // low-pass cutoff (Hz) when the filter is engaged
 
-// The toggles/sliders and the keyboard shortcuts share this state, so both
-// stay in sync — these apply the current values to the mixer.
+// Push the current state to the mixer. Called from the widgets; reverb and the
+// filter both act on the instrument bus, so they're audible as you play.
 function applyReverb() {
   Audio.Mixer.bus("sfx").send("hall", reverbOn ? reverbWet : 0, 200);
 }
-function applyMuffle() {
-  grooveMuffle.frequency(muffled ? cutoff : 20000, 240);
+function applyFilter() {
+  toneFilter.frequency(filterOn ? cutoff : 20000, 240);
 }
 
 function ensureBacking() {
@@ -214,10 +216,20 @@ function glow(midi) {
 // ---------- Input ----------
 
 function handleInput() {
-  // Fully pointer-driven — no keyboard. Play the on-screen piano by holding the
-  // mouse/finger down and rolling across the
-  // keys; each new key under the pointer retriggers. Releasing clears the last
-  // key so tapping the same one again fires.
+  // Keyboard plays the instrument (the on-screen keys mirror it): note keys,
+  // Z/X octave, 1-4 waveform. The mixer/backing controls are UI-only now.
+  for (const k of [...WHITE_KEYS, ...BLACK_KEYS]) {
+    if (Keys.pressed(k.code)) playNote(anchorMidi() + k.semi);
+  }
+  if (Keys.pressed("KeyZ")) octave = Math.max(2, octave - 1);
+  if (Keys.pressed("KeyX")) octave = Math.min(6, octave + 1);
+  for (let d = 0; d < 4; d++) {
+    if (Keys.pressed(`Digit${d + 1}`)) wave = d;
+  }
+
+  // The on-screen piano plays too — hold the mouse/finger down and roll across
+  // the keys; each new key under the pointer retriggers. Releasing clears the
+  // last key so tapping the same one again fires.
   const p = piano();
   if (Pointer.down && Pointer.y >= p.y) {
     let semi = null;
@@ -311,10 +323,10 @@ Loop.run({
           reverbOn = rv;
           applyReverb();
         }
-        const mf = UI.toggle({ id: "mx-muffle", label: "Muffle", on: muffled });
-        if (mf !== muffled) {
-          muffled = mf;
-          applyMuffle();
+        const ff = UI.toggle({ id: "mx-filter", label: "Filter", on: filterOn });
+        if (ff !== filterOn) {
+          filterOn = ff;
+          applyFilter();
         }
       });
       const mv = UI.slider({ id: "mx-master", label: "Master", value: masterVol, w: 210, format: (v) => `${Math.round(v * 100)}%` });
@@ -325,12 +337,14 @@ Loop.run({
       const rw = UI.slider({ id: "mx-wet", label: "Verb", value: reverbWet, w: 210, format: (v) => `${Math.round(v * 100)}%` });
       if (rw !== reverbWet) {
         reverbWet = rw;
+        reverbOn = rw > 0; // dragging Verb up engages reverb (the checkbox follows)
         applyReverb();
       }
       const cf = UI.slider({ id: "mx-cut", label: "Cutoff", min: 200, max: 20000, step: 50, value: cutoff, w: 210, format: (v) => `${(v / 1000).toFixed(1)}k` });
       if (cf !== cutoff) {
         cutoff = cf;
-        if (muffled) applyMuffle();
+        filterOn = cf < 20000; // lowering Cutoff engages the filter (the checkbox follows)
+        applyFilter();
       }
     });
 
@@ -356,7 +370,7 @@ Loop.run({
     }
 
     if (litUntil.size === 0) {
-      Text.drawCentered(ctx, "click a key to play · tweak it in CONTROLS", vp.w / 2, p.y - 26, {
+      Text.drawCentered(ctx, "play with the keyboard or click the keys · shape it in SYNTH", vp.w / 2, p.y - 26, {
         font: "15px monospace",
         color: "#aab",
       });
