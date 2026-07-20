@@ -15,6 +15,38 @@ import type { Rect } from "./engine.js";
 
 type AtlasImage = CanvasImageSource & { width: number; height: number };
 
+/** The contact face on the MOVER, for a `moveAABB` collision filter. */
+export type MoveDir = "left" | "right" | "top" | "bottom";
+
+/** Options for `moveAABB`. */
+export interface MoveOptions {
+  /** Override which tiles block, per cell and per contact direction. Receives
+   *  the tile index, its cell, and the mover's contact face; return true to
+   *  block. Defaults to the map's `solid` predicate. Use it for one-off
+   *  filtering (hazards that don't stop you, doors, etc.). */
+  solid?: (tile: number, cx: number, cy: number, dir: MoveDir) => boolean;
+  /** One-way platforms: tiles that block ONLY a downward landing (the mover's
+   *  bottom meeting the tile's top), using the pre-move bottom edge so you
+   *  rise and pass through from below and step off the sides freely. Explicit
+   *  and opt-in — never inferred from level shape. */
+  oneway?: (tile: number, cx: number, cy: number) => boolean;
+}
+
+/** Result of `moveAABB`: the resolved rect, the delta actually applied, and
+ *  which faces ended in contact this move. */
+export interface MoveResult {
+  /** The resolved rectangle (a fresh object; the input is not mutated). */
+  rect: Rect;
+  /** Delta actually applied after resolution (≤ the requested magnitude). */
+  dx: number;
+  dy: number;
+  /** True if the mover was stopped on that face this move. */
+  left: boolean;
+  right: boolean;
+  top: boolean;
+  bottom: boolean;
+}
+
 export interface TilesConfig {
   /** Tile width in px. */
   tw: number;
@@ -59,6 +91,20 @@ export interface TileMap {
    *  (matches `Collision.rectsOverlap`). The go-to broadphase for tile
    *  platformer movement: move one axis, test, resolve. */
   solidInRect(rect: Rect): boolean;
+  /** Move an axis-aligned rect by (dx, dy) against the solid tiles and resolve
+   *  the collision, returning the stopped rect plus which faces made contact.
+   *
+   *    const hit = map.moveAABB(playerRect, vx, vy);
+   *    playerRect = hit.rect;
+   *    if (hit.bottom) vy = 0;         // landed / ceiling
+   *    if (hit.top) vy = Math.max(0, vy);
+   *
+   *  X and Y resolve independently to exact tile boundaries; every solid tile
+   *  blocks from every side; large deltas sweep the crossed cells (no
+   *  tunneling); a rect already overlapping a solid is not shoved (spawn-
+   *  overlap safe). It owns no velocity/gravity/state — the game keeps those.
+   *  See `MoveOptions` for per-tile filtering and opt-in one-way platforms. */
+  moveAABB(rect: Rect, dx: number, dy: number, opts?: MoveOptions): MoveResult;
   /** Draw every non-empty tile inside `view` (or the whole map). Returns how
    *  many tiles were drawn — handy for asserting the culling works. */
   draw(ctx: CanvasRenderingContext2D, view?: Rect): number;
@@ -164,6 +210,109 @@ export function grid(data: number[][], config: TilesConfig): TileMap {
         }
       }
       return false;
+    },
+
+    moveAABB(rect, dx, dy, opts = {}) {
+      // Live edges — X resolves first, then Y uses the resolved x-span.
+      let x = rect.x;
+      let y = rect.y;
+      const { w, h } = rect;
+      const prevBottom = y + h; // for one-way "landing from above" tests
+
+      // Is cell (cx, cy) blocking, given the mover's contact face? Empty and
+      // off-map cells never block. One-way platforms block only a downward
+      // landing whose pre-move bottom was at/above the tile top.
+      const blocks = (cx: number, cy: number, dir: MoveDir): boolean => {
+        const t = at(cx, cy);
+        if (opts.oneway?.(t, cx, cy)) {
+          return dir === "bottom" && prevBottom <= cy * th + 0.001;
+        }
+        return opts.solid ? opts.solid(t, cx, cy, dir) : isSolid(t);
+      };
+
+      // Perpendicular cell span a segment [a, a+len) covers (edge-exclusive,
+      // matching solidInRect so a flush edge doesn't count as overlap).
+      const span = (a: number, len: number, size: number): [number, number] => [
+        Math.floor(a / size),
+        Math.ceil((a + len) / size) - 1,
+      ];
+
+      // ---- X axis ----
+      let left = false;
+      let right = false;
+      if (dx !== 0) {
+        const [cyA, cyB] = span(y, h, th);
+        if (dx > 0) {
+          const edge = x + w; // leading (right) edge
+          const target = edge + dx;
+          // Column boundaries the right edge crosses: c*tw in [edge, target).
+          // Starting at ceil(edge/tw) skips a cell we already overlap.
+          for (let c = Math.ceil(edge / tw); c * tw < target; c++) {
+            let hit = false;
+            for (let cy = cyA; cy <= cyB; cy++) if (blocks(c, cy, "right")) hit = true;
+            if (hit) {
+              x = c * tw - w;
+              right = true;
+              break;
+            }
+          }
+          if (!right) x = x + dx;
+        } else {
+          const edge = x; // leading (left) edge
+          const target = edge + dx;
+          // Boundaries V = k*tw with target < V <= edge; the cell entered is k-1.
+          for (let k = Math.floor(edge / tw); k * tw > target; k--) {
+            const v = k * tw;
+            if (v > edge) continue;
+            let hit = false;
+            for (let cy = cyA; cy <= cyB; cy++) if (blocks(k - 1, cy, "left")) hit = true;
+            if (hit) {
+              x = v;
+              left = true;
+              break;
+            }
+          }
+          if (!left) x = x + dx;
+        }
+      }
+
+      // ---- Y axis (uses the resolved x-span) ----
+      let top = false;
+      let bottom = false;
+      if (dy !== 0) {
+        const [cxA, cxB] = span(x, w, tw);
+        if (dy > 0) {
+          const edge = y + h;
+          const target = edge + dy;
+          for (let c = Math.ceil(edge / th); c * th < target; c++) {
+            let hit = false;
+            for (let cx = cxA; cx <= cxB; cx++) if (blocks(cx, c, "bottom")) hit = true;
+            if (hit) {
+              y = c * th - h;
+              bottom = true;
+              break;
+            }
+          }
+          if (!bottom) y = y + dy;
+        } else {
+          const edge = y;
+          const target = edge + dy;
+          for (let k = Math.floor(edge / th); k * th > target; k--) {
+            const v = k * th;
+            if (v > edge) continue;
+            let hit = false;
+            for (let cx = cxA; cx <= cxB; cx++) if (blocks(cx, k - 1, "top")) hit = true;
+            if (hit) {
+              y = v;
+              top = true;
+              break;
+            }
+          }
+          if (!top) y = y + dy;
+        }
+      }
+
+      return { rect: { x, y, w, h }, dx: x - rect.x, dy: y - rect.y, left, right, top, bottom };
     },
 
     draw(ctx, view) {

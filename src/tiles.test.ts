@@ -116,3 +116,160 @@ describe("Tiles.grid", () => {
     expect(map.solidAt(3 * TW + 8, 8)).toBe(true);
   });
 });
+
+describe("Tiles.moveAABB", () => {
+  // A room: floor row (y cells 8), left wall (x cell 0) and right wall
+  // (x cell 9), over a 10-wide × 9-tall grid of 16px tiles (160×144 world).
+  const room = () => {
+    const g: number[][] = [];
+    for (let cy = 0; cy < 9; cy++) {
+      g.push(Array.from({ length: 10 }, (_, cx) => (cy === 8 || cx === 0 || cx === 9 ? 1 : 0)));
+    }
+    return g;
+  };
+  const roomMap = () => grid(room(), { tw: TW });
+
+  it("falls and lands exactly on the floor top, reporting bottom contact", () => {
+    const map = roomMap();
+    const r = { x: 32, y: 100, w: 12, h: 16 }; // bottom at 116, floor top at 128
+    const hit = map.moveAABB(r, 0, 40); // would reach 156, past the floor
+    expect(hit.bottom).toBe(true);
+    expect(hit.rect.y).toBe(128 - 16); // bottom snapped to y=128
+    expect(hit.rect.y + hit.rect.h).toBe(128);
+    expect(hit.top).toBe(false);
+  });
+
+  it("hits a ceiling and reports top contact", () => {
+    const map = grid(
+      [
+        [1, 1, 1, 1],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+      ],
+      { tw: TW },
+    );
+    const r = { x: 20, y: 20, w: 10, h: 10 }; // top at 20, ceiling bottom at 16
+    const hit = map.moveAABB(r, 0, -12); // up past y=16
+    expect(hit.top).toBe(true);
+    expect(hit.rect.y).toBe(16); // top snapped to the ceiling
+  });
+
+  it("stops at the left and right walls", () => {
+    const left = roomMap();
+    const rl = { x: 20, y: 40, w: 12, h: 12 }; // wall (cell 0) right edge at 16
+    const hitL = left.moveAABB(rl, -12, 0);
+    expect(hitL.left).toBe(true);
+    expect(hitL.rect.x).toBe(16);
+
+    const right = roomMap();
+    const rr = { x: 130, y: 40, w: 12, h: 12 }; // wall (cell 9) left edge at 144
+    const hitR = right.moveAABB(rr, 12, 0);
+    expect(hitR.right).toBe(true);
+    expect(hitR.rect.x + hitR.rect.w).toBe(144);
+  });
+
+  it("resolves X and Y independently so a corner move stops on both faces", () => {
+    const map = roomMap();
+    // Diagonal dive into the bottom-right corner: right wall @144, floor @128.
+    const r = { x: 100, y: 100, w: 16, h: 16 };
+    const hit = map.moveAABB(r, 60, 60);
+    expect(hit.right).toBe(true); // stopped by the right wall (x cell 9 @ 144)
+    expect(hit.bottom).toBe(true); // and by the floor (y cell 8 @ 128)
+    expect(hit.rect.x + hit.rect.w).toBe(144);
+    expect(hit.rect.y + hit.rect.h).toBe(128);
+  });
+
+  it("sweeps a large delta through crossed cells instead of tunneling", () => {
+    const map = roomMap();
+    const r = { x: 20, y: 40, w: 8, h: 8 };
+    // Far more than the room width — must stop at the right wall, not pass it.
+    const hit = map.moveAABB(r, 1000, 0);
+    expect(hit.right).toBe(true);
+    expect(hit.rect.x + hit.rect.w).toBe(144);
+  });
+
+  it("does not shove a rect already overlapping a solid (spawn-overlap safe)", () => {
+    const map = roomMap();
+    // Straddling the right wall (right edge at 152, inside wall cell 9 @144-160).
+    // A boundary behind the leading edge is never reverse-snapped, so the body
+    // is not teleported and can work itself free.
+    const nudge = map.moveAABB({ x: 140, y: 40, w: 12, h: 12 }, 4, 0);
+    expect(nudge.rect.x).toBe(144); // kept its relative motion, not yanked back
+    // Moving toward open space, it slides out unobstructed.
+    const free = map.moveAABB({ x: 140, y: 40, w: 12, h: 12 }, -20, 0);
+    expect(free.rect.x).toBe(120);
+    expect(free.left).toBe(false);
+  });
+
+  it("treats out-of-map space as empty (no walls unless tiled)", () => {
+    const map = grid([[0, 0, 0]], { tw: TW });
+    const r = { x: 0, y: 0, w: 8, h: 8 };
+    const hit = map.moveAABB(r, 500, 500);
+    expect(hit.rect.x).toBe(500);
+    expect(hit.rect.y).toBe(500);
+    expect(hit.right || hit.bottom || hit.left || hit.top).toBe(false);
+  });
+
+  it("honors a solid filter (non-solid tiles are passed through)", () => {
+    // tile 2 is a hazard that doesn't block; tile 1 does.
+    const map = grid(
+      [
+        [0, 2, 0, 1],
+        [0, 0, 0, 0],
+      ],
+      { tw: TW, solid: () => true }, // map default: everything solid...
+    );
+    const r = { x: 4, y: 0, w: 8, h: 8 };
+    const hit = map.moveAABB(r, 40, 0, { solid: (t) => t === 1 }); // ...override
+    expect(hit.right).toBe(true);
+    expect(hit.rect.x + hit.rect.w).toBe(3 * TW); // stopped at the tile-1 column, through the 2
+  });
+
+  it("one-way platform: blocks a landing from above, passes through from below", () => {
+    // Row of tile 3 at cy=2 (top at y=32); empty elsewhere.
+    const data = [
+      [0, 0, 0],
+      [0, 0, 0],
+      [3, 3, 3],
+    ];
+    const oneway = { oneway: (t: number) => t === 3 };
+
+    // Falling onto it from above → lands on top.
+    const land = grid(
+      data.map((r) => [...r]),
+      { tw: TW },
+    );
+    const falling = { x: 4, y: 20, w: 10, h: 10 }; // bottom 30, platform top 32
+    const hit = land.moveAABB(falling, 0, 10, oneway);
+    expect(hit.bottom).toBe(true);
+    expect(hit.rect.y + hit.rect.h).toBe(32);
+
+    // Rising from below → passes straight through (no top contact).
+    const rise = grid(
+      data.map((r) => [...r]),
+      { tw: TW },
+    );
+    const jumping = { x: 4, y: 40, w: 10, h: 10 }; // top 40, below the platform
+    const up = rise.moveAABB(jumping, 0, -20, oneway);
+    expect(up.top).toBe(false);
+    expect(up.rect.y).toBe(20); // moved freely through
+
+    // Moving sideways under/into it → not blocked horizontally.
+    const side = grid(
+      data.map((r) => [...r]),
+      { tw: TW },
+    );
+    const walking = { x: 4, y: 34, w: 10, h: 10 }; // overlapping the platform row
+    const across = side.moveAABB(walking, 12, 0, oneway);
+    expect(across.right).toBe(false);
+    expect(across.rect.x).toBe(16);
+  });
+
+  it("reports the delta actually applied", () => {
+    const map = roomMap();
+    const r = { x: 32, y: 100, w: 12, h: 16 };
+    const hit = map.moveAABB(r, 0, 40); // lands at y=112 (from 100)
+    expect(hit.dy).toBe(12);
+    expect(hit.dx).toBe(0);
+  });
+});

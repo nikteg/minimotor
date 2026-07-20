@@ -104,7 +104,7 @@ export type {
   Sparkline,
 } from "./perf.js";
 export type { GamepadState } from "./input.js";
-export type { TileMap, TilesConfig } from "./tiles.js";
+export type { TileMap, TilesConfig, MoveOptions, MoveResult, MoveDir } from "./tiles.js";
 export type { Transition, TransitionRender, TransitionRun } from "./transitions.js";
 
 // A shared default world (`Minimotor.World`) for the common single-world case;

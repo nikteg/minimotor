@@ -307,14 +307,21 @@ a sample migration; no phase is accepted merely because an API exists.
 5. **Profile before expanding rendering APIs.** Existing primitives are reused
    before adding another cache or renderer abstraction.
 
-### Phase 1 — kinematic tile movement (highest priority)
+### Phase 1 — kinematic tile movement (highest priority) ✅
+
+**Shipped** as `map.moveAABB(rect, dx, dy, opts?)` on the `TileMap` (a method,
+not a free function — it already has the grid/solidity). Contract below is met
+in full, with unit tests (floor/ceiling/walls, corner, large-delta sweep,
+spawn-overlap, out-of-map, solid filter, one-way, applied-delta) and the
+`tiles` sample migrated off its hand-rolled move-one-axis/test/snap code.
+Pixel Adventure migration follows in its own pass.
 
 **Problem:** samples repeatedly implement move-one-axis/test/snap logic. Small
 mistakes cause underside sticking, corner jitter, tunneling or accidental
 one-way behavior.
 
-**Proposed API:** add a pure `Tiles.moveAABB(map, rect, dx, dy, options?)`
-primitive returning the resolved rectangle plus contact flags:
+**API:** a pure `map.moveAABB(rect, dx, dy, options?)` primitive returning the
+resolved rectangle plus contact flags:
 
 ```ts
 const hit = Tiles.moveAABB(map, playerRect, vx * dt, vy * dt);
