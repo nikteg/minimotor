@@ -138,6 +138,8 @@ describe("UI theme", () => {
     expect(defaultTheme.borderWidth).toBe(2);
     expect(defaultTheme.radius).toBe(0);
     expect(defaultTheme.buttonPadX).toBe(28);
+    expect(defaultTheme.pad).toBe(8);
+    expect(defaultTheme.textPad).toBe(0);
     expect(defaultTheme.primary).toBe(defaultTheme.accent);
     expect(defaultTheme.danger).toBeDefined();
     setTheme({ radius: 8, borderWidth: 3 });
@@ -174,6 +176,22 @@ describe("UI text", () => {
     const { calls } = textCtx();
     text("x", { x: 10, y: 0, w: 100, h: 20, padX: 8 });
     expect(calls.fillText[0][1]).toBe(18); // rect.x(10) + padX(8)
+    _reset();
+  });
+
+  it("defaults the inset to theme.textPad, overridable per call", () => {
+    const flush = textCtx();
+    text("x", { x: 10, y: 0, w: 100, h: 20 }); // textPad default 0 → flush
+    expect(flush.calls.fillText[0][1]).toBe(10);
+    _reset();
+
+    setTheme({ textPad: 6 });
+    const themed = textCtx();
+    text("x", { x: 10, y: 0, w: 100, h: 20 }); // inherits theme inset
+    expect(themed.calls.fillText[0][1]).toBe(16); // rect.x(10) + theme.textPad(6)
+    const over = textCtx();
+    text("x", { x: 10, y: 0, w: 100, h: 20, padX: 0 }); // per-call wins
+    expect(over.calls.fillText[0][1]).toBe(10);
     _reset();
   });
 

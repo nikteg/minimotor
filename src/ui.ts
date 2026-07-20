@@ -94,6 +94,16 @@ export interface Theme {
   radius: number;
   /** Horizontal padding added around auto-sized button labels. Default 28. */
   buttonPadX: number;
+  /** Default inner padding (px) for bordered content containers — the `group`
+   *  body inset. Override per call with `pad`. Structural flow containers
+   *  (`row`/`col`) intentionally stay flush (pad 0) so widgets align to their
+   *  slot edges; use a `group` (or an explicit `pad`) when you want a box that
+   *  insets its content. Default 8. */
+  pad: number;
+  /** Default inset (px) applied by `UI.text` when no `pad`/`padX`/`padY` is
+   *  given. 0 keeps a label flush with its slot (so it lines up with sibling
+   *  widgets and HUD columns); raise it for a global label inset. Default 0. */
+  textPad: number;
 }
 
 export const defaultTheme: Theme = {
@@ -116,6 +126,8 @@ export const defaultTheme: Theme = {
   borderWidth: 2,
   radius: 0,
   buttonPadX: 28,
+  pad: 8,
+  textPad: 0,
 };
 
 let theme: Theme = { ...defaultTheme };
@@ -375,7 +387,8 @@ export interface LayoutOptions {
   h?: number;
   /** Gap between children in px. Default 8. */
   gap?: number;
-  /** Inner padding in px. Default 0 (8 for `group`/`panel`). */
+  /** Inner padding in px. `row`/`col` default to 0 (flush structural flow);
+   *  `group` defaults to `theme.pad`. */
   pad?: number;
   /** Main-axis alignment within the container's own slot when nested. */
   align?: "start" | "end";
@@ -506,7 +519,14 @@ export function group<R>(opts: GroupOptions, children: LayoutChildren<R>): R {
   });
   const top = opts.title ? 34 : 0;
   const body = { x: rect.x, y: rect.y + top, w: rect.w, h: rect.h - top };
-  return runContainer(dir, body, opts.gap ?? 8, opts.pad ?? 8, opts.align ?? "start", children);
+  return runContainer(
+    dir,
+    body,
+    opts.gap ?? 8,
+    opts.pad ?? theme.pad,
+    opts.align ?? "start",
+    children,
+  );
 }
 
 /** Insert extra spacing before the next child in the current layout. */
@@ -815,7 +835,8 @@ export interface TextOptions {
   /** Horizontal alignment within the slot. Default `"left"`. */
   align?: "left" | "center" | "right";
   /** Inset the text inside its slot, in px. `pad` sets both axes; `padX`/
-   *  `padY` override one. Handy for insetting a label from a panel edge. */
+   *  `padY` override one. Handy for insetting a label from a panel edge.
+   *  Defaults to `theme.textPad` (0) when omitted. */
   pad?: number;
   padX?: number;
   padY?: number;
@@ -875,9 +896,10 @@ export function text(
   const lineH = (opts.size ?? theme.fontSize) + 6;
   const rect = place(opts, natural, opts.h ?? lineH);
 
-  // Inset within the slot (pad shorthand + per-axis overrides).
-  const padX = opts.padX ?? opts.pad ?? 0;
-  const padY = opts.padY ?? opts.pad ?? 0;
+  // Inset within the slot (pad shorthand + per-axis overrides). Falls back to
+  // the theme's textPad (default 0 → flush) so a global inset is one setTheme.
+  const padX = opts.padX ?? opts.pad ?? theme.textPad;
+  const padY = opts.padY ?? opts.pad ?? theme.textPad;
   const bx = rect.x + padX;
   const bw = rect.w - padX * 2;
   const by = rect.y + padY;
@@ -949,7 +971,7 @@ function openTextEditor(opts: TextInputOptions): void {
   const input = document.createElement("input");
   input.type = opts.type ?? "text";
   input.value = opts.value;
-  input.maxLength = opts.maxLength ?? -1;
+  if (opts.maxLength !== undefined) input.maxLength = opts.maxLength;
   if (opts.inputMode) input.inputMode = opts.inputMode;
   input.autocomplete = "off";
   input.spellcheck = false;
@@ -963,7 +985,13 @@ function openTextEditor(opts: TextInputOptions): void {
     opacity: "0",
     pointerEvents: "none",
   });
-  const editor: TextEditor = { id: opts.id, input, value: opts.value, changed: false, submitted: false };
+  const editor: TextEditor = {
+    id: opts.id,
+    input,
+    value: opts.value,
+    changed: false,
+    submitted: false,
+  };
   input.addEventListener("input", () => {
     editor.value = input.value;
     editor.changed = true;
@@ -979,17 +1007,19 @@ function openTextEditor(opts: TextInputOptions): void {
   document.body.appendChild(input);
   textEditor = editor;
   input.focus({ preventScroll: true });
-  input.setSelectionRange?.(input.value.length, input.value.length);
+  // Selection APIs throw for some valid input types (notably number/email).
+  try {
+    input.setSelectionRange?.(input.value.length, input.value.length);
+  } catch {
+    // Native control still works; it simply chooses its own caret position.
+  }
 }
 
 /** Canvas-rendered single-line input backed by a hidden native `<input>` for
  * keyboard, clipboard, IME and mobile-keyboard behavior. Returns controlled
  * value plus one-frame `changed`/`submitted` flags. */
 export function textInput(opts: TextInputOptions): TextInputResult;
-export function textInput(
-  ctx: CanvasRenderingContext2D,
-  opts: TextInputOptions,
-): TextInputResult;
+export function textInput(ctx: CanvasRenderingContext2D, opts: TextInputOptions): TextInputResult;
 export function textInput(
   a: CanvasRenderingContext2D | TextInputOptions,
   b?: TextInputOptions,
@@ -1017,7 +1047,10 @@ export function textInput(
   }
   const value = active?.value ?? opts.value;
   const focused = !!active && document.activeElement === active.input;
-  const shown = (opts.type === "password" && value ? "•".repeat(value.length) : value) || opts.placeholder || "";
+  const shown =
+    (opts.type === "password" && value ? "•".repeat(value.length) : value) ||
+    opts.placeholder ||
+    "";
 
   ctx.save();
   drawBox(ctx, rect.x, rect.y, rect.w, rect.h, {
@@ -1119,10 +1152,7 @@ function openSelectEditor<T>(opts: SelectOptions<T>, index: number): void {
  * canvas option list; focused native arrow-key navigation updates the same
  * controlled value. */
 export function select<T>(opts: SelectOptions<T>): SelectResult<T>;
-export function select<T>(
-  ctx: CanvasRenderingContext2D,
-  opts: SelectOptions<T>,
-): SelectResult<T>;
+export function select<T>(ctx: CanvasRenderingContext2D, opts: SelectOptions<T>): SelectResult<T>;
 export function select<T>(
   a: CanvasRenderingContext2D | SelectOptions<T>,
   b?: SelectOptions<T>,
@@ -1141,7 +1171,8 @@ export function select<T>(
     else openSelectEditor(opts, currentIndex);
   }
   let editor = selectEditor?.id === opts.id ? selectEditor : null;
-  let value = editor && editor.index >= 0 ? opts.options[editor.index]?.value ?? opts.value : opts.value;
+  let value =
+    editor && editor.index >= 0 ? (opts.options[editor.index]?.value ?? opts.value) : opts.value;
   let changed = editor?.changed ?? false;
   const selected = opts.options.find((option) => Object.is(option.value, value));
 
@@ -1153,7 +1184,13 @@ export function select<T>(
   ctx.font = uiFont();
   ctx.fillStyle = selected ? theme.text : theme.textDim;
   ctx.textAlign = "left";
-  centeredText(ctx, selected?.label ?? opts.placeholder ?? "Select…", rect.x + 10, rect.y + rect.h / 2, rect.w - 36);
+  centeredText(
+    ctx,
+    selected?.label ?? opts.placeholder ?? "Select…",
+    rect.x + 10,
+    rect.y + rect.h / 2,
+    rect.w - 36,
+  );
   ctx.fillStyle = theme.textDim;
   ctx.beginPath();
   ctx.moveTo(rect.x + rect.w - 20, rect.y + rect.h / 2 - 3);
@@ -1172,19 +1209,31 @@ export function select<T>(
     const vp = Stage.viewport;
     const menuY = rect.y + rect.h + menuH <= vp.h - 4 ? rect.y + rect.h + 2 : rect.y - menuH - 2;
     const menu = { x: rect.x, y: menuY, w: rect.w, h: menuH };
-    panel(ctx, menu);
-    const start = Math.max(0, Math.min(opts.options.length - visible, editor.index - Math.floor(visible / 2)));
+    // Dropdowns must visually occlude the canvas behind them. Theme panel
+    // colors may be translucent, so lay down an opaque widget fill first,
+    // then the normal themed panel/border—same capture pass as popovers/modals.
+    ctx.save();
+    ctx.fillStyle = theme.bgActive;
+    ctx.fillRect(menu.x, menu.y, menu.w, menu.h);
+    ctx.restore();
+    panel(ctx, { ...menu, bg: theme.bgActive });
+    const start = Math.max(
+      0,
+      Math.min(opts.options.length - visible, editor.index - Math.floor(visible / 2)),
+    );
     for (let i = start; i < Math.min(opts.options.length, start + visible); i++) {
       const option = opts.options[i];
-      if (button(ctx, {
-        x: menu.x + 2,
-        y: menu.y + 2 + (i - start) * itemH,
-        w: menu.w - 4,
-        h: itemH,
-        label: option.label,
-        disabled: option.disabled,
-        variant: Object.is(option.value, value) ? "primary" : "ghost",
-      })) {
+      if (
+        button(ctx, {
+          x: menu.x + 2,
+          y: menu.y + 2 + (i - start) * itemH,
+          w: menu.w - 4,
+          h: itemH,
+          label: option.label,
+          disabled: option.disabled,
+          variant: Object.is(option.value, value) ? "primary" : "ghost",
+        })
+      ) {
         editor.index = i;
         editor.select.value = String(i);
         editor.changed = true;
@@ -1195,7 +1244,13 @@ export function select<T>(
         break;
       }
     }
-    if (editor && !editor.justOpened && p.released && !pointInRect(p.x, p.y, rect) && !pointInRect(p.x, p.y, menu)) {
+    if (
+      editor &&
+      !editor.justOpened &&
+      p.released &&
+      !pointInRect(p.x, p.y, rect) &&
+      !pointInRect(p.x, p.y, menu)
+    ) {
       removeSelectEditor();
       editor = null;
     }
