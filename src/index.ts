@@ -125,10 +125,15 @@ export type {
   ButtonStyle,
   FloatManager,
   FloatOptions,
+  ModalOptions,
   PanelOptions,
+  PopoverOptions,
   RowOptions,
   ScrollbarOptions,
+  SliderOptions,
+  SpinnerOptions,
   TabsOptions,
+  Theme,
   ToggleOptions,
 } from "./ui.js";
 

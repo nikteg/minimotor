@@ -2,6 +2,7 @@
 // Lightweight FPS / frame-time tracker with optional on-canvas overlay, plus an
 // optional network throughput meter. Tracks rolling min/max/avg over a window.
 
+import { pointInRect } from "./collision.js";
 import type { EnginePlugin, FrameTimings } from "./engine.js";
 import { lerp } from "./mathf.js";
 
@@ -221,12 +222,13 @@ const rate = (perSec: number) => Math.round(perSec);
 const kbps = (bps: number) => (bps / 1024).toFixed(1);
 
 /** Draw a compact perf HUD. Defaults to the top-right corner (pass `viewW` so it
- *  can anchor there); call after your own draw code. */
+ *  can anchor there); call after your own draw code. Returns the box rect, so
+ *  callers can hit-test it (the plugin's click-to-dim uses this). */
 export function drawPerfHud(
   ctx: CanvasRenderingContext2D,
   stats: PerfStats,
   opts: PerfHudOptions = {},
-): void {
+): { x: number; y: number; w: number; h: number } {
   const net = opts.net;
   const timings = opts.timings;
   const anchor = opts.anchor ?? "top-right";
@@ -309,6 +311,7 @@ export function drawPerfHud(
   if (upSpark) strip(upSpark, "↑ sent KB/s", "#4ecdc4");
   if (downSpark) strip(downSpark, "↓ received KB/s", "#ffd43b");
   ctx.restore();
+  return { x: bgX, y: bgY, w: boxW, h: boxH };
 }
 
 // ---------- Plugin ----------
@@ -336,7 +339,8 @@ function usedHeapMB(): number | undefined {
 }
 
 /** Create a Perf HUD game plugin. Each call owns its own tracker state. Draws in
- *  the top-right corner by default; pass a `NetMeter` to also show throughput:
+ *  the top-right corner by default; pass a `NetMeter` to also show throughput.
+ *  Click the HUD to dim it out of the way (and click again to restore):
  *
  *    const net = Minimotor.Perf.createNetMeter();
  *    Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin({ net })] });
@@ -348,6 +352,8 @@ export function plugin(opts: PerfOptions = {}): EnginePlugin {
   const upSpark = wantGraphs && opts.net ? createSparkline() : undefined;
   const downSpark = wantGraphs && opts.net ? createSparkline() : undefined;
   const graphs = wantGraphs ? { frame: frameSpark, up: upSpark, down: downSpark } : undefined;
+  let dimmed = false;
+  let box: { x: number; y: number; w: number; h: number } | null = null;
   return {
     name: "perf",
     afterDraw(game) {
@@ -359,7 +365,13 @@ export function plugin(opts: PerfOptions = {}): EnginePlugin {
         upSpark?.push(net.upBps);
         downSpark?.push(net.downBps);
       }
-      drawPerfHud(game.ctx, stats, {
+      // Click the HUD (its rect from the previous frame) to toggle it dim.
+      const p = game.pointer;
+      if (box && p.frameReleased && pointInRect(p.x, p.y, box)) dimmed = !dimmed;
+      const ctx = game.ctx;
+      ctx.save();
+      if (dimmed) ctx.globalAlpha = 0.12;
+      box = drawPerfHud(ctx, stats, {
         viewW: game.viewport.w,
         anchor: opts.anchor ?? "top-right",
         net,
@@ -368,6 +380,7 @@ export function plugin(opts: PerfOptions = {}): EnginePlugin {
         heapMB: usedHeapMB(),
         graphs,
       });
+      ctx.restore();
     },
   };
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { pointInRect } from "./collision.js";
-import { bar, buttonState, createFloats } from "./ui.js";
+import { _reset, bar, buttonState, createFloats, defaultTheme, getTheme, setTheme } from "./ui.js";
 
 const mockCtx = () => {
   const calls: {
@@ -88,6 +88,19 @@ describe("UI bar", () => {
     const empty = mockCtx();
     bar(empty.ctx, 0, 0, 100, 8, -2); // clamped to none — no fill rect at all
     expect(empty.calls.fillRect).toEqual([[0, 0, 100, 8]]);
+  });
+});
+
+describe("UI theme", () => {
+  it("setTheme merges over the defaults without compounding", () => {
+    setTheme({ accent: "#f00" });
+    expect(getTheme().accent).toBe("#f00");
+    expect(getTheme().text).toBe(defaultTheme.text);
+    setTheme({ text: "#0f0" });
+    expect(getTheme().accent).toBe(defaultTheme.accent); // previous override gone
+    expect(getTheme().text).toBe("#0f0");
+    _reset();
+    expect(getTheme()).toEqual(defaultTheme);
   });
 });
 

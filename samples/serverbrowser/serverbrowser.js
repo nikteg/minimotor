@@ -43,19 +43,38 @@ let servers = fetchServers();
 let tab = 0; // 0 = All, then MODES
 let hideFull = false;
 let hideEmpty = false;
+let maxPing = 250; // 250 = no limit
 let sortKey = "ping";
 let sortDir = 1;
 let scroll = 0;
 let selected = null; // a server object (survives re-sorting), not an index
 let refreshing = false;
-let spin = 0; // spinner angle while refreshing
 let status = "";
+let filtersOpen = false; // the FILTERS popover
+let confirming = null; // server awaiting the join-confirm modal
+let altTheme = false;
+
+// A second look for the whole kit — one setTheme call restyles every widget.
+const AMBER = {
+  font: "Verdana, sans-serif",
+  fontSize: 12,
+  accent: "#ffb454",
+  accentSoft: "#9a6b2f",
+  text: "#f4ecd8",
+  textDim: "#a08e6e",
+  bg: "#3a2f1d",
+  bgHover: "#4a3c24",
+  bgActive: "#2a2214",
+  border: "#5a4a2e",
+  panelBg: "rgba(24,18,8,0.94)",
+};
 
 function visibleServers() {
   let list = servers;
   if (tab > 0) list = list.filter((s) => s.mode === MODES[tab - 1]);
   if (hideFull) list = list.filter((s) => s.players < s.max);
   if (hideEmpty) list = list.filter((s) => s.players > 0);
+  if (maxPing < 250) list = list.filter((s) => s.ping <= maxPing);
   const dir = sortDir;
   return [...list].sort((a, b) => {
     const av = a[sortKey];
@@ -94,15 +113,18 @@ function layout() {
   // Columns: name flexes, the rest are fixed.
   const cols = { mode: 70, region: 56, players: 80, ping: 60 };
   const nameW = w - 24 - cols.mode - cols.region - cols.players - cols.ping - 14;
-  return { x, y, w, h, cols, nameW, listY: y + 128, listH: h - 128 - 64 };
+  return { x, y, w, h, cols, nameW, listY: y + 104, listH: h - 104 - 64 };
 }
 
 const pingColor = (ping) => (ping < 60 ? "#6bff9e" : ping < 130 ? "#ffd43b" : "#ff6b6b");
 
 Minimotor.Loop.run({
-  update(stepMs) {
+  update() {
     if (Keys.pressed("KeyR")) refresh();
-    if (refreshing) spin += stepMs * 0.012;
+    if (Keys.pressed("Escape")) {
+      confirming = null;
+      filtersOpen = false;
+    }
   },
 
   draw(ctx) {
@@ -112,14 +134,20 @@ Minimotor.Loop.run({
     const L = layout();
     UI.panel(ctx, { x: L.x, y: L.y, w: L.w, h: L.h, title: "SERVER BROWSER" });
 
-    // ---- filter bar: tabs + toggles + refresh ----
-    tab = UI.tabs(ctx, {
-      x: L.x + 12,
-      y: L.y + 42,
-      w: Math.min(320, L.w - 140),
-      items: ["All", ...MODES],
-      active: tab,
-    });
+    // ---- control bar: tabs + filters popover trigger + theme + refresh ----
+    const tabsW = Math.min(300, L.w - 320);
+    tab = UI.tabs(ctx, { x: L.x + 12, y: L.y + 42, w: tabsW, items: ["All", ...MODES], active: tab });
+    const nFilters = (hideFull ? 1 : 0) + (hideEmpty ? 1 : 0) + (maxPing < 250 ? 1 : 0);
+    const filterBtn = { x: L.x + tabsW + 22, y: L.y + 42, w: 110, h: 30 };
+    if (
+      UI.button(ctx, {
+        ...filterBtn,
+        label: `FILTERS${nFilters ? ` (${nFilters})` : ""}`,
+        tooltip: "Hide full/empty servers, cap the ping",
+      })
+    ) {
+      filtersOpen = !filtersOpen;
+    }
     if (
       UI.button(ctx, {
         x: L.x + L.w - 116,
@@ -128,22 +156,26 @@ Minimotor.Loop.run({
         h: 30,
         label: refreshing ? "…" : "REFRESH",
         disabled: refreshing,
+        tooltip: "Re-query the master server (R)",
       })
     ) {
       refresh();
     }
-    if (refreshing) {
-      // Tiny spinner next to the button while the mock request is in flight.
-      ctx.save();
-      ctx.strokeStyle = "#4ecdc4";
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(L.x + L.w - 134, L.y + 57, 8, spin, spin + Math.PI * 1.4);
-      ctx.stroke();
-      ctx.restore();
+    // Busy arc while the mock request is in flight.
+    if (refreshing) UI.spinner(ctx, L.x + L.w - 134, L.y + 57);
+    if (
+      UI.button(ctx, {
+        x: L.x + L.w - 196,
+        y: L.y + 42,
+        w: 70,
+        h: 30,
+        label: "THEME",
+        tooltip: "Swap the whole UI kit's theme",
+      })
+    ) {
+      altTheme = !altTheme;
+      UI.setTheme(altTheme ? AMBER : {});
     }
-    hideFull = UI.toggle(ctx, { x: L.x + 12, y: L.y + 84, label: "Hide full", on: hideFull });
-    hideEmpty = UI.toggle(ctx, { x: L.x + 122, y: L.y + 84, label: "Hide empty", on: hideEmpty });
 
     // ---- column headers (click to sort) ----
     const list = visibleServers();
@@ -203,9 +235,14 @@ Minimotor.Loop.run({
     for (let i = first; i <= last; i++) {
       const s = list[i];
       const ry = L.listY + i * ROW_H - scroll;
-      if (UI.row(ctx, { x: L.x + 2, y: ry, w: L.w - 18, h: ROW_H, selected: s === selected })) {
-        selected = s;
-      }
+      const clicked = UI.row(ctx, {
+        x: L.x + 2,
+        y: ry,
+        w: L.w - 18,
+        h: ROW_H,
+        selected: s === selected,
+      });
+      if (clicked && !filtersOpen) selected = s; // popover floats over the list
       ctx.font = "13px monospace";
       ctx.textAlign = "left";
       ctx.fillStyle = "#e8f0f4";
@@ -251,12 +288,62 @@ Minimotor.Loop.run({
         h: 34,
         label: "JOIN",
         disabled: !selected || refreshing,
+        tooltip: selected ? `Join ${selected.name}` : "Select a server first",
       })
     ) {
-      join(selected);
-      UI.float("JOIN", L.x + L.w - 64, footY, { color: "#4ecdc4", life: 600 });
+      confirming = selected;
+    }
+
+    // ---- the filters popover, floating over the list ----
+    const pop = { x: filterBtn.x, y: filterBtn.y + 36, w: 300, h: 128, title: "FILTERS" };
+    filtersOpen = UI.popover(ctx, { ...pop, open: filtersOpen });
+    if (filtersOpen) {
+      hideFull = UI.toggle(ctx, { x: pop.x + 14, y: pop.y + 44, label: "Hide full", on: hideFull });
+      hideEmpty = UI.toggle(ctx, {
+        x: pop.x + 150,
+        y: pop.y + 44,
+        label: "Hide empty",
+        on: hideEmpty,
+      });
+      maxPing = UI.slider(ctx, {
+        x: pop.x + 80,
+        y: pop.y + 92,
+        w: 130,
+        min: 20,
+        max: 250,
+        step: 10,
+        value: maxPing,
+        label: "ping",
+        format: (v) => (v >= 250 ? "any" : `≤${v}`),
+      });
+    }
+
+    // ---- join confirmation: a modal blocks everything behind it ----
+    if (confirming) {
+      const r = UI.modal(ctx, { w: 380, h: 150, title: "JOIN SERVER" });
+      ctx.fillStyle = "#e8f0f4";
+      ctx.font = "13px monospace";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.fillText(`${confirming.name}`, r.x + 16, r.y + 56);
+      ctx.fillStyle = "#7d8894";
+      ctx.fillText(
+        `${confirming.mode} · ${confirming.region} · ${confirming.players}/${confirming.max} players · ${confirming.ping}ms`,
+        r.x + 16,
+        r.y + 78,
+      );
+      if (UI.button(ctx, { x: r.x + r.w - 208, y: r.y + r.h - 46, w: 96, h: 34, label: "JOIN" })) {
+        join(confirming);
+        confirming = null;
+      }
+      if (
+        UI.button(ctx, { x: r.x + r.w - 104, y: r.y + r.h - 46, w: 92, h: 34, label: "CANCEL" })
+      ) {
+        confirming = null;
+      }
     }
 
     UI.drawFloats(ctx);
+    UI.drawTips(ctx); // tooltips on the very top
   },
 });

@@ -212,9 +212,13 @@ spec?)` integration (swap fires behind full coverage). Proof: the `scenes`
   looks), `bar` (clamped meter), `panel` (framed/titled box), `toggle`
   (checkbox), `tabs` (strip), `row` (selectable list row) and `scrollbar`
   (wheel + thumb drag + track paging, backed by `Pointer.wheel`/
-  `framePressed`). No retained widget tree — everything draws in your draw
-  phase. Game-specific overlays (copy/layout) stay in the samples'
-  `overlays.js`, where they belong.
+  `framePressed`), `slider`, `spinner`, `popover` (outside-click closes),
+  `modal` (dimmed backdrop that really blocks background input) and hover
+  `tooltip`s with a stability delay. All colors/fonts flow from a `Theme`
+  (`setTheme` restyles the whole kit); interactive widgets request the hand
+  cursor via the engine's per-frame `setCursor`. No retained widget tree —
+  everything draws in your draw phase. Game-specific overlays (copy/layout)
+  stay in the samples' `overlays.js`, where they belong.
 
 ## Opt-in entry points ✅
 
@@ -353,6 +357,11 @@ pointInRect` for the hit-testing). Proof: the scenes sample's clickable
     (`Pointer.framePressed`, `Pointer.wheel`). Proof: the **serverbrowser**
     sample — a complete no-DOM GUI screen (filter tabs, toggles, sortable
     columns, wheel/drag scrolling list, disabled buttons, mock refresh/join).
+    Round two added `slider`/`spinner`/`popover`/`modal`/`tooltip`, themes
+    (`setTheme`), optical vertical text centering, hover cursors
+    (`Loop.setCursor` + `Loop.onFrame` engine hooks), and a click-to-dim perf
+    HUD — all exercised in the same sample (filters popover, join-confirm
+    modal, theme switcher).
 
 ## Open decisions
 
