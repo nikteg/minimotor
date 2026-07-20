@@ -165,45 +165,41 @@ Minimotor.Loop.run({
     const L = layout();
     UI.panel({ x: L.x, y: L.y, w: L.w, h: L.h, title: "SERVER BROWSER" });
 
-    // ---- control bar: two stacks in the flex row — one growing right,
-    // one growing left. Everything auto-sizes to its label.
-    const barL = UI.stack({ x: L.controls.x, y: L.controls.y, gap: 10, h: L.controls.h });
-    tab = UI.tabs({ at: barL, items: ["All", ...MODES], active: tab });
+    // ---- control bar: two closure rows over the same slot — the left one
+    // flows from the left, the right one (align:"end") grows from the right.
+    // Widgets inside auto-flow and auto-size; no rects threaded by hand.
     const nFilters = (hideFull ? 1 : 0) + (hideEmpty ? 1 : 0) + (maxPing < 250 ? 1 : 0);
-    if (
-      UI.button({
-        at: barL,
-        label: `FILTERS${nFilters ? ` (${nFilters})` : ""}`,
-        tooltip: "Hide full/empty servers, cap the ping",
-      })
-    ) {
-      filtersOpen = !filtersOpen;
-    }
-    const filterBtn = barL.last; // the popover anchors under this
-
-    const barR = UI.stack({
-      x: L.controls.x + L.controls.w,
-      y: L.controls.y,
-      gap: 10,
-      h: L.controls.h,
-      align: "end",
+    let filterBtn;
+    UI.row({ ...L.controls, gap: 10 }, (bar) => {
+      tab = UI.tabs({ items: ["All", ...MODES], active: tab });
+      if (
+        UI.button({
+          label: `FILTERS${nFilters ? ` (${nFilters})` : ""}`,
+          tooltip: "Hide full/empty servers, cap the ping",
+        })
+      ) {
+        filtersOpen = !filtersOpen;
+      }
+      filterBtn = bar.last; // the popover anchors under this
     });
-    if (
-      UI.button({
-        at: barR,
-        label: refreshing ? "…" : "REFRESH",
-        disabled: refreshing,
-        tooltip: "Re-query the master server (R)",
-      })
-    ) {
-      refresh();
-    }
-    if (UI.button({ at: barR, label: "THEME", tooltip: "Swap the whole UI kit's theme" })) {
-      altTheme = !altTheme;
-      UI.setTheme(altTheme ? AMBER : {});
-    }
-    // Busy arc while the mock request is in flight, left of the buttons.
-    if (refreshing) UI.spinner(barR.last.x - 18, L.controls.y + 15);
+
+    UI.row({ ...L.controls, gap: 10, align: "end" }, (bar) => {
+      if (
+        UI.button({
+          label: refreshing ? "…" : "REFRESH",
+          disabled: refreshing,
+          tooltip: "Re-query the master server (R)",
+        })
+      ) {
+        refresh();
+      }
+      if (UI.button({ label: "THEME", tooltip: "Swap the whole UI kit's theme" })) {
+        altTheme = !altTheme;
+        UI.setTheme(altTheme ? AMBER : {});
+      }
+      // Busy arc while the mock request is in flight, left of the buttons.
+      if (refreshing) UI.spinner(bar.extent.x - 18, L.controls.y + 15);
+    });
 
     // ---- column headers (click to sort) — rects straight from the flex ----
     const list = visibleServers();
@@ -214,20 +210,21 @@ Minimotor.Loop.run({
       { key: "players", label: "PLAYERS", rect: L.players },
       { key: "ping", label: "PING", rect: L.ping },
     ];
-    ctx.font = "bold 12px monospace";
-    ctx.textBaseline = "middle";
     for (const hd of headers) {
-      if (UI.row({ ...hd.rect, w: hd.rect.w - 6 })) {
+      if (UI.listItem({ ...hd.rect, w: hd.rect.w - 6 })) {
         if (sortKey === hd.key) sortDir = -sortDir;
         else {
           sortKey = hd.key;
           sortDir = 1;
         }
       }
-      ctx.fillStyle = sortKey === hd.key ? "#4ecdc4" : "#7d8894";
-      ctx.textAlign = "left";
       const arrow = sortKey === hd.key ? (sortDir === 1 ? " ▲" : " ▼") : "";
-      ctx.fillText(hd.label + arrow, hd.rect.x, hd.rect.y + hd.rect.h / 2);
+      UI.text(hd.label + arrow, {
+        ...hd.rect,
+        size: 12,
+        bold: true,
+        color: sortKey === hd.key ? "accent" : "dim",
+      });
     }
 
     // ---- the list: clipped rows + scrollbar, filling the flexed space ----
@@ -242,65 +239,47 @@ Minimotor.Loop.run({
       wheelArea: L.list,
     });
 
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(L.rows.x, L.rows.y, L.rows.w, L.rows.h);
-    ctx.clip();
-
-    const first = Math.floor(scroll / ROW_H);
-    const last = Math.min(list.length - 1, Math.ceil((scroll + L.rows.h) / ROW_H));
-    for (let i = first; i <= last; i++) {
-      const s = list[i];
-      const ry = L.rows.y + i * ROW_H - scroll;
-      const clicked = UI.row({
-        x: L.rows.x,
-        y: ry,
-        w: L.rows.w,
-        h: ROW_H,
-        selected: s === selected,
-      });
-      if (clicked) selected = s; // an open popover blocks this automatically
-      ctx.font = "13px monospace";
-      ctx.textAlign = "left";
-      ctx.fillStyle = "#e8f0f4";
-      ctx.fillText(s.name, L.name.x + 4, ry + ROW_H / 2, L.name.w - 14);
-      ctx.fillStyle = "#9aa7b0";
-      ctx.fillText(s.mode, L.mode.x, ry + ROW_H / 2);
-      ctx.fillText(s.region, L.reg.x, ry + ROW_H / 2);
-      ctx.fillStyle = s.players >= s.max ? "#ff6b6b" : "#9aa7b0";
-      ctx.fillText(`${s.players}/${s.max}`, L.players.x, ry + ROW_H / 2);
-      ctx.fillStyle = pingColor(s.ping);
-      ctx.fillText(`${s.ping}`, L.ping.x, ry + ROW_H / 2);
-    }
-    if (list.length === 0) {
-      ctx.fillStyle = "#5a6a75";
-      ctx.textAlign = "center";
-      ctx.fillText("no servers match the filters", L.rows.x + L.rows.w / 2, L.rows.y + 40);
-    }
-    ctx.restore();
+    UI.clip(L.rows, () => {
+      const first = Math.floor(scroll / ROW_H);
+      const last = Math.min(list.length - 1, Math.ceil((scroll + L.rows.h) / ROW_H));
+      for (let i = first; i <= last; i++) {
+        const s = list[i];
+        const ry = L.rows.y + i * ROW_H - scroll;
+        if (UI.listItem({ x: L.rows.x, y: ry, w: L.rows.w, h: ROW_H, selected: s === selected })) {
+          selected = s; // an open popover blocks this automatically
+        }
+        UI.text(s.name, { x: L.name.x + 4, y: ry, w: L.name.w - 14, h: ROW_H });
+        UI.text(s.mode, { x: L.mode.x, y: ry, h: ROW_H, color: "dim" });
+        UI.text(s.region, { x: L.reg.x, y: ry, h: ROW_H, color: "dim" });
+        UI.text(`${s.players}/${s.max}`, {
+          x: L.players.x,
+          y: ry,
+          h: ROW_H,
+          color: s.players >= s.max ? "#ff6b6b" : "dim",
+        });
+        UI.text(`${s.ping}`, { x: L.ping.x, y: ry, h: ROW_H, color: pingColor(s.ping) });
+      }
+      if (list.length === 0) {
+        UI.text("no servers match the filters", {
+          x: L.rows.x,
+          y: L.rows.y + 24,
+          w: L.rows.w,
+          align: "center",
+          color: "dim",
+        });
+      }
+    });
 
     // ---- footer: count, status, JOIN ----
-    ctx.strokeStyle = "#2a3a48";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(L.x + 2, L.footer.y - 4);
-    ctx.lineTo(L.x + L.w - 2, L.footer.y - 4);
-    ctx.stroke();
-    ctx.font = "12px monospace";
-    ctx.textAlign = "left";
-    ctx.fillStyle = "#7d8894";
     // The join status takes the counter's spot while it's showing.
-    const footTextY = L.footer.y + L.footer.h / 2 + 4;
+    const footText = { x: L.footer.x, y: L.footer.y, w: L.footer.w - 130, h: L.footer.h, size: 12 };
     if (status) {
-      ctx.fillStyle = status.startsWith("Connected") ? "#6bff9e" : "#ffd43b";
-      ctx.fillText(status, L.footer.x, footTextY, L.footer.w - 130);
+      UI.text(status, { ...footText, color: status.startsWith("Connected") ? "#6bff9e" : "#ffd43b" });
     } else {
-      ctx.fillText(
-        `${list.length}/${servers.length} servers · R to refresh`,
-        L.footer.x,
-        footTextY,
-        L.footer.w - 130,
-      );
+      UI.text(`${list.length}/${servers.length} servers · R to refresh`, {
+        ...footText,
+        color: "dim",
+      });
     }
     const footBtns = UI.stack({
       x: L.footer.x + L.footer.w,

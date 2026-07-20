@@ -84,7 +84,13 @@ export type {
 export type { ClockManager, Cancel } from "./clock.js";
 export type { SignalBus } from "./signals.js";
 export type { AssetStore, AssetManifest, ProgressFn } from "./assets.js";
-export type { Animation, SheetConfig, FrameRect, AnimDrawOptions } from "./anim.js";
+export type {
+  Animation,
+  AnimationStates,
+  SheetConfig,
+  FrameRect,
+  AnimDrawOptions,
+} from "./anim.js";
 export type { Sweep } from "./collision.js";
 export type { ShakeState } from "./camera.js";
 export type { ParticleSystem, BurstOptions, Range } from "./particles.js";
@@ -123,22 +129,26 @@ export type {
   BarStyle,
   ButtonOptions,
   ButtonStyle,
-  FloatManager,
-  FloatOptions,
-  ModalOptions,
-  PanelOptions,
-  PopoverOptions,
-  RowOptions,
   ButtonVariant,
   ConfirmOptions,
   FlexSize,
   FlexSpec,
+  FloatManager,
+  FloatOptions,
+  GroupOptions,
+  LayoutChildren,
+  LayoutOptions,
+  ListItemOptions,
+  ModalOptions,
+  PanelOptions,
+  PopoverOptions,
   ScrollbarOptions,
   SliderOptions,
   SpinnerOptions,
   Stack,
   StackOptions,
   TabsOptions,
+  TextOptions,
   Theme,
   ToggleOptions,
 } from "./ui.js";

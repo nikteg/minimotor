@@ -4,11 +4,14 @@ import {
   _reset,
   bar,
   begin,
+  button,
   buttonState,
+  col,
   createFloats,
   defaultTheme,
   flex,
   getTheme,
+  row,
   setTheme,
   stack,
   textWidth,
@@ -239,6 +242,55 @@ describe("UI stack", () => {
     expect(s.next(undefined, 30)).toEqual({ x: 0, y: 0, w: 80, h: 30 });
     expect(s.next(undefined, 20).y).toBe(34);
     expect(s.extent).toEqual({ x: 0, y: 0, w: 80, h: 54 });
+  });
+});
+
+describe("UI closure containers", () => {
+  const btnCtx = () => {
+    const { ctx, calls } = mockCtx();
+    (ctx as { measureText?: unknown }).measureText = (t: string) => ({ width: t.length * 10 });
+    (ctx as { font?: string }).font = "";
+    return { ctx, calls };
+  };
+
+  it("auto-flows children left-to-right and bubbles the click out", () => {
+    const { ctx, calls } = btnCtx();
+    begin(ctx);
+    // A root row with an explicit rect; two auto-width buttons flow inside.
+    const clickedB = row({ x: 0, y: 0, w: 400, h: 40, gap: 10 }, () => {
+      button({ label: "AA" }); // width = 2*10 + padX(28) = 48
+      return button({ label: "BBBB" }); // return value bubbles through row()
+    });
+    expect(clickedB).toBe(false); // pointer is off-screen in the mock
+    // Two button boxes drawn; the second sits one slot + gap to the right.
+    const boxes = calls.boxes;
+    expect(boxes[0][0]).toBe(0); // first button x
+    expect(boxes[0][3]).toBe(40); // fills the row height
+    expect(boxes[1][0]).toBe(48 + 10); // 2nd button after 1st(48) + gap(10)
+    _reset();
+  });
+
+  it("nests a column inside a row and reserves declared sizes", () => {
+    const { ctx } = btnCtx();
+    begin(ctx);
+    const seen: { x: number; y: number; w: number; h: number }[] = [];
+    row({ x: 0, y: 0, w: 300, h: 100, gap: 0 }, () => {
+      col({ w: 120, gap: 4 }, (c) => {
+        button({ label: "X" }); // flows down inside the col
+        button({ label: "Y" });
+        seen.push(c.extent);
+      });
+    });
+    // Column fills the row height (100) as its cross size; buttons stack.
+    expect(seen[0].h).toBeGreaterThan(30); // two 30px buttons + gap
+    _reset();
+  });
+
+  it("a root container without a rect throws", () => {
+    const { ctx } = btnCtx();
+    begin(ctx);
+    expect(() => row(() => button({ label: "x" }))).toThrow(/explicit x\/y\/w\/h/);
+    _reset();
   });
 });
 

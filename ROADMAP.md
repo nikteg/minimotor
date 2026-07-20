@@ -216,7 +216,14 @@ spec?)` integration (swap fires behind full coverage). Proof: the `scenes`
   `modal` (dimmed backdrop that really blocks background input) and hover
   `tooltip`s with a stability delay. All colors/fonts flow from a `Theme`
   (`setTheme` restyles the whole kit); interactive widgets request the hand
-  cursor via the engine's per-frame `setCursor`. Layout, two tools: `flex` —
+  cursor via the engine's per-frame `setCursor`. `text` draws themed labels
+  (size/bold/color roles/align, clamped) so a screen never touches
+  `ctx.font`/`fillText`; `clip` masks a scroll region without hand-rolled
+  save/clip/restore. **Closure containers** (egui-style): `row`/`col`/`group`
+  take a children callback, push an ambient layout cursor, and widgets inside
+  auto-flow and auto-size — nesting is the layout tree, and a nested widget's
+  click bubbles straight out of the callback's return. `listItem` is the
+  selectable list row (renamed from `row`). Layout, two tools: `flex` —
   split a box into named regions (nested row/col containers, fixed sizes +
   flex-grow shares, gap/pad, flat rect map out; recompute per frame and
   resize comes free) — and `stack`, a one-axis cursor that widgets place

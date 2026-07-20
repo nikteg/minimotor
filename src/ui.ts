@@ -237,6 +237,8 @@ export interface StackOptions {
 
 /** A layout cursor from `stack()`: hands out rects along one axis. */
 export interface Stack {
+  /** Main axis. */
+  readonly dir: "row" | "col";
   /** Reserve the next slot and advance. For rows pass the width (height
    *  defaults from the stack); for columns pass the height as the second
    *  argument (width defaults from the stack). */
@@ -268,6 +270,7 @@ export function stack(opts: StackOptions): Stack {
   let ext: { x: number; y: number; w: number; h: number } | null = null;
 
   return {
+    dir,
     next(w, h) {
       const W = w ?? (dir === "col" ? (opts.w ?? 120) : 100);
       const H = h ?? (dir === "row" ? (opts.h ?? 30) : 30);
@@ -302,6 +305,204 @@ export function stack(opts: StackOptions): Stack {
   };
 }
 
+// ---------- Layout containers (closure children) ----------
+
+// The ambient layout stack. A container pushes a `stack` cursor over its
+// interior for the duration of its children callback; widgets with no
+// explicit x/y and no `at` place themselves into the innermost one. This is
+// the egui-style "children as a closure" layer over the explicit `flex`/
+// `stack` tools — the nesting is the layout tree, and widgets still return
+// their click inline (the callback's return value bubbles out unchanged).
+const layoutStack: Stack[] = [];
+
+/** The innermost active layout cursor, or null outside any container. */
+function currentLayout(): Stack | null {
+  return layoutStack.length > 0 ? layoutStack[layoutStack.length - 1] : null;
+}
+
+/** Resolve a widget's rect: an explicit `at` stack, else the ambient layout
+ *  (unless the caller pinned x/y), else absolute coordinates. `autoW` is the
+ *  widget's natural main-axis size (e.g. a button's label width). */
+function place(
+  opts: { x?: number; y?: number; w?: number; h?: number; at?: Stack },
+  autoW: number,
+  defaultH: number,
+): { x: number; y: number; w: number; h: number } {
+  const pinned = opts.x !== undefined || opts.y !== undefined;
+  const st = pinned ? undefined : (opts.at ?? currentLayout());
+  if (st) {
+    // In a row the main axis is width (pass autoW); in a column it's height
+    // and the width fills the column (pass undefined so the stack's cross
+    // width applies unless the caller overrides).
+    return st.dir === "row" ? st.next(opts.w ?? autoW, opts.h) : st.next(opts.w, opts.h);
+  }
+  return { x: opts.x ?? 0, y: opts.y ?? 0, w: opts.w ?? autoW, h: opts.h ?? defaultH };
+}
+
+/** Options shared by the closure containers. */
+export interface LayoutOptions {
+  /** Explicit rect — required for a ROOT container (no parent layout). */
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+  /** Gap between children in px. Default 8. */
+  gap?: number;
+  /** Inner padding in px. Default 0 (8 for `group`/`panel`). */
+  pad?: number;
+  /** Main-axis alignment within the container's own slot when nested. */
+  align?: "start" | "end";
+}
+
+// Run `children` with a fresh layout cursor over `rect`'s interior. The
+// cursor is also handed to the callback (egui style) so children can anchor
+// popovers/spinners to `.last` or read `.extent`.
+function runContainer<R>(
+  dir: "row" | "col",
+  rect: { x: number; y: number; w: number; h: number },
+  gap: number,
+  pad: number,
+  align: "start" | "end",
+  children: (layout: Stack) => R,
+): R {
+  const inner = { x: rect.x + pad, y: rect.y + pad, w: rect.w - pad * 2, h: rect.h - pad * 2 };
+  // For align:"end" the cursor starts at the far edge and grows backward.
+  const start =
+    align === "end"
+      ? {
+          x: dir === "row" ? inner.x + inner.w : inner.x,
+          y: dir === "col" ? inner.y + inner.h : inner.y,
+        }
+      : { x: inner.x, y: inner.y };
+  const st = stack({
+    x: start.x,
+    y: start.y,
+    dir,
+    gap,
+    align,
+    // Cross-axis size the children fill: row → height, col → width.
+    h: dir === "row" ? inner.h : undefined,
+    w: dir === "col" ? inner.w : undefined,
+  });
+  layoutStack.push(st);
+  try {
+    return children(st);
+  } finally {
+    layoutStack.pop();
+  }
+}
+
+// Resolve a container's own rect: explicit if given, else reserve a slot from
+// the parent layout (declared main-axis size, cross inherited).
+function containerRect(
+  dir: "row" | "col",
+  opts: LayoutOptions,
+): { x: number; y: number; w: number; h: number } {
+  if (
+    opts.x !== undefined &&
+    opts.y !== undefined &&
+    opts.w !== undefined &&
+    opts.h !== undefined
+  ) {
+    return { x: opts.x, y: opts.y, w: opts.w, h: opts.h };
+  }
+  const parent = currentLayout();
+  if (!parent) {
+    throw new Error("Minimotor.UI: a root row/col/group needs explicit x/y/w/h");
+  }
+  // A row's natural extent along a column parent is its height (default 34);
+  // a col's along a row parent is its width. Cross fills the parent.
+  return parent.next(opts.w, opts.h ?? (dir === "row" ? 34 : undefined));
+}
+
+/** A container's children callback — receives the layout cursor for
+ *  anchoring (`.last`) or measuring (`.extent`). */
+export type LayoutChildren<R> = (layout: Stack) => R;
+
+/** Untangle `(opts?, children)` vs `(children)`. */
+function layoutArgs<R>(
+  a: LayoutOptions | LayoutChildren<R>,
+  b?: LayoutChildren<R>,
+): [LayoutOptions, LayoutChildren<R>] {
+  return typeof a === "function" ? [{}, a] : [a, b as LayoutChildren<R>];
+}
+
+/** Lay children out left-to-right. Root call needs an explicit rect; nested
+ *  calls reserve a slot from the enclosing container (full parent height, a
+ *  declared width, or `h` as the row's own height in a column parent). The
+ *  callback receives the cursor and returns whatever you return — a nested
+ *  button's `clicked` bubbles straight out:
+ *
+ *    UI.row(() => {
+ *      if (UI.button({ label: "Play" })) start();   // auto-flows, auto-width
+ *      UI.button({ label: "Options" });
+ *    }); */
+export function row<R>(children: LayoutChildren<R>): R;
+export function row<R>(opts: LayoutOptions, children: LayoutChildren<R>): R;
+export function row<R>(a: LayoutOptions | LayoutChildren<R>, b?: LayoutChildren<R>): R {
+  const [opts, children] = layoutArgs(a, b);
+  const rect = containerRect("row", opts);
+  return runContainer("row", rect, opts.gap ?? 8, opts.pad ?? 0, opts.align ?? "start", children);
+}
+
+/** Lay children out top-to-bottom. See `row`. */
+export function col<R>(children: LayoutChildren<R>): R;
+export function col<R>(opts: LayoutOptions, children: LayoutChildren<R>): R;
+export function col<R>(a: LayoutOptions | LayoutChildren<R>, b?: LayoutChildren<R>): R {
+  const [opts, children] = layoutArgs(a, b);
+  const rect = containerRect("col", opts);
+  return runContainer("col", rect, opts.gap ?? 8, opts.pad ?? 0, opts.align ?? "start", children);
+}
+
+/** A `group` is a bordered/optionally-titled box that also lays its children
+ *  out (a column by default). Combines `panel` + `col` in one call. */
+export interface GroupOptions extends LayoutOptions {
+  title?: string;
+  dir?: "row" | "col";
+  bg?: string;
+  border?: string;
+}
+
+export function group<R>(opts: GroupOptions, children: LayoutChildren<R>): R {
+  const dir = opts.dir ?? "col";
+  const rect = containerRect(dir, opts);
+  panel({
+    x: rect.x,
+    y: rect.y,
+    w: rect.w,
+    h: rect.h,
+    title: opts.title,
+    bg: opts.bg,
+    border: opts.border,
+  });
+  const top = opts.title ? 34 : 0;
+  const body = { x: rect.x, y: rect.y + top, w: rect.w, h: rect.h - top };
+  return runContainer(dir, body, opts.gap ?? 8, opts.pad ?? 8, opts.align ?? "start", children);
+}
+
+/** Insert extra spacing before the next child in the current layout. */
+export function spacer(px: number): void {
+  currentLayout()?.gap(px);
+}
+
+/** Clip drawing to `rect` for the duration of `children` — for scrollable
+ *  lists and masked regions, so a screen never hand-rolls save/clip/restore.
+ *  Returns the callback's value. */
+export function clip<R>(
+  rect: { x: number; y: number; w: number; h: number },
+  children: () => R,
+): R {
+  const ctx = uiCtx();
+  ctx.save();
+  roundRectPath(ctx, rect.x, rect.y, rect.w, rect.h, 0);
+  ctx.clip();
+  try {
+    return children();
+  } finally {
+    ctx.restore();
+  }
+}
+
 // ---------- Shared input (overlay capture + hover cursor) ----------
 
 // While an overlay (modal OR open popover) is up, widgets drawn outside its
@@ -326,11 +527,17 @@ function rawPointer() {
 }
 
 /** The pointer as widgets see it: frame-scoped edges, and dead while an
- *  overlay has the screen (unless we're in the overlay's own pass). */
+ *  overlay has the screen (unless we're in the overlay's own pass). Falls
+ *  back to a dead pointer when there's no default game yet (headless/tests),
+ *  so widgets still render, they just don't interact. */
 function uiPointer() {
   ensureWired(); // per-frame housekeeping keeps overlay/tooltip state honest
   if (overlayActive && !inOverlayPass) return DEAD_POINTER;
-  return rawPointer();
+  try {
+    return rawPointer();
+  } catch {
+    return DEAD_POINTER;
+  }
 }
 
 /** Hovering an interactive widget asks for the hand cursor; the engine
@@ -525,6 +732,71 @@ export function createFloats(): FloatManager {
   };
 }
 
+// ---------- Text ----------
+
+/** A themed text label. */
+export interface TextOptions {
+  /** Position. In a layout, omit and it flows like any widget (reserving a
+   *  slot the width of the text, the row's height / a `size`-tall line). */
+  x?: number;
+  y?: number;
+  /** Slot sizing overrides when placed in a layout. */
+  w?: number;
+  h?: number;
+  at?: Stack;
+  /** Font size in px. Default `theme.fontSize`. */
+  size?: number;
+  /** Bold. Default false. */
+  bold?: boolean;
+  /** Full font string — overrides `size`/`bold`/theme font entirely. */
+  font?: string;
+  /** Color. `"dim"` / `"accent"` map to theme roles; any CSS color works.
+   *  Default `theme.text`. */
+  color?: string;
+  /** Horizontal alignment within the slot. Default `"left"`. */
+  align?: "left" | "center" | "right";
+  /** Clamp width (px) — the glyphs squeeze rather than spill. In a layout the
+   *  slot width is used automatically. */
+  maxWidth?: number;
+}
+
+function resolveColor(c: string | undefined): string {
+  if (c === "dim") return theme.textDim;
+  if (c === "accent") return theme.accent;
+  return c ?? theme.text;
+}
+
+/** Draw a line of themed text. Uses the theme font/size/color so a screen
+ *  never has to touch `ctx.font`/`fillText` itself; flows in a layout or
+ *  positions absolutely:
+ *
+ *    UI.text("Score: 42", { x: 12, y: 12, bold: true });
+ *    UI.text(name, { color: "dim", align: "right", w: col.w }); */
+export function text(str: string, opts?: TextOptions): void;
+export function text(ctx: CanvasRenderingContext2D, str: string, opts?: TextOptions): void;
+export function text(
+  a: CanvasRenderingContext2D | string,
+  b?: string | TextOptions,
+  c?: TextOptions,
+): void {
+  const [ctx, str, opts] =
+    typeof a === "string" ? [uiCtx(), a, (b as TextOptions) ?? {}] : [a, b as string, c ?? {}];
+  ctx.save();
+  ctx.font = opts.font ?? uiFont(opts.size ?? theme.fontSize, opts.bold ?? false);
+  const natural = Math.ceil(ctx.measureText(str).width);
+  const lineH = (opts.size ?? theme.fontSize) + 6;
+  const rect = place(opts, natural, opts.h ?? lineH);
+  const align = opts.align ?? "left";
+  ctx.fillStyle = resolveColor(opts.color);
+  ctx.textAlign = align;
+  const tx =
+    align === "center" ? rect.x + rect.w / 2 : align === "right" ? rect.x + rect.w : rect.x;
+  const maxW =
+    opts.maxWidth ?? (opts.w !== undefined || currentLayout() || opts.at ? rect.w : undefined);
+  centeredText(ctx, str, tx, rect.y + rect.h / 2, maxW);
+  ctx.restore();
+}
+
 // ---------- Button ----------
 
 /** Button look. `"default"` is the neutral filled button; `"primary"` fills
@@ -627,9 +899,7 @@ export function button(a: CanvasRenderingContext2D | ButtonOptions, b?: ButtonOp
   ctx.font = opts.font ?? uiFont(theme.fontSize + 2, true);
   // Auto width: the label plus comfortable padding.
   const w = opts.w ?? Math.ceil(ctx.measureText(opts.label).width) + theme.buttonPadX;
-  const rect = opts.at
-    ? opts.at.next(w, opts.h)
-    : { x: opts.x ?? 0, y: opts.y ?? 0, w, h: opts.h ?? 30 };
+  const rect = place(opts, w, opts.h ?? 30);
 
   const p = uiPointer();
   const over = pointInRect(p.x, p.y, rect);
@@ -713,6 +983,8 @@ export function panel(a: CanvasRenderingContext2D | PanelOptions, b?: PanelOptio
 export interface ToggleOptions {
   x?: number;
   y?: number;
+  /** Slot height when placed in a layout (the box centers within it). */
+  h?: number;
   label: string;
   /** Current value — pass your state in, assign the return value back. */
   on: boolean;
@@ -737,15 +1009,10 @@ export function toggle(a: CanvasRenderingContext2D | ToggleOptions, b?: ToggleOp
   ctx.font = opts.font ?? uiFont();
   const labelW = ctx.measureText(opts.label).width;
   const w = size + 8 + Math.ceil(labelW);
-  // Hit region spans box + label, so the text is clickable too. In a stack
-  // the slot is vertically centered on the cross axis.
-  let rect;
-  if (opts.at) {
-    const slot = opts.at.next(w);
-    rect = { x: slot.x, y: slot.y + (slot.h - size) / 2, w, h: size };
-  } else {
-    rect = { x: opts.x ?? 0, y: opts.y ?? 0, w, h: size };
-  }
+  // Hit region spans box + label, so the text is clickable too. Placed via a
+  // layout, the box is vertically centered on the taller slot.
+  const slot = place({ x: opts.x, y: opts.y, w, h: opts.h, at: opts.at }, w, size);
+  const rect = { x: slot.x, y: slot.y + Math.max(0, (slot.h - size) / 2), w, h: size };
   const { hover, clicked } = buttonState(rect, uiPointer());
   hoverCursor(hover);
   if (hover && opts.tooltip) tooltip(opts.tooltip);
@@ -804,9 +1071,7 @@ export function tabs(a: CanvasRenderingContext2D | TabsOptions, b?: TabsOptions)
     opts.w ??
     (Math.ceil(Math.max(...opts.items.map((t) => ctx.measureText(t).width))) + 26) *
       opts.items.length;
-  const rect = opts.at
-    ? opts.at.next(w, opts.h)
-    : { x: opts.x ?? 0, y: opts.y ?? 0, w, h: opts.h ?? 30 };
+  const rect = place(opts, w, opts.h ?? 30);
   const cellW = rect.w / opts.items.length;
   const p = uiPointer();
   let active = opts.active;
@@ -836,10 +1101,11 @@ export function tabs(a: CanvasRenderingContext2D | TabsOptions, b?: TabsOptions)
   return active;
 }
 
-// ---------- Row ----------
+// ---------- List item ----------
 
-/** A selectable list row. */
-export interface RowOptions {
+/** A selectable list row (a table/menu entry — not to be confused with the
+ *  `row` layout container). */
+export interface ListItemOptions {
   x: number;
   y: number;
   w: number;
@@ -852,13 +1118,16 @@ export interface RowOptions {
   tooltip?: string;
 }
 
-/** Draw a row background with hover/selected states and report a click.
- *  Draw your own content (columns, icons) on top afterwards:
+/** Draw a selectable list-item background with hover/selected states and
+ *  report a click. Draw your own content (columns, icons) on top afterwards:
  *
- *    if (UI.row(ctx, { x, y, w, h, selected: i === sel })) sel = i; */
-export function row(opts: RowOptions): boolean;
-export function row(ctx: CanvasRenderingContext2D, opts: RowOptions): boolean;
-export function row(a: CanvasRenderingContext2D | RowOptions, b?: RowOptions): boolean {
+ *    if (UI.listItem({ x, y, w, h, selected: i === sel })) sel = i; */
+export function listItem(opts: ListItemOptions): boolean;
+export function listItem(ctx: CanvasRenderingContext2D, opts: ListItemOptions): boolean;
+export function listItem(
+  a: CanvasRenderingContext2D | ListItemOptions,
+  b?: ListItemOptions,
+): boolean {
   const [ctx, opts] = withCtx(a, b);
   const { hover, clicked } = buttonState(opts, uiPointer());
   hoverCursor(hover);
@@ -1313,9 +1582,9 @@ let tipShown: { text: string; since: number } | null = null; // hover-stable
 /** Request a tooltip for this frame (call while your hit-area is hovered —
  *  widgets with a `tooltip` option do this for you). Drawn by `drawTips`
  *  after the hover has held ~350 ms. */
-export function tooltip(text: string): void {
+export function tooltip(msg: string): void {
   ensureWired();
-  tipRequest = text;
+  tipRequest = msg;
 }
 
 /** Draw the pending tooltip near the pointer, clamped to the viewport. Call
@@ -1323,11 +1592,11 @@ export function tooltip(text: string): void {
 export function drawTips(maybeCtx?: CanvasRenderingContext2D): void {
   const ctx = maybeCtx ?? uiCtx();
   if (!tipShown || performance.now() - tipShown.since < 350) return;
-  const text = tipShown.text;
+  const msg = tipShown.text;
   const vp = Stage.viewport;
   ctx.save();
   ctx.font = uiFont(theme.fontSize - 1);
-  const w = ctx.measureText(text).width + 16;
+  const w = ctx.measureText(msg).width + 16;
   const h = 24;
   let x = Pointer.x + 14;
   let y = Pointer.y + 20;
@@ -1341,7 +1610,7 @@ export function drawTips(maybeCtx?: CanvasRenderingContext2D): void {
   });
   ctx.fillStyle = theme.text;
   ctx.textAlign = "left";
-  centeredText(ctx, text, x + 8, y + h / 2);
+  centeredText(ctx, msg, x + 8, y + h / 2);
   ctx.restore();
 }
 
@@ -1353,35 +1622,41 @@ let wired = false;
 
 function ensureWired(): void {
   if (wired) return;
-  wired = true;
-  Loop.onStep(() => {
-    floats.advance(Loop.step);
-    spinAngle += 0.12; // ~7 rad/s at 60 steps
-  });
-  // Frame-end housekeeping for the immediate-mode state machines.
-  Loop.onFrame(() => {
-    begunCtx = null; // re-begin() each frame when overriding the ctx
-    // Overlay capture: what was drawn this frame gates input next frame.
-    overlayActive = overlaySeen;
-    overlaySeen = false;
-    inOverlayPass = false;
-    // Tooltip hover-stability: same text keeps its timer; a change restarts.
-    if (tipRequest) {
-      if (tipShown?.text !== tipRequest) {
-        tipShown = { text: tipRequest, since: performance.now() };
+  // Registering the loop hooks needs the default game; without one
+  // (headless/tests) the calls throw — stay unwired and retry next call.
+  try {
+    Loop.onStep(() => {
+      floats.advance(Loop.step);
+      spinAngle += 0.12; // ~7 rad/s at 60 steps
+    });
+    // Frame-end housekeeping for the immediate-mode state machines.
+    Loop.onFrame(() => {
+      begunCtx = null; // re-begin() each frame when overriding the ctx
+      // Overlay capture: what was drawn this frame gates input next frame.
+      overlayActive = overlaySeen;
+      overlaySeen = false;
+      inOverlayPass = false;
+      // Tooltip hover-stability: same text keeps its timer; a change restarts.
+      if (tipRequest) {
+        if (tipShown?.text !== tipRequest) {
+          tipShown = { text: tipRequest, since: performance.now() };
+        }
+      } else {
+        tipShown = null;
       }
-    } else {
-      tipShown = null;
-    }
-    tipRequest = null;
-  });
+      tipRequest = null;
+    });
+    wired = true;
+  } catch {
+    // no default game yet
+  }
 }
 
 /** Spawn a rising, fading text at (x, y) — score pops, damage numbers,
  *  pickup labels. Aged on the fixed step; draw with `drawFloats`. */
-export function float(text: string, x: number, y: number, opts?: FloatOptions): void {
+export function float(str: string, x: number, y: number, opts?: FloatOptions): void {
   ensureWired();
-  floats.spawn(text, x, y, opts);
+  floats.spawn(str, x, y, opts);
 }
 
 /** Draw all live floating texts. Call late in `draw` so they sit on top. */
