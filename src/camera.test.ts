@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createCamera, scrollColumns } from "./camera.js";
+import { createCamera, scrollColumns, createShake } from "./camera.js";
 
 describe("createCamera", () => {
   it("lerps toward the target and clamps to world bounds", () => {
@@ -45,5 +45,44 @@ describe("scrollColumns", () => {
     scrollColumns(-50, 100, 200, (x) => xs.push(x), 0);
     // offset = ((-50 % 100) + 100) % 100 = 50; pad=0 → columns at bx 0 and 100
     expect(xs).toEqual([-50, 50]);
+  });
+});
+
+describe("createShake", () => {
+  it("is idle until triggered", () => {
+    const s = createShake(() => 1);
+    expect(s.active).toBe(false);
+    s.advance(16);
+    expect(s.x).toBe(0);
+    expect(s.y).toBe(0);
+  });
+
+  it("decays linearly to zero over the duration", () => {
+    const s = createShake(() => 1); // rng=1 → offset = amp*k
+    s.add(10, 100);
+    s.advance(50); // half-way: k = 0.5
+    expect(s.x).toBeCloseTo(5);
+    expect(s.active).toBe(true);
+    s.advance(50); // reaches the end: k = 0
+    expect(s.x).toBe(0);
+    expect(s.active).toBe(false);
+  });
+
+  it("centers the jitter around zero (rng 0.5 → no offset)", () => {
+    const s = createShake(() => 0.5);
+    s.add(10, 100);
+    s.advance(10);
+    expect(s.x).toBeCloseTo(0);
+  });
+
+  it("stacks by keeping the stronger amplitude and restarting the fade", () => {
+    const s = createShake(() => 1);
+    s.add(4, 100);
+    s.advance(90); // nearly faded
+    s.add(20, 100); // stronger shake resets the fade
+    s.advance(0);
+    expect(s.active).toBe(true);
+    s.advance(10);
+    expect(Math.abs(s.x)).toBeGreaterThan(4);
   });
 });

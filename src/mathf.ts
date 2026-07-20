@@ -35,6 +35,37 @@ export function wave(angle: number, amp = 1): number {
   return Math.sin(angle) * amp;
 }
 
+// ---------- Randomness ----------
+// Convenience wrappers over Math.random (not seeded — for spawn jitter, visual
+// variety and the like, not deterministic simulation).
+
+/** Random float in [min, max). */
+export function randRange(min: number, max: number): number {
+  return min + Math.random() * (max - min);
+}
+
+/** Random integer in [min, max] — both ends inclusive. */
+export function randInt(min: number, max: number): number {
+  return min + Math.floor(Math.random() * (max - min + 1));
+}
+
+/** Pick a uniformly-random element of `arr` (undefined only if empty). */
+export function randItem<T>(arr: readonly T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+// ---------- Geometry ----------
+
+/** Euclidean distance between two points. */
+export function distance(ax: number, ay: number, bx: number, by: number): number {
+  return Math.hypot(bx - ax, by - ay);
+}
+
+/** Angle (radians) of the vector from a → b, as `atan2(dy, dx)`. */
+export function angleBetween(ax: number, ay: number, bx: number, by: number): number {
+  return Math.atan2(by - ay, bx - ax);
+}
+
 // ---------- Easing (0..1 → 0..1) ----------
 // Suitable as the `ease` argument to Tween.to.
 

@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import { wireButton, preventTouchFocus } from "./input.js";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { wireButton, preventTouchFocus, vibrate } from "./input.js";
 
 beforeEach(() => {
   document.body.innerHTML = "";
@@ -53,6 +53,36 @@ describe("Input", () => {
       const e = new TouchEvent("touchstart", { cancelable: true });
       c.dispatchEvent(e);
       expect(e.defaultPrevented).toBe(true);
+    });
+  });
+
+  describe("vibrate", () => {
+    const original = Object.getOwnPropertyDescriptor(navigator, "vibrate");
+    afterEach(() => {
+      if (original) Object.defineProperty(navigator, "vibrate", original);
+      else delete (navigator as { vibrate?: unknown }).vibrate;
+    });
+
+    it("forwards the pattern to navigator.vibrate and returns its result", () => {
+      const spy = vi.fn(() => true);
+      Object.defineProperty(navigator, "vibrate", { value: spy, configurable: true });
+      expect(vibrate([10, 20, 10])).toBe(true);
+      expect(spy).toHaveBeenCalledWith([10, 20, 10]);
+    });
+
+    it("no-ops to false where the Vibration API is unavailable", () => {
+      Object.defineProperty(navigator, "vibrate", { value: undefined, configurable: true });
+      expect(vibrate(50)).toBe(false);
+    });
+
+    it("swallows a throwing implementation", () => {
+      Object.defineProperty(navigator, "vibrate", {
+        value: () => {
+          throw new Error("blocked");
+        },
+        configurable: true,
+      });
+      expect(vibrate(50)).toBe(false);
     });
   });
 });

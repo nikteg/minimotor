@@ -1,5 +1,20 @@
-import { describe, it, expect } from "vitest";
-import { lerp, clamp, remap, pulse, wave, linear, easeIn, easeOut, easeInOut } from "./mathf.js";
+import { describe, it, expect, afterEach, vi } from "vitest";
+import {
+  lerp,
+  clamp,
+  remap,
+  pulse,
+  wave,
+  linear,
+  easeIn,
+  easeOut,
+  easeInOut,
+  randRange,
+  randInt,
+  randItem,
+  distance,
+  angleBetween,
+} from "./mathf.js";
 
 describe("Mathf", () => {
   it("lerp interpolates and extrapolates", () => {
@@ -43,5 +58,37 @@ describe("Mathf", () => {
     expect(easeIn(0.5)).toBeCloseTo(0.25); // slow start
     expect(easeOut(0.5)).toBeCloseTo(0.75); // fast start
     expect(easeInOut(0.5)).toBeCloseTo(0.5);
+  });
+
+  describe("randomness", () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it("randRange maps 0 and ~1 to the range ends", () => {
+      vi.spyOn(Math, "random").mockReturnValue(0);
+      expect(randRange(10, 20)).toBe(10);
+      vi.spyOn(Math, "random").mockReturnValue(0.5);
+      expect(randRange(10, 20)).toBe(15);
+    });
+
+    it("randInt is inclusive at both ends", () => {
+      vi.spyOn(Math, "random").mockReturnValue(0);
+      expect(randInt(3, 6)).toBe(3);
+      vi.spyOn(Math, "random").mockReturnValue(0.999);
+      expect(randInt(3, 6)).toBe(6);
+    });
+
+    it("randItem indexes into the array", () => {
+      vi.spyOn(Math, "random").mockReturnValue(0.5);
+      expect(randItem(["a", "b", "c", "d"])).toBe("c");
+    });
+  });
+
+  it("distance is the Euclidean length", () => {
+    expect(distance(0, 0, 3, 4)).toBe(5);
+  });
+
+  it("angleBetween points from a toward b", () => {
+    expect(angleBetween(0, 0, 1, 0)).toBeCloseTo(0);
+    expect(angleBetween(0, 0, 0, 1)).toBeCloseTo(Math.PI / 2);
   });
 });

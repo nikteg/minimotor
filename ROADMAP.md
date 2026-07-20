@@ -41,20 +41,20 @@ one default engine built by `Stage.init()`.
 - ✅ `Keys` / `Pointer` — polled input (`down`/`pressed`/`released`)
 - ✅ `Draw` — `ctx`, `frameScale`
 - ✅ `Audio` — crash-safe SFX + scheduled `Music`
-- ✅ `Storage`, `Net`, `Perf`, `Fullscreen`, `Input`
-- 🟡 backlog: gamepad polling, haptics (`navigator.vibrate`), audio channels /
-  sampled buffers, orientation lock, service-worker/PWA helper
+- ✅ `Storage`, `Net`, `Perf`, `Fullscreen`, `Input` (incl. `Input.vibrate` haptics)
+- 🟡 backlog: gamepad polling, audio channels / sampled buffers, orientation
+  lock, service-worker/PWA helper
 
 ## L2 — Primitives 🟡
 
 Pure, data-agnostic helpers. No engine state.
 
-- ✅ `Mathf` — lerp, clamp, remap, pulse, wave (add: randInt/randFloat/randItem,
-  distance, angleBetween, easing set)
-- ✅ `Collision` — rectsOverlap, circleHit, crossedDown (add: circleRect,
-  pointInRect, swept AABB)
-- ✅ `Camera` — `createCamera` (lerp follow + clamp), `scrollColumns` parallax
-  (add: shake)
+- ✅ `Mathf` — lerp, clamp, remap, pulse, wave, easing set, `randRange`,
+  `randInt`, `randItem`, `distance`, `angleBetween`
+- ✅ `Collision` — rectsOverlap, circleHit, crossedDown, `sweptAABB` (tunneling)
+  (add: circleRect, pointInRect)
+- ✅ `Camera` — `createCamera` (lerp follow + clamp), `scrollColumns` parallax,
+  `shake` (decaying screen-shake, aged on the fixed step)
 - ✅ `Sprites` — `getSprite` (square) + `getLayer` (arbitrary offscreen cache)
 - ✅ `Text`, `Physics` (kinematic helpers/constants)
 
@@ -194,7 +194,9 @@ map.solidAt(x, y);
   Feeds the ECS `Sprite` source-rect (`sx/sy/sw/sh`), so animated entities render
   through `world.drawSprites`. Proof: the `sprites` sample (procedural sheet).
 - ⬜ `Tiles` — grid tilemap: draw + solidity query, culled to camera
-- ⬜ `Particles` — emitter presets (the ambient/firework patterns), ECS-friendly
+- ✅ `Particles` — `Particles.burst(x, y, opts)` CPU emitter (velocity, gravity,
+  size/life/color ranges, fade), aged on the fixed step. Pooled flat array, not
+  ECS — high churn, no queries. Used for hoppspelet's death burst + coin sparkle.
 - ⬜ `Transitions` — scene fades/wipes · `UI` — overlay/HUD/floating-text helpers
   (kept out of the core; opinionated, like the samples' `overlays.js`)
 

@@ -32,6 +32,19 @@ export function preventTouchFocus(canvas: HTMLCanvasElement) {
   canvas.addEventListener("touchstart", (e) => e.preventDefault(), { passive: false });
 }
 
+/** Fire device haptics via the Vibration API. `pattern` is a duration in ms or
+ *  an on/off pattern (`[on, off, on, …]`). Returns true if the buzz was
+ *  accepted. Safe everywhere: no-ops (returns false) where vibration is
+ *  unsupported — desktop, iOS Safari — so callers never need to feature-detect. */
+export function vibrate(pattern: number | number[]): boolean {
+  if (typeof navigator === "undefined" || typeof navigator.vibrate !== "function") return false;
+  try {
+    return navigator.vibrate(pattern);
+  } catch {
+    return false;
+  }
+}
+
 /** Keyboard state tracker — returns a live object where `keys["ArrowLeft"]`
  *  is `true` while that key is held. Independent of the Engine; safe to
  *  call anywhere. */

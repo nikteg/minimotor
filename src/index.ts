@@ -5,7 +5,8 @@
 // `createGame` is exported for isolated instances (tests / multiple games).
 
 import { createGame, Stage, Loop, Draw, Keys, Pointer } from "./engine.js";
-import { rectsOverlap, circleHit, crossedDown } from "./collision.js";
+import { rectsOverlap, circleHit, crossedDown, sweptAABB } from "./collision.js";
+import { Particles } from "./particles.js";
 import { Scenes } from "./scenes.js";
 import { Clock, Tween } from "./clock.js";
 import { Signals } from "./signals.js";
@@ -51,6 +52,7 @@ export {
   Signals,
   Assets,
   Anim,
+  Particles,
 };
 export type {
   Rect,
@@ -76,6 +78,9 @@ export type { ClockManager, Cancel } from "./clock.js";
 export type { SignalBus } from "./signals.js";
 export type { AssetStore, AssetManifest, ProgressFn } from "./assets.js";
 export type { Animation, SheetConfig, FrameRect, AnimDrawOptions } from "./anim.js";
+export type { Sweep } from "./collision.js";
+export type { ShakeState } from "./camera.js";
+export type { ParticleSystem, BurstOptions, Range } from "./particles.js";
 
 // A shared default world (`Minimotor.World`) for the common single-world case;
 // games that need isolation or per-scene worlds call `ECS.world()` for their own.
@@ -85,8 +90,8 @@ export type { PhysicsBody } from "./physics.js";
 export type { SpriteCanvas } from "./sprites.js";
 export type { Transport, WsConfig, RtcConfig, Signal } from "./net.js";
 
-const Collision = { rectsOverlap, circleHit, crossedDown };
-export { Collision, rectsOverlap, circleHit, crossedDown };
+const Collision = { rectsOverlap, circleHit, crossedDown, sweptAABB };
+export { Collision, rectsOverlap, circleHit, crossedDown, sweptAABB };
 
 export const Minimotor = {
   createGame,
@@ -115,6 +120,7 @@ export const Minimotor = {
   Signals,
   Assets,
   Anim,
+  Particles,
   Collision,
 };
 
