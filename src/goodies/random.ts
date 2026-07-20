@@ -81,6 +81,19 @@ export function shuffleBag<T>(items: readonly T[], rng: () => number = Math.rand
   };
 }
 
+/** Return a shuffled COPY of `items` (Fisher-Yates, injectable RNG). Use this
+ *  for a one-shot shuffle — a deck, a quiz order, a playlist. The tempting
+ *  `[...items].sort(() => rng() - 0.5)` is measurably biased; this isn't.
+ *  (For repeated without-replacement draws, use `shuffleBag`.) */
+export function shuffle<T>(items: readonly T[], rng: () => number = Math.random): T[] {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.max(0, Math.min(1 - Number.EPSILON, rng())) * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
 /** Roll conventional integer dice and return the total. */
 export function rollDice(count: number, sides: number, rng: () => number = Math.random): number {
   if (!Number.isInteger(count) || count < 0 || !Number.isInteger(sides) || sides < 1) {

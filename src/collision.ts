@@ -96,3 +96,101 @@ export function sweptAABB(a: Rect, dx: number, dy: number, b: Rect): Sweep | nul
   if (xEntry > yEntry) return { t: entry, nx: dx < 0 ? 1 : -1, ny: 0 };
   return { t: entry, nx: 0, ny: dy < 0 ? 1 : -1 };
 }
+
+/** A contact: unit normal (pointing OUT of the obstacle, toward the mover) and
+ *  penetration `depth` — add `nx*depth, ny*depth` to the mover to separate it. */
+export interface Contact {
+  nx: number;
+  ny: number;
+  depth: number;
+}
+
+/** Circle-vs-rectangle overlap. Returns the contact normal + penetration depth,
+ *  or `null` when clear. The normal points from the rect toward the circle, so
+ *  it doubles as the bounce direction — no more `Math.abs(dx) > Math.abs(dy)`
+ *  guessing which way to reflect a ball off a brick/paddle/wall. When the centre
+ *  is inside the rect it pushes out the nearest edge. */
+export function circleRect(cx: number, cy: number, r: number, rect: Rect): Contact | null {
+  const nearX = cx < rect.x ? rect.x : cx > rect.x + rect.w ? rect.x + rect.w : cx;
+  const nearY = cy < rect.y ? rect.y : cy > rect.y + rect.h ? rect.y + rect.h : cy;
+  const dx = cx - nearX;
+  const dy = cy - nearY;
+  const d2 = dx * dx + dy * dy;
+  if (d2 > r * r) return null;
+  if (d2 === 0) {
+    // Centre inside the rect: escape via the nearest edge.
+    const left = cx - rect.x;
+    const right = rect.x + rect.w - cx;
+    const top = cy - rect.y;
+    const bottom = rect.y + rect.h - cy;
+    const m = Math.min(left, right, top, bottom);
+    if (m === left) return { nx: -1, ny: 0, depth: r + left };
+    if (m === right) return { nx: 1, ny: 0, depth: r + right };
+    if (m === top) return { nx: 0, ny: -1, depth: r + top };
+    return { nx: 0, ny: 1, depth: r + bottom };
+  }
+  const d = Math.sqrt(d2);
+  return { nx: dx / d, ny: dy / d, depth: r - d };
+}
+
+/** Minimum-translation contact between two overlapping circles (normal points
+ *  from `b` toward `a`), or `null` if apart. Coincident centres push along +x.
+ *  For separating jostling bodies — enemies, physics balls, crowd agents. */
+export function separateCircles(
+  ax: number,
+  ay: number,
+  ar: number,
+  bx: number,
+  by: number,
+  br: number,
+): Contact | null {
+  const dx = ax - bx;
+  const dy = ay - by;
+  const d2 = dx * dx + dy * dy;
+  const r = ar + br;
+  if (d2 >= r * r) return null;
+  if (d2 === 0) return { nx: 1, ny: 0, depth: r };
+  const d = Math.sqrt(d2);
+  return { nx: dx / d, ny: dy / d, depth: r - d };
+}
+
+/** Which walls a body bounced off this step. */
+export interface BounceFaces {
+  hit: boolean;
+  left: boolean;
+  right: boolean;
+  top: boolean;
+  bottom: boolean;
+}
+
+/** Keep a moving box inside `bounds`, reflecting its velocity off each wall it
+ *  crosses — Pong/Breakout/screensaver bouncing. Mutates `rect.x/y` (clamped
+ *  back inside) and `vel.x/y` (negated per hit face), and reports the faces.
+ *  Only flips a velocity component that points INTO the wall, so a body pinned
+ *  against an edge won't jitter or stick — the classic double-bounce bug. */
+export function bounceInBounds(
+  rect: Rect,
+  vel: { x: number; y: number },
+  bounds: Rect,
+): BounceFaces {
+  const faces: BounceFaces = { hit: false, left: false, right: false, top: false, bottom: false };
+  if (rect.x < bounds.x) {
+    rect.x = bounds.x;
+    if (vel.x < 0) vel.x = -vel.x;
+    faces.left = faces.hit = true;
+  } else if (rect.x + rect.w > bounds.x + bounds.w) {
+    rect.x = bounds.x + bounds.w - rect.w;
+    if (vel.x > 0) vel.x = -vel.x;
+    faces.right = faces.hit = true;
+  }
+  if (rect.y < bounds.y) {
+    rect.y = bounds.y;
+    if (vel.y < 0) vel.y = -vel.y;
+    faces.top = faces.hit = true;
+  } else if (rect.y + rect.h > bounds.y + bounds.h) {
+    rect.y = bounds.y + bounds.h - rect.h;
+    if (vel.y > 0) vel.y = -vel.y;
+    faces.bottom = faces.hit = true;
+  }
+  return faces;
+}

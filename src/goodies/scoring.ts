@@ -97,3 +97,28 @@ export function combo(options: { windowMs?: number; step?: number; max?: number 
     },
   };
 }
+
+export interface Beat {
+  /** Whole beats elapsed. */
+  beat: number;
+  /** Position within the current beat, 0..1. */
+  phase: number;
+  /** Signed ms to the NEAREST beat line, in `[-period/2, period/2)`. Pass its
+   *  absolute value straight to `timingGrade`. */
+  offset: number;
+  /** Triangle pulse 0→1→0 across the beat — for a metronome flash / bounce. */
+  pulse: number;
+}
+
+/** Turn a running clock into beat timing: which beat, how far into it, the
+ *  signed distance to the nearest beat line (the exact quantity `timingGrade`
+ *  wants, and the modular-arithmetic bit rhythm games get wrong), and a
+ *  metronome pulse. `elapsedMs` since the track started, `periodMs` per beat. */
+export function beatClock(elapsedMs: number, periodMs: number): Beat {
+  const p = elapsedMs / periodMs;
+  const beat = Math.floor(p);
+  const phase = p - beat;
+  const offset = (phase < 0.5 ? phase : phase - 1) * periodMs;
+  const pulse = 1 - Math.abs(phase * 2 - 1);
+  return { beat, phase, offset, pulse };
+}

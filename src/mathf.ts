@@ -13,6 +13,34 @@ export function clamp(v: number, min: number, max: number): number {
   return v < min ? min : v > max ? max : v;
 }
 
+/** Move `v` toward `target` by at most `maxDelta` (never overshoots). The
+ *  scalar sibling of `Goodies.approachAngle` — the basis of accel/decel toward
+ *  a speed, a meter filling, a value snapping to a step. */
+export function approach(v: number, target: number, maxDelta: number): number {
+  if (v < target) return Math.min(v + maxDelta, target);
+  if (v > target) return Math.max(v - maxDelta, target);
+  return target;
+}
+
+/** Frame-rate-independent exponential smoothing toward `target`: eases a
+ *  fraction of the remaining distance each second, so the result is identical
+ *  at 30fps and 144fps. `rate` is the sharpness (~how fast it converges).
+ *  Use this instead of `v = lerp(v, target, k)` or `v *= 0.9` in `update`,
+ *  which both depend on the step size. `dt` is the step in SECONDS. */
+export function damp(current: number, target: number, rate: number, dt: number): number {
+  return target + (current - target) * Math.exp(-rate * dt);
+}
+
+/** Shortest-arc interpolation between two angles (radians) by `t`, crossing the
+ *  ±π seam correctly. For interpolating headings/rotations (e.g. networked
+ *  entities) where a plain `lerp` would spin the long way round. */
+export function lerpAngle(a: number, b: number, t: number): number {
+  let d = (b - a) % (Math.PI * 2);
+  if (d > Math.PI) d -= Math.PI * 2;
+  else if (d < -Math.PI) d += Math.PI * 2;
+  return a + d * t;
+}
+
 /** Map `v` from range [inMin, inMax] onto [outMin, outMax] (no clamping). */
 export function remap(
   v: number,
@@ -33,6 +61,16 @@ export function pulse(angle: number): number {
 /** Sine wave `amp·sin(angle)`, for bob/sway/wobble. */
 export function wave(angle: number, amp = 1): number {
   return Math.sin(angle) * amp;
+}
+
+/** Triangle bounce between `min` and `max` as `t` increases — like a ball
+ *  reflecting off both ends (patrol paths, back-and-forth hazards, ping-pong
+ *  cursors). Continuous and never overshoots the bounds. */
+export function pingPong(t: number, min: number, max: number): number {
+  const range = max - min;
+  if (range <= 0) return min;
+  const m = (((t - min) % (2 * range)) + 2 * range) % (2 * range);
+  return min + (m <= range ? m : 2 * range - m);
 }
 
 // ---------- Randomness ----------

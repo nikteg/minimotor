@@ -40,3 +40,34 @@ export function transferStack<T>(
   [slots[from], slots[to]] = [target, source];
   return true;
 }
+
+/** Collect a picked-up `item` into `slots`: top up existing same-item stacks
+ *  (up to their `max`) first, then drop the remainder into empty slots. Returns
+ *  the leftover count that didn't fit (0 = fully collected). The merge-then-
+ *  overflow ordering is the loot/pickup case `transferStack` (slot→slot) doesn't
+ *  cover, and the one people get subtly wrong. */
+export function addToInventory<T>(
+  slots: Array<ItemStack<T> | null>,
+  item: T,
+  options: { max: number; amount?: number; same?: (a: T, b: T) => boolean },
+): number {
+  const max = options.max;
+  const same = options.same ?? Object.is;
+  let amount = Math.max(0, Math.floor(options.amount ?? 1));
+  for (const slot of slots) {
+    if (amount <= 0) break;
+    if (slot && same(slot.item, item)) {
+      const put = Math.min(Math.max(0, max - slot.count), amount);
+      slot.count += put;
+      amount -= put;
+    }
+  }
+  for (let i = 0; i < slots.length && amount > 0; i++) {
+    if (!slots[i]) {
+      const put = Math.min(max, amount);
+      slots[i] = { item, count: put, max };
+      amount -= put;
+    }
+  }
+  return amount;
+}

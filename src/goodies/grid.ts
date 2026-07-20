@@ -169,3 +169,28 @@ export function lineOfSight(
   for (let i = 1; i < end; i++) if (blocks(cells[i].x, cells[i].y)) return false;
   return true;
 }
+
+/** Pick a uniformly-random free cell of a `cols`×`rows` grid — food, loot
+ *  drops, spawn points. `isOccupied(x, y)` marks taken cells. Uses a single
+ *  reservoir pass, so it's O(cells) and returns `null` when the grid is full
+ *  instead of spinning forever — the trap in the usual `do { rand } while
+ *  (taken)` loop as the board fills up. */
+export function randFreeCell(
+  cols: number,
+  rows: number,
+  isOccupied: (x: number, y: number) => boolean,
+  rng: () => number = Math.random,
+): GridPoint | null {
+  let chosen: GridPoint | null = null;
+  let seen = 0;
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      if (isOccupied(x, y)) continue;
+      seen++;
+      if (Math.floor(Math.max(0, Math.min(1 - Number.EPSILON, rng())) * seen) === 0) {
+        chosen = { x, y };
+      }
+    }
+  }
+  return chosen;
+}

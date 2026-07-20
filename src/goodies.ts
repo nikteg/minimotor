@@ -27,3 +27,4 @@ export * from "./goodies/inventory.js";
 export * from "./goodies/scoring.js";
 export * from "./goodies/pacing.js";
 export * from "./goodies/flash.js";
+export * from "./goodies/history.js";

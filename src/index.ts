@@ -5,7 +5,16 @@
 // `createGame` is exported for isolated instances (tests / multiple games).
 
 import { createGame, Stage, Loop, Draw, Keys, Pointer, Mouse } from "./engine.js";
-import { rectsOverlap, circleHit, crossedDown, pointInRect, sweptAABB } from "./collision.js";
+import {
+  rectsOverlap,
+  circleHit,
+  crossedDown,
+  pointInRect,
+  sweptAABB,
+  circleRect,
+  separateCircles,
+  bounceInBounds,
+} from "./collision.js";
 import * as UI from "./ui.js";
 import { Particles } from "./particles.js";
 import { Scenes } from "./scenes.js";
@@ -98,7 +107,7 @@ export type {
   FrameRect,
   AnimDrawOptions,
 } from "./anim.js";
-export type { Sweep } from "./collision.js";
+export type { Sweep, Contact, BounceFaces } from "./collision.js";
 export type { ShakeState } from "./camera.js";
 export type { ParticleSystem, BurstOptions, Range } from "./particles.js";
 export type {
@@ -147,6 +156,10 @@ export type {
   Combo,
   Charges,
   Flash,
+  Patrol,
+  Trail,
+  Beat,
+  UndoStack,
 } from "./goodies.js";
 export type {
   Transport,
@@ -157,8 +170,27 @@ export type {
   InterpolatorOptions,
 } from "./net.js";
 
-const Collision = { rectsOverlap, circleHit, crossedDown, pointInRect, sweptAABB };
-export { Collision, rectsOverlap, circleHit, crossedDown, pointInRect, sweptAABB };
+const Collision = {
+  rectsOverlap,
+  circleHit,
+  crossedDown,
+  pointInRect,
+  sweptAABB,
+  circleRect,
+  separateCircles,
+  bounceInBounds,
+};
+export {
+  Collision,
+  rectsOverlap,
+  circleHit,
+  crossedDown,
+  pointInRect,
+  sweptAABB,
+  circleRect,
+  separateCircles,
+  bounceInBounds,
+};
 export { UI };
 export type {
   BarStyle,
