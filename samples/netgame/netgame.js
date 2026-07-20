@@ -17,7 +17,7 @@ let vp = Minimotor.Stage.init("game", {
   plugins: [Minimotor.Perf.plugin({ net: meter })],
 });
 Minimotor.Stage.onResize((next) => (vp = next)); // movement clamps read vp live
-const { Net, Loop, Keys, Draw, Audio, Mathf } = Minimotor;
+const { Net, Loop, Keys, Draw, Audio, Mathf, UI } = Minimotor;
 
 const PALETTE = ["#4ecdc4", "#ffd43b", "#ff6b6b", "#69db7c", "#b197fc", "#ffa94d"];
 const id = Math.random().toString(36).slice(2, 8);
@@ -108,17 +108,23 @@ Loop.run({
     ctx.lineWidth = 2;
     ctx.stroke();
 
-    ctx.fillStyle = transport.state === "connected" ? "#6bff9e" : "#ffb454";
-    ctx.font = "14px monospace";
-    ctx.fillText(
+    UI.text(
       transport.state === "connected"
         ? `connected — ${others.size} other player${others.size === 1 ? "" : "s"}`
         : `(${transport.state}) — is the dev server running?`,
-      12,
-      24,
+      { x: 12, y: 10, size: 14, color: transport.state === "connected" ? "#6bff9e" : "#ffb454" },
     );
-    ctx.fillStyle = "#8aa";
-    ctx.fillText("←→↑↓/WASD move — open this page in another tab to multiplayer", 12, 44);
-    ctx.fillText("sends at 20 Hz; remote blobs glide via Net.createInterpolator", 12, 62);
+    UI.text("←→↑↓/WASD move — open this page in another tab to multiplayer", {
+      x: 12,
+      y: 30,
+      size: 14,
+      color: "dim",
+    });
+    UI.text("sends at 20 Hz; remote blobs glide via Net.createInterpolator", {
+      x: 12,
+      y: 48,
+      size: 14,
+      color: "dim",
+    });
   },
 });

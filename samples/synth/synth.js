@@ -9,7 +9,7 @@ import { Minimotor } from "minimotor";
 
 let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 Minimotor.Stage.onResize((next) => (vp = next)); // piano + bars lay out from vp
-const { Audio, Keys, Pointer, Text, Mathf, Loop } = Minimotor;
+const { Audio, Keys, Pointer, Text, Mathf, Loop, UI } = Minimotor;
 
 const midiFreq = (m) => 440 * 2 ** ((m - 69) / 12);
 
@@ -252,19 +252,14 @@ Loop.run({
     }
 
     // Info
-    ctx.fillStyle = "#fff";
-    ctx.font = "15px monospace";
-    ctx.fillText(`wave: ${WAVES[wave]}   octave: C${octave}`, 12, 26);
-    ctx.fillStyle = backing && Audio.Music.on ? "#6bff9e" : "#667";
-    ctx.fillText(
+    UI.text(ctx, `wave: ${WAVES[wave]}   octave: C${octave}`, { x: 12, y: 11, size: 15, color: "#fff" });
+    UI.text(
+      ctx,
       `backing: ${backing ? GROOVES[grooveIdx].name : "off"}${Audio.Music.on ? "" : " (muted)"}`,
-      12,
-      48,
+      { x: 12, y: 33, size: 15, color: backing && Audio.Music.on ? "#6bff9e" : "#667" },
     );
-    ctx.fillStyle = "#889";
-    ctx.font = "13px monospace";
-    ctx.fillText("A–; white keys · W–P black keys · Z/X octave · 1–4 wave", 12, 74);
-    ctx.fillText("B backing on/off · N next groove · M mute music", 12, 92);
+    UI.text(ctx, "A–; white keys · W–P black keys · Z/X octave · 1–4 wave", { x: 12, y: 61, size: 13, color: "dim" });
+    UI.text(ctx, "B backing on/off · N next groove · M mute music", { x: 12, y: 79, size: 13, color: "dim" });
 
     // Piano — white keys…
     for (let i = 0; i < WHITE_KEYS.length; i++) {

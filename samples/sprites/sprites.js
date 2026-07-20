@@ -4,7 +4,7 @@
 // so the sample needs no asset files — an 8-frame pulsing/rotating star.
 import { Minimotor } from "minimotor";
 
-const { ECS, Anim, Draw, Loop, Pointer, Mathf } = Minimotor;
+const { ECS, Anim, Draw, Loop, Pointer, Mathf, UI } = Minimotor;
 const world = ECS.world();
 
 let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin({ world })] });
@@ -84,8 +84,6 @@ Loop.run({
     ctx.fillStyle = "#12141c";
     ctx.fillRect(0, 0, vp.w, vp.h);
     world.drawSprites(ctx); // blits each Sprite's current source rect
-    ctx.fillStyle = "#fff";
-    ctx.font = "14px monospace";
-    ctx.fillText(`${world.count(ECS.Sprite)} animated sprites · click to add`, 10, 22);
+    UI.text(`${world.count(ECS.Sprite)} animated sprites · click to add`, { x: 10, y: 8, size: 14 });
   },
 });

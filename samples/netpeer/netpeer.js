@@ -17,7 +17,7 @@ let vp = Minimotor.Stage.init("game", {
   plugins: [Minimotor.Perf.plugin({ net: meter })],
 });
 Minimotor.Stage.onResize((next) => (vp = next)); // both panes lay out from vp
-const { Net, Pointer, Keys, Loop } = Minimotor;
+const { Net, Pointer, Keys, Loop, UI } = Minimotor;
 
 const dec = new TextDecoder();
 
@@ -93,10 +93,14 @@ Loop.run({
     ctx.lineTo(half, vp.h);
     ctx.stroke();
 
-    ctx.fillStyle = "#8aa";
-    ctx.font = "bold 15px monospace";
-    ctx.fillText("YOU  (host)  — move your mouse here", 16, 28);
-    ctx.fillText("PEER (guest) — drawn from received bytes", half + 16, 28);
+    UI.text("YOU  (host)  — move your mouse here", { x: 16, y: 13, size: 15, bold: true, color: "dim" });
+    UI.text("PEER (guest) — drawn from received bytes", {
+      x: half + 16,
+      y: 13,
+      size: 15,
+      bold: true,
+      color: "dim",
+    });
 
     // Your dot (left pane).
     ctx.fillStyle = "#4ecdc4";
@@ -116,20 +120,25 @@ Loop.run({
 
     // Status.
     const st = you.transport.state;
-    ctx.fillStyle = st === "connected" ? "#6bff9e" : "#ffb454";
-    ctx.font = "14px monospace";
-    ctx.fillText(`channel: ${st}`, 16, vp.h - 44);
-    ctx.fillStyle = "#8aa";
-    ctx.fillText(`sent → ${sent}   peer received → ${recvByPeer}`, 16, vp.h - 24);
-    ctx.fillText(`acks back ← ${recvByYou}`, 16, vp.h - 6);
-    ctx.fillText(
+    UI.text(`channel: ${st}`, {
+      x: 16,
+      y: vp.h - 58,
+      size: 14,
+      color: st === "connected" ? "#6bff9e" : "#ffb454",
+    });
+    UI.text(`sent → ${sent}   peer received → ${recvByPeer}`, {
+      x: 16,
+      y: vp.h - 38,
+      size: 14,
+      color: "dim",
+    });
+    UI.text(`acks back ← ${recvByYou}`, { x: 16, y: vp.h - 20, size: 14, color: "dim" });
+    UI.text(
       `I: interpolation ${interpolate ? "ON — guest glides 100ms behind" : "OFF — guest snaps per packet"}`,
-      half + 16,
-      vp.h - 6,
+      { x: half + 16, y: vp.h - 20, size: 14, color: "dim" },
     );
     if (st !== "connected") {
-      ctx.fillStyle = "#ffb454";
-      ctx.fillText("negotiating peer connection…", half + 16, vp.h - 24);
+      UI.text("negotiating peer connection…", { x: half + 16, y: vp.h - 38, size: 14, color: "#ffb454" });
     }
   },
 });

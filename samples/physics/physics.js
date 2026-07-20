@@ -9,7 +9,7 @@
 import { Minimotor } from "minimotor";
 import { Physics2D } from "minimotor/physics2d";
 
-const { ECS, Pointer, Keys, Mathf, Camera, Audio, Sprites, Loop } = Minimotor;
+const { ECS, Pointer, Keys, Mathf, Camera, Audio, Sprites, Loop, UI } = Minimotor;
 
 const world = ECS.world();
 const { Phys } = Physics2D; // the standard body-holding component
@@ -161,10 +161,12 @@ Minimotor.Loop.run({
     world.drawSprites(ctx); // every body, via the built-in renderer
     ctx.restore();
 
-    ctx.fillStyle = "#fff";
-    ctx.font = "14px monospace";
-    ctx.fillText(`bodies: ${phys.count}`, 10, 20);
-    ctx.fillStyle = "#8aa";
-    ctx.fillText("hold to pour crates · +Shift/X balls · R reset", 10, vp.h - 10);
+    UI.text(`bodies: ${phys.count}`, { x: 10, y: 6, size: 14 });
+    UI.text("hold to pour crates · +Shift/X balls · R reset", {
+      x: 10,
+      y: vp.h - 24,
+      size: 14,
+      color: "dim",
+    });
   },
 });

@@ -109,12 +109,10 @@ Scenes.define("play", {
     ctx.fillRect(player.x, player.y, player.size, player.size);
 
     // HUD — the bar drains with the clock.
-    ctx.fillStyle = "#fff";
-    ctx.font = "16px monospace";
-    ctx.fillText(`Score: ${score}`, 12, 24);
-    ctx.fillText(`Time: ${Math.ceil(timeLeft / 60)}s`, 12, 46);
+    UI.text(`Score: ${score}`, { x: 12, y: 8, size: 16, color: "#fff" });
+    UI.text(`Time: ${Math.ceil(timeLeft / 60)}s`, { x: 12, y: 30, size: 16, color: "#fff" });
     UI.bar(12, 54, 140, 8, timeLeft / (15 * 60), { fill: "#ffd43b" });
-    ctx.fillText("P to pause", 12, vp.h - 12);
+    UI.text("P to pause", { x: 12, y: vp.h - 28, size: 16, color: "#fff" });
 
     UI.drawFloats(); // score pops, on top of everything
   },

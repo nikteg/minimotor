@@ -7,7 +7,7 @@ import { Minimotor } from "minimotor";
 
 let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 Minimotor.Stage.onResize((next) => (vp = next)); // bounce bounds read vp live
-const { Particles, Camera, Input, Mathf, Pointer, Loop, Audio } = Minimotor;
+const { Particles, Camera, Input, Mathf, Pointer, Loop, Audio, UI } = Minimotor;
 
 const COLORS = ["#ff6b6b", "#4ecdc4", "#ffe066", "#a06bff", "#6bff9e", "#ff9f43"];
 
@@ -121,8 +121,10 @@ Loop.run({
     Particles.draw(ctx);
     ctx.restore();
 
-    ctx.fillStyle = "#fff";
-    ctx.font = "14px monospace";
-    ctx.fillText(`Particles: ${Particles.count}   —   click for a big impact, hold to spray`, 12, 24);
+    UI.text(`Particles: ${Particles.count}   —   click for a big impact, hold to spray`, {
+      x: 12,
+      y: 10,
+      size: 14,
+    });
   },
 });

@@ -142,9 +142,7 @@ Minimotor.Loop.run({
     ctx.fill();
 
     // HUD
-    ctx.fillStyle = "#fff";
-    ctx.font = "14px monospace";
-    ctx.fillText(`Score: ${score}  Best: ${best}  Length: ${snake.length}`, 10, 18);
+    Minimotor.UI.text(`Score: ${score}  Best: ${best}  Length: ${snake.length}`, { x: 10, y: 4, size: 14 });
 
     if (gameOver) {
       drawGameOver(ctx, vp.w, vp.h, score, best, "Press any arrow key to restart");

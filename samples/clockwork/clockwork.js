@@ -96,20 +96,18 @@ Loop.run({
     }
     Particles.draw(ctx);
     UI.panel(ctx, { x: 7, y: 7, w: 430, h: 52, bg: "rgba(7,10,24,.82)", border: "#30496e" });
-    ctx.fillStyle = "#fff"; ctx.font = "bold 16px monospace";
-    ctx.fillText(`SCORE ${hud.score}   COMBO x${hud.combo}   TIME ${hud.elapsed.toFixed(1)}s`, 14, 26);
-    ctx.fillStyle = "#ff6b6b"; ctx.fillText("GARDEN", 14, 47);
+    UI.text(ctx, `SCORE ${hud.score}   COMBO x${hud.combo}   TIME ${hud.elapsed.toFixed(1)}s`, { x: 14, y: 10, size: 16, bold: true, color: "#fff" });
+    UI.text(ctx, "GARDEN", { x: 14, y: 31, size: 16, bold: true, color: "#ff6b6b" });
     UI.bar(ctx, 88, 41, 95, 8, hud.health / 5, { fill: "#ff6b6b", bg: "#3b2034" });
     UI.drawFloats(ctx);
-    ctx.fillStyle = "#8da1c2"; ctx.font = "12px monospace";
-    ctx.fillText("CLICK THE GLOWING BUDS · SPACE / click after game over to replay", 14, 65);
-    if (hud.messageAlpha > 0) { ctx.globalAlpha = hud.messageAlpha; ctx.fillStyle = "#ffe066"; ctx.font = "bold 20px monospace"; ctx.fillText(hud.message, 14, vp.h - 20); ctx.globalAlpha = 1; }
+    UI.text(ctx, "CLICK THE GLOWING BUDS · SPACE / click after game over to replay", { x: 14, y: 53, size: 12, color: "dim" });
+    if (hud.messageAlpha > 0) { ctx.globalAlpha = hud.messageAlpha; UI.text(ctx, hud.message, { x: 14, y: vp.h - 40, size: 20, bold: true, color: "#ffe066" }); ctx.globalAlpha = 1; }
     if (hud.pulse > 0) { ctx.strokeStyle = `rgba(255,224,102,${hud.pulse})`; ctx.lineWidth = 3; ctx.strokeRect(5, 5, vp.w - 10, vp.h - 10); }
     if (state === "gameover") {
       ctx.fillStyle = "rgba(7,10,24,.82)"; ctx.fillRect(0, 0, vp.w, vp.h);
-      ctx.textAlign = "center"; ctx.fillStyle = "#ff6b6b"; ctx.font = "bold 34px monospace"; ctx.fillText("GARDEN SILENT", vp.w / 2, vp.h / 2 - 18);
-      ctx.fillStyle = "#fff"; ctx.font = "15px monospace"; ctx.fillText(`FINAL SCORE ${hud.score}`, vp.w / 2, vp.h / 2 + 14);
-      ctx.fillStyle = "#9fb3d9"; ctx.font = "13px monospace"; ctx.fillText("SPACE or click to grow another run", vp.w / 2, vp.h / 2 + 42); ctx.textAlign = "left";
+      UI.text(ctx, "GARDEN SILENT", { x: vp.w / 2, y: vp.h / 2 - 52, size: 34, bold: true, color: "#ff6b6b", align: "center" });
+      UI.text(ctx, `FINAL SCORE ${hud.score}`, { x: vp.w / 2, y: vp.h / 2 - 1, size: 15, color: "#fff", align: "center" });
+      UI.text(ctx, "SPACE or click to grow another run", { x: vp.w / 2, y: vp.h / 2 + 29, size: 13, color: "dim", align: "center" });
     }
   },
 });

@@ -10,7 +10,7 @@ import { Minimotor } from "minimotor";
 
 let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 Minimotor.Stage.onResize((next) => (vp = next)); // wall/reset derive from vp
-const { Collision, Keys, Loop } = Minimotor;
+const { Collision, Keys, Loop, UI } = Minimotor;
 
 const midY = () => vp.h / 2;
 
@@ -114,21 +114,13 @@ Loop.run({
     }
 
     // HUD.
-    ctx.fillStyle = "#fff";
-    ctx.font = "16px monospace";
-    ctx.fillText(`method: ${swept ? "sweptAABB" : "rectsOverlap (per-frame)"}`, 16, 28);
-    ctx.fillText(`speed:  ${speed} px/step`, 16, 50);
-    ctx.fillStyle = "#6bff9e";
-    ctx.fillText(`hits: ${stats.hits}`, 16, 78);
-    ctx.fillStyle = "#ff5252";
-    ctx.fillText(`tunneled: ${stats.tunneled}`, 120, 78);
-    ctx.fillStyle = "#888";
-    ctx.font = "13px monospace";
-    ctx.fillText("Space = toggle method    ↑/↓ = speed", 16, vp.h - 20);
+    UI.text(`method: ${swept ? "sweptAABB" : "rectsOverlap (per-frame)"}`, { x: 16, y: 12, size: 16 });
+    UI.text(`speed:  ${speed} px/step`, { x: 16, y: 34, size: 16 });
+    UI.text(`hits: ${stats.hits}`, { x: 16, y: 62, size: 16, color: "#6bff9e" });
+    UI.text(`tunneled: ${stats.tunneled}`, { x: 120, y: 62, size: 16, color: "#ff5252" });
+    UI.text("Space = toggle method    ↑/↓ = speed", { x: 16, y: vp.h - 33, size: 13, color: "dim" });
     if (!swept && speed > proj.w) {
-      ctx.fillStyle = "#ff5252";
-      ctx.font = "14px monospace";
-      ctx.fillText("↑ speed high enough to tunnel — watch the per-frame test miss", 16, 104);
+      UI.text("↑ speed high enough to tunnel — watch the per-frame test miss", { x: 16, y: 90, size: 14, color: "#ff5252" });
     }
   },
 });

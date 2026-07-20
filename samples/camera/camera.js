@@ -79,7 +79,7 @@ Loop.run({
       ctx.strokeStyle = done ? "#64f0c8" : active ? "#ffe066" : "#405477"; ctx.lineWidth = active ? 3 : 2;
       ctx.beginPath(); ctx.arc(b.x, b.y, active ? 28 + Math.sin(performance.now() / 180) * 6 : 20, 0, Math.PI * 2); ctx.stroke();
       ctx.fillStyle = done ? "#64f0c8" : active ? "#ffe066" : "#405477"; ctx.beginPath(); ctx.arc(b.x, b.y, 7, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = "#fff"; ctx.font = "13px monospace"; ctx.fillText(done ? "DELIVERED" : active ? "DOCK HERE" : "LOCKED", b.x - 38, b.y - 42);
+      UI.text(ctx, done ? "DELIVERED" : active ? "DOCK HERE" : "LOCKED", { x: b.x - 38, y: b.y - 55, size: 13, color: "#fff" });
     }
     for (const d of drones) { ctx.save(); ctx.translate(d.x, d.y); ctx.rotate(Math.atan2(courier.y - d.y, courier.x - d.x)); ctx.fillStyle = "#ff6b6b"; ctx.strokeStyle = "#ffb199"; ctx.beginPath(); ctx.moveTo(11, 0); ctx.lineTo(-8, -7); ctx.lineTo(-4, 0); ctx.lineTo(-8, 7); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore(); }
     if (courier.invuln <= 0 || Math.floor(elapsed * 12) % 2) { ctx.save(); ctx.translate(courier.x, courier.y); ctx.rotate(courier.angle); ctx.fillStyle = "#142f43"; ctx.strokeStyle = "#64f0c8"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(18, 0); ctx.lineTo(-11, -10); ctx.lineTo(-6, 0); ctx.lineTo(-11, 10); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore(); }
@@ -87,9 +87,9 @@ Loop.run({
     Particles.draw(ctx);
     ctx.restore();
     UI.panel(ctx, { x: 8, y: 7, w: 520, h: 42, bg: "rgba(8,11,24,.86)", border: "#30496e" });
-    ctx.fillStyle = "#fff"; ctx.font = "14px monospace"; ctx.fillText(`BEACONS ${beaconIndex}/${beacons.length}  LIVES ${"◆".repeat(Math.max(0, lives))}  TIME ${elapsed.toFixed(1)}s`, 14, 22);
+    UI.text(ctx, `BEACONS ${beaconIndex}/${beacons.length}  LIVES ${"◆".repeat(Math.max(0, lives))}  TIME ${elapsed.toFixed(1)}s`, { x: 14, y: 8, size: 14, color: "#fff" });
     UI.bar(ctx, 14, 32, 90, 7, lives / 3, { fill: "#64f0c8", bg: "#20344a" });
-    ctx.fillStyle = "#8da1c2"; ctx.fillText("WASD / arrows to fly · click an in-range beacon · +/- zoom · R restart", 14, 65);
-    if (state !== "play") { ctx.fillStyle = "rgba(5,8,20,.78)"; ctx.fillRect(0, 0, vp.w, vp.h); ctx.fillStyle = state === "won" ? "#64f0c8" : "#ff6b6b"; ctx.font = "bold 30px monospace"; ctx.textAlign = "center"; ctx.fillText(state === "won" ? "DELIVERY COMPLETE" : "COURIER LOST", vp.w / 2, vp.h / 2 - 10); ctx.fillStyle = "#fff"; ctx.font = "14px monospace"; ctx.fillText("Press R to run the route again", vp.w / 2, vp.h / 2 + 24); ctx.textAlign = "left"; }
+    UI.text(ctx, "WASD / arrows to fly · click an in-range beacon · +/- zoom · R restart", { x: 14, y: 51, size: 14, color: "dim" });
+    if (state !== "play") { ctx.fillStyle = "rgba(5,8,20,.78)"; ctx.fillRect(0, 0, vp.w, vp.h); UI.text(ctx, state === "won" ? "DELIVERY COMPLETE" : "COURIER LOST", { x: vp.w / 2, y: vp.h / 2 - 40, size: 30, bold: true, color: state === "won" ? "#64f0c8" : "#ff6b6b", align: "center" }); UI.text(ctx, "Press R to run the route again", { x: vp.w / 2, y: vp.h / 2 + 10, size: 14, color: "#fff", align: "center" }); }
   },
 });

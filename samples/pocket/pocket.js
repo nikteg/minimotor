@@ -134,12 +134,11 @@ Loop.run({
     }
     Particles.draw(ctx);
     UI.panel(ctx, { x: 4, y: 3, w: 300, h: 23, bg: "rgba(3,5,12,.72)", border: "#30496e" });
-    ctx.fillStyle = "#fff"; ctx.font = "8px monospace";
-    ctx.fillText(`SCORE ${sessionScore}  BEST ${best.best}  WAVE ${level}`, 9, 12);
-    ctx.fillText(`LIVES ${"◆".repeat(Math.max(0, lives))}`, 9, H - 9);
-    ctx.fillStyle = "#9fb3d9"; ctx.fillText("HYPER", W - 65, H - 9);
+    UI.text(ctx, `SCORE ${sessionScore}  BEST ${best.best}  WAVE ${level}`, { x: 9, y: 4, size: 8, color: "#fff" });
+    UI.text(ctx, `LIVES ${"◆".repeat(Math.max(0, lives))}`, { x: 9, y: H - 17, size: 8, color: "#fff" });
+    UI.text(ctx, "HYPER", { x: W - 65, y: H - 17, size: 8, color: "dim" });
     UI.bar(ctx, W - 37, H - 14, 30, 6, ship.hyperspace > 0 ? 1 - ship.hyperspace / 4 : 1, { fill: "#b197fc", bg: "#1b2740" });
-    if (state === "title" || state === "gameover") { ctx.fillStyle = "rgba(3,5,12,.75)"; ctx.fillRect(0, 0, W, H); ctx.textAlign = "center"; ctx.fillStyle = state === "title" ? "#64f0c8" : "#ff6b6b"; ctx.font = "bold 25px monospace"; ctx.fillText(state === "title" ? "POCKET ASTEROIDS" : "SHIP LOST", W / 2, 65); ctx.fillStyle = "#fff"; ctx.font = "9px monospace"; ctx.fillText(state === "title" ? "SPACE / A BUTTON TO LAUNCH" : `SCORE ${sessionScore} · SPACE TO RESTART`, W / 2, 84); ctx.fillStyle = "#9fb3d9"; ctx.fillText("ROTATE · THRUST · FIRE · HYPERSPACE", W / 2, 102); ctx.textAlign = "left"; }
+    if (state === "title" || state === "gameover") { ctx.fillStyle = "rgba(3,5,12,.75)"; ctx.fillRect(0, 0, W, H); UI.text(ctx, state === "title" ? "POCKET ASTEROIDS" : "SHIP LOST", { x: W / 2, y: 40, size: 25, bold: true, color: state === "title" ? "#64f0c8" : "#ff6b6b", align: "center" }); UI.text(ctx, state === "title" ? "SPACE / A BUTTON TO LAUNCH" : `SCORE ${sessionScore} · SPACE TO RESTART`, { x: W / 2, y: 75, size: 9, color: "#fff", align: "center" }); UI.text(ctx, "ROTATE · THRUST · FIRE · HYPERSPACE", { x: W / 2, y: 93, size: 9, color: "dim", align: "center" }); }
     ctx.restore();
   },
 });

@@ -57,10 +57,9 @@ Minimotor.Loop.run({
     ctx.fill();
 
     // HUD
-    ctx.fillStyle = "#fff";
-    ctx.font = "16px monospace";
-    ctx.fillText(`Score: ${score}  Best: ${Math.max(best, score)}`, 10, 24);
-    ctx.fillText(`Ball: ${ball.x.toFixed(0)},${ball.y.toFixed(0)}  V: ${ball.vx.toFixed(1)},${ball.vy.toFixed(1)}`, 10, 46);
-    ctx.fillText(`Arrow keys to move ball`, 10, vp.h - 10);
+    const { UI } = Minimotor;
+    UI.text(`Score: ${score}  Best: ${Math.max(best, score)}`, { x: 10, y: 8, size: 16 });
+    UI.text(`Ball: ${ball.x.toFixed(0)},${ball.y.toFixed(0)}  V: ${ball.vx.toFixed(1)},${ball.vy.toFixed(1)}`, { x: 10, y: 30, size: 16 });
+    UI.text(`Arrow keys to move ball`, { x: 10, y: vp.h - 26, size: 16 });
   },
 });

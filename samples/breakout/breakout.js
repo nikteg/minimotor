@@ -220,10 +220,8 @@ Scenes.define("play", {
     ctx.arc(ball.x, ball.y, BALL_R, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = "#fff";
-    ctx.font = "14px monospace";
-    ctx.fillText(`Score: ${score}  Best: ${best}  ${"♥".repeat(lives)}`, 10, 20);
-    ctx.fillText("← → move  Space launch", 10, GH - 14);
+    UI.text(`Score: ${score}  Best: ${best}  ${"♥".repeat(lives)}`, { x: 10, y: 6, size: 14 });
+    UI.text("← → move  Space launch", { x: 10, y: GH - 28, size: 14 });
 
     UI.drawFloats(); // score pops, in game space
 

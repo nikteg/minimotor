@@ -22,8 +22,6 @@ Minimotor.Loop.run({
     ctx.clearRect(0, 0, vp.w, vp.h);
     ctx.fillStyle = "#4ecdc4";
     ctx.fillRect(x, y, 50, 50);
-    ctx.fillStyle = "#fff";
-    ctx.font = "14px monospace";
-    ctx.fillText("Arrow keys to move", 10, 20);
+    Minimotor.UI.text("Arrow keys to move", { x: 10, y: 6, size: 14 });
   },
 });

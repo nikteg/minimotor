@@ -4,7 +4,7 @@
 // no hand-written blit loop — plus an update system that fades sprites out.
 import { Minimotor } from "minimotor";
 
-const { ECS, Pointer, Draw } = Minimotor;
+const { ECS, Pointer, Draw, UI } = Minimotor;
 const world = ECS.world();
 
 // The perf HUD shows this world's live entity count (`ents`).
@@ -67,8 +67,6 @@ Minimotor.Loop.run({
     const { ctx } = Draw;
     ctx.clearRect(0, 0, vp.w, vp.h);
     world.drawSprites(ctx); // built-in: centers + blits every Sprite by z
-    ctx.fillStyle = "#fff";
-    ctx.font = "14px monospace";
-    ctx.fillText(`Sparks: ${world.count(Sprite)}  Click to spawn`, 10, 20);
+    UI.text(`Sparks: ${world.count(Sprite)}  Click to spawn`, { x: 10, y: 6, size: 14 });
   },
 });
