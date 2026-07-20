@@ -10,7 +10,7 @@ import { Minimotor } from "minimotor";
 
 let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 Minimotor.Stage.onResize((next) => (vp = next)); // piano + bars lay out from vp
-const { Audio, Keys, Pointer, Text, Mathf, Loop, UI } = Minimotor;
+const { Audio, Pointer, Text, Mathf, Loop, UI } = Minimotor;
 
 const midiFreq = (m) => 440 * 2 ** ((m - 69) / 12);
 
@@ -74,6 +74,7 @@ const BLACK_KEYS = [
   { code: "KeyP", semi: 15, pos: 8, label: "P" },
 ];
 
+const WHITE_NOTES = ["C", "D", "E", "F", "G", "A", "B"]; // key labels (no keyboard now)
 const anchorMidi = () => 12 * (octave + 1); // C of the current octave
 const litUntil = new Map(); // midi → until-timestamp, for key highlights
 
@@ -154,6 +155,19 @@ Audio.Mixer.compressor();
 let reverbOn = false;
 let muffled = false;
 let lastPointerMidi = null; // for hold-and-roll on the piano
+// Continuous mix/filter amounts, driven by the on-screen sliders.
+let masterVol = 1;
+let reverbWet = 0.4;
+let cutoff = 700; // muffle low-pass cutoff (Hz) when engaged
+
+// The toggles/sliders and the keyboard shortcuts share this state, so both
+// stay in sync — these apply the current values to the mixer.
+function applyReverb() {
+  Audio.Mixer.bus("sfx").send("hall", reverbOn ? reverbWet : 0, 200);
+}
+function applyMuffle() {
+  grooveMuffle.frequency(muffled ? cutoff : 20000, 240);
+}
 
 function ensureBacking() {
   if (musicStarted) return;
@@ -200,30 +214,8 @@ function glow(midi) {
 // ---------- Input ----------
 
 function handleInput() {
-  for (const k of [...WHITE_KEYS, ...BLACK_KEYS]) {
-    if (Keys.pressed(k.code)) playNote(anchorMidi() + k.semi);
-  }
-  if (Keys.pressed("KeyZ")) octave = Math.max(2, octave - 1);
-  if (Keys.pressed("KeyX")) octave = Math.min(6, octave + 1);
-  for (let d = 0; d < 4; d++) {
-    if (Keys.pressed(`Digit${d + 1}`)) wave = d;
-  }
-  if (Keys.pressed("KeyB")) {
-    ensureBacking();
-    backing = !backing;
-  }
-  if (Keys.pressed("KeyN")) grooveIdx = (grooveIdx + 1) % GROOVES.length;
-  if (Keys.pressed("KeyM")) Audio.Music.setOn(!Audio.Music.on);
-  if (Keys.pressed("KeyR")) {
-    reverbOn = !reverbOn;
-    Audio.Mixer.bus("sfx").send("hall", reverbOn ? 0.4 : 0, 200);
-  }
-  if (Keys.pressed("KeyF")) {
-    muffled = !muffled;
-    grooveMuffle.frequency(muffled ? 380 : 20000, 260);
-  }
-
-  // Play the on-screen piano — hold the mouse/finger down and roll across the
+  // Fully pointer-driven — no keyboard. Play the on-screen piano by holding the
+  // mouse/finger down and rolling across the
   // keys; each new key under the pointer retriggers. Releasing clears the last
   // key so tapping the same one again fires.
   const p = piano();
@@ -288,20 +280,59 @@ Loop.run({
       ctx.fillRect(i * barW + 2, p.y - 16 - h, barW - 4, h);
     }
 
-    // Info
-    UI.text(ctx, `wave: ${WAVES[wave]}   octave: C${octave}`, { x: 12, y: 11, size: 15, color: "#fff" });
-    UI.text(
-      ctx,
-      `backing: ${backing ? GROOVES[grooveIdx].name : "off"}${Audio.Music.on ? "" : " (muted)"}`,
-      { x: 12, y: 33, size: 15, color: backing && Audio.Music.on ? "#6bff9e" : "#667" },
-    );
-    UI.text(ctx, "A–; white keys · W–P black keys · Z/X octave · 1–4 wave", { x: 12, y: 61, size: 13, color: "dim" });
-    UI.text(ctx, "B backing on/off · N next groove · M mute music", { x: 12, y: 79, size: 13, color: "dim" });
-  UI.text(
-    ctx,
-    `R reverb: ${reverbOn ? "on" : "off"} · F muffle backing: ${muffled ? "on" : "off"}`,
-    { x: 12, y: 97, size: 13, color: reverbOn || muffled ? "#6bff9e" : "dim" },
-  );
+    // Fully on-screen: every control is a UI widget — wave/octave/groove that
+    // used to be keyboard shortcuts are now a tab strip, sliders and a select;
+    // toggles are checkboxes, filter/level amounts are sliders, and the backing
+    // has a play/pause button. The group title is the synth's name, and it is
+    // the only thing drawn in the top-left corner.
+    UI.group({ x: 12, y: 12, w: 340, h: 352, title: "SYNTH" }, () => {
+      wave = UI.tabs({ items: WAVES, active: wave });
+      octave = UI.slider({ id: "mx-oct", label: "Octave", min: 2, max: 6, step: 1, value: octave, w: 210, format: (v) => `C${v}` });
+      UI.row({ h: 30, gap: 22 }, () => {
+        const b = UI.toggle({ id: "mx-backing", label: "Backing", on: backing });
+        if (b !== backing) {
+          if (b) ensureBacking();
+          backing = b;
+        }
+        if (UI.button({ id: "mx-play", label: Audio.Music.on ? "❚❚ Pause" : "▶ Play" })) {
+          Audio.Music.setOn(!Audio.Music.on);
+        }
+      });
+      const groove = UI.select({
+        id: "mx-groove",
+        value: grooveIdx,
+        w: 210,
+        options: GROOVES.map((g, i) => ({ label: g.name, value: i })),
+      });
+      if (groove.value !== grooveIdx) grooveIdx = groove.value;
+      UI.row({ h: 26, gap: 22 }, () => {
+        const rv = UI.toggle({ id: "mx-reverb", label: "Reverb", on: reverbOn });
+        if (rv !== reverbOn) {
+          reverbOn = rv;
+          applyReverb();
+        }
+        const mf = UI.toggle({ id: "mx-muffle", label: "Muffle", on: muffled });
+        if (mf !== muffled) {
+          muffled = mf;
+          applyMuffle();
+        }
+      });
+      const mv = UI.slider({ id: "mx-master", label: "Master", value: masterVol, w: 210, format: (v) => `${Math.round(v * 100)}%` });
+      if (mv !== masterVol) {
+        masterVol = mv;
+        Audio.Mixer.setMasterVolume(mv);
+      }
+      const rw = UI.slider({ id: "mx-wet", label: "Verb", value: reverbWet, w: 210, format: (v) => `${Math.round(v * 100)}%` });
+      if (rw !== reverbWet) {
+        reverbWet = rw;
+        applyReverb();
+      }
+      const cf = UI.slider({ id: "mx-cut", label: "Cutoff", min: 200, max: 20000, step: 50, value: cutoff, w: 210, format: (v) => `${(v / 1000).toFixed(1)}k` });
+      if (cf !== cutoff) {
+        cutoff = cf;
+        if (muffled) applyMuffle();
+      }
+    });
 
     // Piano — white keys…
     for (let i = 0; i < WHITE_KEYS.length; i++) {
@@ -311,7 +342,7 @@ Loop.run({
       ctx.fillRect(i * p.keyW + 1, p.y, p.keyW - 2, p.h);
       ctx.fillStyle = lit ? "#083" : "#99a";
       ctx.font = "13px monospace";
-      ctx.fillText(k.label, i * p.keyW + p.keyW / 2 - 4, vp.h - 10);
+      ctx.fillText(WHITE_NOTES[i % 7], i * p.keyW + p.keyW / 2 - 4, vp.h - 10);
     }
     // …then black keys on top.
     for (const k of BLACK_KEYS) {
@@ -321,11 +352,11 @@ Loop.run({
       ctx.fillRect(r.x, r.y, r.w, r.h);
       ctx.fillStyle = lit ? "#083" : "#667";
       ctx.font = "11px monospace";
-      ctx.fillText(k.label, r.x + r.w / 2 - 3, r.y + r.h - 8);
+      ctx.fillText(`${WHITE_NOTES[k.pos % 7]}#`, r.x + r.w / 2 - 6, r.y + r.h - 8);
     }
 
-    if (!musicStarted) {
-      Text.drawCentered(ctx, "play the keys — or press B for a backing groove", vp.w / 2, 130, {
+    if (litUntil.size === 0) {
+      Text.drawCentered(ctx, "click a key to play · tweak it in CONTROLS", vp.w / 2, p.y - 26, {
         font: "15px monospace",
         color: "#aab",
       });

@@ -1889,6 +1889,10 @@ export function tabs(a: CanvasRenderingContext2D | TabsOptions, b?: TabsOptions)
   if (command === "ArrowLeft" || command === "ArrowUp")
     active = (active - 1 + opts.items.length) % opts.items.length;
   ctx.textAlign = "center";
+  // Uniform baseline across the row: `centeredText` centers each label's own
+  // ink box, so labels with descenders (g/q) would sit higher than others.
+  // "middle" is font-relative (string-independent), so every tab lines up.
+  ctx.textBaseline = "middle";
   // Round only the strip's outer corners: clip the whole strip, fill cells
   // square inside it.
   ctx.save();
@@ -1910,7 +1914,7 @@ export function tabs(a: CanvasRenderingContext2D | TabsOptions, b?: TabsOptions)
       ctx.fillRect(x, rect.y + rect.h - 3, cellW - 2, 3);
     }
     ctx.fillStyle = isActive ? theme.text : theme.textDim;
-    centeredText(ctx, label, x + cellW / 2, rect.y + rect.h / 2, cellW - 10);
+    ctx.fillText(label, x + cellW / 2, rect.y + rect.h / 2, cellW - 10);
   });
   ctx.restore();
   ctx.restore();
@@ -2604,7 +2608,7 @@ function ensureWired(): void {
         const target = event.target as HTMLElement | null;
         const onFocusSurface =
           !!focusedWidget ||
-          target?.dataset.minimotorUi === "true" ||
+          target?.dataset?.minimotorUi === "true" ||
           (target instanceof HTMLCanvasElement && focusCanvases.has(target));
         if (!onFocusSurface) return;
         const entry = focusRegistry.find((item) => item.id === focusedWidget);
@@ -2629,7 +2633,7 @@ function ensureWired(): void {
     window.addEventListener("focusin", (event) => {
       const target = event.target as HTMLElement | null;
       if (
-        target?.dataset.minimotorUi !== "true" &&
+        target?.dataset?.minimotorUi !== "true" &&
         !(target instanceof HTMLCanvasElement && focusCanvases.has(target))
       ) {
         setWidgetFocus(null);
