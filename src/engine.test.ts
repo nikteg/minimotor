@@ -88,6 +88,27 @@ describe("run / loop", () => {
     return { game, update, draw };
   }
 
+  it("passes the fixed step to update and the ctx to draw", () => {
+    const { game } = build();
+    const update = vi.fn();
+    const draw = vi.fn();
+    game.run({ update, draw });
+    tick(16);
+    tick(36); // 20ms → one step
+    expect(update).toHaveBeenCalledWith(1000 / 60);
+    expect(draw).toHaveBeenCalledWith(game.ctx);
+  });
+
+  it("measures per-frame update/draw cost in game.timings", () => {
+    const { game } = build();
+    game.run({ update: () => {}, draw: () => {} });
+    tick(16);
+    tick(36); // 20ms → one step
+    expect(game.timings.steps).toBe(1);
+    expect(game.timings.updateMs).toBeGreaterThanOrEqual(0);
+    expect(game.timings.drawMs).toBeGreaterThanOrEqual(0);
+  });
+
   it("runs draw but not update while paused", () => {
     const { game, update, draw } = withCallbacks();
     tick(16); // primes lastTime

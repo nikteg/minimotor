@@ -17,8 +17,8 @@ Minimotor.Loop.run({
     x = Math.max(0, Math.min(vp.w - 50, x));
     y = Math.max(0, Math.min(vp.h - 50, y));
   },
-  draw() {
-    const { ctx } = Minimotor.Draw;
+  draw(ctx) {
+    // The loop passes the drawing context — no need to reach for Minimotor.Draw.
     ctx.clearRect(0, 0, vp.w, vp.h);
     ctx.fillStyle = "#4ecdc4";
     ctx.fillRect(x, y, 50, 50);

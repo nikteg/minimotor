@@ -91,13 +91,26 @@ export interface EnginePlugin {
   onResize?: (game: Game) => void;
 }
 
-/** The per-frame callbacks. Both are no-arg; read state from the namespaces
- *  (`Minimotor.Keys` / `Minimotor.Draw`) or, for an isolated game, its props. */
+/** The per-frame callbacks. Both receive their most-used dependency as an
+ *  argument (a no-arg function is still assignable, so taking nothing stays
+ *  fine); input is read from the polled namespaces (`Minimotor.Keys` /
+ *  `Minimotor.Pointer`) or, for an isolated game, its props. */
 export interface GameCallbacks {
-  /** Fixed-timestep simulation. May run 0..N times per rendered frame. */
-  update: () => void;
-  /** Render. Runs once per rendered frame. */
-  draw: () => void;
+  /** Fixed-timestep simulation. May run 0..N times per rendered frame.
+   *  `stepMs` is the fixed step (1000/60) — the amount of simulated time this
+   *  call represents. */
+  update: (stepMs: number) => void;
+  /** Render. Runs once per rendered frame with the drawing context. */
+  draw: (ctx: CanvasRenderingContext2D) => void;
+}
+
+/** How long the last frame's work took, measured by the engine.
+ *  `updateMs` covers every fixed step run that frame; `steps` is how many ran
+ *  (0 on idle frames, >1 when catching up). */
+export interface FrameTimings {
+  updateMs: number;
+  drawMs: number;
+  steps: number;
 }
 
 /** An isolated built game. Its state (`keys`, `ctx`, …) is read directly; the
@@ -116,6 +129,9 @@ export interface Game {
    *  displays. */
   readonly alpha: number;
   readonly paused: boolean;
+  /** Last frame's update/draw cost (see `FrameTimings`). The same object is
+   *  mutated each frame — read, don't hold. */
+  readonly timings: FrameTimings;
   /** Subscribe to viewport changes (resize / orientation); returns unsubscribe. */
   onResize(handler: (vp: Viewport) => void): () => void;
   /** Subscribe to each fixed update step (runs after the user's `update`, before
@@ -234,6 +250,7 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
 
   // ---- Frame state ----
   let frameScale = 1;
+  const timings: FrameTimings = { updateMs: 0, drawMs: 0, steps: 0 };
   let paused = false;
   let callbacks: GameCallbacks | null = null;
   let running = false;
@@ -332,7 +349,7 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
       // mid-pause doesn't fire pressed() on the first step after resume().
       consumeEdges();
       for (const p of plugins) p.beforeDraw?.(game);
-      callbacks!.draw();
+      callbacks!.draw(ctx);
       for (const p of plugins) p.afterDraw?.(game);
       requestAnimationFrame(loop);
       return;
@@ -346,6 +363,7 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
 
     for (const p of plugins) p.beforeUpdate?.(game);
     let steps = 0;
+    const updStart = performance.now();
     while (accumulator >= STEP_MS) {
       if (++steps > MAX_CATCHUP_STEPS) {
         // Already this far behind, more catch-up only digs the hole deeper —
@@ -354,17 +372,21 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
         break;
       }
       for (const h of stepStartHandlers) h(); // poll-only inputs sample here
-      callbacks!.update();
+      callbacks!.update(STEP_MS);
       for (const h of stepHandlers) h(); // timers / tweens advance one step
       // Each step observes the current press, then it's consumed — so pressed()
       // is true for exactly one step, even if this frame runs several.
       consumeEdges();
       accumulator -= STEP_MS;
     }
+    timings.updateMs = performance.now() - updStart;
+    timings.steps = Math.min(steps, MAX_CATCHUP_STEPS);
     for (const p of plugins) p.afterUpdate?.(game);
 
     for (const p of plugins) p.beforeDraw?.(game);
-    callbacks!.draw();
+    const drawStart = performance.now();
+    callbacks!.draw(ctx);
+    timings.drawMs = performance.now() - drawStart;
     for (const p of plugins) p.afterDraw?.(game);
     requestAnimationFrame(loop);
   }
@@ -386,6 +408,7 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
     get paused() {
       return paused;
     },
+    timings,
     onResize(handler) {
       resizeHandlers.add(handler);
       return () => resizeHandlers.delete(handler);

@@ -5,9 +5,9 @@
 // Input.vibrate (haptics, no-op on desktop) and Mathf.randRange / randItem.
 import { Minimotor } from "minimotor";
 
-let vp = Minimotor.Stage.init("game");
+let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 Minimotor.Stage.onResize((next) => (vp = next)); // bounce bounds read vp live
-const { Particles, Camera, Input, Mathf, Pointer, Draw, Loop, Audio } = Minimotor;
+const { Particles, Camera, Input, Mathf, Pointer, Loop, Audio } = Minimotor;
 
 const COLORS = ["#ff6b6b", "#4ecdc4", "#ffe066", "#a06bff", "#6bff9e", "#ff9f43"];
 
@@ -88,8 +88,8 @@ Loop.run({
     step();
   },
 
-  draw() {
-    const { ctx } = Draw;
+  // The loop hands draw its ctx (update gets the fixed step in ms).
+  draw(ctx) {
     ctx.clearRect(0, 0, vp.w, vp.h);
 
     // Everything except the HUD is drawn under the shake offset, so the whole

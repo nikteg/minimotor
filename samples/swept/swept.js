@@ -8,9 +8,9 @@
 // Controls:  Space = toggle method (swept ⇄ per-frame)   ↑/↓ = speed
 import { Minimotor } from "minimotor";
 
-let vp = Minimotor.Stage.init("game");
+let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 Minimotor.Stage.onResize((next) => (vp = next)); // wall/reset derive from vp
-const { Collision, Keys, Draw, Loop } = Minimotor;
+const { Collision, Keys, Loop } = Minimotor;
 
 const midY = () => vp.h / 2;
 
@@ -78,8 +78,7 @@ Loop.run({
     flashAge++;
   },
 
-  draw() {
-    const { ctx } = Draw;
+  draw(ctx) {
     ctx.clearRect(0, 0, vp.w, vp.h);
     const w = wall();
 

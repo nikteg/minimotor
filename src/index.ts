@@ -62,6 +62,7 @@ export type {
   Rect,
   Viewport,
   EnginePlugin,
+  FrameTimings,
   GameCallbacks,
   Game as GameHost,
   GameBuilder,
