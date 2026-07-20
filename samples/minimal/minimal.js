@@ -1,7 +1,8 @@
 // Absolute minimal game: colored square that moves with arrow keys
 import { Minimotor } from "minimotor";
 
-const vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
+let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
+Minimotor.Stage.onResize((next) => (vp = next)); // bounds below read vp live
 
 let x = vp.w / 2 - 25;
 let y = vp.h / 2 - 25;

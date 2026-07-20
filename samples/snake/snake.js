@@ -3,11 +3,11 @@
 import { Minimotor } from "minimotor";
 import { drawGameOver } from "../shared/overlays.js";
 
-const vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
+let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 
 const CELL = 20;
-const COLS = Math.floor(vp.w / CELL);
-const ROWS = Math.floor(vp.h / CELL);
+let COLS = Math.floor(vp.w / CELL);
+let ROWS = Math.floor(vp.h / CELL);
 const MOVE_INTERVAL = 6; // frames between moves
 
 let snake = [{ x: Math.floor(COLS / 2), y: Math.floor(ROWS / 2) }];
@@ -27,6 +27,15 @@ function spawnFood() {
   } while (snake.some((s) => s.x === fx && s.y === fy));
   return { x: fx, y: fy };
 }
+
+Minimotor.Stage.onResize((next) => {
+  vp = next;
+  COLS = Math.floor(vp.w / CELL);
+  ROWS = Math.floor(vp.h / CELL);
+  // Segments outside the new grid wrap on their next move; food must stay
+  // reachable, so respawn it if the grid shrank past it.
+  if (food.x >= COLS || food.y >= ROWS) food = spawnFood();
+});
 
 function restart() {
   snake = [{ x: Math.floor(COLS / 2), y: Math.floor(ROWS / 2) }];

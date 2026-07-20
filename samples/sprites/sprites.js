@@ -4,7 +4,8 @@
 // so the sample needs no asset files — an 8-frame pulsing/rotating star.
 import { Minimotor } from "minimotor";
 
-const vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
+let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
+Minimotor.Stage.onResize((next) => (vp = next)); // wrap bounds read vp live
 const { ECS, Anim, Draw, Loop, Pointer, Mathf } = Minimotor;
 
 const FRAMES = 8;
@@ -45,6 +46,7 @@ const world = ECS.world();
 
 function spawnStar(x, y) {
   const anim = Anim.sheet(sheetCanvas, { fw: CELL, fh: CELL, fps: 12 });
+  anim.update(Mathf.randRange(0, (FRAMES / 12) * 1000)); // desync the timelines
   const a = Math.random() * Math.PI * 2;
   const speed = 1 + Math.random() * 2;
   world.spawn(

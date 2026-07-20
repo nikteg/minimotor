@@ -13,9 +13,10 @@ import { Minimotor } from "minimotor";
 // Host-side network meter, shown in the Perf HUD (top-right): message and byte
 // rates for the cursor stream going out and the acks coming back.
 const meter = Minimotor.Perf.createNetMeter();
-const vp = Minimotor.Stage.init("game", {
+let vp = Minimotor.Stage.init("game", {
   plugins: [Minimotor.Perf.plugin({ net: meter })],
 });
+Minimotor.Stage.onResize((next) => (vp = next)); // both panes lay out from vp
 const { Net, Pointer, Draw, Loop } = Minimotor;
 
 const dec = new TextDecoder();

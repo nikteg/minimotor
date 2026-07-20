@@ -13,9 +13,10 @@
 import { Minimotor } from "minimotor";
 
 const meter = Minimotor.Perf.createNetMeter();
-const vp = Minimotor.Stage.init("game", {
+let vp = Minimotor.Stage.init("game", {
   plugins: [Minimotor.Perf.plugin({ net: meter })],
 });
+Minimotor.Stage.onResize((next) => (vp = next)); // movement clamps read vp live
 const { Net, Loop, Keys, Draw, Audio, Mathf } = Minimotor;
 
 const PALETTE = ["#4ecdc4", "#ffd43b", "#ff6b6b", "#69db7c", "#b197fc", "#ffa94d"];

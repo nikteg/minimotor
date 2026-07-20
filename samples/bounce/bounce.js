@@ -3,7 +3,8 @@
 
 import { Minimotor } from "minimotor";
 
-const vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
+let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
+Minimotor.Stage.onResize((next) => (vp = next)); // wall bounds read vp live
 
 const BALL_SIZE = 30;
 const MOVE_SPEED = 4;

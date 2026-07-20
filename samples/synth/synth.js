@@ -2,7 +2,8 @@
 // Demonstrates: Audio (Music.start, Music.note/kick/noiseHit), playSfx, input, visualizer
 import { Minimotor } from "minimotor";
 
-const vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
+let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
+Minimotor.Stage.onResize((next) => (vp = next)); // visualizer lays out from vp
 
 // ---------- Melodies ----------
 

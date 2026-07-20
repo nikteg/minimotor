@@ -5,7 +5,8 @@
 // Input.vibrate (haptics, no-op on desktop) and Mathf.randRange / randItem.
 import { Minimotor } from "minimotor";
 
-const vp = Minimotor.Stage.init("game");
+let vp = Minimotor.Stage.init("game");
+Minimotor.Stage.onResize((next) => (vp = next)); // bounce bounds read vp live
 const { Particles, Camera, Input, Mathf, Pointer, Draw, Loop, Audio } = Minimotor;
 
 const COLORS = ["#ff6b6b", "#4ecdc4", "#ffe066", "#a06bff", "#6bff9e", "#ff9f43"];
@@ -65,10 +66,25 @@ function step() {
   }
 }
 
+let sprayTick = 0;
+
 Loop.run({
   update() {
-    // Click / tap anywhere for a big impact right under the pointer.
+    // Click / tap anywhere for a big impact right under the pointer…
     if (Pointer.pressed) impact(Pointer.x, Pointer.y, 3);
+    // …and keep spraying while held, with a low rumble and a soft crackle.
+    else if (Pointer.down) {
+      Particles.burst(Pointer.x, Pointer.y, {
+        count: 4,
+        colors: COLORS,
+        speed: [40, 170],
+        size: [2, 4],
+        life: [300, 700],
+        gravity: 500,
+      });
+      Camera.shake(2, 120);
+      if (sprayTick++ % 4 === 0) Audio.Sfx.blip(Mathf.randRange(180, 320), 0.04, 0.08);
+    }
     step();
   },
 
@@ -107,6 +123,6 @@ Loop.run({
 
     ctx.fillStyle = "#fff";
     ctx.font = "14px monospace";
-    ctx.fillText(`Particles: ${Particles.count}   —   click/tap for a big impact`, 12, 24);
+    ctx.fillText(`Particles: ${Particles.count}   —   click for a big impact, hold to spray`, 12, 24);
   },
 });

@@ -8,15 +8,23 @@
 import { Minimotor } from "minimotor";
 import { drawGameOver } from "../shared/overlays.js";
 
-const vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
+let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 const { Scenes, Keys, Draw, ECS, Collision, Mathf, Camera, Audio } = Minimotor;
 
 // Fixed game dimensions — scaled to fit the viewport, keeping aspect ratio.
 const GW = 400;
 const GH = 700;
-const scale = Math.min(vp.w / GW, vp.h / GH);
-const ox = (vp.w - GW * scale) / 2; // letterbox offset X
-const oy = (vp.h - GH * scale) / 2;
+let scale, ox, oy; // letterbox transform, recomputed on resize
+function layout() {
+  scale = Math.min(vp.w / GW, vp.h / GH);
+  ox = (vp.w - GW * scale) / 2;
+  oy = (vp.h - GH * scale) / 2;
+}
+layout();
+Minimotor.Stage.onResize((next) => {
+  vp = next;
+  layout();
+});
 
 const PADDLE_W = 80;
 const PADDLE_H = 14;

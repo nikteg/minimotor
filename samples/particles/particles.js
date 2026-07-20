@@ -4,7 +4,8 @@
 // no hand-written blit loop — plus an update system that fades sprites out.
 import { Minimotor } from "minimotor";
 
-const vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
+let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
+Minimotor.Stage.onResize((next) => (vp = next)); // clear/HUD read vp live
 const { ECS, Pointer, Draw } = Minimotor;
 
 const NUM = 200;

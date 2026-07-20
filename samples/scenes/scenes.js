@@ -3,7 +3,8 @@
 // and transitions — fade into play, wipe down into game over.
 import { Minimotor } from "minimotor";
 
-const vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
+let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
+Minimotor.Stage.onResize((next) => (vp = next)); // every scene lays out from vp
 const { Scenes, Transitions, Keys, Draw, Text, Mathf, Audio } = Minimotor;
 
 const center = (text, y, opts) => Text.drawCentered(Draw.ctx, text, vp.w / 2, y, opts);

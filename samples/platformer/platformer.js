@@ -4,7 +4,8 @@
 import { Minimotor } from "minimotor";
 import { drawGameOver, drawLevelComplete } from "../shared/overlays.js";
 
-const vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
+let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
+Minimotor.Stage.onResize((next) => (vp = next)); // camera + layout read vp live
 
 // World
 const WORLD_W = 3600;
@@ -283,6 +284,11 @@ Minimotor.Loop.run({
     drawCloud(2200, 50, 1.1);
     drawCloud(3000, 70, 0.9);
 
+    // The world is a fixed 600px tall — anchor it to the bottom of the screen
+    // so the ground hugs the window edge at any size (HUD stays screen-space).
+    ctx.save();
+    ctx.translate(0, vp.h - WORLD_H);
+
     // Hills (parallax)
     ctx.fillStyle = "#7ec850";
     for (let i = 0; i < 12; i++) {
@@ -362,20 +368,23 @@ Minimotor.Loop.run({
     // Flag
     {
       const fx = FLAG_X - cameraX;
-      // Pole
+      // Pole — planted in the ground, not hovering above it.
       ctx.fillStyle = "#888";
-      ctx.fillRect(fx - 2, FLAG_Y, 4, 120);
+      ctx.fillRect(fx - 2, FLAG_Y, 4, GROUND_Y - FLAG_Y);
+      ctx.fillStyle = "#666";
+      ctx.fillRect(fx - 6, GROUND_Y - 6, 12, 6); // base plate
       // Ball on top
       ctx.fillStyle = "#ffd700";
       ctx.beginPath();
       ctx.arc(fx, FLAG_Y, 6, 0, Math.PI * 2);
       ctx.fill();
-      // Flag
+      // Flag, waving gently
+      const wave = Math.sin(animFrame * 0.1) * 3;
       ctx.fillStyle = "#2ecc71";
       ctx.beginPath();
-      ctx.moveTo(fx, FLAG_Y + 8);
-      ctx.lineTo(fx + 30, FLAG_Y + 18);
-      ctx.lineTo(fx, FLAG_Y + 28);
+      ctx.moveTo(fx + 2, FLAG_Y + 8);
+      ctx.quadraticCurveTo(fx + 18, FLAG_Y + 10 + wave, fx + 32, FLAG_Y + 18 + wave);
+      ctx.lineTo(fx + 2, FLAG_Y + 28);
       ctx.fill();
     }
 
@@ -409,6 +418,8 @@ Minimotor.Loop.run({
         ctx.fillRect(px + PLAYER_W - 12, player.y + PLAYER_H * 0.85, 8, PLAYER_H * 0.15);
       }
     }
+
+    ctx.restore(); // end bottom-anchored world space
 
     // HUD
     ctx.fillStyle = "rgba(0,0,0,0.5)";
