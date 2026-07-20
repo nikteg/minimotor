@@ -9,6 +9,9 @@ const dec = new TextDecoder();
 
 const $ = (id) => document.getElementById(id);
 const urlEl = $("url");
+// Default to the echo endpoint the dev server hosts (see vite.config.ts) —
+// always reachable, unlike public echo services.
+urlEl.value = location.origin.replace(/^http/, "ws") + "/ws-echo";
 const toggleEl = $("toggle");
 const sendEl = $("send");
 const msgEl = $("msg");

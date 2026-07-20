@@ -151,7 +151,7 @@ const SCHED_INTERVAL_MS = 60;
 let musicGain: GainNode | null = null;
 let musicStarted = false;
 let musicStep = 0;
-let musicTimer: number | null = null;
+let musicTimer: ReturnType<typeof setInterval> | null = null;
 let musicNextNoteTime = 0;
 let musicConfig: MusicConfig | null = null;
 
