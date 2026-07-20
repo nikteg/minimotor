@@ -184,11 +184,13 @@ function ensureBacking() {
       const g = GROOVES[grooveIdx];
       const i = step % 64;
       // Transpose the pitched parts with the Octave control (drums stay put),
-      // so the backing follows the same octave as the keys you play.
+      // so the backing follows the same octave as the keys you play. The lead
+      // melody also uses the selected waveform, so the groove's "synth" voice
+      // matches the instrument.
       const shift = 12 * (octave - 4);
       const m = g.melody[i];
       if (m) {
-        Audio.Music.note(midiFreq(m + shift), 0.3, g.lead, g.leadVol, when);
+        Audio.Music.note(midiFreq(m + shift), 0.3, WAVES[wave], g.leadVol, when);
         glow(m + shift);
       }
       const b = g.bass[i];
