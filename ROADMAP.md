@@ -232,6 +232,10 @@ spec?)` integration (swap fires behind full coverage). Proof: the `scenes`
 - **A full rigid-body physics engine** (joints/solver) — keep light kinematic
   helpers; integrate an external lib only behind an opt-in adapter if ever needed.
 - **A retained scene graph** with mandatory transform nodes — fights immediate mode.
+- **WebGL/WebGPU rendering** in v1 — the whole draw surface is Canvas2D
+  (`Draw.ctx`, sprites, tiles, particles). If a real game ever outgrows 2D
+  canvas throughput, a GL sprite batcher could slot in behind `world.drawSprites`
+  without changing the plain-data API — but not before profiling demands it.
 - **A serialization/save format** in v1 — the ECS API is designed to allow it later.
 
 ## Build milestones
