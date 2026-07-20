@@ -1,7 +1,8 @@
 // Synth: a playable instrument + a scheduled backing band.
 // Demonstrates: Audio.playSfx (custom voices on the SFX bus), Audio.Music
-// (look-ahead scheduler: note/kick/noiseHit), the Audio.Mixer (a reverb send
-// on the instrument + a live lowpass muffle on the backing), polled input.
+// (look-ahead scheduler: note/kick/noiseHit), and the Audio.Mixer — both buses
+// send into a shared reverb, a master low-pass sweeps the whole mix, and a
+// master limiter glues it. All driven by on-screen UI widgets.
 //
 // Play it: A S D F G H J K L ; are the white keys (C major from C4), W E T Y U
 // O P the black keys. Z/X shift octaves, 1-4 pick the waveform. Click the
@@ -143,12 +144,9 @@ let backing = false;
 let musicStarted = false;
 
 // ---------- Mixer wiring ----------
-// A reverb the instrument (the "sfx" bus) can aux-send into, and a lowpass on
-// the backing ("music" bus) to muffle it. Declaring these creates no
-// AudioContext — the graph materializes on the first note — so it is safe at
-// load. R toggles the reverb send; F sweeps the muffle filter live.
-// Reverb the instrument sends into, and a MASTER low-pass (Cutoff) that filters
-// the whole mix — the played notes and the backing groove together.
+// A shared "hall" reverb both buses send into, and a MASTER low-pass (Cutoff)
+// that filters the whole mix. Declaring these creates no AudioContext (the
+// graph materializes on the first note), so it is safe at load.
 Audio.Mixer.reverb("hall", { seconds: 2.4, decay: 2.2, wet: 0.9 });
 const toneFilter = Audio.Mixer.masterFilter("lowpass", 20000);
 // A limiter on the master glues the mix and keeps peaks from clipping when you
@@ -162,10 +160,13 @@ let masterVol = 1;
 let reverbWet = 0.4;
 let cutoff = 1200; // low-pass cutoff (Hz) when the filter is engaged
 
-// Push the current state to the mixer. Called from the widgets; reverb and the
-// filter both act on the instrument bus, so they're audible as you play.
+// Push the current state to the mixer. Verb sends BOTH buses into the reverb
+// (instrument + backing) and Cutoff is a master filter, so all three knobs act
+// on the whole synth.
 function applyReverb() {
-  Audio.Mixer.bus("sfx").send("hall", reverbOn ? reverbWet : 0, 200);
+  const level = reverbOn ? reverbWet : 0;
+  Audio.Mixer.bus("sfx").send("hall", level, 200);
+  Audio.Mixer.bus("music").send("hall", level, 200);
 }
 function applyFilter() {
   toneFilter.frequency(filterOn ? cutoff : 20000, 240);
