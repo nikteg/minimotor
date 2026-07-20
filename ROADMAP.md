@@ -256,7 +256,14 @@ hoppspelet) as proof it actually simplifies code — the discipline used so far.
    animates a procedurally-built sheet through the ECS. (Pure logic unit-tested
    with mocks; visual proof is browser-only — image decode doesn't run headless.)
 6. **Tiles** — a tilemap sample.
-7. **Flagship** — migrate hoppspelet fully onto Scenes + ECS.
+7. ✅ **Flagship** — hoppspelet migrated fully onto Scenes + ECS, in two stages
+   with **no engine changes**. (a) Game states (`ready|playing|gameover`) became a
+   `Scenes` stack; `game.state` is now a mirror set by each scene's `enter()` so
+   the resize/announce logic is untouched. (b) The `obstacles`/`coins`/
+   `floatingTexts` arrays became a single ECS world (Obstacle/Coin/FloatingText
+   components); the old `.filter()` rebuild passes are now despawn-while-iterating,
+   and drawing stays hand-written (custom per-theme visuals) — the documented
+   escape hatch from `world.drawSprites`.
 
 ## Open decisions
 
