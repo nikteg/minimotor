@@ -551,6 +551,118 @@ export function playSfx(build: SfxBuilder): void {
   }
 }
 
+/** A parameter value: a constant, or a `{ from, to }` sweep over `time` seconds
+ *  (default the note's release). `curve` defaults to exponential — the musical
+ *  choice for pitch and filter cutoffs (both stay > 0). */
+export type ToneSweep = number | { from: number; to: number; time?: number; curve?: "lin" | "exp" };
+
+/** A one-shot synth voice: an oscillator (or noise) through an
+ *  attack/hold/release envelope and an optional filter, routed to a mixer bus.
+ *  This is the declarative alternative to hand-wiring nodes in a `SfxBuilder`. */
+export interface ToneOptions {
+  /** Oscillator shape, or `"noise"` for filtered noise (hats, hits, wind). */
+  wave?: OscillatorType | "noise";
+  /** Pitch in Hz — a number or a `{ from, to }` sweep. Ignored for `"noise"`. */
+  freq?: ToneSweep;
+  /** Extra detuned unison voices, in cents (e.g. `[-6, 6]`). Oscillators only. */
+  detune?: number[];
+  /** Peak level 0..1. Default 0.3. */
+  gain?: number;
+  /** Fade-in seconds. Default 0.005. */
+  attack?: number;
+  /** Seconds held at peak before the release. Default 0. */
+  hold?: number;
+  /** Fade-out seconds (the note's tail). Default 0.25. */
+  release?: number;
+  /** An optional filter the voice runs through; `freq` may sweep. */
+  filter?: { type: BiquadFilterType; freq?: ToneSweep; q?: number };
+  /** Absolute audio-clock start time. Default now. */
+  when?: number;
+  /** Start delay in seconds from now (ignored if `when` is given). Default 0. */
+  delay?: number;
+  /** Mixer bus to play on. Default `"sfx"`. */
+  bus?: string;
+}
+
+function scheduleSweep(
+  param: AudioParam,
+  spec: ToneSweep,
+  when: number,
+  fallbackTime: number,
+): void {
+  if (typeof spec === "number") {
+    param.setValueAtTime(spec, when);
+    return;
+  }
+  param.setValueAtTime(spec.from, when);
+  const at = when + (spec.time ?? fallbackTime);
+  if (spec.curve === "lin") param.linearRampToValueAtTime(spec.to, at);
+  else param.exponentialRampToValueAtTime(Math.max(0.0001, spec.to), at);
+}
+
+/** Play a described synth voice — no manual node graph. Crash-safe (a missing
+ *  or blocked AudioContext is swallowed). Layer calls (with `delay`/`when`) for
+ *  chords and arpeggios; drop to `playSfx` only when you need a custom graph.
+ *
+ *    Audio.tone({ wave: "square", freq: 880, release: 0.08 });        // blip
+ *    Audio.tone({ wave: "triangle", freq: { from: 220, to: 660, time: 0.12 } }); // jump
+ *    Audio.tone({ wave: "noise", release: 0.05, filter: { type: "highpass", freq: 8000 } }); // hat
+ *    Audio.tone({ wave: "sine", freq: 440, detune: [-5, 5],
+ *                 filter: { type: "lowpass", freq: { from: 4000, to: 800 } } }); */
+export function tone(opts: ToneOptions): void {
+  try {
+    const ctx = ensureAudio();
+    const when = opts.when ?? ctx.currentTime + (opts.delay ?? 0);
+    const wave = opts.wave ?? "sine";
+    const peak = Math.max(0.0001, opts.gain ?? 0.3);
+    const attack = Math.max(0, opts.attack ?? 0.005);
+    const hold = Math.max(0, opts.hold ?? 0);
+    const release = Math.max(0.01, opts.release ?? 0.25);
+    const holdEnd = when + attack + hold;
+    const end = holdEnd + release;
+
+    // Attack → (hold) → exponential release envelope.
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0.0001, when);
+    env.gain.linearRampToValueAtTime(peak, when + attack);
+    if (hold > 0) env.gain.setValueAtTime(peak, holdEnd);
+    env.gain.exponentialRampToValueAtTime(0.0001, end);
+    env.connect(Mixer.bus(opts.bus ?? "sfx").input);
+
+    // Sources feed the filter if present, else the envelope directly.
+    let sink: AudioNode = env;
+    if (opts.filter) {
+      const f = ctx.createBiquadFilter();
+      f.type = opts.filter.type;
+      if (opts.filter.q !== undefined) f.Q.value = opts.filter.q;
+      scheduleSweep(f.frequency, opts.filter.freq ?? 1000, when, release);
+      f.connect(env);
+      sink = f;
+    }
+
+    if (wave === "noise") {
+      const src = ctx.createBufferSource();
+      src.buffer = getNoiseBuffer();
+      src.loop = true;
+      src.connect(sink);
+      src.start(when);
+      src.stop(end + 0.02);
+    } else {
+      for (const cents of opts.detune ?? [0]) {
+        const osc = ctx.createOscillator();
+        osc.type = wave;
+        osc.detune.value = cents;
+        scheduleSweep(osc.frequency, opts.freq ?? 440, when, release);
+        osc.connect(sink);
+        osc.start(when);
+        osc.stop(end + 0.02);
+      }
+    }
+  } catch {
+    /* silent - rather no sound than a frozen game */
+  }
+}
+
 /** The SFX channel (the mixer's "sfx" bus): master mute/volume plus a few synth
  *  presets, so every game doesn't re-implement the same blip. All presets are
  *  crash-safe (playSfx). */
@@ -568,51 +680,18 @@ export const Sfx = {
 
   /** Short square-wave blip — menu ticks, UI feedback. */
   blip(freq = 880, dur = 0.08, vol = 0.25): void {
-    playSfx((ctx, now, out) => {
-      const osc = ctx.createOscillator();
-      const g = ctx.createGain();
-      osc.type = "square";
-      osc.frequency.value = freq;
-      g.gain.setValueAtTime(vol, now);
-      g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
-      osc.connect(g).connect(out);
-      osc.start(now);
-      osc.stop(now + dur + 0.02);
-    });
+    tone({ wave: "square", freq, gain: vol, release: dur });
   },
 
   /** Rising sweep — the classic jump. */
   jump(): void {
-    playSfx((ctx, now, out) => {
-      const osc = ctx.createOscillator();
-      const g = ctx.createGain();
-      osc.type = "triangle";
-      osc.frequency.setValueAtTime(220, now);
-      osc.frequency.exponentialRampToValueAtTime(660, now + 0.12);
-      g.gain.setValueAtTime(0.3, now);
-      g.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
-      osc.connect(g).connect(out);
-      osc.start(now);
-      osc.stop(now + 0.2);
-    });
+    tone({ wave: "triangle", freq: { from: 220, to: 660, time: 0.12 }, gain: 0.3, release: 0.18 });
   },
 
   /** Two-note sparkle — pickups, coins. */
   coin(): void {
-    playSfx((ctx, now, out) => {
-      for (const [i, freq] of [988, 1319].entries()) {
-        const osc = ctx.createOscillator();
-        const g = ctx.createGain();
-        const t = now + i * 0.08;
-        osc.type = "sine";
-        osc.frequency.value = freq;
-        g.gain.setValueAtTime(0.25, t);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
-        osc.connect(g).connect(out);
-        osc.start(t);
-        osc.stop(t + 0.3);
-      }
-    });
+    tone({ wave: "sine", freq: 988, gain: 0.25, release: 0.25 });
+    tone({ wave: "sine", freq: 1319, gain: 0.25, release: 0.25, delay: 0.08 });
   },
 };
 

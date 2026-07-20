@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { Mixer, Sfx } from "./audio.js";
+import { Mixer, Sfx, tone } from "./audio.js";
 
 // ---- Minimal Web Audio mock ----
 // Records every connect() so we can assert graph wiring; AudioParams remember
@@ -84,6 +84,18 @@ class MockAudioContext {
   createBuffer(channels: number, length: number) {
     return { numberOfChannels: channels, length, getChannelData: () => new Float32Array(length) };
   }
+  createOscillator() {
+    return mockNode("osc", {
+      type: "sine",
+      frequency: new MockParam(),
+      detune: new MockParam(),
+      start() {},
+      stop() {},
+    });
+  }
+  createBufferSource() {
+    return mockNode("source", { buffer: null, loop: false, start() {}, stop() {} });
+  }
 }
 
 beforeEach(() => {
@@ -167,6 +179,31 @@ describe("Audio.Mixer", () => {
     bus.duck(0.5, { attackMs: 20, holdMs: 50, releaseMs: 150 });
     Mixer.duck("chan5", 0.3); // shorthand
     expect(bus.volume).toBe(0.7); // duck never overwrites the set volume
+  });
+});
+
+describe("Audio.tone", () => {
+  it("builds an oscillator voice graph (crash-safe)", () => {
+    const before = connections.length;
+    tone({ wave: "square", freq: 440, gain: 0.2, release: 0.1 });
+    expect(connections.length).toBeGreaterThan(before); // wired osc → env → bus
+  });
+
+  it("runs the voice through a filter when given one", () => {
+    connections.length = 0;
+    tone({
+      wave: "sine",
+      freq: { from: 200, to: 800 },
+      detune: [-5, 5],
+      filter: { type: "lowpass", freq: 1000 },
+    });
+    expect(connections.some((c) => c.toKind === "biquad")).toBe(true);
+  });
+
+  it("supports a noise source without throwing", () => {
+    expect(() =>
+      tone({ wave: "noise", release: 0.05, filter: { type: "highpass", freq: 8000 } }),
+    ).not.toThrow();
   });
 });
 

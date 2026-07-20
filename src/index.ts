@@ -1,10 +1,10 @@
 // Minimotor - minimal game engine for small 2D canvas games.
 // The whole engine is reached through PascalCase `Minimotor.*` namespaces.
-// Engine runtime: Stage / Loop / Draw / Keys / Pointer (backed by one default
+// Engine runtime: Stage / Loop / Draw / Keys / Pointer / Mouse (backed by one default
 // game built via Stage.init). Services & helpers: Audio, Sprites, Storage, etc.
 // `createGame` is exported for isolated instances (tests / multiple games).
 
-import { createGame, Stage, Loop, Draw, Keys, Pointer } from "./engine.js";
+import { createGame, Stage, Loop, Draw, Keys, Pointer, Mouse } from "./engine.js";
 import { rectsOverlap, circleHit, crossedDown, pointInRect, sweptAABB } from "./collision.js";
 import * as UI from "./ui.js";
 import { Particles } from "./particles.js";
@@ -39,6 +39,7 @@ export {
   Draw,
   Keys,
   Pointer,
+  Mouse,
   Audio,
   Input,
   Storage,
@@ -118,7 +119,16 @@ export type { Transition, TransitionRender, TransitionRun } from "./transitions.
 // A shared default world (`Minimotor.World`) for the common single-world case;
 // games that need isolation or per-scene worlds call `ECS.world()` for their own.
 const defaultWorld = ECS.world();
-export type { SfxBuilder, MusicConfig, Bus, Filter, Effect, DelayEffect } from "./audio.js";
+export type {
+  SfxBuilder,
+  MusicConfig,
+  Bus,
+  Filter,
+  Effect,
+  DelayEffect,
+  ToneOptions,
+  ToneSweep,
+} from "./audio.js";
 export type { PhysicsBody } from "./physics.js";
 export type { SpriteCanvas, SheetOptions } from "./sprites.js";
 export type {
@@ -196,6 +206,7 @@ export const Minimotor = {
   Draw,
   Keys,
   Pointer,
+  Mouse,
   Audio,
   Input,
   Storage,
