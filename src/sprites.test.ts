@@ -6,6 +6,7 @@ import {
   bakeSheet,
   composeSheet,
   contentBounds,
+  tint,
 } from "./sprites.js";
 
 beforeEach(() => {
@@ -69,6 +70,18 @@ describe("Sprites", () => {
       n++;
     });
     expect(n).toBe(2);
+  });
+});
+
+describe("Sprites.tint", () => {
+  it("returns a same-size silhouette, cached per (source, color)", () => {
+    const src = getSprite("tintsrc", 20, 1, () => {});
+    const white = tint(src, "#fff");
+    expect(white).toBeInstanceOf(HTMLCanvasElement);
+    expect(white.width).toBe(src.width);
+    expect(white.height).toBe(src.height);
+    expect(tint(src, "#fff")).toBe(white); // same (source, color) → cached
+    expect(tint(src, "#f00")).not.toBe(white); // different color → new canvas
   });
 });
 

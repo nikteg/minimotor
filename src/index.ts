@@ -133,6 +133,10 @@ export type {
   ItemStack,
   WaveScale,
   DayPhase,
+  DistanceField,
+  Combo,
+  Charges,
+  Flash,
 } from "./goodies.js";
 export type {
   Transport,

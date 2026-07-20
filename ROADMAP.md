@@ -71,19 +71,25 @@ small pieces of genre knowledge that otherwise get rewritten in every game.
 Recipes may combine lower-level Minimotor primitives, but remain plain functions
 or tiny state objects—never a mandatory gameplay framework.
 
-**Shipped recipe shelf:**
+**Shipped recipe shelf** (split into family modules under `src/goodies/`; the
+public surface stays flat — every recipe is `Minimotor.Goodies.<name>`):
 
-- **Wrapping worlds:** `wrap`, `wrappedDelta`, `wrappedDistance`.
-- **Loot/cards/procedural:** `weightedPick`, `shuffleBag`, `chance`.
-- **Grid/puzzle/roguelike/tactics:** `gridNeighbors`, `floodFill`, `gridLine`,
-  `lineOfSight`.
-- **Shooter/racing steering:** `approachAngle`, `leadTarget`.
-- **Rhythm:** `timingGrade` with configurable timing windows.
-- **Racing/objectives:** `checkpointRoute` for ordered checkpoints and laps.
-- **RPG/tabletop/combat:** `rollDice`, `damageRoll`.
-- **Inventory/crafting:** `transferStack` for moving, merging and swapping.
-- **Bullet hell/strategy:** `ringFormation`, `gridFormation`.
-- **Arcade/survival/simulation:** `scoreRank`, `waveScale`, `dayCycle`.
+- **Wrapping worlds** (`wrapping`): `wrap`, `wrappedDelta`, `wrappedDistance`.
+- **Randomness / loot / dice** (`random`): `seedRng` (deterministic PRNG for
+  replayable/seeded runs), `chance`, `weightedPick`, `shuffleBag`, `rollDice`,
+  `damageRoll`.
+- **Grid/puzzle/roguelike/tactics** (`grid`): `gridNeighbors`, `floodFill`,
+  `gridLine`, `lineOfSight`, `distanceField` (multi-source BFS field for chase
+  AI / creep routing).
+- **Shooter/racing steering** (`steering`): `approachAngle`, `leadTarget`,
+  `ringFormation`, `gridFormation`.
+- **Inventory/crafting** (`inventory`): `transferStack` (move/merge/swap).
+- **Scoring** (`scoring`): `timingGrade`, `scoreRank`, `combo` (decaying
+  hit-streak multiplier).
+- **Pacing** (`pacing`): `checkpointRoute`, `waveScale`, `dayCycle`, `charges`
+  (a refilling ability/dash/ammo meter).
+- **Hit flash** (`flash`): `flash`, a "took damage" white-blink timing latch
+  (pairs with `Sprites.tint` for sprite silhouettes).
 
 **Candidate recipe families:**
 

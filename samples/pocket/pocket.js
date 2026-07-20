@@ -21,7 +21,10 @@ const pad = Input.gamepad();
 // A roomier logical viewport keeps ships and rocks readable on large screens.
 const W = 480, H = 270;
 const best = Game.createScoreTracker("pocket-asteroids-best");
-const ship = { x: W / 2, y: H / 2, vx: 0, vy: 0, angle: -Math.PI / 2, cooldown: 0, invuln: 0, hyperspace: 0 };
+const ship = { x: W / 2, y: H / 2, vx: 0, vy: 0, angle: -Math.PI / 2, cooldown: 0, invuln: 0 };
+// One hyperspace jump that recharges over 4s (a Goodies charge meter). fraction
+// drives the HUD bar; refill() tops it off on respawn.
+const hyper = Goodies.charges({ max: 1, refillMs: 4000 });
 const bullets = [], asteroids = [];
 const stars = Array.from({ length: 64 }, (_, i) => ({ x: 8 + (i * 71) % (W - 16), y: 8 + (i * 43) % (H - 16), r: i % 9 === 0 ? 1.2 : 0.7 }));
 let sessionScore = 0, lives = 3, level = 1, state = "title", elapsed = 0;
@@ -31,7 +34,7 @@ function torusDistance(ax, ay, bx, by) {
 }
 function resetShip() {
   ship.x = W / 2; ship.y = H / 2; ship.vx = 0; ship.vy = 0; ship.angle = -Math.PI / 2;
-  ship.invuln = 2; ship.hyperspace = 0;
+  ship.invuln = 2; hyper.refill();
 }
 function makeAsteroid(x, y, size, speed = 1) {
   const r = size === 3 ? 14 : size === 2 ? 9 : 5;
@@ -48,13 +51,13 @@ function newWave() {
   }
 }
 function hyperspace() {
-  if (ship.hyperspace > 0) return;
+  if (!hyper.use()) return; // spend the charge if one is ready
   let x = ship.x, y = ship.y;
   for (let i = 0; i < 30; i++) {
     x = Math.random() * W; y = Math.random() * H;
     if (asteroids.every((a) => torusDistance(x, y, a.x, a.y) > a.r + 28)) break;
   }
-  ship.x = x; ship.y = y; ship.vx *= .3; ship.vy *= .3; ship.invuln = 1.2; ship.hyperspace = 4;
+  ship.x = x; ship.y = y; ship.vx *= .3; ship.vy *= .3; ship.invuln = 1.2;
   Sfx.click();
 }
 function startGame() { bullets.length = 0; asteroids.length = 0; sessionScore = 0; lives = 3; level = 1; elapsed = 0; state = "play"; resetShip(); newWave(); }
@@ -78,7 +81,7 @@ Loop.run({
     if (state === "title") { if (actions.pressed("fire") || pad.pressed(Input.Buttons.A)) startGame(); return; }
     if (state === "gameover") { if (actions.pressed("fire") || pad.pressed(Input.Buttons.A)) startGame(); return; }
     elapsed += dt;
-    ship.cooldown = Math.max(0, ship.cooldown - dt); ship.invuln = Math.max(0, ship.invuln - dt); ship.hyperspace = Math.max(0, ship.hyperspace - dt);
+    ship.cooldown = Math.max(0, ship.cooldown - dt); ship.invuln = Math.max(0, ship.invuln - dt); hyper.tick(stepMs);
     const axis = pad.axis(0);
     const turn = (actions.down("right") ? 1 : 0) - (actions.down("left") ? 1 : 0) || axis;
     ship.angle += turn * 4.5 * dt;
@@ -128,7 +131,7 @@ Loop.run({
     UI.text(ctx, `SCORE ${sessionScore}  BEST ${best.best}  WAVE ${level}`, { x: 9, y: 4, size: 8, color: "#fff" });
     UI.text(ctx, `LIVES ${"◆".repeat(Math.max(0, lives))}`, { x: 9, y: H - 17, size: 8, color: "#fff" });
     UI.text(ctx, "HYPER", { x: W - 65, y: H - 17, size: 8, color: "dim" });
-    UI.bar(ctx, W - 37, H - 14, 30, 6, ship.hyperspace > 0 ? 1 - ship.hyperspace / 4 : 1, { fill: "#b197fc", bg: "#1b2740" });
+    UI.bar(ctx, W - 37, H - 14, 30, 6, hyper.fraction, { fill: "#b197fc", bg: "#1b2740" });
     if (state === "title" || state === "gameover") { ctx.fillStyle = "rgba(3,5,12,.75)"; ctx.fillRect(0, 0, W, H); UI.text(ctx, state === "title" ? "POCKET ASTEROIDS" : "SHIP LOST", { x: W / 2, y: 40, size: 25, bold: true, color: state === "title" ? "#64f0c8" : "#ff6b6b", align: "center" }); UI.text(ctx, state === "title" ? "SPACE / A BUTTON TO LAUNCH" : `SCORE ${sessionScore} · SPACE TO RESTART`, { x: W / 2, y: 75, size: 9, color: "#fff", align: "center" }); UI.text(ctx, "ROTATE · THRUST · FIRE · HYPERSPACE", { x: W / 2, y: 93, size: 9, color: "dim", align: "center" }); }
     ctx.restore();
   },

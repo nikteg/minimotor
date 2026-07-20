@@ -5,13 +5,17 @@ import * as Sfx from "../shared/sfx.js";
 
 let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 Minimotor.Stage.onResize((next) => (vp = next));
-const { Loop, Pointer, Keys, Clock, Tween, Signals, Mathf, Particles, UI } = Minimotor;
+const { Loop, Pointer, Keys, Clock, Tween, Signals, Mathf, Goodies, Particles, UI } = Minimotor;
 
 const buds = [];
-const hud = { score: 0, combo: 0, health: 5, elapsed: 0, message: "LISTEN FOR THE CHIME", messageAlpha: 1, pulse: 0 };
+const hud = { score: 0, health: 5, elapsed: 0, message: "LISTEN FOR THE CHIME", messageAlpha: 1, pulse: 0 };
+// A decaying combo (keep harvesting within the window or the streak drops) and
+// a hit-flash for the "garden went quiet" damage blink.
+const combo = Goodies.combo({ windowMs: 3200 });
+const damage = Goodies.flash(320);
 let spawnCount = 0, state = "play";
 function resetRun() {
-  buds.length = 0; hud.score = 0; hud.combo = 0; hud.health = 5; hud.elapsed = 0; hud.message = "THE GARDEN AWAKENS"; hud.messageAlpha = 1; state = "play"; spawnBud();
+  buds.length = 0; hud.score = 0; combo.reset(); hud.health = 5; hud.elapsed = 0; hud.message = "THE GARDEN AWAKENS"; hud.messageAlpha = 1; state = "play"; spawnBud();
 }
 
 function spawnBud() {
@@ -31,10 +35,11 @@ function spawnBud() {
 
 // Game systems never touch the HUD directly: they announce facts instead.
 Signals.on("harvest", (b) => {
-  hud.score += 10 + hud.combo * 3;
-  UI.float(`+${10 + (hud.combo * 3)}`, b.x, b.y - 24, { color: "#ffe066" });
-  hud.combo++;
-  hud.message = `HARVESTED +${10 + (hud.combo - 1) * 3}`;
+  combo.hit();
+  const bonus = 10 + (combo.count - 1) * 3;
+  hud.score += bonus;
+  UI.float(`+${bonus}`, b.x, b.y - 24, { color: "#ffe066" });
+  hud.message = `HARVESTED +${bonus}`;
   hud.messageAlpha = 1;
   hud.pulse = 1;
   Particles.burst(b.x, b.y, { count: 24, colors: ["#4ecdc4", "#ffe066", "#b197fc"], speed: [50, 230], size: [2, 5], life: [300, 800], gravity: 160 });
@@ -42,7 +47,7 @@ Signals.on("harvest", (b) => {
 });
 Signals.on("miss", () => {
   if (state !== "play") return;
-  hud.combo = 0; hud.health--;
+  combo.reset(); hud.health--; damage.hit();
   hud.message = hud.health > 0 ? "THE GARDEN WENT QUIET" : "THE GARDEN FELL SILENT";
   hud.messageAlpha = 1;
   Sfx.lose();
@@ -52,7 +57,7 @@ Signals.on("miss", () => {
 resetRun();
 Clock.every(1050, spawnBud); // deterministic fixed-step rhythm
 Clock.every(3000, () => {
-  if (hud.combo > 0) hud.message = `COMBO x${hud.combo} — KEEP THE RHYTHM`;
+  if (combo.count > 0) hud.message = `COMBO x${combo.count} — KEEP THE RHYTHM`;
 });
 Clock.every(8000, () => {
   // A repeating signal demonstrates that listeners can be swapped independently.
@@ -67,6 +72,8 @@ Loop.run({
       return;
     }
     hud.elapsed += 1 / 60;
+    combo.tick(Loop.step);
+    damage.tick(Loop.step);
     hud.messageAlpha = Math.max(0, hud.messageAlpha - 0.018);
     hud.pulse = Math.max(0, hud.pulse - 0.05);
     for (let i = buds.length - 1; i >= 0; i--) {
@@ -96,13 +103,15 @@ Loop.run({
     }
     Particles.draw(ctx);
     UI.panel(ctx, { x: 7, y: 7, w: 430, h: 52, bg: "rgba(7,10,24,.82)", border: "#30496e" });
-    UI.text(ctx, `SCORE ${hud.score}   COMBO x${hud.combo}   TIME ${hud.elapsed.toFixed(1)}s`, { x: 14, y: 10, size: 16, bold: true, color: "#fff" });
+    UI.text(ctx, `SCORE ${hud.score}   COMBO x${combo.count}   TIME ${hud.elapsed.toFixed(1)}s`, { x: 14, y: 10, size: 16, bold: true, color: "#fff" });
     UI.text(ctx, "GARDEN", { x: 14, y: 31, size: 16, bold: true, color: "#ff6b6b" });
     UI.bar(ctx, 88, 41, 95, 8, hud.health / 5, { fill: "#ff6b6b", bg: "#3b2034" });
     UI.drawFloats(ctx);
     UI.text(ctx, "CLICK THE GLOWING BUDS · SPACE / click after game over to replay", { x: 14, y: 53, size: 12, color: "dim" });
     if (hud.messageAlpha > 0) { ctx.globalAlpha = hud.messageAlpha; UI.text(ctx, hud.message, { x: 14, y: vp.h - 40, size: 20, bold: true, color: "#ffe066" }); ctx.globalAlpha = 1; }
     if (hud.pulse > 0) { ctx.strokeStyle = `rgba(255,224,102,${hud.pulse})`; ctx.lineWidth = 3; ctx.strokeRect(5, 5, vp.w - 10, vp.h - 10); }
+    // Hit flash: a red border that blinks and fades when the garden loses a bud.
+    if (damage.active) { ctx.strokeStyle = `rgba(255,80,80,${damage.value})`; ctx.lineWidth = 10; ctx.strokeRect(5, 5, vp.w - 10, vp.h - 10); }
     if (state === "gameover") {
       ctx.fillStyle = "rgba(7,10,24,.82)"; ctx.fillRect(0, 0, vp.w, vp.h);
       UI.text(ctx, "GARDEN SILENT", { x: vp.w / 2, y: vp.h / 2 - 52, size: 34, bold: true, color: "#ff6b6b", align: "center" });

@@ -69,6 +69,51 @@ export function getLayer(
   return layer;
 }
 
+const tintCache = new WeakMap<
+  HTMLCanvasElement | HTMLImageElement | ImageBitmap,
+  Map<string, HTMLCanvasElement>
+>();
+
+/** A solid-`color` silhouette of `source` — the same opaque shape, flat-filled.
+ *  Draw it over the original at a fading alpha for a hit "white flash" (pair
+ *  the alpha with `Goodies.flash`), or use it for damage tints and team colors.
+ *  Cached per (source, color), so call it every frame freely.
+ *
+ *    ctx.drawImage(frame, x, y);
+ *    ctx.globalAlpha = flash.value;
+ *    ctx.drawImage(Sprites.tint(frame, "#fff"), x, y); // same dest rect as `frame`
+ *    ctx.globalAlpha = 1; */
+export function tint(
+  source: HTMLCanvasElement | HTMLImageElement | ImageBitmap,
+  color: string,
+): HTMLCanvasElement {
+  const w = Math.max(1, Math.ceil("naturalWidth" in source ? source.naturalWidth : source.width));
+  const h = Math.max(
+    1,
+    Math.ceil("naturalHeight" in source ? source.naturalHeight : source.height),
+  );
+  let byColor = tintCache.get(source);
+  if (!byColor) {
+    byColor = new Map();
+    tintCache.set(source, byColor);
+  }
+  const key = `${color}@${w}x${h}`;
+  let out = byColor.get(key);
+  if (!out) {
+    out = document.createElement("canvas");
+    out.width = w;
+    out.height = h;
+    const ctx = out.getContext("2d")!;
+    ctx.drawImage(source, 0, 0, w, h);
+    // Keep only the pixels the sprite already covers, recolored flat.
+    ctx.globalCompositeOperation = "source-in";
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, w, h);
+    byColor.set(key, out);
+  }
+  return out;
+}
+
 /** Clear the sprite AND layer caches (call on resize or theme change if needed). */
 export function clearSpriteCache(): void {
   cache.clear();

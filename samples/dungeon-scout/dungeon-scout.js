@@ -1,14 +1,18 @@
-// DUNGEON SCOUT: grid, flood-fill and line-of-sight recipes in a tiny roguelike.
+// DUNGEON SCOUT: grid recipes in a tiny roguelike — a SEEDED layout (seedRng),
+// a distance-from-hero heatmap (distanceField), plus line-of-sight fog.
 import { Minimotor } from "minimotor";
 const { Goodies, Input, Loop, UI, Pointer } = Minimotor;
 let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 Minimotor.Stage.onResize((next) => (vp = next));
 const actions = Input.actions({ up: ["ArrowUp", "KeyW"], down: ["ArrowDown", "KeyS"], left: ["ArrowLeft", "KeyA"], right: ["ArrowRight", "KeyD"] });
 const COLS = 20, ROWS = 12, CELL = 28;
-let map, hero, exit, reachable, visible;
+let map, hero, exit, reachable, visible, field, maxDist;
+let seed = 1; // R advances the seed; the same seed always rebuilds the same map
 
 function generate() {
-  map = Array.from({ length: ROWS }, (_r, y) => Array.from({ length: COLS }, (_c, x) => x === 0 || y === 0 || x === COLS - 1 || y === ROWS - 1 || Goodies.chance(0.2) ? 1 : 0));
+  // seedRng makes the layout reproducible — same seed, same dungeon.
+  const rng = Goodies.seedRng(seed);
+  map = Array.from({ length: ROWS }, (_r, y) => Array.from({ length: COLS }, (_c, x) => x === 0 || y === 0 || x === COLS - 1 || y === ROWS - 1 || Goodies.chance(0.2, rng) ? 1 : 0));
   hero = { x: 1, y: 1 }; exit = { x: COLS - 2, y: ROWS - 2 };
   map[hero.y][hero.x] = 0; map[exit.y][exit.x] = 0;
   const carved = [...Goodies.gridLine(hero.x, hero.y, exit.x, hero.y), ...Goodies.gridLine(exit.x, hero.y, exit.x, exit.y)];
@@ -16,19 +20,28 @@ function generate() {
   recalc();
 }
 function recalc() {
-  const cells = Goodies.floodFill(hero, (x, y) => map[y]?.[x] === 0);
-  reachable = new Set(cells.map((p) => `${p.x},${p.y}`));
+  // distanceField: BFS step-distance from the hero to every open cell. The
+  // reachable set falls out of `field.cells`; `at()` drives the heatmap.
+  field = Goodies.distanceField(hero, (x, y) => map[y]?.[x] === 0);
+  reachable = new Set(field.cells.map((c) => `${c.x},${c.y}`));
+  maxDist = field.cells.reduce((m, c) => Math.max(m, c.dist), 1);
   visible = new Set();
   for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
     if (Math.hypot(x - hero.x, y - hero.y) <= 6 && Goodies.lineOfSight(hero.x, hero.y, x, y, (cx, cy) => map[cy]?.[cx] === 1, false)) visible.add(`${x},${y}`);
   }
 }
+// Cell color by hero distance: bright teal near, deep blue far.
+const mix = (a, b, t) => Math.round(a + (b - a) * t);
+const heat = (d) => {
+  const t = Math.min(1, d / maxDist);
+  return `rgb(${mix(78, 20, t)},${mix(205, 34, t)},${mix(196, 58, t)})`;
+};
 function tryMove(dx, dy) { const x = hero.x + dx, y = hero.y + dy; if (map[y]?.[x] === 0) { hero = { x, y }; recalc(); } }
 generate();
 
 Loop.run({ update() {
   if (actions.pressed("up")) tryMove(0, -1); else if (actions.pressed("down")) tryMove(0, 1); else if (actions.pressed("left")) tryMove(-1, 0); else if (actions.pressed("right")) tryMove(1, 0);
-  if (Minimotor.Keys.pressed("KeyR")) generate();
+  if (Minimotor.Keys.pressed("KeyR")) { seed = (seed + 1) >>> 0; generate(); }
 }, draw(ctx) {
   ctx.fillStyle = "#0d1118"; ctx.fillRect(0, 0, vp.w, vp.h);
   const ox = Math.round((vp.w - COLS * CELL) / 2), oy = 86;
@@ -36,11 +49,11 @@ Loop.run({ update() {
   // are laid out with the theme's padding — no hand-tuned y under the strip.
   // `h: body.remaining` fills the padded body so the line centers in it.
   UI.group({ x: ox - 12, y: 12, w: COLS * CELL + 24, h: 60, title: "DUNGEON SCOUT" }, (body) => {
-    UI.text(`Reachable ${reachable.size} · arrows/WASD move · R rebuild`, { h: body.remaining, size: 11, color: "dim" });
+    UI.text(`Reachable ${reachable.size} · seed ${seed} · WASD move · R new seed`, { h: body.remaining, size: 11, color: "dim" });
   });
   for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
-    const seen = visible.has(`${x},${y}`), wall = map[y][x] === 1;
-    ctx.fillStyle = !seen ? "#080b10" : wall ? "#394558" : reachable.has(`${x},${y}`) ? "#1d3940" : "#18202b";
+    const key = `${x},${y}`, seen = visible.has(key), wall = map[y][x] === 1;
+    ctx.fillStyle = !seen ? "#080b10" : wall ? "#394558" : reachable.has(key) ? heat(field.at(x, y)) : "#18202b";
     ctx.fillRect(ox + x * CELL + 1, oy + y * CELL + 1, CELL - 2, CELL - 2);
   }
   ctx.fillStyle = "#ffe066"; ctx.fillRect(ox + exit.x * CELL + 8, oy + exit.y * CELL + 8, 12, 12);
