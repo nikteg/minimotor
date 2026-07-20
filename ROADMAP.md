@@ -172,7 +172,7 @@ Minimotor.Signals.on("score", (n) => (hud.score = n));
 Minimotor.Signals.emit("score", 10);
 ```
 
-## L4 — Content ⬜
+## L4 — Content 🟡
 
 The gap between "toy" and "full-fledged": loaded art and level data.
 
@@ -186,8 +186,13 @@ map.draw(ctx, camera);
 map.solidAt(x, y);
 ```
 
-- ⬜ `Assets` — preload images/audio/JSON with progress; cached map
-- ⬜ `Anim` — sprite-sheet frames + timeline, dt-advanced
+- ✅ `Assets` — `load(manifest, onProgress?)` preloads images + JSON (kind by
+  extension), cached by name; `image`/`json`/`get`/`has`/`clear`. (Audio
+  preloading deferred — the WebAudio path lives in `Audio`.)
+- ✅ `Anim` — `Anim.sheet(img, { fw, fh, fps, frames?, cols?, loop? })`: grid
+  slicing + dt-advanced timeline (`update`/`rect`/`frame`/`done`/`reset`/`draw`).
+  Feeds the ECS `Sprite` source-rect (`sx/sy/sw/sh`), so animated entities render
+  through `world.drawSprites`. Proof: the `sprites` sample (procedural sheet).
 - ⬜ `Tiles` — grid tilemap: draw + solidity query, culled to camera
 - ⬜ `Particles` — emitter presets (the ambient/firework patterns), ECS-friendly
 - ⬜ `Transitions` — scene fades/wipes · `UI` — overlay/HUD/floating-text helpers
@@ -243,7 +248,13 @@ hoppspelet) as proof it actually simplifies code — the discipline used so far.
    ECS (blocks as entities queried for collision & render; play + pushed
    game-over overlay) before extending. The API carried a whole game with **no
    engine changes** — validating the L3 surface.
-5. **Assets + Anim** — a new image-based sample (first game that loads art).
+4c. ✅ **Built-in Sprite renderer** — standard `ECS.Sprite` component +
+   `world.drawSprites(ctx)` (z-sorted, anchor/rot/scale/alpha, source sub-rect for
+   sheets/atlases). Particles sample dropped its hand-written blit loop.
+5. ✅ **Assets + Anim** — `Assets` preloader (images + JSON) and `Anim.sheet`
+   sprite-sheet playback wired into the Sprite source-rect. New **sprites** sample
+   animates a procedurally-built sheet through the ECS. (Pure logic unit-tested
+   with mocks; visual proof is browser-only — image decode doesn't run headless.)
 6. **Tiles** — a tilemap sample.
 7. **Flagship** — migrate hoppspelet fully onto Scenes + ECS.
 

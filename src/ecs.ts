@@ -81,6 +81,13 @@ export interface SpriteData {
   z?: number;
   /** Skip drawing when false (default true). */
   visible?: boolean;
+  /** Source sub-rect within `img` (px). Set all four to blit one cell of a
+   *  sprite sheet / texture atlas — an `Anim` writes these each frame. When set,
+   *  on-screen size defaults to `sw`/`sh` instead of the whole image. */
+  sx?: number;
+  sy?: number;
+  sw?: number;
+  sh?: number;
 }
 
 let nextComponentId = 0;
@@ -342,8 +349,10 @@ export function world(): World {
         if (alpha <= 0) continue;
 
         const img = s.img;
-        const w = s.w ?? img.logicalSize ?? img.width;
-        const h = s.h ?? img.logicalSize ?? img.height;
+        const clipped = s.sw !== undefined && s.sh !== undefined;
+        // With a source rect the natural size is the cell; otherwise the image.
+        const w = s.w ?? (clipped ? s.sw! : (img.logicalSize ?? img.width));
+        const h = s.h ?? (clipped ? s.sh! : (img.logicalSize ?? img.height));
         const ax = s.ax ?? 0.5;
         const ay = s.ay ?? 0.5;
         const rot = s.rot ?? 0;
@@ -354,7 +363,11 @@ export function world(): World {
         ctx.translate(s.x, s.y);
         if (rot !== 0) ctx.rotate(rot);
         if (scale !== 1) ctx.scale(scale, scale);
-        ctx.drawImage(img, -ax * w, -ay * h, w, h);
+        if (clipped) {
+          ctx.drawImage(img, s.sx ?? 0, s.sy ?? 0, s.sw!, s.sh!, -ax * w, -ay * h, w, h);
+        } else {
+          ctx.drawImage(img, -ax * w, -ay * h, w, h);
+        }
         ctx.restore();
       }
     },

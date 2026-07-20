@@ -9,7 +9,9 @@ import { rectsOverlap, circleHit, crossedDown } from "./collision.js";
 import { Scenes } from "./scenes.js";
 import { Clock, Tween } from "./clock.js";
 import { Signals } from "./signals.js";
+import { Assets } from "./assets.js";
 import * as ECS from "./ecs.js";
+import * as Anim from "./anim.js";
 import * as Audio from "./audio.js";
 import * as Mathf from "./mathf.js";
 import * as Input from "./input.js";
@@ -47,6 +49,8 @@ export {
   Clock,
   Tween,
   Signals,
+  Assets,
+  Anim,
 };
 export type {
   Rect,
@@ -70,6 +74,8 @@ export type {
 } from "./ecs.js";
 export type { ClockManager, Cancel } from "./clock.js";
 export type { SignalBus } from "./signals.js";
+export type { AssetStore, AssetManifest, ProgressFn } from "./assets.js";
+export type { Animation, SheetConfig, FrameRect, AnimDrawOptions } from "./anim.js";
 
 // A shared default world (`Minimotor.World`) for the common single-world case;
 // games that need isolation or per-scene worlds call `ECS.world()` for their own.
@@ -107,6 +113,8 @@ export const Minimotor = {
   Clock,
   Tween,
   Signals,
+  Assets,
+  Anim,
   Collision,
 };
 
