@@ -447,6 +447,99 @@ collision solver, no manual letterbox/camera transform plumbing, no direct
 current controls, fully solid platforms, animation states, visual effects and
 120 Hz target.
 
+## Character composition — state machines & timing ⬜
+
+Games keep asking for "a platformer character": coyote time, jump buffering,
+wall jumps, state-driven animation. A bundled character controller is a stated
+non-goal (it fuses policy — jump heights, impulse directions, gravity — that
+belongs to the game). The engine's job is the small, pure, reusable
+**mechanisms** those characters compose. Same discipline as extraction: ship
+with tests and prove each helper in Pixel Adventure **plus** one other sample
+(`platformer`, `tiles`, `pocket`).
+
+### `Fsm` — a general finite state machine (L3, beside Scenes) ⬜
+
+A logic state machine: named states with `enter`/`update`/`exit`, where a
+state's `update` returns the next state name (falsy = stay) and `go(name)`
+forces a transition (firing exit → enter). Plain data, no inheritance.
+
+```ts
+const sm = Minimotor.Fsm.create(
+  {
+    idle: { update: () => (moving ? "run" : grounded ? null : "fall") },
+    run:  { update: () => (!grounded ? "fall" : moving ? null : "idle") },
+    jump: { enter: () => (vy = -JUMP), update: () => (vy >= 0 ? "fall" : null) },
+    fall: { update: () => (grounded ? "idle" : null) },
+    hurt: { enter: () => hurtClock.start(), update: () => (hurtClock.done ? "idle" : null) },
+  },
+  "idle",
+);
+sm.update(dtMs);   // runs the active state; a returned name transitions
+sm.state;          // active name;  sm.is("jump");  sm.go("hurt")
+```
+
+**Maps to `Anim.states`:** they share the named-state shape but are different
+layers — `Fsm` is game logic (enter/exit/update), `Anim.states` is a clip
+timeline (`play`/`rect`/`done`). They are NOT merged. They pair in one line
+(`anim.play(sm.state)`), and `Fsm.create(states, initial, { anim })` will
+optionally auto-`play(newState)` on every transition when a clip of that name
+exists — the common case where logical state and animation state are 1:1
+(Pixel Adventure's idle/run/jump/fall/hit). Scenes stays the app-level stack;
+`Fsm` is the per-entity machine.
+
+### `Timers` — polled timing latches (coyote, buffer, cooldown) ⬜
+
+Not platformer-specific — grace windows, buffered inputs and cooldowns recur in
+top-down, shmup and action games too. Three tiny pure factories, ticked on the
+fixed step, holding only a countdown:
+
+```ts
+const coyote = Minimotor.Timers.window(100);   // grace after a condition drops
+const jumpBuf = Minimotor.Timers.buffer(120);  // an input honored slightly early
+const dashCd = Minimotor.Timers.cooldown(500); // a reusable-after-delay gate
+
+// each fixed step:
+if (grounded) coyote.charge();
+coyote.tick(stepMs); jumpBuf.tick(stepMs); dashCd.tick(stepMs);
+if (Keys.pressed("Space")) jumpBuf.trigger();
+if (coyote.active && jumpBuf.consume()) { vy = -JUMP; }   // coyote + buffered jump
+if (dashCd.ready() && dash) { doDash(); dashCd.use(); }
+```
+
+- `window(ms)`: `charge()` refills; `active` true during `ms` after the last
+  charge — coyote time, "recently damaged", grace periods.
+- `buffer(ms)`: `trigger()` arms; `consume()` returns true once if armed within
+  the window, then clears — jump/attack buffering.
+- `cooldown(ms)`: `ready()` while elapsed; `use()` restarts the timer.
+
+### Wall jumps stay composed, not a helper ⬜
+
+`moveAABB` already reports `left`/`right` contact — that IS the wall detection.
+A wall jump is then `Timers` + a game-chosen impulse:
+
+```ts
+if ((hit.left || hit.right) && jumpBuf.consume()) {
+  vy = -WALL_JUMP_UP;
+  vx = hit.left ? WALL_JUMP_PUSH : -WALL_JUMP_PUSH; // away from the wall
+}
+```
+
+Bundling the impulse magnitudes/direction into a `Platform.wallJump()` would be
+policy for one game. So there is **no wall-jump util and no `Platform`
+namespace**: `moveAABB` stays on `Tiles` (tile data lives there; top-down games
+use it too), and the platformer story is composition —
+`Tiles.moveAABB` + `Fsm` + `Timers` + `Anim.states` + `Camera` + `Particles`.
+The **proof** is a Pixel Adventure / platformer sample gaining coyote time,
+jump buffering and wall jumps with no new "controller" object.
+
+### Deliberately NOT added
+
+- A `PlatformerController` / character object (policy + presentation bundle).
+- Variable jump height, air control, gravity curves — one-line game code
+  (`if (!held && vy < 0) vy *= 0.5`), not worth an API.
+- Slopes and moving platforms — revisit only if a `moveAABB` extension is
+  demonstrably needed by two samples (a future extraction phase, if ever).
+
 ## Build milestones
 
 Each milestone lands with **tests** and a **refactor of a real game** (a sample or
