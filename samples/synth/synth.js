@@ -45,6 +45,9 @@ function playNote(midi) {
   });
   glow(midi);
   litUntil.set(midi, performance.now() + 180);
+  // Duck the backing groove briefly so the played note cuts through (a light
+  // side-chain). Repeated hits keep it ducked, then it swells back.
+  if (backing) Audio.Mixer.duck("music", 0.4, { attackMs: 25, holdMs: 70, releaseMs: 220 });
 }
 
 // Keyboard layout: semitone offsets from the anchor C. `pos` is the white-key
@@ -145,8 +148,12 @@ let musicStarted = false;
 // load. R toggles the reverb send; F sweeps the muffle filter live.
 Audio.Mixer.reverb("hall", { seconds: 2.4, decay: 2.2, wet: 0.9 });
 const grooveMuffle = Audio.Mixer.bus("music").addFilter("lowpass", 20000);
+// A limiter on the master glues the mix and keeps peaks from clipping when you
+// roll the keys and notes stack up.
+Audio.Mixer.compressor();
 let reverbOn = false;
 let muffled = false;
+let lastPointerMidi = null; // for hold-and-roll on the piano
 
 function ensureBacking() {
   if (musicStarted) return;
@@ -216,19 +223,30 @@ function handleInput() {
     grooveMuffle.frequency(muffled ? 380 : 20000, 260);
   }
 
-  // Click/tap the on-screen piano.
-  if (Pointer.pressed) {
-    const p = piano();
-    if (Pointer.y >= p.y) {
-      for (const k of BLACK_KEYS) {
-        const r = blackRect(p, k);
-        if (Pointer.x >= r.x && Pointer.x < r.x + r.w && Pointer.y < r.y + r.h) {
-          return playNote(anchorMidi() + k.semi);
-        }
+  // Play the on-screen piano — hold the mouse/finger down and roll across the
+  // keys; each new key under the pointer retriggers. Releasing clears the last
+  // key so tapping the same one again fires.
+  const p = piano();
+  if (Pointer.down && Pointer.y >= p.y) {
+    let semi = null;
+    for (const k of BLACK_KEYS) {
+      const r = blackRect(p, k);
+      if (Pointer.x >= r.x && Pointer.x < r.x + r.w && Pointer.y < r.y + r.h) {
+        semi = k.semi;
+        break;
       }
-      const idx = Mathf.clamp(Math.floor(Pointer.x / p.keyW), 0, WHITE_KEYS.length - 1);
-      playNote(anchorMidi() + WHITE_KEYS[idx].semi);
     }
+    if (semi === null) {
+      const idx = Mathf.clamp(Math.floor(Pointer.x / p.keyW), 0, WHITE_KEYS.length - 1);
+      semi = WHITE_KEYS[idx].semi;
+    }
+    const midi = anchorMidi() + semi;
+    if (midi !== lastPointerMidi) {
+      lastPointerMidi = midi;
+      playNote(midi);
+    }
+  } else {
+    lastPointerMidi = null;
   }
 }
 

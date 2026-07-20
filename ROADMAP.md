@@ -41,8 +41,9 @@ one default engine built by `Stage.init()`.
 - ✅ `Keys` / `Pointer` — polled input (`down`/`pressed`/`released`)
 - ✅ `Draw` — `ctx`, `frameScale`
 - ✅ `Audio` — crash-safe SFX + scheduled `Music`, plus `Audio.Mixer`: named
-  channel buses under a master, per-bus volume/mute, dynamic biquad filters and
-  aux sends into shared reverb/delay effects (Sfx/Music are the built-in buses)
+  channel buses under a master, per-bus volume/mute, dynamic biquad filters,
+  aux sends into shared reverb/delay effects, a master compressor/limiter and
+  side-chain `duck(bus, amount)` (Sfx/Music are the built-in buses)
 - ✅ `Storage`, `Net`, `Perf`, `Fullscreen`, `Input` (incl. `Input.vibrate`
   haptics, `Input.actions` mapping, `Input.gamepad` polling with edge semantics)
 - 🟡 backlog: audio sampled buffers, orientation lock, service-worker/PWA

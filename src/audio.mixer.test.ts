@@ -72,6 +72,15 @@ class MockAudioContext {
   createDelay() {
     return mockNode("delay", { delayTime: new MockParam() });
   }
+  createDynamicsCompressor() {
+    return mockNode("compressor", {
+      threshold: new MockParam(),
+      ratio: new MockParam(),
+      attack: new MockParam(),
+      release: new MockParam(),
+      knee: new MockParam(),
+    });
+  }
   createBuffer(channels: number, length: number) {
     return { numberOfChannels: channels, length, getChannelData: () => new Float32Array(length) };
   }
@@ -132,6 +141,21 @@ describe("Audio.Mixer", () => {
     echo.setFeedback(0.25);
     echo.setWet(0.5);
     expect(echo.wet).toBe(0.5);
+  });
+
+  it("inserts a master compressor/limiter", () => {
+    Mixer.compressor({ ratio: 20, threshold: -12 });
+    void Mixer.bus("chan4").input; // materialize the master path
+    expect(connections.some((c) => c.toKind === "compressor")).toBe(true);
+  });
+
+  it("duck() is crash-safe and independent of channel volume", () => {
+    const bus = Mixer.bus("chan5");
+    bus.setVolume(0.7);
+    void bus.input; // materialize
+    bus.duck(0.5, { attackMs: 20, holdMs: 50, releaseMs: 150 });
+    Mixer.duck("chan5", 0.3); // shorthand
+    expect(bus.volume).toBe(0.7); // duck never overwrites the set volume
   });
 });
 

@@ -47,12 +47,50 @@ function rampParam(param: AudioParam, target: number, rampMs: number): void {
 let masterGain: GainNode | null = null;
 let masterVolume = 1;
 let masterOn = true;
+interface CompSpec {
+  threshold: number;
+  ratio: number;
+  attack: number;
+  release: number;
+  knee: number;
+}
+let compSpec: CompSpec | null = null;
+let masterComp: DynamicsCompressorNode | null = null;
+
+// Route the master gain to the destination — through the compressor/limiter if
+// one is configured. Called on master creation and whenever the compressor is
+// (re)configured, so it can be inserted after the graph already exists.
+function wireMasterOut(ctx: AudioContext): void {
+  if (!masterGain) return;
+  try {
+    masterGain.disconnect();
+  } catch {
+    /* not yet connected */
+  }
+  if (compSpec) {
+    if (!masterComp) masterComp = ctx.createDynamicsCompressor();
+    masterComp.threshold.value = compSpec.threshold;
+    masterComp.ratio.value = compSpec.ratio;
+    masterComp.attack.value = compSpec.attack;
+    masterComp.release.value = compSpec.release;
+    masterComp.knee.value = compSpec.knee;
+    try {
+      masterComp.disconnect();
+    } catch {
+      /* ok */
+    }
+    masterGain.connect(masterComp);
+    masterComp.connect(ctx.destination);
+  } else {
+    masterGain.connect(ctx.destination);
+  }
+}
 
 function ensureMaster(ctx: AudioContext): GainNode {
   if (!masterGain) {
     masterGain = ctx.createGain();
     masterGain.gain.value = masterOn ? masterVolume : 0;
-    masterGain.connect(ctx.destination);
+    wireMasterOut(ctx);
   }
   return masterGain;
 }
@@ -90,6 +128,10 @@ export interface Bus {
   /** Aux-send this bus (post-fader) into a named effect at `level` (0..1).
    *  Create the effect first with `Mixer.reverb` / `Mixer.delay`. */
   send(effect: string, level: number, rampMs?: number): void;
+  /** Momentarily dip this bus by `amount` (0..1) then restore — a game-style
+   *  side-chain duck (e.g. duck the music while a big SFX plays). Independent
+   *  of the channel volume, so it never overwrites your `setVolume`. */
+  duck(amount: number, opts?: { attackMs?: number; holdMs?: number; releaseMs?: number }): void;
 }
 
 /** A shared effect that buses send into; its wet output returns to the master. */
@@ -128,6 +170,7 @@ function createBus(name: string): Bus {
   let on = true;
   let inputNode: GainNode | null = null;
   let gainNode: GainNode | null = null;
+  let duckGain: GainNode | null = null; // transient side-chain dip, post-volume
   const filters: FilterState[] = [];
   const sends = new Map<string, SendState>();
 
@@ -160,12 +203,12 @@ function createBus(name: string): Bus {
   };
 
   const wireSend = (effectName: string, s: SendState): void => {
-    if (!gainNode || s.node) return;
+    if (!duckGain || s.node) return;
     const effect = effects.get(effectName);
     if (!effect) return; // effect not created yet; wired when send() is called again
     s.node = ensureAudio().createGain();
     s.node.gain.value = s.level;
-    gainNode.connect(s.node);
+    duckGain.connect(s.node); // post-fader (after volume + duck)
     s.node.connect(effect.input);
   };
 
@@ -175,7 +218,9 @@ function createBus(name: string): Bus {
     inputNode = ctx.createGain();
     gainNode = ctx.createGain();
     gainNode.gain.value = on ? volume : 0;
-    gainNode.connect(ensureMaster(ctx));
+    duckGain = ctx.createGain();
+    gainNode.connect(duckGain);
+    duckGain.connect(ensureMaster(ctx));
     rewire();
     for (const [effectName, s] of sends) wireSend(effectName, s);
   };
@@ -252,6 +297,18 @@ function createBus(name: string): Bus {
       }
       if (gainNode) wireSend(effectName, s);
       if (s.node) rampParam(s.node.gain, level, rampMs);
+    },
+    duck(amount, opts = {}) {
+      ensure();
+      if (!duckGain || !audioCtx) return;
+      const attackMs = opts.attackMs ?? 40;
+      const holdMs = opts.holdMs ?? 120;
+      const releaseMs = opts.releaseMs ?? 300;
+      const now = audioCtx.currentTime;
+      const g = duckGain.gain;
+      g.cancelScheduledValues(now);
+      g.setTargetAtTime(Math.max(0, 1 - amount), now, attackMs / 3000);
+      g.setTargetAtTime(1, now + (attackMs + holdMs) / 1000, releaseMs / 3000);
     },
   };
 }
@@ -385,6 +442,37 @@ export const Mixer = {
       effects.set(name, effect);
     }
     return effect;
+  },
+  /** Insert a compressor/limiter on the master bus (before the destination) —
+   *  glue the mix and stop peaks clipping when many sounds stack. Defaults act
+   *  as a gentle limiter; raise `ratio` / lower `threshold` for a hard brick
+   *  wall. Call once (idempotent); re-calling re-tunes it. */
+  compressor(
+    opts: {
+      threshold?: number;
+      ratio?: number;
+      attack?: number;
+      release?: number;
+      knee?: number;
+    } = {},
+  ): void {
+    compSpec = {
+      threshold: opts.threshold ?? -18,
+      ratio: opts.ratio ?? 12,
+      attack: opts.attack ?? 0.003,
+      release: opts.release ?? 0.25,
+      knee: opts.knee ?? 6,
+    };
+    if (masterGain && audioCtx) wireMasterOut(audioCtx);
+  },
+  /** Momentarily duck a named bus by `amount` then restore — e.g. dip the
+   *  music while a big SFX plays. Shorthand for `Mixer.bus(name).duck(...)`. */
+  duck(
+    name: string,
+    amount: number,
+    opts?: { attackMs?: number; holdMs?: number; releaseMs?: number },
+  ): void {
+    Mixer.bus(name).duck(amount, opts);
   },
   /** Master volume 0..1 for everything (click-free ramp). */
   setMasterVolume(v: number, rampMs = 20): void {
