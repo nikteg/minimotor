@@ -285,26 +285,26 @@ Loop.run({
     // toggles are checkboxes, filter/level amounts are sliders, and the backing
     // has a play/pause button. The group title is the synth's name, and it is
     // the only thing drawn in the top-left corner.
-    UI.group({ x: 12, y: 12, w: 340, h: 352, title: "SYNTH" }, () => {
-      wave = UI.tabs({ items: WAVES, active: wave });
+    UI.group({ x: 12, y: 12, w: 340, h: 360, title: "SYNTH" }, () => {
+      wave = UI.tabs({ id: "mx-wave", items: WAVES, active: wave });
       octave = UI.slider({ id: "mx-oct", label: "Octave", min: 2, max: 6, step: 1, value: octave, w: 210, format: (v) => `C${v}` });
-      UI.row({ h: 30, gap: 22 }, () => {
-        const b = UI.toggle({ id: "mx-backing", label: "Backing", on: backing });
-        if (b !== backing) {
-          if (b) ensureBacking();
-          backing = b;
-        }
-        if (UI.button({ id: "mx-play", label: Audio.Music.on ? "❚❚ Pause" : "▶ Play" })) {
-          Audio.Music.setOn(!Audio.Music.on);
-        }
+      // The backing groove lives in its own group: pick the groove, and the
+      // play/pause button starts/stops it (no separate on/off toggle).
+      UI.group({ h: 82, title: "Music" }, () => {
+        UI.row({ h: 30, gap: 12 }, () => {
+          const groove = UI.select({
+            id: "mx-groove",
+            value: grooveIdx,
+            w: 150,
+            options: GROOVES.map((g, i) => ({ label: g.name, value: i })),
+          });
+          if (groove.value !== grooveIdx) grooveIdx = groove.value;
+          if (UI.button({ id: "mx-play", label: backing ? "❚❚ Pause" : "▶ Play" })) {
+            if (!backing) ensureBacking();
+            backing = !backing;
+          }
+        });
       });
-      const groove = UI.select({
-        id: "mx-groove",
-        value: grooveIdx,
-        w: 210,
-        options: GROOVES.map((g, i) => ({ label: g.name, value: i })),
-      });
-      if (groove.value !== grooveIdx) grooveIdx = groove.value;
       UI.row({ h: 26, gap: 22 }, () => {
         const rv = UI.toggle({ id: "mx-reverb", label: "Reverb", on: reverbOn });
         if (rv !== reverbOn) {
