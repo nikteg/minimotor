@@ -583,10 +583,166 @@ interface SelectEditor {
   select: HTMLSelectElement;
   index: number;
   changed: boolean;
+  open: boolean;
   justOpened: boolean;
 }
 let selectEditor: SelectEditor | null = null;
 let selectSeen: string | null = null;
+interface SelectOverlayRequest<T = unknown> {
+  ctx: CanvasRenderingContext2D;
+  opts: SelectOptions<T>;
+  rect: { x: number; y: number; w: number; h: number };
+}
+let selectOverlayRequest: SelectOverlayRequest | null = null;
+let selectCommit: { id: string; index: number } | null = null;
+
+// Focusables register in draw order each frame. Keyboard events happen between
+// frames, so they operate on the last complete registry rather than a retained
+// widget tree.
+interface FocusEntry {
+  id: string;
+  disabled: boolean;
+  overlay: boolean;
+  tabIndex: number;
+  native: boolean;
+  focus?: () => void;
+  blur?: () => void;
+}
+let focusFrame: FocusEntry[] = [];
+let focusRegistry: FocusEntry[] = [];
+let focusedWidget: string | null = null;
+let focusOverlayActive = false;
+let focusBeforeOverlay: string | null = null;
+let keyboardActivation: string | null = null;
+let keyboardCommand: { id: string; key: string } | null = null;
+let focusKeyboardWired = false;
+const focusCanvases = new WeakSet<HTMLCanvasElement>();
+
+function focusCandidates(): FocusEntry[] {
+  const entries = focusOverlayActive
+    ? focusRegistry.filter((entry) => entry.overlay)
+    : focusRegistry;
+  return entries
+    .filter((entry) => !entry.disabled && entry.tabIndex >= 0)
+    .map((entry, order) => ({ entry, order }))
+    .sort((a, b) => a.entry.tabIndex - b.entry.tabIndex || a.order - b.order)
+    .map(({ entry }) => entry);
+}
+
+function setWidgetFocus(id: string | null): void {
+  if (focusedWidget === id) return;
+  focusRegistry.find((entry) => entry.id === focusedWidget)?.blur?.();
+  focusedWidget = id;
+  focusRegistry.find((entry) => entry.id === id)?.focus?.();
+}
+
+function moveWidgetFocus(direction: 1 | -1): void {
+  const entries = focusCandidates();
+  if (!entries.length) return setWidgetFocus(null);
+  const current = entries.findIndex((entry) => entry.id === focusedWidget);
+  const next =
+    current < 0
+      ? direction > 0
+        ? 0
+        : entries.length - 1
+      : (current + direction + entries.length) % entries.length;
+  setWidgetFocus(entries[next].id);
+}
+
+function wireFocusCanvas(ctx: CanvasRenderingContext2D): void {
+  const canvas = ctx.canvas;
+  if (focusCanvases.has(canvas)) return;
+  focusCanvases.add(canvas);
+  if (!canvas.hasAttribute("tabindex")) canvas.tabIndex = 0;
+  canvas.addEventListener("focus", () => {
+    if (!focusedWidget) moveWidgetFocus(1);
+  });
+}
+
+function registerFocusable(
+  ctx: CanvasRenderingContext2D,
+  opts: {
+    id?: string;
+    disabled?: boolean;
+    tabIndex?: number;
+    native?: boolean;
+    focus?: () => void;
+    blur?: () => void;
+  },
+): boolean {
+  if (!opts.id) return false;
+  wireFocusCanvas(ctx);
+  focusFrame.push({
+    id: opts.id,
+    disabled: opts.disabled ?? false,
+    overlay: inOverlayPass,
+    tabIndex: opts.tabIndex ?? 0,
+    native: opts.native ?? false,
+    focus: opts.focus,
+    blur: opts.blur,
+  });
+  return focusedWidget === opts.id;
+}
+
+function markFocusableOverlay(id: string): void {
+  const entry = [...focusFrame].reverse().find((item) => item.id === id);
+  if (entry) entry.overlay = true;
+}
+
+function focusFromPointer(ctx: CanvasRenderingContext2D, id: string | undefined): void {
+  if (!id) return;
+  focusedWidget = id;
+  ctx.canvas.focus({ preventScroll: true });
+}
+
+function drawFocusRing(
+  ctx: CanvasRenderingContext2D,
+  rect: { x: number; y: number; w: number; h: number },
+): void {
+  ctx.save();
+  ctx.strokeStyle = theme.accent;
+  ctx.lineWidth = Math.max(2, theme.borderWidth);
+  ctx.setLineDash([4, 3]);
+  roundRectPath(ctx, rect.x - 3, rect.y - 3, rect.w + 6, rect.h + 6, theme.radius + 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function consumeKeyboardActivation(id: string | undefined): boolean {
+  if (!id || keyboardActivation !== id) return false;
+  keyboardActivation = null;
+  return true;
+}
+
+function consumeKeyboardCommand(id: string | undefined): string | null {
+  if (!id || keyboardCommand?.id !== id) return null;
+  const key = keyboardCommand.key;
+  keyboardCommand = null;
+  return key;
+}
+
+/** Move keyboard focus to a registered widget. */
+export function focus(id: string): void {
+  if (focusRegistry.some((entry) => entry.id === id && !entry.disabled)) setWidgetFocus(id);
+}
+
+/** Clear canvas-widget keyboard focus. */
+export function blur(): void {
+  setWidgetFocus(null);
+}
+
+/** The currently focused widget id, or `null`. */
+export function focusedId(): string | null {
+  return focusedWidget;
+}
+
+/** Move to the next/previous widget in the most recently drawn tab order. */
+export function focusNext(): void {
+  moveWidgetFocus(1);
+}
+export function focusPrevious(): void {
+  moveWidgetFocus(-1);
+}
 
 const DEAD_POINTER = { x: -1e9, y: -1e9, down: false, released: false, pressed: false, wheel: 0 };
 
@@ -950,6 +1106,8 @@ export interface TextInputOptions {
   type?: "text" | "password" | "email" | "number" | "search";
   inputMode?: "text" | "decimal" | "numeric" | "tel" | "search" | "email" | "url";
   ariaLabel?: string;
+  /** Keyboard traversal order. Negative values exclude the field. */
+  tabIndex?: number;
   /** Blur after Enter. Default true. */
   blurOnSubmit?: boolean;
 }
@@ -976,6 +1134,8 @@ function openTextEditor(opts: TextInputOptions): void {
   input.autocomplete = "off";
   input.spellcheck = false;
   input.setAttribute("aria-label", opts.ariaLabel ?? opts.placeholder ?? opts.id);
+  input.tabIndex = -1;
+  input.dataset.minimotorUi = "true";
   Object.assign(input.style, {
     position: "fixed",
     left: "-1000px",
@@ -1028,10 +1188,24 @@ export function textInput(
   ensureWired();
   textInputSeen = opts.id;
   const rect = place(opts, opts.w ?? 180, opts.h ?? 32);
+  const keyboardFocused = registerFocusable(ctx, {
+    id: opts.id,
+    disabled: opts.disabled,
+    tabIndex: opts.tabIndex,
+    native: true,
+    focus: () => {
+      if (textEditor?.id === opts.id) textEditor.input.focus({ preventScroll: true });
+      else openTextEditor(opts);
+    },
+    blur: () => {
+      if (textEditor?.id === opts.id) textEditor.input.blur();
+    },
+  });
   const p = uiPointer();
   const hovered = !opts.disabled && pointInRect(p.x, p.y, rect);
   if (hovered) hoverCursor(true);
   if (hovered && p.released) {
+    focusFromPointer(ctx, opts.id);
     if (textEditor?.id === opts.id) textEditor.input.focus({ preventScroll: true });
     else openTextEditor(opts);
   } else if (p.released && textEditor?.id === opts.id && !hovered) textEditor.input.blur();
@@ -1047,10 +1221,13 @@ export function textInput(
   }
   const value = active?.value ?? opts.value;
   const focused = !!active && document.activeElement === active.input;
-  const shown =
-    (opts.type === "password" && value ? "•".repeat(value.length) : value) ||
-    opts.placeholder ||
-    "";
+  const shown = value
+    ? opts.type === "password"
+      ? "•".repeat(value.length)
+      : value
+    : focused
+      ? ""
+      : (opts.placeholder ?? "");
 
   ctx.save();
   drawBox(ctx, rect.x, rect.y, rect.w, rect.h, {
@@ -1070,6 +1247,7 @@ export function textInput(
     ctx.fillRect(caretX, rect.y + 7, 1, Math.max(4, rect.h - 14));
   }
   ctx.restore();
+  if (keyboardFocused) drawFocusRing(ctx, rect);
 
   const changed = active?.changed ?? false;
   const submitted = active?.submitted ?? false;
@@ -1101,6 +1279,8 @@ export interface SelectOptions<T> {
   placeholder?: string;
   maxVisible?: number;
   ariaLabel?: string;
+  /** Keyboard traversal order. Negative values exclude the select. */
+  tabIndex?: number;
 }
 
 export interface SelectResult<T> {
@@ -1114,10 +1294,12 @@ function removeSelectEditor(): void {
   selectEditor = null;
 }
 
-function openSelectEditor<T>(opts: SelectOptions<T>, index: number): void {
+function openSelectEditor<T>(opts: SelectOptions<T>, index: number, menuOpen = true): void {
   removeSelectEditor();
   const select = document.createElement("select");
   select.setAttribute("aria-label", opts.ariaLabel ?? opts.id);
+  select.tabIndex = -1;
+  select.dataset.minimotorUi = "true";
   Object.assign(select.style, {
     position: "fixed",
     left: "-1000px",
@@ -1135,13 +1317,27 @@ function openSelectEditor<T>(opts: SelectOptions<T>, index: number): void {
     select.appendChild(option);
   }
   select.value = index >= 0 ? String(index) : "";
-  const editor: SelectEditor = { id: opts.id, select, index, changed: false, justOpened: true };
+  const editor: SelectEditor = {
+    id: opts.id,
+    select,
+    index,
+    changed: false,
+    open: menuOpen,
+    justOpened: menuOpen,
+  };
   select.addEventListener("change", () => {
     editor.index = Number(select.value);
     editor.changed = true;
   });
   select.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" || event.key === "Enter") select.blur();
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      editor.open = !editor.open;
+      editor.justOpened = editor.open;
+    } else if (event.key === "Escape") {
+      editor.open = false;
+      select.blur();
+    }
   });
   document.body.appendChild(select);
   selectEditor = editor;
@@ -1162,18 +1358,44 @@ export function select<T>(
   selectSeen = opts.id;
   const rect = place(opts, opts.w ?? 180, opts.h ?? 32);
   const currentIndex = opts.options.findIndex((option) => Object.is(option.value, opts.value));
+  const keyboardFocused = registerFocusable(ctx, {
+    id: opts.id,
+    disabled: opts.disabled,
+    tabIndex: opts.tabIndex,
+    native: true,
+    focus: () => {
+      if (selectEditor?.id === opts.id) selectEditor.select.focus({ preventScroll: true });
+      else openSelectEditor(opts, currentIndex, false);
+    },
+    blur: () => {
+      if (selectEditor?.id === opts.id) {
+        selectEditor.open = false;
+        selectEditor.select.blur();
+      }
+    },
+  });
   const p = selectEditor?.id === opts.id ? rawPointer() : uiPointer();
   const hovered = !opts.disabled && pointInRect(p.x, p.y, rect);
   if (hovered) hoverCursor(true);
 
   if (hovered && p.released && !opts.disabled) {
-    if (selectEditor?.id === opts.id) removeSelectEditor();
-    else openSelectEditor(opts, currentIndex);
+    focusFromPointer(ctx, opts.id);
+    if (selectEditor?.id === opts.id) {
+      selectEditor.open = !selectEditor.open;
+      selectEditor.justOpened = selectEditor.open;
+      selectEditor.select.focus({ preventScroll: true });
+    } else openSelectEditor(opts, currentIndex);
   }
   let editor = selectEditor?.id === opts.id ? selectEditor : null;
+  const committed = selectCommit?.id === opts.id ? selectCommit.index : -1;
+  if (committed >= 0) selectCommit = null;
   let value =
-    editor && editor.index >= 0 ? (opts.options[editor.index]?.value ?? opts.value) : opts.value;
-  let changed = editor?.changed ?? false;
+    committed >= 0
+      ? (opts.options[committed]?.value ?? opts.value)
+      : editor && editor.index >= 0
+        ? (opts.options[editor.index]?.value ?? opts.value)
+        : opts.value;
+  let changed = committed >= 0 || (editor?.changed ?? false);
   const selected = opts.options.find((option) => Object.is(option.value, value));
 
   ctx.save();
@@ -1199,67 +1421,76 @@ export function select<T>(
   ctx.closePath();
   ctx.fill();
   ctx.restore();
+  if (keyboardFocused) drawFocusRing(ctx, rect);
 
-  if (editor) {
+  if (editor?.open) {
+    markFocusableOverlay(opts.id);
+    // Defer the menu until frame-end so siblings drawn later in the callback
+    // layout cannot paint over it. Input is still captured immediately.
     overlaySeen = true;
     inOverlayPass = true;
-    const visible = Math.max(1, Math.min(opts.options.length, opts.maxVisible ?? 8));
-    const itemH = 30;
-    const menuH = visible * itemH + 4;
-    const vp = Stage.viewport;
-    const menuY = rect.y + rect.h + menuH <= vp.h - 4 ? rect.y + rect.h + 2 : rect.y - menuH - 2;
-    const menu = { x: rect.x, y: menuY, w: rect.w, h: menuH };
-    // Dropdowns must visually occlude the canvas behind them. Theme panel
-    // colors may be translucent, so lay down an opaque widget fill first,
-    // then the normal themed panel/border—same capture pass as popovers/modals.
-    ctx.save();
-    ctx.fillStyle = theme.bgActive;
-    ctx.fillRect(menu.x, menu.y, menu.w, menu.h);
-    ctx.restore();
-    panel(ctx, { ...menu, bg: theme.bgActive });
-    const start = Math.max(
-      0,
-      Math.min(opts.options.length - visible, editor.index - Math.floor(visible / 2)),
-    );
-    for (let i = start; i < Math.min(opts.options.length, start + visible); i++) {
-      const option = opts.options[i];
-      if (
-        button(ctx, {
-          x: menu.x + 2,
-          y: menu.y + 2 + (i - start) * itemH,
-          w: menu.w - 4,
-          h: itemH,
-          label: option.label,
-          disabled: option.disabled,
-          variant: Object.is(option.value, value) ? "primary" : "ghost",
-        })
-      ) {
-        editor.index = i;
-        editor.select.value = String(i);
-        editor.changed = true;
-        value = option.value;
-        changed = true;
-        removeSelectEditor();
-        editor = null;
-        break;
-      }
-    }
-    if (
-      editor &&
-      !editor.justOpened &&
-      p.released &&
-      !pointInRect(p.x, p.y, rect) &&
-      !pointInRect(p.x, p.y, menu)
-    ) {
-      removeSelectEditor();
-      editor = null;
-    }
-  }
-  if (editor) {
+    selectOverlayRequest = { ctx, opts, rect } as SelectOverlayRequest;
     editor.changed = false;
-    editor.justOpened = false;
   }
-  return { value, changed, open: !!editor };
+  return { value, changed, open: !!editor?.open };
+}
+
+function drawSelectOverlay(): void {
+  const request = selectOverlayRequest;
+  selectOverlayRequest = null;
+  if (!request || !selectEditor?.open || selectEditor.id !== request.opts.id) return;
+  const { ctx, opts, rect } = request;
+  const editor = selectEditor;
+  const p = rawPointer();
+  const value = editor.index >= 0 ? opts.options[editor.index]?.value : opts.value;
+  const visible = Math.max(1, Math.min(opts.options.length, opts.maxVisible ?? 8));
+  const itemH = 30;
+  const menuH = visible * itemH + 4;
+  const vp = Stage.viewport;
+  const menuY = rect.y + rect.h + menuH <= vp.h - 4 ? rect.y + rect.h + 2 : rect.y - menuH - 2;
+  const menu = { x: rect.x, y: menuY, w: rect.w, h: menuH };
+
+  ctx.save();
+  ctx.fillStyle = theme.bgActive;
+  ctx.fillRect(menu.x, menu.y, menu.w, menu.h);
+  ctx.restore();
+  panel(ctx, { ...menu, bg: theme.bgActive });
+  const start = Math.max(
+    0,
+    Math.min(opts.options.length - visible, editor.index - Math.floor(visible / 2)),
+  );
+  for (let i = start; i < Math.min(opts.options.length, start + visible); i++) {
+    const option = opts.options[i];
+    if (
+      button(ctx, {
+        x: menu.x + 2,
+        y: menu.y + 2 + (i - start) * itemH,
+        w: menu.w - 4,
+        h: itemH,
+        label: option.label,
+        disabled: option.disabled,
+        variant: Object.is(option.value, value) ? "primary" : "ghost",
+      })
+    ) {
+      editor.index = i;
+      editor.select.value = String(i);
+      editor.index = i;
+      editor.select.value = String(i);
+      editor.open = false;
+      selectCommit = { id: opts.id, index: i }; // observed by select() next draw
+      return;
+    }
+  }
+  if (
+    !editor.justOpened &&
+    p.released &&
+    !pointInRect(p.x, p.y, rect) &&
+    !pointInRect(p.x, p.y, menu)
+  ) {
+    removeSelectEditor();
+    return;
+  }
+  editor.justOpened = false;
 }
 
 // ---------- Button ----------
@@ -1288,6 +1519,10 @@ export interface ButtonStyle {
  *  `w` optional — auto-sized to the label when omitted), or hand it a
  *  layout `Stack` via `at` and skip the geometry entirely. */
 export interface ButtonOptions extends ButtonStyle {
+  /** Stable identity enables Tab focus and keyboard activation. */
+  id?: string;
+  /** Keyboard traversal order. Negative values exclude the button. */
+  tabIndex?: number;
   x?: number;
   y?: number;
   /** Omit to auto-size to the label (+ padding). */
@@ -1365,13 +1600,21 @@ export function button(a: CanvasRenderingContext2D | ButtonOptions, b?: ButtonOp
   // Auto width: the label plus comfortable padding.
   const w = opts.w ?? Math.ceil(ctx.measureText(opts.label).width) + theme.buttonPadX;
   const rect = place(opts, w, opts.h ?? 30);
+  const keyboardFocused = registerFocusable(ctx, {
+    id: opts.id,
+    disabled: opts.disabled,
+    tabIndex: opts.tabIndex,
+  });
 
   const p = uiPointer();
   const over = pointInRect(p.x, p.y, rect);
   if (over && opts.tooltip) tooltip(opts.tooltip);
-  const { hover, active, clicked } = opts.disabled
+  const state = opts.disabled
     ? { hover: false, active: false, clicked: false }
     : buttonState(rect, p);
+  const { hover, active } = state;
+  const clicked = state.clicked || (!opts.disabled && consumeKeyboardActivation(opts.id));
+  if (state.clicked) focusFromPointer(ctx, opts.id);
   hoverCursor(hover);
 
   const c = variantColors(opts);
@@ -1396,6 +1639,7 @@ export function button(a: CanvasRenderingContext2D | ButtonOptions, b?: ButtonOp
     rect.w - 12, // labels squeeze rather than spill
   );
   ctx.restore();
+  if (keyboardFocused) drawFocusRing(ctx, rect);
 
   return clicked;
 }
@@ -1437,7 +1681,9 @@ export function panel(a: CanvasRenderingContext2D | PanelOptions, b?: PanelOptio
     ctx.fillStyle = opts.titleColor ?? theme.accent;
     ctx.font = opts.font ?? uiFont(theme.fontSize + 1, true);
     ctx.textAlign = "left";
-    centeredText(ctx, opts.title, opts.x + 12, opts.y + 17, opts.w - 24);
+    // Inset the title by the same theme.pad as a group's body, so a titled
+    // group's header text and its content line up on the same left edge.
+    centeredText(ctx, opts.title, opts.x + theme.pad, opts.y + 17, opts.w - theme.pad * 2);
   }
   ctx.restore();
 }
@@ -1446,6 +1692,10 @@ export function panel(a: CanvasRenderingContext2D | PanelOptions, b?: PanelOptio
 
 /** A labeled checkbox. */
 export interface ToggleOptions {
+  /** Stable identity enables Tab focus and keyboard activation. */
+  id?: string;
+  tabIndex?: number;
+  disabled?: boolean;
   x?: number;
   y?: number;
   /** Slot height when placed in a layout (the box centers within it). */
@@ -1478,9 +1728,16 @@ export function toggle(a: CanvasRenderingContext2D | ToggleOptions, b?: ToggleOp
   // layout, the box is vertically centered on the taller slot.
   const slot = place({ x: opts.x, y: opts.y, w, h: opts.h, at: opts.at }, w, size);
   const rect = { x: slot.x, y: slot.y + Math.max(0, (slot.h - size) / 2), w, h: size };
-  const { hover, clicked } = buttonState(rect, uiPointer());
-  hoverCursor(hover);
-  if (hover && opts.tooltip) tooltip(opts.tooltip);
+  const keyboardFocused = registerFocusable(ctx, {
+    id: opts.id,
+    disabled: opts.disabled,
+    tabIndex: opts.tabIndex,
+  });
+  const state = opts.disabled ? { hover: false, clicked: false } : buttonState(rect, uiPointer());
+  const clicked = state.clicked || (!opts.disabled && consumeKeyboardActivation(opts.id));
+  if (state.clicked) focusFromPointer(ctx, opts.id);
+  hoverCursor(state.hover);
+  if (state.hover && opts.tooltip) tooltip(opts.tooltip);
   const on = clicked ? !opts.on : opts.on;
 
   // Checkbox radius scales down with the theme so a big radius doesn't turn
@@ -1488,7 +1745,7 @@ export function toggle(a: CanvasRenderingContext2D | ToggleOptions, b?: ToggleOp
   const boxR = Math.min(theme.radius, 4);
   drawBox(ctx, rect.x, rect.y, size, size, {
     fill: theme.bgActive,
-    stroke: hover ? theme.accent : theme.border,
+    stroke: state.hover ? theme.accent : theme.border,
     radius: boxR,
   });
   if (on) {
@@ -1501,6 +1758,7 @@ export function toggle(a: CanvasRenderingContext2D | ToggleOptions, b?: ToggleOp
   ctx.textAlign = "left";
   centeredText(ctx, opts.label, rect.x + size + 8, rect.y + size / 2);
   ctx.restore();
+  if (keyboardFocused) drawFocusRing(ctx, rect);
   return on;
 }
 
@@ -1508,6 +1766,9 @@ export function toggle(a: CanvasRenderingContext2D | ToggleOptions, b?: ToggleOp
 
 /** A horizontal tab strip. */
 export interface TabsOptions {
+  /** Stable identity enables Tab focus and arrow-key selection. */
+  id?: string;
+  tabIndex?: number;
   x?: number;
   y?: number;
   /** Total width, split equally between the tabs. Omit to auto-size every
@@ -1537,9 +1798,15 @@ export function tabs(a: CanvasRenderingContext2D | TabsOptions, b?: TabsOptions)
     (Math.ceil(Math.max(...opts.items.map((t) => ctx.measureText(t).width))) + 26) *
       opts.items.length;
   const rect = place(opts, w, opts.h ?? 30);
+  const keyboardFocused = registerFocusable(ctx, { id: opts.id, tabIndex: opts.tabIndex });
   const cellW = rect.w / opts.items.length;
   const p = uiPointer();
   let active = opts.active;
+  const command = consumeKeyboardCommand(opts.id);
+  if (command === "ArrowRight" || command === "ArrowDown")
+    active = (active + 1) % opts.items.length;
+  if (command === "ArrowLeft" || command === "ArrowUp")
+    active = (active - 1 + opts.items.length) % opts.items.length;
   ctx.textAlign = "center";
   // Round only the strip's outer corners: clip the whole strip, fill cells
   // square inside it.
@@ -1550,7 +1817,10 @@ export function tabs(a: CanvasRenderingContext2D | TabsOptions, b?: TabsOptions)
     const x = rect.x + i * cellW;
     const { hover, clicked } = buttonState({ x, y: rect.y, w: cellW, h: rect.h }, p);
     hoverCursor(hover);
-    if (clicked) active = i;
+    if (clicked) {
+      active = i;
+      focusFromPointer(ctx, opts.id);
+    }
     const isActive = i === active;
     ctx.fillStyle = isActive ? theme.bg : hover ? theme.bgHover : theme.bgActive;
     ctx.fillRect(x, rect.y, cellW - 2, rect.h);
@@ -1563,6 +1833,7 @@ export function tabs(a: CanvasRenderingContext2D | TabsOptions, b?: TabsOptions)
   });
   ctx.restore();
   ctx.restore();
+  if (keyboardFocused) drawFocusRing(ctx, rect);
   return active;
 }
 
@@ -1571,6 +1842,10 @@ export function tabs(a: CanvasRenderingContext2D | TabsOptions, b?: TabsOptions)
 /** A selectable list row (a table/menu entry — not to be confused with the
  *  `row` layout container). */
 export interface ListItemOptions {
+  /** Stable identity enables Tab focus and Enter/Space activation. */
+  id?: string;
+  tabIndex?: number;
+  disabled?: boolean;
   x: number;
   y: number;
   w: number;
@@ -1594,7 +1869,15 @@ export function listItem(
   b?: ListItemOptions,
 ): boolean {
   const [ctx, opts] = withCtx(a, b);
-  const { hover, clicked } = buttonState(opts, uiPointer());
+  const keyboardFocused = registerFocusable(ctx, {
+    id: opts.id,
+    disabled: opts.disabled,
+    tabIndex: opts.tabIndex,
+  });
+  const state = opts.disabled ? { hover: false, clicked: false } : buttonState(opts, uiPointer());
+  const clicked = state.clicked || (!opts.disabled && consumeKeyboardActivation(opts.id));
+  if (state.clicked) focusFromPointer(ctx, opts.id);
+  const { hover } = state;
   hoverCursor(hover);
   if (hover && opts.tooltip) tooltip(opts.tooltip);
   ctx.save();
@@ -1609,6 +1892,7 @@ export function listItem(
     ctx.fillRect(opts.x, opts.y, 3, opts.h);
   }
   ctx.restore();
+  if (keyboardFocused) drawFocusRing(ctx, opts);
   return clicked;
 }
 
@@ -1630,8 +1914,10 @@ export interface SliderOptions {
   label?: string;
   /** Value text drawn right of the track. Default the rounded value. */
   format?: (v: number) => string;
-  /** Identity for drag tracking across frames. Defaults to the position. */
+  /** Identity for drag tracking and keyboard focus. Defaults to the position. */
   id?: string;
+  tabIndex?: number;
+  disabled?: boolean;
   font?: string;
   color?: string;
 }
@@ -1654,13 +1940,26 @@ export function slider(a: CanvasRenderingContext2D | SliderOptions, b?: SliderOp
   const p = uiPointer();
   // Generous hit region: the whole track strip, knob included.
   const hit = { x: opts.x - knobR, y: opts.y - knobR, w: opts.w + knobR * 2, h: knobR * 2 };
-  const hover = pointInRect(p.x, p.y, hit);
+  const keyboardFocused = registerFocusable(ctx, {
+    id,
+    disabled: opts.disabled,
+    tabIndex: opts.tabIndex,
+  });
+  const hover = !opts.disabled && pointInRect(p.x, p.y, hit);
   hoverCursor(hover || sliderDrag === id);
 
   if (!p.down) sliderDrag = null;
-  if (p.pressed && hover && !sliderDrag) sliderDrag = id;
+  if (p.pressed && hover && !sliderDrag) {
+    sliderDrag = id;
+    focusFromPointer(ctx, id);
+  }
 
   let value = Math.max(min, Math.min(max, opts.value));
+  const command = consumeKeyboardCommand(id);
+  const keyboardStep = opts.step ?? (max - min) / 100;
+  if (command === "ArrowRight" || command === "ArrowUp") value += keyboardStep;
+  if (command === "ArrowLeft" || command === "ArrowDown") value -= keyboardStep;
+  value = Math.max(min, Math.min(max, value));
   if (sliderDrag === id) {
     value = min + ((p.x - opts.x) / opts.w) * (max - min);
     if (opts.step) value = Math.round(value / opts.step) * opts.step;
@@ -1688,6 +1987,7 @@ export function slider(a: CanvasRenderingContext2D | SliderOptions, b?: SliderOp
   const valueText = opts.format ? opts.format(value) : `${Math.round(value)}`;
   centeredText(ctx, valueText, opts.x + opts.w + 12, opts.y);
   ctx.restore();
+  if (keyboardFocused) drawFocusRing(ctx, hit);
   return value;
 }
 
@@ -1959,6 +2259,8 @@ export function modal(
 
 /** A whole dialog in one call. */
 export interface ConfirmOptions {
+  /** Stable prefix for keyboard-focusable action buttons. */
+  id?: string;
   title?: string;
   /** Body lines. The first is drawn in the primary text color, the rest
    *  dimmed — lead + detail. */
@@ -2032,7 +2334,15 @@ export function confirm(
   const btnBar = stack({ x: r.x + r.w - 12, y: r.y + r.h - 46, gap: 8, h: 34, align: "end" });
   let hit: string | null = null;
   for (let i = buttons.length - 1; i >= 0; i--) {
-    if (button(ctx, { at: btnBar, label: buttons[i], variant: variantFor(i), h: 34 })) {
+    if (
+      button(ctx, {
+        id: `${opts.id ?? opts.title ?? "confirm"}:button:${i}`,
+        at: btnBar,
+        label: buttons[i],
+        variant: variantFor(i),
+        h: 34,
+      })
+    ) {
       hit = buttons[i];
     }
   }
@@ -2044,6 +2354,8 @@ export function confirm(
 /** Bottom-screen dialogue used by RPGs, adventures, visual novels and tutorial
  * conversations. Rendering is immediate-mode; the game owns conversation state. */
 export interface DialogOptions {
+  /** Stable prefix for keyboard-focusable choices. */
+  id?: string;
   speaker?: string;
   lines: string[];
   /** Optional response/action labels. Returns the clicked label. */
@@ -2112,7 +2424,13 @@ export function dialog(
     const bar = stack({ x: x + w - 12, y: y + h - 44, h: 32, gap: 8, align: "end" });
     for (let i = choices.length - 1; i >= 0; i--) {
       if (
-        button(ctx, { at: bar, label: choices[i], variant: i === 0 ? "primary" : "default", h: 32 })
+        button(ctx, {
+          id: `${opts.id ?? opts.speaker ?? "dialog"}:choice:${i}`,
+          at: bar,
+          label: choices[i],
+          variant: i === 0 ? "primary" : "default",
+          h: 32,
+        })
       ) {
         hit = choices[i];
       }
@@ -2177,6 +2495,46 @@ let spinAngle = 0;
 let wired = false;
 
 function ensureWired(): void {
+  if (!focusKeyboardWired && typeof window !== "undefined") {
+    focusKeyboardWired = true;
+    window.addEventListener(
+      "keydown",
+      (event) => {
+        const target = event.target as HTMLElement | null;
+        const onFocusSurface =
+          !!focusedWidget ||
+          target?.dataset.minimotorUi === "true" ||
+          (target instanceof HTMLCanvasElement && focusCanvases.has(target));
+        if (!onFocusSurface) return;
+        const entry = focusRegistry.find((item) => item.id === focusedWidget);
+        if (event.key === "Tab") {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          moveWidgetFocus(event.shiftKey ? -1 : 1);
+        } else if (!entry?.native && (event.key === "Enter" || event.key === " ")) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          if (focusedWidget) keyboardActivation = focusedWidget;
+        } else if (!entry?.native && event.key.startsWith("Arrow")) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          if (focusedWidget) keyboardCommand = { id: focusedWidget, key: event.key };
+        } else if (event.key === "Escape" && !entry?.native) {
+          blur();
+        }
+      },
+      true,
+    );
+    window.addEventListener("focusin", (event) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.dataset.minimotorUi !== "true" &&
+        !(target instanceof HTMLCanvasElement && focusCanvases.has(target))
+      ) {
+        setWidgetFocus(null);
+      }
+    });
+  }
   if (wired) return;
   // Registering the loop hooks needs the default game; without one
   // (headless/tests) the calls throw — stay unwired and retry next call.
@@ -2187,7 +2545,29 @@ function ensureWired(): void {
     });
     // Frame-end housekeeping for the immediate-mode state machines.
     Loop.onFrame(() => {
+      // Deferred overlays render above every ordinary widget in the user's
+      // draw callback (and still see frame-scoped pointer release edges).
+      drawSelectOverlay();
       begunCtx = null; // re-begin() each frame when overriding the ctx
+      // Complete this frame's keyboard registry after every widget (including
+      // deferred overlays) has had a chance to register.
+      focusRegistry = focusFrame;
+      focusFrame = [];
+      const wasFocusOverlay = focusOverlayActive;
+      if (!wasFocusOverlay && overlaySeen) focusBeforeOverlay = focusedWidget;
+      focusOverlayActive = overlaySeen;
+      const candidates = focusCandidates();
+      const focusMissing = !candidates.some((entry) => entry.id === focusedWidget);
+      if (focusMissing && (focusedWidget || focusOverlayActive)) {
+        const restore =
+          !focusOverlayActive &&
+          wasFocusOverlay &&
+          candidates.some((entry) => entry.id === focusBeforeOverlay)
+            ? focusBeforeOverlay
+            : null;
+        setWidgetFocus(focusOverlayActive && candidates.length ? candidates[0].id : restore);
+      }
+      if (wasFocusOverlay && !focusOverlayActive) focusBeforeOverlay = null;
       // Overlay capture: what was drawn this frame gates input next frame.
       overlayActive = overlaySeen;
       overlaySeen = false;
@@ -2251,6 +2631,15 @@ export function _reset(): void {
   removeSelectEditor();
   textInputSeen = null;
   selectSeen = null;
+  selectOverlayRequest = null;
+  selectCommit = null;
+  focusFrame = [];
+  focusRegistry = [];
+  focusedWidget = null;
+  focusOverlayActive = false;
+  focusBeforeOverlay = null;
+  keyboardActivation = null;
+  keyboardCommand = null;
   begunCtx = null;
   wired = false;
 }

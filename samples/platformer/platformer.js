@@ -429,11 +429,15 @@ Minimotor.Loop.run({
 
     ctx.restore(); // end bottom-anchored world space
 
-    // HUD uses the same immediate-mode UI primitives as the other samples.
-    Minimotor.UI.panel(ctx, { x: 8, y: 8, w: Math.min(430, vp.w - 16), h: 48, title: "PLATFORM RUN" });
-    Minimotor.UI.text(`Score ${score}   Best ${best}   Coins ${coinCount}   ${"♥".repeat(lives)}`, { x: 18, y: 34, size: 13 });
-    Minimotor.UI.panel(ctx, { x: 8, y: vp.h - 42, w: 220, h: 34 });
-    Minimotor.UI.text("← → move   Space jump", { x: 18, y: vp.h - 33, size: 12 });
+    // HUD uses the same immediate-mode UI primitives as the other samples. A
+    // titled `group` lays the header text out under its strip with the theme's
+    // padding, so there are no hand-tuned y offsets to keep in sync.
+    Minimotor.UI.group({ x: 8, y: 8, w: Math.min(430, vp.w - 16), h: 60, title: "PLATFORM RUN" }, (body) => {
+      Minimotor.UI.text(`Score ${score}   Best ${best}   Coins ${coinCount}   ${"♥".repeat(lives)}`, { h: body.remaining, size: 13 });
+    });
+    Minimotor.UI.group({ x: 8, y: vp.h - 46, w: 220, h: 34 }, (body) => {
+      Minimotor.UI.text("← → move   Space jump", { h: body.remaining, size: 12, color: "dim" });
+    });
 
     // Game Over overlay
     if (gameOver) {
