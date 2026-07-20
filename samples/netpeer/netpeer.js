@@ -17,7 +17,7 @@ let vp = Minimotor.Stage.init("game", {
   plugins: [Minimotor.Perf.plugin({ net: meter })],
 });
 Minimotor.Stage.onResize((next) => (vp = next)); // both panes lay out from vp
-const { Net, Pointer, Draw, Loop } = Minimotor;
+const { Net, Pointer, Keys, Loop } = Minimotor;
 
 const dec = new TextDecoder();
 
@@ -35,12 +35,20 @@ let sent = 0;
 let recvByPeer = 0;
 let recvByYou = 0;
 
+// The guest's view of your cursor, two ways: the raw last packet, and a
+// snapshot interpolator that renders ~100ms in the past, blending between
+// packets. Toggle with I to see what interpolation buys — especially while
+// idle-skipping below keeps the packet rate low.
+let interpolate = true;
+const interp = Net.createInterpolator({ delayMs: 100 });
+
 // The guest renders nothing itself — it just receives your cursor and bounces an
 // acknowledgement back, so we can prove the channel is full-duplex.
 peer.transport.onMessage = (bytes) => {
   const msg = JSON.parse(dec.decode(bytes));
   recvByPeer++;
   remoteN = msg; // the position that actually crossed the wire
+  interp.push({ x: msg.x, y: msg.y });
   if (peer.transport.state === "connected") peer.transport.sendJson({ ack: recvByPeer });
 };
 
@@ -52,22 +60,28 @@ you.transport.onMessage = (bytes) => {
 
 you.connect(); // create the offer → loopback → answer → channel opens
 
+let lastSent = null; // skip sends while the cursor hasn't moved
+
 Loop.run({
   update() {
+    if (Keys.pressed("KeyI")) interpolate = !interpolate;
+
     // Track the pointer while it's over the left pane.
     if (Pointer.x >= 0 && Pointer.x < vp.w / 2) {
       localN = { x: (Pointer.x / (vp.w / 2)) * 1, y: Pointer.y / vp.h };
     }
-    // Stream your cursor to the peer over the data channel (once open).
-    if (you.transport.state === "connected") {
+    // Stream your cursor to the peer over the data channel (once open) —
+    // but only when it actually moved. An idle cursor costs zero bytes.
+    const moved = !lastSent || lastSent.x !== localN.x || lastSent.y !== localN.y;
+    if (moved && you.transport.state === "connected") {
       you.transport.sendJson(localN);
+      lastSent = localN;
       sent++;
       meter.sent(JSON.stringify(localN).length);
     }
   },
 
-  draw() {
-    const { ctx } = Draw;
+  draw(ctx) {
     ctx.clearRect(0, 0, vp.w, vp.h);
     const half = vp.w / 2;
 
@@ -90,11 +104,13 @@ Loop.run({
     ctx.arc(localN.x * half, localN.y * vp.h, 12, 0, Math.PI * 2);
     ctx.fill();
 
-    // Peer's dot (right pane) — only if a message has arrived.
-    if (remoteN) {
+    // Peer's dot (right pane) — raw last packet, or sampled from the
+    // interpolator's snapshot buffer (~100ms in the past, gliding).
+    const shown = interpolate ? (interp.sample() ?? remoteN) : remoteN;
+    if (shown) {
       ctx.fillStyle = "#ffe066";
       ctx.beginPath();
-      ctx.arc(half + remoteN.x * half, remoteN.y * vp.h, 12, 0, Math.PI * 2);
+      ctx.arc(half + shown.x * half, shown.y * vp.h, 12, 0, Math.PI * 2);
       ctx.fill();
     }
 
@@ -106,6 +122,11 @@ Loop.run({
     ctx.fillStyle = "#8aa";
     ctx.fillText(`sent → ${sent}   peer received → ${recvByPeer}`, 16, vp.h - 24);
     ctx.fillText(`acks back ← ${recvByYou}`, 16, vp.h - 6);
+    ctx.fillText(
+      `I: interpolation ${interpolate ? "ON — guest glides 100ms behind" : "OFF — guest snaps per packet"}`,
+      half + 16,
+      vp.h - 6,
+    );
     if (st !== "connected") {
       ctx.fillStyle = "#ffb454";
       ctx.fillText("negotiating peer connection…", half + 16, vp.h - 24);
