@@ -67,6 +67,8 @@ Minimotor.Loop.run({
     const { ctx } = Draw;
     ctx.clearRect(0, 0, vp.w, vp.h);
     world.drawSprites(ctx); // built-in: centers + blits every Sprite by z
-    UI.text(`Sparks: ${world.count(Sprite)}  Click to spawn`, { x: 10, y: 6, size: 14 });
+    UI.group({ x: 10, y: 10, w: 230, h: 58, title: "PARTICLES" }, (body) =>
+      UI.text(`Sparks ${world.count(Sprite)}  ·  click to spawn`, { h: body.remaining, size: 13 }),
+    );
   },
 });

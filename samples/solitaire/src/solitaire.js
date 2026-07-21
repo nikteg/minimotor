@@ -29,9 +29,10 @@ const CARD_H = 76;
 const CARD_GAP_V = 18;
 const PILE_GAP_H = 10;
 const MARGIN = 14;
+const HUD_H = 24;
 
 const LOGICAL_W = MARGIN * 2 + CARD_W * 7 + PILE_GAP_H * 6;
-const LOGICAL_H = MARGIN * 2 + CARD_H + 20 + CARD_H + CARD_GAP_V * 12 + 80;
+const LOGICAL_H = HUD_H + MARGIN * 2 + CARD_H + 20 + CARD_H + CARD_GAP_V * 12 + 80;
 
 function rankValue(rank) {
   return RANKS.indexOf(rank);
@@ -64,6 +65,12 @@ let history = [];
 let gameTime = 0;
 let moves = 0;
 let score = 0;
+let aiPlaying = false;
+let cancelAi = null;
+let aiMotion = null;
+let aiLastMove = null;
+let aiStockPasses = 0;
+let aiVisited = new Set();
 let gameStartedAt = 0;
 let stats = { wins: 0, games: 0, bestTime: 0 };
 
@@ -91,7 +98,7 @@ function layoutBoard() {
   offsetX = lb.ox;
   offsetY = lb.oy;
 
-  const topY = MARGIN;
+  const topY = HUD_H + MARGIN;
   layout.stock = { x: MARGIN, y: topY, w: CARD_W, h: CARD_H };
   layout.waste = { x: MARGIN + CARD_W + 10, y: topY, w: CARD_W, h: CARD_H };
 
@@ -292,6 +299,93 @@ function tryAutoMoveAny() {
   return false;
 }
 
+function aiQueueMove(source, index, target, targetType, targetIndex) {
+  if (aiMotion) return;
+  aiLastMove = { source, target };
+  aiStockPasses = 0;
+  const cards = source.slice(index);
+  const sourceCol = tableau.indexOf(source);
+  const sourceRect = source === waste
+    ? layout.waste
+    : { ...layout.tableau[sourceCol], y: layout.tableau[sourceCol].y + index * CARD_GAP_V };
+  const destination = targetType === "foundation"
+    ? layout.foundations[targetIndex]
+    : { ...layout.tableau[targetIndex], y: layout.tableau[targetIndex].y + target.length * CARD_GAP_V };
+  aiMotion = { cards, x: sourceRect.x, y: sourceRect.y, source, index, target, targetType };
+  Tween.to(aiMotion, { x: destination.x, y: destination.y }, 360, Mathf.easeInOut, () => {
+    if (!aiMotion) return;
+    const motion = aiMotion;
+    aiMotion = null;
+    moveCards(motion.source, motion.index, motion.target);
+    if (motion.targetType === "foundation") checkWin();
+  });
+}
+
+function aiSignature() {
+  const pile = (cards) => cards.map((card) => `${card.id}${card.faceUp ? "+" : "-"}`).join(",");
+  return `${stock.length}|${pile(waste)}|${tableau.map(pile).join("/")}|${foundations.map(pile).join("/")}`;
+}
+
+function aiStep() {
+  if (Scenes.active !== "play" || fsm.state !== "playing" || aiMotion) return;
+  const signature = aiSignature();
+  if (aiVisited.has(signature)) {
+    // Never give up: reset the search frontier and inspect the stock again.
+    aiVisited.clear();
+    aiLastMove = null;
+    drawFromStock();
+    return;
+  }
+  aiVisited.add(signature);
+  if (waste.length) {
+    const card = waste[waste.length - 1];
+    const foundation = FOUNDATION_SUITS.findIndex((_, i) => canMoveToFoundation(card, i));
+    if (foundation >= 0) {
+      aiQueueMove(waste, waste.length - 1, foundations[foundation], "foundation", foundation);
+      return;
+    }
+    const target = tableau.findIndex((_, i) => canMoveToTableau(card, i));
+    if (target >= 0) {
+      aiQueueMove(waste, waste.length - 1, tableau[target], "tableau", target);
+      return;
+    }
+  }
+  for (let col = 0; col < tableau.length; col++) {
+    const pile = tableau[col];
+    for (let index = 0; index < pile.length; index++) {
+      if (!pile[index].faceUp || !pile.slice(index).every((card) => card.faceUp)) continue;
+      if (index === pile.length - 1) {
+        const foundation = FOUNDATION_SUITS.findIndex((_, i) => canMoveToFoundation(pile[index], i));
+        if (foundation >= 0) {
+          aiQueueMove(pile, index, foundations[foundation], "foundation", foundation);
+          return;
+        }
+      }
+      const target = tableau.findIndex((_, i) =>
+        i !== col && canMoveToTableau(pile[index], i) &&
+        !(aiLastMove?.source === tableau[i] && aiLastMove?.target === pile),
+      );
+      if (target >= 0) {
+        aiQueueMove(pile, index, tableau[target], "tableau", target);
+        return;
+      }
+    }
+  }
+  // Explore the stock before conceding. Allow one complete recycle pass.
+  if (!stock.length) {
+    aiStockPasses++;
+    if (aiStockPasses > 1000) aiStockPasses = 0;
+  }
+  drawFromStock();
+}
+
+function toggleAi() {
+  aiPlaying = !aiPlaying;
+  cancelAi?.();
+  cancelAi = aiPlaying ? Clock.every(520, aiStep) : null;
+  UI.float(aiPlaying ? "AI playing" : "AI paused", Pointer.x, Pointer.y, { color: "#ffd43b" });
+}
+
 function tryAutoMoveToFoundation(sourcePile, sourceIndex) {
   const card = sourcePile[sourceIndex];
   if (!card || sourceIndex !== sourcePile.length - 1) return false;
@@ -327,8 +421,10 @@ function checkWin() {
     stats.wins++;
     const timeSec = Math.floor(gameTime / 1000);
     if (!stats.bestTime || timeSec < stats.bestTime) stats.bestTime = timeSec;
-    scoreTracker.save();
     saveStats();
+    aiPlaying = false;
+    cancelAi?.();
+    cancelAi = null;
     Signals.emit("win", { time: timeSec });
     fsm.go("won");
     Scenes.push("won");
@@ -389,13 +485,13 @@ const fsm = Fsm.create(
         gameTime = performance.now() - gameStartedAt;
         undoCd.tick(Loop.step);
         hintFlash.tick(Loop.step);
-        if (input.newGame()) {
+        if (input.pressed("newGame")) {
           Scenes.go("menu");
           return null;
         }
-        if (input.undo()) tryUndo();
-        if (input.hint()) hintFlash.charge();
-        if (input.autoMove() && !tryAutoMoveAny()) {
+        if (input.pressed("undo")) tryUndo();
+        if (input.pressed("hint")) hintFlash.charge();
+        if (input.pressed("autoMove") && !tryAutoMoveAny()) {
           UI.float("No auto move", Pointer.x, Pointer.y, { color: "#ff6b6b" });
         }
         return null;
@@ -481,7 +577,7 @@ function drawPiles(ctx) {
   const wasteRect = toScreen(layout.waste);
   if (waste.length) {
     const card = waste[waste.length - 1];
-    drawCard(ctx, card, wasteRect.x, wasteRect.y, wasteRect.w, wasteRect.h);
+    if (!(aiMotion?.source === waste)) drawCard(ctx, card, wasteRect.x, wasteRect.y, wasteRect.w, wasteRect.h);
     const src = UI.dragSource({ id: "waste-top", ...wasteRect, payload: { type: "waste", cards: [card], source: waste, from: { type: "waste", index: waste.length - 1 } } });
     if (src.hovered) Loop.setCursor("grab");
   } else {
@@ -541,9 +637,10 @@ function drawPiles(ctx) {
     pile.forEach((card, idx) => {
       const cy = logical.y + idx * CARD_GAP_V;
       const cardRect = toScreen({ x: logical.x, y: cy, w: CARD_W, h: CARD_H });
-      drawCard(ctx, card, cardRect.x, cardRect.y, cardRect.w, cardRect.h);
+      const hiddenByAi = aiMotion?.source === pile && idx >= aiMotion.index;
+      if (!hiddenByAi) drawCard(ctx, card, cardRect.x, cardRect.y, cardRect.w, cardRect.h);
 
-      if (card.faceUp) {
+      if (card.faceUp && !hiddenByAi) {
         const isBottom = idx === pile.length - 1;
         const canDrag = isBottom || pile.slice(idx + 1).every((c) => c.faceUp);
         if (canDrag) {
@@ -575,6 +672,14 @@ function drawPiles(ctx) {
     });
   });
 
+  // AI's animated drag preview
+  if (aiMotion) {
+    aiMotion.cards.forEach((card, i) => {
+      const pos = screenPoint(aiMotion.x, aiMotion.y + i * CARD_GAP_V);
+      drawCard(ctx, card, pos.x, pos.y, CARD_W * scale, CARD_H * scale, true);
+    });
+  }
+
   // Drag preview
   const drag = UI.draggedItem();
   if (drag) {
@@ -586,10 +691,22 @@ function drawPiles(ctx) {
 }
 
 function drawHud(ctx) {
-  const timePos = screenPoint(MARGIN + CARD_W * 2 + 30, MARGIN + 4);
-  UI.text(`Time ${formatTime(gameTime)}`, { x: timePos.x, y: timePos.y, size: 12 * scale, color: "#fff" });
-  UI.text(`Score ${score}`, { x: timePos.x, y: timePos.y + 18 * scale, size: 12 * scale, color: "#fff" });
-  UI.text(`Moves ${moves}`, { x: timePos.x, y: timePos.y + 36 * scale, size: 12 * scale, color: "#fff" });
+  UI.group(
+    {
+      x: Math.max(12, (vp.w - 306) / 2),
+      y: 4,
+      w: 306,
+      h: 48,
+      dir: "row",
+      gap: 8,
+      pad: 8,
+    },
+    (bar) => {
+      UI.text(`TIME ${formatTime(gameTime)}`, { at: bar, w: 92, h: 32, size: 11, align: "center", color: "#fff" });
+      UI.text(`SCORE ${score}`, { at: bar, w: 92, h: 32, size: 11, align: "center", color: "#fff" });
+      UI.text(`MOVES ${moves}`, { at: bar, w: 92, h: 32, size: 11, align: "center", color: "#fff" });
+    },
+  );
 
   if (hintFlash.active) {
     const hint = findHint();
@@ -605,9 +722,10 @@ function drawHud(ctx) {
 
   const toolbarY = (LOGICAL_H - 42) * scale + offsetY;
   const toolbar = UI.stack({ x: MARGIN * scale + offsetX, y: toolbarY, gap: 10 * scale });
-  if (UI.button({ at: toolbar, label: "NEW (N)", variant: "primary", h: 32 * scale })) Scenes.go("menu");
+  if (UI.button({ at: toolbar, label: "NEW (N)", variant: "primary", h: 32 * scale })) Scenes.go("play", Transitions.fade(300));
   if (UI.button({ at: toolbar, label: "UNDO (U)", h: 32 * scale })) tryUndo();
   if (UI.button({ at: toolbar, label: "HINT (H)", h: 32 * scale })) hintFlash.charge();
+  if (UI.button({ at: toolbar, label: aiPlaying ? "PAUSE AI" : "AI PLAY", h: 32 * scale })) toggleAi();
   if (UI.button({ at: toolbar, label: "FULL (F)", h: 32 * scale })) toggleFullscreen();
 }
 
@@ -624,47 +742,24 @@ function toggleFullscreen() {
 }
 
 // ---- Scenes ----
-Scenes.define("menu", {
-  enter: () => {
-    loadStats();
-    UI.cancelDrag();
-    fsm.go("ready");
-  },
-  update: () => {
-    if (Keys.pressed("Space") || Keys.pressed("Enter")) {
-      stats.games++;
-      saveStats();
-      Scenes.go("play", Transitions.fade(400));
-    }
-  },
-  draw: () => {
-    const ctx = Draw.ctx;
-    ctx.fillStyle = "#0b3d2e";
-    ctx.fillRect(0, 0, vp.w, vp.h);
-    Text.drawCentered(ctx, "♠ SOLITAIRE ♥", vp.w / 2, vp.h / 2 - 80, { font: "bold 42px monospace", color: "#ffd43b" });
-    Text.drawCentered(ctx, "Klondike with Minimotor primitives", vp.w / 2, vp.h / 2 - 30, { font: "16px monospace", color: "#aaa" });
-
-    const best = stats.bestTime ? formatTime(stats.bestTime * 1000) : "—";
-    Text.drawCentered(ctx, `Wins ${stats.wins} / Games ${stats.games}   Best ${best}`, vp.w / 2, vp.h / 2 + 10, { font: "14px monospace", color: "#ccc" });
-
-    if (UI.button({ x: vp.w / 2 - 80, y: vp.h / 2 + 50, w: 160, h: 44, label: "DEAL", variant: "primary" })) {
-      stats.games++;
-      saveStats();
-      Scenes.go("play", Transitions.fade(400));
-    }
-    Text.drawCentered(ctx, "SPACE to deal · N new · U undo · H hint · F fullscreen", vp.w / 2, vp.h / 2 + 110, { font: "12px monospace", color: "#888" });
-  },
-});
-
 Scenes.define("play", {
   opaque: true,
   enter: () => {
     loadStats();
+    stats.games++;
+    saveStats();
     deal();
     fsm.go("playing");
     gameStartedAt = performance.now();
     UI.clearFloats();
     Particles.clear();
+    aiPlaying = false;
+    cancelAi?.();
+    cancelAi = null;
+    aiMotion = null;
+    aiLastMove = null;
+    aiStockPasses = 0;
+    aiVisited = new Set();
     Clock.after(400, () => {
       const pos = screenPoint(LOGICAL_W / 2, LOGICAL_H / 2);
       UI.float("Good luck!", pos.x, pos.y, { color: "#4ecdc4" });
@@ -704,7 +799,7 @@ Scenes.define("won", {
   },
   update: () => {
     sparkleAnim?.update(Loop.step);
-    if (input.newGame()) Scenes.go("menu");
+    if (input.pressed("newGame")) Scenes.go("play", Transitions.fade(300));
   },
   draw: () => {
     const ctx = Draw.ctx;
@@ -731,8 +826,7 @@ Scenes.define("won", {
     Text.drawCentered(ctx, `Time ${formatTime(gameTime)}   Moves ${moves}`, subPos.x, subPos.y, { font: "16px monospace", color: "#fff" });
 
     const btnY = (LOGICAL_H / 2 + 30) * scale + offsetY;
-    if (UI.button({ x: vp.w / 2 - 170, y: btnY, w: 160, h: 42, label: "PLAY AGAIN" })) Scenes.go("menu");
-    if (UI.button({ x: vp.w / 2 + 10, y: btnY, w: 160, h: 42, label: "MENU" })) Scenes.go("menu", Transitions.fade(400));
+    if (UI.button({ x: vp.w / 2 - 170, y: btnY, w: 160, h: 42, label: "PLAY AGAIN" })) Scenes.go("play", Transitions.fade(300));
   },
 });
 
@@ -747,4 +841,4 @@ Signals.on("win", ({ time }) => {
 layoutBoard();
 buildCardBackSprite();
 buildSparkleSheet();
-Scenes.go("menu");
+Scenes.go("play");
