@@ -17,7 +17,7 @@ const input = Input.actions({
 // just before landing. The gate decides *when*; the impulse below is ours.
 const jumpGate = Timers.jumpGate({ coyoteMs: 90, bufferMs: 120 });
 
-let progress = 0, ready = false, failed = "", level, map, cam, terrain, backdrop, skyLayer, terrainLayer, playerAnim, enemyAnim, fruitAnim, goalAnim;
+let ready = false, failed = "", level, map, cam, terrain, backdrop, skyLayer, terrainLayer, playerAnim, enemyAnim, fruitAnim, goalAnim;
 let player, playerSm, enemies = [], coins = [], goal, lives = 3, state = "loading", elapsed = 0;
 
 // ---------------------------------------------------------------------------
@@ -247,27 +247,28 @@ function makeStaticLayers() {
   });
 }
 
+// The manifest composes each sprite sheet into an Animation as it loads, so
+// the `.then` receives ready-to-use anims — no Anim.sheet(Assets.image(…))
+// glue. Plain URLs stay images/JSON; `sheet` specs become Animations.
+const asset = (p) => new URL(`../assets/${p}`, import.meta.url).href;
+const frog = { fw: 32, fh: 32 };
 Assets.load({
   level: new URL("../level.json", import.meta.url).href,
-  terrain: new URL("../assets/terrain.png", import.meta.url).href,
-  background: new URL("../assets/background.png", import.meta.url).href,
-  playerIdle: new URL("../assets/player-idle.png", import.meta.url).href,
-  playerRun: new URL("../assets/player-run.png", import.meta.url).href,
-  playerJump: new URL("../assets/player-jump.png", import.meta.url).href,
-  playerFall: new URL("../assets/player-fall.png", import.meta.url).href,
-  playerHit: new URL("../assets/player-hit.png", import.meta.url).href,
-  enemy: new URL("../assets/radish-run.png", import.meta.url).href,
-  fruit: new URL("../assets/bananas.png", import.meta.url).href,
-  goal: new URL("../assets/goal.png", import.meta.url).href,
-}, (done, total) => (progress = done / total)).then(() => {
-  level = Assets.json("level"); terrain = Assets.image("terrain"); backdrop = Assets.image("background");
+  terrain: asset("terrain.png"),
+  background: asset("background.png"),
+  playerIdle: { src: asset("player-idle.png"), sheet: { ...frog, fps: 8 } },
+  playerRun: { src: asset("player-run.png"), sheet: { ...frog, fps: 12 } },
+  playerJump: { src: asset("player-jump.png"), sheet: frog },
+  playerFall: { src: asset("player-fall.png"), sheet: frog },
+  playerHit: { src: asset("player-hit.png"), sheet: { ...frog, fps: 14 } },
+  enemy: { src: asset("radish-run.png"), sheet: { fw: 30, fh: 38, fps: 9 } },
+  fruit: { src: asset("bananas.png"), sheet: { fw: 32, fh: 32, fps: 10 } },
+  goal: { src: asset("goal.png"), sheet: { fw: 64, fh: 64, fps: 5 } },
+}).then((A) => {
+  level = A.level; terrain = A.terrain; backdrop = A.background;
   map = Tiles.grid(level.tiles, { tw: TILE, atlas: terrain, cols: Math.floor(terrain.width / TILE), solid: (tile) => tile === 1 });
   playerAnim = Anim.states({
-    idle: Anim.sheet(Assets.image("playerIdle"), { fw: 32, fh: 32, fps: 8 }),
-    run: Anim.sheet(Assets.image("playerRun"), { fw: 32, fh: 32, fps: 12 }),
-    jump: Anim.sheet(Assets.image("playerJump"), { fw: 32, fh: 32 }),
-    fall: Anim.sheet(Assets.image("playerFall"), { fw: 32, fh: 32 }),
-    hit: Anim.sheet(Assets.image("playerHit"), { fw: 32, fh: 32, fps: 14 }),
+    idle: A.playerIdle, run: A.playerRun, jump: A.playerJump, fall: A.playerFall, hit: A.playerHit,
   }, "idle");
   // The player's animation is driven by a state machine whose states map 1:1
   // to the animation clips — every transition auto-plays the matching clip via
@@ -294,9 +295,7 @@ Assets.load({
     "idle",
     { anim: playerAnim },
   );
-  enemyAnim = Anim.sheet(Assets.image("enemy"), { fw: 30, fh: 38, fps: 9 });
-  fruitAnim = Anim.sheet(Assets.image("fruit"), { fw: 32, fh: 32, fps: 10 });
-  goalAnim = Anim.sheet(Assets.image("goal"), { fw: 64, fh: 64, fps: 5 });
+  enemyAnim = A.enemy; fruitAnim = A.fruit; goalAnim = A.goal;
   coins = level.coins.map(([x, y]) => ({ x: x * TILE + TILE / 2, y: y * TILE + TILE / 2, got: false, pop: 0 }));
   enemies = level.enemies.map(([x, y], i) => ({ x: x * TILE + TILE / 2, y: y * TILE, w: 28, h: 35, vx: i % 2 ? -45 : 45, dead: false }));
   goal = { x: level.goal[0] * TILE + TILE / 2, y: level.goal[1] * TILE + TILE / 2 };
@@ -383,7 +382,7 @@ Loop.run({
     ctx.save(); ctx.translate(box.ox, box.oy); ctx.scale(box.scale, box.scale); ctx.imageSmoothingEnabled = false;
     if (!ready) {
       UI.panel(ctx, { x: 110, y: 88, w: 260, h: 86, title: "PIXEL ADVENTURE" });
-      UI.bar(ctx, 135, 133, 210, 10, progress, { fill: "#ffe066", bg: "#263653" });
+      UI.bar(ctx, 135, 133, 210, 10, Assets.progress, { fill: "#ffe066", bg: "#263653" });
       ctx.fillStyle = "#fff"; ctx.font = "12px monospace"; ctx.textAlign = "center"; ctx.fillText(failed || "LOADING PIXEL FROG ATLASES…", 240, 119); ctx.textAlign = "left";
       ctx.restore(); return;
     }

@@ -99,7 +99,7 @@ export type {
 } from "./ecs.js";
 export type { ClockManager, Cancel } from "./clock.js";
 export type { SignalBus } from "./signals.js";
-export type { AssetStore, AssetManifest, ProgressFn } from "./assets.js";
+export type { AssetStore, AssetManifest, AssetSpec, ProgressFn } from "./assets.js";
 export type {
   Animation,
   AnimationStates,

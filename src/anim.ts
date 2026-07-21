@@ -78,7 +78,7 @@ export interface AnimationStates<K extends string = string> extends Animation {
   resetAll(): void;
 }
 
-type SheetImage = CanvasImageSource & { width: number; height: number };
+export type SheetImage = CanvasImageSource & { width: number; height: number };
 
 /** Create an animation over a grid sprite sheet. */
 export function sheet(image: SheetImage, config: SheetConfig): Animation {

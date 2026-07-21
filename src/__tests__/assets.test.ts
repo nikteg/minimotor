@@ -91,4 +91,49 @@ describe("Assets", () => {
     a.clear();
     expect(a.has("hero")).toBe(false);
   });
+
+  it("returns composed resources keyed by manifest key", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ level: 3 }) })),
+    );
+    const a = createAssets();
+    const res = await a.load({
+      hero: { src: "hero.png", sheet: { fw: 32, fh: 32, fps: 8 } },
+      terrain: "terrain.png",
+      map: "level.json",
+    });
+    // sheet spec → an Animation (has update() + a source rect)
+    expect(typeof (res.hero as { update: unknown }).update).toBe("function");
+    expect((res.hero as { rect: { sw: number } }).rect.sw).toBe(32);
+    // plain URL → the image; .json → parsed data
+    expect(res.terrain).toBeInstanceOf(HTMLImageElement);
+    expect(res.map).toEqual({ level: 3 });
+  });
+
+  it("still caches the raw image for a composed spec", async () => {
+    const a = createAssets();
+    await a.load({ hero: { src: "hero.png", sheet: { fw: 16, fh: 16 } } });
+    // the by-name cache holds the raw image, not the Animation
+    expect(a.image("hero")).toBeInstanceOf(HTMLImageElement);
+  });
+
+  it("exposes live progress and loading state", async () => {
+    const a = createAssets();
+    expect(a.loading).toBe(false);
+    expect(a.progress).toBe(1);
+    const p = a.load({ one: "a.png", two: "b.png" });
+    expect(a.loading).toBe(true); // pending set synchronously, before the awaits
+    await p;
+    expect(a.loading).toBe(false);
+    expect(a.progress).toBe(1);
+  });
+
+  it("clears loading state even when a load fails", async () => {
+    stubImages("fail");
+    const a = createAssets();
+    await expect(a.load({ broken: "nope.png" })).rejects.toThrow();
+    expect(a.loading).toBe(false); // counters reset on settle, not just success
+    expect(a.progress).toBe(1);
+  });
 });
