@@ -106,6 +106,9 @@ export type {
   SheetConfig,
   FrameRect,
   AnimDrawOptions,
+  Motion,
+  AnimateOptions,
+  Parallel,
 } from "./anim.js";
 export type { Sweep, Contact, BounceFaces } from "./collision.js";
 export type { ShakeState } from "./camera.js";
