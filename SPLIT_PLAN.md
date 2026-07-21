@@ -97,7 +97,16 @@ folders with barrels; tests moved to `<module>/__tests__/`; the public
 `minimotor/server` entry (`src/net/server/`) adds Node-side rooms / tick /
 signaling. `noUnusedLocals` is on, which now catches dead imports for free.
 
-## New highest-value target: `ui/core.ts` (~1650 lines)
+## ~~New highest-value target: `ui/core.ts` (~1650 lines)~~ — DONE
+
+Split into `context` / `theme` / `stack` / `identity` / `input` / `text` /
+`frame` with `core.ts` as a barrel (widget files + `index.ts` untouched). The
+focus + overlay + editor + tooltip + float machinery and the frame-welded
+`textInput`/`select` stayed together in `frame.ts` (~960 lines) — genuinely one
+coupled unit; a further split would need moving `ensureWired`'s per-subsystem
+housekeeping behind setters, not worth the risk yet. Original plan follows.
+
+## Original write-up: `ui/core.ts` (~1650 lines)
 
 The `ui` split intentionally parked the whole immediate-mode *kernel* in
 `ui/core.ts` — implicit context, theme, draw helpers, layout primitives, shared
