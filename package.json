@@ -12,6 +12,10 @@
     "./physics2d": {
       "types": "./build/physics2d.d.ts",
       "default": "./build/physics2d.js"
+    },
+    "./server": {
+      "types": "./build/server.d.ts",
+      "default": "./build/server.js"
     }
   },
   "scripts": {

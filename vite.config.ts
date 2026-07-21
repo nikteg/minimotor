@@ -68,6 +68,7 @@ export default defineConfig({
     // "/physics2d" subpath (string aliases also match "<find>/…" prefixes).
     alias: [
       { find: "minimotor/physics2d", replacement: here("./build/physics2d.js") },
+      { find: "minimotor/server", replacement: here("./build/server.js") },
       { find: "minimotor", replacement: here("./build/index.js") },
     ],
   },
@@ -89,7 +90,6 @@ export default defineConfig({
         bounce: here("./samples/bounce/index.html"),
         breakout: here("./samples/breakout/index.html"),
         snake: here("./samples/snake/index.html"),
-        platformer: here("./samples/platformer/index.html"),
         particles: here("./samples/particles/index.html"),
         physics: here("./samples/physics/index.html"),
         serverbrowser: here("./samples/serverbrowser/index.html"),
@@ -112,7 +112,7 @@ export default defineConfig({
         guildTrader: here("./samples/guild-trader/index.html"),
         dungeonScout: here("./samples/dungeon-scout/index.html"),
         leadDefender: here("./samples/lead-defender/index.html"),
-        beatCircuit: here("./samples/beat-circuit/index.html"),
+        checkpointRally: here("./samples/checkpoint-rally/index.html"),
         solitaire: here("./samples/solitaire/index.html"),
       },
     },

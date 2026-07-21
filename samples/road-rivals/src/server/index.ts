@@ -1,5 +1,6 @@
 import { WebSocketServer } from "ws";
-import { leadTarget } from "../../../../src/goodies.js";
+import { leadTarget } from "../../../../src/goodies/index.js";
+import { serve, serverTick } from "../../../../src/net/server/index.js";
 
 /** Create the self-contained authoritative server for the Road Rivals sample. */
 export function createRoadRivalsServer(): WebSocketServer {
@@ -84,18 +85,10 @@ export function createRoadRivalsServer(): WebSocketServer {
       respawnAt: 0,
     },
   ];
-  const roadBroadcast = (message: unknown) => {
-    const data = JSON.stringify(message);
-    for (const client of road.clients) if (client.readyState === 1) client.send(data);
-  };
-  road.on("connection", (sock) => {
-    sock.on("message", (raw) => {
-      let msg: any;
-      try {
-        msg = JSON.parse(raw.toString());
-      } catch {
-        return;
-      }
+  // serve() owns the socket bookkeeping; the authoritative bot/pickup state
+  // below broadcasts through the same room, and peer messages relay untouched.
+  const room = serve<unknown, any>(road, {
+    onMessage(client, msg) {
       if (msg.game !== "road-rivals") return;
       if (msg.type === "state") {
         roadPlayers.set(msg.id, {
@@ -116,7 +109,7 @@ export function createRoadRivalsServer(): WebSocketServer {
           bot.vy += msg.iy ?? 0;
           if (bot.health <= 0) {
             bot.deadUntil = Date.now() + 3500;
-            roadBroadcast({ game: "road-rivals", type: "bot-killed", by: msg.id, botId: bot.id });
+            room.broadcast({ game: "road-rivals", type: "bot-killed", by: msg.id, botId: bot.id });
           }
         }
       } else if (msg.type === "pickup") {
@@ -126,27 +119,25 @@ export function createRoadRivalsServer(): WebSocketServer {
           pickup.active = false;
           pickup.respawnAt = Date.now() + (pickup.kind === "weapon" ? 12000 : 8000);
           if (pickup.kind === "weapon") {
-            roadBroadcast({
+            room.broadcast({
               game: "road-rivals",
               type: "weapon-pickup",
               target: msg.id,
               weapon: pickup.weapon,
             });
           } else {
-            roadBroadcast({ game: "road-rivals", type: "heal", target: msg.id, amount: 35 });
+            room.broadcast({ game: "road-rivals", type: "heal", target: msg.id, amount: 35 });
           }
         }
       }
-      // Player snapshots, shots and player/car hits remain immediate peer
+      // Player snapshots, shots and player/car hits stay immediate peer
       // messages; the authoritative world packet below covers bots/pickups.
       if (!(msg.type === "hit" && String(msg.target).startsWith("bot-")) && msg.type !== "pickup") {
-        for (const client of road.clients) {
-          if (client !== sock && client.readyState === 1) client.send(raw);
-        }
+        room.relay(client, msg);
       }
-    });
+    },
   });
-  setInterval(() => {
+  serverTick(20, () => {
     const now = Date.now();
     for (let i = 0; i < pickups.length; i++) {
       if (!pickups[i].active && now >= pickups[i].respawnAt) pickups[i].active = true;
@@ -209,7 +200,7 @@ export function createRoadRivalsServer(): WebSocketServer {
         if (distance < 520 && now >= bot.shotAt) {
           bot.shotAt = now + 900 + Math.random() * 650;
           const lead = leadTarget(bot.x, bot.y, target.x, target.y, target.vx, target.vy, 760);
-          roadBroadcast({
+          room.broadcast({
             game: "road-rivals",
             type: "shot",
             id: bot.id,
@@ -226,7 +217,7 @@ export function createRoadRivalsServer(): WebSocketServer {
             targetBot.vy += ((targetBot.y - bot.y) / (distance || 1)) * 55;
             if (targetBot.health <= 0 && targetBot.deadUntil === 0) {
               targetBot.deadUntil = now + 3500;
-              roadBroadcast({
+              room.broadcast({
                 game: "road-rivals",
                 type: "bot-killed",
                 by: bot.id,
@@ -245,7 +236,7 @@ export function createRoadRivalsServer(): WebSocketServer {
       bot.vx *= 0.88;
       bot.vy *= 0.88;
     }
-    roadBroadcast({
+    room.broadcast({
       game: "road-rivals",
       type: "world",
       bots: bots.map((bot) => ({
@@ -259,6 +250,6 @@ export function createRoadRivalsServer(): WebSocketServer {
       })),
       pickups: pickups.filter((pickup) => pickup.active),
     });
-  }, 50);
+  });
   return road;
 }
