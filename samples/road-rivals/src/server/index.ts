@@ -1,6 +1,6 @@
 import { WebSocketServer } from "ws";
 import { leadTarget } from "../../../../src/goodies/index.js";
-import { serve, serverTick } from "../../../../src/net/server/index.js";
+import { createPresence, serve, serverTick } from "../../../../src/net/server/index.js";
 
 /** Create the self-contained authoritative server for the Road Rivals sample. */
 export function createRoadRivalsServer(): WebSocketServer {
@@ -8,10 +8,7 @@ export function createRoadRivalsServer(): WebSocketServer {
   // Road Rivals has a tiny authoritative world server: players still own their
   // movement, while bots, bot damage and health pickups live here so every
   // client observes one shared simulation rather than spawning private AI.
-  const roadPlayers = new Map<
-    string,
-    { x: number; y: number; vx: number; vy: number; phase: string; seenAt: number }
-  >();
+  const players = createPresence<{ x: number; y: number; vx: number; vy: number; phase: string }>();
   const roadsX = [480, 1440, 2400, 3360, 4320];
   const roadsY = [375, 1125, 1875, 2625];
   const intersections = roadsY.flatMap((y) => roadsX.map((x) => ({ x, y })));
@@ -91,16 +88,15 @@ export function createRoadRivalsServer(): WebSocketServer {
     onMessage(client, msg) {
       if (msg.game !== "road-rivals") return;
       if (msg.type === "state") {
-        roadPlayers.set(msg.id, {
+        players.set(msg.id, {
           x: msg.px,
           y: msg.py,
           vx: msg.vx ?? 0,
           vy: msg.vy ?? 0,
           phase: msg.phase,
-          seenAt: Date.now(),
         });
       } else if (msg.type === "bye") {
-        roadPlayers.delete(msg.id);
+        players.delete(msg.id);
       } else if (msg.type === "hit" && String(msg.target).startsWith("bot-")) {
         const bot = bots.find((entry) => entry.id === msg.target);
         if (bot && bot.deadUntil === 0) {
@@ -114,7 +110,7 @@ export function createRoadRivalsServer(): WebSocketServer {
         }
       } else if (msg.type === "pickup") {
         const pickup = pickups.find((entry) => entry.id === msg.pickupId);
-        const state = roadPlayers.get(msg.id);
+        const state = players.get(msg.id);
         if (pickup?.active && state && Math.hypot(state.x - pickup.x, state.y - pickup.y) < 55) {
           pickup.active = false;
           pickup.respawnAt = Date.now() + (pickup.kind === "weapon" ? 12000 : 8000);
@@ -142,6 +138,7 @@ export function createRoadRivalsServer(): WebSocketServer {
     for (let i = 0; i < pickups.length; i++) {
       if (!pickups[i].active && now >= pickups[i].respawnAt) pickups[i].active = true;
     }
+    players.prune(); // forget players who've gone quiet (dropped sockets)
     for (let i = 0; i < bots.length; i++) {
       const bot = bots[i];
       if (bot.deadUntil) {
@@ -154,11 +151,7 @@ export function createRoadRivalsServer(): WebSocketServer {
       let target: { x: number; y: number; vx: number; vy: number } | null = null;
       let targetBot: (typeof bots)[number] | null = null;
       let distance = Infinity;
-      for (const [playerId, player] of roadPlayers) {
-        if (now - player.seenAt > 6000) {
-          roadPlayers.delete(playerId);
-          continue;
-        }
+      for (const [, player] of players.entries()) {
         if (player.phase !== "alive") continue;
         const d = Math.hypot(player.x - bot.x, player.y - bot.y);
         if (d < distance) {
