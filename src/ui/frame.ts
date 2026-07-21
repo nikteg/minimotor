@@ -5,6 +5,7 @@ import { Stack, place } from "./stack.js";
 import { centeredText, drawBox, roundRectPath, setTheme, theme, uiFont } from "./theme.js";
 import { button, panel } from "./controls.js";
 import { pointInRect } from "../collision.js";
+import { clamp } from "../mathf.js";
 import { Loop, Pointer, Stage } from "../engine/index.js";
 
 // ---------- Drag state (shared: widgets set it, the frame loop cancels it) ----
@@ -703,7 +704,9 @@ export function drawSelectOverlay(): void {
   const editor = selectEditor;
   const p = rawPointer();
   const value = editor.index >= 0 ? opts.options[editor.index]?.value : opts.value;
-  const visible = Math.max(1, Math.min(opts.options.length, opts.maxVisible ?? 8));
+  // Clamp the upper bound to ≥ 1 so an empty option list still yields 1 row of
+  // space (a plain clamp then works — the lower bound wins on an empty list).
+  const visible = clamp(opts.maxVisible ?? 8, 1, Math.max(1, opts.options.length));
   const itemH = 30;
   const menuH = visible * itemH + 4;
   const vp = Stage.viewport;
