@@ -6,14 +6,13 @@ import * as Sfx from "../../shared/src/sfx.js";
 let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 Minimotor.Stage.onResize((next) => (vp = next));
 const { Assets, Anim, Text, Keys, Loop, Particles, UI, Collision } = Minimotor;
-let progress = 0, ready = false, level, hero, seal, relics = [], score = 0, state = "play", elapsed = 0;
+let progress = 0, ready = false, level, hero, relics = [], score = 0, state = "play", elapsed = 0;
 const BODY_R = 15; // the hero's collision radius, shared by wall probing and pickups
 const player = { x: 96, y: 128, speed: 145 };
 const gate = { x: 12 * 48 + 24, y: 48 + 24 };
 
-// Build a deliberately clean 8-frame astronaut sheet. The loaded PNG is an
-// archive seal, not a sprite sheet; slicing arbitrary artwork was the source
-// of the old "spinning icon" bug.
+// Build a deliberately clean 8-frame astronaut sheet procedurally (slicing
+// arbitrary artwork was the source of the old "spinning icon" bug).
 function makeHeroSheet() {
   const sheet = document.createElement("canvas");
   sheet.width = 48 * 8;
@@ -38,10 +37,9 @@ function makeHeroSheet() {
 }
 
 // JSON and image are loaded in parallel; the loading screen itself uses no DOM UI.
-Assets.load({ level: new URL("../level.json", import.meta.url).href, icon: new URL("../icon.png", import.meta.url).href }, (done, total) => { progress = done / total; })
+Assets.load({ level: new URL("../level.json", import.meta.url).href }, (done, total) => { progress = done / total; })
   .then(() => {
     level = Assets.json("level");
-    seal = Assets.image("icon");
     hero = Anim.sheet(makeHeroSheet(), { fw: 48, fh: 48, fps: 10 });
     relics = level.tiles.flatMap((row, y) => row.map((tile, x) => tile === 2 ? { x: x * 48 + 24, y: y * 48 + 24, got: false } : null).filter(Boolean));
     resetGame();
@@ -124,7 +122,6 @@ Loop.run({
     UI.panel(ctx, { x: 8, y: 7, w: 350, h: 38, bg: "rgba(8,14,27,.85)", border: "#38557e" });
     Text.drawText(ctx, `MOON KEYS ${score}/${relics.length}   TIME ${elapsed.toFixed(1)}s`, 14, 14, { font: "bold 16px monospace", color: "#fff" });
     Text.drawText(ctx, "WASD / ARROWS: MOVE · R: RESTART", 14, 36, { font: "12px monospace", color: "#9fb3d9" });
-    if (seal) { ctx.globalAlpha = 0.75; ctx.drawImage(seal, vp.w - 48, 10, 32, 32); ctx.globalAlpha = 1; }
     Text.drawText(ctx, gateOpen ? "All keys found — reach the glowing archive gate" : level.message, 14, vp.h - 26, { font: "13px monospace", color: gateOpen ? "#64f0c8" : "#9fb3d9" });
     if (state === "won") {
       ctx.fillStyle = "rgba(8,14,27,.82)"; ctx.fillRect(0, 0, vp.w, vp.h);
