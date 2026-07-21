@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from "vitest";
-import { _reset, begin, table, type TableColumn } from "../ui.js";
+import { _reset, begin, table, type TableColumn } from "../index.js";
 
 // A mock 2D context that records fillText and answers measureText, enough for
 // UI.text / list / listItem / scrollbar to run headless.

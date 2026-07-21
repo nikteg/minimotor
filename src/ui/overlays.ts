@@ -1,0 +1,296 @@
+import { ButtonVariant, PanelOptions, bar, button, panel } from "./controls.js";
+import {
+  centeredText,
+  enterOverlay,
+  ensureWired,
+  rawPointer,
+  stack,
+  text,
+  theme,
+  uiFont,
+  uiPointer,
+  withCtx,
+} from "./core.js";
+import { row } from "./layout.js";
+import { pointInRect } from "../collision.js";
+import { Stage } from "../engine.js";
+
+// ---------- Popover ----------
+
+/** An anchored floating panel (dropdown, filter flyout). */
+export interface PopoverOptions extends PanelOptions {
+  /** Open state — pass yours in, assign the return value back. */
+  open: boolean;
+  /** Identity across frames. Defaults to the position. */
+  id?: string;
+}
+
+// Whether each popover was open LAST frame — the click that opens one lands
+// outside its rect and must not immediately close it again.
+const popoverWasOpen = new Map<string, boolean>();
+
+/** Draw a popover panel while open; a click anywhere outside closes it (and
+ *  is swallowed — it can't also activate whatever sits underneath). While
+ *  open, the popover is an overlay: every widget drawn BEFORE it in the
+ *  frame goes input-dead; widgets drawn after (its contents) work normally.
+ *  Returns the new open state:
+ *
+ *    if (UI.button(trigger)) filtersOpen = !filtersOpen;
+ *    filtersOpen = UI.popover({ x, y, w: 240, h: 120, open: filtersOpen });
+ *    if (filtersOpen) { ...toggles/sliders at x/y... } */
+export function popover(opts: PopoverOptions): boolean;
+export function popover(ctx: CanvasRenderingContext2D, opts: PopoverOptions): boolean;
+export function popover(a: CanvasRenderingContext2D | PopoverOptions, b?: PopoverOptions): boolean {
+  const [ctx, opts] = withCtx(a, b);
+  ensureWired();
+  const id = opts.id ?? `${opts.x}:${opts.y}`;
+  const was = popoverWasOpen.get(id) ?? false;
+  let open = opts.open;
+  // Raw pointer: while open we're the overlay — uiPointer would be dead.
+  const p = rawPointer();
+  if (open && was && p.released && !pointInRect(p.x, p.y, opts)) open = false;
+  popoverWasOpen.set(id, open);
+  if (open) {
+    enterOverlay();
+    panel(ctx, opts);
+  }
+  return open;
+}
+
+// ---------- Modal ----------
+
+/** A centered dialog over a dimmed backdrop. */
+export interface ModalOptions {
+  w: number;
+  h: number;
+  title?: string;
+}
+
+/** Dim the whole screen and open a centered panel. Returns the panel rect —
+ *  draw the dialog contents (text, buttons) inside it after the call. While
+ *  a modal is up, every widget drawn BEFORE it in the frame ignores the
+ *  pointer, so clicks can't land through the backdrop; widgets drawn after
+ *  (the dialog's own) work normally. Call it LAST in your draw. For the
+ *  common title/lines/buttons dialog, `confirm()` does all of this for you:
+ *
+ *    if (confirming) {
+ *      const r = UI.modal({ w: 340, h: 150, title: "CONFIRM" });
+ *      if (UI.button({ x: r.x + 12, ... label: "OK" })) { ... }
+ *    } */
+export function modal(opts: ModalOptions): { x: number; y: number; w: number; h: number };
+export function modal(
+  ctx: CanvasRenderingContext2D,
+  opts: ModalOptions,
+): { x: number; y: number; w: number; h: number };
+export function modal(
+  a: CanvasRenderingContext2D | ModalOptions,
+  b?: ModalOptions,
+): { x: number; y: number; w: number; h: number } {
+  const [ctx, opts] = withCtx(a, b);
+  ensureWired();
+  enterOverlay();
+  const vp = Stage.viewport;
+  ctx.save();
+  ctx.fillStyle = theme.dim;
+  ctx.fillRect(0, 0, vp.w, vp.h);
+  ctx.restore();
+  const x = Math.round((vp.w - opts.w) / 2);
+  const y = Math.round((vp.h - opts.h) / 2);
+  panel(ctx, { x, y, w: opts.w, h: opts.h, title: opts.title });
+  return { x, y, w: opts.w, h: opts.h };
+}
+
+// ---------- Confirm (declarative dialog) ----------
+
+/** A whole dialog in one call. */
+export interface ConfirmOptions {
+  /** Stable prefix for keyboard-focusable action buttons. */
+  id?: string;
+  title?: string;
+  /** Body lines. The first is drawn in the primary text color, the rest
+   *  dimmed — lead + detail. */
+  lines?: string[];
+  /** Button labels, left to right (the last one sits at the right edge —
+   *  put the primary action last). Default `["OK"]`. */
+  buttons?: string[];
+  /** Per-button variants, aligned with `buttons`. Omit an entry for the
+   *  default look. E.g. `["default", "danger"]` for a Cancel/Delete pair.
+   *  When omitted entirely, the LAST button defaults to `"primary"`. */
+  variants?: ButtonVariant[];
+  /** Minimum dialog width; it grows to fit the content. Default 300. */
+  minW?: number;
+}
+
+/** The declarative modal: title, body lines and buttons in one call, sized
+ *  to its content. Returns the clicked button's label, or `null`:
+ *
+ *    if (confirming) {
+ *      const hit = UI.confirm({
+ *        title: "JOIN SERVER",
+ *        lines: [server.name, details],
+ *        buttons: ["CANCEL", "JOIN"],
+ *      });
+ *      if (hit === "JOIN") join(server);
+ *      if (hit) confirming = null;
+ *    } */
+export function confirm(opts: ConfirmOptions): string | null;
+export function confirm(ctx: CanvasRenderingContext2D, opts: ConfirmOptions): string | null;
+export function confirm(
+  a: CanvasRenderingContext2D | ConfirmOptions,
+  b?: ConfirmOptions,
+): string | null {
+  const [ctx, opts] = withCtx(a, b);
+  const lines = opts.lines ?? [];
+  const buttons = opts.buttons ?? ["OK"];
+  const lineH = theme.fontSize + 8;
+
+  // Size to content: widest of title, lines, and the button row.
+  ctx.save();
+  ctx.font = uiFont(theme.fontSize + 2, true);
+  const buttonsW = buttons.reduce(
+    (sum, l) => sum + Math.ceil(ctx.measureText(l).width) + 28 + 8,
+    0,
+  );
+  ctx.font = uiFont(theme.fontSize + 1, true);
+  const titleW = opts.title ? Math.ceil(ctx.measureText(opts.title).width) : 0;
+  ctx.font = uiFont();
+  const lineW = Math.ceil(Math.max(0, ...lines.map((l) => ctx.measureText(l).width)));
+  ctx.restore();
+  const w = Math.max(opts.minW ?? 300, lineW + 32, buttonsW + 24, titleW + 24);
+  const h = (opts.title ? 30 : 0) + 16 + lines.length * lineH + 16 + 34 + 12;
+
+  const r = modal(ctx, { w, h, title: opts.title });
+
+  ctx.save();
+  ctx.font = uiFont();
+  ctx.textAlign = "left";
+  let ty = r.y + (opts.title ? 30 : 0) + 16 + lineH / 2;
+  lines.forEach((line, i) => {
+    ctx.fillStyle = i === 0 ? theme.text : theme.textDim;
+    centeredText(ctx, line, r.x + 16, ty);
+    ty += lineH;
+  });
+  ctx.restore();
+
+  // Buttons right-aligned; array order reads left → right. Without explicit
+  // variants, the last (rightmost, primary-action) button goes accent.
+  const variantFor = (i: number): ButtonVariant =>
+    opts.variants?.[i] ?? (i === buttons.length - 1 ? "primary" : "default");
+  const btnBar = stack({ x: r.x + r.w - 12, y: r.y + r.h - 46, gap: 8, h: 34, align: "end" });
+  let hit: string | null = null;
+  for (let i = buttons.length - 1; i >= 0; i--) {
+    if (
+      button(ctx, {
+        id: `${opts.id ?? opts.title ?? "confirm"}:button:${i}`,
+        tabIndex: i,
+        at: btnBar,
+        label: buttons[i],
+        variant: variantFor(i),
+        h: 34,
+      })
+    ) {
+      hit = buttons[i];
+    }
+  }
+  return hit;
+}
+
+// ---------- Dialogue box ----------
+
+/** Bottom-screen dialogue used by RPGs, adventures, visual novels and tutorial
+ * conversations. Rendering is immediate-mode; the game owns conversation state. */
+export interface DialogOptions {
+  /** Stable prefix for keyboard-focusable choices. */
+  id?: string;
+  speaker?: string;
+  lines: string[];
+  /** Optional response/action labels. Returns the clicked label. */
+  choices?: string[];
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+  /** Optional portrait drawn on the left. */
+  portrait?: CanvasImageSource;
+  portraitSize?: number;
+  /** Small footer hint when there are no explicit choices. */
+  hint?: string;
+}
+
+/** Draw a themed dialogue box and return the clicked choice, or `null`.
+ *
+ * ```ts
+ * const answer = UI.dialog({
+ *   speaker: "BLACKSMITH",
+ *   lines: ["The old bridge is unsafe."],
+ *   choices: ["REPAIR IT", "LEAVE"],
+ * });
+ * ``` */
+export function dialog(opts: DialogOptions): string | null;
+export function dialog(ctx: CanvasRenderingContext2D, opts: DialogOptions): string | null;
+export function dialog(
+  a: CanvasRenderingContext2D | DialogOptions,
+  b?: DialogOptions,
+): string | null {
+  const [ctx, opts] = withCtx(a, b);
+  const vp = Stage.viewport;
+  const choices = opts.choices ?? [];
+  const portraitSize = opts.portrait ? (opts.portraitSize ?? 72) : 0;
+  const lineH = theme.fontSize + 8;
+  const choicesH = choices.length ? 42 : 0;
+  const h = opts.h ?? Math.max(104, 34 + opts.lines.length * lineH + choicesH + 16);
+  const w = opts.w ?? Math.min(680, vp.w - 24);
+  const x = opts.x ?? Math.round((vp.w - w) / 2);
+  const y = opts.y ?? vp.h - h - 12;
+  panel(ctx, { x, y, w, h, title: opts.speaker });
+
+  let textX = x + 14;
+  if (opts.portrait) {
+    const py = y + (opts.speaker ? 34 : 12);
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(opts.portrait, x + 12, py, portraitSize, portraitSize);
+    ctx.restore();
+    textX += portraitSize + 12;
+  }
+  let ty = y + (opts.speaker ? 35 : 13);
+  for (const line of opts.lines) {
+    text(ctx, line, {
+      x: textX,
+      y: ty,
+      w: x + w - 14 - textX,
+      h: lineH,
+      maxWidth: x + w - 14 - textX,
+    });
+    ty += lineH;
+  }
+
+  let hit: string | null = null;
+  if (choices.length) {
+    const bar = stack({ x: x + w - 12, y: y + h - 44, h: 32, gap: 8, align: "end" });
+    for (let i = choices.length - 1; i >= 0; i--) {
+      if (
+        button(ctx, {
+          id: `${opts.id ?? opts.speaker ?? "dialog"}:choice:${i}`,
+          tabIndex: i,
+          at: bar,
+          label: choices[i],
+          variant: i === 0 ? "primary" : "default",
+          h: 32,
+        })
+      ) {
+        hit = choices[i];
+      }
+    }
+  } else if (opts.hint) {
+    text(ctx, opts.hint, {
+      x: x + 12,
+      y: y + h - 28,
+      w: w - 24,
+      h: 18,
+      align: "right",
+      color: "dim",
+    });
+  }
+  return hit;
+}

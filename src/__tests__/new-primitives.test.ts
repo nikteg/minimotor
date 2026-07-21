@@ -13,7 +13,7 @@ import {
   undoStack,
   seedRng,
 } from "../goodies/index.js";
-import { grid } from "../ui.js";
+import { grid } from "../ui/index.js";
 import { createRoster } from "../net.js";
 import { animate, sequence, parallel } from "../anim.js";
 

@@ -15,7 +15,7 @@ import {
   separateCircles,
   bounceInBounds,
 } from "./collision.js";
-import * as UI from "./ui.js";
+import * as UI from "./ui/index.js";
 import { Particles } from "./particles.js";
 import { Scenes } from "./scenes.js";
 import { Clock, Tween } from "./clock.js";
@@ -240,7 +240,7 @@ export type {
   SelectResult,
   Theme,
   ToggleOptions,
-} from "./ui.js";
+} from "./ui/index.js";
 
 export const Minimotor = {
   createGame,

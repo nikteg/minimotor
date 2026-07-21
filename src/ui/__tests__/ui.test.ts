@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { pointInRect } from "../collision.js";
+import { pointInRect } from "../../collision.js";
 import {
   _reset,
   bar,
@@ -17,7 +17,7 @@ import {
   stack,
   text,
   textWidth,
-} from "../ui.js";
+} from "../index.js";
 
 const mockCtx = () => {
   const calls: {
