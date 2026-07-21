@@ -405,20 +405,14 @@ function goToState(next, spec = Transitions.fade(420, "#071012")) {
   });
 }
 
-function circleRect(x, y, radius, rect) {
-  const nx = Mathf.clamp(x, rect.x, rect.x + rect.w);
-  const ny = Mathf.clamp(y, rect.y, rect.y + rect.h);
-  return (x - nx) ** 2 + (y - ny) ** 2 < radius ** 2;
-}
-
 function moveCircle(body, dx, dy, radius) {
   const oldX = body.x;
   body.x = Mathf.clamp(oldX + dx, radius, WORLD.w - radius);
-  if (solids.some((rect) => circleRect(body.x, body.y, radius, rect))) body.x = oldX;
+  if (solids.some((rect) => Collision.circleRect(body.x, body.y, radius, rect))) body.x = oldX;
 
   const oldY = body.y;
   body.y = Mathf.clamp(oldY + dy, radius, WORLD.h - radius);
-  if (solids.some((rect) => circleRect(body.x, body.y, radius, rect))) body.y = oldY;
+  if (solids.some((rect) => Collision.circleRect(body.x, body.y, radius, rect))) body.y = oldY;
 }
 
 function carHits(x, y) {
@@ -427,7 +421,7 @@ function carHits(x, y) {
     y < 28 ||
     x > WORLD.w - 28 ||
     y > WORLD.h - 28 ||
-    solids.some((r) => circleRect(x, y, 28, r)) ||
+    solids.some((r) => Collision.circleRect(x, y, 28, r)) ||
     cars.some(
       (candidate) =>
         candidate !== car &&
@@ -677,23 +671,17 @@ function resetPlayer() {
 
 function separateFootFrom(x, y, radius) {
   if (player.inCar || gameState !== "alive") return;
-  const dx = player.x - x;
-  const dy = player.y - y;
-  const distance = Math.hypot(dx, dy) || 0.001;
-  const overlap = 13 + radius - distance;
-  if (overlap <= 0) return;
-  moveCircle(player, (dx / distance) * overlap, (dy / distance) * overlap, 13);
+  const hit = Collision.separateCircles(player.x, player.y, 13, x, y, radius);
+  if (!hit) return;
+  moveCircle(player, hit.nx * hit.depth, hit.ny * hit.depth, 13);
 }
 
 function repelCarFrom(x, y, radius) {
-  const dx = car.x - x;
-  const dy = car.y - y;
-  const distance = Math.hypot(dx, dy) || 0.001;
-  const overlap = 28 + radius - distance;
-  if (overlap <= 0) return false;
-  carBody.x += (dx / distance) * overlap * 0.72;
-  carBody.y += (dy / distance) * overlap * 0.72;
-  carBody.applyImpulse((dx / distance) * 45, (dy / distance) * 45);
+  const hit = Collision.separateCircles(car.x, car.y, 28, x, y, radius);
+  if (!hit) return false;
+  carBody.x += hit.nx * hit.depth * 0.72;
+  carBody.y += hit.ny * hit.depth * 0.72;
+  carBody.applyImpulse(hit.nx * 45, hit.ny * 45);
   return true;
 }
 
@@ -866,7 +854,7 @@ function updateProjectiles(dt) {
       b.y < 0 ||
       b.x > WORLD.w ||
       b.y > WORLD.h ||
-      solids.some((r) => circleRect(b.x, b.y, 3, r));
+      solids.some((r) => Collision.circleRect(b.x, b.y, 3, r));
     let hit = false;
     if (blocked) burst(b.x, b.y, "#ffc56b", 4);
 
