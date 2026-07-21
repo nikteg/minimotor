@@ -46,8 +46,7 @@ let hideEmpty = false;
 let maxPing = 250; // 250 = no limit
 let search = "";
 let region = "ALL";
-let sortKey = "ping";
-let sortDir = 1;
+let sort = { key: "ping", dir: 1 }; // UI.table sort state (column key + direction)
 let scroll = 0;
 let selected = null; // a server object (survives re-sorting), not an index
 let refreshing = false;
@@ -88,12 +87,7 @@ function visibleServers() {
     const needle = search.trim().toLowerCase();
     list = list.filter((s) => s.name.toLowerCase().includes(needle));
   }
-  const dir = sortDir;
-  return [...list].sort((a, b) => {
-    const av = a[sortKey];
-    const bv = b[sortKey];
-    return (typeof av === "string" ? av.localeCompare(bv) : av - bv) * dir;
-  });
+  return list; // UI.table sorts by the active column
 }
 
 function refresh() {
@@ -134,15 +128,9 @@ function layout() {
 
   UI.col({ x, y: y + 30, w, h: h - 30, pad: 12, gap: 8 }, (body) => {
     L.controls = body.next(undefined, 30);
-    const head = body.next(undefined, 20);
-    UI.row({ ...head, gap: 0 }, (cols) => {
-      L.name = cols.fill(70 + 56 + 80 + 74); // NAME grows; the rest are fixed
-      L.mode = cols.next(70);
-      L.reg = cols.next(56);
-      L.players = cols.next(80);
-      L.ping = cols.next(74);
-    });
-    L.list = body.fill(FOOTER_H + 8); // fill, reserving the footer + its gap
+    // One block for UI.table: its 20px header strip + the row list, filling the
+    // space above the footer (which occupies the column's bottom padding).
+    L.table = body.fill(FOOTER_H + 8);
     const footer = body.next(undefined, FOOTER_H);
     // Let the footer occupy the column's bottom padding so the action row
     // visually anchors to the panel edge instead of floating above it.
@@ -217,60 +205,65 @@ Minimotor.Loop.run({
       if (refreshing) UI.spinner(bar.extent.x - 18, L.controls.y + 15);
     });
 
-    // ---- column headers (click to sort) — rects straight from the flex ----
+    // ---- the server table: sortable headers over a windowed, selectable row
+    // list, all in one call. UI.table sorts the filtered rows by the active
+    // column, owns the scroll + selection, and reports the state back.
     const list = visibleServers();
-    const headers = [
-      { key: "name", label: "NAME", rect: L.name },
-      { key: "mode", label: "MODE", rect: L.mode },
-      { key: "region", label: "REG", rect: L.reg },
-      { key: "players", label: "PLAYERS", rect: L.players },
-      { key: "ping", label: "PING", rect: L.ping },
-    ];
-    for (const hd of headers) {
-      if (UI.listItem({ ...hd.rect, w: hd.rect.w - 6 })) {
-        if (sortKey === hd.key) sortDir = -sortDir;
-        else {
-          sortKey = hd.key;
-          sortDir = 1;
-        }
-      }
-      const arrow = sortKey === hd.key ? (sortDir === 1 ? " ▲" : " ▼") : "";
-      UI.text(hd.label + arrow, {
-        ...hd.rect,
-        size: 12,
-        bold: true,
-        color: sortKey === hd.key ? "accent" : "dim",
-      });
-    }
-
-    // ---- the list: UI.list owns the clip, row windowing, scrollbar and wheel,
-    // filling the flexed space. The row callback draws one server; columns stay
-    // anchored to the header's absolute x positions.
-    scroll = UI.list(
-      { ...L.list, rowH: ROW_H, count: list.length, offset: scroll, id: uiId("server-list") },
-      (i, rect) => {
-        const s = list[i];
-        const ry = rect.y;
-        if (UI.listItem({ x: rect.x, y: ry, w: rect.w, h: ROW_H, selected: s === selected })) {
-          selected = s; // an open popover blocks this automatically
-        }
-        UI.text(s.name, { x: L.name.x + 4, y: ry, w: L.name.w - 14, h: ROW_H });
-        UI.text(s.mode, { x: L.mode.x, y: ry, h: ROW_H, color: "dim" });
-        UI.text(s.region, { x: L.reg.x, y: ry, h: ROW_H, color: "dim" });
-        UI.text(`${s.players}/${s.max}`, {
-          x: L.players.x,
-          y: ry,
-          h: ROW_H,
-          color: s.players >= s.max ? "#ff6b6b" : "dim",
-        });
-        UI.text(`${s.ping}`, { x: L.ping.x, y: ry, h: ROW_H, color: pingColor(s.ping) });
-      },
-    );
+    const res = UI.table({
+      ...L.table,
+      rowH: ROW_H,
+      headerH: 20,
+      id: uiId("servers"),
+      rows: list,
+      sort,
+      offset: scroll,
+      selected, // an open popover blocks row clicks automatically
+      columns: [
+        {
+          key: "name",
+          label: "NAME",
+          value: (s) => s.name,
+          cell: (s, r) => UI.text(s.name, { x: r.x + 4, y: r.y, w: r.w - 14, h: r.h }),
+        },
+        {
+          key: "mode",
+          label: "MODE",
+          width: 70,
+          value: (s) => s.mode,
+          cell: (s, r) => UI.text(s.mode, { ...r, color: "dim" }),
+        },
+        {
+          key: "region",
+          label: "REG",
+          width: 56,
+          value: (s) => s.region,
+          cell: (s, r) => UI.text(s.region, { ...r, color: "dim" }),
+        },
+        {
+          key: "players",
+          label: "PLAYERS",
+          width: 80,
+          value: (s) => s.players,
+          cell: (s, r) =>
+            UI.text(`${s.players}/${s.max}`, { ...r, color: s.players >= s.max ? "#ff6b6b" : "dim" }),
+        },
+        {
+          key: "ping",
+          label: "PING",
+          width: 74,
+          value: (s) => s.ping,
+          cell: (s, r) => UI.text(`${s.ping}`, { ...r, color: pingColor(s.ping) }),
+        },
+      ],
+    });
+    sort = res.sort;
+    scroll = res.offset;
+    selected = res.selected;
     if (list.length === 0) {
       UI.text("no servers match the filters", {
-        x: L.list.x,
-        y: L.list.y + 24,
-        w: L.list.w,
+        x: L.table.x,
+        y: L.table.y + 44,
+        w: L.table.w,
         align: "center",
         color: "dim",
       });
