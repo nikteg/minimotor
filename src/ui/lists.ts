@@ -1,7 +1,6 @@
-import { bar } from "./controls.js";
 import { pointInRect } from "../collision.js";
-import { hoverCursor, select, theme, uiPointer, withCtx } from "./core.js";
-import { clip, col, row } from "./layout.js";
+import { hoverCursor, theme, uiPointer, withCtx } from "./core.js";
+import { clip } from "./layout.js";
 
 /** A vertically-scrolling windowed list. Owns the clip, the visible-range
  *  windowing (only on-screen rows are drawn), the scrollbar and mouse-wheel —

@@ -1,7 +1,6 @@
-import { bar, listItem } from "./controls.js";
-import { ids, text, uiCtx } from "./core.js";
-import { row } from "./layout.js";
-import { list, scrollbar } from "./lists.js";
+import { listItem } from "./controls.js";
+import { text, uiCtx } from "./core.js";
+import { list } from "./lists.js";
 
 // ---------- Table ----------
 

@@ -6,17 +6,13 @@ import {
   consumeKeyboardCommand,
   drawBox,
   drawFocusRing,
-  drawTips,
   ensureWired,
-  focus,
   focusFromPointer,
   hoverCursor,
   place,
   registerFocusable,
   roundRectPath,
   spinAngle,
-  stack,
-  text,
   theme,
   tooltip,
   uiCtx,
@@ -26,9 +22,6 @@ import {
   withCtx,
 } from "./core.js";
 import { pointInRect } from "../collision.js";
-import { clip, group, row } from "./layout.js";
-import { list } from "./lists.js";
-import { table } from "./table.js";
 
 // ---------- Button ----------
 

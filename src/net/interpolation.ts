@@ -10,6 +10,8 @@
 //   const s = remote.sample();
 //   if (s) drawPlayer(s.x, s.y);
 
+import { lerp } from "../mathf.js";
+
 export interface InterpolatorOptions<T> {
   /** How far behind real time to render, in ms. Should cover at least one
    *  packet interval plus jitter; default 100 (two packets at 20 Hz). */
@@ -41,14 +43,14 @@ export interface Interpolator<T> {
 
 function defaultLerp<T>(a: T, b: T, t: number): T {
   if (typeof a === "number" && typeof b === "number") {
-    return (a + (b - a) * t) as T;
+    return lerp(a, b, t) as T;
   }
   const out = { ...(b as object) } as Record<string, unknown>;
   const from = a as Record<string, unknown>;
   for (const k in from) {
     const av = from[k];
     const bv = out[k];
-    if (typeof av === "number" && typeof bv === "number") out[k] = av + (bv - av) * t;
+    if (typeof av === "number" && typeof bv === "number") out[k] = lerp(av, bv, t);
   }
   return out as T;
 }

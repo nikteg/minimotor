@@ -1,7 +1,7 @@
 import type { EnginePlugin } from "../engine/index.js";
 import { pointInRect } from "../collision.js";
 import { drawPerfHud } from "./hud.js";
-import { NetMeter, createNetMeter } from "./net-meter.js";
+import type { NetMeter } from "./net-meter.js";
 import { createSparkline } from "./sparkline.js";
 import { createPerfTracker } from "./tracker.js";
 

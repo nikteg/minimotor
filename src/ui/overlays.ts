@@ -1,4 +1,4 @@
-import { ButtonVariant, PanelOptions, bar, button, panel } from "./controls.js";
+import { ButtonVariant, PanelOptions, button, panel } from "./controls.js";
 import {
   centeredText,
   enterOverlay,
@@ -8,10 +8,8 @@ import {
   text,
   theme,
   uiFont,
-  uiPointer,
   withCtx,
 } from "./core.js";
-import { row } from "./layout.js";
 import { pointInRect } from "../collision.js";
 import { Stage } from "../engine/index.js";
 

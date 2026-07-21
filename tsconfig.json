@@ -5,6 +5,7 @@
     "moduleResolution": "bundler",
     "lib": ["es2020", "dom"],
     "strict": true,
+    "noUnusedLocals": true,
     "declaration": true,
     "outDir": "./build",
     "rootDir": "src",
