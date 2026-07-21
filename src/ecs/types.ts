@@ -34,10 +34,13 @@ export interface ComponentInit<T> {
 }
 
 // `any` is intentional here: these erase the element type so heterogeneous
-// component lists (spawn args, query inputs) type-check. The public API stays
-// fully typed via the generic overloads below.
+// component lists (spawn args, query inputs) type-check (`Component<T>` is
+// invariant in `T`, so `unknown` can't stand in). The public API stays fully
+// typed via the generic overloads below.
+// oxlint-disable-next-line typescript/no-explicit-any
 export type AnyComponent = Component<any>;
 
+// oxlint-disable-next-line typescript/no-explicit-any
 type AnyInit = ComponentInit<any>;
 
 /** An entity id. Encodes a slot index plus a generation counter, so a handle to

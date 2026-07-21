@@ -14,7 +14,7 @@ export interface ServerSocket {
   /** 1 === OPEN in the `ws`/browser convention; `undefined` is treated as open
    *  (test doubles need not model it). */
   readyState?: number;
-  on(event: string, handler: (...args: any[]) => void): void;
+  on(event: string, handler: (...args: unknown[]) => void): void;
 }
 
 /** The slice of a WebSocket *server* a room uses — `ws`'s WebSocketServer. */

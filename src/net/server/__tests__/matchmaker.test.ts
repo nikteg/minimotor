@@ -59,7 +59,7 @@ describe("net/server matchmaker", () => {
   it("delivers post-join messages to onMessage with the room; relay skips sender", () => {
     const srv = new MockServer();
     const got: Array<[string, unknown]> = [];
-    const mm = matchmake(srv, {
+    matchmake(srv, {
       ...routeJoin,
       onMessage: (client, msg, room) => {
         got.push([room.code, msg]);
