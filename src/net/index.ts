@@ -5,5 +5,6 @@
 export * from "./types.js";
 export * from "./websocket.js";
 export * from "./webrtc.js";
+export * from "./rtc-session.js";
 export * from "./interpolation.js";
 export * from "./roster.js";

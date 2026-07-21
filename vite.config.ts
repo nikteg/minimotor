@@ -3,18 +3,22 @@ import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
 import { WebSocketServer } from "ws";
 import { createRoadRivalsServer } from "./samples/road-rivals/src/server/index.js";
+import { signaling } from "./src/net/server/signaling.js";
 
 const here = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
 // Tiny WebSocket endpoints hosted by the dev/preview server itself, so the
 // networking samples work offline (public echo servers come and go):
-//   /ws-echo  — echoes every frame back to the sender (netws console)
-//   /ws-relay — broadcasts every frame to every OTHER client (netgame)
+//   /ws-echo   — echoes every frame back to the sender (netws console)
+//   /ws-relay  — broadcasts every frame to every OTHER client (netgame)
+//   /ws-signal — WebRTC signaling relay for Net.host()/Net.join() (netrtc)
 // Vite's own HMR socket uses a different path/protocol and is untouched.
 function attach(httpServer: Server | null): void {
   if (!httpServer) return;
   const echo = new WebSocketServer({ noServer: true });
   const relay = new WebSocketServer({ noServer: true });
+  const signal = new WebSocketServer({ noServer: true });
+  signaling(signal);
   const road = createRoadRivalsServer();
   echo.on("connection", (sock) => {
     sock.on("message", (data, isBinary) => sock.send(data, { binary: isBinary }));
@@ -34,9 +38,11 @@ function attach(httpServer: Server | null): void {
         ? echo
         : path === "/ws-relay"
           ? relay
-          : path === "/ws-road-rivals"
-            ? road
-            : null;
+          : path === "/ws-signal"
+            ? signal
+            : path === "/ws-road-rivals"
+              ? road
+              : null;
     if (!wss) return;
     wss.handleUpgrade(req, socket, head, (sock) => wss.emit("connection", sock, req));
   });
@@ -101,6 +107,7 @@ export default defineConfig({
         roadRivals: here("./samples/road-rivals/index.html"),
         roadRivalsClient: here("./samples/road-rivals/client.html"),
         netpeer: here("./samples/netpeer/index.html"),
+        netrtc: here("./samples/netrtc/index.html"),
         netws: here("./samples/netws/index.html"),
         synth: here("./samples/synth/index.html"),
         clockwork: here("./samples/clockwork/index.html"),

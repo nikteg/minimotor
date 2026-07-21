@@ -93,11 +93,12 @@ describe("net/server signaling", () => {
     const srv = new MockServer();
     signaling(srv);
     const a = srv.connect();
-    expect(a.json()).toEqual([{ type: "welcome", id: "c0", peers: [] }]);
+    // first peer is the host — welcome names itself as host
+    expect(a.json()).toEqual([{ type: "welcome", id: "c0", host: "c0", peers: [] }]);
 
     const b = srv.connect();
-    // b learns c0 is already present; a is told b joined
-    expect(b.json()[0]).toEqual({ type: "welcome", id: "c1", peers: ["c0"] });
+    // b learns c0 is the host and already present; a is told b joined
+    expect(b.json()[0]).toEqual({ type: "welcome", id: "c1", host: "c0", peers: ["c0"] });
     expect(a.json().at(-1)).toEqual({ type: "peer-join", id: "c1" });
 
     // a signals b → b receives it tagged with the sender
@@ -109,6 +110,29 @@ describe("net/server signaling", () => {
     });
 
     a.close();
-    expect(b.json().at(-1)).toEqual({ type: "peer-leave", id: "c0" });
+    // host (c0) left: b hears the leave, then that it's the promoted host
+    expect(b.json().at(-2)).toEqual({ type: "peer-leave", id: "c0" });
+    expect(b.json().at(-1)).toEqual({ type: "host", id: "c1" });
+  });
+
+  it("promotes the oldest remaining peer when the host leaves", () => {
+    const srv = new MockServer();
+    signaling(srv);
+    const a = srv.connect(); // c0 — host
+    const b = srv.connect(); // c1
+    const c = srv.connect(); // c2
+
+    a.close(); // host drops
+    expect(b.json().at(-1)).toEqual({ type: "host", id: "c1" }); // c1 promoted
+    expect(c.json().at(-1)).toEqual({ type: "host", id: "c1" });
+
+    // a fresh peer now learns c1 is the host
+    const d = srv.connect();
+    expect(d.json()[0]).toEqual({
+      type: "welcome",
+      id: "c3",
+      host: "c1",
+      peers: ["c1", "c2"],
+    });
   });
 });
