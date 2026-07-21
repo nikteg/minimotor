@@ -89,10 +89,9 @@ const FLAG_Y = GROUND_Y - 160;
 let coins = [];
 let enemies = [];
 let cameraX = 0;
-let score = 0;
+const scores = Minimotor.Game.createScoreTracker("platformer_best");
 let coinCount = 0;
 let lives = 3;
-let best = Minimotor.Storage.load("platformer_best", 0);
 let gameOver = false;
 let levelComplete = false;
 let invincible = 0; // frames of invincibility after taking damage
@@ -102,8 +101,7 @@ function restart() {
   player.x = 40; player.y = GROUND_Y - PLAYER_H;
   player.vx = 0; player.vy = 0; player.onGround = false; player.facing = 1;
   cameraX = 0;
-  if (score > best) { best = score; Minimotor.Storage.save("platformer_best", best); }
-  score = 0; coinCount = 0;
+  scores.reset(); coinCount = 0;
   lives = 3;
   gameOver = false;
   levelComplete = false;
@@ -118,7 +116,7 @@ function initCoins() {
 
 function initEnemies() {
   enemies = enemyDefs.map(([x, y, w, h, pl, pr]) => ({
-    x, y, w, h, vx: 1.5, patrolLeft: pl, patrolRight: pr, alive: true,
+    x, y, w, h, pat: Minimotor.Goodies.patrol(pl, pr - w, { start: x }), alive: true,
   }));
 }
 
@@ -183,9 +181,7 @@ Minimotor.Loop.run({
       Minimotor.Audio.Sfx.jump();
     }
     // Variable jump height — release early to shorten
-    if (!jumpHeld && player.vy < -4) {
-      player.vy *= 0.65;
-    }
+    Minimotor.Physics.variableJump(player, jumpHeld);
 
     // Gravity
     player.vy += GRAVITY;
@@ -220,12 +216,9 @@ Minimotor.Loop.run({
     // Coin collection
     for (const c of coins) {
       if (c.collected) continue;
-      if (
-        player.x + player.w > c.x - 8 && player.x < c.x + 8 &&
-        player.y + player.h > c.y - 8 && player.y < c.y + 8
-      ) {
+      if (Minimotor.Collision.rectsOverlap(player, { x: c.x - 8, y: c.y - 8, w: 16, h: 16 })) {
         c.collected = true;
-        score += 100;
+        scores.add(100);
         coinCount++;
         Minimotor.Audio.Sfx.coin();
         Minimotor.Particles.burst(c.x - cameraX, c.y, {
@@ -239,20 +232,15 @@ Minimotor.Loop.run({
     for (const e of enemies) {
       if (!e.alive) continue;
       // Patrol
-      e.x += e.vx;
-      if (e.x <= e.patrolLeft) { e.x = e.patrolLeft; e.vx = Math.abs(e.vx); }
-      if (e.x + e.w >= e.patrolRight) { e.x = e.patrolRight - e.w; e.vx = -Math.abs(e.vx); }
+      e.x = e.pat.tick(1.5);
 
       // Collision with player
-      if (
-        player.x + player.w > e.x + 4 && player.x < e.x + e.w - 4 &&
-        player.y + player.h > e.y + 4 && player.y < e.y + e.h - 4
-      ) {
+      if (Minimotor.Collision.rectsOverlap(player, { x: e.x + 4, y: e.y + 4, w: e.w - 8, h: e.h - 8 })) {
         // Stomping (player falling onto enemy top)
         if (player.vy > 0 && player.y + player.h - player.vy <= e.y + 8) {
           e.alive = false;
           player.vy = JUMP_FORCE * 0.6;
-          score += 200;
+          scores.add(200);
           Minimotor.Audio.Sfx.blip(220, 0.12); // squash
           Minimotor.Camera.shake(4, 160);
           Minimotor.Particles.burst(e.x + e.w / 2 - cameraX, e.y, {
@@ -266,12 +254,9 @@ Minimotor.Loop.run({
     }
 
     // Flag / goal
-    if (
-      player.x + player.w > FLAG_X - 16 && player.x < FLAG_X + 16 &&
-      player.y + player.h > FLAG_Y - 80 && player.y < FLAG_Y + 120
-    ) {
+    if (Minimotor.Collision.rectsOverlap(player, { x: FLAG_X - 16, y: FLAG_Y - 80, w: 32, h: 200 })) {
       levelComplete = true;
-      score += 1000 + coinCount * 50;
+      scores.add(1000 + coinCount * 50);
       Minimotor.Audio.Sfx.coin(); // victory sparkle
       Minimotor.Camera.shake(3, 220);
       for (let i = 0; i < 3; i++) {
@@ -279,7 +264,7 @@ Minimotor.Loop.run({
           count: 14, colors: ["#2ecc71", "#ffd700", "#fff", "#5c94fc"], size: [2, 5], speed: [60, 220], life: [500, 1100], gravity: 120,
         });
       }
-      if (score > best) { best = score; Minimotor.Storage.save("platformer_best", best); }
+      scores.save();
     }
 
     // Camera
@@ -392,7 +377,7 @@ Minimotor.Loop.run({
       ctx.fillRect(sx + 4, e.y + 4, 6, 6);
       ctx.fillRect(sx + e.w - 10, e.y + 4, 6, 6);
       ctx.fillStyle = "#111";
-      const pupilOff = e.vx > 0 ? 2 : 0;
+      const pupilOff = e.pat.dir > 0 ? 2 : 0;
       ctx.fillRect(sx + 5 + pupilOff, e.y + 5, 3, 3);
       ctx.fillRect(sx + e.w - 9 + pupilOff, e.y + 5, 3, 3);
       // Feet
@@ -462,7 +447,7 @@ Minimotor.Loop.run({
     // titled `group` lays the header text out under its strip with the theme's
     // padding, so there are no hand-tuned y offsets to keep in sync.
     Minimotor.UI.group({ x: 8, y: 8, w: Math.min(430, vp.w - 16), h: 60, title: "PLATFORM RUN" }, (body) => {
-      Minimotor.UI.text(`Score ${score}   Best ${best}   Coins ${coinCount}   ${"♥".repeat(lives)}`, { h: body.remaining, size: 13 });
+      Minimotor.UI.text(`Score ${scores.score}   Best ${scores.best}   Coins ${coinCount}   ${"♥".repeat(lives)}`, { h: body.remaining, size: 13 });
     });
     Minimotor.UI.group({ x: 8, y: vp.h - 46, w: 220, h: 34 }, (body) => {
       Minimotor.UI.text("← → move   Space jump", { h: body.remaining, size: 12, color: "dim" });
@@ -471,7 +456,7 @@ Minimotor.Loop.run({
 
     // Game Over overlay
     if (gameOver) {
-      drawGameOver(ctx, vp.w, vp.h, score, best, "Press Space to restart");
+      drawGameOver(ctx, vp.w, vp.h, scores.score, scores.best, "Press Space to restart");
     }
 
     // Level Complete overlay
@@ -480,7 +465,7 @@ Minimotor.Loop.run({
         ctx,
         vp.w,
         vp.h,
-        score,
+        scores.score,
         `Coins: ${coinCount}  Bonus: +${1000 + coinCount * 50}`,
         "Press R to replay",
       );
@@ -499,7 +484,7 @@ function takeDamage() {
   });
   if (lives <= 0) {
     gameOver = true;
-    if (score > best) { best = score; Minimotor.Storage.save("platformer_best", best); }
+    scores.save();
   } else {
     // Reset position
     player.x = Math.max(40, player.x - 100);

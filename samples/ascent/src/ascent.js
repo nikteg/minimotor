@@ -214,11 +214,7 @@ const DASH_FREEZE = 3;
 const INV_SQRT2 = 0.7071;
 
 // Move `v` toward `target` by at most `delta` (linear approach) — the basis of
-// tight, predictable accel/decel.
-function approach(v, target, delta) {
-  return v < target ? Math.min(v + delta, target) : Math.max(v - delta, target);
-}
-
+// tight, predictable accel/decel via Mathf.approach.
 // ---------------------------------------------------------------------------
 // Sound — layered synth SFX from Audio.tone: a pitched voice plus a filtered
 // noise burst per hit, so jumps, dashes and impacts read punchy rather than
@@ -696,9 +692,9 @@ Loop.run({
         const turning = player.vx !== 0 && Math.sign(player.vx) !== dir;
         let acc = (player.onGround ? RUN_ACCEL : AIR_ACCEL) * (turning ? TURN_MULT : 1);
         if (player.wallLock > 0) acc *= 0.4; // brief reduced control after a wall jump
-        player.vx = approach(player.vx, dir * RUN_MAX, acc);
+        player.vx = Mathf.approach(player.vx, dir * RUN_MAX, acc);
       } else if (player.wallLock === 0) {
-        player.vx = approach(player.vx, 0, player.onGround ? GROUND_DECEL : AIR_DECEL);
+        player.vx = Mathf.approach(player.vx, 0, player.onGround ? GROUND_DECEL : AIR_DECEL);
       }
 
       // Vertical: gravity, with a half-gravity "hang" near the apex and the
