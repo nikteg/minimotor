@@ -168,6 +168,8 @@ export type {
   Signal,
   Interpolator,
   InterpolatorOptions,
+  Roster,
+  RosterOptions,
 } from "./net.js";
 
 const Collision = {
@@ -207,10 +209,12 @@ export type {
   DropTargetState,
   FloatManager,
   FloatOptions,
+  GridOptions,
   GroupOptions,
   IdPart,
   LayoutChildren,
   LayoutOptions,
+  ListOptions,
   ListItemOptions,
   ModalOptions,
   PanelOptions,

@@ -13,6 +13,8 @@ import {
   undoStack,
   seedRng,
 } from "./goodies.js";
+import { grid } from "./ui.js";
+import { createRoster } from "./net.js";
 
 describe("Mathf.approach", () => {
   it("moves toward target without overshooting", () => {
@@ -197,6 +199,36 @@ describe("Goodies.trail", () => {
       { x: 3, y: 3 },
       { x: 2, y: 2 },
     ]); // newest first, capped
+  });
+});
+
+describe("UI.grid", () => {
+  it("splits an area into even cells, minus the gap", () => {
+    const cells: Array<{ x: number; y: number; w: number; h: number }> = [];
+    grid({ x: 0, y: 0, w: 100, h: 100, cols: 2, rows: 2, gap: 10 }, (r) => cells.push(r));
+    expect(cells.length).toBe(4);
+    expect(cells[0]).toEqual({ x: 0, y: 0, w: 45, h: 45 }); // (100-10)/2
+    expect(cells[3]).toEqual({ x: 55, y: 55, w: 45, h: 45 }); // bottom-right
+  });
+});
+
+describe("Net.createRoster", () => {
+  it("tracks peers: join flag, prune stale, sample live", () => {
+    let clock = 0;
+    const r = createRoster<{ x: number }>({ delayMs: 0, timeoutMs: 1000, now: () => clock });
+    expect(r.update("a", { x: 1 }).isNew).toBe(true);
+    expect(r.update("a", { x: 2 }).isNew).toBe(false); // seen before
+    expect(r.size).toBe(1);
+    clock = 1000;
+    r.update("b", { x: 9 });
+    expect(r.ids.sort()).toEqual(["a", "b"]);
+    clock = 1600; // a last seen at 0 (stale), b at 1000 (fresh)
+    expect(r.prune()).toEqual(["a"]);
+    expect(r.size).toBe(1);
+    const live = r.sample();
+    expect(live.length).toBe(1);
+    expect(live[0][0]).toBe("b");
+    expect(live[0][1]).toEqual({ x: 9 });
   });
 });
 

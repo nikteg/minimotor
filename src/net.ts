@@ -70,6 +70,11 @@ export interface Transport {
   /** Called when the transport closes (intentionally or due to error). */
   onClose: (() => void) | null;
 
+  /** Called on every connection-state transition (connecting → connected →
+   *  closed, and back to connecting on reconnect). Saves polling `state` from a
+   *  timer just to reflect it in the UI. */
+  onState: ((state: "connecting" | "connected" | "closed") => void) | null;
+
   /** Current connection state. */
   readonly state: "connecting" | "connected" | "closed";
 
@@ -104,6 +109,7 @@ export function connect(config: WsConfig): Transport {
   const transport: Transport = {
     onMessage: null,
     onClose: null,
+    onState: null,
 
     get state() {
       return state;
@@ -131,7 +137,7 @@ export function connect(config: WsConfig): Transport {
 
     close() {
       intentionalClose = true;
-      state = "closed";
+      setState("closed");
       stopTimers();
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (ws) {
@@ -141,13 +147,20 @@ export function connect(config: WsConfig): Transport {
     },
   };
 
+  // Update `state` and notify onState only on a real transition.
+  const setState = (next: Transport["state"]): void => {
+    if (state === next) return;
+    state = next;
+    transport.onState?.(next);
+  };
+
   function doConnect() {
-    state = "connecting";
+    setState("connecting");
     ws = new WebSocket(config.url);
     ws.binaryType = binaryType;
 
     ws.onopen = () => {
-      state = "connected";
+      setState("connected");
       lastRecv = Date.now();
       if (heartbeatMs > 0) {
         heartbeatTimer = setInterval(() => {
@@ -187,7 +200,7 @@ export function connect(config: WsConfig): Transport {
     };
 
     ws.onclose = () => {
-      state = "closed";
+      setState("closed");
       stopTimers();
       if (!intentionalClose && reconnectMs > 0) {
         reconnectTimer = setTimeout(doConnect, reconnectMs);
@@ -242,6 +255,7 @@ export function createPeer(config: RtcConfig = {}): {
   const transport: Transport = {
     onMessage: null,
     onClose: null,
+    onState: null,
 
     get state() {
       return state;
@@ -270,8 +284,15 @@ export function createPeer(config: RtcConfig = {}): {
     close() {
       if (dc) dc.close();
       if (pc) pc.close();
-      state = "closed";
+      setState("closed");
     },
+  };
+
+  // Update `state` and notify onState only on a real transition.
+  const setState = (next: Transport["state"]): void => {
+    if (state === next) return;
+    state = next;
+    transport.onState?.(next);
   };
 
   let onSignal: ((signal: Signal) => void) | null = null;
@@ -306,7 +327,7 @@ export function createPeer(config: RtcConfig = {}): {
 
     pc2.onconnectionstatechange = () => {
       if (pc2.connectionState === "failed" || pc2.connectionState === "disconnected") {
-        state = "closed";
+        setState("closed");
         if (transport.onClose) transport.onClose();
       }
     };
@@ -317,7 +338,7 @@ export function createPeer(config: RtcConfig = {}): {
     dc.binaryType = "arraybuffer";
 
     dc.onopen = () => {
-      state = "connected";
+      setState("connected");
     };
 
     dc.onmessage = (e: MessageEvent) => {
@@ -332,7 +353,7 @@ export function createPeer(config: RtcConfig = {}): {
     };
 
     dc.onclose = () => {
-      state = "closed";
+      setState("closed");
       if (transport.onClose) transport.onClose();
     };
   }
@@ -361,7 +382,7 @@ export function createPeer(config: RtcConfig = {}): {
         })
         .catch((err) => {
           console.warn("Minimotor.Net: creating WebRTC offer failed", err);
-          state = "closed";
+          setState("closed");
           if (transport.onClose) transport.onClose();
         });
     },
@@ -506,6 +527,96 @@ export function createInterpolator<T>(opts: InterpolatorOptions<T> = {}): Interp
     clear() {
       times.length = 0;
       states.length = 0;
+    },
+  };
+}
+
+// ---------- Remote-peer roster ----------
+// Multiplayer relays send a stream of per-peer state; every game then re-invents
+// the same bookkeeping: make an interpolator on first sight, stamp last-seen,
+// prune peers that went quiet, and detect joins. `createRoster` is that, once.
+
+export interface RosterOptions<T> {
+  /** Interpolation delay passed to each peer's interpolator (see
+   *  `createInterpolator`). */
+  delayMs?: number;
+  /** Drop a peer after this long without an update, in ms. Default 5000. */
+  timeoutMs?: number;
+  /** Custom blend for interpolation (angles, nested objects). */
+  lerp?: (a: T, b: T, t: number) => T;
+  /** Millisecond clock — injectable for tests. Default `performance.now`. */
+  now?: () => number;
+}
+
+export interface Roster<T> {
+  /** Feed a state update for peer `id` (creating its interpolator on first
+   *  sight and stamping last-seen). `{ isNew }` flags a just-joined peer. */
+  update(id: string, state: T, atMs?: number): { isNew: boolean };
+  /** Remove a peer explicitly (e.g. on a `bye`). True if it existed. */
+  remove(id: string): boolean;
+  /** Drop peers unseen for `timeoutMs`; returns the removed ids. Call each
+   *  step — it's the cleanup that's easy to forget or get wrong. */
+  prune(atMs?: number): string[];
+  /** Interpolated `[id, state]` for every peer that has a sample yet. */
+  sample(atMs?: number): Array<[string, T]>;
+  readonly ids: string[];
+  readonly size: number;
+  clear(): void;
+}
+
+/** Track a set of remote peers, each with its own snapshot interpolator. */
+export function createRoster<T>(options: RosterOptions<T> = {}): Roster<T> {
+  const timeout = options.timeoutMs ?? 5000;
+  const clock = options.now ?? (() => performance.now());
+  const peers = new Map<string, { interp: Interpolator<T>; lastSeen: number }>();
+  return {
+    update(id, state, atMs = clock()) {
+      let peer = peers.get(id);
+      const isNew = !peer;
+      if (!peer) {
+        peer = {
+          interp: createInterpolator<T>({
+            delayMs: options.delayMs,
+            lerp: options.lerp,
+            now: options.now,
+          }),
+          lastSeen: atMs,
+        };
+        peers.set(id, peer);
+      }
+      peer.lastSeen = atMs;
+      peer.interp.push(state, atMs);
+      return { isNew };
+    },
+    remove(id) {
+      return peers.delete(id);
+    },
+    prune(atMs = clock()) {
+      const dropped: string[] = [];
+      for (const [id, peer] of peers) {
+        if (atMs - peer.lastSeen > timeout) {
+          peers.delete(id);
+          dropped.push(id);
+        }
+      }
+      return dropped;
+    },
+    sample(atMs = clock()) {
+      const out: Array<[string, T]> = [];
+      for (const [id, peer] of peers) {
+        const s = peer.interp.sample(atMs);
+        if (s !== null) out.push([id, s]);
+      }
+      return out;
+    },
+    get ids() {
+      return [...peers.keys()];
+    },
+    get size() {
+      return peers.size;
+    },
+    clear() {
+      peers.clear();
     },
   };
 }
