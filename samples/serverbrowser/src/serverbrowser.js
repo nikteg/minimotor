@@ -123,7 +123,6 @@ const ROW_H = 30;
 // panel's 30px title strip hands out controls / headers / list / footer, the
 // list `fill`s the leftover height, and the header is a nested row whose NAME
 // column fills while the rest are fixed. No arithmetic, no flex spec.
-const SCROLL_W = 10;
 const FOOTER_H = 40;
 
 function layout() {
@@ -143,10 +142,7 @@ function layout() {
       L.players = cols.next(80);
       L.ping = cols.next(74);
     });
-    const list = body.fill(FOOTER_H + 8); // fill, reserving the footer + its gap
-    L.list = list;
-    L.rows = { x: list.x, y: list.y, w: list.w - SCROLL_W - 4, h: list.h };
-    L.scroll = { x: list.x + list.w - SCROLL_W, y: list.y, w: SCROLL_W, h: list.h };
+    L.list = body.fill(FOOTER_H + 8); // fill, reserving the footer + its gap
     const footer = body.next(undefined, FOOTER_H);
     // Let the footer occupy the column's bottom padding so the action row
     // visually anchors to the panel edge instead of floating above it.
@@ -247,25 +243,15 @@ Minimotor.Loop.run({
       });
     }
 
-    // ---- the list: clipped rows + scrollbar, filling the flexed space ----
-    const content = list.length * ROW_H;
-    scroll = UI.scrollbar({
-      x: L.scroll.x,
-      y: L.scroll.y,
-      h: L.scroll.h,
-      view: L.list.h,
-      content,
-      offset: scroll,
-      wheelArea: L.list,
-    });
-
-    UI.clip(L.rows, () => {
-      const first = Math.floor(scroll / ROW_H);
-      const last = Math.min(list.length - 1, Math.ceil((scroll + L.rows.h) / ROW_H));
-      for (let i = first; i <= last; i++) {
+    // ---- the list: UI.list owns the clip, row windowing, scrollbar and wheel,
+    // filling the flexed space. The row callback draws one server; columns stay
+    // anchored to the header's absolute x positions.
+    scroll = UI.list(
+      { ...L.list, rowH: ROW_H, count: list.length, offset: scroll, id: uiId("server-list") },
+      (i, rect) => {
         const s = list[i];
-        const ry = L.rows.y + i * ROW_H - scroll;
-        if (UI.listItem({ x: L.rows.x, y: ry, w: L.rows.w, h: ROW_H, selected: s === selected })) {
+        const ry = rect.y;
+        if (UI.listItem({ x: rect.x, y: ry, w: rect.w, h: ROW_H, selected: s === selected })) {
           selected = s; // an open popover blocks this automatically
         }
         UI.text(s.name, { x: L.name.x + 4, y: ry, w: L.name.w - 14, h: ROW_H });
@@ -278,17 +264,17 @@ Minimotor.Loop.run({
           color: s.players >= s.max ? "#ff6b6b" : "dim",
         });
         UI.text(`${s.ping}`, { x: L.ping.x, y: ry, h: ROW_H, color: pingColor(s.ping) });
-      }
-      if (list.length === 0) {
-        UI.text("no servers match the filters", {
-          x: L.rows.x,
-          y: L.rows.y + 24,
-          w: L.rows.w,
-          align: "center",
-          color: "dim",
-        });
-      }
-    });
+      },
+    );
+    if (list.length === 0) {
+      UI.text("no servers match the filters", {
+        x: L.list.x,
+        y: L.list.y + 24,
+        w: L.list.w,
+        align: "center",
+        color: "dim",
+      });
+    }
 
     // ---- footer: count, status, JOIN ----
     // The join status takes the counter's spot while it's showing.
