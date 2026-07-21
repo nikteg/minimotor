@@ -1,7 +1,7 @@
 // DUNGEON SCOUT: grid recipes in a tiny roguelike — a SEEDED layout (seedRng),
 // a distance-from-hero heatmap (distanceField), plus line-of-sight fog.
 import { Minimotor } from "minimotor";
-const { Goodies, Input, Loop, UI, Pointer } = Minimotor;
+const { Goodies, Gizmos, Input, Loop, UI, Pointer } = Minimotor;
 let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 Minimotor.Stage.onResize((next) => (vp = next));
 const actions = Input.actions({ up: ["ArrowUp", "KeyW"], down: ["ArrowDown", "KeyS"], left: ["ArrowLeft", "KeyA"], right: ["ArrowRight", "KeyD"] });
@@ -11,7 +11,7 @@ let seed = 1; // R advances the seed; the same seed always rebuilds the same map
 
 function generate() {
   // seedRng makes the layout reproducible — same seed, same dungeon.
-  const rng = Goodies.seedRng(seed);
+  const rng = Gizmos.seedRng(seed);
   map = Array.from({ length: ROWS }, (_r, y) => Array.from({ length: COLS }, (_c, x) => x === 0 || y === 0 || x === COLS - 1 || y === ROWS - 1 || Goodies.chance(0.2, rng) ? 1 : 0));
   hero = { x: 1, y: 1 }; exit = { x: COLS - 2, y: ROWS - 2 };
   map[hero.y][hero.x] = 0; map[exit.y][exit.x] = 0;

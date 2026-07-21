@@ -5,14 +5,14 @@ import * as Sfx from "../../shared/src/sfx.js";
 
 let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 Minimotor.Stage.onResize((next) => (vp = next));
-const { Loop, Pointer, Keys, Clock, Tween, Signals, Mathf, Goodies, Particles, UI } = Minimotor;
+const { Loop, Pointer, Keys, Clock, Tween, Signals, Mathf, Gizmos, Particles, UI } = Minimotor;
 
 const buds = [];
 const hud = { score: 0, health: 5, elapsed: 0, message: "LISTEN FOR THE CHIME", messageAlpha: 1, pulse: 0 };
 // A decaying combo (keep harvesting within the window or the streak drops) and
 // a hit-flash for the "garden went quiet" damage blink.
-const combo = Goodies.combo({ windowMs: 3200 });
-const damage = Goodies.flash(320);
+const combo = Gizmos.combo({ windowMs: 3200 });
+const damage = Gizmos.flash(320);
 let spawnCount = 0, state = "play";
 function resetRun() {
   buds.length = 0; hud.score = 0; combo.reset(); hud.health = 5; hud.elapsed = 0; hud.message = "THE GARDEN AWAKENS"; hud.messageAlpha = 1; state = "play"; spawnBud();

@@ -10,11 +10,9 @@ import {
   gridNeighbors,
   leadTarget,
   lineOfSight,
-  checkpointRoute,
   ringFormation,
   rollDice,
   scoreRank,
-  shuffleBag,
   timingGrade,
   transferStack,
   waveScale,
@@ -70,13 +68,6 @@ describe("Goodies loot and cards", () => {
     expect(weightedPick([{ value: "x", weight: 0 }], () => 0)).toBeUndefined();
   });
 
-  it("draws every shuffle-bag item before refilling", () => {
-    const bag = shuffleBag(["a", "b", "c"], () => 0);
-    expect(new Set([bag.next(), bag.next(), bag.next()])).toEqual(new Set(["a", "b", "c"]));
-    expect(bag.remaining).toBe(0);
-    expect(bag.next()).toBeDefined();
-    expect(bag.remaining).toBe(2);
-  });
 });
 
 describe("Goodies grids", () => {
@@ -122,18 +113,6 @@ describe("Goodies rhythm and racing", () => {
     expect(timingGrade(200)).toBe("miss");
   });
 
-  it("tracks ordered checkpoints and completed laps", () => {
-    const route = checkpointRoute(3);
-    expect(route.visit(1)).toBe(false);
-    expect(route.visit(0)).toBe(true);
-    expect(route.visit(1)).toBe(true);
-    expect(route.visit(2)).toBe(true);
-    expect(route.lap).toBe(1);
-    expect(route.next).toBe(0);
-    route.reset();
-    expect(route.lap).toBe(0);
-    expect(() => checkpointRoute(0)).toThrow(RangeError);
-  });
 });
 
 describe("Goodies RPG and inventory", () => {

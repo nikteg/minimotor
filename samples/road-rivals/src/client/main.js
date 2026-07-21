@@ -32,7 +32,7 @@ const {
   UI,
   Camera,
   Collision,
-  Goodies,
+  Gizmos,
   Transitions,
   ECS,
 } = Minimotor;
@@ -48,7 +48,7 @@ const spawn =
     ? { x: roadsX[0], y: roadsY[0] }
     : { x: roadsX[roadsX.length - 1], y: roadsY[roadsY.length - 1] };
 
-const playerFlash = Goodies.flash(150);
+const playerFlash = Gizmos.flash(150);
 const player = {
   x: spawn.x,
   y: spawn.y,
@@ -72,7 +72,7 @@ const cars = fleetPoints(clientNo).map((point, index) => ({
   health: 100,
   respawn: 0,
   type: point.type,
-  flash: Goodies.flash(180),
+  flash: Gizmos.flash(180),
   body: null,
 }));
 let car = cars[0];
@@ -246,7 +246,7 @@ transport.onMessage = (bytes) => {
           vy: 0,
           health: state.health,
           dead: state.dead ? 1 : 0,
-          flash: Goodies.flash(130),
+          flash: Gizmos.flash(130),
           interp: Net.createInterpolator({ delayMs: 100 }),
         };
         botById.set(state.id, bot);
@@ -350,7 +350,7 @@ transport.onMessage = (bytes) => {
   if (!remote) {
     remote = {
       color: msg.color,
-      carFlash: Goodies.flash(180),
+      carFlash: Gizmos.flash(180),
       lastSeen: performance.now(),
       life: msg.life,
       interp: Net.createInterpolator({ delayMs: 100, lerp: blendState }),

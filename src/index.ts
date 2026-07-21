@@ -22,20 +22,21 @@ import { Clock, Tween } from "./clock.js";
 import { Signals } from "./signals.js";
 import { Assets } from "./assets.js";
 import * as ECS from "./ecs/index.js";
-import * as Anim from "./anim.js";
+import * as Anim from "./anim/index.js";
 import * as Fsm from "./fsm.js";
 import * as Timers from "./timers.js";
 import * as Audio from "./audio/index.js";
 import * as Mathf from "./mathf.js";
-import * as Input from "./input.js";
+import * as Input from "./input/index.js";
 import * as Storage from "./storage.js";
 import * as Physics from "./physics.js";
 import * as Sprites from "./sprites.js";
 import * as Net from "./net/index.js";
 import * as Perf from "./perf/index.js";
-import * as Camera from "./camera.js";
+import * as Camera from "./camera/index.js";
 import * as Game from "./game.js";
 import * as Goodies from "./goodies/index.js";
+import * as Gizmos from "./gizmos/index.js";
 import * as Fullscreen from "./fullscreen.js";
 import * as Text from "./text.js";
 import * as Tiles from "./tiles.js";
@@ -59,6 +60,7 @@ export {
   Camera,
   Game,
   Goodies,
+  Gizmos,
   Fullscreen,
   Text,
   Tiles,
@@ -109,9 +111,9 @@ export type {
   Motion,
   AnimateOptions,
   Parallel,
-} from "./anim.js";
+} from "./anim/index.js";
 export type { Sweep, Contact, BounceFaces } from "./collision.js";
-export type { ShakeState } from "./camera.js";
+export type { ShakeState } from "./camera/index.js";
 export type { ParticleSystem, BurstOptions, Range } from "./particles.js";
 export type {
   PerfStats,
@@ -122,7 +124,7 @@ export type {
   PerfOptions,
   Sparkline,
 } from "./perf/index.js";
-export type { GamepadState } from "./input.js";
+export type { GamepadState } from "./input/index.js";
 export type { State, AnimBridge, FsmOptions, Machine } from "./fsm.js";
 export type { Window, Buffer, Cooldown, JumpGate, JumpGateOptions } from "./timers.js";
 export type { TileMap, TilesConfig, MoveOptions, MoveResult, MoveDir } from "./tiles.js";
@@ -145,25 +147,31 @@ export type { PhysicsBody } from "./physics.js";
 export type { SpriteCanvas, AtlasOptions } from "./sprites.js";
 export type {
   Weighted,
-  ShuffleBag,
   GridPoint,
   GridNeighborOptions,
   LeadTarget,
   TimingGrade,
-  CheckpointRoute,
   DamageRoll,
   ItemStack,
   WaveScale,
   DayPhase,
   DistanceField,
+  Beat,
+} from "./goodies/index.js";
+export type {
+  ShuffleBag,
+  CheckpointRoute,
   Combo,
   Charges,
   Flash,
   Patrol,
   Trail,
-  Beat,
   UndoStack,
-} from "./goodies/index.js";
+  Car,
+  CarConfig,
+  DriveInput,
+  DrivableBody,
+} from "./gizmos/index.js";
 export type {
   Transport,
   WsConfig,
@@ -260,6 +268,7 @@ export const Minimotor = {
   Camera,
   Game,
   Goodies,
+  Gizmos,
   Fullscreen,
   Text,
   Tiles,

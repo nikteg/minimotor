@@ -73,6 +73,24 @@
         margin-top: 10px;
         line-height: 1.5;
       }
+      .section-title {
+        max-width: 880px;
+        width: 100%;
+        padding: 40px 20px 0;
+      }
+      .section-title h2 {
+        font-size: 1.5rem;
+        border-bottom: 1px solid #333;
+        padding-bottom: 8px;
+      }
+      .section-title p {
+        color: #888;
+        font-size: 0.9rem;
+        margin-top: 8px;
+      }
+      .grid {
+        padding-top: 20px;
+      }
     </style>
   </head>
   <body>
@@ -80,6 +98,10 @@
       <h1>Minimotor Samples</h1>
       <p>Small games built with the Minimotor engine</p>
     </header>
+    <div class="section-title">
+      <h2>Fundamentals</h2>
+      <p>Focused demos — each one puts a single Minimotor module or primitive front and center.</p>
+    </div>
     <div class="grid">
       <a class="card" href="./minimal/">
         <h2>Minimal</h2>
@@ -112,28 +134,12 @@
         <span class="tag">Loop</span><span class="tag">Storage</span><span class="tag">Audio</span>
         <p>Ball bounces off walls. Each wall hit earns a point. Best score saved with Storage.</p>
       </a>
-      <a class="card" href="./breakout/">
-        <h2>Breakout</h2>
-        <span class="tag">Scenes</span><span class="tag">ECS</span><span class="tag">Collision</span><span class="tag">Audio</span>
-        <p>
-          Paddle + ball + destructible blocks. Blocks are ECS entities (queried for collision +
-          render); Scenes drive play and a pushed game-over overlay.
-        </p>
-      </a>
       <a class="card" href="./snake/">
         <h2>Snake</h2>
         <span class="tag">Storage</span><span class="tag">Audio</span><span class="tag">Goodies</span><span class="tag">UI</span>
         <p>
           Classic grid-based snake with growing tail. Collect food, avoid self-collision. Arrow or
           WASD.
-        </p>
-      </a>
-      <a class="card" href="./platformer/">
-        <h2>Platformer</h2>
-        <span class="tag">Timers</span><span class="tag">Audio</span><span class="tag">Storage</span><span class="tag">UI</span>
-        <p>
-          Mario-style side-scroller. Platforms, coins, goomba-like enemies you can stomp, flag goal,
-          parallax sky.
         </p>
       </a>
       <a class="card" href="./particles/">
@@ -193,23 +199,6 @@
           and watch fast movers tunnel straight through the naive one.
         </p>
       </a>
-      <a class="card" href="./netgame/">
-        <h2>Multiplayer Blobs</h2>
-        <span class="tag">Net.connect</span><span class="tag">Interpolator</span
-        ><span class="tag">heartbeat</span>
-        <p>
-          A real WebSocket game: every open tab is a player, relayed by the dev server. Sends at
-          only 20 Hz — remote players glide anyway thanks to snapshot interpolation.
-        </p>
-      </a>
-      <a class="card" href="./road-rivals/">
-        <h2>Road Rivals</h2>
-        <span class="tag">Net</span><span class="tag">Physics2D</span><span class="tag">ECS</span><span class="tag">Interpolator</span>
-        <p>
-          Two live clients in one page. Fight on foot, enter or exit your car, drift with a dynamic
-          bicycle model, and see remote players smoothed through snapshot interpolation.
-        </p>
-      </a>
       <a class="card" href="./netpeer/">
         <h2>P2P Data Channel</h2>
         <span class="tag">Net</span><span class="tag">WebRTC</span>
@@ -248,6 +237,37 @@
         <p>
           Load a JSON map and image manifest, collect every moon key, then reach the unlocked gate
           with a clean animated astronaut.
+        </p>
+      </a>
+    </div>
+    <div class="section-title">
+      <h2>Showcase</h2>
+      <p>Complete little games that compose many modules together into a full playable loop.</p>
+    </div>
+    <div class="grid">
+      <a class="card" href="./breakout/">
+        <h2>Breakout</h2>
+        <span class="tag">Scenes</span><span class="tag">ECS</span><span class="tag">Collision</span><span class="tag">Audio</span>
+        <p>
+          Paddle + ball + destructible blocks. Blocks are ECS entities (queried for collision +
+          render); Scenes drive play and a pushed game-over overlay.
+        </p>
+      </a>
+      <a class="card" href="./netgame/">
+        <h2>Multiplayer Blobs</h2>
+        <span class="tag">Net.connect</span><span class="tag">Interpolator</span
+        ><span class="tag">heartbeat</span>
+        <p>
+          A real WebSocket game: every open tab is a player, relayed by the dev server. Sends at
+          only 20 Hz — remote players glide anyway thanks to snapshot interpolation.
+        </p>
+      </a>
+      <a class="card" href="./road-rivals/">
+        <h2>Road Rivals</h2>
+        <span class="tag">Net</span><span class="tag">Physics2D</span><span class="tag">ECS</span><span class="tag">Interpolator</span>
+        <p>
+          Two live clients in one page. Fight on foot, enter or exit your car, drift with a dynamic
+          bicycle model, and see remote players smoothed through snapshot interpolation.
         </p>
       </a>
       <a class="card" href="./pocket/">
@@ -295,10 +315,14 @@
         <span class="tag">Target leading</span><span class="tag">Waves</span><span class="tag">Particles</span>
         <p>An automated turret predicts moving targets through escalating radial enemy waves.</p>
       </a>
-      <a class="card" href="./beat-circuit/">
-        <h2>Beat Circuit</h2>
-        <span class="tag">Rhythm</span><span class="tag">Audio</span><span class="tag">Day cycle</span>
-        <p>Drive ordered checkpoints on the beat while the circuit cycles from dawn to night.</p>
+      <a class="card" href="./checkpoint-rally/">
+        <h2>Checkpoint Rally</h2>
+        <span class="tag">Physics2D</span><span class="tag">Gizmos.car</span><span class="tag">Audio.engineSound</span><span class="tag">Camera</span>
+        <p>
+          Drive a car around a long winding circuit, hitting numbered gates in order to complete
+          laps. A dead-zone camera follows the car through a world bigger than the screen, with a
+          corner minimap of the whole track and your best lap time.
+        </p>
       </a>
       <a class="card" href="./solitaire/">
         <h2>Solitaire</h2>

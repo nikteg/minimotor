@@ -4,7 +4,7 @@
 // ball trails and glows. It plays itself; watch it escalate.
 import { Minimotor } from "minimotor";
 
-const { Stage, Loop, Draw, UI, Audio, Particles, Camera, Goodies, Mathf } = Minimotor;
+const { Stage, Loop, Draw, UI, Audio, Particles, Camera, Gizmos, Mathf } = Minimotor;
 
 let vp = Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 Stage.onResize((next) => (vp = next)); // wall bounds read vp live
@@ -27,9 +27,9 @@ const partials = [
   { mul: 1, gain: 0.16, type: "sine" },
   { mul: 2, gain: 0.06, type: "triangle" },
 ];
-const trail = Goodies.trail(12); // bounded motion ring
+const trail = Gizmos.trail(12); // bounded motion ring
 let bounces = 0;
-const ballFlash = Goodies.flash(140); // white "hit" blink on the ball itself
+const ballFlash = Gizmos.flash(140); // white "hit" blink on the ball itself
 
 function bounceFx(x, y) {
   Camera.shake(3, 120);
@@ -121,7 +121,7 @@ Loop.run({
     ctx.fillStyle = "rgba(255,255,255,0.6)";
     ctx.beginPath(); ctx.arc(cx - r * 0.3, cy - r * 0.3, r * 0.28, 0, Math.PI * 2); ctx.fill();
 
-    // Hit flash (Goodies.flash): blink the ball toward white on each bounce.
+    // Hit flash (Gizmos.flash): blink the ball toward white on each bounce.
     if (ballFlash.value > 0) {
       ctx.globalAlpha = ballFlash.value;
       ctx.fillStyle = "#ffffff";

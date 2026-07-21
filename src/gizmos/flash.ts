@@ -5,7 +5,7 @@
 // the timing — the game decides how to show it: blend a fill toward white for
 // vector art, or draw a white silhouette over a sprite (`Sprites.tint`).
 
-import { animate } from "../anim.js";
+import { animate } from "../anim/index.js";
 
 export interface Flash {
   /** Trigger the flash (intensity jumps to 1). */
@@ -22,7 +22,7 @@ export interface Flash {
  *  `value` (1 → 0) as the flash strength. Cross-genre juice — enemies blinking
  *  when shot, the player on damage, a button on press. `ease` shapes the fade.
  *
- *    const flash = Minimotor.Goodies.flash(120);
+ *    const flash = Minimotor.Gizmos.flash(120);
  *    // on damage: flash.hit();   // each step: flash.tick(Loop.step);
  *    // vector art:  draw normally, then overlay white at `flash.value` alpha.
  *    // sprite art:  ctx.globalAlpha = flash.value;

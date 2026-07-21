@@ -2,20 +2,11 @@ import { describe, expect, it } from "vitest";
 import { approach, damp, lerpAngle, pingPong } from "../mathf.js";
 import { circleRect, separateCircles, bounceInBounds } from "../collision.js";
 import { letterboxView, formatClock, createScoreTracker } from "../game.js";
-import {
-  randFreeCell,
-  shuffle,
-  addToInventory,
-  beatClock,
-  nearest,
-  patrol,
-  trail,
-  undoStack,
-  seedRng,
-} from "../goodies/index.js";
+import { randFreeCell, shuffle, addToInventory, beatClock, nearest } from "../goodies/index.js";
+import { patrol, trail, undoStack, seedRng } from "../gizmos/index.js";
 import { grid } from "../ui/index.js";
 import { createRoster } from "../net/index.js";
-import { animate, sequence, parallel } from "../anim.js";
+import { animate, sequence, parallel } from "../anim/index.js";
 
 describe("Mathf.approach", () => {
   it("moves toward target without overshooting", () => {
@@ -193,7 +184,7 @@ describe("Goodies.nearest", () => {
   });
 });
 
-describe("Goodies.patrol", () => {
+describe("Gizmos.patrol", () => {
   it("bounces between bounds and flips facing", () => {
     const p = patrol(0, 10, { start: 8, dir: 1 });
     expect(p.tick(4)).toBe(10); // clamps at max
@@ -202,7 +193,7 @@ describe("Goodies.patrol", () => {
   });
 });
 
-describe("Goodies.trail", () => {
+describe("Gizmos.trail", () => {
   it("keeps the newest points up to maxLen", () => {
     const t = trail(2);
     t.push(1, 1);
@@ -296,7 +287,7 @@ describe("Net.createRoster", () => {
   });
 });
 
-describe("Goodies.undoStack", () => {
+describe("Gizmos.undoStack", () => {
   it("restores prior snapshots and respects the cap", () => {
     const u = undoStack<{ n: number }>({ limit: 2 });
     u.push({ n: 1 });

@@ -17,7 +17,7 @@
 
 import { Minimotor } from "minimotor";
 
-const { Assets, ECS, Fsm, Anim, Sprites, Timers, Particles, Camera, Audio, Storage, Mathf, Draw, Loop, Keys, UI, Goodies } =
+const { Assets, ECS, Fsm, Anim, Sprites, Timers, Particles, Camera, Audio, Storage, Mathf, Draw, Loop, Keys, UI, Gizmos } =
   Minimotor;
 
 let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
@@ -276,7 +276,7 @@ const player = {
 
 // Celeste-style single air dash: one charge, refilled instantly on the ground
 // or a crystal (never on a timer — refillMs is only there to satisfy the API).
-const dash = Goodies.charges({ max: 1, refillMs: 1 });
+const dash = Gizmos.charges({ max: 1, refillMs: 1 });
 
 const jumpGate = Timers.jumpGate({ coyoteMs: 100, bufferMs: 130 });
 const wallCoyote = Timers.window(90);

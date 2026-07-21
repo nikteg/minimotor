@@ -2,7 +2,7 @@
 // Demonstrates: Stage / Loop / Keys / Pointer / Draw, Scenes + Transitions,
 // UI immediate-mode widgets + drag/drop, Input.actions, Audio.Sfx, Storage,
 // Timers, Clock/Tween, Signals, Fsm, Text, Particles, Collision, Mathf,
-// Game.letterbox, Goodies.shuffleBag & gridFormation, Fullscreen.applyFullscreen,
+// Game.letterbox, Goodies.shuffle & gridFormation, Fullscreen.applyFullscreen,
 // Perf.plugin, Sprites.getSprite, and Anim.sheet for a win sparkle.
 import { Minimotor } from "minimotor";
 

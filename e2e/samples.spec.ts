@@ -49,15 +49,6 @@ test("snake sample loads and runs", async ({ page }) => {
   await expect(page.locator("canvas#game")).toBeVisible();
 });
 
-test("platformer sample loads and jumps", async ({ page }) => {
-  await page.goto("/platformer/");
-  await expect(page.locator("canvas#game")).toBeVisible();
-  await page.waitForTimeout(500);
-  await page.keyboard.press("Space");
-  await page.waitForTimeout(2000);
-  await expect(page.locator("canvas#game")).toBeVisible();
-});
-
 test("particles sample spawns on click", async ({ page }) => {
   await page.goto("/particles/");
   await expect(page.locator("canvas#game")).toBeVisible();
@@ -68,7 +59,7 @@ test("particles sample spawns on click", async ({ page }) => {
   await expect(canvas).toBeVisible();
 });
 
-for (const sample of ["guild-trader", "dungeon-scout", "lead-defender", "beat-circuit"]) {
+for (const sample of ["guild-trader", "dungeon-scout", "lead-defender", "checkpoint-rally"]) {
   test(`${sample} Goodies sample loads`, async ({ page }) => {
     await page.goto(`/${sample}/`);
     await expect(page.locator("canvas#game")).toBeVisible();

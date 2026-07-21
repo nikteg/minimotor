@@ -1,7 +1,7 @@
 // GUILD TRADER: RPG inventory drag/drop, stack merging, dialogue and loot recipes.
 import { Minimotor } from "minimotor";
 
-const { Goodies, Loop, UI, Pointer } = Minimotor;
+const { Goodies, Gizmos, Loop, UI, Pointer } = Minimotor;
 let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 Minimotor.Stage.onResize((next) => (vp = next));
 
@@ -16,7 +16,7 @@ const loot = [
   { value: items.bomb, weight: 3 },
   { value: items.rune, weight: 1 },
 ];
-const encounterBag = Goodies.shuffleBag(["SLIME", "BAT", "MIMIC", "WISP"]);
+const encounterBag = Gizmos.shuffleBag(["SLIME", "BAT", "MIMIC", "WISP"]);
 const slots = [
   { item: items.potion, count: 3, max: 5 },
   { item: items.bomb, count: 2, max: 3 },

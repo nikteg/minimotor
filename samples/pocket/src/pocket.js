@@ -7,7 +7,7 @@ import * as Sfx from "../../shared/src/sfx.js";
 Minimotor.Fullscreen.applyFullscreen();
 let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 Minimotor.Stage.onResize((next) => (vp = next));
-const { Loop, Input, Game, Goodies, Mathf, Particles, UI } = Minimotor;
+const { Loop, Input, Game, Goodies, Gizmos, Mathf, Particles, UI } = Minimotor;
 // The fixed 16:9 field is letterboxed (uniform scale + bars) at any window
 // size, so the vector art never distorts.
 const actions = Input.actions({
@@ -24,7 +24,7 @@ const best = Game.createScoreTracker("pocket-asteroids-best");
 const ship = { x: W / 2, y: H / 2, vx: 0, vy: 0, angle: -Math.PI / 2, cooldown: 0, invuln: 0 };
 // One hyperspace jump that recharges over 4s (a Goodies charge meter). fraction
 // drives the HUD bar; refill() tops it off on respawn.
-const hyper = Goodies.charges({ max: 1, refillMs: 4000 });
+const hyper = Gizmos.charges({ max: 1, refillMs: 4000 });
 const bullets = [], asteroids = [];
 const stars = Array.from({ length: 64 }, (_, i) => ({ x: 8 + (i * 71) % (W - 16), y: 8 + (i * 43) % (H - 16), r: i % 9 === 0 ? 1.2 : 0.7 }));
 let sessionScore = 0, lives = 3, level = 1, state = "title", elapsed = 0;

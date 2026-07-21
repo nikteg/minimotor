@@ -16,7 +16,7 @@
 //
 //   if (Minimotor.Assets.loading) UI.bar(x, y, w, h, Minimotor.Assets.progress);
 
-import { sheet as animSheet, type SheetConfig, type SheetImage } from "./anim.js";
+import { sheet as animSheet, type SheetConfig, type SheetImage } from "./anim/index.js";
 import { tint as tintSprite } from "./sprites.js";
 
 /** A manifest entry: a plain URL, or a `{ src }` spec that composes the loaded
