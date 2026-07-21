@@ -36,34 +36,31 @@ function addItem(item) {
   message = leftover > 0 ? "Inventory full." : `Received ${item.name}.`;
 }
 
-function drawInventory(ctx, contentW) {
-  const slotW = (contentW - 24) / 4;
-  for (let row = 0; row < 2; row++) {
-    UI.row({ h: 48, gap: 8 }, (layout) => {
-      for (let column = 0; column < 4; column++) {
-        const i = row * 4 + column;
-        const rect = layout.next(slotW, 48);
-        ctx.fillStyle = "#182536"; ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
-        ctx.strokeStyle = "#3a5568"; ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1);
-        const stack = slots[i];
-        if (stack) UI.dragSource({ id: `slot:${i}`, ...rect, payload: { index: i } });
-        const target = UI.dropTarget({ id: `slot:${i}`, ...rect });
-        if (target.canDrop) {
-          ctx.strokeStyle = "#4ecdc4"; ctx.lineWidth = 3; ctx.strokeRect(rect.x + 2, rect.y + 2, rect.w - 4, rect.h - 4);
-        }
-        if (target.dropped) {
-          const from = target.dropped.payload.index;
-          if (Goodies.transferStack(slots, from, i)) message = "Inventory reorganized.";
-        }
-        if (stack && UI.draggedItem()?.sourceId !== `slot:${i}`) {
-          const icon = Math.min(22, rect.h - 20);
-          ctx.fillStyle = stack.item.color; ctx.fillRect(rect.x + (rect.w - icon) / 2, rect.y + 5, icon, icon);
-          UI.text(ctx, stack.item.name, { x: rect.x + 3, y: rect.y + rect.h - 18, w: rect.w - 6, h: 14, size: 9, align: "center" });
-          UI.text(ctx, `×${stack.count}`, { x: rect.x + rect.w - 22, y: rect.y + 3, w: 18, h: 14, size: 9, align: "right" });
-        }
-      }
-    });
-  }
+// A 2×4 slot grid. UI.grid hands each cell its rect, so the slot code drops
+// the nested row/column loops and the slot-width arithmetic. `region` is a
+// full-width block reserved in the group's column (two 48px rows + an 8px gap).
+function drawInventory(ctx, layout) {
+  const region = layout.next(undefined, 104);
+  UI.grid({ ...region, cols: 4, rows: 2, gap: 8 }, (rect, i) => {
+    ctx.fillStyle = "#182536"; ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    ctx.strokeStyle = "#3a5568"; ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1);
+    const stack = slots[i];
+    if (stack) UI.dragSource({ id: `slot:${i}`, ...rect, payload: { index: i } });
+    const target = UI.dropTarget({ id: `slot:${i}`, ...rect });
+    if (target.canDrop) {
+      ctx.strokeStyle = "#4ecdc4"; ctx.lineWidth = 3; ctx.strokeRect(rect.x + 2, rect.y + 2, rect.w - 4, rect.h - 4);
+    }
+    if (target.dropped) {
+      const from = target.dropped.payload.index;
+      if (Goodies.transferStack(slots, from, i)) message = "Inventory reorganized.";
+    }
+    if (stack && UI.draggedItem()?.sourceId !== `slot:${i}`) {
+      const icon = Math.min(22, rect.h - 20);
+      ctx.fillStyle = stack.item.color; ctx.fillRect(rect.x + (rect.w - icon) / 2, rect.y + 5, icon, icon);
+      UI.text(ctx, stack.item.name, { x: rect.x + 3, y: rect.y + rect.h - 18, w: rect.w - 6, h: 14, size: 9, align: "center" });
+      UI.text(ctx, `×${stack.count}`, { x: rect.x + rect.w - 22, y: rect.y + 3, w: 18, h: 14, size: 9, align: "right" });
+    }
+  });
 }
 
 Loop.run({
@@ -81,8 +78,8 @@ Loop.run({
       });
 
       UI.row({ h: 166, gap: 12 }, () => {
-        UI.group({ w: half, h: 166, title: "ADVENTURER INVENTORY", gap: 8 }, () => {
-          drawInventory(ctx, half - 16);
+        UI.group({ w: half, h: 166, title: "ADVENTURER INVENTORY", gap: 8 }, (body) => {
+          drawInventory(ctx, body);
         });
         UI.group({ w: half, h: 166, title: "MARA'S COUNTER", gap: 7 }, () => {
           UI.row({ h: 32, gap: 10 }, (actions) => {
