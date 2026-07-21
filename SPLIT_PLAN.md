@@ -152,7 +152,7 @@ cross ~400 lines.
 
 ## More server primitives to add (`src/net/server/`)
 
-- `presence` — a server-side player-state registry with `touch(id, state)` +
+- ~~`presence`~~ (DONE — createPresence) — a server-side player-state registry with `touch(id, state)` +
   stale-prune (the `roadPlayers` Map + `seenAt` pattern road-rivals still
   hand-rolls), mirroring the client `Net.createRoster`.
 - `rooms`/matchmaking — multiple named rooms on one server, join-by-code.
