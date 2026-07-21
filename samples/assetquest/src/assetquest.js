@@ -5,8 +5,9 @@ import * as Sfx from "../../shared/src/sfx.js";
 
 let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 Minimotor.Stage.onResize((next) => (vp = next));
-const { Assets, Anim, Text, Keys, Loop, Particles, UI } = Minimotor;
+const { Assets, Anim, Text, Keys, Loop, Particles, UI, Collision } = Minimotor;
 let progress = 0, ready = false, level, hero, seal, relics = [], score = 0, state = "play", elapsed = 0;
+const BODY_R = 15; // the hero's collision radius, shared by wall probing and pickups
 const player = { x: 96, y: 128, speed: 145 };
 const gate = { x: 12 * 48 + 24, y: 48 + 24 };
 
@@ -53,7 +54,7 @@ function solid(x, y) {
   const tile = level?.tiles?.[ty]?.[tx];
   return tile == null || tile === 1;
 }
-function circleClear(x, y, radius = 15) {
+function circleClear(x, y, radius = BODY_R) {
   const points = [[-radius, 0], [radius, 0], [0, -radius], [0, radius], [-radius * .7, -radius * .7], [radius * .7, -radius * .7], [-radius * .7, radius * .7], [radius * .7, radius * .7]];
   return points.every(([px, py]) => !solid(x + px, y + py));
 }
@@ -80,11 +81,11 @@ Loop.run({
     if (Keys.down("ArrowRight") || Keys.down("KeyD")) move(player.speed * dt, 0);
     if (Keys.down("ArrowUp") || Keys.down("KeyW")) move(0, -player.speed * dt);
     if (Keys.down("ArrowDown") || Keys.down("KeyS")) move(0, player.speed * dt);
-    for (const r of relics) if (!r.got && Math.hypot(player.x - r.x, player.y - r.y) < 24) {
+    for (const r of relics) if (!r.got && Collision.circleHit(player.x, player.y, BODY_R, r.x, r.y, 9)) {
       r.got = true; score++; Sfx.pickup(); UI.float("+1 KEY", r.x, r.y - 22, { color: "#ffe066" });
       Particles.burst(r.x, r.y, { count: 18, colors: ["#ffe066", "#fff"], speed: [30, 150], life: [300, 650], gravity: 80 });
     }
-    if (score === relics.length && Math.hypot(player.x - gate.x, player.y - gate.y) < 28) {
+    if (score === relics.length && Collision.circleHit(player.x, player.y, BODY_R, gate.x, gate.y, 13)) {
       state = "won"; Sfx.win();
       Particles.burst(gate.x, gate.y, { count: 45, colors: ["#64f0c8", "#ffe066", "#fff"], speed: [40, 220], life: [500, 1200], gravity: 60 });
     }
