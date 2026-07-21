@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { sheet, states } from "./anim.js";
+import { sheet, states } from "../anim.js";
 
 // A sheet 4 cols × 2 rows of 32×32 cells.
 const img = { width: 128, height: 64 } as HTMLImageElement;

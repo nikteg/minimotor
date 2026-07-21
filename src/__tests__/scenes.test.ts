@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { createSceneManager, type Scene } from "./scenes.js";
+import { createSceneManager, type Scene } from "../scenes.js";
 
 function spyScene(log: string[], name: string): Scene {
   return {
@@ -145,12 +145,12 @@ describe("Scenes default facade", () => {
     // Fresh module registry: import the facade and drive it through a fake Loop.
     vi.resetModules();
     const runSpy = vi.fn();
-    vi.doMock("./engine.js", () => ({
+    vi.doMock("../engine.js", () => ({
       Loop: { run: runSpy, onStep: vi.fn(), step: 1000 / 60 },
       Draw: { ctx: {} },
       Stage: { viewport: { w: 800, h: 600 } },
     }));
-    const { Scenes } = await import("./scenes.js");
+    const { Scenes } = await import("../scenes.js");
 
     const log: string[] = [];
     Scenes.define("play", spyScene(log, "play"));
@@ -165,19 +165,19 @@ describe("Scenes default facade", () => {
     // stack is [play, play] after go+push → top updates, both draw
     expect(log).toEqual(["play:update", "play:draw", "play:draw"]);
 
-    vi.doUnmock("./engine.js");
+    vi.doUnmock("../engine.js");
   });
 
   it("go with a transition swaps behind full coverage", async () => {
     vi.resetModules();
     const runSpy = vi.fn();
     const onStepSpy = vi.fn();
-    vi.doMock("./engine.js", () => ({
+    vi.doMock("../engine.js", () => ({
       Loop: { run: runSpy, onStep: onStepSpy, step: 100 },
       Draw: { ctx: {} },
       Stage: { viewport: { w: 800, h: 600 } },
     }));
-    const { Scenes } = await import("./scenes.js");
+    const { Scenes } = await import("../scenes.js");
 
     const log: string[] = [];
     Scenes.define("a", spyScene(log, "a"));
@@ -203,6 +203,6 @@ describe("Scenes default facade", () => {
     draw();
     expect(render).not.toHaveBeenCalled();
 
-    vi.doUnmock("./engine.js");
+    vi.doUnmock("../engine.js");
   });
 });

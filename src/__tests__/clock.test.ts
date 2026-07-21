@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
-import { createClock } from "./clock.js";
-import { easeOut, linear } from "./mathf.js";
+import { createClock } from "../clock.js";
+import { easeOut, linear } from "../mathf.js";
 
 describe("Clock timers", () => {
   it("after fires once at/after the delay, then is gone", () => {

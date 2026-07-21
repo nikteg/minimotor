@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { fade, wipe, run } from "./transitions.js";
+import { fade, wipe, run } from "../transitions.js";
 
 function mockCtx() {
   return {

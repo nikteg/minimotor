@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { GRAVITY, JUMP_FORCE, applyGravity, jump, type PhysicsBody } from "./physics.js";
+import { GRAVITY, JUMP_FORCE, applyGravity, jump, type PhysicsBody } from "../physics.js";
 
 function body(p: Partial<PhysicsBody> = {}): PhysicsBody {
   return { x: 0, y: 0, w: 20, h: 20, vy: 0, onGround: true, rotation: 0, ...p };

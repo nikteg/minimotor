@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { charges, combo, distanceField, flash, seedRng, shuffleBag } from "./goodies.js";
+import { charges, combo, distanceField, flash, seedRng, shuffleBag } from "../index.js";
 
 describe("Goodies.seedRng", () => {
   it("is deterministic per seed and stays in [0, 1)", () => {

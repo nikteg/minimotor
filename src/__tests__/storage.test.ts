@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { load, save } from "./storage.js";
+import { load, save } from "../storage.js";
 
 const store = new Map<string, string>();
 

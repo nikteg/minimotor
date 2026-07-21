@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { connect, createPeer, createInterpolator, type Signal } from "./net.js";
+import { connect, createPeer, createInterpolator, type Signal } from "../net.js";
 
 const flushMicrotasks = () => new Promise((r) => setTimeout(r, 0));
 

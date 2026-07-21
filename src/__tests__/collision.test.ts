@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { rectsOverlap, circleHit, crossedDown, sweptAABB } from "./collision.js";
+import { rectsOverlap, circleHit, crossedDown, sweptAABB } from "../collision.js";
 
 describe("rectsOverlap", () => {
   it("overlapping", () =>

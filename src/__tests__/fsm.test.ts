@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { create } from "./fsm.js";
+import { create } from "../fsm.js";
 
 describe("Fsm", () => {
   it("starts in the initial state and fires its enter", () => {

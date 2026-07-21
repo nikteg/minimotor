@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buffer, cooldown, jumpGate, window } from "./timers.js";
+import { buffer, cooldown, jumpGate, window } from "../timers.js";
 
 describe("Timers.window (coyote/grace)", () => {
   it("is active for the duration after charge, then closes", () => {

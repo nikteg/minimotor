@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { createSignals } from "./signals.js";
+import { createSignals } from "../signals.js";
 
 describe("Signals", () => {
   it("delivers payloads to all listeners", () => {

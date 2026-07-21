@@ -35,7 +35,7 @@ import * as Net from "./net.js";
 import * as Perf from "./perf.js";
 import * as Camera from "./camera.js";
 import * as Game from "./game.js";
-import * as Goodies from "./goodies.js";
+import * as Goodies from "./goodies/index.js";
 import * as Fullscreen from "./fullscreen.js";
 import * as Text from "./text.js";
 import * as Tiles from "./tiles.js";
@@ -163,7 +163,7 @@ export type {
   Trail,
   Beat,
   UndoStack,
-} from "./goodies.js";
+} from "./goodies/index.js";
 export type {
   Transport,
   WsConfig,

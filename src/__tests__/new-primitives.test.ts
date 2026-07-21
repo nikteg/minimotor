@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { approach, damp, lerpAngle, pingPong } from "./mathf.js";
-import { circleRect, separateCircles, bounceInBounds } from "./collision.js";
-import { letterboxView, formatClock, createScoreTracker } from "./game.js";
+import { approach, damp, lerpAngle, pingPong } from "../mathf.js";
+import { circleRect, separateCircles, bounceInBounds } from "../collision.js";
+import { letterboxView, formatClock, createScoreTracker } from "../game.js";
 import {
   randFreeCell,
   shuffle,
@@ -12,10 +12,10 @@ import {
   trail,
   undoStack,
   seedRng,
-} from "./goodies.js";
-import { grid } from "./ui.js";
-import { createRoster } from "./net.js";
-import { animate, sequence, parallel } from "./anim.js";
+} from "../goodies/index.js";
+import { grid } from "../ui.js";
+import { createRoster } from "../net.js";
+import { animate, sequence, parallel } from "../anim.js";
 
 describe("Mathf.approach", () => {
   it("moves toward target without overshooting", () => {

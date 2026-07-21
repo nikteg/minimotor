@@ -19,12 +19,12 @@
 //   pacing     — checkpoints/laps, wave scaling, day cycle, charge meters
 //   flash      — hit "white flash" timing latch
 
-export * from "./goodies/wrapping.js";
-export * from "./goodies/random.js";
-export * from "./goodies/grid.js";
-export * from "./goodies/steering.js";
-export * from "./goodies/inventory.js";
-export * from "./goodies/scoring.js";
-export * from "./goodies/pacing.js";
-export * from "./goodies/flash.js";
-export * from "./goodies/history.js";
+export * from "./wrapping.js";
+export * from "./random.js";
+export * from "./grid.js";
+export * from "./steering.js";
+export * from "./inventory.js";
+export * from "./scoring.js";
+export * from "./pacing.js";
+export * from "./flash.js";
+export * from "./history.js";

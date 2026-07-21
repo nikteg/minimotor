@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createCamera, scrollColumns, createShake } from "./camera.js";
+import { createCamera, scrollColumns, createShake } from "../camera.js";
 
 describe("createCamera", () => {
   it("lerps toward the target and clamps to world bounds", () => {

@@ -14,7 +14,7 @@ import {
   randItem,
   distance,
   angleBetween,
-} from "./mathf.js";
+} from "../mathf.js";
 
 describe("Mathf", () => {
   it("lerp interpolates and extrapolates", () => {

@@ -9,7 +9,7 @@ import {
   Draw,
   type Game,
   type GameCallbacks,
-} from "./engine.js";
+} from "../engine.js";
 
 // jsdom canvas support + a controllable requestAnimationFrame.
 let rafCallback: ((t: number) => void) | null = null;

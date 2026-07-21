@@ -7,7 +7,7 @@ import {
   packAtlas,
   contentBounds,
   tint,
-} from "./sprites.js";
+} from "../sprites.js";
 
 beforeEach(() => {
   clearSpriteCache();

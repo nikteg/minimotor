@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { createParticles } from "./particles.js";
+import { createParticles } from "../particles.js";
 
 describe("createParticles", () => {
   it("emits `count` particles per burst", () => {

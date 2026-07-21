@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { grid } from "./tiles.js";
+import { grid } from "../tiles.js";
 
 // 4×3 level: border of 1s along the bottom + a floating block of 2.
 //   0 0 0 0

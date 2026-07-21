@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { createAssets } from "./assets.js";
+import { createAssets } from "../assets.js";
 
 // Wrap real jsdom images so `instanceof HTMLImageElement` still holds, but make
 // setting `src` resolve (or reject) the load asynchronously.
