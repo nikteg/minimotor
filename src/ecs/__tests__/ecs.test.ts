@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { component, world, Sprite, type Entity } from "../ecs.js";
+import { component, world, Sprite, type Entity } from "../index.js";
 
 const Position = component<{ x: number; y: number }>("Position");
 const Velocity = component<{ x: number; y: number }>("Velocity");

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { world as ecsWorld, Sprite } from "../ecs.js";
+import { world as ecsWorld, Sprite } from "../ecs/index.js";
 import { attach, Phys, world } from "../physics2d.js";
 
 const STEP = 1000 / 60;

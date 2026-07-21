@@ -13,7 +13,7 @@
 // you `go`/`push`, so game code never calls `Loop.run` when using scenes.
 
 import { Loop, Draw, Stage } from "./engine.js";
-import type { World } from "./ecs.js";
+import type { World } from "./ecs/index.js";
 import { run as runTransition, type Transition, type TransitionRun } from "./transitions.js";
 
 /** A game screen. Every hook is optional. `update` runs on the fixed timestep

@@ -21,7 +21,7 @@ import { Scenes } from "./scenes.js";
 import { Clock, Tween } from "./clock.js";
 import { Signals } from "./signals.js";
 import { Assets } from "./assets.js";
-import * as ECS from "./ecs.js";
+import * as ECS from "./ecs/index.js";
 import * as Anim from "./anim.js";
 import * as Fsm from "./fsm.js";
 import * as Timers from "./timers.js";
@@ -96,7 +96,7 @@ export type {
   RenderSystem,
   SpriteData,
   DrawSpritesOptions,
-} from "./ecs.js";
+} from "./ecs/index.js";
 export type { ClockManager, Cancel } from "./clock.js";
 export type { SignalBus } from "./signals.js";
 export type { AssetStore, AssetManifest, AssetSpec, ProgressFn } from "./assets.js";
