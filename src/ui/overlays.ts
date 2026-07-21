@@ -13,7 +13,7 @@ import {
 } from "./core.js";
 import { row } from "./layout.js";
 import { pointInRect } from "../collision.js";
-import { Stage } from "../engine.js";
+import { Stage } from "../engine/index.js";
 
 // ---------- Popover ----------
 

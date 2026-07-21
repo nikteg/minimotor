@@ -3,7 +3,7 @@
 // the keyboard usable (no focus steal), action mapping over `Keys`,
 // and gamepad polling with the same edge semantics.
 
-import { Keys, Loop } from "./engine.js";
+import { Keys, Loop } from "./engine/index.js";
 
 /** Binds a button element to an action with touch+click+mousedown handling.
  *  mousedown+preventDefault stops the button from grabbing focus

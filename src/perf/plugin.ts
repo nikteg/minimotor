@@ -1,4 +1,4 @@
-import type { EnginePlugin } from "../engine.js";
+import type { EnginePlugin } from "../engine/index.js";
 import { pointInRect } from "../collision.js";
 import { drawPerfHud } from "./hud.js";
 import { NetMeter, createNetMeter } from "./net-meter.js";

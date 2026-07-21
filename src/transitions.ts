@@ -10,7 +10,7 @@
 // ones are one object literal. The runner (`run`) is pure and fixed-step —
 // testable without an engine; the `Scenes` facade drives it for you.
 
-import type { Viewport } from "./engine.js";
+import type { Viewport } from "./engine/index.js";
 
 /** Draws the transition overlay. `t` is coverage 0..1 — 0 means the scene is
  *  fully visible, 1 fully covered. Called once per frame while active. */

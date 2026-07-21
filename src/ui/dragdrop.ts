@@ -1,6 +1,6 @@
 import { activeDrag, rawPointer, setActiveDrag, uiPointer, type ActiveDrag } from "./core.js";
 import { pointInRect } from "../collision.js";
-import { Loop } from "../engine.js";
+import { Loop } from "../engine/index.js";
 
 // ---------- Drag and drop ----------
 

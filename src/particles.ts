@@ -11,7 +11,7 @@
 // frame-rate independent). Velocities are px/second, gravity px/second², life
 // in ms.
 
-import { Loop } from "./engine.js";
+import { Loop } from "./engine/index.js";
 
 interface Particle {
   x: number;

@@ -7,7 +7,7 @@
 //   Minimotor.Clock.every(1000, spawnWave);        // repeating; returns a canceler
 //   Minimotor.Tween.to(text, { y: text.y - 30, alpha: 0 }, 450, Mathf.easeOut);
 
-import { Loop } from "./engine.js";
+import { Loop } from "./engine/index.js";
 import { linear } from "./mathf.js";
 
 type Ease = (t: number) => number;

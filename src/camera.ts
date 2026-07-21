@@ -2,7 +2,7 @@
 // Follows a target with lerp damping, clamped to world bounds.
 // Call `update` each frame, then use `x` / `y` as render offsets.
 
-import { Loop } from "./engine.js";
+import { Loop } from "./engine/index.js";
 
 export interface Camera {
   x: number;

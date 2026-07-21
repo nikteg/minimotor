@@ -4,7 +4,7 @@
 // game built via Stage.init). Services & helpers: Audio, Sprites, Storage, etc.
 // `createGame` is exported for isolated instances (tests / multiple games).
 
-import { createGame, Stage, Loop, Draw, Keys, Pointer, Mouse } from "./engine.js";
+import { createGame, Stage, Loop, Draw, Keys, Pointer, Mouse } from "./engine/index.js";
 import {
   rectsOverlap,
   circleHit,
@@ -85,7 +85,7 @@ export type {
   GameBuilder,
   GameOptions,
   StageOptions,
-} from "./engine.js";
+} from "./engine/index.js";
 export type { Scene, SceneManager } from "./scenes.js";
 export type {
   Component,

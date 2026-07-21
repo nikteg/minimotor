@@ -11,7 +11,7 @@
 //   // in update():
 //   if (map.solidAt(player.x, player.y + player.h)) land();
 
-import type { Rect } from "./engine.js";
+import type { Rect } from "./engine/index.js";
 
 type AtlasImage = CanvasImageSource & { width: number; height: number };
 

@@ -12,7 +12,7 @@
 // The default `Scenes` facade wires itself into the default Loop the first time
 // you `go`/`push`, so game code never calls `Loop.run` when using scenes.
 
-import { Loop, Draw, Stage } from "./engine.js";
+import { Loop, Draw, Stage } from "./engine/index.js";
 import type { World } from "./ecs/index.js";
 import { run as runTransition, type Transition, type TransitionRun } from "./transitions.js";
 

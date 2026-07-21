@@ -19,7 +19,7 @@
 // every widget at once; per-widget style options still override.
 
 import { pointInRect } from "../collision.js";
-import { Draw, Loop, Pointer, Stage } from "../engine.js";
+import { Draw, Loop, Pointer, Stage } from "../engine/index.js";
 // The select dropdown's overlay (drawSelectOverlay, below) renders through the
 // panel/button widgets. Call-time only, so this cycle with controls is safe.
 import { button, panel } from "./controls.js";

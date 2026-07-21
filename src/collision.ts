@@ -1,7 +1,7 @@
 // ---------- Collision helpers ----------
 // Pure, allocation-free overlap tests. No engine state — just geometry.
 
-import type { Rect } from "./engine.js";
+import type { Rect } from "./engine/index.js";
 
 /** Axis-aligned rectangle overlap (touching edges do NOT count as overlap). */
 export function rectsOverlap(a: Rect, b: Rect): boolean {
