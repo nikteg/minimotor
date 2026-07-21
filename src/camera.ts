@@ -3,6 +3,7 @@
 // Call `update` each frame, then use `x` / `y` as render offsets.
 
 import { Loop } from "./engine/index.js";
+import { clamp } from "./mathf.js";
 
 export interface Camera {
   x: number;
@@ -34,7 +35,8 @@ export interface CameraConfig {
  *  world instead of pinning it to the top-left corner. */
 function clampAxis(want: number, world: number, view: number): number {
   if (world < view) return (world - view) / 2;
-  return Math.max(0, Math.min(world - view, want));
+  // Reachable only when world ≥ view, so `world - view ≥ 0` — a plain clamp.
+  return clamp(want, 0, world - view);
 }
 
 export function createCamera(config: CameraConfig): Camera & {

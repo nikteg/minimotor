@@ -11,6 +11,7 @@
 // testable without an engine; the `Scenes` facade drives it for you.
 
 import type { Viewport } from "./engine/index.js";
+import { clamp } from "./mathf.js";
 
 /** Draws the transition overlay. `t` is coverage 0..1 — 0 means the scene is
  *  fully visible, 1 fully covered. Called once per frame while active. */
@@ -91,7 +92,7 @@ export function run(spec: Transition, swap: () => void): TransitionRun {
     },
     draw(ctx, vp) {
       const t = elapsed < half ? elapsed / half : 1 - (elapsed - half) / half;
-      spec.render(ctx, Math.max(0, Math.min(1, t)), vp);
+      spec.render(ctx, clamp(t, 0, 1), vp);
     },
     get done() {
       return elapsed >= spec.durationMs;

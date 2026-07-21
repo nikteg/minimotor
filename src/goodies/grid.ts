@@ -1,3 +1,5 @@
+import { clamp } from "../mathf.js";
+
 // ---------- Grid, puzzle and roguelike ----------
 // Tile-map reasoning: neighbours, connected regions, Bresenham lines, sight and
 // distance fields. `passable`/`blocks` predicates keep these map-agnostic — the
@@ -187,7 +189,7 @@ export function randFreeCell(
     for (let x = 0; x < cols; x++) {
       if (isOccupied(x, y)) continue;
       seen++;
-      if (Math.floor(Math.max(0, Math.min(1 - Number.EPSILON, rng())) * seen) === 0) {
+      if (Math.floor(clamp(rng(), 0, 1 - Number.EPSILON) * seen) === 0) {
         chosen = { x, y };
       }
     }

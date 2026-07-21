@@ -1,4 +1,5 @@
 import { pointInRect } from "../collision.js";
+import { clamp } from "../mathf.js";
 import { hoverCursor, theme, uiPointer, withCtx } from "./core.js";
 import { clip } from "./layout.js";
 
@@ -36,7 +37,7 @@ export function list(
   const scrollW = needsBar ? (opts.scrollW ?? 10) : 0;
   const listW = opts.w - (scrollW ? scrollW + 4 : 0);
   const max = Math.max(0, content - opts.h);
-  let offset = Math.max(0, Math.min(max, opts.offset));
+  let offset = clamp(opts.offset, 0, max);
 
   clip({ x: opts.x, y: opts.y, w: listW, h: opts.h }, () => {
     const first = Math.max(0, Math.floor(offset / step));
@@ -141,7 +142,7 @@ export function scrollbar(
 ): number {
   const [ctx, opts] = withCtx(a, b);
   const max = Math.max(0, opts.content - opts.view);
-  let offset = Math.max(0, Math.min(max, opts.offset));
+  let offset = clamp(opts.offset, 0, max);
   if (max <= 0) return 0; // everything fits — draw nothing
 
   const id = opts.id ?? `${opts.x}:${opts.y}`;
@@ -169,7 +170,7 @@ export function scrollbar(
     offset += p.wheel;
   }
 
-  offset = Math.max(0, Math.min(max, offset));
+  offset = clamp(offset, 0, max);
   thumbY = opts.y + (offset / max) * range;
 
   ctx.save();

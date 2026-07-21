@@ -3,6 +3,7 @@
 // looping day/night cycle, and a refilling charge meter for dashes/abilities.
 
 import { wrap } from "./wrapping.js";
+import { clamp } from "../mathf.js";
 
 export interface CheckpointRoute {
   readonly next: number;
@@ -104,7 +105,7 @@ export interface Charges {
 export function charges(options: { max: number; refillMs: number; start?: number }): Charges {
   const max = Math.max(0, Math.floor(options.max));
   const refillMs = Math.max(1, options.refillMs);
-  let count = Math.max(0, Math.min(max, Math.floor(options.start ?? max)));
+  let count = clamp(Math.floor(options.start ?? max), 0, max);
   let progress = 0;
   return {
     get count() {
@@ -141,7 +142,7 @@ export function charges(options: { max: number; refillMs: number; start?: number
       progress = 0;
     },
     add(n = 1) {
-      count = Math.max(0, Math.min(max, count + Math.floor(n)));
+      count = clamp(count + Math.floor(n), 0, max);
     },
   };
 }

@@ -21,6 +21,7 @@ import {
   widgetId,
   withCtx,
 } from "./core.js";
+import { clamp } from "../mathf.js";
 import { pointInRect } from "../collision.js";
 
 // ---------- Button ----------
@@ -495,16 +496,16 @@ export function slider(a: CanvasRenderingContext2D | SliderOptions, b?: SliderOp
     focusFromPointer(ctx, id);
   }
 
-  let value = Math.max(min, Math.min(max, opts.value));
+  let value = clamp(opts.value, min, max);
   const command = consumeKeyboardCommand(id);
   const keyboardStep = opts.step ?? (max - min) / 100;
   if (command === "ArrowRight" || command === "ArrowUp") value += keyboardStep;
   if (command === "ArrowLeft" || command === "ArrowDown") value -= keyboardStep;
-  value = Math.max(min, Math.min(max, value));
+  value = clamp(value, min, max);
   if (sliderDrag === id) {
     value = min + ((p.x - sx) / sw) * (max - min);
     if (opts.step) value = Math.round(value / opts.step) * opts.step;
-    value = Math.max(min, Math.min(max, value));
+    value = clamp(value, min, max);
   }
   const knobX = sx + ((value - min) / (max - min || 1)) * sw;
 
@@ -614,7 +615,7 @@ export function bar(
     typeof a === "number"
       ? [uiCtx(), a, b, c, d, e, (f2 as BarStyle) ?? {}]
       : [a, b, c, d, e, f2 as number, g ?? {}];
-  const f = Math.max(0, Math.min(1, frac));
+  const f = clamp(frac, 0, 1);
   const r = Math.min(theme.radius, h / 2);
   ctx.save();
   drawBox(ctx, x, y, w, h, { fill: style.bg ?? "rgba(255,255,255,0.15)", radius: r });

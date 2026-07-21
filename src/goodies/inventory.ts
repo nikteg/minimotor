@@ -1,3 +1,5 @@
+import { clamp } from "../mathf.js";
+
 // ---------- Inventory and crafting ----------
 // Moving items between slots the way players expect: fill an empty slot, merge
 // same-item stacks up to their cap, or swap two different stacks.
@@ -20,7 +22,7 @@ export function transferStack<T>(
   if (from === to) return true;
   const source = slots[from];
   if (!source || !slots.hasOwnProperty(to)) return false;
-  const moved = Math.max(0, Math.min(source.count, Math.floor(amount)));
+  const moved = clamp(Math.floor(amount), 0, source.count);
   if (moved === 0) return true;
   const target = slots[to];
   if (!target) {

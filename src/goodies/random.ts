@@ -1,3 +1,5 @@
+import { clamp } from "../mathf.js";
+
 // ---------- Randomness: seeds, chance, loot and dice ----------
 // Everything that draws on a random source. The recipes take an injectable
 // `rng: () => number` (default Math.random); pass `seedRng(n)` for seeded,
@@ -22,7 +24,7 @@ export function seedRng(seed: number): () => number {
 
 /** Bernoulli chance with injectable RNG. Probability is clamped to 0..1. */
 export function chance(probability: number, rng: () => number = Math.random): boolean {
-  return rng() < Math.max(0, Math.min(1, probability));
+  return rng() < clamp(probability, 0, 1);
 }
 
 export interface Weighted<T> {
@@ -40,7 +42,7 @@ export function weightedPick<T>(
   let total = 0;
   for (const entry of entries) if (entry.weight > 0) total += entry.weight;
   if (!(total > 0)) return undefined;
-  let cursor = Math.max(0, Math.min(1 - Number.EPSILON, rng())) * total;
+  let cursor = clamp(rng(), 0, 1 - Number.EPSILON) * total;
   for (const entry of entries) {
     if (entry.weight <= 0) continue;
     cursor -= entry.weight;
@@ -64,7 +66,7 @@ export function shuffleBag<T>(items: readonly T[], rng: () => number = Math.rand
   function reset(): void {
     bag = [...items];
     for (let i = bag.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.max(0, Math.min(1 - Number.EPSILON, rng())) * (i + 1));
+      const j = Math.floor(clamp(rng(), 0, 1 - Number.EPSILON) * (i + 1));
       [bag[i], bag[j]] = [bag[j], bag[i]];
     }
   }
@@ -88,7 +90,7 @@ export function shuffleBag<T>(items: readonly T[], rng: () => number = Math.rand
 export function shuffle<T>(items: readonly T[], rng: () => number = Math.random): T[] {
   const out = [...items];
   for (let i = out.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.max(0, Math.min(1 - Number.EPSILON, rng())) * (i + 1));
+    const j = Math.floor(clamp(rng(), 0, 1 - Number.EPSILON) * (i + 1));
     [out[i], out[j]] = [out[j], out[i]];
   }
   return out;
@@ -101,7 +103,7 @@ export function rollDice(count: number, sides: number, rng: () => number = Math.
   }
   let total = 0;
   for (let i = 0; i < count; i++)
-    total += 1 + Math.floor(Math.max(0, Math.min(1 - Number.EPSILON, rng())) * sides);
+    total += 1 + Math.floor(clamp(rng(), 0, 1 - Number.EPSILON) * sides);
   return total;
 }
 
