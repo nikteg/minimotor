@@ -7,3 +7,4 @@ export * from "./room.js";
 export * from "./tick.js";
 export * from "./signaling.js";
 export * from "./presence.js";
+export * from "./matchmaker.js";
