@@ -1,6 +1,6 @@
 import { ensureWired, inOverlayPass, overlayActive } from "./frame.js";
-import { Loop, Pointer } from "../engine/index.js";
-import { pointInRect } from "../collision.js";
+import { Loop, Pointer } from "../../engine/index.js";
+import { pointInRect } from "../../collision.js";
 
 export const DEAD_POINTER = {
   x: -1e9,

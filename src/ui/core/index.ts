@@ -18,11 +18,11 @@
 // Colors and fonts come from the active theme — `UI.setTheme({...})` restyles
 // every widget at once; per-widget style options still override.
 //
-// core.ts is a barrel over the kernel sub-modules; widgets and index.ts still
-// import from "./core.js" unchanged. Split: context / theme (+ draw helpers) /
-// stack (layout primitives) / identity / input (pointer + buttonState) / text /
-// frame (the coupled focus + overlay + editor + tooltip + float machinery, the
-// per-frame ensureWired housekeeping, and the frame-welded textInput/select).
+// This is the kernel barrel: widgets and index.ts import from "./core/index.js".
+// Split: context / theme (+ draw helpers) / stack (layout primitives) /
+// identity / input (pointer + buttonState) / text / frame (the coupled focus +
+// overlay + editor + tooltip + float machinery, the per-frame ensureWired
+// housekeeping, and the frame-welded textInput/select).
 
 export * from "./context.js";
 export * from "./theme.js";

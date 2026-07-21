@@ -44,7 +44,7 @@ export {
   textWidth,
   tooltip,
   _reset,
-} from "./core.js";
+} from "./core/index.js";
 export type {
   FloatManager,
   FloatOptions,
@@ -60,4 +60,4 @@ export type {
   TextInputResult,
   TextOptions,
   Theme,
-} from "./core.js";
+} from "./core/index.js";

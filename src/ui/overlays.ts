@@ -9,7 +9,7 @@ import {
   theme,
   uiFont,
   withCtx,
-} from "./core.js";
+} from "./core/index.js";
 import { pointInRect } from "../collision.js";
 import { Stage } from "../engine/index.js";
 

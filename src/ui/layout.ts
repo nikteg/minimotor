@@ -9,7 +9,7 @@ import {
   runContainer,
   theme,
   uiCtx,
-} from "./core.js";
+} from "./core/index.js";
 
 /** Lay children out left-to-right. Root call needs an explicit rect; nested
  *  calls reserve a slot from the enclosing container (full parent height, a

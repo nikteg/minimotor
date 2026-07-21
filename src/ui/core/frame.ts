@@ -3,10 +3,10 @@ import { idScopes, requiredWidgetId } from "./identity.js";
 import { hoverCursor, rawPointer, uiPointer } from "./input.js";
 import { Stack, place } from "./stack.js";
 import { centeredText, drawBox, roundRectPath, setTheme, theme, uiFont } from "./theme.js";
-import { button, panel } from "./controls.js";
-import { pointInRect } from "../collision.js";
-import { clamp } from "../mathf.js";
-import { Loop, Pointer, Stage } from "../engine/index.js";
+import { button, panel } from "../controls.js";
+import { pointInRect } from "../../collision.js";
+import { clamp } from "../../mathf.js";
+import { Loop, Pointer, Stage } from "../../engine/index.js";
 
 // ---------- Drag state (shared: widgets set it, the frame loop cancels it) ----
 export interface ActiveDrag {

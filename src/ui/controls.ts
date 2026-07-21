@@ -20,7 +20,7 @@ import {
   uiPointer,
   widgetId,
   withCtx,
-} from "./core.js";
+} from "./core/index.js";
 import { clamp } from "../mathf.js";
 import { pointInRect } from "../collision.js";
 
