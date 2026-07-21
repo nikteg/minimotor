@@ -1,29 +1,4 @@
-// ---------- Audio support ----------
-// WebAudio helpers: crash-safe sound effects and a scheduled music
-// player. The game provides melodies/song structure; the engine
-// manages AudioContext, timing, volume and pause on hidden tab.
-
-/** Builds one sound effect. Route nodes into `out` (the master SFX bus, so
- *  `Sfx.setOn`/`setVolume` apply); older builders that connect straight to
- *  `ctx.destination` keep working but bypass the bus. */
-export type SfxBuilder = (ctx: AudioContext, now: number, out: AudioNode) => void;
-
-let audioCtx: AudioContext | null = null;
-
-// Lazy init: AudioContext must not be created before a user gesture,
-// so always call via playSfx/Music.start (which runs on first action).
-export function ensureAudio(): AudioContext {
-  if (!audioCtx) {
-    const AC =
-      window.AudioContext ||
-      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    audioCtx = new AC();
-  }
-  if (audioCtx.state === "suspended") {
-    audioCtx.resume();
-  }
-  return audioCtx;
-}
+import { audioCtx, ensureAudio } from "./context.js";
 
 // ---------- Mixer ----------
 // A small routing mixer over Web Audio. Named channel BUSES feed a MASTER bus
@@ -45,8 +20,11 @@ function rampParam(param: AudioParam, target: number, rampMs: number): void {
 }
 
 let masterGain: GainNode | null = null;
+
 let masterVolume = 1;
+
 let masterOn = true;
+
 interface CompSpec {
   threshold: number;
   ratio: number;
@@ -54,8 +32,11 @@ interface CompSpec {
   release: number;
   knee: number;
 }
+
 let compSpec: CompSpec | null = null;
+
 let masterComp: DynamicsCompressorNode | null = null;
+
 const masterFilters: FilterState[] = [];
 
 // Route the master gain to the destination through any master filters and the
@@ -177,12 +158,14 @@ interface FilterState {
   gain: number;
   node: BiquadFilterNode | null;
 }
+
 interface SendState {
   level: number;
   node: GainNode | null;
 }
 
 const buses = new Map<string, Bus>();
+
 const effects = new Map<string, Effect>();
 
 function createBus(name: string): Bus {
@@ -531,344 +514,5 @@ export const Mixer = {
   setOn(on: boolean, rampMs = 20): void {
     masterOn = on;
     if (masterGain) rampParam(masterGain.gain, on ? masterVolume : 0, rampMs);
-  },
-};
-
-// ---------- SFX bus ----------
-// Sound effects route through the mixer's built-in "sfx" bus (mute/volume is a
-// single knob; add filters/sends via `Mixer.bus("sfx")`).
-
-// All sound effects should go through this: sound MUST NEVER crash the
-// game (e.g. when AudioContext is missing or blocked by the browser).
-// A thrown error here would otherwise bubble up through update() and
-// stop the entire game loop.
-export function playSfx(build: SfxBuilder): void {
-  try {
-    const ctx = ensureAudio();
-    build(ctx, ctx.currentTime, Mixer.bus("sfx").input);
-  } catch {
-    /* silent - rather no sound than a frozen game */
-  }
-}
-
-/** A parameter value: a constant, or a `{ from, to }` sweep over `time` seconds
- *  (default the note's release). `curve` defaults to exponential — the musical
- *  choice for pitch and filter cutoffs (both stay > 0). */
-export type ToneSweep = number | { from: number; to: number; time?: number; curve?: "lin" | "exp" };
-
-/** A one-shot synth voice: an oscillator (or noise) through an
- *  attack/hold/release envelope and an optional filter, routed to a mixer bus.
- *  This is the declarative alternative to hand-wiring nodes in a `SfxBuilder`. */
-export interface ToneOptions {
-  /** Oscillator shape, or `"noise"` for filtered noise (hats, hits, wind). */
-  wave?: OscillatorType | "noise";
-  /** Pitch in Hz — a number or a `{ from, to }` sweep. Ignored for `"noise"`. */
-  freq?: ToneSweep;
-  /** Extra detuned unison voices, in cents (e.g. `[-6, 6]`). Oscillators only. */
-  detune?: number[];
-  /** Peak level 0..1. Default 0.3. */
-  gain?: number;
-  /** Fade-in seconds. Default 0.005. */
-  attack?: number;
-  /** Seconds held at peak before the release. Default 0. */
-  hold?: number;
-  /** Fade-out seconds (the note's tail). Default 0.25. */
-  release?: number;
-  /** An optional filter the voice runs through; `freq` may sweep. */
-  filter?: { type: BiquadFilterType; freq?: ToneSweep; q?: number };
-  /** Absolute audio-clock start time. Default now. */
-  when?: number;
-  /** Start delay in seconds from now (ignored if `when` is given). Default 0. */
-  delay?: number;
-  /** Mixer bus to play on. Default `"sfx"`. */
-  bus?: string;
-}
-
-function scheduleSweep(
-  param: AudioParam,
-  spec: ToneSweep,
-  when: number,
-  fallbackTime: number,
-): void {
-  if (typeof spec === "number") {
-    param.setValueAtTime(spec, when);
-    return;
-  }
-  param.setValueAtTime(spec.from, when);
-  const at = when + (spec.time ?? fallbackTime);
-  if (spec.curve === "lin") param.linearRampToValueAtTime(spec.to, at);
-  else param.exponentialRampToValueAtTime(Math.max(0.0001, spec.to), at);
-}
-
-/** Play a described synth voice — no manual node graph. Crash-safe (a missing
- *  or blocked AudioContext is swallowed). Layer calls (with `delay`/`when`) for
- *  chords and arpeggios; drop to `playSfx` only when you need a custom graph.
- *
- *    Audio.tone({ wave: "square", freq: 880, release: 0.08 });        // blip
- *    Audio.tone({ wave: "triangle", freq: { from: 220, to: 660, time: 0.12 } }); // jump
- *    Audio.tone({ wave: "noise", release: 0.05, filter: { type: "highpass", freq: 8000 } }); // hat
- *    Audio.tone({ wave: "sine", freq: 440, detune: [-5, 5],
- *                 filter: { type: "lowpass", freq: { from: 4000, to: 800 } } }); */
-export function tone(opts: ToneOptions): void {
-  try {
-    const ctx = ensureAudio();
-    const when = opts.when ?? ctx.currentTime + (opts.delay ?? 0);
-    const wave = opts.wave ?? "sine";
-    const peak = Math.max(0.0001, opts.gain ?? 0.3);
-    const attack = Math.max(0, opts.attack ?? 0.005);
-    const hold = Math.max(0, opts.hold ?? 0);
-    const release = Math.max(0.01, opts.release ?? 0.25);
-    const holdEnd = when + attack + hold;
-    const end = holdEnd + release;
-
-    // Attack → (hold) → exponential release envelope.
-    const env = ctx.createGain();
-    env.gain.setValueAtTime(0.0001, when);
-    env.gain.linearRampToValueAtTime(peak, when + attack);
-    if (hold > 0) env.gain.setValueAtTime(peak, holdEnd);
-    env.gain.exponentialRampToValueAtTime(0.0001, end);
-    env.connect(Mixer.bus(opts.bus ?? "sfx").input);
-
-    // Sources feed the filter if present, else the envelope directly.
-    let sink: AudioNode = env;
-    if (opts.filter) {
-      const f = ctx.createBiquadFilter();
-      f.type = opts.filter.type;
-      if (opts.filter.q !== undefined) f.Q.value = opts.filter.q;
-      scheduleSweep(f.frequency, opts.filter.freq ?? 1000, when, release);
-      f.connect(env);
-      sink = f;
-    }
-
-    if (wave === "noise") {
-      const src = ctx.createBufferSource();
-      src.buffer = getNoiseBuffer();
-      src.loop = true;
-      src.connect(sink);
-      src.start(when);
-      src.stop(end + 0.02);
-    } else {
-      for (const cents of opts.detune ?? [0]) {
-        const osc = ctx.createOscillator();
-        osc.type = wave;
-        osc.detune.value = cents;
-        scheduleSweep(osc.frequency, opts.freq ?? 440, when, release);
-        osc.connect(sink);
-        osc.start(when);
-        osc.stop(end + 0.02);
-      }
-    }
-  } catch {
-    /* silent - rather no sound than a frozen game */
-  }
-}
-
-/** The SFX channel (the mixer's "sfx" bus): master mute/volume plus a few synth
- *  presets, so every game doesn't re-implement the same blip. All presets are
- *  crash-safe (playSfx). */
-export const Sfx = {
-  get on(): boolean {
-    return Mixer.bus("sfx").on;
-  },
-  setOn(on: boolean): void {
-    Mixer.bus("sfx").setOn(on);
-  },
-  /** Master SFX volume 0..1 (click-free ramp). */
-  setVolume(v: number): void {
-    Mixer.bus("sfx").setVolume(v);
-  },
-
-  /** Short square-wave blip — menu ticks, UI feedback. */
-  blip(freq = 880, dur = 0.08, vol = 0.25): void {
-    tone({ wave: "square", freq, gain: vol, release: dur });
-  },
-
-  /** Rising sweep — the classic jump. */
-  jump(): void {
-    tone({ wave: "triangle", freq: { from: 220, to: 660, time: 0.12 }, gain: 0.3, release: 0.18 });
-  },
-
-  /** Two-note sparkle — pickups, coins. */
-  coin(): void {
-    tone({ wave: "sine", freq: 988, gain: 0.25, release: 0.25 });
-    tone({ wave: "sine", freq: 1319, gain: 0.25, release: 0.25, delay: 0.08 });
-  },
-};
-
-// ---------- Music player ----------
-// Web Audio scheduling: the timer wakes us often, but notes are booked
-// in advance against audioCtx.currentTime. This keeps the melody steady
-// even if timers jitter, and it won't break if the interval gets throttled.
-
-export interface MusicConfig {
-  // Master volume for the music channel.
-  volume: number;
-  // Length of one schedule step in milliseconds (e.g. a sixteenth note).
-  stepMs: number;
-  // Called for each step; book notes via Music.note/kick/noiseHit.
-  // `when` is the audio clock time (seconds) when the step should play.
-  schedule: (step: number, when: number) => void;
-  // localStorage key to remember on/off between visits (optional).
-  storageKey?: string;
-}
-
-const SCHED_AHEAD_S = 0.2;
-const SCHED_INTERVAL_MS = 60;
-
-let musicBus: Bus | null = null;
-let musicStarted = false;
-let musicStep = 0;
-let musicTimer: ReturnType<typeof setInterval> | null = null;
-let musicNextNoteTime = 0;
-let musicConfig: MusicConfig | null = null;
-
-let noiseBuffer: AudioBuffer | null = null;
-
-function getNoiseBuffer(): AudioBuffer {
-  if (!noiseBuffer) {
-    const ctx = ensureAudio();
-    const len = Math.floor(ctx.sampleRate * 0.2);
-    noiseBuffer = ctx.createBuffer(1, len, ctx.sampleRate);
-    const data = noiseBuffer.getChannelData(0);
-    for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
-  }
-  return noiseBuffer;
-}
-
-function schedulerTick() {
-  if (!audioCtx || !musicBus || !musicConfig) return;
-  // If the clock has caught up (e.g. after suspend) - skip ahead instead
-  // of scheduling a storm of late notes.
-  if (musicNextNoteTime < audioCtx.currentTime) {
-    musicNextNoteTime = audioCtx.currentTime + 0.05;
-  }
-  while (musicNextNoteTime < audioCtx.currentTime + SCHED_AHEAD_S) {
-    musicConfig.schedule(musicStep, musicNextNoteTime);
-    musicStep++;
-    musicNextNoteTime += musicConfig.stepMs / 1000;
-  }
-}
-
-function stopScheduler() {
-  if (musicTimer !== null) {
-    clearInterval(musicTimer);
-    musicTimer = null;
-  }
-}
-
-function startScheduler() {
-  if (musicTimer !== null || !musicStarted) return;
-  musicNextNoteTime = 0; // reset so first tick starts "now"
-  schedulerTick();
-  musicTimer = setInterval(schedulerTick, SCHED_INTERVAL_MS);
-}
-
-// Pause scheduling when the tab is hidden: the game is stopped anyway
-// (rAF is paused) and background tabs throttle timers so the melody
-// would break up.
-document.addEventListener("visibilitychange", () => {
-  if (document.hidden) {
-    stopScheduler();
-  } else {
-    startScheduler();
-  }
-});
-
-export const Music = {
-  // On/off state is reflected in the music bus gain, so the scheduler can keep
-  // running even when muted - switching is instant and click-free.
-  /** Read-only in practice — call `setOn()` to change it, or the gain node and
-   *  the persisted preference silently go out of sync with this flag. */
-  on: true,
-
-  // Starts the music channel. Call on the first user gesture (browsers
-  // require a gesture to unlock audio). Safe to call multiple times.
-  start(config: MusicConfig): void {
-    if (musicStarted) return;
-    musicConfig = config;
-    if (config.storageKey) {
-      try {
-        Music.on = localStorage.getItem(config.storageKey) !== "off";
-      } catch {
-        /* private browsing etc. - default on */
-      }
-    }
-    // Sound must NEVER block the game - swallow all errors.
-    try {
-      ensureAudio();
-      // The music channel is just the mixer's "music" bus — volume/mute live on
-      // its gain, and games can add filters/sends via Mixer.bus("music").
-      musicBus = Mixer.bus("music");
-      musicBus.setVolume(config.volume, 0);
-      musicBus.setOn(Music.on, 0);
-      musicStarted = true;
-      startScheduler();
-    } catch {
-      musicStarted = true; // don't try again every frame
-    }
-  },
-
-  setOn(on: boolean): void {
-    Music.on = on;
-    if (musicConfig?.storageKey) {
-      try {
-        localStorage.setItem(musicConfig.storageKey, on ? "on" : "off");
-      } catch {
-        /* see above */
-      }
-    }
-    musicBus?.setOn(on, 50);
-  },
-
-  // Simple synth note with attack/release curve, routed through the music channel.
-  note(freq: number, dur: number, type: OscillatorType, vol: number, when: number): void {
-    if (!audioCtx || !musicBus) return;
-    const osc = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
-    osc.type = type;
-    osc.frequency.value = freq;
-    g.gain.setValueAtTime(0, when);
-    g.gain.linearRampToValueAtTime(vol, when + 0.015);
-    g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
-    osc.connect(g).connect(musicBus.input);
-    osc.start(when);
-    osc.stop(when + dur + 0.02);
-  },
-
-  // Kick drum: a descending sine tone.
-  kick(when: number): void {
-    if (!audioCtx || !musicBus) return;
-    const osc = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(150, when);
-    osc.frequency.exponentialRampToValueAtTime(45, when + 0.1);
-    g.gain.setValueAtTime(0.9, when);
-    g.gain.exponentialRampToValueAtTime(0.0001, when + 0.22);
-    osc.connect(g).connect(musicBus.input);
-    osc.start(when);
-    osc.stop(when + 0.25);
-  },
-
-  // Hi-hat/snare: filtered noise from a reusable noise buffer.
-  noiseHit(
-    when: number,
-    dur: number,
-    vol: number,
-    filterType: BiquadFilterType,
-    freq: number,
-  ): void {
-    if (!audioCtx || !musicBus) return;
-    const src = audioCtx.createBufferSource();
-    src.buffer = getNoiseBuffer();
-    const f = audioCtx.createBiquadFilter();
-    f.type = filterType;
-    f.frequency.value = freq;
-    const g = audioCtx.createGain();
-    g.gain.setValueAtTime(vol, when);
-    g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
-    src.connect(f).connect(g).connect(musicBus.input);
-    src.start(when);
-    src.stop(when + dur + 0.02);
   },
 };

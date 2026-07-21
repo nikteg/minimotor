@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { Mixer, Sfx, tone } from "../audio.js";
+import { Mixer, Sfx, tone } from "../index.js";
 
 // ---- Minimal Web Audio mock ----
 // Records every connect() so we can assert graph wiring; AudioParams remember

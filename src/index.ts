@@ -25,7 +25,7 @@ import * as ECS from "./ecs.js";
 import * as Anim from "./anim.js";
 import * as Fsm from "./fsm.js";
 import * as Timers from "./timers.js";
-import * as Audio from "./audio.js";
+import * as Audio from "./audio/index.js";
 import * as Mathf from "./mathf.js";
 import * as Input from "./input.js";
 import * as Storage from "./storage.js";
@@ -140,7 +140,7 @@ export type {
   DelayEffect,
   ToneOptions,
   ToneSweep,
-} from "./audio.js";
+} from "./audio/index.js";
 export type { PhysicsBody } from "./physics.js";
 export type { SpriteCanvas, AtlasOptions } from "./sprites.js";
 export type {
