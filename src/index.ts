@@ -142,7 +142,7 @@ export type {
   ToneSweep,
 } from "./audio.js";
 export type { PhysicsBody } from "./physics.js";
-export type { SpriteCanvas, SheetOptions } from "./sprites.js";
+export type { SpriteCanvas, AtlasOptions } from "./sprites.js";
 export type {
   Weighted,
   ShuffleBag,

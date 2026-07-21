@@ -125,60 +125,81 @@ export function clearSpriteCache(): void {
 // callback (procedural art) or by packing separate frame images — plus a helper
 // to measure a sprite's real opaque bounds (trim transparent padding).
 
-/** Options for `bakeSheet` / `composeSheet`. */
-export interface SheetOptions {
-  /** Grid columns; frames fill row-major. Default: all frames on one row. */
+/** Options for `atlas` / `packAtlas`. */
+export interface AtlasOptions {
+  /** Grid columns; cells fill row-major. Default: all cells on one row. */
   cols?: number;
+  /** Where each cell's draw origin sits. `"top-left"` (default) puts (0,0) at
+   *  the cell's top-left corner, matching how you draw everything else on a
+   *  canvas — and how tiles are laid out (hand the result to `Tiles.grid`'s
+   *  `atlas` option). `"center"` puts (0,0) at the cell centre — the cell spans
+   *  `[-fw/2, fw/2] × [-fh/2, fh/2]` — so rotating or scaling a procedural
+   *  animation frame in place stays symmetric. */
+  origin?: "top-left" | "center";
 }
 
-/** Bake `count` frames into one grid sprite-sheet canvas, ready to hand to
- *  `Anim.sheet(canvas, { fw, fh, cols })`. `draw(ctx, i)` renders frame `i`
- *  with the context saved/restored and translated to that cell's **centre**
- *  (so rotating/scaling procedural art is symmetric); the cell spans
- *  `[-fw/2, fw/2] × [-fh/2, fh/2]`. Frames fill left-to-right, top-to-bottom.
+/** Bake `count` cells into one grid atlas canvas — a texture atlas / sprite
+ *  sheet — so you never hand-roll `document.createElement` + `getContext`.
+ *  Hand the result to `Tiles.grid`'s `atlas` option, or to
+ *  `Anim.sheet(canvas, { fw, fh, cols })` for animation. `draw(ctx, i)` renders
+ *  cell `i` with the context saved/restored and translated to that cell
+ *  (top-left origin by default — see `AtlasOptions.origin`). Cells fill
+ *  left-to-right, top-to-bottom. The canvas is 1:1 (no DPR scaling):
+ *  `Tiles.grid`/`Anim.sheet` blit `fw × fh` per cell and handle their own
+ *  crisp compositing.
  *
- *    const sheet = Sprites.bakeSheet(40, 40, 16, (ctx, i) => {
+ *    // A tile atlas (default top-left origin):
+ *    const sheet = Sprites.atlas(24, 24, 3, (g, i) => {
+ *      g.fillStyle = ["#69db7c", "#7a5230", "#b0575a"][i];
+ *      g.fillRect(0, 0, 24, 24);
+ *    });
+ *    const map = Tiles.grid(level, { tw: 24, atlas: sheet });
+ *
+ *    // Rotatable animation frames (centre origin):
+ *    const spin = Sprites.atlas(40, 40, 16, (ctx, i) => {
  *      ctx.rotate((i / 16) * Math.PI * 2);
  *      ctx.fillStyle = "#5fd8ff";
  *      ctx.fillRect(-8, -8, 16, 16);
- *    });
- *    const spin = Anim.sheet(sheet, { fw: 40, fh: 40, cols: 16, fps: 14 }); */
-export function bakeSheet(
+ *    }, { origin: "center" });
+ *    const anim = Anim.sheet(spin, { fw: 40, fh: 40, cols: 16, fps: 14 }); */
+export function atlas(
   fw: number,
   fh: number,
   count: number,
   draw: (ctx: CanvasRenderingContext2D, index: number) => void,
-  opts: SheetOptions = {},
+  opts: AtlasOptions = {},
 ): HTMLCanvasElement {
   const cols = Math.max(1, opts.cols ?? count);
   const rows = Math.max(1, Math.ceil(count / cols));
+  const offX = opts.origin === "center" ? fw / 2 : 0;
+  const offY = opts.origin === "center" ? fh / 2 : 0;
   const cv = document.createElement("canvas");
   cv.width = fw * cols;
   cv.height = fh * rows;
   const ctx = cv.getContext("2d")!;
   for (let i = 0; i < count; i++) {
     ctx.save();
-    ctx.translate((i % cols) * fw + fw / 2, Math.floor(i / cols) * fh + fh / 2);
+    ctx.translate((i % cols) * fw + offX, Math.floor(i / cols) * fh + offY);
     draw(ctx, i);
     ctx.restore();
   }
   return cv;
 }
 
-/** Pack same-size frame images into one grid sprite-sheet canvas — the common
- *  "N separate PNGs → one sheet for `Anim.sheet`" case. Frame size defaults to
- *  the first image's dimensions; pass `cols` for a grid (default: one row).
+/** Pack same-size images into one grid atlas canvas — the common "N separate
+ *  PNGs → one sheet" case. Frame size defaults to the first image's
+ *  dimensions; pass `cols` for a grid (default: one row).
  *
- *    const sheet = Sprites.composeSheet([idle0, idle1, idle2, idle3]);
+ *    const sheet = Sprites.packAtlas([idle0, idle1, idle2, idle3]);
  *    const idle = Anim.sheet(sheet, { fw: 32, fh: 32, cols: 4, fps: 6 }); */
-export function composeSheet(
+export function packAtlas(
   images: Array<CanvasImageSource & { width: number; height: number }>,
-  opts: SheetOptions & { fw?: number; fh?: number } = {},
+  opts: { cols?: number; fw?: number; fh?: number } = {},
 ): HTMLCanvasElement {
-  if (images.length === 0) throw new Error("Sprites.composeSheet: no frames");
+  if (images.length === 0) throw new Error("Sprites.packAtlas: no frames");
   const fw = opts.fw ?? images[0].width;
   const fh = opts.fh ?? images[0].height;
-  return bakeSheet(fw, fh, images.length, (ctx, i) => ctx.drawImage(images[i], -fw / 2, -fh / 2), {
+  return atlas(fw, fh, images.length, (ctx, i) => ctx.drawImage(images[i], 0, 0), {
     cols: opts.cols,
   });
 }

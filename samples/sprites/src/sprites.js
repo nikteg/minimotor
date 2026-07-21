@@ -15,22 +15,28 @@ const FRAMES = 8;
 const CELL = 64;
 
 // ---- Bake a sprite sheet (1 row × 8 cells) once ----
-// Sprites.bakeSheet sizes the canvas and centres the context on each cell, so
-// the per-frame callback just draws the star at the origin.
-const sheetCanvas = Sprites.bakeSheet(CELL, CELL, FRAMES, (c, i) => {
-  const t = i / FRAMES;
-  c.rotate(t * Math.PI * 2); // spin
-  const r = 14 + Mathf.pulse(t * Math.PI * 2) * 12; // pulse the size
-  c.fillStyle = `hsl(${Math.round(t * 360)}, 80%, 60%)`;
-  c.beginPath();
-  for (let p = 0; p < 10; p++) {
-    const a = (p / 10) * Math.PI * 2;
-    const rad = p % 2 === 0 ? r : r * 0.45;
-    c.lineTo(Math.cos(a) * rad, Math.sin(a) * rad);
-  }
-  c.closePath();
-  c.fill();
-});
+// Sprites.atlas sizes the canvas; origin: "center" puts (0,0) at each cell's
+// centre, so the per-frame callback just spins the star about the origin.
+const sheetCanvas = Sprites.atlas(
+  CELL,
+  CELL,
+  FRAMES,
+  (c, i) => {
+    const t = i / FRAMES;
+    c.rotate(t * Math.PI * 2); // spin
+    const r = 14 + Mathf.pulse(t * Math.PI * 2) * 12; // pulse the size
+    c.fillStyle = `hsl(${Math.round(t * 360)}, 80%, 60%)`;
+    c.beginPath();
+    for (let p = 0; p < 10; p++) {
+      const a = (p / 10) * Math.PI * 2;
+      const rad = p % 2 === 0 ? r : r * 0.45;
+      c.lineTo(Math.cos(a) * rad, Math.sin(a) * rad);
+    }
+    c.closePath();
+    c.fill();
+  },
+  { origin: "center" },
+);
 
 const Vel = ECS.component("Vel");
 const Animated = ECS.component("Anim"); // holds the per-entity Animation

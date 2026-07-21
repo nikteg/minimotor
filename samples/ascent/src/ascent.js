@@ -304,12 +304,13 @@ let crystalAnim; // shared Anim.sheet over the "ready" row (drives sx)
 const orbWorld = ECS.world();
 const Orb = ECS.component("Orb"); // { cd, baseX, baseY }
 
-// Bake the spinning dash-crystal with Sprites.bakeSheet: CRYSTAL_FR rotation
+// Bake the spinning dash-crystal with Sprites.atlas: CRYSTAL_FR rotation
 // frames per row × 2 rows (row 0 = "ready" cyan + glow, row 1 = "spent" grey).
-// bakeSheet translates to each cell's centre, so the diamond rotates in place.
+// origin: "center" translates to each cell's centre, so the diamond rotates
+// in place.
 function bakeCrystalSheet() {
   const s = 8;
-  return Sprites.bakeSheet(
+  return Sprites.atlas(
     CRYSTAL_FS,
     CRYSTAL_FS,
     CRYSTAL_FR * 2,
@@ -340,7 +341,7 @@ function bakeCrystalSheet() {
       g.fillStyle = ready ? "#eafcff" : "#c4d2dc";
       g.fill();
     },
-    { cols: CRYSTAL_FR },
+    { cols: CRYSTAL_FR, origin: "center" },
   );
 }
 
@@ -365,7 +366,7 @@ function manifest() {
 
 function buildAnimations() {
   const img = (n) => Assets.image(n);
-  const compose = (...names) => Sprites.composeSheet(names.map(img));
+  const compose = (...names) => Sprites.packAtlas(names.map(img));
   const idleSheet = compose("idle0", "idle1", "idle2", "idle3");
   const runSheet = compose("run0", "run1", "run2", "run3");
   const jumpSheet = compose("jump0", "jump1", "jump2");

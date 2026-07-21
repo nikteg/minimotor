@@ -3,8 +3,8 @@ import {
   getSprite,
   getLayer,
   clearSpriteCache,
-  bakeSheet,
-  composeSheet,
+  atlas,
+  packAtlas,
   contentBounds,
   tint,
 } from "./sprites.js";
@@ -110,44 +110,60 @@ describe("Sprites.getLayer", () => {
   });
 });
 
-describe("Sprites.bakeSheet", () => {
-  it("sizes the canvas to the frame grid and draws each frame once, in order", () => {
+describe("Sprites.atlas", () => {
+  it("sizes the canvas to the cell grid and draws each cell once, in order", () => {
     const seen: number[] = [];
-    const sheet = bakeSheet(16, 12, 5, (_ctx, i) => seen.push(i), { cols: 2 });
+    const sheet = atlas(16, 12, 5, (_ctx, i) => seen.push(i), { cols: 2 });
     expect(sheet.width).toBe(32); // 2 cols × 16
     expect(sheet.height).toBe(36); // ceil(5/2) = 3 rows × 12
     expect(seen).toEqual([0, 1, 2, 3, 4]);
   });
   it("defaults to a single row", () => {
-    const sheet = bakeSheet(10, 10, 4, () => {});
+    const sheet = atlas(10, 10, 4, () => {});
     expect(sheet.width).toBe(40);
     expect(sheet.height).toBe(10);
   });
-  it("centres the context on each cell (save/translate/restore per frame)", () => {
+  it("puts the origin at each cell's top-left by default (save/translate/restore per cell)", () => {
     let ctxRef: Record<string, ReturnType<typeof vi.fn>> | undefined;
-    bakeSheet(20, 20, 3, (ctx) => {
+    atlas(24, 24, 3, (ctx) => {
       ctxRef = ctx as unknown as Record<string, ReturnType<typeof vi.fn>>;
     });
     expect(ctxRef!.save).toHaveBeenCalledTimes(3);
     expect(ctxRef!.restore).toHaveBeenCalledTimes(3);
-    // First frame centre = (fw/2, fh/2) = (10, 10).
+    // Cell corners, no centre offset: (0,0), (24,0), (48,0).
+    expect(ctxRef!.translate).toHaveBeenNthCalledWith(1, 0, 0);
+    expect(ctxRef!.translate).toHaveBeenNthCalledWith(2, 24, 0);
+    expect(ctxRef!.translate).toHaveBeenNthCalledWith(3, 48, 0);
+  });
+  it("centres the context on each cell with origin: 'center'", () => {
+    let ctxRef: Record<string, ReturnType<typeof vi.fn>> | undefined;
+    atlas(
+      20,
+      20,
+      3,
+      (ctx) => {
+        ctxRef = ctx as unknown as Record<string, ReturnType<typeof vi.fn>>;
+      },
+      { origin: "center" },
+    );
+    // First cell centre = (fw/2, fh/2) = (10, 10).
     expect(ctxRef!.translate).toHaveBeenNthCalledWith(1, 10, 10);
-    // Third frame (single row) centre x = 2*20 + 10 = 50.
+    // Third cell (single row) centre x = 2*20 + 10 = 50.
     expect(ctxRef!.translate).toHaveBeenNthCalledWith(3, 50, 10);
   });
 });
 
-describe("Sprites.composeSheet", () => {
+describe("Sprites.packAtlas", () => {
   const img = (w: number, h: number) =>
     ({ width: w, height: h }) as unknown as CanvasImageSource & { width: number; height: number };
 
   it("packs frames into one row, inferring frame size from the first image", () => {
-    const sheet = composeSheet([img(24, 32), img(24, 32), img(24, 32)]);
+    const sheet = packAtlas([img(24, 32), img(24, 32), img(24, 32)]);
     expect(sheet.width).toBe(72);
     expect(sheet.height).toBe(32);
   });
   it("honours explicit frame size and cols", () => {
-    const sheet = composeSheet([img(8, 8), img(8, 8), img(8, 8), img(8, 8)], {
+    const sheet = packAtlas([img(8, 8), img(8, 8), img(8, 8), img(8, 8)], {
       fw: 8,
       fh: 8,
       cols: 2,
@@ -156,7 +172,7 @@ describe("Sprites.composeSheet", () => {
     expect(sheet.height).toBe(16);
   });
   it("throws when given no frames", () => {
-    expect(() => composeSheet([])).toThrow(/no frames/);
+    expect(() => packAtlas([])).toThrow(/no frames/);
   });
 });
 

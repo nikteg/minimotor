@@ -8,7 +8,7 @@
 import { Minimotor } from "minimotor";
 
 let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
-const { Loop, Keys, Draw, Tiles, Camera, Input, Audio, UI } = Minimotor;
+const { Loop, Keys, Draw, Tiles, Camera, Input, Audio, UI, Sprites } = Minimotor;
 Minimotor.Stage.onResize((next) => {
   vp = next;
   cam.setView(vp.w, vp.h); // keep following/clamping to the real screen
@@ -36,27 +36,29 @@ for (let i = 0; i < 6; i++) {
 }
 
 // ---- Atlas: three 24px tiles baked once (grass / dirt / brick) ----
-const atlas = document.createElement("canvas");
-atlas.width = TW * 3;
-atlas.height = TW;
-{
-  const g = atlas.getContext("2d");
-  g.fillStyle = "#7a5230"; // grass tile: dirt body…
-  g.fillRect(0, 0, TW, TW);
-  g.fillStyle = "#69db7c"; // …green top
-  g.fillRect(0, 0, TW, 7);
-  g.fillStyle = "#7a5230"; // dirt tile
-  g.fillRect(TW, 0, TW, TW);
-  g.fillStyle = "#5c3d23";
-  for (let i = 0; i < 5; i++) g.fillRect(TW + ((i * 7) % 20) + 2, ((i * 11) % 20) + 2, 3, 2);
-  g.fillStyle = "#b0575a"; // brick tile
-  g.fillRect(TW * 2, 0, TW, TW);
-  g.fillStyle = "#8d4245";
-  for (let y = 0; y < TW; y += 6) {
-    g.fillRect(TW * 2, y, TW, 1);
-    g.fillRect(TW * 2 + (y % 12 ? 6 : 14), y, 2, 6);
+// Sprites.atlas owns the canvas/context; each tile draws from its own top-left
+// corner (the default origin), then grid consumes the strip as its atlas.
+const atlas = Sprites.atlas(TW, TW, 3, (g, i) => {
+  if (i === 0) {
+    g.fillStyle = "#7a5230"; // grass tile: dirt body…
+    g.fillRect(0, 0, TW, TW);
+    g.fillStyle = "#69db7c"; // …green top
+    g.fillRect(0, 0, TW, 7);
+  } else if (i === 1) {
+    g.fillStyle = "#7a5230"; // dirt tile
+    g.fillRect(0, 0, TW, TW);
+    g.fillStyle = "#5c3d23";
+    for (let d = 0; d < 5; d++) g.fillRect(((d * 7) % 20) + 2, ((d * 11) % 20) + 2, 3, 2);
+  } else {
+    g.fillStyle = "#b0575a"; // brick tile
+    g.fillRect(0, 0, TW, TW);
+    g.fillStyle = "#8d4245";
+    for (let y = 0; y < TW; y += 6) {
+      g.fillRect(0, y, TW, 1);
+      g.fillRect(y % 12 ? 6 : 14, y, 2, 6);
+    }
   }
-}
+});
 
 const map = Tiles.grid(level, { tw: TW, atlas });
 
