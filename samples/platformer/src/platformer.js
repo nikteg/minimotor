@@ -5,7 +5,7 @@ import { Minimotor } from "minimotor";
 import { drawGameOver, drawLevelComplete } from "../../shared/src/overlays.js";
 
 let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
-Minimotor.Stage.onResize((next) => (vp = next)); // camera + layout read vp live
+Minimotor.Stage.onResize((next) => { vp = next; cam.setView(next.w, WORLD_H); }); // camera + layout read vp live
 
 const { Timers, Loop } = Minimotor;
 // Forgiving jump: still fires ~100ms after running off a ledge (coyote time)
@@ -88,6 +88,9 @@ const FLAG_Y = GROUND_Y - 160;
 // State
 let coins = [];
 let enemies = [];
+// A damped, world-clamped follow camera. cameraX mirrors cam.x so the draw
+// code keeps subtracting a scalar; framing keeps the player ~1/3 from the left.
+const cam = Minimotor.Camera.createCamera({ worldW: WORLD_W, worldH: WORLD_H, viewW: vp.w, viewH: WORLD_H, damping: 0.1 });
 let cameraX = 0;
 const scores = Minimotor.Game.createScoreTracker("platformer_best");
 let coinCount = 0;
@@ -100,7 +103,7 @@ let animFrame = 0;
 function restart() {
   player.x = 40; player.y = GROUND_Y - PLAYER_H;
   player.vx = 0; player.vy = 0; player.onGround = false; player.facing = 1;
-  cameraX = 0;
+  cam.snapTo(player.x + vp.w / 6, WORLD_H / 2); cameraX = cam.x;
   scores.reset(); coinCount = 0;
   lives = 3;
   gameOver = false;
@@ -267,10 +270,10 @@ Minimotor.Loop.run({
       scores.save();
     }
 
-    // Camera
-    const targetCX = player.x - vp.w / 3;
-    cameraX += (targetCX - cameraX) * 0.1;
-    cameraX = Math.max(0, Math.min(WORLD_W - vp.w, cameraX));
+    // Camera. Fixed-step update loop, so dtScale stays 1 — damping 0.1 gives
+    // the same per-tick follow the hand-rolled lerp had.
+    cam.update(player.x + vp.w / 6, WORLD_H / 2);
+    cameraX = cam.x;
   },
   draw() {
     const { ctx } = Minimotor.Draw;
@@ -308,12 +311,11 @@ Minimotor.Loop.run({
 
     // Hills (parallax)
     ctx.fillStyle = "#7ec850";
-    for (let i = 0; i < 12; i++) {
-      const hx = i * 320 - (cameraX * 0.3) % 320;
+    Minimotor.Camera.scrollColumns(cameraX * 0.3, 320, vp.w, (hx) => {
       ctx.beginPath();
       ctx.arc(hx, GROUND_Y, 120, 0, Math.PI, true);
       ctx.fill();
-    }
+    });
 
     // Platforms
     for (const [px, py, pw, ph, color] of platforms) {
@@ -491,6 +493,6 @@ function takeDamage() {
     player.y = GROUND_Y - PLAYER_H;
     player.vy = 0;
     player.onGround = false;
-    cameraX = Math.max(0, player.x - vp.w / 3);
+    cam.snapTo(player.x + vp.w / 6, WORLD_H / 2); cameraX = cam.x;
   }
 }
