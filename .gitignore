@@ -10,5 +10,8 @@ samples-dist/
 # Playwright run artifacts
 test-results/
 
+# macOS
+.DS_Store
+
 # Sample sources are hand-written JS, not build output — keep them tracked.
 !samples/**/*.js
