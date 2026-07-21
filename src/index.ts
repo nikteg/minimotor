@@ -31,7 +31,7 @@ import * as Input from "./input.js";
 import * as Storage from "./storage.js";
 import * as Physics from "./physics.js";
 import * as Sprites from "./sprites.js";
-import * as Net from "./net.js";
+import * as Net from "./net/index.js";
 import * as Perf from "./perf/index.js";
 import * as Camera from "./camera.js";
 import * as Game from "./game.js";
@@ -173,7 +173,7 @@ export type {
   InterpolatorOptions,
   Roster,
   RosterOptions,
-} from "./net.js";
+} from "./net/index.js";
 
 const Collision = {
   rectsOverlap,
