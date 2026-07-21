@@ -143,7 +143,11 @@ hud). Lower priority — they're showcase code, not shipped API — but a good
 "dogfood the primitives" exercise (e.g. road-rivals could lean on the new
 `minimotor/server` room helpers, `Camera`, `Particles.burst`).
 
-## Below the threshold (leave for now)
+## Below the threshold
+
+Split anyway (clear multi-concern seams): **anim** → sheet/value, **camera** →
+camera/parallax/shake, **input** → actions/gamepad. Left single (no real seam):
+**tiles** (one cohesive grid), **particles** (system + thin facade). Remaining:
 
 `physics2d.ts` (~434, separate entry — internal-only split possible but not
 worth touching `package.json`/alias), `tiles.ts` (~346), `anim.ts` (~325),
@@ -152,7 +156,7 @@ cross ~400 lines.
 
 ## More server primitives to add (`src/net/server/`)
 
-- ~~`presence`~~ (DONE — createPresence) — a server-side player-state registry with `touch(id, state)` +
+- ~~`presence`~~ (DONE — createPresence) / ~~matchmaking~~ (DONE — matchmake) — a server-side player-state registry with `touch(id, state)` +
   stale-prune (the `roadPlayers` Map + `seenAt` pattern road-rivals still
   hand-rolls), mirroring the client `Net.createRoster`.
 - `rooms`/matchmaking — multiple named rooms on one server, join-by-code.
