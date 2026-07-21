@@ -17,7 +17,7 @@
 
 import { Minimotor } from "minimotor";
 
-const { Assets, ECS, Fsm, Anim, Sprites, Timers, Particles, Camera, Audio, Storage, Mathf, Draw, Loop, Keys, UI } =
+const { Assets, ECS, Fsm, Anim, Sprites, Timers, Particles, Camera, Audio, Storage, Mathf, Draw, Loop, Keys, UI, Goodies } =
   Minimotor;
 
 let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
@@ -265,7 +265,6 @@ const player = {
   facing: 1,
   onGround: false,
   wallDir: 0,
-  hasDash: true,
   dashTime: 0,
   dashDx: 0,
   dashDy: 0,
@@ -274,6 +273,10 @@ const player = {
   dead: false,
   deathSpin: 0,
 };
+
+// Celeste-style single air dash: one charge, refilled instantly on the ground
+// or a crystal (never on a timer — refillMs is only there to satisfy the API).
+const dash = Goodies.charges({ max: 1, refillMs: 1 });
 
 const jumpGate = Timers.jumpGate({ coyoteMs: 100, bufferMs: 130 });
 const wallCoyote = Timers.window(90);
@@ -495,7 +498,7 @@ function respawn(hard) {
   player.y = level.spawn.y;
   player.vx = player.vy = 0;
   player.facing = 1;
-  player.hasDash = true;
+  dash.refill();
   player.dashTime = player.freeze = player.wallLock = 0;
   player.dead = false;
   player.deathSpin = 0;
@@ -679,7 +682,7 @@ Loop.run({
       if (player.dashTime % 2 === 0)
         Particles.burst(player.x + PW / 2, player.y + PH / 2, {
           count: 2, speed: [5, 25], size: [2, 3], life: [180, 320],
-          colors: player.hasDash ? ["#d8e2ff", "#fff"] : ["#7fd6ff", "#bff"],
+          colors: dash.count > 0 ? ["#d8e2ff", "#fff"] : ["#7fd6ff", "#bff"],
         });
       if (player.dashTime === 0) {
         player.vx = Math.sign(player.dashDx) * DASH_END_SPEED;
@@ -737,7 +740,7 @@ Loop.run({
     if (!key.jumpHeld() && player.vy < JUMP_V * 0.45) player.vy *= 0.55;
 
     // -------- Dash trigger --------
-    if (key.dashPress() && player.hasDash && player.dashTime === 0) {
+    if (key.dashPress() && dash.count > 0 && player.dashTime === 0) {
       let dx = dir;
       let dy = key.down() ? 1 : key.up() ? -1 : 0;
       if (dx === 0 && dy === 0) dx = player.facing;
@@ -752,7 +755,7 @@ Loop.run({
       player.vy = player.dashDy * DASH_SPEED;
       player.dashTime = DASH_FRAMES;
       player.freeze = DASH_FREEZE;
-      player.hasDash = false;
+      dash.use();
       if (dx !== 0) player.facing = Math.sign(dx);
       Camera.shake(4, 180);
       SFX.dash();
@@ -781,7 +784,7 @@ Loop.run({
     }
 
     player.wallDir = wallOn(1) ? 1 : wallOn(-1) ? -1 : 0;
-    if (player.onGround) player.hasDash = true;
+    if (player.onGround) dash.refill();
 
     // -------- Hazards --------
     if (spikeHit(level.grid, player.x, player.y, PW, PH) || player.y > WORLD_H + 40) die();
@@ -802,7 +805,7 @@ Loop.run({
       s.alpha = readyOrb ? 1 : 0.35;
       s.y = o.baseY + Math.sin(bt + o.baseX) * 2;
       if (readyOrb && Math.abs(o.baseX - pcx) < 17 && Math.abs(o.baseY - pcy) < 18) {
-        player.hasDash = true;
+        dash.refill();
         o.cd = 90;
         SFX.orb();
         Particles.burst(o.baseX, o.baseY, {
@@ -1038,7 +1041,7 @@ function drawDashPip(ctx) {
   const cx = 8 + 12;
   const cy = 8 + 58 + 16; // just below the info group box
   const s = 8;
-  const ready = player.hasDash;
+  const ready = dash.count > 0;
   ctx.save();
   ctx.translate(cx, cy);
   if (ready) {
