@@ -32,12 +32,8 @@ let message = "Drag matching stacks together, or swap different items.";
 let encounter = "—";
 
 function addItem(item) {
-  let index = slots.findIndex((slot) => slot?.item === item && slot.count < slot.max);
-  if (index < 0) index = slots.indexOf(null);
-  if (index < 0) { message = "Inventory full."; return; }
-  if (slots[index]) slots[index].count++;
-  else slots[index] = { item, count: 1, max: item.max };
-  message = `Received ${item.name}.`;
+  const leftover = Goodies.addToInventory(slots, item, { max: item.max });
+  message = leftover > 0 ? "Inventory full." : `Received ${item.name}.`;
 }
 
 function drawInventory(ctx, contentW) {

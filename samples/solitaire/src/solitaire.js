@@ -181,10 +181,7 @@ function freshDeck() {
       cards.push({ suit, rank, faceUp: false, id: `${suit}${rank}` });
     }
   }
-  const bag = Goodies.shuffleBag(cards);
-  const shuffled = [];
-  while (bag.remaining) shuffled.push(bag.next());
-  return shuffled;
+  return Goodies.shuffle(cards);
 }
 
 function snapshot() {
