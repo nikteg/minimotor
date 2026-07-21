@@ -4,7 +4,7 @@
 // ball trails and glows. It plays itself; watch it escalate.
 import { Minimotor } from "minimotor";
 
-const { Stage, Loop, Draw, UI, Audio, Particles, Camera, Goodies } = Minimotor;
+const { Stage, Loop, Draw, UI, Audio, Particles, Camera, Goodies, Mathf } = Minimotor;
 
 let vp = Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 Stage.onResize((next) => (vp = next)); // wall bounds read vp live
@@ -18,7 +18,7 @@ const SPEEDUP = 1.06; // each bounce speeds the ball up…
 const MAX_SPEED = 60; // …to a very high ceiling so it can't tunnel out
 const ball = { x: vp.w / 2, y: vp.h / 2, w: BALL, h: BALL, vx: 2.4, vy: 3.1 };
 
-const clampSpeed = (v) => Math.max(-MAX_SPEED, Math.min(MAX_SPEED, v * SPEEDUP));
+const clampSpeed = (v) => Mathf.clamp(v * SPEEDUP, -MAX_SPEED, MAX_SPEED);
 
 // The bounce note layers a sub for body, a sine fundamental and a triangle
 // octave of shimmer — [frequency ×, level, waveform].
@@ -27,7 +27,7 @@ const partials = [
   { mul: 1, gain: 0.16, type: "sine" },
   { mul: 2, gain: 0.06, type: "triangle" },
 ];
-const trail = [];
+const trail = Goodies.trail(12); // bounded motion ring
 let bounces = 0;
 const ballFlash = Goodies.flash(140); // white "hit" blink on the ball itself
 
@@ -84,8 +84,7 @@ Loop.run({
 
     ballFlash.tick(Loop.step);
 
-    trail.unshift({ x: cx, y: cy });
-    if (trail.length > 12) trail.pop();
+    trail.push(cx, cy);
   },
   draw() {
     const { ctx } = Draw;
@@ -99,8 +98,9 @@ Loop.run({
     ctx.translate(Camera.shakeX(), Camera.shakeY());
 
     // Motion trail (oldest = faintest/smallest).
-    for (let i = trail.length - 1; i >= 0; i--) {
-      const p = trail[i], k = i / trail.length;
+    const pts = trail.points;
+    for (let i = pts.length - 1; i >= 0; i--) {
+      const p = pts[i], k = i / pts.length;
       ctx.globalAlpha = (1 - k) * 0.35;
       ctx.fillStyle = "#ff6b6b";
       ctx.beginPath();

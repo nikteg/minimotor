@@ -18,9 +18,8 @@ const clear = (bg) => {
 // ---- shared play state (reset by play.enter) ----
 const player = { x: 0, y: 0, size: 34 };
 let target = { x: 0, y: 0, r: 16 };
-let score = 0;
+const scores = Minimotor.Game.createScoreTracker("scenes_best");
 let timeLeft = 0; // in update steps (60/s)
-let best = Minimotor.Storage.load("scenes_best", 0);
 
 function placeTarget() {
   target.x = 40 + Math.random() * (vp.w - 80);
@@ -46,7 +45,7 @@ Scenes.define("menu", {
       startClicked();
     }
     center("(or press SPACE)", vp.h / 2 + 78, { color: "#667" });
-    center(`Best: ${best}`, vp.h / 2 + 106, { color: "#888" });
+    center(`Best: ${scores.best}`, vp.h / 2 + 106, { color: "#888" });
   },
   update() {
     if (Keys.pressed("Space")) startClicked();
@@ -58,7 +57,7 @@ Scenes.define("play", {
   enter() {
     player.x = vp.w / 2;
     player.y = vp.h / 2;
-    score = 0;
+    scores.reset();
     timeLeft = 15 * 60; // 15 seconds
     UI.clearFloats(); // no leftover "+1"s from the last round
     placeTarget();
@@ -80,15 +79,14 @@ Scenes.define("play", {
     const px = player.x + player.size / 2;
     const py = player.y + player.size / 2;
     if (Minimotor.Collision.circleHit(px, py, player.size / 2, target.x, target.y, target.r)) {
-      score++;
+      scores.add(1);
       Audio.Sfx.coin();
       UI.float("+1", target.x, target.y - 20, { color: "#ffd43b" });
       placeTarget();
     }
 
     if (--timeLeft <= 0) {
-      best = Math.max(best, score);
-      Minimotor.Storage.save("scenes_best", best);
+      scores.save();
       Audio.Sfx.blip(140, 0.35);
       Scenes.go("over", Transitions.wipe(600, "down"));
     }
@@ -109,7 +107,7 @@ Scenes.define("play", {
     ctx.fillRect(player.x, player.y, player.size, player.size);
 
     // HUD — the bar drains with the clock.
-    UI.text(`Score: ${score}`, { x: 12, y: 8, size: 16, color: "#fff" });
+    UI.text(`Score: ${scores.score}`, { x: 12, y: 8, size: 16, color: "#fff" });
     UI.text(`Time: ${Math.ceil(timeLeft / 60)}s`, { x: 12, y: 30, size: 16, color: "#fff" });
     UI.bar(12, 54, 140, 8, timeLeft / (15 * 60), { fill: "#ffd43b" });
     UI.text("P to pause", { x: 12, y: vp.h - 28, size: 16, color: "#fff" });
@@ -139,7 +137,7 @@ Scenes.define("over", {
     const { ctx } = Draw;
     clear("#1a1220");
     center("GAME OVER", vp.h / 2 - 60, { font: "bold 32px monospace", color: "#ff6b6b" });
-    center(`Score: ${score}   Best: ${best}`, vp.h / 2 - 20, { font: "18px monospace" });
+    center(`Score: ${scores.score}   Best: ${scores.best}`, vp.h / 2 - 20, { font: "18px monospace" });
     if (
       UI.button({ x: vp.w / 2 - 170, y: vp.h / 2 + 16, w: 160, h: 44, label: "PLAY AGAIN" })
     ) {

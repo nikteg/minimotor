@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { approach, damp, lerpAngle, pingPong } from "./mathf.js";
 import { circleRect, separateCircles, bounceInBounds } from "./collision.js";
-import { letterboxView, formatClock } from "./game.js";
+import { letterboxView, formatClock, createScoreTracker } from "./game.js";
 import {
   randFreeCell,
   shuffle,
@@ -111,6 +111,18 @@ describe("Game.letterboxView", () => {
     expect(v.toLogical(70, 20)).toEqual({ x: 10, y: 10 });
     expect(v.contains(70, 20, { x: 0, y: 0, w: 20, h: 20 })).toBe(true);
     expect(v.contains(0, 0, { x: 0, y: 0, w: 20, h: 20 })).toBe(false); // outside the fit
+  });
+});
+
+describe("Game.createScoreTracker.reset", () => {
+  it("resets the score but keeps best", () => {
+    const t = createScoreTracker(`test_best_${Math.floor(seedRng(3)() * 1e6)}`);
+    t.add(50);
+    expect(t.score).toBe(50);
+    expect(t.best).toBe(50);
+    t.reset();
+    expect(t.score).toBe(0);
+    expect(t.best).toBe(50); // best survives a restart
   });
 });
 

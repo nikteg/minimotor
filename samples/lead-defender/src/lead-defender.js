@@ -1,6 +1,6 @@
 // LEAD DEFENDER: predictive aiming, angle steering, wave scaling and radial spawns.
 import { Minimotor } from "minimotor";
-const { Goodies, Loop, UI, Particles } = Minimotor;
+const { Goodies, Collision, Loop, UI, Particles } = Minimotor;
 let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 Minimotor.Stage.onResize((next) => (vp = next));
 let enemies = [], bullets = [], wave = 0, lives = 10, score = 0, cooldown = 0, turret = -Math.PI / 2;
@@ -14,9 +14,8 @@ Loop.run({ update(stepMs) {
   const dt = stepMs / 1000, cx = vp.w / 2, cy = vp.h / 2;
   cooldown -= dt;
   for (const e of enemies) { const a = Math.atan2(cy - e.y, cx - e.x); e.vx = Math.cos(a) * e.speed; e.vy = Math.sin(a) * e.speed; e.x += e.vx * dt; e.y += e.vy * dt; }
-  enemies = enemies.filter((e) => { if (Math.hypot(e.x - cx, e.y - cy) < 25) { lives--; Particles.burst(cx, cy, { count: 12, colors: ["#ff6b6b", "#fff"] }); return false; } return true; });
-  let target = null, best = Infinity;
-  for (const e of enemies) { const d = Math.hypot(e.x - cx, e.y - cy); if (d < best) { best = d; target = e; } }
+  enemies = enemies.filter((e) => { if (Collision.circleHit(e.x, e.y, 0, cx, cy, 25)) { lives--; Particles.burst(cx, cy, { count: 12, colors: ["#ff6b6b", "#fff"] }); return false; } return true; });
+  const target = Goodies.nearest(cx, cy, enemies, (e) => e);
   if (target) {
     const lead = Goodies.leadTarget(cx, cy, target.x, target.y, target.vx, target.vy, 300);
     if (lead) {
@@ -27,7 +26,7 @@ Loop.run({ update(stepMs) {
   }
   for (const b of bullets) { b.x += b.vx * dt; b.y += b.vy * dt; b.ttl -= dt; }
   for (let bi = bullets.length - 1; bi >= 0; bi--) for (let ei = enemies.length - 1; ei >= 0; ei--) {
-    if (Math.hypot(bullets[bi].x - enemies[ei].x, bullets[bi].y - enemies[ei].y) < 12) {
+    if (Collision.circleHit(bullets[bi].x, bullets[bi].y, 0, enemies[ei].x, enemies[ei].y, 12)) {
       const hit = Goodies.damageRoll(1, { variance: 0, critChance: 0.12, critMultiplier: 2 }); enemies[ei].hp -= hit.amount;
       Particles.burst(bullets[bi].x, bullets[bi].y, { count: hit.critical ? 12 : 5, colors: hit.critical ? ["#ffe066", "#fff"] : "#4ecdc4", life: [120, 300] });
       bullets.splice(bi, 1); if (enemies[ei].hp <= 0) { enemies.splice(ei, 1); score += hit.critical ? 20 : 10; } break;

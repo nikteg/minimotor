@@ -14,18 +14,15 @@ let snake = [{ x: Math.floor(COLS / 2), y: Math.floor(ROWS / 2) }];
 let dir = { x: 1, y: 0 };
 let nextDir = { x: 1, y: 0 };
 let food = spawnFood();
-let score = 0;
-let best = Minimotor.Storage.load("snake_best", 0);
+const scores = Minimotor.Game.createScoreTracker("snake_best");
 let tick = 0;
 let gameOver = false;
 
+// A uniformly-random empty cell (bounded scan — returns null only when the
+// board is full, i.e. you've won). Beats the old `do { rand } while (taken)`.
 function spawnFood() {
-  let fx, fy;
-  do {
-    fx = Math.floor(Math.random() * COLS);
-    fy = Math.floor(Math.random() * ROWS);
-  } while (snake.some((s) => s.x === fx && s.y === fy));
-  return { x: fx, y: fy };
+  const occupied = (x, y) => snake.some((s) => s.x === x && s.y === y);
+  return Minimotor.Goodies.randFreeCell(COLS, ROWS, occupied) ?? snake[0];
 }
 
 Minimotor.Stage.onResize((next) => {
@@ -42,8 +39,7 @@ function restart() {
   dir = { x: 1, y: 0 };
   nextDir = { x: 1, y: 0 };
   food = spawnFood();
-  if (score > best) { best = score; Minimotor.Storage.save("snake_best", best); }
-  score = 0;
+  scores.reset();
   tick = 0;
   gameOver = false;
 }
@@ -87,13 +83,13 @@ Minimotor.Loop.run({
     // Self collision
     if (snake.some((s) => s.x === head.x && s.y === head.y)) {
       gameOver = true;
+      scores.save();
       Minimotor.Audio.Sfx.blip(110, 0.4); // low, long — the death buzz
       Minimotor.Camera.shake(6, 320);
       Minimotor.Particles.burst(head.x * CELL + CELL / 2, head.y * CELL + CELL / 2, {
         count: 26, speed: [40, 210], size: [2, 5], life: [300, 720],
         colors: ["#8fe36a", "#4a8c2a", "#ffffff"],
       });
-      if (score > best) { best = score; Minimotor.Storage.save("snake_best", best); }
       return;
     }
 
@@ -101,7 +97,7 @@ Minimotor.Loop.run({
 
     // Food
     if (head.x === food.x && head.y === food.y) {
-      score += 10;
+      scores.add(10);
       Minimotor.Audio.Sfx.coin();
       Minimotor.Camera.shake(2, 90);
       Minimotor.Particles.burst(food.x * CELL + CELL / 2, food.y * CELL + CELL / 2, {
@@ -175,11 +171,11 @@ Minimotor.Loop.run({
 
     // HUD.
     Minimotor.UI.group({ x: 8, y: 8, w: 280, h: 60, title: "SNAKE" }, (body) => {
-      Minimotor.UI.text(`Score ${score}   Best ${best}   Len ${snake.length}`, { h: body.remaining, size: 13 });
+      Minimotor.UI.text(`Score ${scores.score}   Best ${scores.best}   Len ${snake.length}`, { h: body.remaining, size: 13 });
     });
 
     if (gameOver) {
-      drawGameOver(ctx, vp.w, vp.h, score, best, "Press any arrow key to restart");
+      drawGameOver(ctx, vp.w, vp.h, scores.score, scores.best, "Press any arrow key to restart");
     }
   },
 });

@@ -87,7 +87,7 @@ Loop.run({
     ship.angle += turn * 4.5 * dt;
     const thrusting = actions.down("thrust") || pad.axis(1) < -.35;
     if (thrusting) { ship.vx += Math.cos(ship.angle) * 110 * dt; ship.vy += Math.sin(ship.angle) * 110 * dt; }
-    ship.vx *= Math.pow(.992, dt * 60); ship.vy *= Math.pow(.992, dt * 60);
+    ship.vx = Mathf.damp(ship.vx, 0, 0.48, dt); ship.vy = Mathf.damp(ship.vy, 0, 0.48, dt);
     ship.x = Goodies.wrap(ship.x + ship.vx * dt, W); ship.y = Goodies.wrap(ship.y + ship.vy * dt, H);
     const firing = actions.down("fire") || pad.down(Input.Buttons.A);
     if (firing) fire();

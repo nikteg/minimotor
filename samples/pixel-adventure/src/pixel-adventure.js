@@ -7,7 +7,7 @@ import { Minimotor } from "minimotor";
 const GAME_W = 480, GAME_H = 270, TILE = 48;
 let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 Minimotor.Stage.onResize((next) => (vp = next));
-const { Assets, Anim, Fsm, Timers, Tiles, Camera, Input, Keys, Draw, Loop, UI, Particles, Sprites, Game, Audio } =
+const { Assets, Anim, Fsm, Timers, Tiles, Camera, Collision, Mathf, Input, Keys, Draw, Loop, UI, Particles, Sprites, Game, Audio } =
   Minimotor;
 const input = Input.actions({
   left: ["ArrowLeft", "KeyA"], right: ["ArrowRight", "KeyD"], jump: ["ArrowUp", "KeyW", "Space"],
@@ -318,8 +318,8 @@ Loop.run({
     enemyAnim.update(stepMs); fruitAnim.update(stepMs); goalAnim.update(stepMs);
     const direction = (input.down("right") ? 1 : 0) - (input.down("left") ? 1 : 0);
     if (direction) { player.vx += direction * 900 * dt; player.facing = direction; }
-    else player.vx *= Math.pow(0.0008, dt);
-    player.vx = Math.max(-165, Math.min(165, player.vx));
+    else player.vx = Mathf.damp(player.vx, 0, 7.1, dt);
+    player.vx = Mathf.clamp(player.vx, -165, 165);
     // A 96px first ledge needs a 140px jump arc (the -525 impulse). The impulse
     // is ours; the coyote-grace + input-buffer timing is the gate's.
     const pressedJump = input.pressed("jump");
@@ -356,9 +356,7 @@ Loop.run({
       if (enemy.dead) continue;
       enemy.x += enemy.vx * dt;
       if (solid(enemy)) { enemy.x -= enemy.vx * dt; enemy.vx *= -1; }
-      const overlapX = Math.abs(player.x - enemy.x) < (player.w + enemy.w) / 2;
-      const overlapY = Math.abs((player.y - player.h / 2) - (enemy.y - enemy.h / 2)) < (player.h + enemy.h) / 2;
-      if (overlapX && overlapY) {
+      if (Collision.rectsOverlap(rect(player), rect(enemy))) {
         if (player.vy > 55 && player.y - player.h / 2 < enemy.y - enemy.h / 2) {
           enemy.dead = true; player.vy = -270; SFX.stomp(); Camera.shake(3.5, 190); // punch on a kill
           UI.float("+100", enemy.x, enemy.y - 45, { color: "#ffe066" });
@@ -368,7 +366,7 @@ Loop.run({
     }
     for (const coin of coins) {
       if (coin.got) { coin.pop += dt; continue; }
-      if (Math.hypot(player.x - coin.x, player.y - coin.y) >= 27) continue;
+      if (!Collision.circleHit(player.x, player.y, 0, coin.x, coin.y, 27)) continue;
       coin.got = true; coin.pop = 0; SFX.coin(); // no shake on a pickup
       UI.float("FRUIT!", coin.x, coin.y - 26, { color: "#fff3a3" });
       Particles.burst(coin.x, coin.y, { count: 24, colors: ["#fff", "#fff3a3", "#ffe066", "#ffb347"], size: [2, 5], speed: [55, 205], life: [300, 680], gravity: 105 });
@@ -376,7 +374,7 @@ Loop.run({
       if (coins.every((c) => c.got)) { SFX.unlock(); UI.float("GOAL UNLOCKED!", player.x, player.y - 60, { color: "#64f0c8" }); }
     }
     if (player.y > map.worldH + 70) hurt();
-    if (coins.every((coin) => coin.got) && Math.hypot(player.x - goal.x, player.y - goal.y) < 38) { state = "won"; SFX.win(); }
+    if (coins.every((coin) => coin.got) && Collision.circleHit(player.x, player.y, 0, goal.x, goal.y, 38)) { state = "won"; SFX.win(); }
     cam.update(player.x, player.y - player.h / 2, Draw.frameScale);
   },
 

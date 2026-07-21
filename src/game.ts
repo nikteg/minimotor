@@ -8,10 +8,12 @@ import * as Storage from "./storage.js";
 /** Score + best-score tracker with automatic persistence.
  *  `best` is loaded from localStorage and saved whenever score exceeds it. */
 export interface ScoreTracker {
-  score: number;
+  readonly score: number;
   readonly best: number;
   /** Add points; auto-saves best if exceeded */
   add(points: number): void;
+  /** Reset the current score to 0 (keeps `best`) — call on restart. */
+  reset(): void;
   /** Force-save current best (e.g. on game over) */
   save(): void;
 }
@@ -32,6 +34,9 @@ export function createScoreTracker(storageKey: string): ScoreTracker {
         _best = _score;
         Storage.save(storageKey, _best);
       }
+    },
+    reset() {
+      _score = 0;
     },
     save() {
       Storage.save(storageKey, _best);
