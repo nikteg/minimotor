@@ -8,7 +8,7 @@
 import { Minimotor } from "minimotor";
 import { drawGameOver } from "../../shared/src/overlays.js";
 
-const { Scenes, Keys, Draw, ECS, Collision, Mathf, Camera, Audio, UI } = Minimotor;
+const { Scenes, Keys, Draw, ECS, Collision, Mathf, Camera, Audio, UI, Game } = Minimotor;
 
 // ---- ECS: one component holding a block's rect + presentation ----
 const Block = ECS.component("Block"); // { x, y, w, h, color, row }
@@ -22,9 +22,7 @@ const GW = 400;
 const GH = 700;
 let scale, ox, oy; // letterbox transform, recomputed on resize
 function layout() {
-  scale = Math.min(vp.w / GW, vp.h / GH);
-  ox = (vp.w - GW * scale) / 2;
-  oy = (vp.h - GH * scale) / 2;
+  ({ scale, ox, oy } = Game.letterbox(GW, GH, vp.w, vp.h));
 }
 layout();
 Minimotor.Stage.onResize((next) => {
@@ -49,9 +47,8 @@ const ROW_COLORS = ["#ff6b6b", "#ffa94d", "#ffd43b", "#69db7c", "#4ecdc4"];
 // ---- plain-object state (single instances) ----
 const paddle = { x: GW / 2 - PADDLE_W / 2, y: GH - 60, w: PADDLE_W, h: PADDLE_H };
 const ball = { x: GW / 2, y: GH - 80, r: BALL_R, vx: 2.5, vy: -2.5 };
-let score = 0;
+const scores = Game.createScoreTracker("breakout_best");
 let lives = 3;
-let best = Minimotor.Storage.load("breakout_best", 0);
 let waiting = true; // ball sits on the paddle until launched
 
 function spawnWave() {
@@ -84,7 +81,7 @@ Scenes.define("play", {
   enter() {
     world.clear();
     spawnWave();
-    score = 0;
+    scores.reset();
     lives = 3;
     paddle.x = GW / 2 - PADDLE_W / 2;
     UI.clearFloats();
@@ -140,20 +137,17 @@ Scenes.define("play", {
     // Blocks — query the ECS, bounce off the first hit and despawn it. Despawn
     // during a query is safe: the world buffers it until iteration finishes.
     for (const [e, b] of world.query(Block)) {
-      const closestX = Mathf.clamp(ball.x, b.x, b.x + b.w);
-      const closestY = Mathf.clamp(ball.y, b.y, b.y + b.h);
-      const dx = ball.x - closestX;
-      const dy = ball.y - closestY;
-      if (dx * dx + dy * dy < BALL_R * BALL_R) {
+      const c = Collision.circleRect(ball.x, ball.y, BALL_R, b);
+      if (c) {
         world.despawn(e);
         Camera.shake(3, 120); // a little kick per broken block
         Audio.Sfx.blip(880 - b.row * 90, 0.06); // pitch by row — top rows ring higher
         const points = (ROWS - b.row) * 10;
-        score += points;
+        scores.add(points);
         // Floats live in game space (inside the letterbox transform), so they
         // scale and shake with the board.
         UI.float(`+${points}`, b.x + b.w / 2, b.y, { color: b.color });
-        if (Math.abs(dx) > Math.abs(dy)) ball.vx = -ball.vx;
+        if (Math.abs(c.nx) > Math.abs(c.ny)) ball.vx = -ball.vx;
         else ball.vy = -ball.vy;
         ball.vx *= 1.02;
         ball.vy *= 1.02;
@@ -167,8 +161,7 @@ Scenes.define("play", {
       Camera.shake(9, 350); // losing a life hits harder
       Audio.Sfx.blip(130, 0.35);
       if (lives <= 0) {
-        best = Math.max(best, score);
-        Minimotor.Storage.save("breakout_best", best);
+        scores.save();
         Scenes.push("over"); // overlay; the board stays drawn underneath
       } else {
         resetBall();
@@ -182,19 +175,12 @@ Scenes.define("play", {
       ball.vy *= 1.15;
     }
 
-    if (score > best) {
-      best = score;
-      Minimotor.Storage.save("breakout_best", best);
-    }
   },
 
   draw() {
     const { ctx } = Draw;
     ctx.clearRect(0, 0, vp.w, vp.h);
-    ctx.fillStyle = "#0a0a0a";
-    ctx.fillRect(0, 0, vp.w, vp.h);
-    ctx.fillStyle = "#151515";
-    ctx.fillRect(ox, oy, GW * scale, GH * scale);
+    Game.drawLetterbox(ctx, vp.w, vp.h, GW, GH, "#0a0a0a", "#151515");
 
     ctx.save();
     ctx.translate(ox, oy);
@@ -220,7 +206,7 @@ Scenes.define("play", {
     ctx.arc(ball.x, ball.y, BALL_R, 0, Math.PI * 2);
     ctx.fill();
 
-    UI.text(`Score: ${score}  Best: ${best}  ${"♥".repeat(lives)}`, { x: 10, y: 6, size: 14 });
+    UI.text(`Score: ${scores.score}  Best: ${scores.best}  ${"♥".repeat(lives)}`, { x: 10, y: 6, size: 14 });
     UI.text("← → move  Space launch", { x: 10, y: GH - 28, size: 14 });
 
     UI.drawFloats(); // score pops, in game space
@@ -248,7 +234,7 @@ Scenes.define("over", {
     ctx.save();
     ctx.translate(ox, oy);
     ctx.scale(scale, scale);
-    drawGameOver(ctx, GW, GH, score, best, "Space to play again");
+    drawGameOver(ctx, GW, GH, scores.score, scores.best, "Space to play again");
     ctx.restore();
   },
 });
