@@ -3,7 +3,19 @@
 // Demonstrates: Particles.create() + fx.burst (CPU emitter, clock-derived),
 // Camera.shake (decaying screen-shake — applied inside Camera.render),
 // Input.vibrate (haptics, no-op on desktop) and Mathf.randRange / randItem.
-import { Audio, Camera, Draw, Input, Loop, Mathf, Particles, Perf, Pointer, Stage, UI } from "minimotor";
+import {
+  Audio,
+  Camera,
+  Draw,
+  Input,
+  Loop,
+  Mathf,
+  Particles,
+  Perf,
+  Pointer,
+  Stage,
+  UI,
+} from "minimotor";
 
 const view = Stage.init("game", { background: "#14141c", plugins: [Perf.plugin()] });
 
@@ -12,7 +24,7 @@ const COLORS = ["#ff6b6b", "#4ecdc4", "#ffe066", "#a06bff", "#6bff9e", "#ff9f43"
 const fx = Particles.create();
 
 // One shared "impact" — a burst, a shake and a buzz, all scaled by `power`.
-function impact(x, y, power) {
+function impact(x: number, y: number, power: number) {
   fx.burst({
     at: { x, y },
     count: Math.round(14 * power),

@@ -17,11 +17,22 @@ import {
   Transitions,
   UI,
 } from "minimotor";
+import type { Entity, Flash, Interpolator, Transition, TransitionRun } from "minimotor";
 import { Physics2D } from "minimotor/physics2d";
-import { CAR_TYPES, WEAPONS, WORLD, fleetPoints, roadsX, roadsY } from "./config.js";
-import { createRoadAudio } from "./audio.js";
-import { createRoadHud } from "./hud.js";
-import { createRoadWorld } from "./world.js";
+import type { Body2D } from "minimotor/physics2d";
+import {
+  CAR_TYPES,
+  WEAPONS,
+  WORLD,
+  fleetPoints,
+  roadsX,
+  roadsY,
+  type CarTypeId,
+  type PickupData,
+} from "./config.ts";
+import { createRoadAudio } from "./audio.ts";
+import { createRoadHud } from "./hud.ts";
+import { createRoadWorld } from "./world.ts";
 import {
   drawCar,
   drawCarExplosion,
@@ -32,7 +43,203 @@ import {
   drawProp,
   drawRemote,
   drawWorld,
-} from "./visuals.js";
+} from "./visuals.ts";
+
+interface Player {
+  x: number;
+  y: number;
+  angle: number;
+  inCar: boolean;
+  health: number;
+  knockX: number;
+  knockY: number;
+}
+interface FleetCar {
+  id: string;
+  spawnX: number;
+  spawnY: number;
+  x: number;
+  y: number;
+  angle: number;
+  vx: number;
+  vy: number;
+  steer: number;
+  health: number;
+  respawn: number;
+  type: CarTypeId;
+  flash: Flash;
+  body: Body2D;
+  lastImpactAt?: number;
+}
+interface BotState {
+  id: string;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  health: number;
+  dead?: boolean;
+}
+interface Bot {
+  id: string;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  health: number;
+  dead: number;
+  flash: Flash;
+  interp: Interpolator<BotState>;
+  ramCooldown?: number;
+}
+interface RemoteState {
+  id?: string;
+  color?: string;
+  life?: number;
+  phase: string;
+  mode: string;
+  px: number;
+  py: number;
+  pa: number;
+  vx: number;
+  vy: number;
+  cx: number;
+  cy: number;
+  ca: number;
+  health: number;
+  carHealth?: number;
+  carAlive?: boolean;
+  carType?: string;
+}
+interface Remote {
+  color: string;
+  carFlash: Flash;
+  lastSeen: number;
+  life: number;
+  interp: Interpolator<RemoteState>;
+}
+interface Bullet {
+  x: number;
+  y: number;
+  px: number;
+  py: number;
+  vx: number;
+  vy: number;
+  owner: string;
+  color: string | undefined;
+  life: number;
+  damage: number;
+  local: boolean;
+  hostile: boolean;
+  shotId: string | null;
+}
+interface Spark {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  color: string;
+}
+interface Debris {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  spin: number;
+  angle: number;
+  size: number;
+  color: string;
+}
+interface Smoke {
+  angle: number;
+  distance: number;
+  size: number;
+}
+interface Explosion {
+  x: number;
+  y: number;
+  age: number;
+  duration: number;
+  debris: Debris[];
+  smoke: Smoke[];
+}
+interface EnemyDeath {
+  x: number;
+  y: number;
+  angle: number;
+  age: number;
+  duration: number;
+  color: string;
+}
+interface Wheel {
+  x: number;
+  y: number;
+}
+interface TireMark {
+  x: number;
+  y: number;
+  x2: number;
+  y2: number;
+  life: number;
+  alpha: number;
+}
+interface BodyData {
+  kind?: string;
+  car?: FleetCar;
+  prop?: unknown;
+}
+interface BulletOptions {
+  damage?: number;
+  speed?: number;
+  life?: number;
+}
+interface NetMsg {
+  game?: string;
+  id?: string;
+  type?: string;
+  bots?: BotState[];
+  pickups?: PickupData[];
+  target?: string;
+  amount?: number;
+  weapon?: string;
+  by?: string;
+  botId?: string;
+  x?: number;
+  y?: number;
+  a?: number;
+  color?: string;
+  shotId?: string;
+  bot?: boolean;
+  damage?: number;
+  speed?: number;
+  life?: number;
+  sound?: boolean;
+  part?: string;
+  ix?: number;
+  iy?: number;
+  phase?: string;
+  mode?: string;
+  px?: number;
+  py?: number;
+  pa?: number;
+  vx?: number;
+  vy?: number;
+  cx?: number;
+  cy?: number;
+  ca?: number;
+  health?: number;
+  carHealth?: number;
+  carAlive?: boolean;
+  carId?: string;
+  carType?: string;
+}
+interface RosterRow {
+  label: string;
+  status: string;
+  color: string;
+  local?: boolean;
+}
 
 const meter = Perf.createNetMeter();
 // The viewport is LIVE (mutated on resize); the engine clears to `background`.
@@ -51,7 +258,7 @@ const spawn =
     : { x: roadsX[roadsX.length - 1], y: roadsY[roadsY.length - 1] };
 
 const playerFlash = Gizmos.flash(150);
-const player = {
+const player: Player = {
   x: spawn.x,
   y: spawn.y,
   angle: 0,
@@ -61,7 +268,7 @@ const player = {
   knockY: 0,
 };
 const ENTER_CAR_RANGE = 125;
-const cars = fleetPoints(clientNo).map((point, index) => ({
+const cars: FleetCar[] = fleetPoints(clientNo).map((point, index) => ({
   id: `${clientNo}:car:${index}`,
   spawnX: point.x,
   spawnY: point.y,
@@ -75,44 +282,60 @@ const cars = fleetPoints(clientNo).map((point, index) => ({
   respawn: 0,
   type: point.type,
   flash: Gizmos.flash(180),
-  body: null,
+  body: null as unknown as Body2D,
 }));
 let car = cars[0];
-let carBody = null;
+let carBody: Body2D = null as unknown as Body2D;
 // The game lerps `cameraFocus` itself (mouse-look offset + spectator target),
 // so the default camera follows it rigidly; the world clamp comes for free.
 const cameraFocus = { x: spawn.x, y: spawn.y };
 Camera.follow(cameraFocus, { world: WORLD, damping: 1 });
 Camera.snap();
-const bullets = [];
-const sparks = [];
-const explosions = [];
-const enemyDeaths = [];
-const tireMarks = [];
-let previousRearWheels = null;
+
+// Adapter over the default Camera facade: the old bespoke camera object exposed
+// world↔screen helpers and an immediate snapTo. Shake now folds into
+// `Camera.render`, so it is not part of these transforms.
+const camera = {
+  get x() {
+    return Camera.x;
+  },
+  get y() {
+    return Camera.y;
+  },
+  sx: (wx: number) => wx - Camera.x,
+  sy: (wy: number) => wy - Camera.y,
+  wx: (sx: number) => sx + Camera.x,
+  wy: (sy: number) => sy + Camera.y,
+  snapTo: (x: number, y: number) => {
+    cameraFocus.x = x;
+    cameraFocus.y = y;
+    Camera.snap();
+  },
+};
+
+const bullets: Bullet[] = [];
+const sparks: Spark[] = [];
+const explosions: Explosion[] = [];
+const enemyDeaths: EnemyDeath[] = [];
+const tireMarks: TireMark[] = [];
+let previousRearWheels: [Wheel, Wheel] | null = null;
 let tireMarkTimer = 0;
-const remotes = new Map();
+const remotes = new Map<string, Remote>();
 let score = 0;
 let life = 0;
 let spawnProtectedUntil = 0;
-const ownedWeapons = new Set(["pistol"]);
+const ownedWeapons = new Set<string>(["pistol"]);
 let activeWeapon = 0;
 let gameState = "spectator";
-let transition = null;
-const actorCollisionCooldown = new Map();
+let transition: TransitionRun | null = null;
+const actorCollisionCooldown = new Map<string, number>();
 
-const {
-  buildings,
-  cover,
-  intersections: botSpawns,
-  props,
-  solids,
-} = createRoadWorld();
-const enemies = [];
-const botById = new Map();
-const Pickup = ECS.component("RoadRivalsPickup");
+const { buildings, cover, intersections: botSpawns, props, solids } = createRoadWorld();
+const enemies: Bot[] = [];
+const botById = new Map<string, Bot>();
+const Pickup = ECS.component<PickupData>("RoadRivalsPickup");
 const pickupWorld = ECS.create();
-const pickupEntities = new Map();
+const pickupEntities = new Map<string, Entity>();
 
 // Box2D/Planck owns rigid collision and impulse transfer. The driving model
 // below supplies tire-space velocities; the solver handles contacts, sliding,
@@ -172,9 +395,11 @@ addEventListener("pointerdown", unlockRoadAudio, { once: true });
 
 let lastCrashAt = 0;
 physics.onContact((a, b) => {
-  const hitCar = a.data?.kind === "car" ? a : b.data?.kind === "car" ? b : null;
+  const aData = a.data as BodyData;
+  const bData = b.data as BodyData;
+  const hitCar = aData?.kind === "car" ? a : bData?.kind === "car" ? b : null;
   if (!hitCar) return;
-  const fleetCar = hitCar.data?.car;
+  const fleetCar = (hitCar.data as BodyData).car;
   const speed = Math.hypot(hitCar.vx, hitCar.vy);
   const now = performance.now();
   if (speed > 95 && now - lastCrashAt > 160) {
@@ -197,10 +422,10 @@ const transport = Net.connect({
   idleTimeoutMs: 15000,
 });
 
-function angleDelta(a, b) {
+function angleDelta(a: number, b: number) {
   return Math.atan2(Math.sin(b - a), Math.cos(b - a));
 }
-function blendState(a, b, t) {
+function blendState(a: RemoteState, b: RemoteState, t: number): RemoteState {
   return {
     ...b,
     px: Mathf.lerp(a.px, b.px, t),
@@ -216,16 +441,16 @@ function blendState(a, b, t) {
 transport.onMessage = (bytes) => {
   if (!bytes.length) return;
   meter.recv(bytes.length);
-  let msg;
+  let msg: NetMsg;
   try {
-    msg = JSON.parse(decoder.decode(bytes));
+    msg = JSON.parse(decoder.decode(bytes)) as NetMsg;
   } catch {
     return;
   }
   if (msg.game !== "road-rivals" || msg.id === id) return;
   if (msg.type === "world") {
-    const liveBots = new Set();
-    for (const state of msg.bots) {
+    const liveBots = new Set<string>();
+    for (const state of msg.bots ?? []) {
       liveBots.add(state.id);
       let bot = botById.get(state.id);
       if (!bot) {
@@ -238,7 +463,7 @@ transport.onMessage = (bytes) => {
           health: state.health,
           dead: state.dead ? 1 : 0,
           flash: Gizmos.flash(130),
-          interp: Net.createInterpolator({ delayMs: 100 }),
+          interp: Net.createInterpolator<BotState>({ delayMs: 100 }),
         };
         botById.set(state.id, bot);
         enemies.push(bot);
@@ -248,15 +473,12 @@ transport.onMessage = (bytes) => {
       bot.health = state.health;
       bot.interp.push(state);
     }
-    const activePickups = new Set(msg.pickups.map((pickup) => pickup.id));
-    for (const pickup of msg.pickups) {
+    const activePickups = new Set((msg.pickups ?? []).map((pickup) => pickup.id));
+    for (const pickup of msg.pickups ?? []) {
       const entity = pickupEntities.get(pickup.id);
-      if (entity) Object.assign(pickupWorld.get(entity, Pickup), pickup);
+      if (entity) Object.assign(pickupWorld.get(entity, Pickup)!, pickup);
       else {
-        pickupEntities.set(
-          pickup.id,
-          pickupWorld.spawn(Pickup.with({ ...pickup })),
-        );
+        pickupEntities.set(pickup.id, pickupWorld.spawn(Pickup.with({ ...pickup })));
       }
     }
     for (const [pickupId, entity] of pickupEntities) {
@@ -289,7 +511,7 @@ transport.onMessage = (bytes) => {
       score += 100;
       radioSound();
     }
-    const bot = botById.get(msg.botId);
+    const bot = botById.get(msg.botId ?? "");
     if (bot) {
       burst(bot.x, bot.y, "#ff695f", 24);
       enemyDeaths.push({
@@ -304,18 +526,28 @@ transport.onMessage = (bytes) => {
     }
     return;
   }
-  if (msg.type === "bye") return void remotes.delete(msg.id);
+  if (msg.type === "bye") return void remotes.delete(msg.id ?? "");
   if (msg.type === "car-explosion") {
-    spawnCarExplosion(msg.x, msg.y, msg.color ?? "#ffcb5c");
+    spawnCarExplosion(msg.x ?? 0, msg.y ?? 0, msg.color ?? "#ffcb5c");
     return;
   }
   if (msg.type === "shot") {
-    spawnBullet(msg.x, msg.y, msg.a, msg.id, msg.color, false, msg.shotId, !!msg.bot, {
-      damage: msg.damage,
-      speed: msg.speed,
-      life: msg.life,
-    });
-    if (msg.sound !== false) gunSound(msg.x, msg.y, msg.weapon);
+    spawnBullet(
+      msg.x ?? 0,
+      msg.y ?? 0,
+      msg.a ?? 0,
+      msg.id ?? "",
+      msg.color,
+      false,
+      msg.shotId ?? null,
+      !!msg.bot,
+      {
+        damage: msg.damage,
+        speed: msg.speed,
+        life: msg.life,
+      },
+    );
+    if (msg.sound !== false) gunSound(msg.x ?? 0, msg.y ?? 0, msg.weapon);
     return;
   }
   if (msg.type === "hit") {
@@ -337,35 +569,35 @@ transport.onMessage = (bytes) => {
     return;
   }
   if (msg.type !== "state") return;
-  let remote = remotes.get(msg.id);
+  let remote = remotes.get(msg.id ?? "");
   if (!remote) {
     remote = {
-      color: msg.color,
+      color: msg.color ?? "#fff",
       carFlash: Gizmos.flash(180),
       lastSeen: performance.now(),
-      life: msg.life,
-      interp: Net.createInterpolator({ delayMs: 100, lerp: blendState }),
+      life: msg.life ?? 0,
+      interp: Net.createInterpolator<RemoteState>({ delayMs: 100, lerp: blendState }),
     };
-    remotes.set(msg.id, remote);
+    remotes.set(msg.id ?? "", remote);
   }
   remote.lastSeen = performance.now();
   if (remote.life !== msg.life) {
-    remote.life = msg.life;
+    remote.life = msg.life ?? 0;
     remote.interp.clear(); // respawns/teleports must snap, never sweep
   }
-  remote.interp.push(msg);
+  remote.interp.push(msg as unknown as RemoteState);
 };
 
 addEventListener("pagehide", () => {
   transport.trySend(encoder.encode(JSON.stringify({ game: "road-rivals", type: "bye", id })));
 });
 
-function send(message) {
+function send(message: Record<string, unknown>) {
   const payload = JSON.stringify({ game: "road-rivals", id, color, ...message });
   if (transport.trySend(encoder.encode(payload))) meter.sent(payload.length);
 }
 
-const joinTransition = {
+const joinTransition: Transition = {
   durationMs: 720,
   render(ctx, t, viewport) {
     const eased = t * t * (3 - 2 * t);
@@ -387,7 +619,7 @@ const joinTransition = {
   },
 };
 
-function goToState(next, spec = Transitions.fade(420, "#071012")) {
+function goToState(next: string, spec: Transition = Transitions.fade(420, "#071012")) {
   if (transition || gameState === next) return;
   gameState = "transition";
   transition = Transitions.run(spec, () => {
@@ -396,7 +628,7 @@ function goToState(next, spec = Transitions.fade(420, "#071012")) {
   });
 }
 
-function moveCircle(body, dx, dy, radius) {
+function moveCircle(body: { x: number; y: number }, dx: number, dy: number, radius: number) {
   const oldX = body.x;
   body.x = Mathf.clamp(oldX + dx, radius, WORLD.w - radius);
   if (solids.some((rect) => Collision.circleRect(body.x, body.y, radius, rect))) body.x = oldX;
@@ -406,7 +638,7 @@ function moveCircle(body, dx, dy, radius) {
   if (solids.some((rect) => Collision.circleRect(body.x, body.y, radius, rect))) body.y = oldY;
 }
 
-function carHits(x, y) {
+function carHits(x: number, y: number) {
   return (
     x < 28 ||
     y < 28 ||
@@ -425,11 +657,13 @@ function carHits(x, y) {
 // A compact dynamic bicycle model: engine/brake forces act longitudinally,
 // tires dissipate lateral slip, steering produces wheelbase-based yaw, and
 // rolling + aerodynamic drag limit speed without an arbitrary hard clamp.
-function updateCar(dt) {
+function updateCar(dt: number) {
   const config = CAR_TYPES[car.type];
-  const throttle = (Keys.down("KeyW") || Keys.down("ArrowUp") ? 1 : 0) -
+  const throttle =
+    (Keys.down("KeyW") || Keys.down("ArrowUp") ? 1 : 0) -
     (Keys.down("KeyS") || Keys.down("ArrowDown") ? 1 : 0);
-  const steerInput = (Keys.down("KeyD") || Keys.down("ArrowRight") ? 1 : 0) -
+  const steerInput =
+    (Keys.down("KeyD") || Keys.down("ArrowRight") ? 1 : 0) -
     (Keys.down("KeyA") || Keys.down("ArrowLeft") ? 1 : 0);
   car.angle = carBody.rot;
   car.vx = carBody.vx;
@@ -454,7 +688,8 @@ function updateCar(dt) {
   lateral *= Math.exp(-grip * dt);
   // Power and steering can break rear traction, producing controllable fishtail
   // rather than random noise.
-  if (throttle > 0 && Math.abs(forward) > 230) lateral -= steerInput * Math.abs(forward) * 0.62 * dt;
+  if (throttle > 0 && Math.abs(forward) > 230)
+    lateral -= steerInput * Math.abs(forward) * 0.62 * dt;
 
   const steerLimit = config.steer / (1 + Math.abs(forward) / 700);
   const targetSteer = steerInput * steerLimit;
@@ -470,8 +705,8 @@ function updateCar(dt) {
   carBody.spin = Math.abs(forward) > 4 ? (forward / 60) * Math.tan(car.steer) * yawGain : 0;
 }
 
-function nearestEnterableCar() {
-  let nearest = null;
+function nearestEnterableCar(): FleetCar | null {
+  let nearest: FleetCar | null = null;
   let nearestDistance = ENTER_CAR_RANGE;
   for (const candidate of cars) {
     if (candidate.health <= 0) continue;
@@ -512,15 +747,15 @@ function tryToggleCar() {
 }
 
 function spawnBullet(
-  x,
-  y,
-  angle,
-  owner,
-  bulletColor,
-  local,
-  shotId = null,
+  x: number,
+  y: number,
+  angle: number,
+  owner: string,
+  bulletColor: string | undefined,
+  local: boolean,
+  shotId: string | null = null,
   hostile = false,
-  options = {},
+  options: BulletOptions = {},
 ) {
   const speed = options.speed ?? 760;
   const muzzleX = x + Math.cos(angle) * 24;
@@ -543,9 +778,9 @@ function spawnBullet(
 }
 
 let shotCooldown = 0;
-function cursorAimAngle(origin = player) {
-  const screenX = origin.x - camera.x + Camera.shakeX();
-  const screenY = origin.y - camera.y + Camera.shakeY();
+function cursorAimAngle(origin: { x: number; y: number } = player) {
+  const screenX = origin.x - camera.x;
+  const screenY = origin.y - camera.y;
   return Math.atan2(Mouse.y - screenY, Mouse.x - screenX);
 }
 
@@ -571,13 +806,18 @@ function shoot() {
       ...options,
     });
   }
-  burst(origin.x + Math.cos(aim) * 28, origin.y + Math.sin(aim) * 28, "#fff2a8", weapon.pellets + 4);
+  burst(
+    origin.x + Math.cos(aim) * 28,
+    origin.y + Math.sin(aim) * 28,
+    "#fff2a8",
+    weapon.pellets + 4,
+  );
   gunSound(origin.x, origin.y, weapon.id);
   return weapon.cooldown;
 }
 
-function spawnCarExplosion(x, y, carColor, broadcast = false) {
-  const debris = Array.from({ length: 18 }, (_, index) => {
+function spawnCarExplosion(x: number, y: number, carColor: string, broadcast = false) {
+  const debris: Debris[] = Array.from({ length: 18 }, (_, index) => {
     const angle = Math.random() * Math.PI * 2;
     const speed = Mathf.randRange(90, 330);
     return {
@@ -591,7 +831,7 @@ function spawnCarExplosion(x, y, carColor, broadcast = false) {
       color: index % 3 === 0 ? carColor : index % 2 ? "#ffb24f" : "#3a4142",
     };
   });
-  const smoke = Array.from({ length: 10 }, (_, index) => ({
+  const smoke: Smoke[] = Array.from({ length: 10 }, (_, index) => ({
     angle: (index / 10) * Math.PI * 2 + Mathf.randRange(-0.3, 0.3),
     distance: Mathf.randRange(12, 42),
     size: Mathf.randRange(14, 28),
@@ -605,15 +845,22 @@ function spawnCarExplosion(x, y, carColor, broadcast = false) {
   if (broadcast) send({ type: "car-explosion", x, y });
 }
 
-function burst(x, y, sparkColor, count) {
+function burst(x: number, y: number, sparkColor: string, count: number) {
   for (let i = 0; i < count; i++) {
     const a = Math.random() * Math.PI * 2;
     const speed = Mathf.randRange(40, 190);
-    sparks.push({ x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, life: Mathf.randRange(0.18, 0.5), color: sparkColor });
+    sparks.push({
+      x,
+      y,
+      vx: Math.cos(a) * speed,
+      vy: Math.sin(a) * speed,
+      life: Mathf.randRange(0.18, 0.5),
+      color: sparkColor,
+    });
   }
 }
 
-function damagePlayer(amount) {
+function damagePlayer(amount: number) {
   if (gameState !== "alive" || performance.now() < spawnProtectedUntil) return;
   player.health -= amount;
   playerFlash.hit();
@@ -627,7 +874,7 @@ function damagePlayer(amount) {
   }
 }
 
-function damageCar(amount, targetCar = car) {
+function damageCar(amount: number, targetCar = car) {
   if (targetCar.health <= 0) return;
   targetCar.health = Math.max(0, targetCar.health - amount);
   targetCar.flash.hit();
@@ -660,14 +907,14 @@ function resetPlayer() {
   burst(player.x, player.y, color, 24);
 }
 
-function separateFootFrom(x, y, radius) {
+function separateFootFrom(x: number, y: number, radius: number) {
   if (player.inCar || gameState !== "alive") return;
   const hit = Collision.separateCircles(player.x, player.y, 13, x, y, radius);
   if (!hit) return;
   moveCircle(player, hit.nx * hit.depth, hit.ny * hit.depth, 13);
 }
 
-function repelCarFrom(x, y, radius) {
+function repelCarFrom(x: number, y: number, radius: number) {
   const hit = Collision.separateCircles(car.x, car.y, 28, x, y, radius);
   if (!hit) return false;
   carBody.x += hit.nx * hit.depth * 0.72;
@@ -676,7 +923,7 @@ function repelCarFrom(x, y, radius) {
   return true;
 }
 
-function updateTireMarks(dt) {
+function updateTireMarks(dt: number) {
   for (let i = tireMarks.length - 1; i >= 0; i--) {
     tireMarks[i].life -= dt;
     if (tireMarks[i].life <= 0) tireMarks.splice(i, 1);
@@ -692,14 +939,20 @@ function updateTireMarks(dt) {
   const s = Math.sin(car.angle);
   const rearX = car.x - c * 21;
   const rearY = car.y - s * 21;
-  const wheels = [
+  const wheels: [Wheel, Wheel] = [
     { x: rearX - s * 11, y: rearY + c * 11 },
     { x: rearX + s * 11, y: rearY - c * 11 },
   ];
   if (marking && previousRearWheels && tireMarkTimer <= 0) {
     const alpha = Mathf.clamp(0.18 + tireSlip / 420, 0.18, 0.58);
     for (let i = 0; i < 2; i++) {
-      tireMarks.push({ ...previousRearWheels[i], x2: wheels[i].x, y2: wheels[i].y, life: 9, alpha });
+      tireMarks.push({
+        ...previousRearWheels[i],
+        x2: wheels[i].x,
+        y2: wheels[i].y,
+        life: 9,
+        alpha,
+      });
     }
     if (tireMarks.length > 700) tireMarks.splice(0, tireMarks.length - 700);
     tireMarkTimer = 0.025;
@@ -707,14 +960,13 @@ function updateTireMarks(dt) {
   previousRearWheels = wheels;
 }
 
-function updateActors(dt) {
+function updateActors(dt: number) {
   for (const fleetCar of cars) {
     if (fleetCar.health > 0 && (!player.inCar || fleetCar !== car)) {
       separateFootFrom(fleetCar.x, fleetCar.y, 29);
     }
   }
   for (const enemy of enemies) {
-    enemy.flash.tick(dt * 1000);
     const state = enemy.interp.sample();
     if (!state) continue;
     enemy.x = state.x;
@@ -798,7 +1050,7 @@ function updateActors(dt) {
       const pickup = pickupWorld.get(entity, Pickup);
       const useful =
         pickup &&
-        (pickup.kind === "weapon" ? !ownedWeapons.has(pickup.weapon) : player.health < 100);
+        (pickup.kind === "weapon" ? !ownedWeapons.has(pickup.weapon ?? "") : player.health < 100);
       if (
         !useful ||
         !Collision.circleHit(player.x, player.y, player.inCar ? 28 : 13, pickup.x, pickup.y, 16)
@@ -813,7 +1065,7 @@ function updateActors(dt) {
   }
 }
 
-function updateExplosions(dt) {
+function updateExplosions(dt: number) {
   for (let i = enemyDeaths.length - 1; i >= 0; i--) {
     enemyDeaths[i].age += dt;
     if (enemyDeaths[i].age >= enemyDeaths[i].duration) enemyDeaths.splice(i, 1);
@@ -832,7 +1084,7 @@ function updateExplosions(dt) {
   }
 }
 
-function updateProjectiles(dt) {
+function updateProjectiles(dt: number) {
   for (let i = bullets.length - 1; i >= 0; i--) {
     const b = bullets[i];
     b.px = b.x;
@@ -854,8 +1106,7 @@ function updateProjectiles(dt) {
     // the actively networked car still arrives through its targeted hit event.
     const struckCar = cars.find(
       (candidate) =>
-        candidate.health > 0 &&
-        Collision.circleHit(b.x, b.y, 3, candidate.x, candidate.y, 30),
+        candidate.health > 0 && Collision.circleHit(b.x, b.y, 3, candidate.x, candidate.y, 30),
     );
     if (struckCar) {
       if (b.local || b.hostile || struckCar !== car || !player.inCar) {
@@ -878,8 +1129,7 @@ function updateProjectiles(dt) {
 
     if (b.local && !hit) {
       const enemy = enemies.find(
-        (target) =>
-          target.dead <= 0 && Collision.circleHit(b.x, b.y, 3, target.x, target.y, 14),
+        (target) => target.dead <= 0 && Collision.circleHit(b.x, b.y, 3, target.x, target.y, 14),
       );
       if (enemy) {
         enemy.flash.hit();
@@ -901,10 +1151,7 @@ function updateProjectiles(dt) {
       for (const [remoteId, remote] of remotes) {
         const state = remote.interp.sample();
         if (!state || state.phase === "dead") continue;
-        if (
-          state.carAlive !== false &&
-          Collision.circleHit(b.x, b.y, 3, state.cx, state.cy, 28)
-        ) {
+        if (state.carAlive !== false && Collision.circleHit(b.x, b.y, 3, state.cx, state.cy, 28)) {
           remote.carFlash.hit();
           send({
             type: "hit",
@@ -917,10 +1164,7 @@ function updateProjectiles(dt) {
           hit = true;
           break;
         }
-        if (
-          state.mode === "foot" &&
-          Collision.circleHit(b.x, b.y, 3, state.px, state.py, 14)
-        ) {
+        if (state.mode === "foot" && Collision.circleHit(b.x, b.y, 3, state.px, state.py, 14)) {
           send({
             type: "hit",
             part: "player",
@@ -949,42 +1193,36 @@ function updateProjectiles(dt) {
 }
 
 let sendStep = 0;
-const {
-  drawCarHealth,
-  drawEnterCarPrompt,
-  drawInventory,
-  drawMinimap,
-  drawPlayerHealth,
-} = createRoadHud(() => ({
-  Pickup,
-  activeWeapon,
-  buildings,
-  camera,
-  car,
-  cars,
-  color,
-  enemies,
-  gameState,
-  nearestEnterableCar,
-  ownedWeapons,
-  pickupWorld,
-  player,
-  remotes,
-  selectWeapon(slot) {
-    activeWeapon = slot;
-    radioSound();
-  },
-  vp,
-}));
+const { drawCarHealth, drawEnterCarPrompt, drawInventory, drawMinimap, drawPlayerHealth } =
+  createRoadHud(() => ({
+    Pickup,
+    activeWeapon,
+    buildings,
+    camera,
+    car,
+    cars,
+    color,
+    enemies,
+    gameState,
+    nearestEnterableCar,
+    ownedWeapons,
+    pickupWorld,
+    player,
+    remotes,
+    selectWeapon(slot: number) {
+      activeWeapon = slot;
+      radioSound();
+    },
+    vp,
+  }));
 
 Loop.run({
-  update(dtMs) {
+  update() {
+    const dtMs = Loop.step;
     const dt = dtMs / 1000;
     let wantsToShoot = false;
     transition?.advance(dtMs);
     if (transition?.done) transition = null;
-    playerFlash.tick(dtMs);
-    for (const remote of remotes.values()) remote.carFlash.tick(dtMs);
 
     if (gameState === "alive") {
       for (let slot = 0; slot < WEAPONS.length; slot++) {
@@ -996,10 +1234,10 @@ Loop.run({
       if (Keys.pressed("KeyE")) tryToggleCar();
       if (player.inCar) updateCar(dt);
       else {
-        let dx =
+        const dx =
           (Keys.down("KeyD") || Keys.down("ArrowRight") ? 1 : 0) -
           (Keys.down("KeyA") || Keys.down("ArrowLeft") ? 1 : 0);
-        let dy =
+        const dy =
           (Keys.down("KeyS") || Keys.down("ArrowDown") ? 1 : 0) -
           (Keys.down("KeyW") || Keys.down("ArrowUp") ? 1 : 0);
         const len = Math.hypot(dx, dy) || 1;
@@ -1014,7 +1252,6 @@ Loop.run({
       if (!player.inCar && Mouse.inside && Mouse.down && shotCooldown <= 0) wantsToShoot = true;
     }
     for (const fleetCar of cars) {
-      fleetCar.flash.tick(dtMs);
       if (fleetCar.respawn > 0) {
         fleetCar.respawn -= dt;
         if (fleetCar.respawn <= 0) {
@@ -1038,8 +1275,8 @@ Loop.run({
       fleetCar.vy = fleetCar.body.vy;
     }
     for (const prop of props) {
-      prop.x = prop.body.x;
-      prop.y = prop.body.y;
+      prop.x = prop.body!.x;
+      prop.y = prop.body!.y;
     }
     if (player.inCar) {
       player.x = car.x;
@@ -1055,8 +1292,8 @@ Loop.run({
     updateEngineSound(engineLoad, tireSlip);
 
     if (gameState === "alive") {
-      const aimX = camera.wx(Mouse.x - Camera.shakeX());
-      const aimY = camera.wy(Mouse.y - Camera.shakeY());
+      const aimX = camera.wx(Mouse.x);
+      const aimY = camera.wy(Mouse.y);
       player.angle = Math.atan2(aimY - player.y, aimX - player.x);
       if (wantsToShoot) shotCooldown = shoot();
     }
@@ -1108,72 +1345,69 @@ Loop.run({
 
     ctx.fillStyle = "#101719";
     ctx.fillRect(0, 0, vp.w, vp.h);
-    ctx.save();
-    ctx.translate(
-      Math.round(-camera.x + Camera.shakeX()),
-      Math.round(-camera.y + Camera.shakeY()),
-    );
-    drawWorld(ctx, buildings, cover);
-    ctx.lineWidth = 3;
-    ctx.lineCap = "round";
-    for (const mark of tireMarks) {
-      ctx.globalAlpha = mark.alpha * Mathf.clamp(mark.life / 2, 0, 1);
-      ctx.strokeStyle = "#080c0d";
-      ctx.beginPath();
-      ctx.moveTo(mark.x, mark.y);
-      ctx.lineTo(mark.x2, mark.y2);
-      ctx.stroke();
-    }
-    ctx.globalAlpha = 1;
-    ctx.lineCap = "butt";
-    for (const prop of props) drawProp(ctx, prop);
-    for (const [, pickup] of pickupWorld.query(Pickup)) drawPickup(ctx, pickup);
-    for (const enemy of enemies) if (enemy.dead <= 0) drawEnemy(ctx, enemy, player);
-    for (const death of enemyDeaths) drawEnemyDeath(ctx, death);
-    for (const remote of remotes.values()) {
-      const state = remote.interp.sample();
-      if (state) drawRemote(ctx, state, remote);
-    }
-    if (gameState === "alive") {
-      for (const fleetCar of cars) {
-        if (fleetCar.health <= 0) continue;
-        drawCar(
-          ctx,
-          fleetCar.x,
-          fleetCar.y,
-          fleetCar.angle,
-          CAR_TYPES[fleetCar.type].color,
-          player.inCar && fleetCar === car,
-          fleetCar.flash.value,
-          fleetCar.type,
-        );
+    // The camera transform (and its shake) fold into `Camera.render`.
+    Camera.render(() => {
+      drawWorld(ctx, buildings, cover);
+      ctx.lineWidth = 3;
+      ctx.lineCap = "round";
+      for (const mark of tireMarks) {
+        ctx.globalAlpha = mark.alpha * Mathf.clamp(mark.life / 2, 0, 1);
+        ctx.strokeStyle = "#080c0d";
+        ctx.beginPath();
+        ctx.moveTo(mark.x, mark.y);
+        ctx.lineTo(mark.x2, mark.y2);
+        ctx.stroke();
       }
-    }
-    if (gameState === "alive" && !player.inCar) {
-      drawPerson(ctx, player.x, player.y, player.angle, color, true, playerFlash.value);
-    }
-    for (const b of bullets) {
-      ctx.strokeStyle = b.color ?? "#fff";
-      ctx.lineWidth = b.local ? 3 : 2;
-      ctx.beginPath();
-      ctx.moveTo(b.px, b.py);
-      ctx.lineTo(b.x, b.y);
-      ctx.stroke();
-    }
-    for (const explosion of explosions) drawCarExplosion(ctx, explosion);
-    for (const p of sparks) {
-      ctx.globalAlpha = Mathf.clamp(p.life * 3, 0, 1);
-      ctx.fillStyle = p.color;
-      ctx.fillRect(p.x - 2, p.y - 2, 4, 4);
-    }
-    ctx.globalAlpha = 1;
-    ctx.restore();
+      ctx.globalAlpha = 1;
+      ctx.lineCap = "butt";
+      for (const prop of props) drawProp(ctx, prop);
+      for (const [, pickup] of pickupWorld.query(Pickup)) drawPickup(ctx, pickup);
+      for (const enemy of enemies) if (enemy.dead <= 0) drawEnemy(ctx, enemy, player);
+      for (const death of enemyDeaths) drawEnemyDeath(ctx, death);
+      for (const remote of remotes.values()) {
+        const state = remote.interp.sample();
+        if (state) drawRemote(ctx, state, remote);
+      }
+      if (gameState === "alive") {
+        for (const fleetCar of cars) {
+          if (fleetCar.health <= 0) continue;
+          drawCar(
+            ctx,
+            fleetCar.x,
+            fleetCar.y,
+            fleetCar.angle,
+            CAR_TYPES[fleetCar.type].color,
+            player.inCar && fleetCar === car,
+            fleetCar.flash.value,
+            fleetCar.type,
+          );
+        }
+      }
+      if (gameState === "alive" && !player.inCar) {
+        drawPerson(ctx, player.x, player.y, player.angle, color, true, playerFlash.value);
+      }
+      for (const b of bullets) {
+        ctx.strokeStyle = b.color ?? "#fff";
+        ctx.lineWidth = b.local ? 3 : 2;
+        ctx.beginPath();
+        ctx.moveTo(b.px, b.py);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+      for (const explosion of explosions) drawCarExplosion(ctx, explosion);
+      for (const p of sparks) {
+        ctx.globalAlpha = Mathf.clamp(p.life * 3, 0, 1);
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x - 2, p.y - 2, 4, 4);
+      }
+      ctx.globalAlpha = 1;
+    });
 
     // World prompts render before the fixed HUD, so the roster always wins
     // z-order when the car is underneath it.
     drawEnterCarPrompt();
 
-    const rosterRows = [
+    const rosterRows: RosterRow[] = [
       {
         label: `YOU · CLIENT ${clientNo}`,
         status: `${gameState} · ${Math.ceil(player.health)} HP · CAR ${Math.ceil(car.health)}`,
@@ -1237,17 +1471,14 @@ Loop.run({
     if (gameState === "alive" && player.inCar) drawCarHealth();
     if (gameState === "alive") drawInventory();
     if (gameState === "alive") {
-      UI.text(
-        player.inCar ? "E EXIT · WASD DRIVE · SPACE HANDBRAKE" : "WASD MOVE · MOUSE FIRE",
-        {
-          x: vp.w / 2,
-          y: vp.h - 34,
-          align: "center",
-          size: 13,
-          bold: true,
-          color: "#dce7e7",
-        },
-      );
+      UI.text(player.inCar ? "E EXIT · WASD DRIVE · SPACE HANDBRAKE" : "WASD MOVE · MOUSE FIRE", {
+        x: vp.w / 2,
+        y: vp.h - 34,
+        align: "center",
+        size: 13,
+        bold: true,
+        color: "#dce7e7",
+      });
     } else if (gameState === "spectator") {
       const join = { x: vp.w / 2 - 180, y: vp.h / 2 - 92, w: 360, h: 184 };
       UI.panel({ ...join, title: "ROAD RIVALS" });
@@ -1340,4 +1571,3 @@ Loop.run({
     }
   },
 });
-

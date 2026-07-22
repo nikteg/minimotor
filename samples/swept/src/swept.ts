@@ -22,7 +22,7 @@ const proj = { x: 0, y: 0, w: 18, h: 18 };
 let speed = 60; // px per step; well above the wall's 6px width
 let swept = true;
 let stats = { hits: 0, tunneled: 0 };
-let flash = null; // { x, y, tunneled } — last outcome marker, fades out
+let flash: { x: number; y: number; tunneled: boolean } | null = null; // last outcome marker, fades out
 let flashAge = 0;
 
 function reset() {
@@ -31,7 +31,7 @@ function reset() {
 }
 reset();
 
-function box(x) {
+function box(x: number) {
   return { x, y: proj.y, w: proj.w, h: proj.h };
 }
 
@@ -58,7 +58,7 @@ Loop.run({
     if (detected) {
       // Stop at the contact face. With the swept test we know exactly where
       // (start + motion·t); the per-frame test only knows "somewhere overlapping".
-      const contactX = swept ? prevX + speed * hit.t : proj.x;
+      const contactX = swept ? prevX + speed * hit!.t : proj.x;
       stats.hits++;
       Audio.Sfx.blip(880, 0.05); // clean catch
       flash = { x: contactX + proj.w, y: proj.y + proj.h / 2, tunneled: false };
@@ -108,13 +108,27 @@ Loop.run({
     }
 
     // HUD.
-    UI.text(`method: ${swept ? "sweptAABB" : "rectsOverlap (per-frame)"}`, { x: 16, y: 12, size: 16 });
+    UI.text(`method: ${swept ? "sweptAABB" : "rectsOverlap (per-frame)"}`, {
+      x: 16,
+      y: 12,
+      size: 16,
+    });
     UI.text(`speed:  ${speed} px/step`, { x: 16, y: 34, size: 16 });
     UI.text(`hits: ${stats.hits}`, { x: 16, y: 62, size: 16, color: "#6bff9e" });
     UI.text(`tunneled: ${stats.tunneled}`, { x: 120, y: 62, size: 16, color: "#ff5252" });
-    UI.text("Space = toggle method    ↑/↓ = speed", { x: 16, y: view.h - 33, size: 13, color: "dim" });
+    UI.text("Space = toggle method    ↑/↓ = speed", {
+      x: 16,
+      y: view.h - 33,
+      size: 13,
+      color: "dim",
+    });
     if (!swept && speed > proj.w) {
-      UI.text("↑ speed high enough to tunnel — watch the per-frame test miss", { x: 16, y: 90, size: 14, color: "#ff5252" });
+      UI.text("↑ speed high enough to tunnel — watch the per-frame test miss", {
+        x: 16,
+        y: 90,
+        size: 14,
+        color: "#ff5252",
+      });
     }
   },
 });

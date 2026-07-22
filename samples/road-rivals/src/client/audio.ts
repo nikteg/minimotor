@@ -1,6 +1,26 @@
 import { Audio, Mathf } from "minimotor";
+import type { Bus } from "minimotor";
 
-function noiseBuffer(ctx, seconds) {
+interface AudioState {
+  player: { inCar: boolean; x: number; y: number };
+  car: { x: number; y: number; vx: number; vy: number; angle: number };
+  gameState: string;
+}
+
+interface EngineNodes {
+  ctx: AudioContext;
+  fundamental: OscillatorNode;
+  harmonic: OscillatorNode;
+  engineFilter: BiquadFilterNode;
+  engineGain: GainNode;
+  roadFilter: BiquadFilterNode;
+  roadGain: GainNode;
+  skidGain: GainNode;
+}
+
+type SfxBuild = (ctx: AudioContext, now: number, out: AudioNode) => void;
+
+function noiseBuffer(ctx: AudioContext, seconds: number): AudioBuffer {
   const buffer = ctx.createBuffer(
     1,
     Math.max(1, Math.floor(ctx.sampleRate * seconds)),
@@ -11,7 +31,7 @@ function noiseBuffer(ctx, seconds) {
   return buffer;
 }
 
-export function createRoadAudio(getState) {
+export function createRoadAudio(getState: () => AudioState) {
   let roadAudioReady = false;
   Audio.Mixer.setMasterVolume(0.82);
   Audio.Mixer.compressor({ threshold: -15, ratio: 10, attack: 0.004, release: 0.18, knee: 5 });
@@ -35,12 +55,12 @@ export function createRoadAudio(getState) {
   uiBus.setVolume(0.48);
   uiBus.send("road-city", 0.08);
 
-  function roadSfx(bus, build) {
+  function roadSfx(bus: Bus, build: SfxBuild) {
     if (!roadAudioReady) return;
     Audio.playSfx((ctx, now) => build(ctx, now, bus.input));
   }
 
-  function gunSound(x, y, weapon = "pistol") {
+  function gunSound(x: number, y: number, weapon = "pistol") {
     const { player, car } = getState();
     const listener = player.inCar ? car : player;
     const distance = Math.hypot(x - listener.x, y - listener.y);
@@ -82,7 +102,10 @@ export function createRoadAudio(getState) {
         now + (shotgun ? 0.16 : smg ? 0.035 : 0.08),
       );
       mechanismGain.gain.setValueAtTime(0.0001, now);
-      mechanismGain.gain.exponentialRampToValueAtTime(shotgun ? 0.12 : smg ? 0.045 : 0.035, now + 0.009);
+      mechanismGain.gain.exponentialRampToValueAtTime(
+        shotgun ? 0.12 : smg ? 0.045 : 0.035,
+        now + 0.009,
+      );
       mechanismGain.gain.exponentialRampToValueAtTime(
         0.0001,
         now + (shotgun ? 0.17 : smg ? 0.04 : 0.085),
@@ -98,7 +121,7 @@ export function createRoadAudio(getState) {
     });
   }
 
-  function enemyDeathSound(x, y) {
+  function enemyDeathSound(x: number, y: number) {
     const { player, car } = getState();
     const listener = player.inCar ? car : player;
     const distance = Math.hypot(x - listener.x, y - listener.y);
@@ -152,7 +175,7 @@ export function createRoadAudio(getState) {
     });
   }
 
-  function doorSound(entering) {
+  function doorSound(entering: boolean) {
     roadSfx(uiBus, (ctx, now, out) => {
       const thud = ctx.createOscillator();
       const thudGain = ctx.createGain();
@@ -177,7 +200,7 @@ export function createRoadAudio(getState) {
     });
   }
 
-  function carExplosionSound(x, y) {
+  function carExplosionSound(x: number, y: number) {
     const { player, car } = getState();
     const listener = player.inCar ? car : player;
     const distance = Math.hypot(x - listener.x, y - listener.y);
@@ -299,7 +322,7 @@ export function createRoadAudio(getState) {
     });
   }
 
-  let engineNodes = null;
+  let engineNodes: EngineNodes | null = null;
   function ensureEngineSound() {
     if (engineNodes) return;
     Audio.playSfx((ctx, now) => {
@@ -354,7 +377,7 @@ export function createRoadAudio(getState) {
       };
     });
   }
-  function updateEngineSound(engineLoad, tireSlip) {
+  function updateEngineSound(engineLoad: number, tireSlip: number) {
     if (!engineNodes) return;
     const { player, car, gameState } = getState();
     const speed = Math.abs(car.vx * Math.cos(car.angle) + car.vy * Math.sin(car.angle));
@@ -367,13 +390,29 @@ export function createRoadAudio(getState) {
     const now = engineNodes.ctx.currentTime;
     engineNodes.fundamental.frequency.setTargetAtTime(engineHz, now, 0.055);
     engineNodes.harmonic.frequency.setTargetAtTime(engineHz * 2.01, now, 0.05);
-    engineNodes.engineFilter.frequency.setTargetAtTime(300 + engineHz * 4 + engineLoad * 180, now, 0.08);
-    engineNodes.engineGain.gain.setTargetAtTime(driving ? 0.018 + engineLoad * 0.018 : 0.0001, now, 0.1);
+    engineNodes.engineFilter.frequency.setTargetAtTime(
+      300 + engineHz * 4 + engineLoad * 180,
+      now,
+      0.08,
+    );
+    engineNodes.engineGain.gain.setTargetAtTime(
+      driving ? 0.018 + engineLoad * 0.018 : 0.0001,
+      now,
+      0.1,
+    );
     engineNodes.roadFilter.frequency.setTargetAtTime(180 + speed * 1.2, now, 0.1);
-    engineNodes.roadGain.gain.setTargetAtTime(driving ? Math.min(0.018, speed / 26000) : 0.0001, now, 0.12);
-    engineNodes.skidGain.gain.setTargetAtTime(driving ? Math.min(0.035, tireSlip / 7000) : 0.0001, now, 0.06);
+    engineNodes.roadGain.gain.setTargetAtTime(
+      driving ? Math.min(0.018, speed / 26000) : 0.0001,
+      now,
+      0.12,
+    );
+    engineNodes.skidGain.gain.setTargetAtTime(
+      driving ? Math.min(0.035, tireSlip / 7000) : 0.0001,
+      now,
+      0.06,
+    );
   }
-  function crashSound(speed) {
+  function crashSound(speed: number) {
     Audio.Mixer.duck("road-vehicle", Mathf.clamp(speed / 900, 0.12, 0.5), {
       attackMs: 8,
       holdMs: 45,

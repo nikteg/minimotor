@@ -11,6 +11,25 @@
 //   network's packet rate (we deliberately send at only 20 Hz to prove it),
 // - Perf.createNetMeter in the HUD for live traffic rates.
 import { Audio, Draw, Keys, Loop, Mathf, Net, Perf, Stage, UI } from "minimotor";
+import type { Interpolator } from "minimotor";
+
+interface Vec {
+  x: number;
+  y: number;
+}
+interface RemotePlayer {
+  interp: Interpolator<Vec>;
+  color?: string;
+  lastSeen: number;
+}
+interface NetMsg {
+  game: string;
+  id: string;
+  bye?: boolean;
+  color?: string;
+  x: number;
+  y: number;
+}
 
 const meter = Perf.createNetMeter();
 // The viewport is LIVE (mutated on resize) — movement clamps read it fresh.
@@ -24,7 +43,7 @@ const sfx = Audio.sfx({ join: Audio.recipes.coin() });
 const PALETTE = ["#4ecdc4", "#ffd43b", "#ff6b6b", "#69db7c", "#b197fc", "#ffa94d"];
 const id = Math.random().toString(36).slice(2, 8);
 const color = PALETTE[Math.floor(Math.random() * PALETTE.length)];
-const me = { x: Mathf.randRange(80, vp.w - 80), y: Mathf.randRange(80, vp.h - 80) };
+const me: Vec = { x: Mathf.randRange(80, vp.w - 80), y: Mathf.randRange(80, vp.h - 80) };
 
 const transport = Net.connect({
   url: location.origin.replace(/^http/, "ws") + "/ws-relay",
@@ -35,12 +54,12 @@ const transport = Net.connect({
 
 // Remote players: id → { interp, color, lastSeen }. Each one gets a snapshot
 // interpolator; draw() samples it at (now − 100 ms).
-const others = new Map();
+const others = new Map<string, RemotePlayer>();
 
 transport.onMessage = (bytes) => {
   if (bytes.length === 0) return; // someone's heartbeat frame — not gameplay
   meter.recv(bytes.length);
-  const msg = JSON.parse(new TextDecoder().decode(bytes));
+  const msg = JSON.parse(new TextDecoder().decode(bytes)) as NetMsg;
   if (msg.game !== "netgame") return; // /ws-relay hosts several samples
   if (msg.bye) {
     others.delete(msg.id);
@@ -48,7 +67,11 @@ transport.onMessage = (bytes) => {
   }
   let p = others.get(msg.id);
   if (!p) {
-    p = { interp: Net.createInterpolator({ delayMs: 100 }), color: msg.color };
+    p = {
+      interp: Net.createInterpolator<Vec>({ delayMs: 100 }),
+      color: msg.color,
+      lastSeen: performance.now(),
+    };
     others.set(msg.id, p);
     sfx.join.play(); // someone joined
   }

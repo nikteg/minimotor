@@ -12,6 +12,13 @@
 // its own and broadcasts the whole set back. Close the host tab and the server
 // promotes the oldest guest; the survivors re-negotiate to it automatically.
 import { Draw, Loop, Net, Pointer, Stage, UI } from "minimotor";
+import type { GuestSession, HostSession } from "minimotor";
+
+interface Vec {
+  x: number;
+  y: number;
+}
+type CursorState = Record<string, Vec>;
 
 // The viewport is LIVE (mutated on resize) — layout reads it fresh each frame.
 const vp = Stage.init("game", { background: "#0e1116" });
@@ -22,26 +29,26 @@ const SIGNAL = `${location.protocol === "https:" ? "wss" : "ws"}://${location.ho
 
 // A stable-ish colour per peer id, so each cursor keeps its hue across frames.
 const PALETTE = ["#4ecdc4", "#ffe066", "#ff6b6b", "#a78bfa", "#6bff9e", "#ff9e64", "#5eead0"];
-const hueOf = (id) => {
+const hueOf = (id: string) => {
   let h = 0;
   for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   return PALETTE[h % PALETTE.length];
 };
 
 // role: null → menu; "host" | "guest" once chosen.
-let role = null;
-let session = null;
+let role: "host" | "guest" | null = null;
+let session: HostSession<CursorState, Vec> | GuestSession<Vec, CursorState> | null = null;
 let status = "pick a role";
 
 // cursors we currently draw: id → { x, y } in 0..1 normalized coords.
-const cursors = new Map();
-let myCursor = { x: 0.5, y: 0.5 };
+const cursors = new Map<string, Vec>();
+let myCursor: Vec = { x: 0.5, y: 0.5 };
 
 function startHost() {
   role = "host";
   status = "connecting to relay…";
   cursors.clear();
-  const room = Net.hostSession({ signal: SIGNAL });
+  const room = Net.hostSession<CursorState, Vec>({ signal: SIGNAL });
   session = room;
   room.onGuestJoin = () => (status = `hosting — ${room.guests.length} guest(s)`);
   room.onGuestLeave = (id) => {
@@ -55,7 +62,7 @@ function startGuest() {
   role = "guest";
   status = "connecting to relay…";
   cursors.clear();
-  const me = Net.joinSession({ signal: SIGNAL });
+  const me = Net.joinSession<Vec, CursorState>({ signal: SIGNAL });
   session = me;
   me.onOpen = () => (status = `joined — host ${me.hostId}`);
   me.onClose = () => (status = "channel closed — waiting for a new host…");
@@ -87,19 +94,26 @@ Loop.run({
       myCursor = { x: Pointer.x / vp.w, y: Pointer.y / vp.h };
     }
     if (role === "guest") {
-      session.send(myCursor); // stream my cursor to the host
+      (session as GuestSession<Vec, CursorState>).send(myCursor); // stream my cursor to the host
     } else if (role === "host") {
-      cursors.set(session.id || "host", myCursor); // include my own cursor
+      const host = session as HostSession<CursorState, Vec>;
+      cursors.set(host.id || "host", myCursor); // include my own cursor
       // Fan the merged set out to every guest.
-      const state = {};
+      const state: CursorState = {};
       for (const [id, c] of cursors) state[id] = c;
-      session.broadcast(state);
+      host.broadcast(state);
     }
   },
 
   draw() {
     if (!role) {
-      UI.text("WebRTC Host / Join", { x: vp.w / 2, y: vp.h / 2 - 80, size: 28, bold: true, align: "center" });
+      UI.text("WebRTC Host / Join", {
+        x: vp.w / 2,
+        y: vp.h / 2 - 80,
+        size: 28,
+        bold: true,
+        align: "center",
+      });
       UI.text("Open this page in another tab and pick the opposite role.", {
         x: vp.w / 2,
         y: vp.h / 2 - 44,
@@ -108,7 +122,9 @@ Loop.run({
         align: "center",
       });
       const cx = vp.w / 2;
-      if (UI.button("HOST A ROOM", { x: cx - 170, y: vp.h / 2, w: 160, h: 48, variant: "primary" })) {
+      if (
+        UI.button("HOST A ROOM", { x: cx - 170, y: vp.h / 2, w: 160, h: 48, variant: "primary" })
+      ) {
         startHost();
       }
       if (UI.button("JOIN A ROOM", { x: cx + 10, y: vp.h / 2, w: 160, h: 48 })) {
@@ -117,11 +133,18 @@ Loop.run({
       return;
     }
 
+    const myId = session?.id ?? "";
     // Every known cursor, host + guests alike ("d9" ≈ 85% alpha for others).
     for (const [id, c] of cursors) {
-      const mine = (role === "host" && id === (session.id || "host")) || (role === "guest" && id === session.id);
+      const mine =
+        (role === "host" && id === (myId || "host")) || (role === "guest" && id === myId);
       Draw.circle(c.x * vp.w, c.y * vp.h, mine ? 13 : 10, mine ? hueOf(id) : hueOf(id) + "d9");
-      UI.text(mine ? `${id} (you)` : id, { x: c.x * vp.w + 16, y: c.y * vp.h - 6, size: 12, color: "dim" });
+      UI.text(mine ? `${id} (you)` : id, {
+        x: c.x * vp.w + 16,
+        y: c.y * vp.h - 6,
+        size: 12,
+        color: "dim",
+      });
     }
 
     UI.text(`role: ${role}`, { x: 16, y: 20, size: 15, bold: true });

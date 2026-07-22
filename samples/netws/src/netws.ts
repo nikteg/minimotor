@@ -2,26 +2,26 @@
 // Demonstrates: Net.connect — transport.sendJson, transport.onMessage
 // (string frames now arrive decoded), transport.onClose and polling
 // transport.state. No game loop; the engine's networking works standalone.
-import { Net } from "minimotor";
+import { Net, type Transport } from "minimotor";
 
 const dec = new TextDecoder();
 
-const $ = (id) => document.getElementById(id);
-const urlEl = $("url");
+const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
+const urlEl = $<HTMLInputElement>("url");
 // Default to the echo endpoint the dev server hosts (see vite.config.ts) —
 // always reachable, unlike public echo services.
 urlEl.value = location.origin.replace(/^http/, "ws") + "/ws-echo";
-const toggleEl = $("toggle");
-const sendEl = $("send");
-const msgEl = $("msg");
-const logEl = $("log");
-const dotEl = $("dot");
-const stateEl = $("state");
+const toggleEl = $<HTMLButtonElement>("toggle");
+const sendEl = $<HTMLButtonElement>("send");
+const msgEl = $<HTMLInputElement>("msg");
+const logEl = $<HTMLPreElement>("log");
+const dotEl = $<HTMLSpanElement>("dot");
+const stateEl = $<HTMLSpanElement>("state");
 
-let transport = null;
-let poll = null;
+let transport: Transport | null = null;
+let poll: ReturnType<typeof setInterval> | null = null;
 
-function log(text, cls = "meta") {
+function log(text: string, cls = "meta") {
   const line = document.createElement("span");
   line.className = cls;
   const time = new Date().toLocaleTimeString();
@@ -30,7 +30,7 @@ function log(text, cls = "meta") {
   logEl.scrollTop = logEl.scrollHeight;
 }
 
-function setState(state) {
+function setState(state: string) {
   dotEl.className = "dot " + state;
   stateEl.textContent = state;
   const connected = state === "connected";

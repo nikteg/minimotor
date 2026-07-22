@@ -1,6 +1,18 @@
 // Snake: classic grid-based snake with growing tail and self-collision
 // Demonstrates: game loop, input, UI, storage and Goodies.wrap grid movement
-import { Audio, Camera, Draw, Game, Goodies, Keys, Loop, Particles, Perf, Stage, UI } from "minimotor";
+import {
+  Audio,
+  Camera,
+  Draw,
+  Game,
+  Goodies,
+  Keys,
+  Loop,
+  Particles,
+  Perf,
+  Stage,
+  UI,
+} from "minimotor";
 import { drawGameOver } from "../../shared/src/overlays.ts";
 
 // The viewport is LIVE (mutated on resize) — grid sizing reacts in onResize.
@@ -23,7 +35,7 @@ let gameOver = false;
 // A uniformly-random empty cell (bounded scan — returns null only when the
 // board is full, i.e. you've won). Beats the old `do { rand } while (taken)`.
 function spawnFood() {
-  const occupied = (x, y) => snake.some((s) => s.x === x && s.y === y);
+  const occupied = (x: number, y: number) => snake.some((s) => s.x === x && s.y === y);
   return Goodies.randFreeCell(COLS, ROWS, occupied) ?? snake[0];
 }
 
@@ -46,7 +58,7 @@ function restart() {
 }
 
 // Arrow / WASD input
-const keyMap = {
+const keyMap: Record<string, { x: number; y: number }> = {
   ArrowUp: { x: 0, y: -1 },
   ArrowDown: { x: 0, y: 1 },
   ArrowLeft: { x: -1, y: 0 },
@@ -88,7 +100,10 @@ Loop.run({
       Camera.shake(6, 320);
       fx.burst({
         at: { x: head.x * CELL + CELL / 2, y: head.y * CELL + CELL / 2 },
-        count: 26, speed: [0.7, 3.5], size: [2, 5], life: [300, 720],
+        count: 26,
+        speed: [0.7, 3.5],
+        size: [2, 5],
+        life: [300, 720],
         color: ["#8fe36a", "#4a8c2a", "#ffffff"],
       });
       return;
@@ -103,7 +118,10 @@ Loop.run({
       Camera.shake(2, 90);
       fx.burst({
         at: { x: food.x * CELL + CELL / 2, y: food.y * CELL + CELL / 2 },
-        count: 14, speed: [0.5, 2.3], size: [2, 4], life: [220, 480],
+        count: 14,
+        speed: [0.5, 2.3],
+        size: [2, 4],
+        life: [220, 480],
         color: ["#ff6b6b", "#ffd36b", "#ffffff"],
       });
       food = spawnFood();
@@ -126,14 +144,21 @@ Loop.run({
       ctx.strokeStyle = "rgba(255,255,255,0.04)";
       ctx.lineWidth = 1;
       for (let x = 0; x <= view.w; x += CELL) {
-        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, view.h); ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, view.h);
+        ctx.stroke();
       }
       for (let y = 0; y <= view.h; y += CELL) {
-        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(view.w, y); ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(view.w, y);
+        ctx.stroke();
       }
 
       // Food: soft glow + a pulsing berry.
-      const fcx = food.x * CELL + CELL / 2, fcy = food.y * CELL + CELL / 2;
+      const fcx = food.x * CELL + CELL / 2,
+        fcy = food.y * CELL + CELL / 2;
       const pulse = 1 + Math.sin(Date.now() / 200) * 0.16;
       const glow = ctx.createRadialGradient(fcx, fcy, 2, fcx, fcy, CELL * 0.9);
       glow.addColorStop(0, "rgba(255,120,120,0.5)");
@@ -141,9 +166,13 @@ Loop.run({
       ctx.fillStyle = glow;
       ctx.fillRect(fcx - CELL, fcy - CELL, CELL * 2, CELL * 2);
       ctx.fillStyle = "#ff6b6b";
-      ctx.beginPath(); ctx.arc(fcx, fcy, (CELL / 2 - 3) * pulse, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath();
+      ctx.arc(fcx, fcy, (CELL / 2 - 3) * pulse, 0, Math.PI * 2);
+      ctx.fill();
       ctx.fillStyle = "rgba(255,255,255,0.5)";
-      ctx.beginPath(); ctx.arc(fcx - 2, fcy - 2, 2, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath();
+      ctx.arc(fcx - 2, fcy - 2, 2, 0, Math.PI * 2);
+      ctx.fill();
 
       // Snake: rounded segments, brighter toward the head.
       snake.forEach((s, i) => {
@@ -156,15 +185,21 @@ Loop.run({
 
       // Head eyes, looking along the direction of travel.
       const h = snake[0];
-      const hcx = h.x * CELL + CELL / 2, hcy = h.y * CELL + CELL / 2;
-      const px = -dir.y, py = dir.x; // perpendicular
+      const hcx = h.x * CELL + CELL / 2,
+        hcy = h.y * CELL + CELL / 2;
+      const px = -dir.y,
+        py = dir.x; // perpendicular
       for (const side of [1, -1]) {
         const ex = hcx + dir.x * 3 + px * 4 * side;
         const ey = hcy + dir.y * 3 + py * 4 * side;
         ctx.fillStyle = "#ffffff";
-        ctx.beginPath(); ctx.arc(ex, ey, 2.4, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath();
+        ctx.arc(ex, ey, 2.4, 0, Math.PI * 2);
+        ctx.fill();
         ctx.fillStyle = "#0c140c";
-        ctx.beginPath(); ctx.arc(ex + dir.x, ey + dir.y, 1.2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath();
+        ctx.arc(ex + dir.x, ey + dir.y, 1.2, 0, Math.PI * 2);
+        ctx.fill();
       }
 
       Draw.particles(fx);
@@ -172,7 +207,10 @@ Loop.run({
 
     // HUD.
     UI.group({ x: 8, y: 8, w: 280, h: 60, title: "SNAKE" }, (body) => {
-      UI.text(`Score ${scores.score}   Best ${scores.best}   Len ${snake.length}`, { h: body.remaining, size: 13 });
+      UI.text(`Score ${scores.score}   Best ${scores.best}   Len ${snake.length}`, {
+        h: body.remaining,
+        size: 13,
+      });
     });
 
     if (gameOver) {

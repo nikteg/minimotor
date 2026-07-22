@@ -4,7 +4,7 @@
 //
 //   Assets     — parallel image load, then one composed sprite sheet per state.
 //   Anim / Fsm — Idle/Run/Jump/Fall/Wall/Dash clips (real art) driven by a
-//                state machine via the anim bridge (1:1 state→clip).
+//                state machine; each state owns a 1:1 sheet cursor.
 //   Timers     — jumpGate (coyote + jump buffering) and window latches for the
 //                dash refill and wall-jump coyote grace.
 //   Particles  — dust puffs, dash bursts; the Lore "Death" burst plays on death.
@@ -15,13 +15,30 @@
 //           R restart room. Dash refills on the ground or a floating orb; the
 //           orb goes dim while spent.
 
-import { Minimotor } from "minimotor";
+import {
+  Anim,
+  Assets,
+  Audio,
+  Camera,
+  Draw,
+  ECS,
+  Fsm,
+  Gizmos,
+  Keys,
+  Loop,
+  Mathf,
+  Particles,
+  Perf,
+  Sprites,
+  Stage,
+  Storage,
+  Timers,
+  UI,
+} from "minimotor";
+import type { SheetCursor, SpriteLike } from "minimotor";
 
-const { Assets, ECS, Fsm, Anim, Sprites, Timers, Particles, Camera, Audio, Storage, Mathf, Draw, Loop, Keys, UI, Gizmos } =
-  Minimotor;
-
-let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
-Minimotor.Stage.onResize((next) => (vp = next));
+let vp = Stage.init("game", { plugins: [Perf.plugin()] });
+Stage.onResize((next) => (vp = next));
 
 // ---------------------------------------------------------------------------
 // World grid — 16px cells (the 8px tiles are drawn at 2×).
@@ -48,7 +65,20 @@ const WORLD_H = ROWS * CELL;
 // each crystal is a mandatory mid-air refill. Voids are sized well beyond a
 // single jump+dash (~10–11 cells), so skipping a crystal means falling onto
 // spikes. Ground still refills, but you never touch it inside a gauntlet.
-const LEVELS = [
+type Dir = "up" | "down";
+interface LevelDef {
+  name: string;
+  sky: [string, string, string];
+  goal: "sign" | "house";
+  spawn: [number, number];
+  exit: [number, number];
+  plats: Array<[number, number, number, number?]>;
+  spikes: Array<[number, number, number, Dir]>;
+  orbs: Array<[number, number]>;
+  props: Array<[string, number, number]>;
+}
+
+const LEVELS: LevelDef[] = [
   {
     // One forced 2-crystal chain over a 16-cell void, then a staircase climb.
     name: "Foothills",
@@ -133,9 +163,24 @@ const LEVELS = [
 // ---------------------------------------------------------------------------
 // Build a bordered tile grid from a level definition.
 // ---------------------------------------------------------------------------
-function buildLevel(def) {
-  const grid = Array.from({ length: ROWS }, () => new Array(COLS).fill(" "));
-  const set = (c, r, ch) => {
+interface OrbDef {
+  x: number;
+  y: number;
+}
+interface BuiltLevel {
+  grid: string[][];
+  orbDefs: OrbDef[];
+  spawn: { x: number; y: number };
+  exit: { x: number; y: number };
+  goal: "sign" | "house";
+  sky: [string, string, string];
+  name: string;
+  props: Array<[string, number, number]>;
+}
+
+function buildLevel(def: LevelDef): BuiltLevel {
+  const grid = Array.from({ length: ROWS }, () => new Array<string>(COLS).fill(" "));
+  const set = (c: number, r: number, ch: string) => {
     if (c >= 0 && c < COLS && r >= 0 && r < ROWS) grid[r][c] = ch;
   };
   // Border.
@@ -157,17 +202,26 @@ function buildLevel(def) {
   const orbDefs = def.orbs.map(([c, r]) => ({ x: c * CELL + CELL / 2, y: r * CELL + CELL / 2 }));
   const spawn = { x: def.spawn[0] * CELL + (CELL - PW) / 2, y: (def.spawn[1] + 1) * CELL - PH };
   const exit = { x: def.exit[0] * CELL, y: def.exit[1] * CELL };
-  return { grid, orbDefs, spawn, exit, goal: def.goal, sky: def.sky, name: def.name, props: def.props };
+  return {
+    grid,
+    orbDefs,
+    spawn,
+    exit,
+    goal: def.goal,
+    sky: def.sky,
+    name: def.name,
+    props: def.props,
+  };
 }
 
-function tileAt(grid, c, r) {
+function tileAt(grid: string[][], c: number, r: number): string {
   if (c < 0 || c >= COLS || r < 0 || r >= ROWS) return "#";
   return grid[r][c];
 }
-const isSolid = (grid, c, r) => tileAt(grid, c, r) === "#";
+const isSolid = (grid: string[][], c: number, r: number) => tileAt(grid, c, r) === "#";
 
 // Deadly-tile overlap for a rect (spikes only kill in their business half).
-function spikeHit(grid, x, y, w, h) {
+function spikeHit(grid: string[][], x: number, y: number, w: number, h: number): boolean {
   const c0 = Math.floor(x / CELL);
   const c1 = Math.floor((x + w - 1) / CELL);
   const r0 = Math.floor(y / CELL);
@@ -213,18 +267,36 @@ const DASH_FRAMES = 11;
 const DASH_FREEZE = 3;
 const INV_SQRT2 = 0.7071;
 
-// Move `v` toward `target` by at most `delta` (linear approach) — the basis of
-// tight, predictable accel/decel via Mathf.approach.
+// Particle system (immediate-mode bursts, rendered via Draw.particles).
+const fx = Particles.create();
+
 // ---------------------------------------------------------------------------
 // Sound — layered synth SFX from Audio.tone: a pitched voice plus a filtered
 // noise burst per hit, so jumps, dashes and impacts read punchy rather than
-// like plain blips. `tone`/`noise` used to be hand-wired here; they're now just
-// Audio.tone({ wave: ... }) and Audio.tone({ wave: "noise", filter: ... }).
+// like plain blips.
 // ---------------------------------------------------------------------------
-const pitched = (wave, f0, f1, dur, gain, delay = 0) =>
-  Audio.tone({ wave, freq: f1 ? { from: f0, to: f1 } : f0, release: dur, gain, delay });
-const burst = (type, f0, f1, q, dur, gain) =>
-  Audio.tone({ wave: "noise", release: dur, gain, filter: { type, freq: f1 ? { from: f0, to: f1 } : f0, q } });
+const pitched = (
+  wave: OscillatorType,
+  f0: number,
+  f1: number,
+  dur: number,
+  gain: number,
+  delay = 0,
+) => Audio.tone({ wave, freq: f1 ? { from: f0, to: f1 } : f0, release: dur, gain, delay });
+const burst = (
+  type: BiquadFilterType,
+  f0: number,
+  f1: number,
+  q: number,
+  dur: number,
+  gain: number,
+) =>
+  Audio.tone({
+    wave: "noise",
+    release: dur,
+    gain,
+    filter: { type, freq: f1 ? { from: f0, to: f1 } : f0, q },
+  });
 
 const SFX = {
   jump: () => {
@@ -239,7 +311,7 @@ const SFX = {
     burst("bandpass", 1600, 300, 2, 0.2, 0.22);
     pitched("sawtooth", 220, 90, 0.18, 0.14);
   },
-  land: (impact) => {
+  land: (impact: number) => {
     const v = Math.min(0.18, 0.05 + impact * 0.02);
     burst("lowpass", 300, 120, 1, 0.09, v);
     pitched("sine", 150, 80, 0.09, v * 0.7);
@@ -285,13 +357,16 @@ let wallCoyoteDir = 0;
 // ---------------------------------------------------------------------------
 // Assets & animation (built after load)
 // ---------------------------------------------------------------------------
-const url = (name) => new URL(`../assets/${name}.png`, import.meta.url).href;
+const url = (name: string) => new URL(`../assets/${name}.png`, import.meta.url).href;
 const FRAME = 32; // player frame size
 const FEET_Y = 23; // frame-y of the character's feet (content ends ~here)
 
-let anim; // Anim.states for the player
-let sm; // player Fsm
-const tex = {}; // decoded tile / prop images by key
+type PlayerState = "idle" | "run" | "jump" | "fall" | "wall" | "dash" | "dead";
+
+let clips!: Record<PlayerState, SheetCursor<"s">>; // one 1:1 sheet cursor per state
+let sm!: Fsm.Machine<PlayerState>; // player Fsm
+const tex: Record<string, HTMLImageElement> = {}; // decoded tile / prop images by key
+const texBase: Record<string, number> = {}; // real opaque base fraction per prop/goal
 
 // Collectibles live on the ECS: one entity per dash orb, drawn by the built-in
 // sprite renderer. The crystal art is procedural, so we bake it ONCE into an
@@ -299,22 +374,43 @@ const tex = {}; // decoded tile / prop images by key
 // like any loaded sprite sheet — no per-frame path drawing.
 const CRYSTAL_FR = 16; // rotation frames
 const CRYSTAL_FS = 40; // baked frame size (px, includes glow)
-let crystalSheet; // the cached canvas
-let crystalAnim; // shared Anim.sheet over the "ready" row (drives sx)
-const orbWorld = ECS.world();
-const Orb = ECS.component("Orb"); // { cd, baseX, baseY }
+let crystalSheet!: HTMLCanvasElement; // the cached canvas
+let crystalAnim!: SheetCursor<"spin">; // shared cursor over the "ready" row (drives sx)
+const orbWorld = ECS.create();
+interface OrbData {
+  cd: number;
+  baseX: number;
+  baseY: number;
+}
+const Orb = ECS.component<OrbData>("Orb");
+
+// Draw a sheet cursor's current frame at (dx, dy) with an anchor fraction —
+// replicates the retired `anim.draw`.
+function drawCursor(
+  ctx: CanvasRenderingContext2D,
+  cur: SpriteLike,
+  dx: number,
+  dy: number,
+  w: number,
+  h: number,
+  ax = 0.5,
+  ay = 0.5,
+): void {
+  const r = cur.rect;
+  ctx.drawImage(cur.sheet.image, r.sx, r.sy, r.sw, r.sh, dx - w * ax, dy - h * ay, w, h);
+}
 
 // Bake the spinning dash-crystal with Sprites.atlas: CRYSTAL_FR rotation
 // frames per row × 2 rows (row 0 = "ready" cyan + glow, row 1 = "spent" grey).
 // origin: "center" translates to each cell's centre, so the diamond rotates
 // in place.
-function bakeCrystalSheet() {
+function bakeCrystalSheet(): HTMLCanvasElement {
   const s = 8;
   return Sprites.atlas(
     CRYSTAL_FS,
     CRYSTAL_FS,
     CRYSTAL_FR * 2,
-    (g, i) => {
+    (g: CanvasRenderingContext2D, i: number) => {
       const ready = i < CRYSTAL_FR;
       if (ready) {
         const glow = g.createRadialGradient(0, 0, 2, 0, 0, s * 2.4);
@@ -346,16 +442,28 @@ function bakeCrystalSheet() {
 }
 
 const TILE_KEYS = [
-  "grassTL", "grassTM", "grassTR",
-  "dirtML", "dirtMM", "dirtMR",
-  "dirtBL", "dirtBM", "dirtBR",
-  "spikeUp", "spikeDown", "bg", "rays",
-  "tree", "house", "rock", "sign",
+  "grassTL",
+  "grassTM",
+  "grassTR",
+  "dirtML",
+  "dirtMM",
+  "dirtMR",
+  "dirtBL",
+  "dirtBM",
+  "dirtBR",
+  "spikeUp",
+  "spikeDown",
+  "bg",
+  "rays",
+  "tree",
+  "house",
+  "rock",
+  "sign",
 ];
 
-function manifest() {
-  const m = {};
-  const add = (n) => (m[n] = url(n));
+function manifest(): Record<string, string> {
+  const m: Record<string, string> = {};
+  const add = (n: string) => (m[n] = url(n));
   for (let i = 0; i < 4; i++) add(`idle${i}`);
   for (let i = 0; i < 4; i++) add(`run${i}`);
   for (let i = 0; i < 3; i++) add(`jump${i}`);
@@ -364,129 +472,159 @@ function manifest() {
   return m;
 }
 
-function buildAnimations() {
-  const img = (n) => Assets.image(n);
-  const compose = (...names) => Sprites.packAtlas(names.map(img));
+function buildAnimations(): void {
+  const img = (n: string) => Assets.image(n);
+  const compose = (...names: string[]) => Sprites.packAtlas(names.map(img));
   const idleSheet = compose("idle0", "idle1", "idle2", "idle3");
   const runSheet = compose("run0", "run1", "run2", "run3");
   const jumpSheet = compose("jump0", "jump1", "jump2");
   const climbSheet = compose("climb0", "climb1", "climb2", "climb3");
-  // `cols` must equal each sheet's real frame count (single row) so the default
-  // frame list and the source-rect math line up.
-  const s = (sheet, cols, extra = {}) => Anim.sheet(sheet, { fw: FRAME, fh: FRAME, cols, ...extra });
 
-  anim = Anim.states(
-    {
-      idle: s(idleSheet, 4, { fps: 5 }),
-      run: s(runSheet, 4, { fps: 13 }),
-      jump: s(jumpSheet, 3, { fps: 10 }),
-      fall: s(jumpSheet, 3, { fps: 1, frames: [2] }),
-      wall: s(climbSheet, 4, { fps: 8 }),
-      dash: s(jumpSheet, 3, { fps: 1, frames: [0] }),
-      // Death: hold the arms-up launch pose while the body tumbles off-screen.
-      dead: s(jumpSheet, 3, { fps: 1, frames: [0] }),
-    },
-    "idle",
-  );
+  // Each state is a single-state cursor over its own strip. fall/dash/dead need
+  // a specific jump frame, so bake a 1-frame strip of exactly that frame.
+  const oneState = (sheet: HTMLCanvasElement, frames: number, fps: number) =>
+    Anim.sheet(sheet, {
+      frame: { w: FRAME, h: FRAME },
+      states: { s: { row: 0, frames, fps } },
+    }).play("s");
 
-  // Cache decoded tile/prop images (the ECS/Anim path wants canvases scaled;
-  // here we draw them directly, scaling in draw calls).
+  clips = {
+    idle: oneState(idleSheet, 4, 5),
+    run: oneState(runSheet, 4, 13),
+    jump: oneState(jumpSheet, 3, 10),
+    fall: oneState(Sprites.packAtlas([img("jump2")]), 1, 1),
+    wall: oneState(climbSheet, 4, 8),
+    dash: oneState(Sprites.packAtlas([img("jump0")]), 1, 1),
+    // Death: hold the arms-up launch pose while the body tumbles off-screen.
+    dead: oneState(Sprites.packAtlas([img("jump0")]), 1, 1),
+  };
+
+  // Cache decoded tile/prop images (drawn directly, scaled in draw calls).
   for (const k of TILE_KEYS) tex[k] = img(k);
 
   // Measure each prop/goal's real opaque base (fraction of height) so it seats
   // on its surface regardless of transparent padding at the bottom of the art.
-  tex._base = {};
   for (const k of ["sign", "house", "tree", "rock"]) {
     const b = Sprites.contentBounds(img(k));
-    tex._base[k] = (b.y + b.h) / img(k).height;
+    texBase[k] = (b.y + b.h) / img(k).height;
   }
 
-  // Bake the crystal collectible once; the shared anim advances the "ready" row.
+  // Bake the crystal collectible once; the shared cursor advances the "ready" row.
   crystalSheet = bakeCrystalSheet();
   crystalAnim = Anim.sheet(crystalSheet, {
-    fw: CRYSTAL_FS, fh: CRYSTAL_FS, cols: CRYSTAL_FR, fps: 14,
-  });
+    frame: { w: CRYSTAL_FS, h: CRYSTAL_FS },
+    states: { spin: { row: 0, frames: CRYSTAL_FR, fps: 14 } },
+  }).play("spin");
 
   sm = makeFsm();
 }
 
-function makeFsm() {
-  return Fsm.create(
-    {
-      idle: {
-        update: () =>
-          player.dashTime > 0 ? "dash"
-          : !player.onGround ? (player.vy < 0 ? "jump" : "fall")
-          : Math.abs(player.vx) > 0.4 ? "run"
-          : null,
-      },
-      run: {
-        update: () =>
-          player.dashTime > 0 ? "dash"
-          : !player.onGround ? (player.vy < 0 ? "jump" : "fall")
-          : Math.abs(player.vx) <= 0.4 ? "idle"
-          : null,
-      },
-      jump: {
-        update: () =>
-          player.dashTime > 0 ? "dash"
-          : player.onGround ? "idle"
-          : player.wallDir !== 0 && player.vy > 0 ? "wall"
-          : player.vy >= 0 ? "fall"
-          : null,
-      },
-      fall: {
-        update: () =>
-          player.dashTime > 0 ? "dash"
-          : player.onGround ? "idle"
-          : player.wallDir !== 0 ? "wall"
-          : null,
-      },
-      wall: {
-        update: () =>
-          player.dashTime > 0 ? "dash"
-          : player.onGround ? "idle"
-          : player.wallDir === 0 ? "fall"
-          : null,
-      },
-      dash: {
-        update: () =>
-          player.dashTime > 0 ? null
-          : player.onGround ? "idle"
-          : player.wallDir !== 0 ? "wall"
-          : "fall",
-      },
-      // Terminal state: entered via sm.go("dead"); the update loop drives the
-      // pop-and-fall physics directly and resets us out on respawn.
-      dead: { update: () => null },
+function makeFsm(): Fsm.Machine<PlayerState> {
+  const states: Record<PlayerState, Fsm.State<PlayerState>> = {
+    idle: {
+      update: () =>
+        player.dashTime > 0
+          ? "dash"
+          : !player.onGround
+            ? player.vy < 0
+              ? "jump"
+              : "fall"
+            : Math.abs(player.vx) > 0.4
+              ? "run"
+              : null,
     },
-    "idle",
-    { anim },
-  );
+    run: {
+      update: () =>
+        player.dashTime > 0
+          ? "dash"
+          : !player.onGround
+            ? player.vy < 0
+              ? "jump"
+              : "fall"
+            : Math.abs(player.vx) <= 0.4
+              ? "idle"
+              : null,
+    },
+    jump: {
+      update: () =>
+        player.dashTime > 0
+          ? "dash"
+          : player.onGround
+            ? "idle"
+            : player.wallDir !== 0 && player.vy > 0
+              ? "wall"
+              : player.vy >= 0
+                ? "fall"
+                : null,
+    },
+    fall: {
+      update: () =>
+        player.dashTime > 0
+          ? "dash"
+          : player.onGround
+            ? "idle"
+            : player.wallDir !== 0
+              ? "wall"
+              : null,
+    },
+    wall: {
+      update: () =>
+        player.dashTime > 0
+          ? "dash"
+          : player.onGround
+            ? "idle"
+            : player.wallDir === 0
+              ? "fall"
+              : null,
+    },
+    dash: {
+      update: () =>
+        player.dashTime > 0
+          ? null
+          : player.onGround
+            ? "idle"
+            : player.wallDir !== 0
+              ? "wall"
+              : "fall",
+    },
+    // Terminal state: entered via sm.go("dead"); the update loop drives the
+    // pop-and-fall physics directly and resets us out on respawn.
+    dead: { update: () => null },
+  };
+  // No {anim} bridge anymore — reset the entering state's clip on each change.
+  return Fsm.create(states, "idle", { onChange: (_from, to) => clips[to].reset() });
 }
 
 // ---------------------------------------------------------------------------
 // Level / progression state
 // ---------------------------------------------------------------------------
 let levelIndex = 0;
-let level;
+let level!: BuiltLevel;
 let deaths = 0;
-let bestDeaths = Storage.load("ascent_best", null);
+let bestDeaths: number | null = Storage.load<number | null>("ascent_best", null);
 let won = false;
 let ready = false;
 let fade = 1;
 
-function loadLevel(i) {
+function loadLevel(i: number): void {
   level = buildLevel(LEVELS[i]);
   // Reset the collectible world and spawn one Orb entity per dash orb.
-  const stale = [];
+  const stale: ECS.Entity[] = [];
   for (const [e] of orbWorld.query(Orb)) stale.push(e);
   for (const e of stale) orbWorld.despawn(e);
   for (const { x, y } of level.orbDefs) {
     orbWorld.spawn(
       ECS.Sprite.with({
-        x, y, img: crystalSheet,
-        sx: 0, sy: 0, sw: CRYSTAL_FS, sh: CRYSTAL_FS, w: 34, h: 34, z: 1,
+        x,
+        y,
+        img: crystalSheet,
+        sx: 0,
+        sy: 0,
+        sw: CRYSTAL_FS,
+        sh: CRYSTAL_FS,
+        w: 34,
+        h: 34,
+        z: 1,
       }),
       Orb.with({ cd: 0, baseX: x, baseY: y }),
     );
@@ -494,7 +632,7 @@ function loadLevel(i) {
   respawn(true);
 }
 
-function respawn(hard) {
+function respawn(_hard: boolean): void {
   player.x = level.spawn.x;
   player.y = level.spawn.y;
   player.vx = player.vy = 0;
@@ -506,7 +644,7 @@ function respawn(hard) {
   if (sm) sm.go("idle");
 }
 
-function die() {
+function die(): void {
   if (player.dead) return;
   player.dead = true;
   deaths++;
@@ -520,13 +658,17 @@ function die() {
   if (sm) sm.go("dead");
   Camera.shake(6, 260);
   SFX.death();
-  Particles.burst(player.x + PW / 2, player.y + PH / 2, {
-    count: 14, speed: [40, 140], size: [2, 4], life: [300, 600],
-    colors: ["#ffffff", "#c9d0e0", "#7d8598"],
+  fx.burst({
+    at: { x: player.x + PW / 2, y: player.y + PH / 2 },
+    count: 14,
+    speed: [40, 140],
+    size: [2, 4],
+    life: [300, 600],
+    color: ["#ffffff", "#c9d0e0", "#7d8598"],
   });
 }
 
-function nextLevel() {
+function nextLevel(): void {
   if (levelIndex + 1 >= LEVELS.length) {
     won = true;
     if (bestDeaths === null || deaths < bestDeaths) {
@@ -542,7 +684,7 @@ function nextLevel() {
   SFX.orb();
 }
 
-function restartGame() {
+function restartGame(): void {
   levelIndex = 0;
   deaths = 0;
   won = false;
@@ -553,7 +695,7 @@ function restartGame() {
 // ---------------------------------------------------------------------------
 // Collision (axis-separated AABB vs. tile grid)
 // ---------------------------------------------------------------------------
-function moveX(dx) {
+function moveX(dx: number): void {
   player.x += dx;
   const g = level.grid;
   const r0 = Math.floor(player.y / CELL);
@@ -577,7 +719,7 @@ function moveX(dx) {
   }
 }
 
-function moveY(dy) {
+function moveY(dy: number): void {
   player.y += dy;
   const g = level.grid;
   const c0 = Math.floor(player.x / CELL);
@@ -603,7 +745,7 @@ function moveY(dy) {
 }
 
 // Stable "am I standing on ground?" probe (1px below the feet).
-function groundBelow() {
+function groundBelow(): boolean {
   const g = level.grid;
   const c0 = Math.floor((player.x + 1) / CELL);
   const c1 = Math.floor((player.x + PW - 2) / CELL);
@@ -612,7 +754,7 @@ function groundBelow() {
   return false;
 }
 
-function wallOn(dir) {
+function wallOn(dir: number): boolean {
   const g = level.grid;
   const x = dir > 0 ? player.x + PW : player.x - 1;
   const r0 = Math.floor((player.y + 2) / CELL);
@@ -631,8 +773,12 @@ const key = {
   up: () => Keys.down("ArrowUp") || Keys.down("KeyW"),
   down: () => Keys.down("ArrowDown") || Keys.down("KeyS"),
   jumpPress: () =>
-    Keys.pressed("KeyC") || Keys.pressed("KeyZ") || Keys.pressed("Space") || Keys.pressed("ArrowUp"),
-  jumpHeld: () => Keys.down("KeyC") || Keys.down("KeyZ") || Keys.down("Space") || Keys.down("ArrowUp"),
+    Keys.pressed("KeyC") ||
+    Keys.pressed("KeyZ") ||
+    Keys.pressed("Space") ||
+    Keys.pressed("ArrowUp"),
+  jumpHeld: () =>
+    Keys.down("KeyC") || Keys.down("KeyZ") || Keys.down("Space") || Keys.down("ArrowUp"),
   dashPress: () => Keys.pressed("KeyX") || Keys.pressed("ShiftLeft") || Keys.pressed("KeyK"),
 };
 
@@ -648,7 +794,6 @@ Assets.load(manifest()).then(() => {
 Loop.run({
   update() {
     if (!ready) return;
-    const step = Loop.step;
 
     if (won) {
       if (Keys.pressed("KeyR")) restartGame();
@@ -664,7 +809,6 @@ Loop.run({
       player.y += player.vy;
       player.x += player.vx;
       player.deathSpin += 0.32;
-      anim.update(step);
       if (player.y > WORLD_H + 80) respawn(false);
       return;
     }
@@ -681,9 +825,13 @@ Loop.run({
     if (player.dashTime > 0) {
       player.dashTime--;
       if (player.dashTime % 2 === 0)
-        Particles.burst(player.x + PW / 2, player.y + PH / 2, {
-          count: 2, speed: [5, 25], size: [2, 3], life: [180, 320],
-          colors: dash.count > 0 ? ["#d8e2ff", "#fff"] : ["#7fd6ff", "#bff"],
+        fx.burst({
+          at: { x: player.x + PW / 2, y: player.y + PH / 2 },
+          count: 2,
+          speed: [5, 25],
+          size: [2, 3],
+          life: [180, 320],
+          color: dash.count > 0 ? ["#d8e2ff", "#fff"] : ["#7fd6ff", "#bff"],
         });
       if (player.dashTime === 0) {
         player.vx = Math.sign(player.dashDx) * DASH_END_SPEED;
@@ -721,9 +869,8 @@ Loop.run({
       wallCoyote.charge();
       wallCoyoteDir = player.wallDir;
     }
-    wallCoyote.tick(step);
 
-    if (jumpGate.update(player.onGround, pressedJump, step)) {
+    if (jumpGate.try(pressedJump, player.onGround)) {
       player.vy = JUMP_V;
       player.onGround = false;
       dust(player.x + PW / 2, player.y + PH, "#e8e2ff");
@@ -743,7 +890,7 @@ Loop.run({
     // -------- Dash trigger --------
     if (key.dashPress() && dash.count > 0 && player.dashTime === 0) {
       let dx = dir;
-      let dy = key.down() ? 1 : key.up() ? -1 : 0;
+      const dy = key.down() ? 1 : key.up() ? -1 : 0;
       if (dx === 0 && dy === 0) dx = player.facing;
       if (dx !== 0 && dy !== 0) {
         player.dashDx = dx * INV_SQRT2;
@@ -760,9 +907,13 @@ Loop.run({
       if (dx !== 0) player.facing = Math.sign(dx);
       Camera.shake(4, 180);
       SFX.dash();
-      Particles.burst(player.x + PW / 2, player.y + PH / 2, {
-        count: 14, speed: [40, 130], size: [2, 4], life: [220, 420],
-        colors: ["#d8e2ff", "#fff", "#a0c8ff"],
+      fx.burst({
+        at: { x: player.x + PW / 2, y: player.y + PH / 2 },
+        count: 14,
+        speed: [40, 130],
+        size: [2, 4],
+        life: [220, 420],
+        color: ["#d8e2ff", "#fff", "#a0c8ff"],
       });
     }
 
@@ -790,13 +941,13 @@ Loop.run({
     // -------- Hazards --------
     if (spikeHit(level.grid, player.x, player.y, PW, PH) || player.y > WORLD_H + 40) die();
 
-    // -------- Orbs (ECS): animate the shared crystal, bob, and refill on touch.
-    crystalAnim.update(step);
+    // -------- Orbs (ECS): the shared crystal cursor animates itself; bob and
+    // refill on touch.
     const cr = crystalAnim.rect;
     const bt = performance.now() * 0.004;
     const pcx = player.x + PW / 2;
     const pcy = player.y + PH / 2;
-    for (const [, s, o] of orbWorld.query(ECS.Sprite, Orb)) {
+    orbWorld.each(ECS.Sprite, Orb, (_e, s, o) => {
       if (o.cd > 0) o.cd--;
       const readyOrb = o.cd === 0;
       s.sx = cr.sx;
@@ -809,12 +960,16 @@ Loop.run({
         dash.refill();
         o.cd = 90;
         SFX.orb();
-        Particles.burst(o.baseX, o.baseY, {
-          count: 12, speed: [40, 120], size: [2, 4], life: [220, 420],
-          colors: ["#a0f0ff", "#fff", "#7fd6ff"],
+        fx.burst({
+          at: { x: o.baseX, y: o.baseY },
+          count: 12,
+          speed: [40, 120],
+          size: [2, 4],
+          life: [220, 420],
+          color: ["#a0f0ff", "#fff", "#7fd6ff"],
         });
       }
-    }
+    });
 
     // -------- Exit --------
     const ex = level.exit.x + CELL / 2;
@@ -823,9 +978,8 @@ Loop.run({
       nextLevel();
 
     // -------- Animation --------
-    sm.update(step);
+    sm.update();
     if (player.wallDir !== 0 && sm.is("wall")) player.facing = -player.wallDir;
-    anim.update(step);
   },
 
   draw() {
@@ -843,21 +997,26 @@ Loop.run({
     }
 
     const scale = Math.min(vp.w / WORLD_W, vp.h / WORLD_H);
-    const offX = (vp.w - WORLD_W * scale) / 2 + Camera.shakeX();
-    const offY = (vp.h - WORLD_H * scale) / 2 + Camera.shakeY();
-    ctx.save();
-    ctx.translate(offX, offY);
-    ctx.scale(scale, scale);
+    const offX = (vp.w - WORLD_W * scale) / 2;
+    const offY = (vp.h - WORLD_H * scale) / 2;
 
-    drawBackground(ctx);
-    drawProps(ctx);
-    drawTiles(ctx);
-    orbWorld.drawSprites(ctx); // ECS-owned dash crystals
-    drawExit(ctx);
-    Particles.draw(ctx);
-    drawPlayer(ctx);
+    // World block: the default camera is identity, so render() only layers on
+    // the screen-shake offset (triggered by Camera.shake on dash/death).
+    Camera.render(() => {
+      ctx.save();
+      ctx.translate(offX, offY);
+      ctx.scale(scale, scale);
 
-    ctx.restore();
+      drawBackground(ctx);
+      drawProps(ctx);
+      drawTiles(ctx);
+      orbWorld.drawSprites(ctx); // ECS-owned dash crystals
+      drawExit(ctx);
+      Draw.particles(fx);
+      drawPlayer(ctx);
+
+      ctx.restore();
+    });
 
     drawHud(ctx);
     if (fade > 0) {
@@ -871,17 +1030,23 @@ Loop.run({
 // ---------------------------------------------------------------------------
 // Small fx helper
 // ---------------------------------------------------------------------------
-function dust(x, y, color) {
-  Particles.burst(x, y, {
-    count: 7, angle: -Math.PI / 2, spread: Math.PI * 0.9,
-    speed: [15, 55], size: [1, 3], life: [180, 360], colors: color,
+function dust(x: number, y: number, color: string): void {
+  fx.burst({
+    at: { x, y },
+    count: 7,
+    angle: -Math.PI / 2,
+    spread: Math.PI * 0.9,
+    speed: [15, 55],
+    size: [1, 3],
+    life: [180, 360],
+    color,
   });
 }
 
 // ---------------------------------------------------------------------------
 // Rendering
 // ---------------------------------------------------------------------------
-function drawBackground(ctx) {
+function drawBackground(ctx: CanvasRenderingContext2D): void {
   const grad = ctx.createLinearGradient(0, 0, 0, WORLD_H);
   grad.addColorStop(0, level.sky[0]);
   grad.addColorStop(0.55, level.sky[1]);
@@ -911,7 +1076,7 @@ function drawBackground(ctx) {
   }
 }
 
-function drawProps(ctx) {
+function drawProps(ctx: CanvasRenderingContext2D): void {
   ctx.globalAlpha = 0.9;
   for (const [kind, c, r] of level.props) {
     const img = tex[kind];
@@ -919,14 +1084,14 @@ function drawProps(ctx) {
     const h = img.height * 1.4;
     // Seat the sprite's real (opaque) base on the row's surface, ignoring any
     // transparent padding below the art.
-    const drawY = r * CELL - tex._base[kind] * h;
+    const drawY = r * CELL - texBase[kind] * h;
     ctx.drawImage(img, c * CELL, drawY, w, h);
   }
   ctx.globalAlpha = 1;
 }
 
 // Pick the 8px tile art for a solid cell by its open neighbours (autotiling).
-function tileFor(g, c, r) {
+function tileFor(g: string[][], c: number, r: number): HTMLImageElement {
   const openU = !isSolid(g, c, r - 1);
   const openL = !isSolid(g, c - 1, r);
   const openR = !isSolid(g, c + 1, r);
@@ -938,7 +1103,7 @@ function tileFor(g, c, r) {
 
 const DIRT_BASE = "#2a2027"; // fill under solid cells so no tile has a see-through seam
 
-function drawTiles(ctx) {
+function drawTiles(ctx: CanvasRenderingContext2D): void {
   const g = level.grid;
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
@@ -957,7 +1122,7 @@ function drawTiles(ctx) {
   }
 }
 
-function drawExit(ctx) {
+function drawExit(ctx: CanvasRenderingContext2D): void {
   const { x, y } = level.exit;
   const t = performance.now() * 0.003;
   const surface = y + CELL; // the ledge top the exit cell sits above
@@ -966,12 +1131,12 @@ function drawExit(ctx) {
     const img = tex.house;
     const w = img.width * 1.2;
     const h = img.height * 1.2;
-    const drawY = surface - tex._base.house * h; // real base on the ledge
+    const drawY = surface - texBase.house * h; // real base on the ledge
     ctx.drawImage(img, x + CELL / 2 - w / 2, drawY, w, h);
     glowY = drawY + h * 0.7;
   } else {
     const sw = CELL * 1.6;
-    const drawY = surface - tex._base.sign * sw;
+    const drawY = surface - texBase.sign * sw;
     ctx.drawImage(tex.sign, x + (CELL - sw) / 2, drawY, sw, sw);
     glowY = drawY + sw * 0.4;
   }
@@ -984,16 +1149,17 @@ function drawExit(ctx) {
   ctx.globalAlpha = 1;
 }
 
-function drawPlayer(ctx) {
+function drawPlayer(ctx: CanvasRenderingContext2D): void {
   const cx = player.x + PW / 2;
   const feet = player.y + PH;
+  const cur = clips[sm.current];
 
   if (player.dead) {
     // Tumbling launch pose, rotated around the body centre.
     ctx.save();
     ctx.translate(cx, player.y + PH / 2);
     ctx.rotate(player.deathSpin);
-    anim.draw(ctx, 0, 0, { w: FRAME, h: FRAME, ax: 0.5, ay: 0.5 });
+    drawCursor(ctx, cur, 0, 0, FRAME, FRAME, 0.5, 0.5);
     ctx.restore();
     return;
   }
@@ -1020,25 +1186,32 @@ function drawPlayer(ctx) {
   ctx.save();
   ctx.translate(cx, feet);
   ctx.scale(player.facing < 0 ? -1 : 1, 1);
-  anim.draw(ctx, 0, 0, { w, h, ax: 0.5, ay: FEET_Y / FRAME });
+  drawCursor(ctx, cur, 0, 0, w, h, 0.5, FEET_Y / FRAME);
   ctx.restore();
 }
 
-function drawHud(ctx) {
+function drawHud(ctx: CanvasRenderingContext2D): void {
   if (!ready) return;
   const best = bestDeaths === null ? "—" : bestDeaths;
   UI.group({ x: 8, y: 8, w: Math.min(360, vp.w - 16), h: 58, title: level.name }, (body) => {
-    UI.text(`Room ${levelIndex + 1}/${LEVELS.length}    Deaths ${deaths}    Best ${best}`, { h: body.remaining, size: 12 });
+    UI.text(`Room ${levelIndex + 1}/${LEVELS.length}    Deaths ${deaths}    Best ${best}`, {
+      h: body.remaining,
+      size: 12,
+    });
   });
   drawDashPip(ctx);
   UI.group({ x: 8, y: vp.h - 40, w: Math.min(360, vp.w - 16), h: 32 }, (body) => {
-    UI.text("←→ move · C/Space jump · X dash · R restart", { h: body.remaining, size: 11, color: "dim" });
+    UI.text("←→ move · C/Space jump · X dash · R restart", {
+      h: body.remaining,
+      size: 11,
+      color: "dim",
+    });
   });
 }
 
 // Dash charge indicator — a small diamond, bright cyan when dash is ready and
 // dim/hollow when spent, so the player can read their charge at a glance.
-function drawDashPip(ctx) {
+function drawDashPip(ctx: CanvasRenderingContext2D): void {
   const cx = 8 + 12;
   const cy = 8 + 58 + 16; // just below the info group box
   const s = 8;
@@ -1070,7 +1243,7 @@ function drawDashPip(ctx) {
   ctx.fillText("DASH", cx + 12, cy + 4);
 }
 
-function drawWin(ctx) {
+function drawWin(ctx: CanvasRenderingContext2D): void {
   ctx.fillStyle = "rgba(8,6,15,0.82)";
   ctx.fillRect(0, 0, vp.w, vp.h);
   ctx.textAlign = "center";
@@ -1081,7 +1254,8 @@ function drawWin(ctx) {
   ctx.font = "18px system-ui, sans-serif";
   ctx.fillText(
     `${deaths} deaths   ·   best ${bestDeaths === null ? "—" : bestDeaths}`,
-    vp.w / 2, vp.h / 2 + 10,
+    vp.w / 2,
+    vp.h / 2 + 10,
   );
   ctx.fillStyle = "#9ad";
   ctx.font = "14px system-ui, sans-serif";

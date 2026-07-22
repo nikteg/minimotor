@@ -1,8 +1,46 @@
+export type CarTypeId = "compact" | "muscle" | "drift";
+
+export interface CarConfig {
+  label: string;
+  w: number;
+  h: number;
+  acceleration: number;
+  grip: number;
+  steer: number;
+  mass: number;
+  color: string;
+}
+
+export interface Weapon {
+  id: string;
+  label: string;
+  cooldown: number;
+  damage: number;
+  pellets: number;
+  spread: number;
+  speed: number;
+  life: number;
+}
+
+export interface FleetPoint {
+  x: number;
+  y: number;
+  type: CarTypeId;
+}
+
+export interface PickupData {
+  id: string;
+  kind: string;
+  x: number;
+  y: number;
+  weapon?: string;
+}
+
 export const WORLD = { w: 4800, h: 3000 };
 export const roadsX = [480, 1440, 2400, 3360, 4320];
 export const roadsY = [375, 1125, 1875, 2625];
 
-export const CAR_TYPES = {
+export const CAR_TYPES: Record<string, CarConfig> = {
   compact: {
     label: "COMPACT",
     w: 54,
@@ -35,7 +73,7 @@ export const CAR_TYPES = {
   },
 };
 
-export const WEAPONS = [
+export const WEAPONS: Weapon[] = [
   {
     id: "pistol",
     label: "PISTOL",
@@ -68,7 +106,7 @@ export const WEAPONS = [
   },
 ];
 
-export function fleetPoints(clientNo) {
+export function fleetPoints(clientNo: number): FleetPoint[] {
   return clientNo % 2
     ? [
         { x: 660, y: 375, type: "compact" },

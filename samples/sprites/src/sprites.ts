@@ -4,7 +4,19 @@
 // (sx/sy/sw/sh), ecs.drawSprites(), and Goodies.wrap. The sheet is generated
 // procedurally so the sample needs no asset files — an 8-frame
 // pulsing/rotating star.
-import { Anim, Draw, ECS, Goodies, Loop, Mathf, Perf, Pointer, Sprites, Stage, UI } from "minimotor";
+import {
+  Anim,
+  Draw,
+  ECS,
+  Goodies,
+  Loop,
+  Mathf,
+  Perf,
+  Pointer,
+  Sprites,
+  Stage,
+  UI,
+} from "minimotor";
 
 const ecs = ECS.create();
 
@@ -45,10 +57,10 @@ const starSheet = Anim.sheet(sheetCanvas, {
 });
 const spin = starSheet.play("spin");
 
-const Vel = ECS.component();
-const Animated = ECS.component(); // holds the per-entity frame offset
+const Vel = ECS.component<{ x: number; y: number }>("Vel");
+const Animated = ECS.component<{ offset: number }>("Animated"); // holds the per-entity frame offset
 
-function spawnStar(x, y) {
+function spawnStar(x: number, y: number) {
   const offset = Mathf.randInt(0, FRAMES - 1); // desync the timelines
   const r = starSheet.rect("spin", offset);
   const a = Math.random() * Math.PI * 2;

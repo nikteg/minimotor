@@ -6,6 +6,27 @@
 // disabled) / float, plus Clock.ui.after driving a fake refresh and join.
 // The server list is mock data — swap fetchServers() for a real request.
 import { Clock, Keys, Loop, Mathf, Perf, Stage, UI } from "minimotor";
+import type { TableSort, Theme } from "minimotor";
+
+interface Server {
+  name: string;
+  mode: string;
+  region: string;
+  players: number;
+  max: number;
+  ping: number;
+}
+interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+interface Layout extends Rect {
+  controls: Rect;
+  table: Rect;
+  footer: Rect;
+}
 
 // The viewport is LIVE (mutated on resize) — layout() reads it fresh each frame.
 const vp = Stage.init("game", { background: "#0b0e14", plugins: [Perf.plugin()] });
@@ -17,9 +38,9 @@ const NOUN = ["Arena", "Garage", "Basement", "Castle", "Speedway", "Lounge", "Fo
 const MODES = ["Coop", "PvP", "Race"];
 const REGIONS = ["EU", "NA", "AS", "SA"];
 
-function fetchServers() {
+function fetchServers(): Server[] {
   // Stand-in for a master-server request.
-  const list = [];
+  const list: Server[] = [];
   for (let i = 0; i < 42; i++) {
     const max = Mathf.randItem([4, 8, 12, 16]);
     list.push({
@@ -44,19 +65,19 @@ let hideEmpty = false;
 let maxPing = 250; // 250 = no limit
 let search = "";
 let region = "ALL";
-let sort = { key: "ping", dir: 1 }; // UI.table sort state (column key + direction)
+let sort: TableSort = { key: "ping", dir: 1 }; // UI.table sort state (column key + direction)
 let scroll = 0;
-let selected = null; // a server object (survives re-sorting), not an index
+let selected: Server | null = null; // a server object (survives re-sorting), not an index
 let refreshing = false;
 let status = "";
 let filtersOpen = false; // the FILTERS popover
-let confirming = null; // server awaiting the join-confirm modal
+let confirming: Server | null = null; // server awaiting the join-confirm modal
 let altTheme = false;
 const uiId = UI.ids("server-browser");
 
 // A second look for the whole kit — one setTheme call restyles every widget.
 // Also shows off the metric knobs: rounded corners and a thicker border.
-const AMBER = {
+const AMBER: Partial<Theme> = {
   font: "Verdana, sans-serif",
   fontSize: 12,
   accent: "#ffb454",
@@ -74,7 +95,7 @@ const AMBER = {
   borderWidth: 3,
 };
 
-function visibleServers() {
+function visibleServers(): Server[] {
   let list = servers;
   if (tab > 0) list = list.filter((s) => s.mode === MODES[tab - 1]);
   if (hideFull) list = list.filter((s) => s.players < s.max);
@@ -99,7 +120,7 @@ function refresh() {
   });
 }
 
-function join(server) {
+function join(server: Server) {
   status = `Connecting to ${server.name}…`;
   Clock.ui.after(900, () => {
     status = Math.random() < 0.8 ? `Connected to ${server.name}!` : "Connection failed (mock)";
@@ -117,12 +138,12 @@ const ROW_H = 30;
 // column fills while the rest are fixed. No arithmetic, no flex spec.
 const FOOTER_H = 40;
 
-function layout() {
+function layout(): Layout {
   const w = Math.max(560, Math.min(760, vp.w - 40));
   const h = Math.max(320, Math.min(560, vp.h - 40));
   const x = Math.round((vp.w - w) / 2);
   const y = Math.round((vp.h - h) / 2);
-  const L = { x, y, w, h };
+  const L = { x, y, w, h } as Layout;
 
   UI.col({ x, y: y + 30, w, h: h - 30, pad: 12, gap: 8 }, (body) => {
     L.controls = body.next(undefined, 30);
@@ -138,7 +159,7 @@ function layout() {
   return L;
 }
 
-const pingColor = (ping) => (ping < 60 ? "#6bff9e" : ping < 130 ? "#ffd43b" : "#ff6b6b");
+const pingColor = (ping: number) => (ping < 60 ? "#6bff9e" : ping < 130 ? "#ffd43b" : "#ff6b6b");
 
 Loop.run({
   update() {
@@ -156,8 +177,13 @@ Loop.run({
     // ---- control bar: two closure rows over the same slot — the left one
     // flows from the left, the right one (align:"end") grows from the right.
     // Widgets inside auto-flow and auto-size; no rects threaded by hand.
-    const nFilters = (hideFull ? 1 : 0) + (hideEmpty ? 1 : 0) + (maxPing < 250 ? 1 : 0) + (search ? 1 : 0) + (region !== "ALL" ? 1 : 0);
-    let filterBtn;
+    const nFilters =
+      (hideFull ? 1 : 0) +
+      (hideEmpty ? 1 : 0) +
+      (maxPing < 250 ? 1 : 0) +
+      (search ? 1 : 0) +
+      (region !== "ALL" ? 1 : 0);
+    let filterBtn: Rect = { x: 0, y: 0, w: 0, h: 0 };
     UI.row({ ...L.controls, gap: 10 }, (bar) => {
       tab = UI.tabs({ id: uiId("mode-tabs"), tabIndex: 10, items: ["All", ...MODES], active: tab });
       if (
@@ -170,7 +196,7 @@ Loop.run({
       ) {
         filtersOpen = !filtersOpen;
       }
-      filterBtn = bar.last; // the popover anchors under this
+      filterBtn = bar.last ?? filterBtn; // the popover anchors under this
     });
 
     UI.row({ ...L.controls, gap: 10, align: "end" }, (bar) => {
@@ -204,7 +230,7 @@ Loop.run({
     // list, all in one call. UI.table sorts the filtered rows by the active
     // column, owns the scroll + selection, and reports the state back.
     const list = visibleServers();
-    const res = UI.table({
+    const res = UI.table<Server>({
       ...L.table,
       rowH: ROW_H,
       headerH: 20,
@@ -240,7 +266,10 @@ Loop.run({
           width: 80,
           value: (s) => s.players,
           cell: (s, r) =>
-            UI.text(`${s.players}/${s.max}`, { ...r, color: s.players >= s.max ? "#ff6b6b" : "dim" }),
+            UI.text(`${s.players}/${s.max}`, {
+              ...r,
+              color: s.players >= s.max ? "#ff6b6b" : "dim",
+            }),
         },
         {
           key: "ping",
@@ -275,7 +304,10 @@ Loop.run({
       size: 12,
     };
     if (status) {
-      UI.text(status, { ...footText, color: status.startsWith("Connected") ? "#6bff9e" : "#ffd43b" });
+      UI.text(status, {
+        ...footText,
+        color: status.startsWith("Connected") ? "#6bff9e" : "#ffd43b",
+      });
     } else {
       UI.text(`${list.length}/${servers.length} servers · R to refresh`, {
         ...footText,
@@ -308,45 +340,45 @@ Loop.run({
     if (filtersOpen) {
       UI.idScope("server-browser:filters", () => {
         UI.col({ x: pop.x + 14, y: pop.y + 38, w: pop.w - 28, h: pop.h - 50, gap: 8 }, () => {
-        search = UI.textInput({
-          tabIndex: 10,
-          value: search,
-          h: 30,
-          placeholder: "Search server names…",
-          ariaLabel: "Search servers",
-        }).value;
-        region = UI.select({
-          tabIndex: 20,
-          value: region,
-          h: 30,
-          maxVisible: 4,
-          options: ["ALL", ...REGIONS].map((value) => ({
-            label: value === "ALL" ? "All regions" : value,
-            value,
-          })),
-          ariaLabel: "Server region",
-        }).value;
-        UI.row({ h: 30, gap: 24 }, () => {
-          hideFull = UI.toggle({
-            tabIndex: 30,
-            label: "Hide full",
-            on: hideFull,
+          search = UI.textInput({
+            tabIndex: 10,
+            value: search,
+            h: 30,
+            placeholder: "Search server names…",
+            ariaLabel: "Search servers",
+          }).value;
+          region = UI.select({
+            tabIndex: 20,
+            value: region,
+            h: 30,
+            maxVisible: 4,
+            options: ["ALL", ...REGIONS].map((value) => ({
+              label: value === "ALL" ? "All regions" : value,
+              value,
+            })),
+            ariaLabel: "Server region",
+          }).value;
+          UI.row({ h: 30, gap: 24 }, () => {
+            hideFull = UI.toggle({
+              tabIndex: 30,
+              label: "Hide full",
+              on: hideFull,
+            });
+            hideEmpty = UI.toggle({
+              tabIndex: 40,
+              label: "Hide empty",
+              on: hideEmpty,
+            });
           });
-          hideEmpty = UI.toggle({
-            tabIndex: 40,
-            label: "Hide empty",
-            on: hideEmpty,
-          });
-        });
-        maxPing = UI.slider({
-          tabIndex: 50,
-          w: 180,
-          min: 20,
-          max: 250,
-          step: 10,
-          value: maxPing,
-          label: "ping",
-          format: (v) => (v >= 250 ? "any" : `≤${v}`),
+          maxPing = UI.slider({
+            tabIndex: 50,
+            w: 180,
+            min: 20,
+            max: 250,
+            step: 10,
+            value: maxPing,
+            label: "ping",
+            format: (v) => (v >= 250 ? "any" : `≤${v}`),
           });
         });
       });

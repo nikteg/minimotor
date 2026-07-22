@@ -10,6 +10,11 @@
 // RIGHT is drawn only from bytes that traveled peer→peer over the channel.
 import { Draw, Keys, Loop, Net, Perf, Pointer, Stage, UI } from "minimotor";
 
+interface Vec {
+  x: number;
+  y: number;
+}
+
 // Host-side network meter, shown in the Perf HUD (top-right): message and byte
 // rates for the cursor stream going out and the acks coming back.
 const meter = Perf.createNetMeter();
@@ -29,8 +34,8 @@ you.onSignal = (sig) => peer.applySignal(sig);
 peer.onSignal = (sig) => you.applySignal(sig);
 
 // State shared with the draw loop.
-let localN = { x: 0.5, y: 0.5 }; // your normalized cursor (0..1 within the pane)
-let remoteN = null; // what the peer received, echoed back
+let localN: Vec = { x: 0.5, y: 0.5 }; // your normalized cursor (0..1 within the pane)
+let remoteN: Vec | null = null; // what the peer received, echoed back
 let sent = 0;
 let recvByPeer = 0;
 let recvByYou = 0;
@@ -40,12 +45,12 @@ let recvByYou = 0;
 // packets. Toggle with I to see what interpolation buys — especially while
 // idle-skipping below keeps the packet rate low.
 let interpolate = true;
-const interp = Net.createInterpolator({ delayMs: 100 });
+const interp = Net.createInterpolator<Vec>({ delayMs: 100 });
 
 // The guest renders nothing itself — it just receives your cursor and bounces an
 // acknowledgement back, so we can prove the channel is full-duplex.
 peer.transport.onMessage = (bytes) => {
-  const msg = JSON.parse(dec.decode(bytes));
+  const msg = JSON.parse(dec.decode(bytes)) as Vec;
   recvByPeer++;
   remoteN = msg; // the position that actually crossed the wire
   interp.push({ x: msg.x, y: msg.y });
@@ -60,7 +65,7 @@ you.transport.onMessage = (bytes) => {
 
 you.connect(); // create the offer → loopback → answer → channel opens
 
-let lastSent = null; // skip sends while the cursor hasn't moved
+let lastSent: Vec | null = null; // skip sends while the cursor hasn't moved
 
 Loop.run({
   update() {
@@ -87,7 +92,13 @@ Loop.run({
     // Divider + pane labels.
     Draw.line(half, 0, half, vp.h, "#2a3340", 2);
 
-    UI.text("YOU  (host)  — move your mouse here", { x: 16, y: 13, size: 15, bold: true, color: "dim" });
+    UI.text("YOU  (host)  — move your mouse here", {
+      x: 16,
+      y: 13,
+      size: 15,
+      bold: true,
+      color: "dim",
+    });
     UI.text("PEER (guest) — drawn from received bytes", {
       x: half + 16,
       y: 13,
@@ -126,7 +137,12 @@ Loop.run({
       { x: half + 16, y: vp.h - 20, size: 14, color: "dim" },
     );
     if (st !== "connected") {
-      UI.text("negotiating peer connection…", { x: half + 16, y: vp.h - 38, size: 14, color: "#ffb454" });
+      UI.text("negotiating peer connection…", {
+        x: half + 16,
+        y: vp.h - 38,
+        size: 14,
+        color: "#ffb454",
+      });
     }
   },
 });

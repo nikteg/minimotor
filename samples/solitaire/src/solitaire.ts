@@ -2,19 +2,93 @@
 // Demonstrates: Stage / Loop / Pointer / Draw, Scenes.create + Transitions,
 // UI immediate-mode widgets + drag/drop, Input.map, Audio.Sfx, Storage,
 // Timers, Clock.game timers, Anim motions (the AI's card glide + win cascade),
-// Signals, Fsm, Particles.create, Collision, Mathf, Game.letterbox,
-// Goodies.shuffle & gridFormation, Perf.plugin, Sprites.getSprite, and
-// Anim.sheet for a win sparkle.
+// Signals, Fsm, Particles.create, Collision, Mathf, a fixed-`resolution`
+// letterboxed stage, Goodies.shuffle & gridFormation, Perf.plugin,
+// Sprites.getSprite, and Anim.sheet for a win sparkle.
 import {
-  Anim, Audio, Clock, Collision, Draw, Fsm, Game, Goodies, Input, Loop,
-  Mathf, Particles, Perf, Pointer, Scenes, Signals, Sprites, Stage, Storage,
-  Timers, Transitions, UI,
+  Anim,
+  Audio,
+  Clock,
+  Collision,
+  Draw,
+  Fsm,
+  Goodies,
+  Input,
+  Loop,
+  Mathf,
+  Particles,
+  Perf,
+  Pointer,
+  Scenes,
+  Signals,
+  Sprites,
+  Stage,
+  Storage,
+  Timers,
+  Transitions,
+  UI,
 } from "minimotor";
+
+// ---- Types ----
+interface Slot {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+interface CardFly {
+  from: { x: number; y: number };
+  to: { x: number; y: number };
+  t: ReturnType<typeof Anim.animate>;
+}
+interface Card {
+  suit: string;
+  rank: string;
+  faceUp: boolean;
+  id: string;
+  fly?: CardFly;
+}
+interface DragFrom {
+  type: string;
+  col?: number;
+  index: number;
+}
+interface DragPayload {
+  type: string;
+  col?: number;
+  index?: number;
+  cards?: Card[];
+  source?: Card[];
+  from?: DragFrom;
+}
+interface AiMotion {
+  cards: Card[];
+  from: { x: number; y: number };
+  to: { x: number; y: number };
+  t: ReturnType<typeof Anim.animate>;
+  source: Card[];
+  index: number;
+  target: Card[];
+  targetType: string;
+}
+interface Snapshot {
+  stock: Card[];
+  waste: Card[];
+  foundations: Card[][];
+  tableau: Card[][];
+  score: number;
+  moves: number;
+}
+interface Stats {
+  wins: number;
+  games: number;
+  bestTime: number;
+}
 
 // ---- Constants & helpers ----
 const SUITS = ["♠", "♥", "♣", "♦"];
 const RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
-const SUIT_COLOR = { "♠": "#111", "♣": "#111", "♥": "#c21", "♦": "#c21" };
+const SUIT_COLOR: Record<string, string> = { "♠": "#111", "♣": "#111", "♥": "#c21", "♦": "#c21" };
 const FOUNDATION_SUITS = ["♠", "♥", "♣", "♦"];
 
 const CARD_W = 54;
@@ -27,45 +101,53 @@ const HUD_H = 24;
 const LOGICAL_W = MARGIN * 2 + CARD_W * 7 + PILE_GAP_H * 6;
 const LOGICAL_H = HUD_H + MARGIN * 2 + CARD_H + 20 + CARD_H + CARD_GAP_V * 12 + 80;
 
-function rankValue(rank) {
+function rankValue(rank: string) {
   return RANKS.indexOf(rank);
 }
 
-function isRed(suit) {
+function isRed(suit: string) {
   return suit === "♥" || suit === "♦";
 }
 
 // ---- Game state ----
-// The viewport is LIVE (mutated in place on resize); the resize handler only
-// re-layouts and re-bakes DPR-dependent sprites.
-const vp = Stage.init("game", { fullscreen: true, background: "#062", plugins: [Perf.plugin()] });
+// The stage runs at a FIXED logical resolution, letterboxed into the window by
+// the engine: `vp.w`/`vp.h` ARE `LOGICAL_W`/`LOGICAL_H`, the pointer arrives in
+// logical coordinates, and all drawing is scaled — no manual letterbox math.
+const vp = Stage.init("game", {
+  fullscreen: true,
+  resolution: { w: LOGICAL_W, h: LOGICAL_H },
+  background: "#0b3d2e",
+  barColor: "#062",
+  plugins: [Perf.plugin()],
+});
 Stage.onResize(() => {
-  layoutBoard();
   Sprites.clearSpriteCache();
   buildCardBackSprite();
 });
 
-let scale = 1;
-let offsetX = 0;
-let offsetY = 0;
+// Logical == screen now (the engine owns the letterbox transform), so these
+// stay identity: no scale/offset conversion is needed anywhere.
+const scale = 1;
+const offsetX = 0;
+const offsetY = 0;
 
-let deck = [];
-let stock = [];
-let waste = [];
-let foundations = [[], [], [], []];
-let tableau = [[], [], [], [], [], [], []];
-let history = [];
+let deck: Card[] = [];
+let stock: Card[] = [];
+let waste: Card[] = [];
+let foundations: Card[][] = [[], [], [], []];
+let tableau: Card[][] = [[], [], [], [], [], [], []];
+let history: Snapshot[] = [];
 let gameTime = 0;
 let moves = 0;
 let score = 0;
 let aiPlaying = false;
-let cancelAi = null;
-let aiMotion = null;
-let aiLastMove = null;
+let cancelAi: (() => void) | null = null;
+let aiMotion: AiMotion | null = null;
+let aiLastMove: { source: Card[]; target: Card[] } | null = null;
 let aiStockPasses = 0;
-let aiVisited = new Set();
+let aiVisited = new Set<string>();
 let gameStartedAt = 0;
-let stats = { wins: 0, games: 0, bestTime: 0 };
+let stats: Stats = { wins: 0, games: 0, bestTime: 0 };
 
 const fx = Particles.create();
 
@@ -79,8 +161,8 @@ function saveStats() {
   Storage.save(statsKey, stats);
 }
 
-// ---- Layout (logical coordinates, scaled to screen in draw) ----
-let layout = {
+// ---- Layout (fixed logical coordinates) ----
+const layout: { stock: Slot; waste: Slot; foundations: Slot[]; tableau: Slot[] } = {
   stock: { x: 0, y: 0, w: CARD_W, h: CARD_H },
   waste: { x: 0, y: 0, w: CARD_W, h: CARD_H },
   foundations: [],
@@ -88,11 +170,6 @@ let layout = {
 };
 
 function layoutBoard() {
-  const lb = Game.letterbox(LOGICAL_W, LOGICAL_H, vp.w, vp.h);
-  scale = lb.scale;
-  offsetX = lb.ox;
-  offsetY = lb.oy;
-
   const topY = HUD_H + MARGIN;
   layout.stock = { x: MARGIN, y: topY, w: CARD_W, h: CARD_H };
   layout.waste = { x: MARGIN + CARD_W + 10, y: topY, w: CARD_W, h: CARD_H };
@@ -114,7 +191,9 @@ function layoutBoard() {
   }));
 }
 
-function toScreen(rect) {
+// Logical == screen (the engine applies the letterbox transform), so these are
+// identity — kept as named helpers for readability at the call sites.
+function toScreen(rect: Slot): Slot {
   return {
     x: rect.x * scale + offsetX,
     y: rect.y * scale + offsetY,
@@ -123,17 +202,17 @@ function toScreen(rect) {
   };
 }
 
-function screenPoint(x, y) {
+function screenPoint(x: number, y: number) {
   return { x: x * scale + offsetX, y: y * scale + offsetY };
 }
 
-function pointInLogicalRect(px, py, rect) {
+function pointInLogicalRect(px: number, py: number, rect: Slot) {
   const sr = toScreen(rect);
   return Collision.pointInRect(px, py, sr);
 }
 
 // ---- Sprite assets (card back + sparkle animation) ----
-let cardBackSprite = null;
+let cardBackSprite: ReturnType<typeof Sprites.getSprite> | null = null;
 
 function buildCardBackSprite() {
   cardBackSprite = Sprites.getSprite("card-back", CARD_W, vp.dpr, (ctx) => {
@@ -181,7 +260,7 @@ const sparkleAnim = Anim.sheet(sparkleAtlas, {
 
 // ---- Deck & deal ----
 function freshDeck() {
-  const cards = [];
+  const cards: Card[] = [];
   for (const suit of SUITS) {
     for (const rank of RANKS) {
       cards.push({ suit, rank, faceUp: false, id: `${suit}${rank}` });
@@ -201,7 +280,7 @@ function snapshot() {
   };
 }
 
-function restore(snap) {
+function restore(snap: Snapshot) {
   stock = snap.stock;
   waste = snap.waste;
   foundations = snap.foundations;
@@ -215,14 +294,14 @@ function pushHistory() {
   history.push(snapshot());
 }
 
-function canMoveToFoundation(card, pileIndex) {
+function canMoveToFoundation(card: Card, pileIndex: number) {
   const pile = foundations[pileIndex];
   if (!pile.length) return card.rank === "A" && card.suit === FOUNDATION_SUITS[pileIndex];
   const top = pile[pile.length - 1];
   return top.suit === card.suit && rankValue(card.rank) === rankValue(top.rank) + 1;
 }
 
-function canMoveToTableau(card, columnIndex) {
+function canMoveToTableau(card: Card, columnIndex: number) {
   const pile = tableau[columnIndex];
   if (!pile.length) return card.rank === "K";
   const top = pile[pile.length - 1];
@@ -254,7 +333,7 @@ function deal() {
 
   for (let col = 0; col < 7; col++) {
     for (let row = 0; row <= col; row++) {
-      const card = stock.pop();
+      const card = stock.pop()!;
       card.faceUp = row === col;
       tableau[col].push(card);
     }
@@ -267,7 +346,7 @@ function deal() {
 function recycleWaste() {
   if (stock.length) return;
   while (waste.length) {
-    const card = waste.pop();
+    const card = waste.pop()!;
     card.faceUp = false;
     stock.push(card);
   }
@@ -282,7 +361,7 @@ function drawFromStock() {
   }
   const count = Math.min(3, stock.length);
   for (let i = 0; i < count; i++) {
-    const card = stock.pop();
+    const card = stock.pop()!;
     card.faceUp = true;
     waste.push(card);
   }
@@ -293,23 +372,39 @@ function drawFromStock() {
 function tryAutoMoveAny() {
   if (waste.length && tryAutoMoveToFoundation(waste, waste.length - 1)) return true;
   for (const pile of tableau) {
-    if (pile.length && pile[pile.length - 1].faceUp && tryAutoMoveToFoundation(pile, pile.length - 1)) return true;
+    if (
+      pile.length &&
+      pile[pile.length - 1].faceUp &&
+      tryAutoMoveToFoundation(pile, pile.length - 1)
+    )
+      return true;
   }
   return false;
 }
 
-function aiQueueMove(source, index, target, targetType, targetIndex) {
+function aiQueueMove(
+  source: Card[],
+  index: number,
+  target: Card[],
+  targetType: string,
+  targetIndex: number,
+) {
   if (aiMotion) return;
   aiLastMove = { source, target };
   aiStockPasses = 0;
   const cards = source.slice(index);
   const sourceCol = tableau.indexOf(source);
-  const sourceRect = source === waste
-    ? layout.waste
-    : { ...layout.tableau[sourceCol], y: layout.tableau[sourceCol].y + index * CARD_GAP_V };
-  const destination = targetType === "foundation"
-    ? layout.foundations[targetIndex]
-    : { ...layout.tableau[targetIndex], y: layout.tableau[targetIndex].y + target.length * CARD_GAP_V };
+  const sourceRect =
+    source === waste
+      ? layout.waste
+      : { ...layout.tableau[sourceCol], y: layout.tableau[sourceCol].y + index * CARD_GAP_V };
+  const destination =
+    targetType === "foundation"
+      ? layout.foundations[targetIndex]
+      : {
+          ...layout.tableau[targetIndex],
+          y: layout.tableau[targetIndex].y + target.length * CARD_GAP_V,
+        };
   // A clock-derived motion glides the cards; the move lands when it's done
   // (polled in the playing state's update).
   aiMotion = {
@@ -317,27 +412,32 @@ function aiQueueMove(source, index, target, targetType, targetIndex) {
     from: { x: sourceRect.x, y: sourceRect.y },
     to: { x: destination.x, y: destination.y },
     t: Anim.animate({ ms: 360, ease: Mathf.easeInOut }),
-    source, index, target, targetType,
+    source,
+    index,
+    target,
+    targetType,
   };
 }
 
 function aiMotionPos() {
-  const t = aiMotion.t.value;
+  const m = aiMotion!;
+  const t = m.t.value;
   return {
-    x: Mathf.lerp(aiMotion.from.x, aiMotion.to.x, t),
-    y: Mathf.lerp(aiMotion.from.y, aiMotion.to.y, t),
+    x: Mathf.lerp(m.from.x, m.to.x, t),
+    y: Mathf.lerp(m.from.y, m.to.y, t),
   };
 }
 
 function finishAiMotion() {
-  const motion = aiMotion;
+  const motion = aiMotion!;
   aiMotion = null;
   moveCards(motion.source, motion.index, motion.target);
   if (motion.targetType === "foundation") checkWin();
 }
 
 function aiSignature() {
-  const pile = (cards) => cards.map((card) => `${card.id}${card.faceUp ? "+" : "-"}`).join(",");
+  const pile = (cards: Card[]) =>
+    cards.map((card) => `${card.id}${card.faceUp ? "+" : "-"}`).join(",");
   return `${stock.length}|${pile(waste)}|${tableau.map(pile).join("/")}|${foundations.map(pile).join("/")}`;
 }
 
@@ -370,15 +470,19 @@ function aiStep() {
     for (let index = 0; index < pile.length; index++) {
       if (!pile[index].faceUp || !pile.slice(index).every((card) => card.faceUp)) continue;
       if (index === pile.length - 1) {
-        const foundation = FOUNDATION_SUITS.findIndex((_, i) => canMoveToFoundation(pile[index], i));
+        const foundation = FOUNDATION_SUITS.findIndex((_, i) =>
+          canMoveToFoundation(pile[index], i),
+        );
         if (foundation >= 0) {
           aiQueueMove(pile, index, foundations[foundation], "foundation", foundation);
           return;
         }
       }
-      const target = tableau.findIndex((_, i) =>
-        i !== col && canMoveToTableau(pile[index], i) &&
-        !(aiLastMove?.source === tableau[i] && aiLastMove?.target === pile),
+      const target = tableau.findIndex(
+        (_, i) =>
+          i !== col &&
+          canMoveToTableau(pile[index], i) &&
+          !(aiLastMove?.source === tableau[i] && aiLastMove?.target === pile),
       );
       if (target >= 0) {
         aiQueueMove(pile, index, tableau[target], "tableau", target);
@@ -401,12 +505,12 @@ function toggleAi() {
   UI.floatText(aiPlaying ? "AI playing" : "AI paused", Pointer.x, Pointer.y, { color: "#ffd43b" });
 }
 
-function tryAutoMoveToFoundation(sourcePile, sourceIndex) {
+function tryAutoMoveToFoundation(sourcePile: Card[], sourceIndex: number) {
   const card = sourcePile[sourceIndex];
   if (!card || sourceIndex !== sourcePile.length - 1) return false;
   for (let i = 0; i < 4; i++) {
     if (canMoveToFoundation(card, i)) {
-      foundations[i].push(sourcePile.pop());
+      foundations[i].push(sourcePile.pop()!);
       flipTopFaceDown();
       moves++;
       score += 10;
@@ -420,7 +524,7 @@ function tryAutoMoveToFoundation(sourcePile, sourceIndex) {
   return false;
 }
 
-function moveCards(sourcePile, sourceIndex, targetPile) {
+function moveCards(sourcePile: Card[], sourceIndex: number, targetPile: Card[]) {
   const cards = sourcePile.slice(sourceIndex);
   targetPile.push(...sourcePile.splice(sourceIndex));
   flipTopFaceDown();
@@ -459,8 +563,10 @@ function tryUndo() {
 function findHint() {
   if (waste.length) {
     const card = waste[waste.length - 1];
-    for (let i = 0; i < 4; i++) if (canMoveToFoundation(card, i)) return { from: "waste", to: "foundation", index: i };
-    for (let i = 0; i < 7; i++) if (canMoveToTableau(card, i)) return { from: "waste", to: "tableau", index: i };
+    for (let i = 0; i < 4; i++)
+      if (canMoveToFoundation(card, i)) return { from: "waste", to: "foundation", index: i };
+    for (let i = 0; i < 7; i++)
+      if (canMoveToTableau(card, i)) return { from: "waste", to: "tableau", index: i };
   }
   for (let col = 0; col < 7; col++) {
     const pile = tableau[col];
@@ -469,8 +575,12 @@ function findHint() {
       const card = pile[idx];
       const isSequence = pile.slice(idx).every((c) => c.faceUp);
       if (!isSequence) continue;
-      for (let i = 0; i < 4; i++) if (idx === pile.length - 1 && canMoveToFoundation(card, i)) return { from: "tableau", col, to: "foundation", index: i };
-      for (let i = 0; i < 7; i++) if (i !== col && canMoveToTableau(card, i)) return { from: "tableau", col, to: "tableau", index: i };
+      for (let i = 0; i < 4; i++)
+        if (idx === pile.length - 1 && canMoveToFoundation(card, i))
+          return { from: "tableau", col, to: "foundation", index: i };
+      for (let i = 0; i < 7; i++)
+        if (i !== col && canMoveToTableau(card, i))
+          return { from: "tableau", col, to: "tableau", index: i };
     }
   }
   return null;
@@ -490,7 +600,7 @@ const undoCd = Timers.cooldown(250);
 const hintFlash = Timers.window(600);
 
 // ---- FSM ----
-const fsm = Fsm.create(
+const fsm = Fsm.create<"ready" | "playing" | "won">(
   {
     ready: {
       update: () => null,
@@ -498,8 +608,6 @@ const fsm = Fsm.create(
     playing: {
       update: () => {
         gameTime = performance.now() - gameStartedAt;
-        undoCd.tick(Loop.step);
-        hintFlash.tick(Loop.step);
         if (aiMotion?.t.done) finishAiMotion();
         if (input.newGame.pressed) {
           scenes.go("play", { transition: Transitions.fade(300) });
@@ -516,7 +624,6 @@ const fsm = Fsm.create(
     },
     won: {
       update: () => {
-        undoCd.tick(Loop.step);
         return null;
       },
     },
@@ -525,7 +632,15 @@ const fsm = Fsm.create(
 );
 
 // ---- Drawing ----
-function drawCard(ctx, card, x, y, w, h, ghost = false) {
+function drawCard(
+  ctx: CanvasRenderingContext2D,
+  card: { faceUp: boolean; suit?: string; rank?: string },
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  ghost = false,
+) {
   ctx.save();
   ctx.globalAlpha = ghost ? 0.6 : 1;
   if (!card.faceUp) {
@@ -544,21 +659,21 @@ function drawCard(ctx, card, x, y, w, h, ghost = false) {
     ctx.lineWidth = 1;
     ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
 
-    const color = SUIT_COLOR[card.suit];
+    const color = SUIT_COLOR[card.suit!];
     ctx.fillStyle = color;
     ctx.font = `bold ${Math.max(8, Math.floor(w * 0.24))}px monospace`;
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
-    ctx.fillText(card.rank, x + 4, y + 3);
+    ctx.fillText(card.rank!, x + 4, y + 3);
     ctx.font = `${Math.max(10, Math.floor(w * 0.34))}px monospace`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(card.suit, x + w / 2, y + h / 2 + 2);
+    ctx.fillText(card.suit!, x + w / 2, y + h / 2 + 2);
   }
   ctx.restore();
 }
 
-function drawEmptySlot(ctx, rect, label = "") {
+function drawEmptySlot(ctx: CanvasRenderingContext2D, rect: Slot, label = "") {
   ctx.save();
   ctx.strokeStyle = "rgba(255,255,255,0.18)";
   ctx.lineWidth = 2;
@@ -575,12 +690,17 @@ function drawEmptySlot(ctx, rect, label = "") {
   ctx.restore();
 }
 
-function drawPiles(ctx) {
+function drawPiles(ctx: CanvasRenderingContext2D) {
   // Stock
   const stockRect = toScreen(layout.stock);
   if (stock.length) {
     drawCard(ctx, { faceUp: false }, stockRect.x, stockRect.y, stockRect.w, stockRect.h);
-    const stockSource = UI.dragSource({ id: "stock", ...stockRect, payload: { type: "stock" }, disabled: true });
+    const stockSource = UI.dragSource<DragPayload>({
+      id: "stock",
+      ...stockRect,
+      payload: { type: "stock" },
+      disabled: true,
+    });
     if (stockSource.hovered) Loop.setCursor("pointer");
   } else {
     drawEmptySlot(ctx, stockRect, "↺");
@@ -594,8 +714,18 @@ function drawPiles(ctx) {
   const wasteRect = toScreen(layout.waste);
   if (waste.length) {
     const card = waste[waste.length - 1];
-    if (!(aiMotion?.source === waste)) drawCard(ctx, card, wasteRect.x, wasteRect.y, wasteRect.w, wasteRect.h);
-    const src = UI.dragSource({ id: "waste-top", ...wasteRect, payload: { type: "waste", cards: [card], source: waste, from: { type: "waste", index: waste.length - 1 } } });
+    if (!(aiMotion?.source === waste))
+      drawCard(ctx, card, wasteRect.x, wasteRect.y, wasteRect.w, wasteRect.h);
+    const src = UI.dragSource<DragPayload>({
+      id: "waste-top",
+      ...wasteRect,
+      payload: {
+        type: "waste",
+        cards: [card],
+        source: waste,
+        from: { type: "waste", index: waste.length - 1 },
+      },
+    });
     if (src.hovered) Loop.setCursor("grab");
   } else {
     drawEmptySlot(ctx, wasteRect);
@@ -608,15 +738,26 @@ function drawPiles(ctx) {
     if (pile.length) {
       const card = pile[pile.length - 1];
       drawCard(ctx, card, rect.x, rect.y, rect.w, rect.h);
-      const src = UI.dragSource({ id: `foundation:${i}`, ...rect, payload: { type: "foundation", col: i, cards: [card], source: pile, from: { type: "foundation", col: i, index: pile.length - 1 } } });
+      const src = UI.dragSource<DragPayload>({
+        id: `foundation:${i}`,
+        ...rect,
+        payload: {
+          type: "foundation",
+          col: i,
+          cards: [card],
+          source: pile,
+          from: { type: "foundation", col: i, index: pile.length - 1 },
+        },
+      });
       if (src.hovered) Loop.setCursor("grab");
     } else {
       drawEmptySlot(ctx, rect, FOUNDATION_SUITS[i]);
     }
-    const tgt = UI.dropTarget({
+    const tgt = UI.dropTarget<DragPayload>({
       id: `foundation:${i}`,
       ...rect,
-      accepts: (payload) => payload.cards.length === 1 && canMoveToFoundation(payload.cards[0], i),
+      accepts: (payload) =>
+        payload.cards!.length === 1 && canMoveToFoundation(payload.cards![0], i),
     });
     if (tgt.canDrop) {
       ctx.strokeStyle = "#ffd43b";
@@ -625,7 +766,7 @@ function drawPiles(ctx) {
     }
     if (tgt.dropped) {
       const payload = tgt.dropped.payload;
-      moveCards(payload.source, payload.from.index, foundations[i]);
+      moveCards(payload.source!, payload.from!.index, foundations[i]);
       checkWin();
     }
   });
@@ -636,10 +777,10 @@ function drawPiles(ctx) {
     const pile = tableau[col];
     if (!pile.length) drawEmptySlot(ctx, rect);
 
-    const emptyTarget = UI.dropTarget({
+    const emptyTarget = UI.dropTarget<DragPayload>({
       id: `tableau:${col}`,
       ...rect,
-      accepts: (payload) => payload.cards[0].rank === "K",
+      accepts: (payload) => payload.cards![0].rank === "K",
     });
     if (emptyTarget.canDrop) {
       ctx.strokeStyle = "#4ecdc4";
@@ -648,33 +789,40 @@ function drawPiles(ctx) {
     }
     if (emptyTarget.dropped) {
       const payload = emptyTarget.dropped.payload;
-      moveCards(payload.source, payload.from.index, tableau[col]);
+      moveCards(payload.source!, payload.from!.index, tableau[col]);
     }
 
     pile.forEach((card, idx) => {
       const cy = logical.y + idx * CARD_GAP_V;
       const cardRect = toScreen({ x: logical.x, y: cy, w: CARD_W, h: CARD_H });
-      const hiddenByAi = aiMotion?.source === pile && idx >= aiMotion.index;
+      const hiddenByAi = aiMotion !== null && aiMotion.source === pile && idx >= aiMotion.index;
       if (!hiddenByAi) drawCard(ctx, card, cardRect.x, cardRect.y, cardRect.w, cardRect.h);
 
       if (card.faceUp && !hiddenByAi) {
         const isBottom = idx === pile.length - 1;
         const canDrag = isBottom || pile.slice(idx + 1).every((c) => c.faceUp);
         if (canDrag) {
-          const src = UI.dragSource({
+          const src = UI.dragSource<DragPayload>({
             id: `tableau:${col}:${idx}`,
             ...cardRect,
-            payload: { type: "tableau", col, index: idx, cards: pile.slice(idx), source: tableau[col], from: { type: "tableau", col, index: idx } },
+            payload: {
+              type: "tableau",
+              col,
+              index: idx,
+              cards: pile.slice(idx),
+              source: tableau[col],
+              from: { type: "tableau", col, index: idx },
+            },
           });
           if (src.hovered) Loop.setCursor("grab");
         }
       }
 
       if (card.faceUp) {
-        const tgt = UI.dropTarget({
+        const tgt = UI.dropTarget<DragPayload>({
           id: `tableau:${col}:card:${idx}`,
           ...cardRect,
-          accepts: (payload) => canMoveToTableau(payload.cards[0], col),
+          accepts: (payload) => canMoveToTableau(payload.cards![0], col),
         });
         if (tgt.canDrop) {
           ctx.strokeStyle = "#4ecdc4";
@@ -683,7 +831,7 @@ function drawPiles(ctx) {
         }
         if (tgt.dropped) {
           const payload = tgt.dropped.payload;
-          moveCards(payload.source, payload.from.index, tableau[col]);
+          moveCards(payload.source!, payload.from!.index, tableau[col]);
         }
       }
     });
@@ -699,16 +847,24 @@ function drawPiles(ctx) {
   }
 
   // Drag preview
-  const drag = UI.draggedItem();
+  const drag = UI.draggedItem<DragPayload>();
   if (drag) {
     const payload = drag.payload;
-    payload.cards.forEach((card, i) => {
-      drawCard(ctx, card, drag.x, drag.y + i * CARD_GAP_V * scale, CARD_W * scale, CARD_H * scale, false);
+    payload.cards!.forEach((card, i) => {
+      drawCard(
+        ctx,
+        card,
+        drag.x,
+        drag.y + i * CARD_GAP_V * scale,
+        CARD_W * scale,
+        CARD_H * scale,
+        false,
+      );
     });
   }
 }
 
-function drawHud(ctx) {
+function drawHud(ctx: CanvasRenderingContext2D) {
   UI.group(
     {
       x: Math.max(12, (vp.w - 306) / 2),
@@ -720,16 +876,43 @@ function drawHud(ctx) {
       pad: 8,
     },
     (bar) => {
-      UI.text(`TIME ${formatTime(gameTime)}`, { at: bar, w: 92, h: 32, size: 11, align: "center", color: "#fff" });
-      UI.text(`SCORE ${score}`, { at: bar, w: 92, h: 32, size: 11, align: "center", color: "#fff" });
-      UI.text(`MOVES ${moves}`, { at: bar, w: 92, h: 32, size: 11, align: "center", color: "#fff" });
+      UI.text(`TIME ${formatTime(gameTime)}`, {
+        at: bar,
+        w: 92,
+        h: 32,
+        size: 11,
+        align: "center",
+        color: "#fff",
+      });
+      UI.text(`SCORE ${score}`, {
+        at: bar,
+        w: 92,
+        h: 32,
+        size: 11,
+        align: "center",
+        color: "#fff",
+      });
+      UI.text(`MOVES ${moves}`, {
+        at: bar,
+        w: 92,
+        h: 32,
+        size: 11,
+        align: "center",
+        color: "#fff",
+      });
     },
   );
 
   if (hintFlash.active) {
     const hint = findHint();
     if (hint) {
-      const rect = toScreen(hint.to === "foundation" ? layout.foundations[hint.index] : hint.from === "waste" ? layout.waste : layout.tableau[hint.index]);
+      const rect = toScreen(
+        hint.to === "foundation"
+          ? layout.foundations[hint.index]
+          : hint.from === "waste"
+            ? layout.waste
+            : layout.tableau[hint.index],
+      );
       ctx.save();
       ctx.strokeStyle = "#ffd43b";
       ctx.lineWidth = 3 * scale;
@@ -740,16 +923,20 @@ function drawHud(ctx) {
 
   const toolbarY = (LOGICAL_H - 42) * scale + offsetY;
   const toolbar = UI.stack({ x: MARGIN * scale + offsetX, y: toolbarY, gap: 10 * scale });
-  if (UI.button({ at: toolbar, label: "NEW (N)", variant: "primary", h: 32 * scale })) scenes.go("play", { transition: Transitions.fade(300) });
+  if (UI.button({ at: toolbar, label: "NEW (N)", variant: "primary", h: 32 * scale }))
+    scenes.go("play", { transition: Transitions.fade(300) });
   if (UI.button({ at: toolbar, label: "UNDO (U)", h: 32 * scale })) tryUndo();
   if (UI.button({ at: toolbar, label: "HINT (H)", h: 32 * scale })) hintFlash.charge();
-  if (UI.button({ at: toolbar, label: aiPlaying ? "PAUSE AI" : "AI PLAY", h: 32 * scale })) toggleAi();
+  if (UI.button({ at: toolbar, label: aiPlaying ? "PAUSE AI" : "AI PLAY", h: 32 * scale }))
+    toggleAi();
   if (UI.button({ at: toolbar, label: "FULL (F)", h: 32 * scale })) toggleFullscreen();
 }
 
-function formatTime(ms) {
+function formatTime(ms: number) {
   const total = Math.floor(ms / 1000);
-  const m = Math.floor(total / 60).toString().padStart(2, "0");
+  const m = Math.floor(total / 60)
+    .toString()
+    .padStart(2, "0");
   const s = (total % 60).toString().padStart(2, "0");
   return `${m}:${s}`;
 }
@@ -788,8 +975,9 @@ const scenes = Scenes.create({
       fsm.update();
     },
     draw: () => {
+      // The engine fills the play area ("#0b3d2e") and the letterbox bars
+      // ("#062") each frame; everything below draws in logical coordinates.
       const ctx = Draw.ctx;
-      Game.drawLetterbox(ctx, vp.w, vp.h, LOGICAL_W, LOGICAL_H, "#062", "#0b3d2e");
 
       drawPiles(ctx);
       drawHud(ctx);
@@ -837,7 +1025,7 @@ const scenes = Scenes.create({
       const ctx = Draw.ctx;
 
       // `play` re-draws beneath us (non-opaque push); dim the board.
-      Game.drawLetterbox(ctx, vp.w, vp.h, LOGICAL_W, LOGICAL_H, "#062", "rgba(11,61,46,0.7)");
+      Draw.rect(0, 0, LOGICAL_W, LOGICAL_H, "rgba(11,61,46,0.7)");
 
       foundations.forEach((pile) => {
         pile.forEach((card) => {
@@ -864,18 +1052,33 @@ const scenes = Scenes.create({
 
       const titlePos = screenPoint(LOGICAL_W / 2, LOGICAL_H / 2 - 60);
       const subPos = screenPoint(LOGICAL_W / 2, LOGICAL_H / 2 - 12);
-      Draw.text("YOU WON!", { x: titlePos.x, y: titlePos.y, font: "bold 38px monospace", color: "#ffd43b", align: "center", baseline: "middle" });
-      Draw.text(`Time ${formatTime(gameTime)}   Moves ${moves}`, { x: subPos.x, y: subPos.y, font: "16px monospace", color: "#fff", align: "center", baseline: "middle" });
+      Draw.text("YOU WON!", {
+        x: titlePos.x,
+        y: titlePos.y,
+        font: "bold 38px monospace",
+        color: "#ffd43b",
+        align: "center",
+        baseline: "middle",
+      });
+      Draw.text(`Time ${formatTime(gameTime)}   Moves ${moves}`, {
+        x: subPos.x,
+        y: subPos.y,
+        font: "16px monospace",
+        color: "#fff",
+        align: "center",
+        baseline: "middle",
+      });
 
       const btnY = (LOGICAL_H / 2 + 30) * scale + offsetY;
-      if (UI.button({ x: vp.w / 2 - 170, y: btnY, w: 160, h: 42, label: "PLAY AGAIN" })) scenes.go("play", { transition: Transitions.fade(300) });
+      if (UI.button({ x: vp.w / 2 - 170, y: btnY, w: 160, h: 42, label: "PLAY AGAIN" }))
+        scenes.go("play", { transition: Transitions.fade(300) });
     },
   },
 });
 
 // ---- Signal wiring ----
 Signals.on("move", () => {});
-Signals.on("win", ({ time }) => {
+Signals.on<{ time: number }>("win", ({ time }) => {
   const pos = screenPoint(LOGICAL_W / 2, LOGICAL_H / 2 - 100);
   UI.floatText(`Win in ${time}s!`, pos.x, pos.y, { color: "#ffd43b", font: "bold 18px monospace" });
 });

@@ -1,13 +1,71 @@
-import { Camera, Mathf, UI } from "minimotor";
-import { CAR_TYPES, WEAPONS, WORLD, roadsX, roadsY } from "./config.js";
+import { Mathf, UI } from "minimotor";
+import type { Component, Ecs } from "minimotor";
+import { CAR_TYPES, WEAPONS, WORLD, roadsX, roadsY, type PickupData } from "./config.ts";
 
-export function createRoadHud(getState) {
+interface RectShape {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+interface CarLike {
+  x: number;
+  y: number;
+  type: string;
+  health: number;
+}
+interface EnemyLike {
+  x: number;
+  y: number;
+  dead: number;
+  health: number;
+}
+interface RemoteMinimapState {
+  phase: string;
+  px: number;
+  py: number;
+}
+interface RemoteLike {
+  color: string;
+  interp: { sample(): RemoteMinimapState | null };
+}
+interface PlayerLike {
+  x: number;
+  y: number;
+  inCar: boolean;
+  health: number;
+}
+interface Camera {
+  sx(n: number): number;
+  sy(n: number): number;
+}
+
+export interface HudState {
+  Pickup: Component<PickupData>;
+  activeWeapon: number;
+  buildings: RectShape[];
+  camera: Camera;
+  car: CarLike;
+  cars: CarLike[];
+  color: string;
+  enemies: EnemyLike[];
+  gameState: string;
+  nearestEnterableCar: () => CarLike | null;
+  ownedWeapons: Set<string>;
+  pickupWorld: Ecs;
+  player: PlayerLike;
+  remotes: ReadonlyMap<string, RemoteLike>;
+  selectWeapon: (slot: number) => void;
+  vp: { w: number; h: number };
+}
+
+export function createRoadHud(getState: () => HudState) {
   function drawEnterCarPrompt() {
-      const { camera, gameState, nearestEnterableCar, player, vp } = getState();
+    const { camera, gameState, nearestEnterableCar, player, vp } = getState();
     const nearCar = nearestEnterableCar();
     if (gameState !== "alive" || player.inCar || !nearCar) return;
-    const carScreenX = camera.sx(nearCar.x) + Camera.shakeX();
-    const carScreenY = camera.sy(nearCar.y) + Camera.shakeY();
+    const carScreenX = camera.sx(nearCar.x);
+    const carScreenY = camera.sy(nearCar.y);
     const promptX = Mathf.clamp(carScreenX - 56, 8, vp.w - 120);
     const promptY = Mathf.clamp(carScreenY - 56, 8, vp.h - 38);
     UI.panel({
@@ -31,7 +89,7 @@ export function createRoadHud(getState) {
   }
 
   function drawPlayerHealth() {
-      const { player, vp } = getState();
+    const { player, vp } = getState();
     const w = 306;
     const x = vp.w / 2 - w / 2;
     const y = vp.h - (player.inCar ? 142 : 113);
@@ -52,7 +110,7 @@ export function createRoadHud(getState) {
   }
 
   function drawCarHealth() {
-      const { car, vp } = getState();
+    const { car, vp } = getState();
     const w = 306;
     const x = vp.w / 2 - w / 2;
     const y = vp.h - 113;
@@ -73,7 +131,7 @@ export function createRoadHud(getState) {
   }
 
   function drawInventory() {
-      const { activeWeapon, ownedWeapons, selectWeapon, vp } = getState();
+    const { activeWeapon, ownedWeapons, selectWeapon, vp } = getState();
     const slotW = 98;
     const gap = 4;
     const totalW = WEAPONS.length * slotW + (WEAPONS.length - 1) * gap;
@@ -113,20 +171,20 @@ export function createRoadHud(getState) {
     }
   }
 
-  function drawMinimap(ctx) {
-      const {
-        Pickup,
-        buildings,
-        car,
-        cars,
-        color,
-        enemies,
-        gameState,
-        pickupWorld,
-        player,
-        remotes,
-        vp,
-      } = getState();
+  function drawMinimap(ctx: CanvasRenderingContext2D) {
+    const {
+      Pickup,
+      buildings,
+      car,
+      cars,
+      color,
+      enemies,
+      gameState,
+      pickupWorld,
+      player,
+      remotes,
+      vp,
+    } = getState();
     const outer = { x: vp.w - 180, y: vp.h - 126, w: 170, h: 116 };
     const map = { x: outer.x + 8, y: outer.y + 22, w: 154, h: 86 };
     UI.panel({ ...outer, title: "CITY MAP" });
@@ -136,8 +194,8 @@ export function createRoadHud(getState) {
     ctx.clip();
     ctx.fillStyle = "#121c1d";
     ctx.fillRect(map.x, map.y, map.w, map.h);
-    const mx = (x) => map.x + (x / WORLD.w) * map.w;
-    const my = (y) => map.y + (y / WORLD.h) * map.h;
+    const mx = (x: number) => map.x + (x / WORLD.w) * map.w;
+    const my = (y: number) => map.y + (y / WORLD.h) * map.h;
     ctx.strokeStyle = "#405052";
     ctx.lineWidth = 3;
     ctx.beginPath();
@@ -202,7 +260,6 @@ export function createRoadHud(getState) {
     }
     ctx.restore();
   }
-
 
   return {
     drawCarHealth,

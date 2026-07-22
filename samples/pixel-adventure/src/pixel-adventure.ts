@@ -4,21 +4,61 @@
 // Controls: A/D or arrows move; W, Up or Space jumps; R restarts.
 import { Minimotor } from "minimotor";
 
-const GAME_W = 480, GAME_H = 270, TILE = 48;
+const GAME_W = 480,
+  GAME_H = 270,
+  TILE = 48;
 let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
 Minimotor.Stage.onResize((next) => (vp = next));
-const { Assets, Anim, Fsm, Timers, Tiles, Camera, Collision, Mathf, Input, Keys, Draw, Loop, UI, Particles, Sprites, Game, Audio } =
-  Minimotor;
+const {
+  Assets,
+  Anim,
+  Fsm,
+  Timers,
+  Tiles,
+  Camera,
+  Collision,
+  Mathf,
+  Input,
+  Keys,
+  Draw,
+  Loop,
+  UI,
+  Particles,
+  Sprites,
+  Game,
+  Audio,
+} = Minimotor;
 const input = Input.actions({
-  left: ["ArrowLeft", "KeyA"], right: ["ArrowRight", "KeyD"], jump: ["ArrowUp", "KeyW", "Space"],
+  left: ["ArrowLeft", "KeyA"],
+  right: ["ArrowRight", "KeyD"],
+  jump: ["ArrowUp", "KeyW", "Space"],
 });
 
 // Forgiving jump: coyote grace after running off a ledge + a buffered press
 // just before landing. The gate decides *when*; the impulse below is ours.
 const jumpGate = Timers.jumpGate({ coyoteMs: 90, bufferMs: 120 });
 
-let ready = false, failed = "", level, map, cam, terrain, backdrop, skyLayer, terrainLayer, playerAnim, enemyAnim, fruitAnim, goalAnim;
-let player, playerSm, enemies = [], coins = [], goal, lives = 3, state = "loading", elapsed = 0;
+let ready = false,
+  failed = "",
+  level,
+  map,
+  cam,
+  terrain,
+  backdrop,
+  skyLayer,
+  terrainLayer,
+  playerAnim,
+  enemyAnim,
+  fruitAnim,
+  goalAnim;
+let player,
+  playerSm,
+  enemies = [],
+  coins = [],
+  goal,
+  lives = 3,
+  state = "loading",
+  elapsed = 0;
 
 // ---------------------------------------------------------------------------
 // Sound — synthesized SFX routed through the engine mixer, replacing the old
@@ -117,28 +157,77 @@ const SFX = {
       );
     }),
 };
-function rect(body) { return { x: body.x - body.w / 2, y: body.y - body.h, w: body.w, h: body.h }; }
-function solid(body) { return map.solidInRect(rect(body)); }
+function rect(body) {
+  return { x: body.x - body.w / 2, y: body.y - body.h, w: body.w, h: body.h };
+}
+function solid(body) {
+  return map.solidInRect(rect(body));
+}
 
 function drawFlipped(anim, ctx, x, y, facing, opts) {
-  ctx.save(); ctx.translate(x, y); ctx.scale(facing, 1); anim.draw(ctx, 0, 0, opts); ctx.restore();
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(facing, 1);
+  anim.draw(ctx, 0, 0, opts);
+  ctx.restore();
 }
 function resetRun() {
-  state = "play"; lives = 3; elapsed = 0;
-  player = { x: 96, y: 10 * TILE, w: 25, h: 35, vx: 0, vy: 0, onGround: false, wall: 0, facing: 1, invuln: 1.25, hurtTimer: 0 };
-  coins.forEach((coin) => { coin.got = false; coin.pop = 0; });
-  enemies.forEach((enemy, i) => Object.assign(enemy, { x: level.enemies[i][0] * TILE + TILE / 2, y: level.enemies[i][1] * TILE, vx: i % 2 ? -45 : 45, dead: false }));
+  state = "play";
+  lives = 3;
+  elapsed = 0;
+  player = {
+    x: 96,
+    y: 10 * TILE,
+    w: 25,
+    h: 35,
+    vx: 0,
+    vy: 0,
+    onGround: false,
+    wall: 0,
+    facing: 1,
+    invuln: 1.25,
+    hurtTimer: 0,
+  };
+  coins.forEach((coin) => {
+    coin.got = false;
+    coin.pop = 0;
+  });
+  enemies.forEach((enemy, i) =>
+    Object.assign(enemy, {
+      x: level.enemies[i][0] * TILE + TILE / 2,
+      y: level.enemies[i][1] * TILE,
+      vx: i % 2 ? -45 : 45,
+      dead: false,
+    }),
+  );
   cam.snapTo(player.x, player.y - player.h / 2);
 }
 function respawn() {
-  player.x = 96; player.y = 10 * TILE; player.vx = 0; player.vy = 0; player.onGround = false; player.invuln = 1.5;
+  player.x = 96;
+  player.y = 10 * TILE;
+  player.vx = 0;
+  player.vy = 0;
+  player.onGround = false;
+  player.invuln = 1.5;
 }
 function hurt() {
   if (player.invuln > 0) return;
-  lives--; player.invuln = 1.5; player.hurtTimer = 0.35; SFX.hurt();
-  Particles.burst(player.x, player.y - 20, { count: 20, colors: ["#ff6b6b", "#ffe066"], speed: [55, 180], life: [280, 700], gravity: 280 });
+  lives--;
+  player.invuln = 1.5;
+  player.hurtTimer = 0.35;
+  SFX.hurt();
+  Particles.burst(player.x, player.y - 20, {
+    count: 20,
+    colors: ["#ff6b6b", "#ffe066"],
+    speed: [55, 180],
+    life: [280, 700],
+    gravity: 280,
+  });
   UI.floatText("OUCH!", player.x, player.y - 50, { color: "#ff6b6b" });
-  if (lives === 0) { state = "gameover"; SFX.death(); } else respawn();
+  if (lives === 0) {
+    state = "gameover";
+    SFX.death();
+  } else respawn();
 }
 function movePlayer(dx, dy) {
   // Sweep the bottom-center-anchored body as a top-left rect against the solid
@@ -192,7 +281,14 @@ function drawFruitPickup(ctx, coin) {
   for (let i = 0; i < 8; i++) {
     const angle = (i / 8) * Math.PI * 2 + 0.2;
     const distance = 8 + burst * (25 + (i % 2) * 10);
-    pixelStar(ctx, Math.cos(angle) * distance, Math.sin(angle) * distance - rise * 0.18, 7 - t * 3, colors[i % colors.length], fade * (1 - t * 0.55));
+    pixelStar(
+      ctx,
+      Math.cos(angle) * distance,
+      Math.sin(angle) * distance - rise * 0.18,
+      7 - t * 3,
+      colors[i % colors.length],
+      fade * (1 - t * 0.55),
+    );
   }
 
   // The collected sprite squashes on contact, then stretches and rises before
@@ -212,11 +308,19 @@ function makeStaticLayers() {
   skyLayer = Sprites.getLayer("pixel-adventure:sky", GAME_W, GAME_H, 1, (skyCtx) => {
     skyCtx.imageSmoothingEnabled = false;
     const pattern = skyCtx.createPattern(backdrop, "repeat");
-    if (pattern) { skyCtx.fillStyle = pattern; skyCtx.fillRect(0, 0, GAME_W, GAME_H); }
+    if (pattern) {
+      skyCtx.fillStyle = pattern;
+      skyCtx.fillRect(0, 0, GAME_W, GAME_H);
+    }
     const sky = skyCtx.createLinearGradient(0, 0, 0, GAME_H);
-    sky.addColorStop(0, "rgba(86,205,225,.3)"); sky.addColorStop(1, "rgba(36,91,155,.35)");
-    skyCtx.fillStyle = sky; skyCtx.fillRect(0, 0, GAME_W, GAME_H);
-    skyCtx.fillStyle = "rgba(255,244,184,.75)"; skyCtx.beginPath(); skyCtx.arc(400, 50, 23, 0, Math.PI * 2); skyCtx.fill();
+    sky.addColorStop(0, "rgba(86,205,225,.3)");
+    sky.addColorStop(1, "rgba(36,91,155,.35)");
+    skyCtx.fillStyle = sky;
+    skyCtx.fillRect(0, 0, GAME_W, GAME_H);
+    skyCtx.fillStyle = "rgba(255,244,184,.75)";
+    skyCtx.beginPath();
+    skyCtx.arc(400, 50, 23, 0, Math.PI * 2);
+    skyCtx.fill();
   });
 
   // Real tiling at native atlas resolution. The atlas holds a 3×3 grass block
@@ -226,25 +330,53 @@ function makeStaticLayers() {
   // ground matches the sprite resolution), and every sub-tile picks its edge
   // from the cell's open neighbours. Result: grassy lips on top, dirt sides and
   // proper corners, instead of one blurry block stamped everywhere.
-  const SUB = 16, BX = 96, BY = 0, N = TILE / SUB; // N = 3 sub-tiles per cell
-  terrainLayer = Sprites.getLayer("pixel-adventure:terrain", map.worldW, map.worldH, 1, (terrainCtx) => {
-    terrainCtx.imageSmoothingEnabled = false;
-    for (let y = 0; y < map.rows; y++) for (let x = 0; x < map.cols; x++) if (map.at(x, y)) {
-      const px = x * TILE, py = y * TILE;
-      const openU = !map.at(x, y - 1), openD = !map.at(x, y + 1);
-      const openL = !map.at(x - 1, y), openR = !map.at(x + 1, y);
-      terrainCtx.fillStyle = "rgba(19,45,65,.28)"; terrainCtx.fillRect(px + 4, py + 5, TILE, TILE);
-      for (let sr = 0; sr < N; sr++) for (let sc = 0; sc < N; sc++) {
-        // Only the outer ring of sub-tiles reflects an exposed edge; the rest is
-        // solid dirt-middle. Corners fall out naturally where two edges meet.
-        const eU = openU && sr === 0, eD = openD && sr === N - 1;
-        const eL = openL && sc === 0, eR = openR && sc === N - 1;
-        const srcX = BX + (eL ? 0 : eR ? 2 : 1) * SUB;
-        const srcY = BY + (eU ? 0 : eD ? 2 : 1) * SUB;
-        terrainCtx.drawImage(terrain, srcX, srcY, SUB, SUB, px + sc * SUB, py + sr * SUB, SUB, SUB);
-      }
-    }
-  });
+  const SUB = 16,
+    BX = 96,
+    BY = 0,
+    N = TILE / SUB; // N = 3 sub-tiles per cell
+  terrainLayer = Sprites.getLayer(
+    "pixel-adventure:terrain",
+    map.worldW,
+    map.worldH,
+    1,
+    (terrainCtx) => {
+      terrainCtx.imageSmoothingEnabled = false;
+      for (let y = 0; y < map.rows; y++)
+        for (let x = 0; x < map.cols; x++)
+          if (map.at(x, y)) {
+            const px = x * TILE,
+              py = y * TILE;
+            const openU = !map.at(x, y - 1),
+              openD = !map.at(x, y + 1);
+            const openL = !map.at(x - 1, y),
+              openR = !map.at(x + 1, y);
+            terrainCtx.fillStyle = "rgba(19,45,65,.28)";
+            terrainCtx.fillRect(px + 4, py + 5, TILE, TILE);
+            for (let sr = 0; sr < N; sr++)
+              for (let sc = 0; sc < N; sc++) {
+                // Only the outer ring of sub-tiles reflects an exposed edge; the rest is
+                // solid dirt-middle. Corners fall out naturally where two edges meet.
+                const eU = openU && sr === 0,
+                  eD = openD && sr === N - 1;
+                const eL = openL && sc === 0,
+                  eR = openR && sc === N - 1;
+                const srcX = BX + (eL ? 0 : eR ? 2 : 1) * SUB;
+                const srcY = BY + (eU ? 0 : eD ? 2 : 1) * SUB;
+                terrainCtx.drawImage(
+                  terrain,
+                  srcX,
+                  srcY,
+                  SUB,
+                  SUB,
+                  px + sc * SUB,
+                  py + sr * SUB,
+                  SUB,
+                  SUB,
+                );
+              }
+          }
+    },
+  );
 }
 
 // The manifest composes each sprite sheet into an Animation as it loads, so
@@ -264,60 +396,106 @@ Assets.load({
   enemy: { src: asset("radish-run.png"), sheet: { fw: 30, fh: 38, fps: 9 } },
   fruit: { src: asset("bananas.png"), sheet: { fw: 32, fh: 32, fps: 10 } },
   goal: { src: asset("goal.png"), sheet: { fw: 64, fh: 64, fps: 5 } },
-}).then((A) => {
-  level = A.level; terrain = A.terrain; backdrop = A.background;
-  map = Tiles.grid(level.tiles, { tw: TILE, atlas: terrain, cols: Math.floor(terrain.width / TILE), solid: (tile) => tile === 1 });
-  playerAnim = Anim.states({
-    idle: A.playerIdle, run: A.playerRun, jump: A.playerJump, fall: A.playerFall, hit: A.playerHit,
-  }, "idle");
-  // The player's animation is driven by a state machine whose states map 1:1
-  // to the animation clips — every transition auto-plays the matching clip via
-  // the { anim } bridge, so there's no hand-mirrored play() call. Each state
-  // recomputes the desired state from live physics (a fully-connected machine).
-  const playerState = () =>
-    player.hurtTimer > 0
-      ? "hit"
-      : !player.onGround
-        ? player.vy < 0
-          ? "jump"
-          : "fall"
-        : Math.abs(player.vx) > 18
-          ? "run"
-          : "idle";
-  playerSm = Fsm.create(
-    {
-      idle: { update: playerState },
-      run: { update: playerState },
-      jump: { update: playerState },
-      fall: { update: playerState },
-      hit: { update: playerState },
-    },
-    "idle",
-    { anim: playerAnim },
-  );
-  enemyAnim = A.enemy; fruitAnim = A.fruit; goalAnim = A.goal;
-  coins = level.coins.map(([x, y]) => ({ x: x * TILE + TILE / 2, y: y * TILE + TILE / 2, got: false, pop: 0 }));
-  enemies = level.enemies.map(([x, y], i) => ({ x: x * TILE + TILE / 2, y: y * TILE, w: 28, h: 35, vx: i % 2 ? -45 : 45, dead: false }));
-  goal = { x: level.goal[0] * TILE + TILE / 2, y: level.goal[1] * TILE + TILE / 2 };
-  makeStaticLayers();
-  cam = Camera.createCamera({ worldW: map.worldW, worldH: map.worldH, viewW: GAME_W, viewH: GAME_H, damping: 0.1, deadZoneX: 0.14, deadZoneY: 0.1 });
-  cam.zoom = 0.8;
-  resetRun(); ready = true;
-}).catch((error) => (failed = String(error)));
+})
+  .then((A) => {
+    level = A.level;
+    terrain = A.terrain;
+    backdrop = A.background;
+    map = Tiles.grid(level.tiles, {
+      tw: TILE,
+      atlas: terrain,
+      cols: Math.floor(terrain.width / TILE),
+      solid: (tile) => tile === 1,
+    });
+    playerAnim = Anim.states(
+      {
+        idle: A.playerIdle,
+        run: A.playerRun,
+        jump: A.playerJump,
+        fall: A.playerFall,
+        hit: A.playerHit,
+      },
+      "idle",
+    );
+    // The player's animation is driven by a state machine whose states map 1:1
+    // to the animation clips — every transition auto-plays the matching clip via
+    // the { anim } bridge, so there's no hand-mirrored play() call. Each state
+    // recomputes the desired state from live physics (a fully-connected machine).
+    const playerState = () =>
+      player.hurtTimer > 0
+        ? "hit"
+        : !player.onGround
+          ? player.vy < 0
+            ? "jump"
+            : "fall"
+          : Math.abs(player.vx) > 18
+            ? "run"
+            : "idle";
+    playerSm = Fsm.create(
+      {
+        idle: { update: playerState },
+        run: { update: playerState },
+        jump: { update: playerState },
+        fall: { update: playerState },
+        hit: { update: playerState },
+      },
+      "idle",
+      { anim: playerAnim },
+    );
+    enemyAnim = A.enemy;
+    fruitAnim = A.fruit;
+    goalAnim = A.goal;
+    coins = level.coins.map(([x, y]) => ({
+      x: x * TILE + TILE / 2,
+      y: y * TILE + TILE / 2,
+      got: false,
+      pop: 0,
+    }));
+    enemies = level.enemies.map(([x, y], i) => ({
+      x: x * TILE + TILE / 2,
+      y: y * TILE,
+      w: 28,
+      h: 35,
+      vx: i % 2 ? -45 : 45,
+      dead: false,
+    }));
+    goal = { x: level.goal[0] * TILE + TILE / 2, y: level.goal[1] * TILE + TILE / 2 };
+    makeStaticLayers();
+    cam = Camera.createCamera({
+      worldW: map.worldW,
+      worldH: map.worldH,
+      viewW: GAME_W,
+      viewH: GAME_H,
+      damping: 0.1,
+      deadZoneX: 0.14,
+      deadZoneY: 0.1,
+    });
+    cam.zoom = 0.8;
+    resetRun();
+    ready = true;
+  })
+  .catch((error) => (failed = String(error)));
 
 Loop.run({
   update(stepMs) {
     if (!ready) return;
-    if (Keys.pressed("KeyR")) { resetRun(); return; }
+    if (Keys.pressed("KeyR")) {
+      resetRun();
+      return;
+    }
     if (state !== "play") return;
     const dt = stepMs / 1000;
     elapsed += dt;
     player.invuln = Math.max(0, player.invuln - dt);
     player.hurtTimer = Math.max(0, player.hurtTimer - dt);
-    enemyAnim.update(stepMs); fruitAnim.update(stepMs); goalAnim.update(stepMs);
+    enemyAnim.update(stepMs);
+    fruitAnim.update(stepMs);
+    goalAnim.update(stepMs);
     const direction = (input.down("right") ? 1 : 0) - (input.down("left") ? 1 : 0);
-    if (direction) { player.vx += direction * 900 * dt; player.facing = direction; }
-    else player.vx = Mathf.damp(player.vx, 0, 7.1, dt);
+    if (direction) {
+      player.vx += direction * 900 * dt;
+      player.facing = direction;
+    } else player.vx = Mathf.damp(player.vx, 0, 7.1, dt);
     player.vx = Mathf.clamp(player.vx, -165, 165);
     // A 96px first ledge needs a 140px jump arc (the -525 impulse). The impulse
     // is ours; the coyote-grace + input-buffer timing is the gate's.
@@ -354,79 +532,158 @@ Loop.run({
     for (const enemy of enemies) {
       if (enemy.dead) continue;
       enemy.x += enemy.vx * dt;
-      if (solid(enemy)) { enemy.x -= enemy.vx * dt; enemy.vx *= -1; }
+      if (solid(enemy)) {
+        enemy.x -= enemy.vx * dt;
+        enemy.vx *= -1;
+      }
       if (Collision.rectsOverlap(rect(player), rect(enemy))) {
         if (player.vy > 55 && player.y - player.h / 2 < enemy.y - enemy.h / 2) {
-          enemy.dead = true; player.vy = -270; SFX.stomp(); Camera.shake(3.5, 190); // punch on a kill
+          enemy.dead = true;
+          player.vy = -270;
+          SFX.stomp();
+          Camera.shake(3.5, 190); // punch on a kill
           UI.floatText("+100", enemy.x, enemy.y - 45, { color: "#ffe066" });
-          Particles.burst(enemy.x, enemy.y - 20, { count: 18, colors: ["#ff9f43", "#ffe066"], speed: [45, 160], life: [260, 620], gravity: 180 });
+          Particles.burst(enemy.x, enemy.y - 20, {
+            count: 18,
+            colors: ["#ff9f43", "#ffe066"],
+            speed: [45, 160],
+            life: [260, 620],
+            gravity: 180,
+          });
         } else hurt();
       }
     }
     for (const coin of coins) {
-      if (coin.got) { coin.pop += dt; continue; }
+      if (coin.got) {
+        coin.pop += dt;
+        continue;
+      }
       if (!Collision.circleHit(player.x, player.y, 0, coin.x, coin.y, 27)) continue;
-      coin.got = true; coin.pop = 0; SFX.coin(); // no shake on a pickup
+      coin.got = true;
+      coin.pop = 0;
+      SFX.coin(); // no shake on a pickup
       UI.floatText("FRUIT!", coin.x, coin.y - 26, { color: "#fff3a3" });
-      Particles.burst(coin.x, coin.y, { count: 24, colors: ["#fff", "#fff3a3", "#ffe066", "#ffb347"], size: [2, 5], speed: [55, 205], life: [300, 680], gravity: 105 });
-      Particles.burst(coin.x, coin.y, { count: 8, angle: -Math.PI / 2, spread: 0.55, colors: "#ffffff", size: [2, 4], speed: [115, 210], life: [190, 370] });
-      if (coins.every((c) => c.got)) { SFX.unlock(); UI.floatText("GOAL UNLOCKED!", player.x, player.y - 60, { color: "#64f0c8" }); }
+      Particles.burst(coin.x, coin.y, {
+        count: 24,
+        colors: ["#fff", "#fff3a3", "#ffe066", "#ffb347"],
+        size: [2, 5],
+        speed: [55, 205],
+        life: [300, 680],
+        gravity: 105,
+      });
+      Particles.burst(coin.x, coin.y, {
+        count: 8,
+        angle: -Math.PI / 2,
+        spread: 0.55,
+        colors: "#ffffff",
+        size: [2, 4],
+        speed: [115, 210],
+        life: [190, 370],
+      });
+      if (coins.every((c) => c.got)) {
+        SFX.unlock();
+        UI.floatText("GOAL UNLOCKED!", player.x, player.y - 60, { color: "#64f0c8" });
+      }
     }
     if (player.y > map.worldH + 70) hurt();
-    if (coins.every((coin) => coin.got) && Collision.circleHit(player.x, player.y, 0, goal.x, goal.y, 38)) { state = "won"; SFX.win(); }
+    if (
+      coins.every((coin) => coin.got) &&
+      Collision.circleHit(player.x, player.y, 0, goal.x, goal.y, 38)
+    ) {
+      state = "won";
+      SFX.win();
+    }
     cam.update(player.x, player.y - player.h / 2, Draw.frameScale);
   },
 
   draw(ctx) {
     const box = Game.drawLetterbox(ctx, vp.w, vp.h, GAME_W, GAME_H, "#10182b", "#58c7dc");
-    ctx.save(); ctx.translate(box.ox, box.oy); ctx.scale(box.scale, box.scale); ctx.imageSmoothingEnabled = false;
+    ctx.save();
+    ctx.translate(box.ox, box.oy);
+    ctx.scale(box.scale, box.scale);
+    ctx.imageSmoothingEnabled = false;
     if (!ready) {
       UI.panel(ctx, { x: 110, y: 88, w: 260, h: 86, title: "PIXEL ADVENTURE" });
       UI.bar(ctx, 135, 133, 210, 10, Assets.progress, { fill: "#ffe066", bg: "#263653" });
-      ctx.fillStyle = "#fff"; ctx.font = "12px monospace"; ctx.textAlign = "center"; ctx.fillText(failed || "LOADING PIXEL FROG ATLASES…", 240, 119); ctx.textAlign = "left";
-      ctx.restore(); return;
+      ctx.fillStyle = "#fff";
+      ctx.font = "12px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(failed || "LOADING PIXEL FROG ATLASES…", 240, 119);
+      ctx.textAlign = "left";
+      ctx.restore();
+      return;
     }
 
     // The static art is now one native-resolution sky blit and one terrain
     // blit, independent of tile count. Rounding preserves pixel-art stability.
     ctx.drawImage(skyLayer, 0, 0);
-    const viewW = GAME_W / cam.zoom, viewH = GAME_H / cam.zoom;
+    const viewW = GAME_W / cam.zoom,
+      viewH = GAME_H / cam.zoom;
     const cameraX = Math.min(Math.round(cam.x), map.worldW - viewW);
     const cameraY = Math.min(Math.round(cam.y), map.worldH - viewH);
-    ctx.save(); ctx.translate(Math.round(Camera.shakeX()), Math.round(Camera.shakeY()));
+    ctx.save();
+    ctx.translate(Math.round(Camera.shakeX()), Math.round(Camera.shakeY()));
     ctx.drawImage(terrainLayer, cameraX, cameraY, viewW, viewH, 0, 0, GAME_W, GAME_H);
 
-    ctx.save(); ctx.scale(cam.zoom, cam.zoom); ctx.translate(-cameraX, -cameraY);
+    ctx.save();
+    ctx.scale(cam.zoom, cam.zoom);
+    ctx.translate(-cameraX, -cameraY);
     const unlocked = coins.every((coin) => coin.got);
     goalAnim.draw(ctx, goal.x, goal.y, { w: 58, h: 58 });
-    if (!unlocked) { ctx.fillStyle = "rgba(10,22,44,.65)"; ctx.fillRect(goal.x - 20, goal.y - 30, 40, 50); }
+    if (!unlocked) {
+      ctx.fillStyle = "rgba(10,22,44,.65)";
+      ctx.fillRect(goal.x - 20, goal.y - 30, 40, 50);
+    }
     for (const coin of coins) {
       if (!coin.got) fruitAnim.draw(ctx, coin.x, coin.y, { w: 32, h: 32 });
       else if (coin.pop < 0.68) drawFruitPickup(ctx, coin);
     }
     // The radish art faces left by default, so face = +1 when moving left.
-    for (const enemy of enemies) if (!enemy.dead) drawFlipped(enemyAnim, ctx, enemy.x, enemy.y - 20, enemy.vx < 0 ? 1 : -1, { w: 42, h: 53 });
-    if (player.invuln <= 0 || Math.floor(elapsed * 12) % 2) drawFlipped(playerAnim, ctx, player.x, player.y - 18, player.facing, { w: 48, h: 48 });
-    UI.drawFloatText(ctx); Particles.draw(ctx); ctx.restore();
+    for (const enemy of enemies)
+      if (!enemy.dead)
+        drawFlipped(enemyAnim, ctx, enemy.x, enemy.y - 20, enemy.vx < 0 ? 1 : -1, { w: 42, h: 53 });
+    if (player.invuln <= 0 || Math.floor(elapsed * 12) % 2)
+      drawFlipped(playerAnim, ctx, player.x, player.y - 18, player.facing, { w: 48, h: 48 });
+    UI.drawFloatText(ctx);
+    Particles.draw(ctx);
+    ctx.restore();
     ctx.restore(); // camera shake
     ctx.restore(); // end letterbox — the HUD below is drawn in SCREEN space at a
     // fixed pixel size, so the world can be scaled/zoomed independently of it.
 
     UI.group({ x: 12, y: 12, w: 236, h: 60, title: "SUNNY RUN" }, (body) => {
-      UI.text(`FRUIT ${coins.filter((coin) => coin.got).length}/${coins.length}   LIVES ${"◆".repeat(lives)}`,
-        { h: body.remaining, size: 13, color: "#fff" });
+      UI.text(
+        `FRUIT ${coins.filter((coin) => coin.got).length}/${coins.length}   LIVES ${"◆".repeat(lives)}`,
+        { h: body.remaining, size: 13, color: "#fff" },
+      );
     });
     ctx.textAlign = "left";
-    ctx.fillStyle = "#e9f8ff"; ctx.font = "12px monospace";
+    ctx.fillStyle = "#e9f8ff";
+    ctx.font = "12px monospace";
     ctx.fillText(unlocked ? "GOAL UNLOCKED!" : "Find all fruit", 14, vp.h - 14);
     if (state === "won" || state === "gameover") {
       const won = state === "won";
-      const cx = vp.w / 2, cy = vp.h / 2;
-      ctx.fillStyle = "rgba(7,15,30,.78)"; ctx.fillRect(0, 0, vp.w, vp.h);
+      const cx = vp.w / 2,
+        cy = vp.h / 2;
+      ctx.fillStyle = "rgba(7,15,30,.78)";
+      ctx.fillRect(0, 0, vp.w, vp.h);
       UI.group(
-        { x: cx - 140, y: cy - 58, w: 280, h: 116, title: won ? "ADVENTURE COMPLETE" : "TRY AGAIN", border: won ? "#64f0c8" : "#ff6b6b" },
+        {
+          x: cx - 140,
+          y: cy - 58,
+          w: 280,
+          h: 116,
+          title: won ? "ADVENTURE COMPLETE" : "TRY AGAIN",
+          border: won ? "#64f0c8" : "#ff6b6b",
+        },
         () => {
-          UI.text(won ? "YOU FOUND THE WAY!" : "OUT OF LIVES", { h: 44, size: 18, bold: true, align: "center", color: won ? "#64f0c8" : "#ff6b6b" });
+          UI.text(won ? "YOU FOUND THE WAY!" : "OUT OF LIVES", {
+            h: 44,
+            size: 18,
+            bold: true,
+            align: "center",
+            color: won ? "#64f0c8" : "#ff6b6b",
+          });
           UI.text("Press R to restart", { h: 24, size: 12, align: "center", color: "#fff" });
         },
       );

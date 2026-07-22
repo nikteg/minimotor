@@ -4,12 +4,27 @@
 // into game over — and the UI helpers: immediate-mode buttons (menu / game
 // over), floating score text, a time bar. A push holds Clock.game, so the
 // world beneath the pause overlay freezes for free.
-import { Audio, Collision, Draw, Game, Keys, Loop, Mathf, Perf, Scenes, Stage, Transitions, UI } from "minimotor";
+import {
+  Audio,
+  Collision,
+  Draw,
+  Game,
+  Keys,
+  Loop,
+  Mathf,
+  Perf,
+  Scenes,
+  Stage,
+  Transitions,
+  UI,
+} from "minimotor";
+import type { DrawTextOptions } from "minimotor";
 
 const view = Stage.init("game", { background: "#12141c", plugins: [Perf.plugin()] }); // live viewport — every scene lays out from it
 
-const center = (text, y, opts) => Draw.text(text, { x: view.w / 2, y, align: "center", ...opts });
-const clear = (bg) => Draw.rect(0, 0, view.w, view.h, bg);
+const center = (text: string, y: number, opts: Partial<DrawTextOptions> = {}) =>
+  Draw.text(text, { x: view.w / 2, y, align: "center", ...opts });
+const clear = (bg: string) => Draw.rect(0, 0, view.w, view.h, bg);
 
 // ---- shared play state (reset by play.enter) ----
 const player = { x: 0, y: 0, size: 34 };
@@ -127,7 +142,9 @@ const scenes = Scenes.create({
     draw() {
       clear("#1a1220");
       center("GAME OVER", view.h / 2 - 60, { font: "bold 32px monospace", color: "#ff6b6b" });
-      center(`Score: ${scores.score}   Best: ${scores.best}`, view.h / 2 - 20, { font: "18px monospace" });
+      center(`Score: ${scores.score}   Best: ${scores.best}`, view.h / 2 - 20, {
+        font: "18px monospace",
+      });
       if (
         UI.button({ x: view.w / 2 - 170, y: view.h / 2 + 16, w: 160, h: 44, label: "PLAY AGAIN" })
       ) {

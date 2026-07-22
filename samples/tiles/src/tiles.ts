@@ -5,7 +5,20 @@
 //   player rect against the solid tiles and reports which faces made contact.
 // - Draw.tiles culls to the camera view.
 // - Works with keyboard (←→/AD + Space) and a gamepad (left stick + A).
-import { Audio, Camera, Collision, Draw, Input, Keys, Loop, Perf, Sprites, Stage, Tiles, UI } from "minimotor";
+import {
+  Audio,
+  Camera,
+  Collision,
+  Draw,
+  Input,
+  Keys,
+  Loop,
+  Perf,
+  Sprites,
+  Stage,
+  Tiles,
+  UI,
+} from "minimotor";
 
 Stage.init("game", { background: "#1b2432", plugins: [Perf.plugin()] });
 
@@ -66,7 +79,7 @@ const atlas = Sprites.atlas(TW, TW, 3, (g, i) => {
   }
 });
 
-const cell = (i) => ({ image: atlas, sx: i * TW, sy: 0, sw: TW, sh: TW });
+const cell = (i: number) => ({ image: atlas, sx: i * TW, sy: 0, sw: TW, sh: TW });
 const skin = { g: cell(0), d: cell(1), b: cell(2) };
 
 // ---- Player: an AABB moved by the engine's kinematic tile solver ----
@@ -86,8 +99,7 @@ Loop.run({
       stick;
     player.vel.x = Math.max(-1, Math.min(1, move)) * 3.4;
 
-    const jump =
-      Keys.pressed("Space") || Keys.pressed("KeyW") || pad.pressed(Input.Buttons.A);
+    const jump = Keys.pressed("Space") || Keys.pressed("KeyW") || pad.pressed(Input.Buttons.A);
     if (jump && player.grounded) {
       player.vel.y = -11;
       Audio.Sfx.jump();

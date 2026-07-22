@@ -6,23 +6,33 @@
 // Demonstrates: Physics2D.world/box/circle/walls/pin, onContact, deferred
 // destroy, wake() on resize, the ECS body-in-a-component pattern, and the
 // separate "minimotor/physics2d" entry (core stays dep-free).
-import { Minimotor } from "minimotor";
+import {
+  Audio,
+  Camera,
+  ECS,
+  Keys,
+  Loop,
+  Mathf,
+  Perf,
+  Pointer,
+  Sprites,
+  Stage,
+  UI,
+} from "minimotor";
 import { Physics2D } from "minimotor/physics2d";
-
-const { ECS, Pointer, Keys, Mathf, Camera, Audio, Sprites, Loop, UI } = Minimotor;
 
 const ecs = ECS.create();
 const { Phys } = Physics2D; // the standard body-holding component
 
-let vp = Minimotor.Stage.init("game", {
-  plugins: [Minimotor.Perf.plugin({ world: ecs })],
+let vp = Stage.init("game", {
+  plugins: [Perf.plugin({ world: ecs })],
 });
 
 const phys = Physics2D.world(); // gravity 1800 px/s² down
 
 // ---- pre-rendered textures (base 64px, scaled per body via Sprite w/h) ----
 const TEX = 64;
-const crateTex = (color) =>
+const crateTex = (color: string) =>
   Sprites.getSprite(`crate-${color}`, TEX, vp.dpr, (c) => {
     c.fillStyle = color;
     c.fillRect(-TEX / 2, -TEX / 2, TEX, TEX);
@@ -54,7 +64,7 @@ const plank = phys.box(vp.w / 2, vp.h * 0.55, paddle.w, paddle.h, {
 const hinge = phys.pin(anchor, plank, vp.w / 2, vp.h * 0.55);
 hinge.motor(1.5, 80000); // slow constant spin — flings whatever lands on it
 
-Minimotor.Stage.onResize((next) => {
+Stage.onResize((next) => {
   vp = next;
   // Re-target the frame: the kinematic walls glide to the new rect, sweeping
   // bodies ahead of them — everything pushes on everything else, no teleports.
@@ -72,7 +82,7 @@ Minimotor.Stage.onResize((next) => {
 // ---- dynamic bodies: a Phys component next to the built-in Sprite ----
 const CRATE_COLORS = ["#ffa94d", "#ffd43b", "#ff6b6b"];
 
-function spawnCrate(x, y) {
+function spawnCrate(x: number, y: number) {
   const s = Mathf.randRange(24, 46);
   const body = phys.box(x, y, s, s, { friction: 0.5, restitution: 0.05, data: "crate" });
   body.rot = Mathf.randRange(0, Math.PI / 2);
@@ -82,7 +92,7 @@ function spawnCrate(x, y) {
   );
 }
 
-function spawnBall(x, y) {
+function spawnBall(x: number, y: number) {
   const r = Mathf.randRange(10, 20);
   const body = phys.circle(x, y, r, {
     friction: 0.3,
@@ -98,7 +108,6 @@ function reset() {
     p.body.destroy();
     ecs.despawn(e);
   }
-  ecs.flush();
   for (let i = 0; i < 8; i++) spawnCrate(Mathf.randRange(60, vp.w - 60), Mathf.randRange(0, 200));
   for (let i = 0; i < 5; i++) spawnBall(Mathf.randRange(60, vp.w - 60), Mathf.randRange(0, 150));
 }
@@ -125,7 +134,7 @@ ecs.system("dim-sleepers", (w) => {
 
 let spawnTick = 0;
 
-Minimotor.Loop.run({
+Loop.run({
   update() {
     // Hold to pour crates; shift-click (or X) pours balls instead.
     if (Pointer.down && spawnTick++ % 6 === 0) {
@@ -143,23 +152,22 @@ Minimotor.Loop.run({
     ctx.fillStyle = "#12141c";
     ctx.fillRect(0, 0, vp.w, vp.h);
 
-    ctx.save();
-    ctx.translate(Camera.shakeX(), Camera.shakeY());
+    // The default camera is identity — this block just applies the shake.
+    Camera.render(() => {
+      // Paddle — the one hand-drawn shape (no texture, just a rotated rect).
+      ctx.save();
+      ctx.translate(plank.x, plank.y);
+      ctx.rotate(plank.rot);
+      ctx.fillStyle = "#b197fc";
+      ctx.fillRect(-paddle.w / 2, -paddle.h / 2, paddle.w, paddle.h);
+      ctx.restore();
+      ctx.fillStyle = "#7d8894";
+      ctx.beginPath();
+      ctx.arc(anchor.x, anchor.y, 5, 0, Math.PI * 2);
+      ctx.fill();
 
-    // Paddle — the one hand-drawn shape (no texture, just a rotated rect).
-    ctx.save();
-    ctx.translate(plank.x, plank.y);
-    ctx.rotate(plank.rot);
-    ctx.fillStyle = "#b197fc";
-    ctx.fillRect(-paddle.w / 2, -paddle.h / 2, paddle.w, paddle.h);
-    ctx.restore();
-    ctx.fillStyle = "#7d8894";
-    ctx.beginPath();
-    ctx.arc(anchor.x, anchor.y, 5, 0, Math.PI * 2);
-    ctx.fill();
-
-    ecs.drawSprites(ctx); // every body, via the built-in renderer
-    ctx.restore();
+      ecs.drawSprites(ctx); // every body, via the built-in renderer
+    });
 
     UI.text(`bodies: ${phys.count}`, { x: 10, y: 6, size: 14 });
     UI.text("hold to pour crates · +Shift/X balls · R reset", {

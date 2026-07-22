@@ -8,20 +8,21 @@
 // O P the black keys. Z/X shift octaves, 1-4 pick the waveform. Click the
 // on-screen piano too. B toggles a backing groove, N picks the next one.
 import { Audio, Draw, Keys, Loop, Mathf, Perf, Pointer, Stage, UI } from "minimotor";
+import type { KeyCode } from "minimotor";
 
 // The viewport is LIVE (mutated on resize) — piano + bars lay out from it.
 const vp = Stage.init("game", { background: "#12141c", plugins: [Perf.plugin()] });
 
-const midiFreq = (m) => 440 * 2 ** ((m - 69) / 12);
+const midiFreq = (m: number) => 440 * 2 ** ((m - 69) / 12);
 
 // ---------- The instrument ----------
 
-const WAVES = ["sine", "triangle", "square", "sawtooth"];
+const WAVES: OscillatorType[] = ["sine", "triangle", "square", "sawtooth"];
 let wave = 1; // triangle default — soft but present
 let octave = 4; // C4 anchor; Z/X shifts
 
 // Two slightly-detuned oscillators through a closing low-pass: a warm pluck.
-function playNote(midi) {
+function playNote(midi: number) {
   const freq = midiFreq(midi);
   // A warm pluck: two slightly-detuned voices through a closing low-pass with a
   // soft attack and a long tail — described, not hand-wired.
@@ -43,7 +44,7 @@ function playNote(midi) {
 
 // Keyboard layout: semitone offsets from the anchor C. `pos` is the white-key
 // index a black key sits to the right of.
-const WHITE_KEYS = [
+const WHITE_KEYS: { code: KeyCode; semi: number; label: string }[] = [
   { code: "KeyA", semi: 0, label: "A" },
   { code: "KeyS", semi: 2, label: "S" },
   { code: "KeyD", semi: 4, label: "D" },
@@ -55,7 +56,7 @@ const WHITE_KEYS = [
   { code: "KeyL", semi: 14, label: "L" },
   { code: "Semicolon", semi: 16, label: ";" },
 ];
-const BLACK_KEYS = [
+const BLACK_KEYS: { code: KeyCode; semi: number; pos: number; label: string }[] = [
   { code: "KeyW", semi: 1, pos: 0, label: "W" },
   { code: "KeyE", semi: 3, pos: 1, label: "E" },
   { code: "KeyT", semi: 6, pos: 3, label: "T" },
@@ -67,7 +68,7 @@ const BLACK_KEYS = [
 
 const WHITE_NOTES = ["C", "D", "E", "F", "G", "A", "B"]; // key labels (no keyboard now)
 const anchorMidi = () => 12 * (octave + 1); // C of the current octave
-const litUntil = new Map(); // midi → until-timestamp, for key highlights
+const litUntil = new Map<number, number>(); // midi → until-timestamp, for key highlights
 
 // ---------- Backing grooves (Music scheduler) ----------
 // Each groove is 4 chords × 16 sixteenth-steps of composed melody + bass, plus
@@ -79,52 +80,52 @@ const GROOVES = [
     name: "Chill", // C – G – Am – F, lazy arpeggios
     leadVol: 0.16,
     melody: [
-      72, 0, 0, 0,  76, 0, 74, 0,  72, 0, 79, 0,  76, 0, 74, 0,
-      71, 0, 0, 0,  74, 0, 71, 0,  67, 0, 74, 0,  79, 0, 74, 0,
-      69, 0, 0, 0,  72, 0, 69, 0,  76, 0, 72, 0,  69, 0, 72, 0,
-      69, 0, 0, 0,  72, 0, 69, 0,  77, 0, 76, 0,  72, 0, 74, 0,
+      72, 0, 0, 0, 76, 0, 74, 0, 72, 0, 79, 0, 76, 0, 74, 0, 71, 0, 0, 0, 74, 0, 71, 0, 67, 0, 74,
+      0, 79, 0, 74, 0, 69, 0, 0, 0, 72, 0, 69, 0, 76, 0, 72, 0, 69, 0, 72, 0, 69, 0, 0, 0, 72, 0,
+      69, 0, 77, 0, 76, 0, 72, 0, 74, 0,
     ],
     bass: [
-      36, 0, 0, 0,  0, 0, 36, 0,  36, 0, 0, 0,  43, 0, 36, 0,
-      43, 0, 0, 0,  0, 0, 43, 0,  43, 0, 0, 0,  50, 0, 43, 0,
-      45, 0, 0, 0,  0, 0, 45, 0,  45, 0, 0, 0,  52, 0, 45, 0,
-      41, 0, 0, 0,  0, 0, 41, 0,  41, 0, 0, 0,  48, 0, 41, 0,
+      36, 0, 0, 0, 0, 0, 36, 0, 36, 0, 0, 0, 43, 0, 36, 0, 43, 0, 0, 0, 0, 0, 43, 0, 43, 0, 0, 0,
+      50, 0, 43, 0, 45, 0, 0, 0, 0, 0, 45, 0, 45, 0, 0, 0, 52, 0, 45, 0, 41, 0, 0, 0, 0, 0, 41, 0,
+      41, 0, 0, 0, 48, 0, 41, 0,
     ],
-    kick: [0, 8], snare: [4, 12], hatEvery: 4,
+    kick: [0, 8],
+    snare: [4, 12],
+    hatEvery: 4,
   },
   {
     name: "Night", // Am – F – C – G, sparse and moody
     leadVol: 0.2,
     melody: [
-      69, 0, 0, 0,  0, 0, 72, 0,  71, 0, 69, 0,  0, 0, 0, 0,
-      72, 0, 0, 0,  0, 0, 76, 0,  74, 0, 72, 0,  0, 0, 0, 0,
-      76, 0, 0, 0,  0, 0, 79, 0,  76, 0, 74, 0,  0, 0, 0, 0,
-      74, 0, 0, 0,  0, 0, 71, 0,  69, 0, 67, 0,  0, 0, 71, 0,
+      69, 0, 0, 0, 0, 0, 72, 0, 71, 0, 69, 0, 0, 0, 0, 0, 72, 0, 0, 0, 0, 0, 76, 0, 74, 0, 72, 0, 0,
+      0, 0, 0, 76, 0, 0, 0, 0, 0, 79, 0, 76, 0, 74, 0, 0, 0, 0, 0, 74, 0, 0, 0, 0, 0, 71, 0, 69, 0,
+      67, 0, 0, 0, 71, 0,
     ],
     bass: [
-      33, 0, 0, 0,  0, 0, 0, 0,  33, 0, 40, 0,  0, 0, 0, 0,
-      29, 0, 0, 0,  0, 0, 0, 0,  29, 0, 36, 0,  0, 0, 0, 0,
-      36, 0, 0, 0,  0, 0, 0, 0,  36, 0, 43, 0,  0, 0, 0, 0,
-      31, 0, 0, 0,  0, 0, 0, 0,  31, 0, 38, 0,  0, 0, 0, 0,
+      33, 0, 0, 0, 0, 0, 0, 0, 33, 0, 40, 0, 0, 0, 0, 0, 29, 0, 0, 0, 0, 0, 0, 0, 29, 0, 36, 0, 0,
+      0, 0, 0, 36, 0, 0, 0, 0, 0, 0, 0, 36, 0, 43, 0, 0, 0, 0, 0, 31, 0, 0, 0, 0, 0, 0, 0, 31, 0,
+      38, 0, 0, 0, 0, 0,
     ],
-    kick: [0, 10], snare: [8], hatEvery: 8,
+    kick: [0, 10],
+    snare: [8],
+    hatEvery: 8,
   },
   {
     name: "Bounce", // C – Am – F – G, driving eighths
     leadVol: 0.12,
     melody: [
-      72, 0, 72, 0,  76, 0, 72, 0,  79, 0, 76, 0,  72, 76, 74, 0,
-      72, 0, 72, 0,  76, 0, 72, 0,  81, 0, 79, 0,  76, 0, 74, 0,
-      69, 0, 69, 0,  72, 0, 69, 0,  77, 0, 76, 0,  74, 0, 72, 0,
-      71, 0, 71, 0,  74, 0, 71, 0,  79, 0, 74, 0,  71, 74, 76, 0,
+      72, 0, 72, 0, 76, 0, 72, 0, 79, 0, 76, 0, 72, 76, 74, 0, 72, 0, 72, 0, 76, 0, 72, 0, 81, 0,
+      79, 0, 76, 0, 74, 0, 69, 0, 69, 0, 72, 0, 69, 0, 77, 0, 76, 0, 74, 0, 72, 0, 71, 0, 71, 0, 74,
+      0, 71, 0, 79, 0, 74, 0, 71, 74, 76, 0,
     ],
     bass: [
-      36, 0, 43, 0,  36, 0, 43, 0,  36, 0, 43, 0,  36, 0, 43, 0,
-      33, 0, 40, 0,  33, 0, 40, 0,  33, 0, 40, 0,  33, 0, 40, 0,
-      29, 0, 36, 0,  29, 0, 36, 0,  29, 0, 36, 0,  29, 0, 36, 0,
-      31, 0, 38, 0,  31, 0, 38, 0,  31, 0, 38, 0,  31, 0, 38, 0,
+      36, 0, 43, 0, 36, 0, 43, 0, 36, 0, 43, 0, 36, 0, 43, 0, 33, 0, 40, 0, 33, 0, 40, 0, 33, 0, 40,
+      0, 33, 0, 40, 0, 29, 0, 36, 0, 29, 0, 36, 0, 29, 0, 36, 0, 29, 0, 36, 0, 31, 0, 38, 0, 31, 0,
+      38, 0, 31, 0, 38, 0, 31, 0, 38, 0,
     ],
-    kick: [0, 4, 8, 12], snare: [4, 12], hatEvery: 2,
+    kick: [0, 4, 8, 12],
+    snare: [4, 12],
+    hatEvery: 2,
   },
 ];
 /* oxfmt-ignore-end */
@@ -144,7 +145,7 @@ const toneFilter = Audio.Mixer.masterFilter("lowpass", 20000);
 Audio.Mixer.compressor();
 let reverbOn = false;
 let filterOn = false;
-let lastPointerMidi = null; // for hold-and-roll on the piano
+let lastPointerMidi: number | null = null; // for hold-and-roll on the piano
 // Continuous mix/filter amounts, driven by the on-screen sliders.
 let masterVol = 1;
 let reverbWet = 0.4;
@@ -201,7 +202,7 @@ const BAR_COUNT = 36;
 const bars = Array.from({ length: BAR_COUNT }, () => ({ h: 0, target: 0 }));
 
 // Light the bars around a pitch — the display maps ~3 octaves (C2..C7).
-function glow(midi) {
+function glow(midi: number) {
   const center = Mathf.clamp(((midi - 36) / 48) * BAR_COUNT, 0, BAR_COUNT - 1);
   for (let i = 0; i < BAR_COUNT; i++) {
     const d = Math.abs(i - center);
@@ -220,7 +221,7 @@ function handleInput() {
   if (Keys.pressed("KeyZ")) octave = Math.max(2, octave - 1);
   if (Keys.pressed("KeyX")) octave = Math.min(6, octave + 1);
   for (let d = 0; d < 4; d++) {
-    if (Keys.pressed(`Digit${d + 1}`)) wave = d;
+    if (Keys.pressed(`Digit${d + 1}` as KeyCode)) wave = d;
   }
 
   // The on-screen piano plays too — hold the mouse/finger down and roll across
@@ -256,13 +257,13 @@ const piano = () => {
   const h = Math.min(170, vp.h * 0.3);
   return { y: vp.h - h, h, keyW: vp.w / WHITE_KEYS.length };
 };
-const blackRect = (p, k) => ({
+const blackRect = (p: ReturnType<typeof piano>, k: { pos: number }) => ({
   x: (k.pos + 1) * p.keyW - p.keyW * 0.3,
   y: p.y,
   w: p.keyW * 0.6,
   h: p.h * 0.58,
 });
-const isLit = (midi) => (litUntil.get(midi) ?? 0) > performance.now();
+const isLit = (midi: number) => (litUntil.get(midi) ?? 0) > performance.now();
 
 Loop.run({
   update() {
@@ -293,7 +294,16 @@ Loop.run({
     // the only thing drawn in the top-left corner.
     UI.group({ x: 12, y: 12, w: 340, h: 360, title: "SYNTH" }, () => {
       wave = UI.tabs({ id: "mx-wave", items: WAVES, active: wave });
-      octave = UI.slider({ id: "mx-oct", label: "Octave", min: 2, max: 6, step: 1, value: octave, w: 210, format: (v) => `C${v}` });
+      octave = UI.slider({
+        id: "mx-oct",
+        label: "Octave",
+        min: 2,
+        max: 6,
+        step: 1,
+        value: octave,
+        w: 210,
+        format: (v) => `C${v}`,
+      });
       // The backing groove lives in its own group: pick the groove, and the
       // play/pause button starts/stops it (no separate on/off toggle).
       UI.group({ h: 82, title: "Music" }, () => {
@@ -323,18 +333,39 @@ Loop.run({
           applyFilter();
         }
       });
-      const mv = UI.slider({ id: "mx-master", label: "Master", value: masterVol, w: 210, format: (v) => `${Math.round(v * 100)}%` });
+      const mv = UI.slider({
+        id: "mx-master",
+        label: "Master",
+        value: masterVol,
+        w: 210,
+        format: (v) => `${Math.round(v * 100)}%`,
+      });
       if (mv !== masterVol) {
         masterVol = mv;
         Audio.master.volume = mv;
       }
-      const rw = UI.slider({ id: "mx-wet", label: "Verb", value: reverbWet, w: 210, format: (v) => `${Math.round(v * 100)}%` });
+      const rw = UI.slider({
+        id: "mx-wet",
+        label: "Verb",
+        value: reverbWet,
+        w: 210,
+        format: (v) => `${Math.round(v * 100)}%`,
+      });
       if (rw !== reverbWet) {
         reverbWet = rw;
         reverbOn = rw > 0; // dragging Verb up engages reverb (the checkbox follows)
         applyReverb();
       }
-      const cf = UI.slider({ id: "mx-cut", label: "Cutoff", min: 200, max: 20000, step: 50, value: cutoff, w: 210, format: (v) => `${(v / 1000).toFixed(1)}k` });
+      const cf = UI.slider({
+        id: "mx-cut",
+        label: "Cutoff",
+        min: 200,
+        max: 20000,
+        step: 50,
+        value: cutoff,
+        w: 210,
+        format: (v) => `${(v / 1000).toFixed(1)}k`,
+      });
       if (cf !== cutoff) {
         cutoff = cf;
         filterOn = cf < 20000; // lowering Cutoff engages the filter (the checkbox follows)

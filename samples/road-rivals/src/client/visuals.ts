@@ -1,8 +1,86 @@
-import { CAR_TYPES, WORLD, roadsX, roadsY } from "./config.js";
+import { CAR_TYPES, WORLD, roadsX, roadsY } from "./config.ts";
 
-const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
-export function drawWorld(ctx, buildings, cover) {
+interface RectShape {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+interface Point {
+  x: number;
+  y: number;
+}
+interface SmokePuff {
+  angle: number;
+  distance: number;
+  size: number;
+}
+interface Debris {
+  x: number;
+  y: number;
+  angle: number;
+  color: string;
+  size: number;
+}
+interface Explosion {
+  x: number;
+  y: number;
+  age: number;
+  duration: number;
+  smoke: SmokePuff[];
+  debris: Debris[];
+}
+interface PickupShape {
+  x: number;
+  y: number;
+  kind: string;
+}
+interface PropShape {
+  x: number;
+  y: number;
+  radius: number;
+  color: string;
+}
+interface DeathShape {
+  x: number;
+  y: number;
+  age: number;
+  duration: number;
+  angle: number;
+  color: string;
+}
+interface EnemyShape {
+  x: number;
+  y: number;
+  health: number;
+  flash: { value: number };
+}
+interface RemoteStateShape {
+  carAlive?: boolean;
+  cx: number;
+  cy: number;
+  ca: number;
+  mode: string;
+  carType?: string;
+  carHealth?: number;
+  phase: string;
+  px: number;
+  py: number;
+  pa: number;
+  health: number;
+}
+interface RemoteShape {
+  color: string;
+  carFlash: { value: number };
+}
+
+export function drawWorld(
+  ctx: CanvasRenderingContext2D,
+  buildings: RectShape[],
+  cover: RectShape[],
+) {
   ctx.fillStyle = "#1d2928";
   ctx.fillRect(0, 0, WORLD.w, WORLD.h);
   ctx.fillStyle = "#263334";
@@ -42,7 +120,7 @@ export function drawWorld(ctx, buildings, cover) {
   ctx.strokeRect(4, 4, WORLD.w - 8, WORLD.h - 8);
 }
 
-export function drawCarExplosion(ctx, explosion) {
+export function drawCarExplosion(ctx: CanvasRenderingContext2D, explosion: Explosion) {
   const t = explosion.age / explosion.duration;
   ctx.save();
   if (t < 0.42) {
@@ -102,7 +180,7 @@ export function drawCarExplosion(ctx, explosion) {
   ctx.restore();
 }
 
-export function drawPickup(ctx, pickup) {
+export function drawPickup(ctx: CanvasRenderingContext2D, pickup: PickupShape) {
   const pulse = 1 + Math.sin(performance.now() * 0.006 + pickup.x) * 0.12;
   const weapon = pickup.kind === "weapon";
   ctx.save();
@@ -126,7 +204,7 @@ export function drawPickup(ctx, pickup) {
   ctx.restore();
 }
 
-export function drawProp(ctx, prop) {
+export function drawProp(ctx: CanvasRenderingContext2D, prop: PropShape) {
   ctx.fillStyle = "#101719";
   ctx.beginPath();
   ctx.arc(prop.x + 3, prop.y + 4, prop.radius, 0, Math.PI * 2);
@@ -143,7 +221,7 @@ export function drawProp(ctx, prop) {
   ctx.stroke();
 }
 
-export function drawEnemyDeath(ctx, death) {
+export function drawEnemyDeath(ctx: CanvasRenderingContext2D, death: DeathShape) {
   const t = death.age / death.duration;
   const fall = Math.min(1, t * 2.4);
   ctx.save();
@@ -168,7 +246,7 @@ export function drawEnemyDeath(ctx, death) {
   ctx.restore();
 }
 
-export function drawEnemy(ctx, enemy, target) {
+export function drawEnemy(ctx: CanvasRenderingContext2D, enemy: EnemyShape, target: Point) {
   const angle = Math.atan2(target.y - enemy.y, target.x - enemy.x);
   drawPerson(ctx, enemy.x, enemy.y, angle, "#ef5f57", false, enemy.flash.value);
   ctx.fillStyle = "#101719";
@@ -177,7 +255,16 @@ export function drawEnemy(ctx, enemy, target) {
   ctx.fillRect(enemy.x - 17, enemy.y - 27, 34 * (enemy.health / 100), 4);
 }
 
-export function drawCar(ctx, x, y, angle, carColor, occupied, flash = 0, type = "compact") {
+export function drawCar(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  angle: number,
+  carColor: string,
+  occupied: boolean,
+  flash = 0,
+  type = "compact",
+) {
   const config = CAR_TYPES[type] ?? CAR_TYPES.compact;
   const hw = config.w / 2;
   const hh = config.h / 2;
@@ -210,7 +297,15 @@ export function drawCar(ctx, x, y, angle, carColor, occupied, flash = 0, type = 
   ctx.restore();
 }
 
-export function drawPerson(ctx, x, y, angle, personColor, local = false, flash = 0) {
+export function drawPerson(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  angle: number,
+  personColor: string,
+  local = false,
+  flash = 0,
+) {
   ctx.strokeStyle = "#172024";
   ctx.lineWidth = 7;
   ctx.beginPath();
@@ -236,7 +331,11 @@ export function drawPerson(ctx, x, y, angle, personColor, local = false, flash =
   }
 }
 
-export function drawRemote(ctx, state, remote) {
+export function drawRemote(
+  ctx: CanvasRenderingContext2D,
+  state: RemoteStateShape,
+  remote: RemoteShape,
+) {
   if (state.carAlive !== false) {
     drawCar(
       ctx,

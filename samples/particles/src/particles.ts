@@ -16,7 +16,7 @@ const SIZE = 8;
 // The standard Sprite component carries x/y/img/alpha; Vel is our own. The
 // spark's alpha doubles as its remaining life, so no separate Life component.
 const { Sprite } = ECS;
-const Vel = ECS.component("Vel"); // { x, y }
+const Vel = ECS.component<{ x: number; y: number }>("Vel");
 
 // Pre-render the spark texture once.
 const sparkCanvas = Sprites.getSprite("spark", SIZE * 3, view.dpr, (ctx) => {
@@ -30,7 +30,7 @@ const sparkCanvas = Sprites.getSprite("spark", SIZE * 3, view.dpr, (ctx) => {
   ctx.fill();
 });
 
-function spawnBurst(x, y) {
+function spawnBurst(x: number, y: number) {
   for (let i = 0; i < NUM; i++) {
     const a = Math.random() * Math.PI * 2;
     const speed = 1 + Math.random() * 5;
@@ -51,7 +51,7 @@ ecs.system("integrate", (w) => {
     s.x += v.x;
     s.y += v.y;
     v.y += G;
-    s.alpha -= 0.008;
+    s.alpha = (s.alpha ?? 0) - 0.008;
     if (s.alpha <= 0) w.despawn(e);
   }
 });
