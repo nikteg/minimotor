@@ -1,7 +1,7 @@
 // ASSET QUEST: a tiny playable archive loaded from a manifest at runtime.
 // Focus: Assets.load/progress/json and Anim.sheet, with plain JSON level data.
 import { Anim, Assets, Collision, Draw, Keys, Loop, Particles, Perf, Stage, UI } from "minimotor";
-import * as Sfx from "../../shared/src/sfx.js";
+import * as Sfx from "../../shared/src/sfx.ts";
 
 // The viewport is LIVE (mutated on resize); the engine clears to `background`.
 const vp = Stage.init("game", { background: "#111827", plugins: [Perf.plugin()] });

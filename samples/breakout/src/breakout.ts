@@ -7,14 +7,36 @@
 // - The stage runs at a FIXED 400×700 resolution, letterboxed into the window
 //   by the engine — no manual save/translate/scale, and view.w/view.h ARE the
 //   logical size. The pointer and all drawing are in board coordinates.
-import { Audio, Camera, Collision, Draw, ECS, Game, Keys, Loop, Perf, Scenes, Stage, UI, Vec2 } from "minimotor";
-import { drawGameOver } from "../../shared/src/overlays.js";
+import {
+  Audio,
+  Camera,
+  Collision,
+  Draw,
+  ECS,
+  Game,
+  Keys,
+  Loop,
+  Perf,
+  Scenes,
+  Stage,
+  UI,
+  Vec2,
+} from "minimotor";
+import { drawGameOver } from "../../shared/src/overlays.ts";
 
 const GW = 400;
 const GH = 700;
 
 // ---- ECS: one component holding a block's rect + presentation ----
-const Block = ECS.component("Block"); // { x, y, w, h, color, row }
+interface BlockData {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  color: string;
+  row: number;
+}
+const Block = ECS.component<BlockData>("Block");
 const ecs = ECS.create();
 
 // Fixed-resolution stage: the engine fits GW×GH into the window (play area
@@ -177,7 +199,11 @@ const scenes = Scenes.create({
         Draw.rect(paddle.x, paddle.y, paddle.w, 3, "rgba(255,255,255,0.2)");
         Draw.circle(ball.x, ball.y, BALL_R, "#fff");
 
-        Draw.text(`Score: ${scores.score}  Best: ${scores.best}  ${"♥".repeat(lives)}`, { x: 10, y: 6, size: 14 });
+        Draw.text(`Score: ${scores.score}  Best: ${scores.best}  ${"♥".repeat(lives)}`, {
+          x: 10,
+          y: 6,
+          size: 14,
+        });
         Draw.text("← → move  Space launch", { x: 10, y: GH - 28, size: 14 });
 
         UI.drawFloatText(); // score pops, in board space

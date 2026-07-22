@@ -1,7 +1,7 @@
 // Snake: classic grid-based snake with growing tail and self-collision
 // Demonstrates: game loop, input, UI, storage and Goodies.wrap grid movement
 import { Audio, Camera, Draw, Game, Goodies, Keys, Loop, Particles, Perf, Stage, UI } from "minimotor";
-import { drawGameOver } from "../../shared/src/overlays.js";
+import { drawGameOver } from "../../shared/src/overlays.ts";
 
 // The viewport is LIVE (mutated on resize) — grid sizing reacts in onResize.
 const view = Stage.init("game", { plugins: [Perf.plugin()] });

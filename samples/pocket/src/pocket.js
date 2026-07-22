@@ -2,7 +2,7 @@
 // Focus: Stage fullscreen, Game.letterbox, Goodies torus helpers, Input.map with pad bindings.
 // Controls: left/right rotate, up thrusts, Space fires, H hyperspace.
 import { Draw, Game, Gizmos, Goodies, Input, Loop, Mathf, Particles, Perf, Stage, UI } from "minimotor";
-import * as Sfx from "../../shared/src/sfx.js";
+import * as Sfx from "../../shared/src/sfx.ts";
 
 // Fullscreen stylesheet + live viewport in one call (vp mutates on resize).
 const vp = Stage.init("game", { fullscreen: true, plugins: [Perf.plugin()] });

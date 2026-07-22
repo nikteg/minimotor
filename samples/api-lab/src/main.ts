@@ -203,10 +203,8 @@ function resetLevel(): void {
 
 function updateWorld(): void {
   const run = input.axis("left", "right"); // [#8]
-  wallCoyote.tick(Loop.step);
-  dashActive.tick(Loop.step);
-  dashCooldown.tick(Loop.step);
-
+  // The window/cooldown timers are clock-derived (no tick) — they read
+  // Clock.game, so nothing to advance here.
   const dashing = dashActive.active;
   if (dashing) {
     // A dash owns the velocity: fixed speed, gravity suspended, trail.

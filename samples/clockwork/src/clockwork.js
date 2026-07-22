@@ -1,7 +1,7 @@
 // CLOCKWORK: a tiny arcade garden where everything is scheduled, animated and
 // decoupled by engine services. Focus: Clock, Anim motions and Signals.
 import { Anim, Clock, Draw, Gizmos, Keys, Loop, Mathf, Particles, Perf, Pointer, Signals, Stage, UI } from "minimotor";
-import * as Sfx from "../../shared/src/sfx.js";
+import * as Sfx from "../../shared/src/sfx.ts";
 
 const vp = Stage.init("game", { background: "#0b1020", plugins: [Perf.plugin()] }); // live viewport
 

@@ -8,7 +8,13 @@ import { Draw } from "minimotor";
  *  `w`/`h` is the visible game area (not the full canvas if letterboxed).
  *  (The ctx first argument is gone — Draw owns rendering now; callers pass
  *  the same remaining arguments.) */
-export function drawGameOver(w, h, score, best, restartHint) {
+export function drawGameOver(
+  w: number,
+  h: number,
+  score: number,
+  best: number,
+  restartHint?: string,
+) {
   Draw.rect(0, 0, w, h, "rgba(0,0,0,0.6)");
   Draw.text("GAME OVER", {
     x: w / 2,
@@ -30,7 +36,13 @@ export function drawGameOver(w, h, score, best, restartHint) {
 }
 
 /** Dimmed "LEVEL COMPLETE" screen with score, optional subtitle and hint. */
-export function drawLevelComplete(w, h, score, subtitle, restartHint) {
+export function drawLevelComplete(
+  w: number,
+  h: number,
+  score: number,
+  subtitle?: string,
+  restartHint?: string,
+) {
   Draw.rect(0, 0, w, h, "rgba(0,0,0,0.5)");
   Draw.text("LEVEL COMPLETE! ⭐", {
     x: w / 2,

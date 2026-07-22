@@ -2,7 +2,20 @@
 // bounce AND speeds the ball up. Simple on purpose, but juiced — each bounce
 // fires spark particles, a short Camera.shake and a soft synth boop, and the
 // ball trails and glows. It plays itself; watch it escalate.
-import { Audio, Camera, Collision, Draw, Gizmos, Loop, Mathf, Particles, Perf, Stage, UI, Vec2 } from "minimotor";
+import {
+  Audio,
+  Camera,
+  Collision,
+  Draw,
+  Gizmos,
+  Loop,
+  Mathf,
+  Particles,
+  Perf,
+  Stage,
+  UI,
+  Vec2,
+} from "minimotor";
 
 // The viewport is LIVE (mutated on resize) — wall bounds read it directly.
 const view = Stage.init("game", { plugins: [Perf.plugin()] });
@@ -17,11 +30,11 @@ const MAX_SPEED = 60; // …to a very high ceiling so it can't tunnel out
 // The ball is a Vec2 (x/y) AND a Rect (w/h) with a nested velocity Vec2.
 const ball = { x: view.w / 2, y: view.h / 2, w: BALL, h: BALL, vel: { x: 2.4, y: 3.1 } };
 
-const clampSpeed = (v) => Mathf.clamp(v * SPEEDUP, -MAX_SPEED, MAX_SPEED);
+const clampSpeed = (v: number) => Mathf.clamp(v * SPEEDUP, -MAX_SPEED, MAX_SPEED);
 
 // The bounce note layers a sub for body, a sine fundamental and a triangle
 // octave of shimmer — [frequency ×, level, waveform].
-const partials = [
+const partials: { mul: number; gain: number; type: OscillatorType }[] = [
   { mul: 0.5, gain: 0.1, type: "sine" },
   { mul: 1, gain: 0.16, type: "sine" },
   { mul: 2, gain: 0.06, type: "triangle" },
@@ -59,13 +72,16 @@ function bounceNote() {
   });
 }
 
-function bounceFx(x, y) {
+function bounceFx(x: number, y: number) {
   Camera.shake(3, 120);
   ballFlash.hit();
   bounceNote();
   fx.burst({
     at: { x, y },
-    count: 14, speed: [0.7, 3.2], size: [2, 5], life: [220, 520],
+    count: 14,
+    speed: [0.7, 3.2],
+    size: [2, 5],
+    life: [220, 520],
     color: ["#ffd36b", "#ff6b6b", "#ffffff"],
   });
 }
@@ -81,7 +97,9 @@ Loop.run({
     // spark, boop — and count it.
     bounds.w = view.w;
     bounds.h = view.h;
-    const r = BALL / 2, cx = ball.x + r, cy = ball.y + r;
+    const r = BALL / 2,
+      cx = ball.x + r,
+      cy = ball.y + r;
     const hit = Collision.bounceInBounds(ball, ball.vel, bounds);
     if (hit.hit) {
       if (hit.left || hit.right) ball.vel.x = clampSpeed(ball.vel.x);
@@ -94,7 +112,16 @@ Loop.run({
   },
   draw() {
     // Background gradient (screen space, top level).
-    Draw.rect(0, 0, view.w, view.h, Draw.linear(0, 0, 0, view.h, [[0, "#141726"], [1, "#0a0b12"]]));
+    Draw.rect(
+      0,
+      0,
+      view.w,
+      view.h,
+      Draw.linear(0, 0, 0, view.h, [
+        [0, "#141726"],
+        [1, "#0a0b12"],
+      ]),
+    );
 
     // The default camera is identity — this block just applies the shake.
     Camera.render(() => {
@@ -102,13 +129,16 @@ Loop.run({
       const pts = trail.points;
       Draw.opacity(0.35, () => {
         for (let i = pts.length - 1; i >= 0; i--) {
-          const p = pts[i], k = i / pts.length;
+          const p = pts[i],
+            k = i / pts.length;
           Draw.opacity(1 - k, () => Draw.circle(p.x, p.y, (BALL / 2) * (1 - k * 0.6), "#ff6b6b"));
         }
       });
 
       // Ball: soft glow + body + a specular highlight.
-      const r = BALL / 2, cx = ball.x + r, cy = ball.y + r;
+      const r = BALL / 2,
+        cx = ball.x + r,
+        cy = ball.y + r;
       const glow = Draw.radial(cx, cy, 2, cx, cy, r * 2.2, [
         [0, "rgba(255,150,150,0.5)"],
         [1, "rgba(255,107,107,0)"],

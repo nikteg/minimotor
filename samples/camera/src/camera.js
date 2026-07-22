@@ -3,7 +3,7 @@
 // screen↔world mapping via Camera.toWorld) and Camera.layer for stable
 // procedural parallax scenery.
 import { Audio, Camera, Draw, Input, Keys, Loop, Mathf, Particles, Perf, Pointer, Stage, UI } from "minimotor";
-import * as Sfx from "../../shared/src/sfx.js";
+import * as Sfx from "../../shared/src/sfx.ts";
 
 // The viewport is LIVE (mutated on resize); the engine owns clearing.
 const view = Stage.init("game", { background: "#080b18", plugins: [Perf.plugin()] });

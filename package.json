@@ -32,6 +32,7 @@
     "lint": "oxlint",
     "format": "oxfmt .",
     "verify:tsc": "tsc --noEmit",
+    "verify:samples": "tsc -p samples/tsconfig.json",
     "verify:lint": "oxlint",
     "verify:format": "oxfmt --check .",
     "verify": "pnpm run --parallel \"/^verify:.+$/\""
