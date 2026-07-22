@@ -653,6 +653,133 @@ jump buffering and wall jumps with no new "controller" object.
 - Slopes and moving platforms — revisit only if a `moveAABB` extension is
   demonstrably needed by two samples (a future extraction phase, if ever).
 
+## On-screen touch controls — `OnscreenInput` ⬜
+
+Touch/mobile games need on-screen controls, but the engine's `Pointer` is
+single-touch and `Input` is a headless read-layer. The design is a **new opt-in
+module that renders an on-screen gamepad and feeds it back through the existing
+input path** — a virtual controller indistinguishable from hardware to game code.
+
+**Why its own module (not `Input`, not `UI`).** `Input` is deliberately
+pixel-free (imports only `engine` + `vec2`); `UI` already depends on `Input`
+(`ui/core/frame.ts` reads `gamepad`). The feature straddles both layers — the
+pad half is input, the `drawControls` half needs `Draw`/`theme`. Nesting it in
+`Input` would force `Input → UI` and **cycle** with the existing `UI → Input`.
+So `OnscreenInput` sits above both, importing `createGamepadTracker` from `Input`
+and `Draw`/`theme` from `UI`, polluting neither. The name mirrors `Input`: it is
+the on-screen counterpart.
+
+**The bridge.** `Input.gamepad(0)` returns a hardware `GamepadState`;
+`OnscreenInput.gamepad(config)` returns an on-screen one — same interface, both
+feed `Input.map({ pad })` and the same `pad:` bindings. So the touch stick and a
+real Xbox stick are literally one code path:
+
+```
+ touches ─▶ own pointerId-keyed capture ─▶ synthetic standard-mapping Gamepad
+                                                     │  fused (OR/max-magnitude)
+                          navigator.getGamepads()[i] ┘   with hardware pad
+                                                     │
+                            createGamepadTracker(read) → edge-correct GamepadState
+                                                     │
+                              Input.map(bindings, { pad })  →  input.axis(), .pressed
+```
+
+Multi-touch uses the module's **own `pointerId`-keyed listeners** (+
+`setPointerCapture`) because the engine `Pointer` collapses to one touch;
+extending the engine pointer to multi-touch would ripple through every widget's
+hit-testing, so it is deliberately avoided.
+
+**API.**
+
+```ts
+const pad = OnscreenInput.gamepad({
+  merge: true,                          // fuse hardware pad 0; false = touch-only; number = index
+  opacity: 0.55,
+  haptics: true,                        // opt-in navigator.vibrate on button press
+  autohide: true,                       // show only while touch is the live input source
+  stick:   { anchor: { side: "left",  x: 90, y: 90 }, radius: 60 },
+  buttons: [
+    { anchor: { side: "right", x: 70,  y: 70  }, r: 34, button: "a", label: "A" },
+    { anchor: { side: "right", x: 140, y: 120 }, r: 30, button: "b", label: "B" },
+    { anchor: { side: "right", x: 70,  y: 190 }, r: 26, label: "⏸", onTap: pause },  // unmapped
+  ],
+});
+const input = Input.map(
+  { gas: ["ArrowUp", "pad:a"], fire: ["Space", "pad:b"],
+    left: ["KeyA", "pad:lstick-left"], right: ["KeyD", "pad:lstick-right"] },
+  { pad },                              // pad is a (merged) GamepadState
+);
+
+// game loop
+draw() { OnscreenInput.drawControls(pad); }   // stateless, immediate-mode render
+```
+
+**Config surface.**
+
+```ts
+interface OnscreenGamepadConfig {
+  merge?: boolean | number; // default true (hardware pad 0)
+  autohide?: boolean; // default true
+  autohideFadeMs?: number; // default 200; 0 = instant
+  opacity?: number; // default ~0.5
+  haptics?: boolean | HapticsConfig; // default false
+  stick?: StickSpec; // LEFT analog → standard lstick axes 0/1
+  buttons?: ButtonSpec[]; // RIGHT cluster (>=2) + custom
+}
+type Anchor = { side: "left" | "right"; x: number; y: number }; // inset from a bottom corner; y up
+interface StickSpec {
+  anchor: Anchor;
+  radius: number;
+  deadzone?: number;
+}
+interface ButtonSpec {
+  anchor: Anchor;
+  r: number;
+  label?: string;
+  button?: PadButton; // mapped   → synthetic buttons[...], read via "pad:a"
+  onTap?: () => void; // unmapped → callback (pause, inventory)
+  onHold?: (down: boolean) => void;
+  haptics?: boolean | HapticsConfig; // per-button override
+}
+interface HapticsConfig {
+  ms?: number; // pulse duration, default 12
+  pattern?: number[]; // navigator.vibrate() pattern; overrides ms
+  onPress?: boolean; // default true
+  onRelease?: boolean; // default false
+}
+```
+
+**Resolved decisions.**
+
+- **Merge (default on).** `merge: true` fuses with hardware pad 0 (unplugged =
+  contributes nothing), `false` = touch-only, a number = specific index. Fusion
+  is **raw-level through one `createGamepadTracker`** — button = `hw || touch`,
+  axis = larger magnitude — so `pressed`/`released` stay edge-correct even when
+  the same action comes from both sources. (This is why `merge` is an index, not
+  a `GamepadState`: raw fusion needs the hardware button/axis arrays.)
+- **`autohide` = "show only while touch is the live input source."** One boolean
+  unifies both hide-triggers: hidden on non-touch devices (no coarse pointer),
+  hidden when a real gamepad sends input (any hardware button, or an axis past
+  the deadzone), shown again on the next canvas touch (last-source-wins). Hiding
+  is **visual-only** — merge/poll keep running, so both sources still feed the
+  game; a `~200ms` fade avoids flicker. (Known wrinkle: the re-showing tap also
+  actuates whatever control it lands on, since listeners never sleep.)
+- **Stick — auto-bind is enough.** Auto-binds to standard `lstick` axes 0/1
+  (covers `pad:lstick-*` bindings); games wanting the raw vector read the
+  inherited `pad.axis(0)` / `pad.axis(1)` — no extra API, no `pad.stick`.
+- **Anchors are corner-relative** (`{ side, x, y }`, y up from bottom) so layout
+  survives aspect-ratio / resolution changes.
+- **Haptics** fire `navigator.vibrate(ms | pattern)` on button touch-down
+  (opt-in, per-button override, silent no-op where unsupported); custom `onTap`
+  buttons vibrate too, the stick does not. No hardware rumble in v1.
+
+**Proof migration:** a touch-first sample (checkpoint-rally is the obvious
+candidate — stick to steer, buttons for gas/handbrake) drives the on-screen pad
+through the same `Input.map` bindings it already uses for keyboard/gamepad.
+
+**Deferred:** hardware rumble routing, right analog stick, d-pad rendering,
+rebinding UI for on-screen layout, `OnscreenInput` layout presets.
+
 ## Build milestones
 
 Each milestone lands with **tests** and a **refactor of a real game** (a sample or

@@ -11,6 +11,7 @@
 //   flash    — hit "white flash" timing latch
 //   history  — capped undo snapshot stack
 //   vehicle  — arcade car driving model (drives an injected physics body)
+//   skidmarks— fading tyre rubber laid down while drifting
 
 export * from "./random.js";
 export * from "./motion.js";
@@ -19,3 +20,4 @@ export * from "./pacing.js";
 export * from "./flash.js";
 export * from "./history.js";
 export * from "./vehicle.js";
+export * from "./skidmarks.js";

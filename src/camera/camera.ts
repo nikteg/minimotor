@@ -356,6 +356,12 @@ export const Camera = {
     def().follow(target, opts);
   },
   render: facadeRender,
+  /** Create an independent camera lens (minimaps, split screen, picture-in-
+   *  picture) — separate from the default camera. Render it with
+   *  `Camera.render(lens, { into }, fn)`. */
+  create(opts?: CameraOptions): CameraLens {
+    return createCamera(opts);
+  },
   /** Parallax layer at `factor` strength of the default camera. */
   layer(factor: number, fn: () => void): void {
     def().layer(factor, fn);

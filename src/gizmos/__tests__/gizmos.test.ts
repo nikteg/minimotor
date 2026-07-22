@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { car, charges, checkpointRoute, combo, flash, seedRng, shuffleBag } from "../index.js";
+import {
+  car,
+  charges,
+  checkpointRoute,
+  combo,
+  flash,
+  seedRng,
+  shuffleBag,
+  skidmarks,
+} from "../index.js";
 import { createClockHandle } from "../../clock.js";
 
 describe("Gizmos.seedRng", () => {
@@ -138,5 +147,100 @@ describe("Gizmos.car", () => {
     c.drive({ throttle: 1, steer: 1, handbrake: true }, 0.1);
     expect(c.engineLoad).toBe(1);
     expect(c.tireSlip).toBeGreaterThan(0);
+  });
+});
+
+describe("Gizmos.skidmarks", () => {
+  it("lays segments only while marking, and needs a previous frame to connect", () => {
+    const s = skidmarks({ emitEvery: 0 });
+    // First marking step has no previous wheel position → nothing yet.
+    s.trace(0, 0, 0, { marking: true }, 0.016);
+    expect(s.count).toBe(0);
+    // Second marking step connects from the first → two segments (one per wheel).
+    s.trace(10, 0, 0, { marking: true }, 0.016);
+    expect(s.count).toBe(2);
+    // Not marking lays nothing more.
+    s.trace(20, 0, 0, { marking: false }, 0.016);
+    expect(s.count).toBe(2);
+  });
+
+  it("ages marks out after their life and clears on demand", () => {
+    const s = skidmarks({ emitEvery: 0, life: 1 });
+    s.trace(0, 0, 0, { marking: true }, 0.016);
+    s.trace(10, 0, 0, { marking: true }, 0.016);
+    expect(s.count).toBe(2);
+    s.trace(20, 0, 0, { marking: false }, 2); // dt past life → marks expire
+    expect(s.count).toBe(0);
+    // Pen-up (not marking) ends the streak, so a new drift starts fresh: the
+    // first step re-anchors (no segment), the second connects it → 2.
+    s.trace(30, 0, 0, { marking: true }, 0.016);
+    s.trace(40, 0, 0, { marking: true }, 0.016);
+    expect(s.count).toBe(2);
+    s.clear();
+    expect(s.count).toBe(0);
+  });
+
+  it("caps stored marks at `max`, dropping the oldest", () => {
+    const s = skidmarks({ emitEvery: 0, max: 4 });
+    for (let i = 0; i < 10; i++) s.trace(i * 5, 0, 0, { marking: true }, 0.016);
+    expect(s.count).toBe(4);
+  });
+
+  it("lays one segment per configured tyre", () => {
+    const s = skidmarks({
+      emitEvery: 0,
+      wheels: [
+        { along: -10, across: -8 },
+        { along: -10, across: 8 },
+        { along: 12, across: -8 },
+        { along: 12, across: 8 },
+      ],
+    });
+    s.trace(0, 0, 0, { marking: true }, 0.016); // no previous frame yet
+    s.trace(10, 0, 0, { marking: true }, 0.016); // one segment per wheel
+    expect(s.count).toBe(4);
+  });
+
+  it("connects consecutive segments into an unbroken streak while marking", () => {
+    // A single tyre at the car centre, sliding straight along +x each step.
+    const s = skidmarks({ emitEvery: 0, wheels: [{ along: 0, across: 0 }] });
+    for (let i = 0; i < 4; i++) s.trace(i * 10, 0, 0, { marking: true }, 0.016);
+
+    // Capture the drawn segments' endpoints.
+    const segs: Array<[number, number, number, number]> = [];
+    let cur: [number, number] = [0, 0];
+    const ctx = {
+      save() {},
+      restore() {},
+      beginPath() {},
+      stroke() {},
+      moveTo(x: number, y: number) {
+        cur = [x, y];
+      },
+      lineTo(x: number, y: number) {
+        segs.push([cur[0], cur[1], x, y]);
+      },
+      set strokeStyle(_v: string) {},
+      set lineWidth(_v: number) {},
+      set lineCap(_v: string) {},
+      set globalAlpha(_v: number) {},
+    } as unknown as CanvasRenderingContext2D;
+    s.draw(ctx);
+
+    expect(segs.length).toBeGreaterThan(1);
+    // Each segment's end is the next segment's start → no gaps.
+    for (let i = 1; i < segs.length; i++) {
+      expect(segs[i][0]).toBeCloseTo(segs[i - 1][2]);
+      expect(segs[i][1]).toBeCloseTo(segs[i - 1][3]);
+    }
+  });
+
+  it("keeps marks forever when life is Infinity (continuous)", () => {
+    const s = skidmarks({ emitEvery: 0, life: Infinity });
+    s.trace(0, 0, 0, { marking: true }, 0.016);
+    s.trace(10, 0, 0, { marking: true }, 0.016);
+    expect(s.count).toBe(2);
+    s.trace(20, 0, 0, { marking: false }, 1e6); // huge dt would expire timed marks
+    expect(s.count).toBe(2); // permanent → still there
   });
 });

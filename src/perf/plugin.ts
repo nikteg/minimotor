@@ -59,11 +59,16 @@ export function plugin(opts: PerfOptions = {}): EnginePlugin {
       // Click the HUD (its rect from the previous frame) to toggle it dim.
       const p = game.pointer;
       if (box && p.frameReleased && pointInRect(p.x, p.y, box)) dimmed = !dimmed;
+      const vp = game.viewport;
       const ctx = game.ctx;
       ctx.save();
+      // Draw in WINDOW space (device px ÷ dpr), not the letterbox's logical
+      // space — the perf overlay is a debug HUD, so it sits in the true window
+      // top-right corner, unscaled and over the letterbox bars.
+      ctx.setTransform(vp.dpr, 0, 0, vp.dpr, 0, 0);
       if (dimmed) ctx.globalAlpha = 0.12;
-      box = drawPerfHud(ctx, stats, {
-        viewW: game.viewport.w,
+      const winBox = drawPerfHud(ctx, stats, {
+        viewW: game.canvas.width / vp.dpr, // window CSS width
         anchor: opts.anchor ?? "top-right",
         net,
         timings: game.timings,
@@ -72,6 +77,14 @@ export function plugin(opts: PerfOptions = {}): EnginePlugin {
         graphs,
       });
       ctx.restore();
+      // Map the window-space rect back to logical coords, where the pointer
+      // lives, so next frame's click test matches (works over the bars too).
+      box = winBox && {
+        x: (winBox.x - vp.offsetX) / vp.scale,
+        y: (winBox.y - vp.offsetY) / vp.scale,
+        w: winBox.w / vp.scale,
+        h: winBox.h / vp.scale,
+      };
     },
   };
 }

@@ -3,364 +3,805 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Minimotor Samples</title>
+    <title>Minimotor — a tiny 2D game engine</title>
     <style>
       * {
         margin: 0;
         padding: 0;
         box-sizing: border-box;
       }
+      :root {
+        --bg: #0d0f12;
+        --panel: #16191e;
+        --panel-2: #1b1f26;
+        --border: #2a2f38;
+        --text: #e7ecf0;
+        --dim: #8b94a0;
+        --accent: #4ecdc4;
+        --accent-2: #ffd166;
+      }
+      /* No global smooth scroll: it also animates the browser's scroll
+         restoration on Back (top→bottom on every return from a sample). Anchor
+         clicks jump instantly, which is fine. */
       body {
-        font-family: "Segoe UI", system-ui, sans-serif;
-        background: #111;
-        color: #eee;
-        min-height: 100vh;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
+        font-family:
+          "Segoe UI",
+          system-ui,
+          -apple-system,
+          sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.55;
+        overflow-x: hidden;
       }
-      header {
-        text-align: center;
-        padding: 48px 16px 24px;
-      }
-      h1 {
-        font-size: 2.2rem;
-        margin-bottom: 8px;
-      }
-      header p {
-        color: #888;
-        font-size: 1rem;
-      }
-      .grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-        gap: 20px;
-        max-width: 880px;
-        width: 100%;
-        padding: 0 20px 48px;
-      }
-      .card {
-        background: #1a1a1a;
-        border: 1px solid #333;
-        border-radius: 12px;
-        padding: 24px;
+      a {
+        color: var(--accent);
         text-decoration: none;
-        color: inherit;
+      }
+      .wrap {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 0 20px;
+      }
+
+      /* ---------- top nav ---------- */
+      nav {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background: rgba(13, 15, 18, 0.82);
+        backdrop-filter: blur(8px);
+        border-bottom: 1px solid var(--border);
+      }
+      nav .wrap {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        height: 56px;
+      }
+      nav .brand {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        font-weight: 700;
+        color: var(--text);
+        letter-spacing: 0.2px;
+      }
+      nav .brand svg {
+        display: block;
+      }
+      nav .spacer {
+        flex: 1;
+      }
+      nav a.link {
+        color: var(--dim);
+        font-size: 0.92rem;
+      }
+      nav a.link:hover {
+        color: var(--text);
+      }
+
+      /* ---------- hero ---------- */
+      header.hero {
+        text-align: center;
+        padding: 72px 16px 56px;
+        background:
+          radial-gradient(60% 120% at 50% -10%, rgba(78, 205, 196, 0.12), transparent 60%),
+          radial-gradient(40% 90% at 85% 0%, rgba(255, 209, 102, 0.07), transparent 60%);
+      }
+      .logo-lg {
+        margin-bottom: 22px;
+      }
+      .hero h1 {
+        font-size: clamp(2.4rem, 6vw, 3.6rem);
+        letter-spacing: -1px;
+        margin-bottom: 12px;
+      }
+      .hero h1 .accent {
+        color: var(--accent);
+      }
+      .hero p.tag {
+        color: var(--dim);
+        font-size: clamp(1rem, 2.4vw, 1.2rem);
+        max-width: 620px;
+        margin: 0 auto 14px;
+      }
+      .badges {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        flex-wrap: wrap;
+        margin-bottom: 28px;
+        color: var(--dim);
+        font-size: 0.82rem;
+      }
+      .badges span {
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 3px 12px;
+        background: var(--panel);
+      }
+      .cta {
+        display: flex;
+        gap: 12px;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 11px 20px;
+        border-radius: 9px;
+        font-weight: 600;
+        font-size: 0.95rem;
+        border: 1px solid var(--border);
         transition:
+          transform 0.12s ease,
           border-color 0.2s,
           background 0.2s;
       }
-      .card:hover {
-        border-color: #4ecdc4;
-        background: #1f1f1f;
+      .btn:hover {
+        transform: translateY(-1px);
       }
-      .card h2 {
-        font-size: 1.3rem;
-        margin-bottom: 8px;
+      .btn.primary {
+        background: var(--accent);
+        color: #06231f;
+        border-color: var(--accent);
       }
-      .card .tag {
-        display: inline-block;
-        background: #2a2a2a;
-        color: #4ecdc4;
-        font-size: 0.75rem;
-        padding: 2px 8px;
-        border-radius: 4px;
-        margin-right: 4px;
+      .btn.primary:hover {
+        background: #66e0d7;
       }
-      .card p {
-        color: #999;
+      .btn.ghost {
+        color: var(--text);
+      }
+      .btn.ghost:hover {
+        border-color: var(--accent);
+        background: var(--panel);
+      }
+
+      /* ---------- sections ---------- */
+      section {
+        padding: 52px 0 8px;
+      }
+      .section-head {
+        margin-bottom: 26px;
+      }
+      .section-head h2 {
+        font-size: 1.7rem;
+        letter-spacing: -0.3px;
+      }
+      .section-head p {
+        color: var(--dim);
+        margin-top: 6px;
+        font-size: 0.98rem;
+      }
+
+      /* ---------- code examples ---------- */
+      .examples {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+        gap: 18px;
+      }
+      figure.snippet {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      figure.snippet figcaption {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 12px 10px 16px;
+        border-bottom: 1px solid var(--border);
         font-size: 0.9rem;
-        margin-top: 10px;
-        line-height: 1.5;
+        color: var(--dim);
+        background: var(--panel-2);
       }
-      .section-title {
-        max-width: 880px;
-        width: 100%;
-        padding: 40px 20px 0;
+      figure.snippet figcaption b {
+        color: var(--text);
+        font-weight: 600;
       }
-      .section-title h2 {
-        font-size: 1.5rem;
-        border-bottom: 1px solid #333;
-        padding-bottom: 8px;
+      button.copy {
+        flex: 0 0 auto;
+        border: 1px solid var(--border);
+        background: var(--bg);
+        color: var(--dim);
+        font: inherit;
+        font-size: 0.78rem;
+        padding: 4px 10px;
+        border-radius: 7px;
+        cursor: pointer;
+        transition:
+          color 0.15s,
+          border-color 0.15s,
+          background 0.15s;
       }
-      .section-title p {
-        color: #888;
-        font-size: 0.9rem;
-        margin-top: 8px;
+      button.copy:hover {
+        color: var(--text);
+        border-color: var(--accent);
       }
+      button.copy.copied {
+        color: #06231f;
+        background: var(--accent);
+        border-color: var(--accent);
+      }
+      pre {
+        margin: 0;
+        padding: 16px;
+        overflow-x: auto;
+        font:
+          0.82rem/1.6 "SF Mono",
+          "JetBrains Mono",
+          "Consolas",
+          ui-monospace,
+          monospace;
+        tab-size: 2;
+      }
+      pre code {
+        white-space: pre;
+      }
+      .tok-key {
+        color: #c792ea;
+      }
+      .tok-str {
+        color: #c3e88d;
+      }
+      .tok-com {
+        color: #5c6772;
+        font-style: italic;
+      }
+      .tok-ns {
+        color: var(--accent);
+      }
+      .tok-num {
+        color: var(--accent-2);
+      }
+      .tok-fn {
+        color: #82aaff;
+      }
+
+      /* ---------- showcase grid ---------- */
       .grid {
-        padding-top: 20px;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(258px, 1fr));
+        gap: 16px;
+      }
+      a.card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 20px;
+        color: inherit;
+        display: flex;
+        flex-direction: column;
+        transition:
+          transform 0.12s ease,
+          border-color 0.2s,
+          background 0.2s;
+      }
+      a.card:hover {
+        border-color: var(--accent);
+        background: var(--panel-2);
+        transform: translateY(-2px);
+      }
+      a.card h3 {
+        font-size: 1.15rem;
+        margin-bottom: 9px;
+      }
+      a.card .tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        margin-bottom: 10px;
+      }
+      a.card .tag {
+        background: var(--panel-2);
+        color: var(--accent);
+        font-size: 0.72rem;
+        padding: 2px 8px;
+        border-radius: 5px;
+        border: 1px solid var(--border);
+      }
+      a.card p {
+        color: var(--dim);
+        font-size: 0.88rem;
+      }
+      .flag {
+        display: inline-block;
+        margin-left: 6px;
+        font-size: 0.7rem;
+        color: var(--accent-2);
+        border: 1px solid var(--accent-2);
+        border-radius: 5px;
+        padding: 1px 6px;
+        vertical-align: middle;
+      }
+
+      footer {
+        margin-top: 64px;
+        border-top: 1px solid var(--border);
+        padding: 28px 0 48px;
+        color: var(--dim);
+        font-size: 0.88rem;
+        text-align: center;
       }
     </style>
   </head>
   <body>
-    <header>
-      <h1>Minimotor Samples</h1>
-      <p>Small games built with the Minimotor engine</p>
+    <nav>
+      <div class="wrap">
+        <a class="brand" href="#top">
+          <!-- compact logo -->
+          <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
+            <rect
+              x="2"
+              y="4"
+              width="28"
+              height="24"
+              rx="5"
+              fill="none"
+              stroke="#4ecdc4"
+              stroke-width="2.4"
+            />
+            <rect x="8" y="18" width="4" height="6" rx="1" fill="#4ecdc4" />
+            <rect x="14" y="13" width="4" height="11" rx="1" fill="#4ecdc4" />
+            <rect x="20" y="9" width="4" height="15" rx="1" fill="#ffd166" />
+          </svg>
+          minimotor
+        </a>
+        <div class="spacer"></div>
+        <a class="link" href="#examples">Examples</a>
+        <a class="link" href="#showcase">Showcase</a>
+        <a class="link" href="./api/">API</a>
+      </div>
+    </nav>
+
+    <a id="top"></a>
+    <header class="hero">
+      <div class="logo-lg">
+        <!-- Big logo: a canvas/stage framing rising "motion" bars -->
+        <svg width="96" height="96" viewBox="0 0 32 32" role="img" aria-label="Minimotor logo">
+          <rect
+            x="1.5"
+            y="3.5"
+            width="29"
+            height="25"
+            rx="6"
+            fill="#16191e"
+            stroke="#4ecdc4"
+            stroke-width="2.2"
+          />
+          <rect x="7" y="18" width="4.2" height="6.5" rx="1.2" fill="#4ecdc4" />
+          <rect x="13.9" y="12.5" width="4.2" height="12" rx="1.2" fill="#4ecdc4" />
+          <rect x="20.8" y="8" width="4.2" height="16.5" rx="1.2" fill="#ffd166" />
+        </svg>
+      </div>
+      <h1><span class="accent">mini</span>motor</h1>
+      <p class="tag">
+        A tiny, dependency-free 2D game engine for the web. One canvas, plain data, batteries
+        included — loop, input, camera, tiles, ECS, audio, netcode and an immediate-mode UI.
+      </p>
+      <div class="badges">
+        <span>0 runtime dependencies</span>
+        <span>TypeScript</span>
+        <span>fixed-timestep loop</span>
+        <span>~1 file to start</span>
+      </div>
+      <div class="cta">
+        <a class="btn primary" href="#showcase">Explore the samples</a>
+        <a class="btn ghost" href="./api/">API reference</a>
+        <a class="btn ghost" href="./api-lab/">Open API Lab ✨</a>
+      </div>
     </header>
-    <div class="section-title">
-      <h2>Fundamentals</h2>
-      <p>Focused demos — each one puts a single Minimotor module or primitive front and center.</p>
-    </div>
-    <div class="grid">
-      <a class="card" href="./api-lab/">
-        <h2>API Lab ✨</h2>
-        <span class="tag">everything</span><span class="tag">platformer</span
-        ><span class="tag">net</span>
-        <p>
-          The flagship: the platformer that designed the current API. Tiles, ECS coins, camera
-          follow/shake, wall jumps &amp; dashes, scenes with a pause menu, synth audio, and live
-          multiplayer ghosts — one file exercising the whole engine.
-        </p>
-      </a>
-      <a class="card" href="./minimal/">
-        <h2>Minimal</h2>
-        <span class="tag">Stage.init</span><span class="tag">Keys</span
-        ><span class="tag">Loop</span>
-        <p>
-          Absolute minimum: a colored square that moves with arrow keys. Demonstrates Stage.init,
-          polled Keys, and the game loop.
-        </p>
-      </a>
-      <a class="card" href="./scenes/">
-        <h2>Scenes</h2>
-        <span class="tag">Scenes</span><span class="tag">Transitions</span
-        ><span class="tag">Audio</span><span class="tag">UI</span>
-        <p>
-          Menu → play → game over, with a pause overlay pushed on top. The Scenes stack
-          (define/go/push/pop, enter/exit), fade/wipe transitions, and the UI helpers — clickable
-          buttons, floating score pops, a draining time bar.
-        </p>
-      </a>
-      <a class="card" href="./sprites/">
-        <h2>Sprites</h2>
-        <span class="tag">Sprites.atlas</span><span class="tag">Anim</span
-        ><span class="tag">ECS</span>
-        <p>
-          A procedural sprite sheet baked once with Sprites.atlas, animated with Anim.sheet, and
-          rendered through the ECS Sprite source-rect + Draw.sprites(ecs.dense(Sprites.Sprite)).
-          Click to add more.
-        </p>
-      </a>
-      <a class="card" href="./bounce/">
-        <h2>Bounce</h2>
-        <span class="tag">Loop</span><span class="tag">Storage</span><span class="tag">Audio</span>
-        <p>Ball bounces off walls. Each wall hit earns a point. Best score saved with Storage.</p>
-      </a>
-      <a class="card" href="./snake/">
-        <h2>Snake</h2>
-        <span class="tag">Storage</span><span class="tag">Audio</span
-        ><span class="tag">Goodies</span><span class="tag">UI</span>
-        <p>
-          Classic grid-based snake with growing tail. Collect food, avoid self-collision. Arrow or
-          WASD.
-        </p>
-      </a>
-      <a class="card" href="./particles/">
-        <h2>Particles</h2>
-        <span class="tag">ECS</span><span class="tag">Sprites</span><span class="tag">Pointer</span>
-        <p>
-          200-spark firework effect. Click to spawn. Gravity pulls sparks down. Spark texture
-          pre-rendered with Sprites.getSprite.
-        </p>
-      </a>
-      <a class="card" href="./synth/">
-        <h2>Synth</h2>
-        <span class="tag">Audio</span><span class="tag">Pointer</span><span class="tag">UI</span>
-        <p>
-          A playable synth: keyboard piano (click it too), four waveforms, octave shift — plus
-          scheduled backing grooves with bass and drums, and a bar visualizer.
-        </p>
-      </a>
-      <a class="card" href="./tiles/">
-        <h2>Tiles</h2>
-        <span class="tag">Tiles</span><span class="tag">Camera</span
-        ><span class="tag">Input.gamepad</span><span class="tag">Audio</span>
-        <p>
-          A scrolling tile platformer: a plain number[][] level blitted from a baked atlas, culled
-          to the camera, with solidInRect driving the collision. Plays on keyboard or gamepad.
-        </p>
-      </a>
-      <a class="card" href="./juice/">
-        <h2>Juice</h2>
-        <span class="tag">Particles</span><span class="tag">Camera.shake</span
-        ><span class="tag">Input.vibrate</span>
-        <p>
-          Impact feedback: a bouncing ball fires particle bursts, screen-shake and haptics on every
-          hit. Click for a big one. Uses Mathf randoms for variety.
-        </p>
-      </a>
-      <a class="card" href="./physics/">
-        <h2>Physics</h2>
-        <span class="tag">Physics2D</span><span class="tag">ECS</span><span class="tag">Camera</span
-        ><span class="tag">Audio</span>
-        <p>
-          Real rigid bodies via the opt-in planck (Box2D) adapter: crates stack and sleep, balls
-          bounce, a motorized paddle flings everything. Hold to pour more in.
-        </p>
-      </a>
-      <a class="card" href="./serverbrowser/">
-        <h2>Server Browser</h2>
-        <span class="tag">UI.table</span><span class="tag">UI</span
-        ><span class="tag">Pointer.wheel</span><span class="tag">Clock</span>
-        <p>
-          A full GUI screen from the immediate-mode UI kit: tabs, toggles, a sortable scrollable
-          UI.table, disabled buttons and a mock refresh/join flow. No DOM.
-        </p>
-      </a>
-      <a class="card" href="./swept/">
-        <h2>Swept Collision</h2>
-        <span class="tag">Collision</span><span class="tag">sweptAABB</span
-        ><span class="tag">Audio</span>
-        <p>
-          A projectile flies into a thin wall. Toggle between sweptAABB and a per-frame overlap test
-          and watch fast movers tunnel straight through the naive one.
-        </p>
-      </a>
-      <a class="card" href="./netpeer/">
-        <h2>P2P Data Channel</h2>
-        <span class="tag">Net</span><span class="tag">WebRTC</span>
-        <p>
-          A real WebRTC data channel, both peers in one page (no server). Move on the left; the
-          right dot is drawn only from bytes that crossed the channel.
-        </p>
-      </a>
-      <a class="card" href="./netws/">
-        <h2>WebSocket Console</h2>
-        <span class="tag">Net</span><span class="tag">WebSocket</span>
-        <p>
-          Connect to any WebSocket server and echo messages both ways. Net.connect with send /
-          onMessage / state, running outside the game loop.
-        </p>
-      </a>
-      <a class="card" href="./clockwork/">
-        <h2>Clockwork Garden</h2>
-        <span class="tag">Clock</span><span class="tag">Tween</span><span class="tag">Signals</span
-        ><span class="tag">Particles</span>
-        <p>
-          Harvest a living rhythm garden. Timed spawns, eased buds and score/combo events are
-          separate systems connected by Signals; survive misses and replay for a better run.
-        </p>
-      </a>
-      <a class="card" href="./camera/">
-        <h2>Parallax Courier</h2>
-        <span class="tag">Camera</span><span class="tag">Mathf</span><span class="tag">Pointer</span
-        ><span class="tag">Particles</span>
-        <p>
-          Fly through a vast neon valley, dodge chasing drones and dock at three beacons with a
-          smooth dead-zone camera, zoom and procedural parallax.
-        </p>
-      </a>
-      <a class="card" href="./assetquest/">
-        <h2>Asset Quest</h2>
-        <span class="tag">Assets</span><span class="tag">Anim</span><span class="tag">Text</span
-        ><span class="tag">Particles</span>
-        <p>
-          Load a JSON map and image manifest, collect every moon key, then reach the unlocked gate
-          with a clean animated astronaut.
-        </p>
-      </a>
-    </div>
-    <div class="section-title">
-      <h2>Showcase</h2>
-      <p>Complete little games that compose many modules together into a full playable loop.</p>
-    </div>
-    <div class="grid">
-      <a class="card" href="./breakout/">
-        <h2>Breakout</h2>
-        <span class="tag">Scenes</span><span class="tag">ECS</span><span class="tag">Collision</span
-        ><span class="tag">Audio</span>
-        <p>
-          Paddle + ball + destructible blocks. Blocks are ECS entities (queried for collision +
-          render); Scenes drive play and a pushed game-over overlay.
-        </p>
-      </a>
-      <a class="card" href="./netgame/">
-        <h2>Multiplayer Blobs</h2>
-        <span class="tag">Net.connect</span><span class="tag">Interpolator</span
-        ><span class="tag">heartbeat</span>
-        <p>
-          A real WebSocket game: every open tab is a player, relayed by the dev server. Sends at
-          only 20 Hz — remote players glide anyway thanks to snapshot interpolation.
-        </p>
-      </a>
-      <a class="card" href="./road-rivals/">
-        <h2>Road Rivals</h2>
-        <span class="tag">Net</span><span class="tag">Physics2D</span><span class="tag">ECS</span
-        ><span class="tag">Interpolator</span>
-        <p>
-          Two live clients in one page. Fight on foot, enter or exit your car, drift with a dynamic
-          bicycle model, and see remote players smoothed through snapshot interpolation.
-        </p>
-      </a>
-      <a class="card" href="./pocket/">
-        <h2>Pocket Asteroids</h2>
-        <span class="tag">Fullscreen</span><span class="tag">Game</span
-        ><span class="tag">Input.gamepad</span><span class="tag">Particles</span>
-        <p>
-          A complete Asteroids loop: rotate, thrust, wrap, fire, split rocks, clear waves and
-          hyperspace. Mobile keeps a 16:9 frame; desktop fills its viewport.
-        </p>
-      </a>
-      <a class="card" href="./pixel-adventure/">
-        <h2>Pixel Adventure</h2>
-        <span class="tag">Tiles</span><span class="tag">Fsm</span><span class="tag">Anim</span
-        ><span class="tag">Audio.Mixer</span>
-        <p>
-          A complete platformer using real Pixel Frog CC0 art from itch.io: an autotiled terrain
-          atlas, an Fsm-driven player, a zoomed camera decoupled from a screen-space UI, stomp
-          combat and synthesized SFX mixed through the audio bus.
-        </p>
-      </a>
-      <a class="card" href="./ascent/">
-        <h2>Ascent</h2>
-        <span class="tag">Fsm</span><span class="tag">Timers</span><span class="tag">ECS</span
-        ><span class="tag">Sprites.atlas</span>
-        <p>
-          A Celeste-style precision platformer: three single-screen rooms of forced dash-crystal
-          chains over spike voids, wall jumps and coyote time. The Fsm drives a procedural sprite
-          sheet, ECS owns the crystals, and Timers give forgiving jumps.
-        </p>
-      </a>
-      <a class="card" href="./guild-trader/">
-        <h2>Guild Trader</h2>
-        <span class="tag">UI.dialog</span><span class="tag">Drag &amp; drop</span
-        ><span class="tag">Loot</span>
-        <p>
-          Trade with Mara using draggable stack inventories, weighted loot and fair encounter bags.
-        </p>
-      </a>
-      <a class="card" href="./dungeon-scout/">
-        <h2>Dungeon Scout</h2>
-        <span class="tag">Flood fill</span><span class="tag">Line of sight</span
-        ><span class="tag">Grid</span>
-        <p>Explore generated rooms with reachable-region, grid-line and field-of-view recipes.</p>
-      </a>
-      <a class="card" href="./lead-defender/">
-        <h2>Lead Defender</h2>
-        <span class="tag">Target leading</span><span class="tag">Waves</span
-        ><span class="tag">Particles</span>
-        <p>An automated turret predicts moving targets through escalating radial enemy waves.</p>
-      </a>
-      <a class="card" href="./checkpoint-rally/">
-        <h2>Checkpoint Rally</h2>
-        <span class="tag">Physics2D</span><span class="tag">Gizmos.car</span
-        ><span class="tag">Audio.engineSound</span><span class="tag">Camera</span>
-        <p>
-          Drive a car around a long winding circuit, hitting numbered gates in order to complete
-          laps. A dead-zone camera follows the car through a world bigger than the screen, with a
-          corner minimap of the whole track and your best lap time.
-        </p>
-      </a>
-      <a class="card" href="./solitaire/">
-        <h2>Solitaire</h2>
-        <span class="tag">Scenes</span><span class="tag">UI</span
-        ><span class="tag">Drag &amp; drop</span><span class="tag">Fsm</span>
-        <p>
-          Classic Klondike solitaire: drag-and-drop cards, undo, hints, win celebration and
-          persisted stats — built with Scenes, Signals, Clock/Tween and more.
-        </p>
-      </a>
-    </div>
+
+    <main class="wrap">
+      <!-- ============ TINY EXAMPLES ============ -->
+      <section id="examples">
+        <div class="section-head">
+          <h2>Tiny by design</h2>
+          <p>
+            Everything is reached through PascalCase namespaces off <code>"minimotor"</code>. No
+            setup ceremony — here are complete, real snippets.
+          </p>
+        </div>
+        <div class="examples">
+          <figure class="snippet">
+            <figcaption>
+              <span><b>Move a square</b> — Stage, Loop, Keys, Draw</span>
+              <button class="copy" type="button">Copy</button>
+            </figcaption>
+            <pre><code data-lang="ts">import { Stage, Loop, Keys, Draw } from "minimotor";
+
+Stage.init("game", { background: "#111" });
+const p = { x: 100, y: 100 };
+
+Loop.run({
+  update() {
+    if (Keys.down("ArrowLeft")) p.x -= 3;
+    if (Keys.down("ArrowRight")) p.x += 3;
+  },
+  draw() {
+    Draw.rect(p.x, p.y, 32, 32, "#4ecdc4");
+  },
+});</code></pre>
+          </figure>
+
+          <figure class="snippet">
+            <figcaption>
+              <span><b>Tiles &amp; collision</b> — the level is the source</span>
+              <button class="copy" type="button">Copy</button>
+            </figcaption>
+            <pre><code data-lang="ts">import { Tiles, Collision } from "minimotor";
+
+const level = Tiles.grid("....o....\n#########", {
+  size: 32,
+  legend: { "#": { solid: true } },
+});
+
+const body = { x: 40, y: 0, w: 24, h: 24, vel: { x: 2, y: 0 }, grounded: false };
+
+// swept move-and-slide against the tilemap:
+const hit = Collision.moveAndSlide(body, level);
+if (hit.down) body.vel.y = 0;</code></pre>
+          </figure>
+
+          <figure class="snippet">
+            <figcaption>
+              <span><b>Animate a sprite</b> — one image per state</span>
+              <button class="copy" type="button">Copy</button>
+            </figcaption>
+            <pre><code data-lang="ts">import { Anim, Assets, Draw } from "minimotor";
+
+const art = await Assets.load({ idle: "idle.png", run: "run.png", jump: "jump.png" });
+const hero = Anim.states({
+  idle: { image: art.idle, frames: 4, fps: 6 },
+  run: { image: art.run, frames: 6, fps: 12 },
+  jump: { image: art.jump },
+});
+const anim = hero.play("idle");
+
+const player = { x: 0, y: 0, w: 32, h: 48 };
+anim.set(player.y < 0 ? "jump" : "run"); // typed to the state keys
+Draw.sprite(anim, player, { flipX: true });</code></pre>
+          </figure>
+
+          <figure class="snippet">
+            <figcaption>
+              <span><b>Follow camera + ECS</b> — data never draws itself</span>
+              <button class="copy" type="button">Copy</button>
+            </figcaption>
+            <pre><code data-lang="ts">import { Camera, ECS, Draw, Sprites, Tiles, Loop } from "minimotor";
+
+const level = Tiles.grid("#########", { size: 32, legend: { "#": { solid: true } } });
+const skin = { "#": "#3a3f4a" } satisfies Tiles.Skin&lt;typeof level&gt;;
+const ecs = ECS.create();
+const player = { x: 0, y: 0, w: 32, h: 32 };
+
+Camera.follow(player, { world: level.rect, damping: 0.15 });
+Camera.render(() => {
+  Draw.tiles(level, skin);
+  Draw.sprites(ecs.dense(Sprites.Sprite), { alpha: Loop.alpha });
+});
+Draw.text("Score 0", { x: 10, y: 8 }); // screen space</code></pre>
+          </figure>
+        </div>
+      </section>
+
+      <!-- ============ SHOWCASE ============ -->
+      <section id="showcase">
+        <div class="section-head">
+          <h2>Showcase</h2>
+          <p>
+            Every sample is one self-contained file. Fundamentals put a single module front and
+            center; the games compose many together into a full playable loop.
+          </p>
+        </div>
+
+        <h3 style="color: var(--dim); font-size: 0.95rem; margin: 6px 0 14px; letter-spacing: 1px">
+          FUNDAMENTALS
+        </h3>
+        <div class="grid" id="grid-fundamentals"></div>
+
+        <h3 style="color: var(--dim); font-size: 0.95rem; margin: 34px 0 14px; letter-spacing: 1px">
+          GAMES
+        </h3>
+        <div class="grid" id="grid-games"></div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        Built with minimotor · <a href="./api/">API reference</a> · <a href="./api-lab/">API Lab</a
+        ><br />
+        The networking samples run against WebSocket endpoints served by this same host.
+      </div>
+    </footer>
+
+    <script>
+      // ---- sample catalog (single source of truth for the showcase) ----
+      const FUNDAMENTALS = [
+        [
+          "api-lab",
+          "API Lab",
+          "✨",
+          ["everything", "platformer", "net"],
+          "The flagship: the platformer that designed the current API. Tiles, ECS coins, camera follow/shake, wall jumps & dashes, scenes, synth audio and live multiplayer ghosts — one file exercising the whole engine.",
+        ],
+        [
+          "minimal",
+          "Minimal",
+          "",
+          ["Stage", "Keys", "Loop"],
+          "Absolute minimum: a colored square that moves with the arrow keys.",
+        ],
+        [
+          "scenes",
+          "Scenes",
+          "",
+          ["Scenes", "Transitions", "UI"],
+          "Menu → play → game over with a pushed pause overlay: the Scenes stack, fade/wipe transitions and the UI helpers.",
+        ],
+        [
+          "sprites",
+          "Sprites",
+          "",
+          ["Sprites.atlas", "Anim", "ECS"],
+          "A procedural sheet baked with Sprites.atlas, animated with Anim.sheet and blitted via Draw.sprites(ecs.dense(...)).",
+        ],
+        [
+          "bounce",
+          "Bounce",
+          "",
+          ["Loop", "Storage", "Audio"],
+          "A ball bounces off the walls; each hit scores a point. Best score saved with Storage.",
+        ],
+        [
+          "snake",
+          "Snake",
+          "",
+          ["Storage", "Goodies", "UI"],
+          "Classic grid snake with a growing tail. Collect food, avoid yourself. Arrows or WASD.",
+        ],
+        [
+          "particles",
+          "Particles",
+          "",
+          ["ECS", "Sprites", "Pointer"],
+          "A firework spark effect on the ECS. Click to spawn; gravity pulls the sparks down.",
+        ],
+        [
+          "synth",
+          "Synth",
+          "",
+          ["Audio", "Pointer", "UI"],
+          "A playable synth: piano keys, four waveforms, octave shift, scheduled grooves and a bar visualizer.",
+        ],
+        [
+          "tiles",
+          "Tiles",
+          "",
+          ["Tiles", "Camera", "Input.gamepad"],
+          "A scrolling tile platformer culled to the camera, on keyboard or gamepad.",
+        ],
+        [
+          "juice",
+          "Juice",
+          "",
+          ["Particles", "Camera.shake", "Input.vibrate"],
+          "Impact feedback: particle bursts, screen shake and haptics on every hit.",
+        ],
+        [
+          "physics",
+          "Physics",
+          "",
+          ["Physics2D", "ECS", "Audio"],
+          "Real rigid bodies via the opt-in planck (Box2D) adapter: crates stack and sleep, a motorized paddle flings everything.",
+        ],
+        [
+          "serverbrowser",
+          "Server Browser",
+          "",
+          ["UI.table", "Pointer.wheel"],
+          "A full immediate-mode GUI screen: tabs, toggles, a sortable scrollable table and a mock join flow. No DOM.",
+        ],
+        [
+          "swept",
+          "Swept Collision",
+          "",
+          ["Collision", "sweptAABB"],
+          "A projectile into a thin wall — toggle swept vs per-frame overlap and watch fast movers tunnel.",
+        ],
+        [
+          "netpeer",
+          "P2P Data Channel",
+          "",
+          ["Net", "WebRTC"],
+          "A real WebRTC data channel, both peers in one page. The right dot is drawn only from bytes that crossed the wire.",
+        ],
+        [
+          "netrtc",
+          "WebRTC Host / Join",
+          "",
+          ["Net", "WebRTC", "multiplayer"],
+          "Pure peer-to-peer multiplayer in a star topology via Net.host / Net.join over a signaling relay.",
+        ],
+        [
+          "netws",
+          "WebSocket Console",
+          "",
+          ["Net", "WebSocket"],
+          "Connect to any WebSocket server and echo messages both ways, running outside the game loop.",
+        ],
+        [
+          "clockwork",
+          "Clockwork Garden",
+          "",
+          ["Clock", "Signals", "Particles"],
+          "A rhythm garden: timed spawns, eased buds and score/combo events wired together by Signals.",
+        ],
+        [
+          "camera",
+          "Parallax Courier",
+          "",
+          ["Camera", "Mathf", "Particles"],
+          "Fly a neon valley and dock at beacons with a smooth dead-zone camera, zoom and procedural parallax.",
+        ],
+        [
+          "assetquest",
+          "Asset Quest",
+          "",
+          ["Assets", "Anim", "Particles"],
+          "Load a JSON map + image manifest, collect every moon key, then reach the unlocked gate.",
+        ],
+      ];
+      const GAMES = [
+        [
+          "pixel-adventure",
+          "Pixel Adventure",
+          "",
+          ["Anim.states", "Tiles", "Collision", "Camera"],
+          "A complete platformer on Pixel Frog CC0 art: autotiled terrain, a multi-image Anim.states player, moveAndSlide collision, stomp combat and synth SFX.",
+        ],
+        [
+          "ascent",
+          "Ascent",
+          "",
+          ["Fsm", "Timers", "ECS", "Sprites.atlas"],
+          "A Celeste-style precision platformer: forced dash-crystal chains over spike voids, wall jumps and coyote time.",
+        ],
+        [
+          "breakout",
+          "Breakout",
+          "",
+          ["Scenes", "ECS", "Collision"],
+          "Paddle + ball + destructible blocks. Blocks are ECS entities; Scenes drive play and a game-over overlay.",
+        ],
+        [
+          "road-rivals",
+          "Road Rivals",
+          "",
+          ["Net", "Physics2D", "Interpolator"],
+          "Two live clients in one page: fight on foot, drive a drifting car, and see remote players smoothed by snapshot interpolation.",
+        ],
+        [
+          "netgame",
+          "Multiplayer Blobs",
+          "",
+          ["Net.connect", "Interpolator"],
+          "Every open tab is a player, relayed by the dev server. Sends at 20 Hz — remotes glide via interpolation.",
+        ],
+        [
+          "pocket",
+          "Pocket Asteroids",
+          "",
+          ["Game", "Input.gamepad", "Particles"],
+          "A full Asteroids loop: rotate, thrust, wrap, fire, split rocks, clear waves and hyperspace.",
+        ],
+        [
+          "guild-trader",
+          "Guild Trader",
+          "",
+          ["UI.dialog", "drag & drop", "loot"],
+          "Trade with Mara using draggable stack inventories, weighted loot and fair encounter bags.",
+        ],
+        [
+          "dungeon-scout",
+          "Dungeon Scout",
+          "",
+          ["flood fill", "line of sight", "grid"],
+          "Explore generated rooms with reachable-region, grid-line and field-of-view recipes.",
+        ],
+        [
+          "lead-defender",
+          "Lead Defender",
+          "",
+          ["target leading", "waves", "particles"],
+          "An automated turret predicts moving targets through escalating radial enemy waves.",
+        ],
+        [
+          "checkpoint-rally",
+          "Checkpoint Rally",
+          "",
+          ["Physics2D", "Gizmos.car", "Audio.engine"],
+          "Drive a circuit hitting gates in order; a dead-zone camera, a corner minimap and your best lap time.",
+        ],
+        [
+          "solitaire",
+          "Solitaire",
+          "",
+          ["Scenes", "UI", "drag & drop"],
+          "Klondike solitaire: drag-and-drop, undo, hints, a win celebration and persisted stats.",
+        ],
+      ];
+      const card = ([slug, title, flag, tags, desc]) => {
+        const t = tags.map((x) => `<span class="tag">${x}</span>`).join("");
+        const f = flag ? `<span class="flag">${flag}</span>` : "";
+        return `<a class="card" href="./${slug}/"><h3>${title}${f}</h3><div class="tags">${t}</div><p>${desc}</p></a>`;
+      };
+      document.getElementById("grid-fundamentals").innerHTML = FUNDAMENTALS.map(card).join("");
+      document.getElementById("grid-games").innerHTML = GAMES.map(card).join("");
+
+      // ---- featherweight syntax highlighter (single pass, so inserted spans
+      //      are never re-matched — comment/string first wins each character) ----
+      const RE = new RegExp(
+        [
+          "(?<com>//[^\\n]*)",
+          "(?<str>\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])*'|`(?:\\\\.|[^`\\\\])*`)",
+          "(?<key>\\b(?:import|from|const|let|return|if|else|for|of|function|new|true|false)\\b)",
+          "(?<ns>\\b(?:Stage|Loop|Keys|Pointer|Draw|Camera|ECS|Sprites|Anim|Tiles|Collision|Input|Audio|Particles|Scenes|Timers|Mathf|Vec2|Net|Storage|UI|Physics2D)\\b)",
+          "(?<num>\\b\\d+(?:\\.\\d+)?\\b)",
+        ].join("|"),
+        "g",
+      );
+      for (const code of document.querySelectorAll("pre code")) {
+        const escaped = code.textContent
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+        code.innerHTML = escaped.replace(RE, (m, ...args) => {
+          const g = args[args.length - 1]; // named-groups object
+          const cls = g.com
+            ? "tok-com"
+            : g.str
+              ? "tok-str"
+              : g.key
+                ? "tok-key"
+                : g.ns
+                  ? "tok-ns"
+                  : g.num
+                    ? "tok-num"
+                    : null;
+          return cls ? `<span class="${cls}">${m}</span>` : m;
+        });
+      }
+
+      // ---- copy-code buttons ----
+      for (const btn of document.querySelectorAll("button.copy")) {
+        btn.addEventListener("click", async () => {
+          const code = btn.closest("figure").querySelector("code");
+          try {
+            await navigator.clipboard.writeText(code.textContent);
+          } catch {
+            // Fallback for non-secure contexts.
+            const r = document.createRange();
+            r.selectNodeContents(code);
+            const sel = getSelection();
+            sel.removeAllRanges();
+            sel.addRange(r);
+            document.execCommand("copy");
+            sel.removeAllRanges();
+          }
+          btn.textContent = "Copied!";
+          btn.classList.add("copied");
+          setTimeout(() => {
+            btn.textContent = "Copy";
+            btn.classList.remove("copied");
+          }, 1400);
+        });
+      }
+    </script>
   </body>
 </html>

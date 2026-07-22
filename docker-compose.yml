@@ -1,0 +1,22 @@
+services:
+  # Node sidecar: only the WebSocket endpoints the networking samples use.
+  ws:
+    build:
+      context: .
+      target: ws
+    container_name: minimotor-ws
+    restart: unless-stopped
+    expose:
+      - "8765" # internal only — reached by nginx over the compose network
+
+  # Plain nginx: serves the static showcase, proxies /ws-* to the sidecar.
+  web:
+    build:
+      context: .
+      target: web
+    container_name: minimotor-samples
+    restart: unless-stopped
+    depends_on:
+      - ws
+    ports:
+      - "8765:80"

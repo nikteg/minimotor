@@ -2,9 +2,10 @@
 // The whole engine is reached through PascalCase `Minimotor.*` namespaces.
 // Engine runtime: Stage / Loop / Draw / Keys / Pointer / Mouse (backed by one default
 // game built via Stage.init). Services & helpers: Audio, Sprites, Storage, etc.
-// `createGame` is exported for isolated instances (tests / multiple games).
+// Isolated game instances (tests / multiple games) are created with
+// `Stage.createGame`; extra camera lenses with `Camera.create`.
 
-import { createGame, Stage, Loop, Draw, Keys, Pointer, Mouse } from "./engine/index.js";
+import { Stage, Loop, Draw, Keys, Pointer, Mouse } from "./engine/index.js";
 import { Vec2 } from "./vec2.js";
 import {
   rectsOverlap,
@@ -35,7 +36,7 @@ import * as Storage from "./storage.js";
 import * as Sprites from "./sprites.js";
 import * as Net from "./net/index.js";
 import * as Perf from "./perf/index.js";
-import { Camera, createCamera } from "./camera/index.js";
+import { Camera } from "./camera/index.js";
 import * as Game from "./game.js";
 import * as Goodies from "./goodies/index.js";
 import * as Gizmos from "./gizmos/index.js";
@@ -43,7 +44,6 @@ import * as Tiles from "./tiles.js";
 import * as Transitions from "./transitions.js";
 
 export {
-  createGame,
   Stage,
   Loop,
   Draw,
@@ -57,7 +57,6 @@ export {
   Net,
   Perf,
   Camera,
-  createCamera,
   Game,
   Goodies,
   Gizmos,
@@ -219,6 +218,9 @@ export type {
   CarConfig,
   DriveInput,
   DrivableBody,
+  Skidmarks,
+  SkidmarksOptions,
+  TraceInput,
 } from "./gizmos/index.js";
 export type {
   Transport,
@@ -312,7 +314,6 @@ export type {
 export { Vec2 } from "./vec2.js";
 
 export const Minimotor = {
-  createGame,
   Stage,
   Vec2,
   Loop,

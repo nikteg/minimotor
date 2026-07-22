@@ -666,14 +666,14 @@ scene's hooks.
     - Synth-first stays minimotor's identity (dependency-free, no asset
       pipeline for a jump blip); sample-based sfx load via `Assets` and get
       the same `.play(overrides)` surface.
-    - **Recipe building blocks (`Audio.recipes`)** (Niklas: "add more built in typical sound
+    - **Recipe building blocks (`Audio.Recipes`)** (Niklas: "add more built in typical sound
       effect building blocks") — sfxr-tradition generators that return
       SPECS, not opaque sounds, so they're tweakable and teachable:
       ```ts
       const sfx = Audio.sfx({
-        coin: Audio.recipes.coin(), // classic chime
-        boom: Audio.recipes.explosion({ ms: 400 }), // override any field
-        hurt: Audio.recipes.hit(),
+        coin: Audio.Recipes.coin(), // classic chime
+        boom: Audio.Recipes.explosion({ ms: 400 }), // override any field
+        hurt: Audio.Recipes.hit(),
       });
       ```
       Roster: `coin, jump, hit, explosion, laser, powerup, blip, click,

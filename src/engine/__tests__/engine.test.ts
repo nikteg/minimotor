@@ -469,6 +469,37 @@ describe("live viewport & background", () => {
     tick(16);
     expect(ctx.fillRect).not.toHaveBeenCalled();
   });
+
+  it("clips the draw to the logical viewport when letterboxed (no spill into the bars)", () => {
+    Object.defineProperty(window, "innerWidth", { value: 800, configurable: true });
+    Object.defineProperty(window, "innerHeight", { value: 600, configurable: true });
+    const log: string[] = [];
+    HTMLCanvasElement.prototype.getContext = function (type: string) {
+      if (type !== "2d") return origGc.call(this, type);
+      return {
+        setTransform: vi.fn(),
+        fillRect: vi.fn(),
+        save: () => log.push("save"),
+        restore: () => log.push("restore"),
+        beginPath: () => log.push("beginPath"),
+        rect: (x: number, y: number, w: number, h: number) => log.push(`rect ${x},${y},${w},${h}`),
+        clip: () => log.push("clip"),
+        canvas: this,
+      } as unknown as CanvasRenderingContext2D;
+    };
+    const canvas = document.createElement("canvas");
+    const game = createGame({ canvas, resolution: { w: 200, h: 200 } });
+    game.run({ update: vi.fn(), draw: () => log.push("draw") });
+    tick(16);
+    // The draw runs inside clip(rect 0,0,200,200), then the clip is restored.
+    expect(log).toContain("rect 0,0,200,200");
+    const clip = log.indexOf("clip");
+    const draw = log.indexOf("draw");
+    expect(clip).toBeGreaterThanOrEqual(0);
+    expect(draw).toBeGreaterThan(clip);
+    expect(log.lastIndexOf("restore")).toBeGreaterThan(draw);
+    game.destroy();
+  });
 });
 
 describe("plugins", () => {

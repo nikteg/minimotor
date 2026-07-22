@@ -1,3 +1,4 @@
+import { readdirSync } from "node:fs";
 import type { Server } from "node:http";
 import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
@@ -6,6 +7,26 @@ import { createRoadRivalsServer } from "./samples/road-rivals/src/server/index.j
 import { signaling } from "./src/net/server/signaling.js";
 
 const here = (path: string) => fileURLToPath(new URL(path, import.meta.url));
+
+// Every `.html` under samples/ is a build entry — the gallery at the root plus
+// one (or two, for the net client/host pages) per sample. Auto-discovered so a
+// new sample is just a new folder: no hand-maintained input list to keep in
+// sync (and nothing to forget). `_docs/` holds Markdown only, so nothing there
+// matches anyway; node_modules is skipped defensively.
+function samplePages(): Record<string, string> {
+  const root = here("./samples");
+  const html = readdirSync(root, { recursive: true, encoding: "utf8" })
+    .map((p) => p.replaceAll("\\", "/")) // normalise Windows separators
+    .filter(
+      (p) =>
+        p.endsWith(".html") &&
+        !p.includes("node_modules") &&
+        // `api/` is the generated TypeDoc-style reference (static HTML with its
+        // own assets) — served/copied as-is, never a Vite entry.
+        !p.startsWith("api/"),
+    );
+  return Object.fromEntries(html.map((p) => [p.replace(/\.html$/, ""), `${root}/${p}`]));
+}
 
 // Tiny WebSocket endpoints hosted by the dev/preview server itself, so the
 // networking samples work offline (public echo servers come and go):
@@ -88,41 +109,7 @@ export default defineConfig({
     outDir: here("./samples-dist"),
     emptyOutDir: true,
     rollupOptions: {
-      input: {
-        main: here("./samples/index.html"),
-        apiLab: here("./samples/api-lab/index.html"),
-        scenes: here("./samples/scenes/index.html"),
-        sprites: here("./samples/sprites/index.html"),
-        minimal: here("./samples/minimal/index.html"),
-        bounce: here("./samples/bounce/index.html"),
-        breakout: here("./samples/breakout/index.html"),
-        snake: here("./samples/snake/index.html"),
-        particles: here("./samples/particles/index.html"),
-        physics: here("./samples/physics/index.html"),
-        serverbrowser: here("./samples/serverbrowser/index.html"),
-        tiles: here("./samples/tiles/index.html"),
-        juice: here("./samples/juice/index.html"),
-        swept: here("./samples/swept/index.html"),
-        netgame: here("./samples/netgame/index.html"),
-        netgameClient: here("./samples/netgame/client.html"),
-        roadRivals: here("./samples/road-rivals/index.html"),
-        roadRivalsClient: here("./samples/road-rivals/client.html"),
-        netpeer: here("./samples/netpeer/index.html"),
-        netrtc: here("./samples/netrtc/index.html"),
-        netws: here("./samples/netws/index.html"),
-        synth: here("./samples/synth/index.html"),
-        clockwork: here("./samples/clockwork/index.html"),
-        camera: here("./samples/camera/index.html"),
-        assetquest: here("./samples/assetquest/index.html"),
-        pocket: here("./samples/pocket/index.html"),
-        pixelAdventure: here("./samples/pixel-adventure/index.html"),
-        ascent: here("./samples/ascent/index.html"),
-        guildTrader: here("./samples/guild-trader/index.html"),
-        dungeonScout: here("./samples/dungeon-scout/index.html"),
-        leadDefender: here("./samples/lead-defender/index.html"),
-        checkpointRally: here("./samples/checkpoint-rally/index.html"),
-        solitaire: here("./samples/solitaire/index.html"),
-      },
+      input: samplePages(),
     },
   },
 });

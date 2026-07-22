@@ -3,7 +3,7 @@
 //
 //   const sfx = Audio.sfx({
 //     jump: { shape: "square", freq: { from: 520, to: 880 }, ms: 90, volume: 0.4 },
-//     coin: Audio.recipes.coin(),
+//     coin: Audio.Recipes.coin(),
 //   });
 //   sfx.jump.play();
 //   sfx.coin.play({ pitch: [0.95, 1.15] });      // tuple = per-play jitter
@@ -258,9 +258,9 @@ export function sfx<K extends string>(
 /** Classic sound-effect building blocks. Each returns a plain `SfxSpec` —
  *  inspect it, spread it, tweak any field:
  *
- *    coin: Audio.recipes.coin(),
- *    boom: { ...Audio.recipes.explosion(), ms: 400 }, */
-export const recipes = {
+ *    coin: Audio.Recipes.coin(),
+ *    boom: { ...Audio.Recipes.explosion(), ms: 400 }, */
+export const Recipes = {
   coin: (): SfxSpec => ({
     shape: "sine",
     freq: 988,
@@ -345,9 +345,49 @@ export interface EngineHandle {
   stop(): void;
 }
 
-/** A continuous, gear-shifting engine drone built from a detuned sawtooth pair
- *  through a low-pass, plus a slip-driven noise layer. Persistent (unlike the
- *  one-shot `sfx`) — real-time, outside the clock system. Feed it telemetry:
+// A real engine isn't a sustained tone — it's a train of discrete cylinder
+// *firings* whose rate rises with RPM, coloured by fixed body/exhaust
+// resonances that DON'T move with RPM (the model behind Andy Farnell's engine
+// patch in "Designing Sound"). Two mistakes make a synth engine sound "weird":
+// gliding an oscillator (a sustained tone, not firings), or pitch-shifting a
+// tonal loop (the timbre chipmunks as it revs). We avoid both: the loop is a
+// train of broadband *clicks* (so changing their rate via `playbackRate` shifts
+// the firing rate without pitching the colour), jittered so it isn't robotic,
+// then run through FIXED resonant band-pass "formants" that give the constant
+// engine growl. We ship no audio assets — the loop is built procedurally.
+// Uneven inter-firing gaps: a cross-plane V8 fires on an irregular pattern,
+// which is what gives a muscle car its lumpy "potato-potato" burble rather than
+// an even drone. The gaps sum to 8 so the loop is one full 8-cylinder cycle.
+const FIRING_GAPS = [1.3, 0.7, 0.7, 1.3, 1.3, 0.7, 0.7, 1.3];
+
+function engineCycle(ctx: AudioContext): AudioBuffer {
+  const sr = ctx.sampleRate;
+  const unit = Math.round(sr * 0.02); // base gap; ~ firing period at rate 1
+  const len = unit * FIRING_GAPS.reduce((a, b) => a + b, 0);
+  const buf = ctx.createBuffer(1, len, sr);
+  const d = buf.getChannelData(0);
+  const click = Math.max(4, Math.round(sr * 0.0022)); // ~2.2ms broadband thump
+  let pos = 0;
+  for (const gap of FIRING_GAPS) {
+    // Jitter timing & amplitude per firing so it isn't a robotic pulse.
+    const jitter = Math.round((Math.random() - 0.5) * unit * 0.1);
+    const start = Math.max(0, Math.round(pos) + jitter);
+    const amp = 0.75 + Math.random() * 0.4;
+    for (let i = 0; i < click && start + i < len; i++) {
+      const env = Math.exp(-i / (click * 0.4)); // sharp attack, fast decay
+      d[start + i] += (Math.random() * 2 - 1) * env * amp; // broadband click
+    }
+    pos += gap * unit;
+  }
+  return buf;
+}
+
+/** A continuous, gear-shifting engine — a looping train of synthesized cylinder
+ *  firings whose `playbackRate` climbs with RPM, coloured by a bank of fixed
+ *  resonant formants (so it revs without chipmunking) and a load-opening
+ *  low-pass, plus a slip-driven noise layer that screeches on the limit.
+ *  Persistent (unlike the one-shot `sfx`) — real-time, outside the clock system.
+ *  Feed it telemetry:
  *
  *    const engine = Audio.engine({ gears: 6 });
  *    // each frame: engine.update({ throttle, speed: car.speed, maxSpeed, slip }); */
@@ -362,12 +402,16 @@ export function engine(opts: EngineOptions = {}): EngineHandle {
 
   interface Nodes {
     ctx: AudioContext;
-    oscA: OscillatorNode;
-    oscB: OscillatorNode;
+    firingBase: number; // Hz the loop fires at when playbackRate == 1
+    motor: AudioBufferSourceNode;
+    textureGain: GainNode; // level of the click/formant firing texture
+    saw: OscillatorNode; // tonal harmonic body, tracks the firing fundamental
+    sub: OscillatorNode; // sine sub-weight, an octave down
     lp: BiquadFilterNode;
     gain: GainNode;
-    noise: AudioBufferSourceNode;
-    noiseGain: GainNode;
+    skid: AudioBufferSourceNode;
+    skidGain: GainNode;
+    skidFilter: BiquadFilterNode;
   }
   let n: Nodes | null = null;
   let stopped = false;
@@ -375,34 +419,102 @@ export function engine(opts: EngineOptions = {}): EngineHandle {
   function build(): Nodes | null {
     try {
       const ctx = ensureAudio();
+      const out = Mixer.bus(busName).input;
+      const sr = ctx.sampleRate;
+
       const gain = ctx.createGain();
       gain.gain.value = 0;
+      gain.connect(out);
+
+      // Master low-pass: engine body, opens (brightens) as it revs under load.
       const lp = ctx.createBiquadFilter();
       lp.type = "lowpass";
-      lp.frequency.value = 1400;
+      lp.frequency.value = 700;
+      lp.Q.value = 0.7;
       lp.connect(gain);
-      gain.connect(Mixer.bus(busName).input);
-      const oscA = ctx.createOscillator();
-      const oscB = ctx.createOscillator();
-      oscA.type = oscB.type = "sawtooth";
-      oscB.detune.value = -12;
-      oscA.connect(lp);
-      oscB.connect(lp);
-      oscA.start();
-      oscB.start();
-      // Slip grit: white noise through the same low-pass, its own gain.
-      const noiseGain = ctx.createGain();
-      noiseGain.gain.value = 0;
-      noiseGain.connect(lp);
-      const buf = ctx.createBuffer(1, ctx.sampleRate * 0.5, ctx.sampleRate);
-      const data = buf.getChannelData(0);
-      for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
-      const noise = ctx.createBufferSource();
-      noise.buffer = buf;
-      noise.loop = true;
-      noise.connect(noiseGain);
-      noise.start();
-      return { ctx, oscA, oscB, lp, gain, noise, noiseGain };
+
+      // --- Harmonic body (source-filter): a sawtooth at the firing fundamental
+      // gives a continuous low rumble that rises with revs, plus a sine sub an
+      // octave down for weight. This is the "voice" that stops the engine from
+      // being just isolated clicks (farts). Frequencies are set directly, so
+      // they track RPM without the buffer's playbackRate → no chipmunking.
+      const saw = ctx.createOscillator();
+      saw.type = "sawtooth";
+      saw.frequency.value = idleHz;
+      const sawGain = ctx.createGain();
+      sawGain.gain.value = 0.16;
+      saw.connect(sawGain).connect(lp);
+      saw.start();
+
+      const sub = ctx.createOscillator();
+      sub.type = "sine";
+      sub.frequency.value = idleHz / 2;
+      const subGain = ctx.createGain();
+      subGain.gain.value = 0.85; // heavy sub → deep muscle-car chest
+      sub.connect(subGain).connect(lp);
+      sub.start();
+
+      // --- Firing texture: the click train through FIXED resonant formants adds
+      // the mechanical rasp/growl on top of the body. `textureGain` keeps it a
+      // seasoning, not the whole sound.
+      const cycle = engineCycle(ctx);
+      const firingBase = sr / Math.round(sr * 0.02); // firings/sec at rate 1
+      const motor = ctx.createBufferSource();
+      motor.buffer = cycle;
+      motor.loop = true;
+      motor.start();
+      const textureGain = ctx.createGain();
+      textureGain.gain.value = 0.6;
+      textureGain.connect(lp);
+
+      const formants: Array<[freq: number, q: number, gain: number]> = [
+        [58, 10, 1.0], // deep boom / exhaust body (muscle-car chest)
+        [120, 8, 0.55], // mid burble
+        [240, 5, 0.25], // upper rasp — kept low so it stays dark, not fizzy
+      ];
+      for (const [freq, q, g] of formants) {
+        const bp = ctx.createBiquadFilter();
+        bp.type = "bandpass";
+        bp.frequency.value = freq;
+        bp.Q.value = q;
+        const fg = ctx.createGain();
+        fg.gain.value = g;
+        motor.connect(bp).connect(fg).connect(textureGain);
+      }
+      // A touch of the dry click train keeps the mechanical attack/edge.
+      const dry = ctx.createGain();
+      dry.gain.value = 0.15;
+      motor.connect(dry).connect(textureGain);
+
+      // Tyre-skid layer: band-passed white noise, its own gain (slip-driven).
+      const nb = ctx.createBuffer(1, sr, sr);
+      const nd = nb.getChannelData(0);
+      for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+      const skid = ctx.createBufferSource();
+      skid.buffer = nb;
+      skid.loop = true;
+      const skidFilter = ctx.createBiquadFilter();
+      skidFilter.type = "bandpass";
+      skidFilter.frequency.value = 1400;
+      skidFilter.Q.value = 0.8;
+      const skidGain = ctx.createGain();
+      skidGain.gain.value = 0;
+      skid.connect(skidFilter).connect(skidGain).connect(out);
+      skid.start();
+
+      return {
+        ctx,
+        firingBase,
+        motor,
+        textureGain,
+        saw,
+        sub,
+        lp,
+        gain,
+        skid,
+        skidGain,
+        skidFilter,
+      };
     } catch {
       return null; // no WebAudio — silent, non-fatal
     }
@@ -421,24 +533,30 @@ export function engine(opts: EngineOptions = {}): EngineHandle {
       const gearRev = (norm * gears) % 1;
       const hz = idleHz + (revHz - idleHz) * (0.25 + 0.75 * gearRev) * (0.6 + 0.4 * drive * load);
       const t = n.ctx.currentTime;
-      const rampTo = (p: AudioParam, v: number) => {
-        p.cancelScheduledValues(t);
-        p.setValueAtTime(p.value, t);
-        p.linearRampToValueAtTime(v, t + 0.05);
-      };
-      rampTo(n.oscA.frequency, hz);
-      rampTo(n.oscB.frequency, hz);
-      rampTo(n.lp.frequency, 700 + 1800 * load);
-      rampTo(n.gain.gain, volume * (0.12 + 0.5 * load));
-      rampTo(n.noiseGain.gain, volume * 0.25 * slip);
+      const ramp = (p: AudioParam, v: number, tau = 0.06) => p.setTargetAtTime(v, t, tau);
+      // Tonal body tracks the firing fundamental directly (no chipmunking); the
+      // click texture's playbackRate carries the firing RATE (fixed formants).
+      ramp(n.saw.frequency, hz, 0.05);
+      ramp(n.sub.frequency, hz / 2, 0.05);
+      ramp(n.motor.playbackRate, Math.max(0.05, hz / n.firingBase), 0.05);
+      // Firing texture grows with revs/load; softer at idle so it isn't farty.
+      ramp(n.textureGain.gain, 0.35 + 0.5 * norm + 0.25 * load, 0.08);
+      // Master low-pass opens with rpm & load — kept low-slung so the engine
+      // stays dark and chesty (muscle car) rather than bright/buzzy.
+      ramp(n.lp.frequency, 420 + norm * 1200 + load * 1100 * drive);
+      ramp(n.gain.gain, volume * (0.55 + 0.45 * load) * (0.6 + 0.4 * norm), 0.1);
+      // Skid: only real slip, quadratic so light cornering stays quiet, and well
+      // under the engine so it never dominates.
+      ramp(n.skidGain.gain, Math.min(0.12, slip * slip * 0.14) * volume, 0.05);
     },
     stop() {
       stopped = true;
       if (!n) return;
       try {
-        n.oscA.stop();
-        n.oscB.stop();
-        n.noise.stop();
+        n.motor.stop();
+        n.saw.stop();
+        n.sub.stop();
+        n.skid.stop();
         n.gain.disconnect();
       } catch {
         /* already torn down */

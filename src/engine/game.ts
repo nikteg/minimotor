@@ -256,6 +256,25 @@ function buildGame(options: GameOptions): Game {
     }
   };
 
+  // Run the game's draw callback, clipped to the logical viewport when the
+  // stage is letterboxed — otherwise a following camera or a world larger than
+  // the stage spills past the WxH box into the bars.
+  const drawClipped = () => {
+    if (!letterboxed) {
+      callbacks!.draw(ctx);
+      return;
+    }
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, viewport.w, viewport.h);
+    ctx.clip();
+    try {
+      callbacks!.draw(ctx);
+    } finally {
+      ctx.restore();
+    }
+  };
+
   // ---- Input state (polled; edge sets are cleared once a step consumes them) ----
   const heldKeys = new Set<string>();
   const pressedKeys = new Set<string>();
@@ -452,7 +471,7 @@ function buildGame(options: GameOptions): Game {
       consumeEdges();
       clearFrame();
       for (const p of plugins) p.beforeDraw?.(game);
-      callbacks!.draw(ctx);
+      drawClipped();
       for (const p of plugins) p.afterDraw?.(game);
       endFrame(); // pause menus hit-test and scroll in draw too
       requestAnimationFrame(loop);
@@ -491,7 +510,7 @@ function buildGame(options: GameOptions): Game {
     clearFrame();
     for (const p of plugins) p.beforeDraw?.(game);
     const drawStart = performance.now();
-    callbacks!.draw(ctx);
+    drawClipped();
     timings.drawMs = performance.now() - drawStart;
     for (const p of plugins) p.afterDraw?.(game);
     endFrame();

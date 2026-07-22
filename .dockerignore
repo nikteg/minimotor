@@ -1,0 +1,15 @@
+# Build outputs and installed deps are regenerated inside the image.
+node_modules
+build
+samples-dist
+samples/dist
+.vite
+
+# VCS, test artifacts, local noise.
+.git
+.gitignore
+test-results
+playwright-report
+*.log
+.DS_Store
+.claude

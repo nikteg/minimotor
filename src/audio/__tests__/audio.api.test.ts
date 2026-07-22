@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import { recipes, sfx, buses, master } from "../api.js";
+import { Recipes, sfx, buses, master } from "../api.js";
 
-describe("Audio.recipes", () => {
+describe("Audio.Recipes", () => {
   it("return plain, tweakable SfxSpec data", () => {
-    const coin = recipes.coin();
+    const coin = Recipes.coin();
     expect(typeof coin).toBe("object");
     expect(coin.freq).toBe(988);
     // spreads like data:
-    const tweaked = { ...recipes.explosion(), ms: 400 };
+    const tweaked = { ...Recipes.explosion(), ms: 400 };
     expect(tweaked.ms).toBe(400);
     expect(tweaked.noise).toBe(true);
     expect(() => JSON.stringify(coin)).not.toThrow();

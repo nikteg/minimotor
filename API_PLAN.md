@@ -160,7 +160,7 @@ size, color })`; immediate-mode `emit({ at, chance, ... })` — the
 - Unlock ceremony dies (`ensureAudio` internal; pre-gesture plays dropped
   with dev warn). (#35)
 - `Audio.sfx({...})` typed map, `.play({ pitch: [min,max], bus })`;
-  `Audio.recipes.*` (coin/jump/hit/explosion/laser/powerup/blip/click/
+  `Audio.Recipes.*` (coin/jump/hit/explosion/laser/powerup/blip/click/
   whoosh) returning tweakable specs. (#36)
 - `Audio.music(asset, { loop, volume })`; `play()` idempotent;
   `fade(vol, ms)`; ducking = scene hooks. Audio is real-time (outside the
@@ -208,21 +208,18 @@ fps }, run: {...}, jump: {...} })` returns a shared kit; `kit.play(initial)`
      component's packed backing array (useful beyond sprites). Call site:
      `Draw.sprites(ecs.dense(Sprites.Sprite), { alpha: Loop.alpha, view })`. Draw
      owns rendering; the ECS owns generic data; neither imports the other.
-- **pixel-adventure needs a full rewrite** (quarantined from the TS gate).
-  It was never ported off the old API in the first sample pass (still
-  `Minimotor.*` destructuring, `Input.actions`, `Camera.createCamera`/
-  `shakeX`, `anim.draw`, numeric `Tiles.grid`+`moveAABB`+`solidInRect`,
-  positional `Particles.burst`, `Game.drawLetterbox`, `update(stepMs)`).
-  Rewrite touches: named imports; `Input.map`; per-state sheet cursors (see
-  the gap above); numeric level.json tiles → ASCII `Tiles.grid` + legend +
-  custom atlas render keyed on `map.at(x,y) === "#"`; `moveAABB` →
-  `Collision.moveAndSlide` (remap its bottom-center anchor to a top-left
-  MoverBody); `Camera.follow` + `Camera.render` (drop shakeX/manual cam math);
-  `Stage.init({ resolution })`; `Particles.create`; `dt = Loop.step/1000`.
+- **pixel-adventure rewritten — DONE.** Fully ported off the old API and back
+  in the TS gate (no longer excluded). It's now the showcase for `Anim.states`
+  (the player ships one PNG per state — idle/run/jump/fall/hit — with `frames`
+  derived from each strip's width). Also: named imports; `Input.map`;
+  numeric `level.json` → ASCII `Tiles.grid` + legend, with the autotiled
+  terrain render keyed on `level.at(x,y) === "#"`; `Collision.moveAndSlide`
+  against the level (player + enemies as top-left `MoverBody`s);
+  `Camera.follow`/`Camera.render`; `Audio.tone` synth SFX; `Particles.create`;
+  `Stage.init({ resolution })` (no manual letterbox).
 - **Retire `Game.letterbox`/`drawLetterbox`/`letterboxView`** — superseded by
-  `Stage.init({ resolution })`. Remaining users after the sample sweep:
-  pocket, pixel-adventure (solitaire already migrated). Remove once those two
-  are on `resolution`.
+  `Stage.init({ resolution })`. pixel-adventure and solitaire are now migrated;
+  **pocket** is the last user. Remove once pocket is on `resolution`.
 
 ## Round-2 exercises (own samples, not in this plan's scope)
 

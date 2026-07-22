@@ -16,5 +16,5 @@
     }
   },
   "include": ["**/*.ts"],
-  "exclude": ["../node_modules", "pixel-adventure/**"]
+  "exclude": ["../node_modules"]
 }

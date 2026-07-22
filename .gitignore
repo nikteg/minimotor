@@ -6,6 +6,11 @@ build/
 # Vite output for the samples showcase
 .vite/
 samples-dist/
+samples/dist/
+# tsc output for the WebSocket sidecar (tsconfig.server.json)
+server-dist/
+# Generated API reference (from build/*.d.ts via tools/gen-api-docs.mjs)
+samples/api/
 
 # Playwright run artifacts
 test-results/
