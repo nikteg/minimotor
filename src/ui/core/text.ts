@@ -153,11 +153,11 @@ export function text(
     };
   }
   ctx.save();
-  // UI is ALWAYS screen space, regardless of ambient camera blocks.
+  // UI is ALWAYS screen (letterbox-logical) space, regardless of ambient
+  // camera blocks — reset to the base transform, not raw device space.
   if (typeof ctx.setTransform === "function") {
     try {
-      const dpr = Stage.viewport.dpr;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      Stage.resetTransform();
     } catch {
       // No default game (isolated ctx): leave the transform alone.
     }

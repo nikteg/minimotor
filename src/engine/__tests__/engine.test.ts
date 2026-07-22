@@ -434,6 +434,34 @@ describe("live viewport & background", () => {
     expect(ctx.fillStyle).toBe("#123456");
   });
 
+  it("letterboxes a fixed resolution: logical viewport size + centered fit", () => {
+    Object.defineProperty(window, "innerWidth", { value: 800, configurable: true });
+    Object.defineProperty(window, "innerHeight", { value: 600, configurable: true });
+    const canvas = document.createElement("canvas");
+    const game = createGame({ canvas, resolution: { w: 200, h: 200 } });
+    const vp = game.viewport;
+    expect(vp.w).toBe(200); // logical size, not the window
+    expect(vp.h).toBe(200);
+    expect(vp.scale).toBe(3); // min(800/200, 600/200) = 3
+    expect(vp.offsetX).toBe((800 - 600) / 2); // pillarbox on the wide axis
+    expect(vp.offsetY).toBe(0);
+  });
+
+  it("maps the pointer into logical coordinates under letterbox", () => {
+    Object.defineProperty(window, "innerWidth", { value: 800, configurable: true });
+    Object.defineProperty(window, "innerHeight", { value: 600, configurable: true });
+    const canvas = document.createElement("canvas");
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 800, height: 600 }) as DOMRect;
+    const game = createGame({ canvas, resolution: { w: 200, h: 200 } });
+    // Window center (400,300) → logical center (100,100).
+    window.dispatchEvent(new PointerEvent("pointermove", { clientX: 400, clientY: 300 }));
+    expect(game.pointer.x).toBeCloseTo(100);
+    expect(game.pointer.y).toBeCloseTo(100);
+    // A point inside the left pillar bar is outside the logical area.
+    window.dispatchEvent(new PointerEvent("pointermove", { clientX: 10, clientY: 300 }));
+    expect(game.pointer.inside).toBe(false);
+  });
+
   it("does not clear when no background is configured", () => {
     const { game } = build();
     const ctx = game.ctx as unknown as { fillRect: ReturnType<typeof vi.fn> };

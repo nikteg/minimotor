@@ -110,6 +110,11 @@ export const Stage = {
   fullscreen(): void {
     applyFullscreen();
   },
+  /** Re-apply the base (letterbox) transform — see `Game.resetTransform`.
+   *  Screen-space widgets use this to escape a camera block. */
+  resetTransform(): void {
+    requireDefault().resetTransform();
+  },
   onResize(handler: (vp: Viewport) => void): () => void {
     return requireDefault().onResize(handler);
   },
@@ -169,8 +174,8 @@ export interface DrawTextOptions {
   size?: number;
   /** Full CSS font string — overrides `size`. */
   font?: string;
-  /** Fill color. Default "#fff". */
-  color?: string;
+  /** Fill. A CSS color, or a gradient from `Draw.linear`/`Draw.radial`. Default "#fff". */
+  color?: Fill;
   /** Horizontal anchor of `x`. Default "left". */
   align?: TextHAlign;
   /** Vertical anchor of `y`. Default "top". */
@@ -184,43 +189,49 @@ export interface DrawTextOptions {
 // canvas is. Geometry takes positional args for literals plus a structural
 // overload (anything with the fields IS the shape).
 
-function rect(x: number, y: number, w: number, h: number, color: string): void;
-function rect(rect: Rect, color: string): void;
-function rect(a: number | Rect, b: number | string, c?: number, d?: number, e?: string): void {
+/** A fill: a CSS color string, or a gradient from `Draw.linear`/`Draw.radial`. */
+export type Fill = string | CanvasGradient;
+
+/** Gradient color stops: `[offset 0..1, color]` pairs. */
+export type GradientStops = Array<[number, string]>;
+
+function rect(x: number, y: number, w: number, h: number, color: Fill): void;
+function rect(rect: Rect, color: Fill): void;
+function rect(a: number | Rect, b: number | Fill, c?: number, d?: number, e?: Fill): void {
   const ctx = requireDefault().ctx;
   if (typeof a === "number") {
     ctx.fillStyle = e!;
     ctx.fillRect(a, b as number, c!, d!);
   } else {
-    ctx.fillStyle = b as string;
+    ctx.fillStyle = b as Fill;
     ctx.fillRect(a.x, a.y, a.w, a.h);
   }
 }
 
-function circle(x: number, y: number, r: number, color: string): void;
-function circle(pos: Point, r: number, color: string): void;
-function circle(a: number | Point, b: number, c: number | string, d?: string): void {
+function circle(x: number, y: number, r: number, color: Fill): void;
+function circle(pos: Point, r: number, color: Fill): void;
+function circle(a: number | Point, b: number, c: number | Fill, d?: Fill): void {
   const ctx = requireDefault().ctx;
   const [x, y, r, color] =
-    typeof a === "number" ? [a, b, c as number, d!] : [a.x, a.y, b, c as string];
+    typeof a === "number" ? [a, b, c as number, d!] : [a.x, a.y, b, c as Fill];
   ctx.fillStyle = color;
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.fill();
 }
 
-function line(x1: number, y1: number, x2: number, y2: number, color: string, width?: number): void;
-function line(a: Point, b: Point, color: string, width?: number): void;
+function line(x1: number, y1: number, x2: number, y2: number, color: Fill, width?: number): void;
+function line(a: Point, b: Point, color: Fill, width?: number): void;
 function line(
   a: number | Point,
   b: number | Point,
-  c?: number | string,
-  d?: number | string,
-  e?: string,
+  c?: number | Fill,
+  d?: number | Fill,
+  e?: Fill,
   f?: number,
 ): void {
   const ctx = requireDefault().ctx;
-  let x1: number, y1: number, x2: number, y2: number, color: string, width: number;
+  let x1: number, y1: number, x2: number, y2: number, color: Fill, width: number;
   if (typeof a === "number") {
     x1 = a;
     y1 = b as number;
@@ -233,7 +244,7 @@ function line(
     y1 = a.y;
     x2 = (b as Point).x;
     y2 = (b as Point).y;
-    color = c as string;
+    color = c as Fill;
     width = (d as number | undefined) ?? 1;
   }
   ctx.strokeStyle = color;
@@ -242,6 +253,63 @@ function line(
   ctx.moveTo(x1, y1);
   ctx.lineTo(x2, y2);
   ctx.stroke();
+}
+
+/** A linear-gradient fill from (x0,y0) to (x1,y1). Pass the result as any
+ *  `Draw`/`UI` color: `Draw.rect(r, Draw.linear(0, 0, 0, h, [[0,"#0af"],[1,"#014"]]))`. */
+function linear(
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  stops: GradientStops,
+): CanvasGradient {
+  const ctx = requireDefault().ctx;
+  const g = ctx.createLinearGradient(x0, y0, x1, y1);
+  for (const [at, color] of stops) g.addColorStop(at, color);
+  return g;
+}
+
+/** A radial-gradient fill from the inner circle (x0,y0,r0) to the outer
+ *  (x1,y1,r1). A 3-arg center form covers the common concentric case. */
+function radial(cx: number, cy: number, r: number, stops: GradientStops): CanvasGradient;
+function radial(
+  x0: number,
+  y0: number,
+  r0: number,
+  x1: number,
+  y1: number,
+  r1: number,
+  stops: GradientStops,
+): CanvasGradient;
+function radial(
+  x0: number,
+  y0: number,
+  r0: number,
+  a?: number | GradientStops,
+  y1?: number,
+  r1?: number,
+  b?: GradientStops,
+): CanvasGradient {
+  const ctx = requireDefault().ctx;
+  const g = Array.isArray(a)
+    ? ctx.createRadialGradient(x0, y0, 0, x0, y0, r0)
+    : ctx.createRadialGradient(x0, y0, r0, a as number, y1!, r1!);
+  for (const [at, color] of Array.isArray(a) ? a : b!) g.addColorStop(at, color);
+  return g;
+}
+
+/** Run `fn` with a global opacity multiplier applied (nests correctly and
+ *  restores after) — fade-outs, ghosts, dimmed layers without touching ctx. */
+function opacity(value: number, fn: () => void): void {
+  const ctx = requireDefault().ctx;
+  const prev = ctx.globalAlpha;
+  ctx.globalAlpha = prev * value;
+  try {
+    fn();
+  } finally {
+    ctx.globalAlpha = prev;
+  }
 }
 
 /** Anything Draw.sprite can render: a sheet cursor (`heroSheet.play(...)`)
@@ -329,6 +397,9 @@ export const Draw = {
   rect,
   circle,
   line,
+  linear,
+  radial,
+  opacity,
   text,
   sprite,
   tiles,

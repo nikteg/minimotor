@@ -32,9 +32,10 @@ export interface Rect {
 export interface Viewport {
   canvas: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D;
-  /** Logical width in CSS pixels */
+  /** Logical width. Fills the window, or the fixed `resolution.w` when the
+   *  stage is letterboxed. */
   w: number;
-  /** Logical height in CSS pixels */
+  /** Logical height (see `w`). */
   h: number;
   /** Device pixel ratio (capped at 2 for perf) */
   dpr: number;
@@ -42,6 +43,12 @@ export interface Viewport {
   safeLeft: number;
   /** Safe area top inset */
   safeTop: number;
+  /** Base device→canvas transform (dpr × letterbox scale, plus bar offset).
+   *  Everything draws under this; `resetTransform(ctx)` re-applies it after a
+   *  camera block. `scale` is 1 (offset 0) when the stage isn't letterboxed. */
+  scale: number;
+  offsetX: number;
+  offsetY: number;
 }
 
 /** Plugins hook into the game lifecycle; each hook receives the `Game`.
@@ -123,6 +130,10 @@ export interface Game {
    *  Applied at frame end and reset every frame, so hover cursors clear
    *  themselves — call it each frame the hover holds. */
   setCursor(cursor: string): void;
+  /** Re-apply the base (letterbox) transform: logical coords → device pixels.
+   *  Screen-space UI calls this to escape a camera block back to the letterbox
+   *  base (not raw device space). */
+  resetTransform(): void;
   /** Register a plugin after build (calls its `onInit` immediately). */
   use(plugin: EnginePlugin): void;
   /** Register callbacks and start the loop (idempotent restart of callbacks). */
@@ -151,6 +162,14 @@ export interface GameOptions {
    *  boilerplate) and it is the single source of truth for the background —
    *  don't also set one in CSS. Omit to keep clearing in game hands. */
   background?: string;
+  /** Fixed logical resolution. When set, the engine LETTERBOXES: it fits a
+   *  `w×h` logical space into the window (uniform scale, centered, bars on
+   *  the spare axis), reports `w`/`h` as the logical size, maps the pointer
+   *  into logical coordinates, and scales all drawing — no manual
+   *  save/translate/scale. */
+  resolution?: { w: number; h: number };
+  /** Letterbox bar color (only with `resolution`). Default "#000". */
+  barColor?: string;
   /** Lifecycle plugins (e.g. `Perf.plugin()`). */
   plugins?: EnginePlugin[];
   /** Auto-pause while a coarse-pointer device is held in portrait. */
@@ -201,15 +220,40 @@ function buildGame(options: GameOptions): Game {
   const canvas = resolveCanvas(options.canvas);
   // The viewport is a LIVE object: same identity forever, fields mutated in
   // place on resize — holders never go stale.
-  const viewport = readViewport(canvas);
+  const viewport = readViewport(canvas, options.resolution);
   const ctx = viewport.ctx;
 
   const background = options.background ?? null;
+  const barColor = options.barColor ?? "#000";
+  const letterboxed = !!options.resolution;
   if (background) canvas.style.background = background;
+
+  /** Re-apply the base (letterbox) transform — logical coords → device px.
+   *  Used at frame start and by screen-space UI escaping a camera block. */
+  const resetTransform = () => {
+    ctx.setTransform(
+      viewport.dpr * viewport.scale,
+      0,
+      0,
+      viewport.dpr * viewport.scale,
+      viewport.dpr * viewport.offsetX,
+      viewport.dpr * viewport.offsetY,
+    );
+  };
+
   const clearFrame = () => {
-    if (!background) return;
-    ctx.fillStyle = background;
-    ctx.fillRect(0, 0, viewport.w, viewport.h);
+    if (letterboxed) {
+      // Paint the bars (the whole device canvas), then the play area.
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.fillStyle = barColor;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.restore();
+    }
+    if (background) {
+      ctx.fillStyle = background;
+      ctx.fillRect(0, 0, viewport.w, viewport.h);
+    }
   };
 
   // ---- Input state (polled; edge sets are cleared once a step consumes them) ----
@@ -310,11 +354,16 @@ function buildGame(options: GameOptions): Game {
   };
   const setPointer = (e: { clientX: number; clientY: number }) => {
     if (!canvasRect) canvasRect = canvas.getBoundingClientRect();
-    const cssX = e.clientX - canvasRect.left;
-    const cssY = e.clientY - canvasRect.top;
-    ptr.x = canvasRect.width > 0 ? (cssX * viewport.w) / canvasRect.width : cssX;
-    ptr.y = canvasRect.height > 0 ? (cssY * viewport.h) / canvasRect.height : cssY;
-    ptr.inside = cssX >= 0 && cssY >= 0 && cssX <= canvasRect.width && cssY <= canvasRect.height;
+    // Client → canvas-CSS px (normalize any CSS stretch), then invert the
+    // letterbox base transform (offset + scale) to logical coordinates.
+    const cw = canvas.width / viewport.dpr;
+    const ch = canvas.height / viewport.dpr;
+    const cssX = canvasRect.width > 0 ? ((e.clientX - canvasRect.left) * cw) / canvasRect.width : 0;
+    const cssY =
+      canvasRect.height > 0 ? ((e.clientY - canvasRect.top) * ch) / canvasRect.height : 0;
+    ptr.x = (cssX - viewport.offsetX) / viewport.scale;
+    ptr.y = (cssY - viewport.offsetY) / viewport.scale;
+    ptr.inside = ptr.x >= 0 && ptr.y >= 0 && ptr.x <= viewport.w && ptr.y <= viewport.h;
   };
   const onPointerDown = (e: PointerEvent) => {
     setPointer(e);
@@ -365,7 +414,7 @@ function buildGame(options: GameOptions): Game {
     ptr.wheel = 0;
   };
   const handleResize = () => {
-    Object.assign(viewport, readViewport(canvas)); // live: mutate in place
+    Object.assign(viewport, readViewport(canvas, options.resolution)); // live: mutate in place
     canvasRect = null;
     for (const p of plugins) p.onResize?.(game);
     for (const h of resizeHandlers) h(viewport);
@@ -486,6 +535,7 @@ function buildGame(options: GameOptions): Game {
     setCursor(cursor) {
       cursorRequest = cursor;
     },
+    resetTransform,
     use(plugin) {
       plugins.push(plugin);
       plugin.onInit?.(game);
@@ -539,20 +589,36 @@ function buildGame(options: GameOptions): Game {
   return game;
 }
 
-function readViewport(canvas: HTMLCanvasElement): Viewport {
+function readViewport(canvas: HTMLCanvasElement, resolution?: { w: number; h: number }): Viewport {
   // Known quirk: the canvas is sized to the full window, but fullscreenCSS
   // offsets it by the safe-area insets — on a notched device the far edge
   // overflows by the inset. Draw HUD elements inside `safeLeft`/`safeTop`
   // and keep gameplay away from the extreme edges.
-  const w = window.innerWidth;
-  const h = window.innerHeight;
+  const winW = window.innerWidth;
+  const winH = window.innerHeight;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  canvas.width = Math.round(w * dpr);
-  canvas.height = Math.round(h * dpr);
-  canvas.style.width = w + "px";
-  canvas.style.height = h + "px";
+  canvas.width = Math.round(winW * dpr);
+  canvas.height = Math.round(winH * dpr);
+  canvas.style.width = winW + "px";
+  canvas.style.height = winH + "px";
   const ctx = canvas.getContext("2d")!;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  // Letterbox: a fixed logical resolution fitted (uniform, centered) into the
+  // window; otherwise the logical size IS the window and scale is 1.
+  let w = winW;
+  let h = winH;
+  let scale = 1;
+  let offsetX = 0;
+  let offsetY = 0;
+  if (resolution) {
+    w = resolution.w;
+    h = resolution.h;
+    scale = Math.min(winW / w, winH / h);
+    offsetX = (winW - w * scale) / 2;
+    offsetY = (winH - h * scale) / 2;
+  }
+  // Base transform maps logical coords → device pixels (dpr × letterbox).
+  ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * offsetX, dpr * offsetY);
 
   const rootStyle = getComputedStyle(document.documentElement);
   let safeLeft = parseFloat(rootStyle.getPropertyValue("--sai-left")) || 0;
@@ -576,5 +642,5 @@ function readViewport(canvas: HTMLCanvasElement): Viewport {
     }
   }
 
-  return { canvas, ctx, w, h, dpr, safeLeft, safeTop };
+  return { canvas, ctx, w, h, dpr, safeLeft, safeTop, scale, offsetX, offsetY };
 }

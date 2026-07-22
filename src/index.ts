@@ -89,6 +89,8 @@ export type {
   SpriteLike,
   ParticleLike,
   TilesLike,
+  Fill,
+  GradientStops,
 } from "./engine/index.js";
 export type { SceneSpec, SceneStack, GoOptions, SceneStackOptions } from "./scenes.js";
 export type {

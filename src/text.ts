@@ -8,8 +8,8 @@ export type TextVAlign = "top" | "middle" | "bottom";
 export interface TextStyle {
   /** CSS font string. Default "16px monospace" */
   font?: string;
-  /** Fill color. Default "#fff" */
-  color?: string;
+  /** Fill: a CSS color or a CanvasGradient (Draw.linear/radial). Default "#fff" */
+  color?: string | CanvasGradient;
   /** Horizontal anchor of the x coordinate. Default "left" */
   align?: TextHAlign;
   /** Vertical anchor of the y coordinate. Default "top" */
