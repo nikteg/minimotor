@@ -1,9 +1,7 @@
 // Small musical sound palette shared by the showcase games. No audio assets —
 // each effect is a short arpeggio of Audio.tone voices (a declarative, crash-
 // safe synth voice: oscillator + envelope, on the SFX bus).
-import { Minimotor } from "minimotor";
-
-const { Audio } = Minimotor;
+import { Audio } from "minimotor";
 function notes(sequence, type = "triangle", volume = 0.14) {
   sequence.forEach((freq, i) => {
     Audio.tone({ wave: type, freq, gain: volume, attack: 0.008, release: 0.15, delay: i * 0.065 });

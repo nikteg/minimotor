@@ -270,6 +270,10 @@ function sprite(spr: SpriteLike, at: Rect, opts: DrawSpriteOptions = {}): void {
   const ctx = requireDefault().ctx;
   const r = spr.rect;
   ctx.save();
+  // Nearest-neighbour: interpolated sampling bleeds edge pixels from the
+  // ADJACENT sheet cells into the frame (ghost lines above heads); pixel
+  // art wants crisp scaling anyway.
+  ctx.imageSmoothingEnabled = false;
   ctx.translate(at.x + at.w / 2, at.y + at.h); // bottom-center anchor
   ctx.scale((opts.flipX ? -1 : 1) * (opts.scaleX ?? 1), (opts.flipY ? -1 : 1) * (opts.scaleY ?? 1));
   if (opts.rot) ctx.rotate(opts.rot);

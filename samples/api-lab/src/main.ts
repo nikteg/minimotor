@@ -33,6 +33,7 @@ const input = Input.map({
   left: ["ArrowLeft", "KeyA", "pad:dpad-left", "pad:lstick-left"],
   right: ["ArrowRight", "KeyD", "pad:dpad-right", "pad:lstick-right"],
   jump: ["Space", "ArrowUp", "KeyW", "pad:a"],
+  dash: ["ShiftLeft", "ShiftRight", "KeyX", "pad:b"],
   pause: ["Escape", "pad:start"],
 });
 
@@ -42,6 +43,9 @@ const ACCEL = 0.4;
 const GRAVITY = 0.5;
 const JUMP = -12;
 const JUMP_CUTOFF = 0.45;
+const WALL_SLIDE = 1.4; // max fall speed while pressing into a wall
+const WALL_JUMP_X = 4.5; // horizontal kick away from the wall
+const DASH_SPEED = 9;
 
 // [#39] The level IS the source file: ASCII grid + semantics-only legend.
 const level = Tiles.grid(
@@ -79,6 +83,7 @@ const skin = {
 const sfx = Audio.sfx({
   jump: { shape: "square", freq: { from: 520, to: 880 }, ms: 90, volume: 0.4 },
   coin: Audio.recipes.coin(), // [#36]
+  dash: Audio.recipes.whoosh(),
   thud: { noise: true, freq: 120, ms: 150, volume: 0.6, filter: { type: "lowpass", freq: { from: 200, to: 60 } } },
 });
 
@@ -113,16 +118,18 @@ function makeHeroImage(): HTMLCanvasElement {
     const h = 24 - squish;
     g.save();
     g.translate(x + 16, y + 32);
-    g.transform(1, 0, lean, 1, 0, 0); // run lean
+    g.transform(1, 0, lean, 1, 0, 0); // run lean (kept tiny: frames must stay in-cell)
     g.fillStyle = row === 2 ? "#ffd166" : "#4ecdc4";
-    g.fillRect(-11, -h, 22, h);
+    // Body fills the collision box (1px cell margin so frames never bleed
+    // into sheet neighbours): flush against walls when colliding sideways.
+    g.fillRect(-15, -h, 30, h);
     g.fillStyle = "#1b2528";
-    g.fillRect(-6, -h + 6, 4, 4); // eyes
-    g.fillRect(2, -h + 6, 4, 4);
+    g.fillRect(-8, -h + 6, 5, 5); // eyes
+    g.fillRect(3, -h + 6, 5, 5);
     g.restore();
   };
   for (let f = 0; f < 4; f++) drawHero(f, 0, f === 1 || f === 2 ? 1 : 0, 0); // idle breathe
-  for (let f = 0; f < 6; f++) drawHero(f, 1, f % 3 === 0 ? 2 : 0, f % 2 === 0 ? 0.15 : -0.05); // run
+  for (let f = 0; f < 6; f++) drawHero(f, 1, f % 3 === 0 ? 2 : 0, f % 2 === 0 ? 0.06 : -0.03); // run
   drawHero(0, 2, -3, 0); // jump stretch
   return c;
 }
@@ -142,6 +149,13 @@ let squash = Anim.animate({ from: 1, to: 1, ms: 1 }); // [#27]
 
 // [#32] Content: clock-derived, GC is the teardown.
 const gate = Timers.jumpGate({ coyoteMs: 100, bufferMs: 120 }); // [#11]
+// Wall jumps get their own coyote window; dashes a duration + cooldown.
+const wallCoyote = Timers.window(100);
+const dashActive = Timers.window(130);
+const dashCooldown = Timers.cooldown(400);
+let wallDir = 0; // -1 = wall on our left, +1 = on our right
+let canAirDash = true;
+let dashDir = 1;
 const fx = Particles.create(); // [#28]
 
 const Coin = ECS.component<Vec2>(); // [#21]
@@ -180,18 +194,74 @@ function resetLevel(): void {
 
 function updateWorld(): void {
   const run = input.axis("left", "right"); // [#8]
-  player.vel.x = Mathf.approach(player.vel.x, run * MOVE, ACCEL);
+  wallCoyote.tick(Loop.step);
+  dashActive.tick(Loop.step);
+  dashCooldown.tick(Loop.step);
 
-  player.vel.y += GRAVITY;
+  const dashing = dashActive.active;
+  if (dashing) {
+    // A dash owns the velocity: fixed speed, gravity suspended, trail.
+    player.vel.x = dashDir * DASH_SPEED;
+    player.vel.y = 0;
+    fx.emit({
+      at: { x: player.x + player.w / 2, y: player.y + player.h / 2 },
+      speed: [0.1, 0.6],
+      life: [120, 260],
+      size: [2, 4],
+      color: "#9ee7ff",
+    });
+  } else {
+    player.vel.x = Mathf.approach(player.vel.x, run * MOVE, ACCEL);
+    player.vel.y += GRAVITY;
+  }
+
+  // Ground jump (coyote + buffer via the gate), else wall jump (its own
+  // coyote window charged by recent wall contact).
   if (gate.try(input.jump.pressed, player.grounded)) {
     player.vel.y = JUMP;
     sfx.jump.play(); // [#36]
+  } else if (input.jump.pressed && !player.grounded && wallCoyote.active) {
+    player.vel.y = JUMP * 0.9;
+    player.vel.x = -wallDir * WALL_JUMP_X;
+    facing = -wallDir;
+    wallCoyote.expire(); // one jump per wall touch
+    dashActive.expire(); // a wall jump interrupts a dash
+    sfx.jump.play({ pitch: 1.25 });
+    fx.burst({
+      at: { x: player.x + (wallDir > 0 ? player.w : 0), y: player.y + player.h / 2 },
+      count: 6,
+      speed: [0.5, 2],
+      life: [120, 240],
+      size: [1, 2],
+      color: "#9ee7ff",
+    });
   }
-  if (input.jump.released && player.vel.y < 0) player.vel.y *= JUMP_CUTOFF;
+  if (input.jump.released && player.vel.y < 0 && !dashing) player.vel.y *= JUMP_CUTOFF;
+
+  // Dash: on the edge, off cooldown, once per airtime (refreshes on landing).
+  if (input.dash.pressed && dashCooldown.ready() && (player.grounded || canAirDash)) {
+    if (!player.grounded) canAirDash = false;
+    dashDir = run !== 0 ? Math.sign(run) : facing;
+    facing = dashDir;
+    dashActive.charge();
+    dashCooldown.use();
+    sfx.dash.play();
+    Camera.shake(2, 100); // [#29]
+  }
 
   // [#14]/[#40] Policy path against the tilemap: grid broadphase for free.
   const hit = Collision.moveAndSlide(player, level);
   Vec2.clampRect(player, 0, 0, level.rect.w - player.w, level.rect.h - player.h); // [#10]
+
+  // Wall state (from this step's contacts): recent touch charges the wall
+  // coyote; pressing into the wall while falling becomes a wall slide.
+  if (!player.grounded && (hit.left || hit.right)) {
+    wallDir = hit.left ? -1 : 1;
+    wallCoyote.charge();
+    dashActive.expire(); // dashing into a wall ends the dash
+    if (run === wallDir && player.vel.y > WALL_SLIDE) player.vel.y = WALL_SLIDE;
+  }
+  if (player.grounded) canAirDash = true;
 
   ecs.each(Coin, (e, c) => {
     // [#22] safe despawn-in-iteration
@@ -203,8 +273,8 @@ function updateWorld(): void {
     }
   });
 
-  if (run !== 0) facing = Math.sign(run);
-  anim.set(!player.grounded ? "jump" : Math.abs(player.vel.x) > 0.5 ? "run" : "idle"); // [#25]
+  if (run !== 0 && !dashing) facing = Math.sign(run);
+  anim.set(!player.grounded || dashing ? "jump" : Math.abs(player.vel.x) > 0.5 ? "run" : "idle"); // [#25]
 
   if (player.grounded && !wasGrounded) {
     squash = Anim.animate({ from: 0.6, to: 1, ms: 150, ease: Mathf.easeOut }); // [#27]
@@ -250,6 +320,7 @@ const scenes = Scenes.create({
     draw() {
       UI.text("API LAB", { anchor: "center", y: -30, size: 32 }); // [#33]
       UI.text("Space to start", { anchor: "center", y: 10, color: "#888" });
+      UI.text("run · jump · wall jump · Shift to dash", { anchor: "center", y: 36, color: "#555" });
     },
   },
   playing: {

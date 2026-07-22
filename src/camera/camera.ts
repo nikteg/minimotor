@@ -212,7 +212,10 @@ export function createCamera(options: CameraOptions = {}): CameraLens {
       ctx.translate(-(r.x + sh.x), -(r.y + sh.y));
     } else {
       ctx.scale(state.zoom, state.zoom);
-      ctx.translate(-(state.x + sh.x), -(state.y + sh.y));
+      // Whole-pixel translate: keeps integer world geometry on integer
+      // device pixels — no tile seams, no sprite shimmer. A <1px quantize
+      // of camera motion is imperceptible.
+      ctx.translate(-Math.round(state.x + sh.x), -Math.round(state.y + sh.y));
     }
   }
 
@@ -299,8 +302,8 @@ export function createCamera(options: CameraOptions = {}): CameraLens {
       const ctx = Draw.ctx;
       ctx.save();
       ctx.translate(
-        -(state.x + sh.x) * factor * state.zoom,
-        -(state.y + sh.y) * factor * state.zoom,
+        -Math.round((state.x + sh.x) * factor * state.zoom),
+        -Math.round((state.y + sh.y) * factor * state.zoom),
       );
       try {
         fn();

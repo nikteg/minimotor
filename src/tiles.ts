@@ -278,7 +278,9 @@ export function grid<L extends Record<string, TileSpec>>(
           const y = cy * size;
           if (typeof value === "string") {
             ctx.fillStyle = value;
-            ctx.fillRect(x, y, size, size);
+            // A hair of overlap so fractional transforms can't antialias
+            // hairline gaps between neighbouring fills.
+            ctx.fillRect(x, y, size + 0.5, size + 0.5);
           } else {
             ctx.drawImage(value.image, value.sx, value.sy, value.sw, value.sh, x, y, size, size);
           }
