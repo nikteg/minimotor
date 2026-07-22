@@ -182,6 +182,31 @@ send, onMessage, close()`; star topology + host-healing internal; room
   client-server (WS, server = host); server-side `room.sync` down;
   `createPresence` ≈ server roster, `serverTick` ≈ server loop. (#53)
 
+## Post-port follow-ups (from the sample review round)
+
+- **Multi-image sprite states — API gap.** `Anim.sheet(image, { states })`
+  models ONE atlas image with states as rows. Sprite sets that ship one image
+  PER state (Pixel Frog / many itch.io kits — idle.png, run.png, …) have no
+  first-class home now that `Anim.states({...})` retired. Options to design:
+  a multi-image `Anim.states({ idle: sheetA, run: sheetB }, initial)` that
+  returns a cursor, or documenting the `Record<state, SheetCursor>` +
+  `draw(cursors[fsm.current])` pattern as the blessed approach.
+- **pixel-adventure needs a full rewrite** (quarantined from the TS gate).
+  It was never ported off the old API in the first sample pass (still
+  `Minimotor.*` destructuring, `Input.actions`, `Camera.createCamera`/
+  `shakeX`, `anim.draw`, numeric `Tiles.grid`+`moveAABB`+`solidInRect`,
+  positional `Particles.burst`, `Game.drawLetterbox`, `update(stepMs)`).
+  Rewrite touches: named imports; `Input.map`; per-state sheet cursors (see
+  the gap above); numeric level.json tiles → ASCII `Tiles.grid` + legend +
+  custom atlas render keyed on `map.at(x,y) === "#"`; `moveAABB` →
+  `Collision.moveAndSlide` (remap its bottom-center anchor to a top-left
+  MoverBody); `Camera.follow` + `Camera.render` (drop shakeX/manual cam math);
+  `Stage.init({ resolution })`; `Particles.create`; `dt = Loop.step/1000`.
+- **Retire `Game.letterbox`/`drawLetterbox`/`letterboxView`** — superseded by
+  `Stage.init({ resolution })`. Remaining users after the sample sweep:
+  pocket, pixel-adventure (solitaire already migrated). Remove once those two
+  are on `resolution`.
+
 ## Round-2 exercises (own samples, not in this plan's scope)
 
 - **Physics2D**: `vel: Vec2` (#12), `step()` no-arg explicit, `attach`/
