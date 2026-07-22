@@ -5,18 +5,63 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Road Rivals - Minimotor</title>
     <style>
-      * { box-sizing: border-box; }
-      body { margin: 0; min-height: 100vh; background: #080d10; color: #dce7e7; font-family: system-ui, sans-serif; }
-      header { height: 54px; display: flex; align-items: center; justify-content: space-between; padding: 0 18px; border-bottom: 1px solid #23343a; }
-      h1 { margin: 0; font-size: 17px; letter-spacing: .08em; }
-      p { margin: 0; color: #82969c; font-size: 12px; }
-      .clients { height: calc(100vh - 54px); display: grid; grid-template-columns: 1fr 1fr; gap: 2px; background: #23343a; }
-      iframe { width: 100%; height: 100%; border: 0; background: #101719; }
-      @media (max-width: 800px) { .clients { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; } header p { display: none; } }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: #080d10;
+        color: #dce7e7;
+        font-family: system-ui, sans-serif;
+      }
+      header {
+        height: 54px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 18px;
+        border-bottom: 1px solid #23343a;
+      }
+      h1 {
+        margin: 0;
+        font-size: 17px;
+        letter-spacing: 0.08em;
+      }
+      p {
+        margin: 0;
+        color: #82969c;
+        font-size: 12px;
+      }
+      .clients {
+        height: calc(100vh - 54px);
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 2px;
+        background: #23343a;
+      }
+      iframe {
+        width: 100%;
+        height: 100%;
+        border: 0;
+        background: #101719;
+      }
+      @media (max-width: 800px) {
+        .clients {
+          grid-template-columns: 1fr;
+          grid-template-rows: 1fr 1fr;
+        }
+        header p {
+          display: none;
+        }
+      }
     </style>
   </head>
   <body>
-    <header><h1>ROAD RIVALS · TWO CLIENTS</h1><p>Join each game from its centered spectator panel</p></header>
+    <header>
+      <h1>ROAD RIVALS · TWO CLIENTS</h1>
+      <p>Join each game from its centered spectator panel</p>
+    </header>
     <main class="clients">
       <iframe src="./client.html?client=1" title="Road Rivals client one"></iframe>
       <iframe src="./client.html?client=2" title="Road Rivals client two"></iframe>

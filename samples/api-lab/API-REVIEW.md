@@ -81,10 +81,10 @@ friction; `Mathf.clamp` at hand without importing anything extra.
    - Verdict: **change** (agreed)
    - Sketch (revised with #9 — geometry accepts structural shapes too):
      ```ts
-     Draw.rect(x, y, w, h, color);   // positional, for literals
-     Draw.rect(rect, color);         // anything with {x, y, w, h} — your
-                                     // player object IS a Rect structurally
-     Draw.circle(pos, r, color);     // anything with {x, y}
+     Draw.rect(x, y, w, h, color); // positional, for literals
+     Draw.rect(rect, color); // anything with {x, y, w, h} — your
+     // player object IS a Rect structurally
+     Draw.circle(pos, r, color); // anything with {x, y}
      Draw.line(a, b, color);
      ```
      A `(pos, size, color)` variant was considered and cut: the `Rect`
@@ -140,15 +140,15 @@ actions fusing keyboard (arrows + WASD) and gamepad; movement via
      vectors in draw.rect etc too"): positional args stay for literals, and a
      second overload accepts the structural type — `Vec2` where a point is
      meant, `Rect` where a box is meant (see #7's revised sketch). Vec2 is
-     still not a *required* currency; it's just always accepted.
+     still not a _required_ currency; it's just always accepted.
    - Verdict: **change** (agreed)
 
 10. **Vec2 clamp utilities** (Niklas requested). All in-place, following #9:
     ```ts
-    Vec2.clamp(v, min, max);            // component-wise; min/max are Vec2s
-    Vec2.clampRect(v, x, y, w, h);      // keep point inside a region…
-    Vec2.clampRect(v, rect);            // …with the structural overload (#7 rule)
-    Vec2.limit(v, maxLen);              // magnitude clamp — velocity caps
+    Vec2.clamp(v, min, max); // component-wise; min/max are Vec2s
+    Vec2.clampRect(v, x, y, w, h); // keep point inside a region…
+    Vec2.clampRect(v, rect); // …with the structural overload (#7 rule)
+    Vec2.limit(v, maxLen); // magnitude clamp — velocity caps
     ```
     `limit` is the sneaky-important one for games (max speed without
     distorting direction).
@@ -165,7 +165,7 @@ The up/down input actions were removed — gravity owns Y now.
 
 11. **The arcade `Physics` module is too magic.** Today: module-level
     `GRAVITY = 0.7` and `JUMP_FORCE = -13.5` constants (feel constants are
-    *game* data — every game tunes them), and `applyGravity(body, floorY)`
+    _game_ data — every game tunes them), and `applyGravity(body, floorY)`
     fuses integration with floor collision. Meanwhile the genuinely hard part
     of jumping — coyote time + input buffering — lives elsewhere.
     - Claude's proposal: **retire `Physics.applyGravity`/`jump`/
@@ -210,6 +210,7 @@ call. The floor is now just another solid.
     ordering, don't tunnel, derive grounded/bonk. That loop is the most
     error-prone code beginners write. Godot's `move_and_slide` proves the
     right altitude:
+
     ```ts
     const hit = Collision.slide(player, player.vel, platforms);
     player.grounded = hit.down;
@@ -220,7 +221,7 @@ call. The floor is now just another solid.
     - Returns contact flags `{ up, down, left, right }` as a reused scratch
       object (read, don't hold).
     - Deliberately does NOT touch velocity or decide grounding — what a
-      contact *means* stays game code (one-way platforms, bouncy walls,
+      contact _means_ stays game code (one-way platforms, bouncy walls,
       wall-jumps all stay possible on top).
     - Solids are plain structural `Rect[]` (#9) — the same objects Draw.rect
       renders.
@@ -247,11 +248,11 @@ call. The floor is now just another solid.
     - respects `oneWay` flags;
     - still returns the contacts scratch object (wall-jumps read
       `hit.left`/`hit.right` even on the easy path).
-    Anything with different policy (bounce, sticky walls, no grounded
-    concept) drops one altitude to `Collision.slide`, which never touches
-    `vel` or `grounded`. `moveAndSlide` is ~10 lines implemented on `slide` —
-    cheap to own, and it encodes the two lines everyone writes subtly wrong
-    (zero only the blocked axis; grounded from this step's down contact).
+      Anything with different policy (bounce, sticky walls, no grounded
+      concept) drops one altitude to `Collision.slide`, which never touches
+      `vel` or `grounded`. `moveAndSlide` is ~10 lines implemented on `slide` —
+      cheap to own, and it encodes the two lines everyone writes subtly wrong
+      (zero only the blocked axis; grounded from this step's down contact).
     - Verdict: **change** (agreed in discussion)
 
 ---
@@ -268,17 +269,18 @@ game code never reads the viewport.
 15. **A camera always exists — configure it, don't create it.** (Shaped by
     Niklas: "would it make sense to require a camera?") Today's
     `createCamera({ worldW, worldH, viewW, viewH, damping, deadZoneX,
-    deadZoneY })` has two problems: `viewW`/`viewH` is the #1 stale-snapshot
+deadZoneY })` has two problems: `viewW`/`viewH` is the #1 stale-snapshot
     bug reborn, and the pairs want to be shapes (#9). But the deeper fix is
     architectural: the engine already runs on default-instance singletons
     (`Stage`/`Loop`/`Keys` + `createGame` escape hatch) — the camera should
     be one too. `Stage.init` brings an identity camera (0, 0, zoom 1); games
     that never touch it render exactly as before. Configuring it:
+
     ```ts
     Camera.follow(player, {
-      world,                        // Rect-ish; camera clamps itself to it
+      world, // Rect-ish; camera clamps itself to it
       deadzone: { w: 160, h: 100 },
-      damping: 0.15,                // per-step lerp factor (ease-out)
+      damping: 0.15, // per-step lerp factor (ease-out)
     });
     ```
     - No view size in the config — the camera reads the live viewport (#1).
@@ -292,8 +294,9 @@ game code never reads the viewport.
 16. **Blocks set the drawing space; SCREEN is the default.** (Went through
     three designs in discussion: twin namespaces → Layer instances → blocks.)
     There is exactly ONE primitive set — `Draw.rect/line/circle/text` — and
-    it draws in the *ambient* space, which is the screen at top level.
+    it draws in the _ambient_ space, which is the screen at top level.
     `Camera.render(fn)` runs its callback in world space:
+
     ```ts
     draw() {
       Camera.render(() => { /* world: platforms, player, world text */ });
@@ -301,6 +304,7 @@ game code never reads the viewport.
       UI.text("Score", { x: 10, y: 8 });
     }
     ```
+
     Why blocks beat the alternatives:
     - vs twin namespaces (`Draw.*`/`UI.*` twins): no duplicated primitives;
       helpers inherit the caller's space with no `pen` parameter threading.
@@ -309,24 +313,25 @@ game code never reads the viewport.
       the enclosing block) — accepted.
     - vs `begin()/end()`: the callback IS the push/pop pair; you can't
       forget the pop.
-    Why SCREEN default (Niklas's call): failure modes swap loudness — a
-    forgotten `Camera.render` makes the world visibly stop scrolling
-    (immediate, unshippable), while world-default's forgotten screen wrapper
-    gives a quietly drifting HUD (discovered weeks later). Also makes the
-    sample's progression honest: increments 1–4 draw at top level with no
-    camera and that's *true*, not "identity transform by luck"; increment
-    5's diff is exactly the concept arriving. LÖVE precedent
-    (screen-until-transformed).
-    `UI.*` shrinks to what it really is: themed, input-aware WIDGETS,
-    always screen space regardless of ambient blocks (they own hit-testing).
+      Why SCREEN default (Niklas's call): failure modes swap loudness — a
+      forgotten `Camera.render` makes the world visibly stop scrolling
+      (immediate, unshippable), while world-default's forgotten screen wrapper
+      gives a quietly drifting HUD (discovered weeks later). Also makes the
+      sample's progression honest: increments 1–4 draw at top level with no
+      camera and that's _true_, not "identity transform by luck"; increment
+      5's diff is exactly the concept arriving. LÖVE precedent
+      (screen-until-transformed).
+      `UI.*` shrinks to what it really is: themed, input-aware WIDGETS,
+      always screen space regardless of ambient blocks (they own hit-testing).
     - Verdict: **change** (agreed)
 
 17. **World-space text + coordinate converters** (from Niklas: "how would I
     draw UI.text in camera space?"). With #16, `Draw.text` is one primitive
     drawing in the ambient space — inside `Camera.render` it's world text
     (damage numbers, name tags; zooms and shakes), at top level it's screen
-    text. `UI.text` remains the themed HUD *widget* (#6). Plus lens
+    text. `UI.text` remains the themed HUD _widget_ (#6). Plus lens
     converters for crossing spaces without drawing:
+
     ```ts
     Camera.toScreen(pos, out?);
     Camera.toWorld(pos, out?);   // Camera.toWorld(Pointer) = mouse picking
@@ -344,6 +349,7 @@ game code never reads the viewport.
 19. **A camera is a lens: world rect → screen rect.** Main camera: visible
     world slice → whole canvas. Minimap: whole world → corner rect. Split
     screen: two cameras → two halves. One abstraction, one API:
+
     ```ts
     const minimap = createCamera({ world, fit: world });
     Camera.render(minimap, { into: { x: 10, y: 40, w: 200, h: 50 } }, () => {
@@ -352,6 +358,7 @@ game code never reads the viewport.
       Draw.rect(Camera.rect, "#ffffff22"); // main cam's view rect = viewfinder
     });
     ```
+
     `into` clips; omitted `into` = full canvas; `Camera.render(fn)` with no
     camera argument = the default camera (#16's world block). `Camera.rect`
     being a structural Rect (#9) makes the viewfinder a one-liner.
@@ -418,21 +425,22 @@ motion. Pulled `Assets` and the `Anim`/`Tween` seam into review.
     autocompletes, `art.herp` doesn't compile. Top-level await makes the
     module boundary the loading screen (progress callbacks stay available
     for games that want a real loading bar). Today's `createAssets()` store
-    + manifest types exist but don't give per-key inference.
-    - Verdict: **change** (agreed)
+    - manifest types exist but don't give per-key inference.
+    * Verdict: **change** (agreed)
 
 25. **Spritesheet: config + cursor split, typed states.**
+
     ```ts
     const heroSheet = Anim.sheet(art.hero, {
-      frame: { w: 32, h: 32 },              // structural (#9)
+      frame: { w: 32, h: 32 }, // structural (#9)
       states: {
         idle: { row: 0, frames: 4, fps: 6 },
-        run:  { row: 1, frames: 6, fps: 12 },
+        run: { row: 1, frames: 6, fps: 12 },
         jump: { row: 2, frames: 1 },
       },
     });
-    const anim = heroSheet.play("idle");    // per-entity playback cursor
-    anim.set(grounded ? "run" : "jump");    // typed: keyof states
+    const anim = heroSheet.play("idle"); // per-entity playback cursor
+    anim.set(grounded ? "run" : "jump"); // typed: keyof states
     ```
     - Sheet = shared immutable config; `play()` = cheap per-entity cursor
       (many entities, one sheet).
@@ -451,7 +459,7 @@ motion. Pulled `Assets` and the `Anim`/`Tween` seam into review.
     - Verdict: **change** (agreed)
 
 27. **Two tween systems is one too many.** Today `Anim.animate/sequence/
-    parallel` (Motion) and `Clock`/`Tween` both answer "value over time".
+parallel` (Motion) and `Clock`/`Tween` both answer "value over time".
     The sample's squash uses `Anim.animate({ from, to, ms, ease })` and it's
     fine — but the change-plan should bless ONE value-over-time API and fold
     the other into it (Claude's lean: keep `Anim.animate` as the surface,
@@ -480,13 +488,13 @@ scaled by fall speed (`impact` captured before `moveAndSlide` zeroes it),
       (dust behind + sparks in front = two systems, two draw positions;
       confetti in screen space vs debris in world space = two blocks) and
       scene lifecycle (create per scene, drop on teardown).
-    Alternatives rejected: engine singleton (inverts the moment a game needs
-    two systems), ECS-integration (forces ECS; particle perf wants pooled
-    arrays), self-drawing bursts (placement unanswerable).
-    `fx.burst({ at, count, speed, life, size, color })`: structural `at`,
-    `[min, max]` tuple ranges. The stepping law stands: SIMULATION
-    self-steps, DRAWING is one explicit `fx.draw()` call — order and space
-    are the game's decisions. Both laws go in the docs.
+      Alternatives rejected: engine singleton (inverts the moment a game needs
+      two systems), ECS-integration (forces ECS; particle perf wants pooled
+      arrays), self-drawing bursts (placement unanswerable).
+      `fx.burst({ at, count, speed, life, size, color })`: structural `at`,
+      `[min, max]` tuple ranges. The stepping law stands: SIMULATION
+      self-steps, DRAWING is one explicit `fx.draw()` call — order and space
+      are the game's decisions. Both laws go in the docs.
     - Verdict: **change** (agreed)
 
 29. **`Camera.shake` survived contact with reality — and `Contacts` gained
@@ -514,9 +522,9 @@ scaled by fall speed (`impact` captured before `moveAndSlide` zeroes it),
       retained emitter objects in component data (leak factory; would force
       despawn hooks into the ECS).
     - Particles as entities: stays rejected (#28) — pooled arrays win.
-    Fine print: `chance` is stateless probabilistic emission (slight
-    clumping, fine for juice); games needing deterministic `rate` keep the
-    accumulator in their own component data.
+      Fine print: `chance` is stateless probabilistic emission (slight
+      clumping, fine for juice); games needing deterministic `rate` keep the
+      accumulator in their own component data.
     - Verdict: **change** (agreed)
 
 ---
@@ -532,6 +540,7 @@ entire handoff.
     `Scenes.define("title", scene)` + `Scenes.go("title")` — stringly
     registration, same disease as #21. Ideal reuses the #8 inference
     pattern:
+
     ```ts
     const scenes = Scenes.create({ title: {...}, playing: {...} });
     scenes.go("playing");        // typed: keyof the map; "playnig" won't compile
@@ -575,11 +584,11 @@ entire handoff.
     - motions — `value = ease(clamp(elapsed / ms))`;
     - particle sims — advance in `draw()` by elapsed steps;
     - `jumpGate.try()` — updates internal timers from elapsed on call.
-    Nothing holds them → dropping the reference IS the teardown → scenes
-    need zero lifecycle API for content, and #28's taxonomy gets its
-    enforcement mechanism for free. (The default camera may register — it's
-    a platform facade and lives forever.) "Zero wiring" is now stated as:
-    **pull, don't push — derive from the clock, never register.**
+      Nothing holds them → dropping the reference IS the teardown → scenes
+      need zero lifecycle API for content, and #28's taxonomy gets its
+      enforcement mechanism for free. (The default camera may register — it's
+      a platform facade and lives forever.) "Zero wiring" is now stated as:
+      **pull, don't push — derive from the clock, never register.**
 
     Expanded (discussion): two mechanisms under the law —
     - **Closed-form**: store the birth certificate, compute on read.
@@ -590,9 +599,9 @@ entire handoff.
       `{lastReadStep, state}`, fold forward by elapsed steps on read,
       memoized per step. Same math a registered system would do; only the
       driver changes (reader, not registry).
-    Payoffs beyond lifecycle: unread content costs nothing; reads are pure
-    and testable (set clock, read, assert); evaluation order is the code's
-    read order, not hidden registry order.
+      Payoffs beyond lifecycle: unread content costs nothing; reads are pure
+      and testable (set clock, read, assert); evaluation order is the code's
+      read order, not hidden registry order.
     - Verdict: **change** (agreed)
 
 33. **Anchored HUD positioning.** Title/pause/cleared text wants "center of
@@ -641,13 +650,14 @@ scene's hooks.
     - Verdict: **change** (agreed)
 
 36. **Sfx: typed map of synth specs, content instances, jitter at play.**
+
     ```ts
     const sfx = Audio.sfx({
       jump: { shape: "square", freq: { from: 520, to: 880 }, ms: 90, volume: 0.4 },
       thud: { noise: true, freq: { from: 200, to: 60 }, ms: 150, volume: 0.6 },
     });
     sfx.jump.play();
-    sfx.coin.play({ pitch: [0.95, 1.15] });  // tuple = per-play random jitter
+    sfx.coin.play({ pitch: [0.95, 1.15] }); // tuple = per-play random jitter
     ```
     - Same typed-map + property-access house style as #8/#31.
     - **Convention guard discovered:** `[min, max]` tuples are RESERVED for
@@ -661,13 +671,13 @@ scene's hooks.
       SPECS, not opaque sounds, so they're tweakable and teachable:
       ```ts
       const sfx = Audio.sfx({
-        coin: Audio.recipes.coin(),                  // classic chime
-        boom: Audio.recipes.explosion({ ms: 400 }),  // override any field
+        coin: Audio.recipes.coin(), // classic chime
+        boom: Audio.recipes.explosion({ ms: 400 }), // override any field
         hurt: Audio.recipes.hit(),
       });
       ```
       Roster: `coin, jump, hit, explosion, laser, powerup, blip, click,
-      whoosh`. Each returns a plain SfxSpec — inspect it, tweak it, learn
+whoosh`. Each returns a plain SfxSpec — inspect it, tweak it, learn
       the synth vocabulary from it.
     - Verdict: **change** (agreed)
 
@@ -691,26 +701,26 @@ scene's hooks.
 38. **The mixer: default buses are platform, custom buses are content.**
     (From Niklas: "how does the audio mixer tie into everything?") The
     mixer is the routing graph `sound → bus → master`; each node has volume
-    + effects (reverb/lowpass/compressor).
-    - **Default buses ship with the engine** (`Audio.master`,
+    - effects (reverb/lowpass/compressor).
+    * **Default buses ship with the engine** (`Audio.master`,
       `Audio.buses.sfx`, `Audio.buses.music`) — stable, well-known knobs, so
       a settings screen is three sliders + `Storage`, zero plumbing. Sfx
       maps route to `buses.sfx` by default, music to `buses.music`.
-    - **Custom buses are content**: `Audio.bus({ reverb, lowpass })`;
+    * **Custom buses are content**: `Audio.bus({ reverb, lowpass })`;
       routing per-map (`Audio.sfx(spec, { bus })`) or per-play
       (`.play({ bus })`).
-    - **Environments are scene policy on bus params**:
+    * **Environments are scene policy on bus params**:
       `Audio.buses.sfx.fade({ reverb: 0.5 }, 400)` in a scene's
       `enter`/`exit` — every sound in the game gets the cave treatment, no
       individual sound told anything. (Sharpens #37: pause-duck can be
       instance-fade or bus-fade; scenes pick the altitude.)
-    - **Sidechain ducking is declarative bus config** (per-sound automatic,
+    * **Sidechain ducking is declarative bus config** (per-sound automatic,
       so not a scene event):
       `Audio.buses.music.duckUnder(Audio.buses.sfx, { amount: 0.3, ms: 120 })`.
       The one survivor of today's `Mixer` as a named concept.
-    - **Escape hatch**: no arbitrary graph API — `Audio.raw` exposes the
+    * **Escape hatch**: no arbitrary graph API — `Audio.raw` exposes the
       AudioContext, same drop-to-raw ethos as the canvas.
-    - Verdict: **change** (agreed)
+    * Verdict: **change** (agreed)
 
 ---
 
@@ -724,20 +734,25 @@ all derive from `level`. The hand-kept `world` const is gone.
 39. **ASCII levels with a legend — the level IS the source file.** Today:
     `Tiles.grid(data: number[][], config)` — a number matrix nobody can
     read. Ideal:
+
     ```ts
-    const level = Tiles.grid(`
+    const level = Tiles.grid(
+      `
     ......o.....
     .....===....
     ..P.........
     ############
-    `, {
-      size: 50,
-      legend: {
-        "#": { solid: true },
-        "=": { solid: true, oneWay: true }, // #13's flag
+    `,
+      {
+        size: 50,
+        legend: {
+          "#": { solid: true },
+          "=": { solid: true, oneWay: true }, // #13's flag
+        },
       },
-    });
+    );
     ```
+
     **Revised after Niklas's "wish I could use it more as data":** the
     legend is SEMANTICS ONLY — plain JSON flags, no colors, no selector
     objects. The entire level def (grid string + size + legend) is
@@ -773,15 +788,17 @@ all derive from `level`. The hand-kept `world` const is gone.
 41. **Tilesets & skins: presentation applied at the draw site.** (From
     Niklas: "how can it be combined with tilesets/atlas?", revised by "wish
     I could use it more as data".)
+
     ```ts
     const tiles = Tiles.set(art.tileset, {
-      size: 16,                                  // source cell size
+      size: 16, // source cell size
       names: { ground: [0, 0], plank: [2, 0] },
     });
     const skin = { "#": tiles.auto16(tiles.ground), "=": tiles.plank };
     // or the zero-asset tier:  const skin = { "#": "#3a3f4a", "=": "#31555a" };
     level.draw(skin);
     ```
+
     A skin is a plain `{ char: color | selector }` map handed to `draw` —
     appearance decided where drawing happens, per the drawing-is-explicit
     law. Same level, many skins: themes, seasons, and the minimap drawing
@@ -802,8 +819,8 @@ all derive from `level`. The hand-kept `world` const is gone.
     A `.draw()` method on the level drags the rendering layer into a pure
     data object we just made server-safe. Rendering moves to the renderer:
     ```ts
-    Draw.tiles(level, skin);    // was level.draw(skin)
-    Draw.particles(fx);         // was fx.draw() — same violation, milder
+    Draw.tiles(level, skin); // was level.draw(skin)
+    Draw.particles(fx); // was fx.draw() — same violation, milder
     ```
     The level keeps query methods (`spawns`, `rect`, solids source) — pure
     data questions, valid server-side. The rule in final form: the game
@@ -822,6 +839,7 @@ bound to the default buses (#38), persisted via `Storage` in the scene's
 `exit` hook.
 
 43. **Interaction model: return values, value-in/value-out.**
+
     ```ts
     if (UI.button("Resume")) scenes.pop();
     Audio.buses.music.volume = UI.slider("Music", Audio.buses.music.volume);
@@ -839,6 +857,7 @@ bound to the default buses (#38), persisted via `Storage` in the scene's
 
 44. **Layout: containers are blocks that auto-flow; identity is the label,
     scoped by containers.**
+
     ```ts
     UI.panel({ anchor: "center", w: 260, pad: 16, gap: 10 }, () => {
       UI.text("PAUSED", { size: 28 });
@@ -928,12 +947,14 @@ single-player with one `.catch(() => null)`.
     `Net.join()` return different session types with different vocabularies
     (`broadcast`/`send(guestId)` vs `send`), so the star topology leaks
     into game code as `if (isHost)` branches. Ideal:
+
     ```ts
     const room = await Net.join(signalUrl, { room: "api-lab" });
     room.id; room.peers; room.onJoin(fn); room.onLeave(fn);
     room.send(msg);                 // to everyone (host relays internally)
     room.onMessage((from, msg) => ...);
     ```
+
     Who hosts, relay fan-out, and host-drop healing (which the current
     rtc-session already does!) are INTERNAL. Room names fold matchmaking
     into `join`. Typed via `Net.join<Msg>`. The current asymmetric API
@@ -944,6 +965,7 @@ single-player with one `.catch(() => null)`.
     multiplayer game hand-assembles the same three parts: a send-timer, a
     per-peer interpolator, a timeout-pruned roster (`createInterpolator` +
     `createRoster` + a loop, today). Fused:
+
     ```ts
     const ghosts = Net.sync(room, {
       hz: 15,
@@ -951,6 +973,7 @@ single-player with one `.catch(() => null)`.
     });
     for (const g of ghosts) Draw.rect(g.x, g.y, 32, 32, "#4ecdc466");
     ```
+
     Numbers lerp between snapshots, other fields step; peers prune on
     timeout; self excluded; states are plain structural objects (#9's
     "JSON-safe for net snapshots" foretold this). The parts stay exported
@@ -968,6 +991,7 @@ single-player with one `.catch(() => null)`.
     justify-or-retire; Niklas correctly pushed back — ascent-style player
     state IS the justification: transition rules like "wall-jump only from
     wallslide" are where hand-rolled booleans become bug farms.)
+
     ```ts
     const state = Fsm.create({
       idle: { update: () => (run !== 0 ? "run" : undefined) },
@@ -977,6 +1001,7 @@ single-player with one `.catch(() => null)`.
     state.update();
     anim.set(state.current);   // the entire AnimBridge — one line, machinery retired
     ```
+
     Typed map (#8/#31 pattern), enter/exit hooks like scenes,
     transition-by-returned-name. The altitude ladder: scenes = game modes,
     Fsm = entity behavior, anim states = visuals driven by the Fsm.
@@ -1053,18 +1078,18 @@ Quick dispositions; each "flag" is a candidate for a round-2 review.
   `serverTick`): deliberately NOT judged by this sample (P2P only touched
   signaling). Server-authoritative games are a different genre of consumer
   — round-2 review with its own sample (road-rivals is the corpus).
-    - `Tiles.set` is the space-indexed cousin of `Anim.sheet` (same family:
-      image + grid → cells; sheet indexes by time, set by name). Source
-      cell size scales to the map's world tile size — the two never need
-      to agree.
-    - Tile behaviors are cell SELECTORS, not systems:
-      `tiles.pick(cells, weights)` — per-cell variants, seeded by cell
-      coords (deterministic, stateless, #32 applied to aesthetics);
-      `tiles.anim(cells, { fps })` — Clock.game-derived (pauses with the
-      world), coord-offset phase; `tiles.auto16(base)` — autotiling via the
-      standard 16-cell bitmask layout (neighbors sharing the legend char),
-      escape hatch: `tile: (neighbors) => cell`.
-    - Cheap by construction: selectors are per tile KIND; pure functions of
-      (coords, neighbors, clock) → static layers bakeable offscreen.
-    - `Sprites.atlas`/`packAtlas` stay as the general tools underneath.
-    - Verdict: **change** (agreed)
+  - `Tiles.set` is the space-indexed cousin of `Anim.sheet` (same family:
+    image + grid → cells; sheet indexes by time, set by name). Source
+    cell size scales to the map's world tile size — the two never need
+    to agree.
+  - Tile behaviors are cell SELECTORS, not systems:
+    `tiles.pick(cells, weights)` — per-cell variants, seeded by cell
+    coords (deterministic, stateless, #32 applied to aesthetics);
+    `tiles.anim(cells, { fps })` — Clock.game-derived (pauses with the
+    world), coord-offset phase; `tiles.auto16(base)` — autotiling via the
+    standard 16-cell bitmask layout (neighbors sharing the legend char),
+    escape hatch: `tile: (neighbors) => cell`.
+  - Cheap by construction: selectors are per tile KIND; pure functions of
+    (coords, neighbors, clock) → static layers bakeable offscreen.
+  - `Sprites.atlas`/`packAtlas` stay as the general tools underneath.
+  - Verdict: **change** (agreed)

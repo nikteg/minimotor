@@ -5,3 +5,4 @@
 // (the default-game global + its namespaces).
 export * from "./game.js";
 export * from "./facade.js";
+export * from "./keycodes.js";

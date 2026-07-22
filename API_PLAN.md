@@ -1,7 +1,7 @@
 # API_PLAN — the minimotor API redesign
 
 Distilled from the **api-lab** dogfooding exercise (2026-07-21/22): a sample
-game built increment-by-increment against the API we *wish* existed, with
+game built increment-by-increment against the API we _wish_ existed, with
 every decision debated and verdicted. Full rationale, sketches, and quotes
 live in `samples/api-lab/API-REVIEW.md` (cited as `#n` throughout); the
 aspirational usage code is `samples/api-lab/src/main.ts`. 53 items: 51
@@ -13,8 +13,8 @@ parallelizable once Phase 0–1 land.
 ## Design laws (cross-cutting — enforce in review, document in ROADMAP)
 
 1. **Structural plain data.** `Vec2 {x,y}` / `Rect {x,y,w,h}` as interfaces
-   + function namespaces, never classes. Anything with the fields IS the
-   type. JSON-safe throughout. (#9)
+   - function namespaces, never classes. Anything with the fields IS the
+     type. JSON-safe throughout. (#9)
 2. **Typed maps, property access.** Named-thing collections are inferred
    maps: `Input.map`, `Scenes.create`, `Audio.sfx`, `Anim.sheet` states,
    `Fsm.create`. No stringly lookups; literal unions + `(string & {})`
@@ -41,7 +41,7 @@ parallelizable once Phase 0–1 land.
 ## Phase 0 — Foundations (additive, nothing breaks)
 
 - `Vec2` interface + function namespace: `add, sub, scale, addScaled, len,
-  norm, dot, dist, lerp, angle, rotate`, `out`-param variants; `clamp`,
+norm, dot, dist, lerp, angle, rotate`, `out`-param variants; `clamp`,
   `clampRect` (positional + Rect overloads), `limit`. (#9, #10)
 - `Rect` stays; geometry helpers accept structural overloads.
 - `KeyCode` literal union + `(string & {})`; `PadButton` +
@@ -70,7 +70,7 @@ parallelizable once Phase 0–1 land.
   screen; `into` clips); `Camera.layer(factor, fn)` = parallax (replaces
   `scrollColumns`). (#16, #18, #19)
 - Default camera always exists (identity); `Camera.follow(target, { world,
-  deadzone, damping })`; `Camera.x/y/zoom/rect`; `Camera.shake(mag, ms)`
+deadzone, damping })`; `Camera.x/y/zoom/rect`; `Camera.shake(mag, ms)`
   (absorbs `camera/shake.ts`); `Camera.toWorld/toScreen`. (#15, #17, #29)
 - `Draw.sprite(animCursor, rect, { flipX, scaleY, ... })`;
   `Draw.tiles(level, skin)`; `Draw.particles(sys)`. (#26, #41, #42)
@@ -103,7 +103,7 @@ parallelizable once Phase 0–1 land.
   `Collision.moveAndSlide(body, solids)` (policy: zeroes blocked vel, sets
   `grounded`); `Contacts = { up, down, left, right, impact }`.
   `Solid = Rect & { oneWay? }`. Solid **sources**: `Solid[] | TileMap |
-  mixed array`. (#13, #14, #29, #40)
+mixed array`. (#13, #14, #29, #40)
 - Arcade `Physics` module retires (`GRAVITY`/`JUMP_FORCE`/`applyGravity`/
   `jump`/`variableJump`) — feel constants are game data. **Breaking.** (#11)
 - `Timers.jumpGate({ coyoteMs, bufferMs })` → `gate.try(pressed, grounded)`.
@@ -124,7 +124,7 @@ parallelizable once Phase 0–1 land.
 - `Anim.sheet(img, { frame, states })` + `sheet.play(state)` cursors
   (self-deriving, same-state `set` is a no-op, typed states). (#25)
 - `Particles.create()` (no singleton); `burst({ at, count, speed, life,
-  size, color })`; immediate-mode `emit({ at, chance, ... })` — the
+size, color })`; immediate-mode `emit({ at, chance, ... })` — the
   each-loop is the attachment; no Emitter component. (#28, #30)
 - Tiles: `Tiles.grid(ascii, { size, legend })` — legend = semantics only
   (JSON-pure, server-collidable); marker rule (`spawns`, `spawnOne`);
@@ -171,7 +171,7 @@ parallelizable once Phase 0–1 land.
 ## Phase 10 — Net
 
 - Symmetric `Net.join(url, { room }) → Room`: `id, peers, onJoin, onLeave,
-  send, onMessage, close()`; star topology + host-healing internal; room
+send, onMessage, close()`; star topology + host-healing internal; room
   names fold matchmaking in. Asymmetric host/join stays one tier down.
   (#48)
 - `Net.sync(room, { hz, state })` → iterable of interpolated peer states
@@ -196,17 +196,17 @@ parallelizable once Phase 0–1 land.
 
 ## Breaking changes register
 
-| Change | Item | Blast radius |
-|---|---|---|
-| `update()` loses `stepMs` | #5 | every sample using the param |
-| Arcade `Physics` retires | #11 | samples using applyGravity/jump |
-| `vx/vy` → `vel: Vec2` (Body2D & friends) | #12 | physics samples |
-| `ECS.world()` → `ECS.create()`, `World` type rename | #23 | ECS consumers |
-| `Text.*` leaves public tier | #6 | HUD code → `UI.text` |
-| Screen-default draw space (world needs `Camera.render`) | #16 | every camera sample |
-| `level.draw`/`fx.draw` → `Draw.tiles`/`Draw.particles` | #42 | tiles/particle samples |
-| `Tween` folds into `Anim` | #27 | tween consumers |
-| `Mixer` absorbed into buses | #38 | audio samples |
+| Change                                                  | Item | Blast radius                    |
+| ------------------------------------------------------- | ---- | ------------------------------- |
+| `update()` loses `stepMs`                               | #5   | every sample using the param    |
+| Arcade `Physics` retires                                | #11  | samples using applyGravity/jump |
+| `vx/vy` → `vel: Vec2` (Body2D & friends)                | #12  | physics samples                 |
+| `ECS.world()` → `ECS.create()`, `World` type rename     | #23  | ECS consumers                   |
+| `Text.*` leaves public tier                             | #6   | HUD code → `UI.text`            |
+| Screen-default draw space (world needs `Camera.render`) | #16  | every camera sample             |
+| `level.draw`/`fx.draw` → `Draw.tiles`/`Draw.particles`  | #42  | tiles/particle samples          |
+| `Tween` folds into `Anim`                               | #27  | tween consumers                 |
+| `Mixer` absorbed into buses                             | #38  | audio samples                   |
 
 Migration: the 35 existing samples are the test corpus — port them
 phase-by-phase; each port validates the phase and updates the showcase.

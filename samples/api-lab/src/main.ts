@@ -4,7 +4,26 @@
 // Agreed changes are tagged [#n] — details in ../API-REVIEW.md.
 //
 // Increment 13: net — other players appear as ghosts.
-import { Anim, Assets, Audio, Camera, Collision, Draw, ECS, Input, Loop, Mathf, Net, Particles, Scenes, Stage, Tiles, Timers, UI, Vec2 } from "minimotor";
+import {
+  Anim,
+  Assets,
+  Audio,
+  Camera,
+  Collision,
+  Draw,
+  ECS,
+  Input,
+  Loop,
+  Mathf,
+  Net,
+  Particles,
+  Scenes,
+  Stage,
+  Tiles,
+  Timers,
+  UI,
+  Vec2,
+} from "minimotor";
 
 // [#1]/[#3] Live viewport, engine-owned background.
 Stage.init("game", { background: "#222" });
@@ -14,9 +33,9 @@ const art = await Assets.load({ hero: "assets/hero.png", theme: "assets/theme.og
 
 // [#8] Named actions; zero wiring.
 const input = Input.map({
-  left:  ["ArrowLeft",  "KeyA", "pad:dpad-left",  "pad:lstick-left"],
+  left: ["ArrowLeft", "KeyA", "pad:dpad-left", "pad:lstick-left"],
   right: ["ArrowRight", "KeyD", "pad:dpad-right", "pad:lstick-right"],
-  jump:  ["Space", "ArrowUp", "KeyW", "pad:a"],
+  jump: ["Space", "ArrowUp", "KeyW", "pad:a"],
   pause: ["Escape", "pad:start"],
 });
 
@@ -106,11 +125,12 @@ const ghosts = room
 // [#32] Content: clock-derived, GC is the teardown.
 const gate = Timers.jumpGate({ coyoteMs: 100, bufferMs: 120 }); // [#11]
 const fx = Particles.create(); // [#28]
-const heroSheet = Anim.sheet(art.hero, { // [#25]
+const heroSheet = Anim.sheet(art.hero, {
+  // [#25]
   frame: { w: 32, h: 32 },
   states: {
     idle: { row: 0, frames: 4, fps: 6 },
-    run:  { row: 1, frames: 6, fps: 12 },
+    run: { row: 1, frames: 6, fps: 12 },
     jump: { row: 2, frames: 1 },
   },
 });
@@ -168,11 +188,19 @@ function updateWorld() {
   const hit = Collision.moveAndSlide(player, level);
   Vec2.clampRect(player, level.rect); // [#10] world edges, structural overload
 
-  ecs.each(Coin, (e, c) => { // [#22] safe despawn-in-iteration
+  ecs.each(Coin, (e, c) => {
+    // [#22] safe despawn-in-iteration
     if (Collision.circleRect(c, 10, player)) {
       ecs.despawn(e);
       score += 1;
-      fx.burst({ at: c, count: 12, speed: [1, 3], life: [200, 400], size: [1, 3], color: "#ffd166" }); // [#28]
+      fx.burst({
+        at: c,
+        count: 12,
+        speed: [1, 3],
+        life: [200, 400],
+        size: [1, 3],
+        color: "#ffd166",
+      }); // [#28]
       sfx.coin.play({ pitch: [0.95, 1.15] }); // [#36] tuple = per-play jitter
     }
   });
@@ -184,7 +212,11 @@ function updateWorld() {
     squash = Anim.animate({ from: 0.6, to: 1, ms: 150, ease: "easeOut" }); // [#27]
     fx.burst({
       at: { x: player.x + player.w / 2, y: player.y + player.h },
-      count: 8, speed: [0.5, 2], life: [150, 300], size: [1, 2], color: "#999",
+      count: 8,
+      speed: [0.5, 2],
+      life: [150, 300],
+      size: [1, 2],
+      color: "#999",
     });
     if (hit.impact > 8) {
       Camera.shake(Mathf.remap(hit.impact, 8, 16, 1, 5), 150); // [#29]
@@ -195,7 +227,8 @@ function updateWorld() {
 }
 
 function drawWorld() {
-  Camera.render(() => { // [#16] world block; top level is screen space
+  Camera.render(() => {
+    // [#16] world block; top level is screen space
     // [#42] Data never draws itself — Draw owns ALL rendering. The level
     //        and the particle sim are handed TO the renderer, like sprites.
     Draw.tiles(level, skin); // [#39/#41] culled to Camera.rect, for free
@@ -210,7 +243,8 @@ function drawWorld() {
     Draw.particles(fx); // [#28]/[#42]
   });
   UI.text(`Coins: ${score}/${TOTAL_COINS}`, { x: 10, y: 8, color: "#888" }); // [#6]
-  if (room) UI.text(`${room.peers.length + 1} online`, { anchor: "topRight", x: -10, y: 8, color: "#888" }); // [#33]
+  if (room)
+    UI.text(`${room.peers.length + 1} online`, { anchor: "topRight", x: -10, y: 8, color: "#888" }); // [#33]
 }
 
 let confirmRestart = false;

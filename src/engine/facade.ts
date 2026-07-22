@@ -1,4 +1,5 @@
 import { EnginePlugin, Game, GameCallbacks, STEP_MS, Viewport, createGame } from "./game.js";
+import type { KeyCode } from "./keycodes.js";
 
 /** Polled keyboard state. `down` is level-triggered (held); `pressed` and
  *  `released` are edge-triggered and true for exactly one update step per
@@ -9,11 +10,11 @@ import { EnginePlugin, Game, GameCallbacks, STEP_MS, Viewport, createGame } from
  *    if (Minimotor.Keys.released("KeyR"))  letGo(); */
 export interface Keys {
   /** True while the key is held. */
-  down(code: string): boolean;
+  down(code: KeyCode): boolean;
   /** True for one update step when the key goes down (ignores auto-repeat). */
-  pressed(code: string): boolean;
+  pressed(code: KeyCode): boolean;
   /** True for one update step when the key goes up. */
-  released(code: string): boolean;
+  released(code: KeyCode): boolean;
 }
 
 /** Polled pointer (mouse + touch) in logical CSS pixels, relative to the
@@ -71,7 +72,7 @@ export interface StageOptions {
   /** Auto-pause while a coarse-pointer device is held in portrait. */
   pauseOnPortrait?: boolean;
   /** Key codes to `preventDefault()` on. Default: Space + arrow keys. */
-  preventKeys?: string[];
+  preventKeys?: KeyCode[];
 }
 
 /** Canvas / viewport / screen. `init` builds the default engine and returns

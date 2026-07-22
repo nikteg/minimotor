@@ -15,3 +15,4 @@ test-results/
 
 # Sample sources are hand-written JS, not build output — keep them tracked.
 !samples/**/*.js
+.claude/settings.local.json

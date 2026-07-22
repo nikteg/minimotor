@@ -1,5 +1,6 @@
 import type { Keys, Pointer } from "./facade.js";
 import { clearDefaultGame } from "./facade.js";
+import type { KeyCode } from "./keycodes.js";
 
 // ---------- Minimal game framework ----------
 // The engine is reached through PascalCase `Minimotor.*` namespaces, all backed
@@ -143,7 +144,7 @@ export interface GameOptions {
   /** Key codes whose default browser action (scrolling, etc.) is suppressed
    *  while the game runs. Default: Space + arrow keys. Pass `[]` to suppress
    *  nothing. */
-  preventKeys?: string[];
+  preventKeys?: KeyCode[];
 }
 
 /** Fluent host-builder. Configure, then `build()` into a `Game`. */

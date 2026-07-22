@@ -27,10 +27,10 @@ For each module `X.ts` → `src/X/`:
    keeps its original section-header comments and exports the same named
    symbols. **No symbol renames, no signature changes.**
 2. `src/X/index.ts` is a pure barrel: a top doc-comment + `export * from
-   "./sub.js";` lines. If the module currently exports a facade namespace object
+"./sub.js";` lines. If the module currently exports a facade namespace object
    (e.g. the `UI` default facade), assemble it here.
 3. All relative imports keep explicit `.js` extensions (`moduleResolution:
-   "bundler"`, repo convention).
+"bundler"`, repo convention).
 4. Update `src/index.ts`: change `from "./X.js"` → `from "./X/index.js"`
    (matches how it already imports goodies).
 5. Move `src/X.test.ts` → `src/X/__tests__/X.test.ts`, fixing relative imports
@@ -40,10 +40,12 @@ For each module `X.ts` → `src/X/`:
 ## Per-module split
 
 ### `ui.ts` (3044) — the hard one, do first and carefully
+
 Widgets share many **private** helpers (implicit context, `theme`, widget
 identity, stack/layout `place`, `drawBox`, input/focus/overlay state). These
 must move into a shared `src/ui/core.ts` and be **exported from `core.ts`** (but
 NOT re-exported by the barrel) so widget files can import them. Proposed files:
+
 - `core.ts` — context, theme, widget identity, stack/layout primitives, shared draw/input helpers (the internal glue every widget uses)
 - `layout.ts` — row/col/group/spacer/clip, list, grid containers
 - `table.ts` — table (large, self-contained)
@@ -52,19 +54,24 @@ NOT re-exported by the barrel) so widget files can import them. Proposed files:
 - `overlays.ts` — popover, modal, confirm
 - `dragdrop.ts` — drag & drop
 - `index.ts` — barrel + assemble the default `UI` facade object
-Verify the facade object exported today is reconstructed identically.
+  Verify the facade object exported today is reconstructed identically.
 
 ### `audio.ts` (874, 4 sections)
+
 - `context.ts` (audio context/unlock), `mixer.ts` (`Mixer`: compressor/reverb/bus/duck), `sfx.ts` (`playSfx`, `Sfx` presets), `music.ts` (`Music`) — `index.ts` barrel. Keep the `Audio` facade assembly wherever it currently lives.
 
 ### `engine.ts` (753, core + facade)
+
 - `core.ts` (Loop/Stage/Draw/Keys/Pointer primitives) + `facade.ts` (assembled namespaces) or split by subsystem if boundaries are cleaner on read; `index.ts` barrel. Confirm exact boundaries when reading the file.
 
 ### `net.ts` (622, 6 sections) — clean section cuts; one sub-file per section group.
+
 ### `ecs.ts` (590) — split world / component / query / system / built-in Sprite+renderer along its internal boundaries.
+
 ### `perf.ts` (386, 5 sections) — one sub-file per section group; `index.ts` barrel.
 
 ## Constraints / gotchas
+
 - **Public surface must not change.** After the split, `npm run build` output and every sample (which consume `build/index.js` via the vite alias) behave identically.
 - `.js` extensions mandatory on all relative imports.
 - `physics2d.ts`, `anim.ts`, `tiles.ts`, `goodies/` untouched.
@@ -72,10 +79,12 @@ Verify the facade object exported today is reconstructed identically.
 - Watch for the 2 test files that were failing to load before (import errors, likely from the goodies restructure) — resolve/confirm those while relocating tests so a green baseline is restored.
 
 ## Suggested order
+
 Do the low-risk clean-cut modules first to validate the mechanics, then `ui.ts`:
 `perf` → `net` → `audio` → `ecs` → `engine` → `ui`. Build + test after each.
 
 ## Verification
+
 - After **each** module: `npm run build` (must stay green — `noEmitOnError`
   catches import breakage) and `npx vitest run src/<module>/__tests__` for that
   module's tests.
@@ -108,7 +117,7 @@ housekeeping behind setters, not worth the risk yet. Original plan follows.
 
 ## Original write-up: `ui/core.ts` (~1650 lines)
 
-The `ui` split intentionally parked the whole immediate-mode *kernel* in
+The `ui` split intentionally parked the whole immediate-mode _kernel_ in
 `ui/core.ts` — implicit context, theme, draw helpers, layout primitives, shared
 input, the focus system, the overlay/editor/tooltip/float frame-machinery, and
 the two frame-welded widgets (`textInput`, `select`). It's now the single
@@ -170,7 +179,7 @@ cross ~400 lines.
   two directories, so a narrow pathspec leaves the old-location deletion
   uncommitted (perf/net left stale monoliths in-tree one commit).
 - Curate the barrel only for modules consumed via `import * as X` in
-  `index.ts` (perf/net/audio/ecs/ui). `engine` is consumed via *named* imports,
+  `index.ts` (perf/net/audio/ecs/ui). `engine` is consumed via _named_ imports,
   so its barrel can `export *` freely — the surface is controlled at index.ts.
 - Node-only code (`net/server`) stays out of the browser bundle by using
   **structural** socket types (no `ws`/Node import) + a separate entry point.

@@ -39,4 +39,3 @@ export function dayCycle(time: number, dayLength: number): { t: number; phase: D
   const phase: DayPhase = t < 0.1 ? "dawn" : t < 0.55 ? "day" : t < 0.7 ? "dusk" : "night";
   return { t, phase };
 }
-

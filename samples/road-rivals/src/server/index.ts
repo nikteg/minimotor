@@ -84,7 +84,22 @@ export function createRoadRivalsServer(): WebSocketServer {
   ];
   // serve() owns the socket bookkeeping; the authoritative bot/pickup state
   // below broadcasts through the same room, and peer messages relay untouched.
-  const room = serve<unknown, any>(road, {
+  interface RoadMsg {
+    game: string;
+    type: string;
+    id: string;
+    px: number;
+    py: number;
+    vx?: number;
+    vy?: number;
+    phase: string;
+    target?: string;
+    damage?: number;
+    ix?: number;
+    iy?: number;
+    pickupId?: string;
+  }
+  const room = serve<unknown, RoadMsg>(road, {
     onMessage(client, msg) {
       if (msg.game !== "road-rivals") return;
       if (msg.type === "state") {

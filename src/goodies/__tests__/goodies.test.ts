@@ -67,7 +67,6 @@ describe("Goodies loot and cards", () => {
     expect(weightedPick(loot, () => 0.99)).toBe("rare");
     expect(weightedPick([{ value: "x", weight: 0 }], () => 0)).toBeUndefined();
   });
-
 });
 
 describe("Goodies grids", () => {
@@ -112,7 +111,6 @@ describe("Goodies rhythm and racing", () => {
     expect(timingGrade(-100)).toBe("good");
     expect(timingGrade(200)).toBe("miss");
   });
-
 });
 
 describe("Goodies RPG and inventory", () => {

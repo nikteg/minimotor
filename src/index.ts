@@ -5,6 +5,7 @@
 // `createGame` is exported for isolated instances (tests / multiple games).
 
 import { createGame, Stage, Loop, Draw, Keys, Pointer, Mouse } from "./engine/index.js";
+import { Vec2 } from "./vec2.js";
 import {
   rectsOverlap,
   circleHit,
@@ -80,6 +81,7 @@ export {
 export type {
   Rect,
   Viewport,
+  KeyCode,
   EnginePlugin,
   FrameTimings,
   GameCallbacks,
@@ -253,9 +255,12 @@ export type {
   ToggleOptions,
 } from "./ui/index.js";
 
+export { Vec2 } from "./vec2.js";
+
 export const Minimotor = {
   createGame,
   Stage,
+  Vec2,
   Loop,
   Draw,
   Keys,
