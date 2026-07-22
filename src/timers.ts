@@ -127,12 +127,12 @@ export interface JumpGateOptions {
   bufferMs?: number;
 }
 
-/** One `update` per step deciding when a jump fires. */
+/** One `try` per step deciding when a jump fires. */
 export interface JumpGate {
-  /** Feed this step's grounded flag, whether the jump input was pressed this
-   *  step (the edge, not held), and the step length. Returns true on the step
-   *  the jump should fire — the game applies its own velocity. */
-  update(grounded: boolean, pressed: boolean, dtMs: number): boolean;
+  /** Call once per step with this step's jump-press edge and grounded fact.
+   *  True on the step the jump should fire (press buffering + coyote grace
+   *  folded in) — the jump velocity stays game policy. */
+  try(pressed: boolean, grounded: boolean): boolean;
   /** The underlying latches, exposed for HUD/debug or extra rules. */
   readonly coyote: Window;
   readonly buffer: Buffer;
@@ -150,11 +150,12 @@ export interface JumpGate {
 export function jumpGate(opts: JumpGateOptions = {}): JumpGate {
   const coyote = window(opts.coyoteMs ?? 100);
   const buf = buffer(opts.bufferMs ?? 120);
+  const STEP = 1000 / 60; // one try() per fixed step — the step is the unit
   return {
-    update(grounded, pressed, dtMs) {
+    try(pressed, grounded) {
       if (grounded) coyote.charge();
-      coyote.tick(dtMs);
-      buf.tick(dtMs);
+      coyote.tick(STEP);
+      buf.tick(STEP);
       if (pressed) buf.trigger();
       if (coyote.active && buf.consume()) {
         coyote.expire(); // one jump per takeoff — no lingering-coyote double

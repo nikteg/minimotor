@@ -15,6 +15,8 @@ import {
   circleRect,
   separateCircles,
   bounceInBounds,
+  slide,
+  moveAndSlide,
 } from "./collision.js";
 import * as UI from "./ui/index.js";
 import { Particles } from "./particles.js";
@@ -30,7 +32,6 @@ import * as Audio from "./audio/index.js";
 import * as Mathf from "./mathf.js";
 import * as Input from "./input/index.js";
 import * as Storage from "./storage.js";
-import * as Physics from "./physics.js";
 import * as Sprites from "./sprites.js";
 import * as Net from "./net/index.js";
 import * as Perf from "./perf/index.js";
@@ -52,7 +53,6 @@ export {
   Audio,
   Input,
   Storage,
-  Physics,
   Sprites,
   Net,
   Perf,
@@ -111,7 +111,16 @@ export type {
   SequenceStep,
   Parallel,
 } from "./anim/index.js";
-export type { Sweep, Contact, BounceFaces } from "./collision.js";
+export type {
+  Sweep,
+  Contact,
+  BounceFaces,
+  Solid,
+  SolidSource,
+  Solids,
+  Contacts,
+  MoverBody,
+} from "./collision.js";
 export type { CameraOptions, CameraLens, RenderOptions, FollowTarget } from "./camera/index.js";
 export type { ParticleSystem, BurstOptions, Range } from "./particles.js";
 export type {
@@ -150,7 +159,6 @@ export type {
   ToneOptions,
   ToneSweep,
 } from "./audio/index.js";
-export type { PhysicsBody } from "./physics.js";
 export type { SpriteCanvas, AtlasOptions } from "./sprites.js";
 export type {
   Weighted,
@@ -195,6 +203,8 @@ export type {
 
 const Collision = {
   rectsOverlap,
+  slide,
+  moveAndSlide,
   circleHit,
   crossedDown,
   pointInRect,
@@ -205,6 +215,8 @@ const Collision = {
 };
 export {
   Collision,
+  slide,
+  moveAndSlide,
   rectsOverlap,
   circleHit,
   crossedDown,
@@ -274,7 +286,6 @@ export const Minimotor = {
   Audio,
   Input,
   Storage,
-  Physics,
   Sprites,
   Net,
   Perf,

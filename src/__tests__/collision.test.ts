@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { rectsOverlap, circleHit, crossedDown, sweptAABB } from "../collision.js";
+import {
+  rectsOverlap,
+  circleHit,
+  crossedDown,
+  sweptAABB,
+  slide,
+  moveAndSlide,
+  type Solid,
+} from "../collision.js";
 
 describe("rectsOverlap", () => {
   it("overlapping", () =>
@@ -75,5 +83,85 @@ describe("sweptAABB", () => {
   it("returns null when a purely vertical move never overlaps in x", () => {
     const floor = { x: 50, y: 50, w: 10, h: 10 }; // off to the side
     expect(sweptAABB(player, 0, 100, floor)).toBeNull();
+  });
+});
+
+describe("Collision.slide / moveAndSlide", () => {
+  const floor = { x: 0, y: 100, w: 400, h: 20 };
+
+  it("moves freely when nothing is in the way", () => {
+    const body = { x: 0, y: 0, w: 10, h: 10 };
+    const c = slide(body, { x: 5, y: 3 }, [floor]);
+    expect(body.x).toBe(5);
+    expect(body.y).toBe(3);
+    expect(c.down).toBe(false);
+    expect(c.impact).toBe(0);
+  });
+
+  it("lands on a floor and reports down contact + impact speed", () => {
+    const body = { x: 0, y: 80, w: 10, h: 10 };
+    const c = slide(body, { x: 0, y: 30 }, [floor]); // would tunnel to 110
+    expect(body.y).toBeCloseTo(90, 1); // stopped on top of the floor
+    expect(c.down).toBe(true);
+    expect(c.impact).toBe(30);
+  });
+
+  it("slides along the floor: vertical stop keeps horizontal motion", () => {
+    const body = { x: 0, y: 85, w: 10, h: 10 };
+    slide(body, { x: 20, y: 10 }, [floor]);
+    expect(body.y).toBeCloseTo(90, 1);
+    expect(body.x).toBeGreaterThan(10); // tangential remainder applied
+  });
+
+  it("never tunnels at high speed (swept)", () => {
+    const thin = { x: 0, y: 100, w: 400, h: 2 };
+    const body = { x: 0, y: 0, w: 10, h: 10 };
+    slide(body, { x: 0, y: 500 }, [thin]);
+    expect(body.y).toBeCloseTo(90, 1); // caught the 2px platform
+  });
+
+  it("hits walls left/right", () => {
+    const wall = { x: 50, y: 0, w: 10, h: 100 };
+    const body = { x: 20, y: 40, w: 10, h: 10 };
+    const c = slide(body, { x: 40, y: 0 }, [wall]);
+    expect(body.x).toBeCloseTo(40, 1);
+    expect(c.right).toBe(true);
+  });
+
+  it("oneWay platforms catch falls from above but pass from below/sides", () => {
+    const shelf = { x: 0, y: 50, w: 100, h: 10, oneWay: true };
+    const faller = { x: 10, y: 20, w: 10, h: 10 };
+    const cf = slide(faller, { x: 0, y: 60 }, [shelf]);
+    expect(cf.down).toBe(true);
+    expect(faller.y).toBeCloseTo(40, 1);
+
+    const jumper = { x: 10, y: 80, w: 10, h: 10 };
+    const cj = slide(jumper, { x: 0, y: -60 }, [shelf]); // up through
+    expect(cj.up).toBe(false);
+    expect(jumper.y).toBe(20);
+  });
+
+  it("moveAndSlide zeroes blocked velocity and sets grounded", () => {
+    const body = { x: 0, y: 80, w: 10, h: 10, vel: { x: 3, y: 30 }, grounded: false };
+    const c = moveAndSlide(body, [floor]);
+    expect(body.grounded).toBe(true);
+    expect(body.vel.y).toBe(0); // landing clears vertical
+    expect(body.vel.x).toBe(3); // horizontal untouched
+    expect(c.impact).toBe(30);
+  });
+
+  it("accepts a SolidSource and mixed arrays", () => {
+    const source = {
+      solidsNear(_area: { x: number; y: number; w: number; h: number }, out: Solid[]) {
+        out.push(floor);
+        return out;
+      },
+    };
+    const a = { x: 0, y: 80, w: 10, h: 10 };
+    expect(slide(a, { x: 0, y: 30 }, source).down).toBe(true);
+    const b = { x: 20, y: 80, w: 10, h: 10 };
+    const wall = { x: 0, y: 0, w: 5, h: 200 };
+    expect(slide(b, { x: -20, y: 0 }, [source, wall]).left).toBe(true);
+    expect(b.x).toBeCloseTo(5, 1); // stopped against the wall from the source-mixed array
   });
 });

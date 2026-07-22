@@ -65,45 +65,43 @@ describe("Timers.cooldown", () => {
 });
 
 describe("Timers.jumpGate", () => {
-  const STEP = 1000 / 60;
-
   it("fires when grounded and pressed on the same step", () => {
     const g = jumpGate({ coyoteMs: 100, bufferMs: 120 });
-    expect(g.update(true, true, STEP)).toBe(true);
-    expect(g.update(true, false, STEP)).toBe(false); // no press
+    expect(g.try(true, true)).toBe(true);
+    expect(g.try(false, true)).toBe(false); // no press
   });
 
   it("coyote time: fires shortly after leaving the ground", () => {
     const g = jumpGate({ coyoteMs: 100, bufferMs: 120 });
-    g.update(true, false, STEP); // grounded, charge coyote
+    g.try(false, true); // grounded, charge coyote
     // Now airborne; press within the coyote window a couple steps later.
-    expect(g.update(false, false, STEP)).toBe(false);
-    expect(g.update(false, true, STEP)).toBe(true); // ~33ms after takeoff < 100
+    expect(g.try(false, false)).toBe(false);
+    expect(g.try(true, false)).toBe(true); // ~33ms after takeoff < 100
   });
 
   it("coyote expires after the window", () => {
     const g = jumpGate({ coyoteMs: 100, bufferMs: 120 });
-    g.update(true, false, STEP);
-    for (let i = 0; i < 8; i++) g.update(false, false, STEP); // ~133ms airborne
-    expect(g.update(false, true, STEP)).toBe(false); // too late
+    g.try(false, true);
+    for (let i = 0; i < 8; i++) g.try(false, false); // ~133ms airborne
+    expect(g.try(true, false)).toBe(false); // too late
   });
 
   it("jump buffering: a press just before landing fires on touchdown", () => {
     const g = jumpGate({ coyoteMs: 100, bufferMs: 120 });
     // Airborne, press buffered (no coyote left → doesn't fire yet).
-    g.update(true, false, STEP); // ground once
-    for (let i = 0; i < 8; i++) g.update(false, false, STEP); // burn coyote
-    expect(g.update(false, true, STEP)).toBe(false); // buffered, airborne
+    g.try(false, true); // ground once
+    for (let i = 0; i < 8; i++) g.try(false, false); // burn coyote
+    expect(g.try(true, false)).toBe(false); // buffered, airborne
     // Land within the buffer window → fires.
-    expect(g.update(true, false, STEP)).toBe(true);
+    expect(g.try(false, true)).toBe(true);
   });
 
   it("only one jump per takeoff (no lingering-coyote double jump)", () => {
     const g = jumpGate({ coyoteMs: 100, bufferMs: 120 });
-    expect(g.update(true, true, STEP)).toBe(true); // jump
+    expect(g.try(true, true)).toBe(true); // jump
     // Still 'grounded' the same/next step but shouldn't immediately re-fire
     // without a fresh press+ground; a held press isn't an edge.
-    expect(g.update(false, false, STEP)).toBe(false);
-    expect(g.update(false, true, STEP)).toBe(false); // coyote was expired on fire
+    expect(g.try(false, false)).toBe(false);
+    expect(g.try(true, false)).toBe(false); // coyote was expired on fire
   });
 });
