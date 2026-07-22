@@ -1,7 +1,7 @@
 // Rigid-body physics: the opt-in Physics2D adapter (planck / Box2D) driven by
 // the fixed-step loop — composed with the ECS. Each body lives in a `Phys`
-// component next to the built-in Sprite; a sync system copies the transform
-// over each step, and ecs.drawSprites renders everything. No custom draw
+// component next to a Sprites.Sprite; a sync system copies the transform
+// over each step, and Draw.sprites(ecs.dense(Sprites.Sprite)) renders everything. No custom draw
 // code for the bodies at all.
 // Demonstrates: Physics2D.world/box/circle/walls/pin, onContact, deferred
 // destroy, wake() on resize, the ECS body-in-a-component pattern, and the
@@ -9,6 +9,7 @@
 import {
   Audio,
   Camera,
+  Draw,
   ECS,
   Keys,
   Loop,
@@ -79,7 +80,7 @@ Stage.onResize((next) => {
   }
 });
 
-// ---- dynamic bodies: a Phys component next to the built-in Sprite ----
+// ---- dynamic bodies: a Phys component next to a Sprites.Sprite ----
 const CRATE_COLORS = ["#ffa94d", "#ffd43b", "#ff6b6b"];
 
 function spawnCrate(x: number, y: number) {
@@ -87,7 +88,7 @@ function spawnCrate(x: number, y: number) {
   const body = phys.box(x, y, s, s, { friction: 0.5, restitution: 0.05, data: "crate" });
   body.rot = Mathf.randRange(0, Math.PI / 2);
   ecs.spawn(
-    ECS.Sprite.with({ x, y, img: crateTex(Mathf.randItem(CRATE_COLORS)), w: s, h: s }),
+    Sprites.Sprite.with({ x, y, img: crateTex(Mathf.randItem(CRATE_COLORS)), w: s, h: s }),
     Phys.with({ body }),
   );
 }
@@ -100,7 +101,7 @@ function spawnBall(x: number, y: number) {
     density: 0.6,
     data: "ball",
   });
-  ecs.spawn(ECS.Sprite.with({ x, y, img: ballTex, w: r * 2, h: r * 2 }), Phys.with({ body }));
+  ecs.spawn(Sprites.Sprite.with({ x, y, img: ballTex, w: r * 2, h: r * 2 }), Phys.with({ body }));
 }
 
 function reset() {
@@ -127,7 +128,7 @@ phys.onContact((a, b) => {
 // dim sleeping bodies so the solver's rest detection is visible.
 Physics2D.attach(ecs, phys, { stepMs: Loop.step });
 ecs.system("dim-sleepers", (w) => {
-  for (const [, s, p] of w.query(ECS.Sprite, Phys)) {
+  for (const [, s, p] of w.query(Sprites.Sprite, Phys)) {
     s.alpha = p.body.awake ? 1 : 0.55;
   }
 });
@@ -166,7 +167,7 @@ Loop.run({
       ctx.arc(anchor.x, anchor.y, 5, 0, Math.PI * 2);
       ctx.fill();
 
-      ecs.drawSprites(ctx); // every body, via the built-in renderer
+      Draw.sprites(ecs.dense(Sprites.Sprite)); // every body, via the built-in renderer
     });
 
     UI.text(`bodies: ${phys.count}`, { x: 10, y: 6, size: 14 });

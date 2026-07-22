@@ -1,10 +1,13 @@
-import { Sprite } from "./component.js";
-import type { AnyComponent } from "./types.js";
-import { Entity, RenderSystem, SpriteData, System, Ecs } from "./types.js";
+import type { AnyComponent, Component } from "./types.js";
+import { Entity, RenderSystem, System, Ecs } from "./types.js";
 
 // Entity id packing: id = generation * CAP + index. Plain arithmetic (not
 // bit-shifts) to sidestep 32-bit sign issues on large generations.
 const INDEX_CAP = 1 << 20; // up to ~1M live entities
+
+// Shared empty result for `dense()` when a component has no store yet — a
+// frozen singleton so the no-rows path allocates nothing.
+const EMPTY: readonly never[] = Object.freeze([]);
 
 const indexOf = (e: Entity): number => (e as number) % INDEX_CAP;
 
@@ -57,8 +60,7 @@ export function create(): Ecs {
   let liveCount = 0;
   const commands: (() => void)[] = [];
 
-  // Reused per-call scratch (drawSprites list / each row) — hot-path, no allocs.
-  const scratch: SpriteData[] = [];
+  // Reused per-call scratch (each row) — hot-path, no allocs.
   const eachRow: unknown[] = [];
 
   const updateSystems: { name: string; fn: System }[] = [];
@@ -196,16 +198,6 @@ export function create(): Ecs {
     },
 
     update() {
-      // Snapshot sprite positions before simulating, so drawSprites can
-      // interpolate between the previous and current step (`Loop.alpha`).
-      const spriteStore = stores.get(Sprite.id);
-      if (spriteStore) {
-        for (const d of spriteStore.dense) {
-          const s = d as SpriteData;
-          s.px = s.x;
-          s.py = s.y;
-        }
-      }
       for (const s of updateSystems) s.fn(self);
       flush();
     },
@@ -214,94 +206,13 @@ export function create(): Ecs {
       for (const s of renderSystems) s.fn(self, ctx);
     },
 
-    drawSprites(ctx, opts) {
-      const lerp = opts?.alpha;
-      const view = opts?.view;
-
-      // Reuse the scratch list — a fresh array per frame is pure GC churn.
-      scratch.length = 0;
-      const st = stores.get(Sprite.id);
-      if (!st) return;
-      for (const d of st.dense) scratch.push(d as SpriteData);
-
-      // Sorting an already-ordered list is cheap but not free; check first.
-      let ordered = true;
-      for (let i = 1; i < scratch.length; i++) {
-        if ((scratch[i].z ?? 0) < (scratch[i - 1].z ?? 0)) {
-          ordered = false;
-          break;
-        }
-      }
-      if (!ordered) scratch.sort((a, b) => (a.z ?? 0) - (b.z ?? 0));
-
-      let ctxAlpha = 1; // track instead of save/restore per sprite
-      for (const s of scratch) {
-        if (s.visible === false) continue;
-        const alpha = s.alpha ?? 1;
-        if (alpha <= 0) continue;
-
-        const img = s.img;
-        const clipped = s.sw !== undefined && s.sh !== undefined;
-        // With a source rect the natural size is the cell; otherwise the image.
-        const w = s.w ?? (clipped ? s.sw! : (img.logicalSize ?? img.width));
-        const h = s.h ?? (clipped ? s.sh! : (img.logicalSize ?? img.height));
-        const ax = s.ax ?? 0.5;
-        const ay = s.ay ?? 0.5;
-        const rot = s.rot ?? 0;
-        const scale = s.scale ?? 1;
-        const flipX = s.flipX === true;
-        const flipY = s.flipY === true;
-
-        // Interpolated render position (snapshots come from world.update()).
-        let x = s.x;
-        let y = s.y;
-        if (lerp !== undefined && s.px !== undefined && s.py !== undefined) {
-          x = s.px + (s.x - s.px) * lerp;
-          y = s.py + (s.y - s.py) * lerp;
-        }
-
-        if (view) {
-          // Conservative reject: w+h bounds the diagonal, so this is safe for
-          // any rotation and any anchor in [0,1].
-          const ext = (w + h) * scale;
-          if (
-            x + ext < view.x ||
-            x - ext > view.x + view.w ||
-            y + ext < view.y ||
-            y - ext > view.y + view.h
-          ) {
-            continue;
-          }
-        }
-
-        if (alpha !== ctxAlpha) {
-          ctx.globalAlpha = alpha;
-          ctxAlpha = alpha;
-        }
-
-        if (rot === 0 && scale === 1 && !flipX && !flipY) {
-          // Common case: no transform needed at all.
-          if (clipped) {
-            ctx.drawImage(img, s.sx ?? 0, s.sy ?? 0, s.sw!, s.sh!, x - ax * w, y - ay * h, w, h);
-          } else {
-            ctx.drawImage(img, x - ax * w, y - ay * h, w, h);
-          }
-        } else {
-          ctx.save();
-          ctx.translate(x, y);
-          if (rot !== 0) ctx.rotate(rot);
-          const kx = scale * (flipX ? -1 : 1);
-          const ky = scale * (flipY ? -1 : 1);
-          if (kx !== 1 || ky !== 1) ctx.scale(kx, ky);
-          if (clipped) {
-            ctx.drawImage(img, s.sx ?? 0, s.sy ?? 0, s.sw!, s.sh!, -ax * w, -ay * h, w, h);
-          } else {
-            ctx.drawImage(img, -ax * w, -ay * h, w, h);
-          }
-          ctx.restore();
-        }
-      }
-      if (ctxAlpha !== 1) ctx.globalAlpha = 1;
+    dense<T>(c: Component<T>) {
+      // The store's own packed data array, handed out as-is — the zero-copy
+      // bridge to bulk consumers (e.g. the sprite renderer). The ECS stays
+      // content-agnostic: it doesn't know or care what `c` is. Empty when
+      // nothing holds `c`.
+      const st = stores.get(c.id);
+      return (st ? st.dense : EMPTY) as readonly T[];
     },
 
     // Callback query: shares the matching logic shape with `query` but calls

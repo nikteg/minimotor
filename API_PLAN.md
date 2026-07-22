@@ -77,7 +77,9 @@ deadzone, damping })`; `Camera.x/y/zoom/rect`; `Camera.shake(mag, ms)`
 - `UI.text` = themed HUD widget with `anchor` positioning (safe-area
   aware); `Text.drawText/drawCentered` retire from the public tier. (#6,
   #17, #33)
-- ECS `drawSprites` re-layers on top of `Draw.sprite`.
+- `Draw.sprites(list, { alpha, view })` — the z-sorted batch renderer, off
+  the ECS (`ecs.dense(Sprites.Sprite)` supplies the data). See post-port
+  follow-ups.
 
 ## Phase 3 — Time
 
@@ -184,13 +186,28 @@ send, onMessage, close()`; star topology + host-healing internal; room
 
 ## Post-port follow-ups (from the sample review round)
 
-- **Multi-image sprite states — API gap.** `Anim.sheet(image, { states })`
-  models ONE atlas image with states as rows. Sprite sets that ship one image
-  PER state (Pixel Frog / many itch.io kits — idle.png, run.png, …) have no
-  first-class home now that `Anim.states({...})` retired. Options to design:
-  a multi-image `Anim.states({ idle: sheetA, run: sheetB }, initial)` that
-  returns a cursor, or documenting the `Record<state, SheetCursor>` +
-  `draw(cursors[fsm.current])` pattern as the blessed approach.
+- **Multi-image sprite states — DONE.** `Anim.states({ idle: { image, frames,
+fps }, run: {...}, jump: {...} })` returns a shared kit; `kit.play(initial)`
+  is a per-entity cursor with the SAME surface as a sheet cursor
+  (`.set`/`.state`/`.frame`/`.rect`/`.done`) and satisfies `SpriteLike`, so it
+  drops straight into `Draw.sprite` — `.sheet.image` returns the ACTIVE state's
+  image, switching on `set`. Clock-derived like `Anim.sheet` (no ticking).
+  Lives in `src/anim/states.ts`; covers the one-image-per-state kit layout
+  (Pixel Frog / itch.io) that `Anim.sheet`'s single-atlas model couldn't.
+- **Sprites fully decoupled from the ECS — DONE.** Three ties cut, not just the
+  renderer:
+  1. **Renderer** → `Draw.sprites(list, opts)`, any iterable of sprite-shaped
+     data (`ecs.drawSprites(ctx)` gone).
+  2. **The `Sprite` component + `SpriteData`** moved OUT of the ECS core into the
+     `Sprites` namespace (`Sprites.Sprite`, was `ECS.Sprite`). The ECS core is
+     now content-agnostic — it defines no components at all.
+  3. **The px/py interpolation snapshot** left `update()` (which used to
+     hard-case the Sprite store) and became opt-in: `Sprites.interpolate(ecs)`
+     registers a normal system.
+     The bridge is a generic accessor: `ecs.dense(Component)` returns any
+     component's packed backing array (useful beyond sprites). Call site:
+     `Draw.sprites(ecs.dense(Sprites.Sprite), { alpha: Loop.alpha, view })`. Draw
+     owns rendering; the ECS owns generic data; neither imports the other.
 - **pixel-adventure needs a full rewrite** (quarantined from the TS gate).
   It was never ported off the old API in the first sample pass (still
   `Minimotor.*` destructuring, `Input.actions`, `Camera.createCamera`/

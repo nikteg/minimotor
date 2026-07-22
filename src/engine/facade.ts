@@ -350,6 +350,135 @@ function sprite(spr: SpriteLike, at: Rect, opts: DrawSpriteOptions = {}): void {
   ctx.restore();
 }
 
+// ---------- Batch sprite rendering ----------
+// The z-sorted blit-many renderer. It lives HERE, not on the ECS (Draw owns
+// rendering; data never draws itself). It takes any iterable of sprite-shaped
+// DATA — an ECS Sprite store (`Draw.sprites(ecs.dense(Sprites.Sprite))`), a
+// plain array, whatever — so nothing is coupled to the ECS. `DrawSprite` is
+// structural, so `Sprites.SpriteData` satisfies it with no import either way.
+
+type BlitImage = CanvasImageSource & { width: number; height: number; logicalSize?: number };
+
+/** One entry the batch renderer can blit. The ECS `Sprite` component's data
+ *  matches this structurally. */
+export interface DrawSprite {
+  x: number;
+  y: number;
+  img: BlitImage;
+  w?: number;
+  h?: number;
+  ax?: number;
+  ay?: number;
+  rot?: number;
+  scale?: number;
+  flipX?: boolean;
+  flipY?: boolean;
+  alpha?: number;
+  z?: number;
+  visible?: boolean;
+  sx?: number;
+  sy?: number;
+  sw?: number;
+  sh?: number;
+  px?: number;
+  py?: number;
+}
+
+export interface DrawSpritesOptions {
+  /** Interpolation factor 0..1 (`Loop.alpha`): blends px/py→x/y for stutter-
+   *  free motion on non-60 Hz displays. */
+  alpha?: number;
+  /** Visible world rect — sprites fully outside are skipped before transform. */
+  view?: { x: number; y: number; w: number; h: number };
+}
+
+const spriteScratch: DrawSprite[] = [];
+
+/** Blit an iterable of sprites, sorted by `z` (ties keep order). Honors
+ *  anchor/rotation/scale/flip/alpha/visibility, culls to `view`, and
+ *  interpolates px/py when `opts.alpha` is given. */
+function sprites(list: Iterable<DrawSprite>, opts: DrawSpritesOptions = {}): void {
+  const ctx = requireDefault().ctx;
+  const lerp = opts.alpha;
+  const view = opts.view;
+
+  spriteScratch.length = 0;
+  for (const s of list) spriteScratch.push(s);
+
+  let ordered = true;
+  for (let i = 1; i < spriteScratch.length; i++) {
+    if ((spriteScratch[i].z ?? 0) < (spriteScratch[i - 1].z ?? 0)) {
+      ordered = false;
+      break;
+    }
+  }
+  if (!ordered) spriteScratch.sort((a, b) => (a.z ?? 0) - (b.z ?? 0));
+
+  let ctxAlpha = 1;
+  for (const s of spriteScratch) {
+    if (s.visible === false) continue;
+    const alpha = s.alpha ?? 1;
+    if (alpha <= 0) continue;
+
+    const img = s.img;
+    const clipped = s.sw !== undefined && s.sh !== undefined;
+    const w = s.w ?? (clipped ? s.sw! : (img.logicalSize ?? img.width));
+    const h = s.h ?? (clipped ? s.sh! : (img.logicalSize ?? img.height));
+    const ax = s.ax ?? 0.5;
+    const ay = s.ay ?? 0.5;
+    const rot = s.rot ?? 0;
+    const scale = s.scale ?? 1;
+    const flipX = s.flipX === true;
+    const flipY = s.flipY === true;
+
+    let x = s.x;
+    let y = s.y;
+    if (lerp !== undefined && s.px !== undefined && s.py !== undefined) {
+      x = s.px + (s.x - s.px) * lerp;
+      y = s.py + (s.y - s.py) * lerp;
+    }
+
+    if (view) {
+      const ext = (w + h) * scale;
+      if (
+        x + ext < view.x ||
+        x - ext > view.x + view.w ||
+        y + ext < view.y ||
+        y - ext > view.y + view.h
+      ) {
+        continue;
+      }
+    }
+
+    if (alpha !== ctxAlpha) {
+      ctx.globalAlpha = alpha;
+      ctxAlpha = alpha;
+    }
+
+    if (rot === 0 && scale === 1 && !flipX && !flipY) {
+      if (clipped) {
+        ctx.drawImage(img, s.sx ?? 0, s.sy ?? 0, s.sw!, s.sh!, x - ax * w, y - ay * h, w, h);
+      } else {
+        ctx.drawImage(img, x - ax * w, y - ay * h, w, h);
+      }
+    } else {
+      ctx.save();
+      ctx.translate(x, y);
+      if (rot !== 0) ctx.rotate(rot);
+      const kx = scale * (flipX ? -1 : 1);
+      const ky = scale * (flipY ? -1 : 1);
+      if (kx !== 1 || ky !== 1) ctx.scale(kx, ky);
+      if (clipped) {
+        ctx.drawImage(img, s.sx ?? 0, s.sy ?? 0, s.sw!, s.sh!, -ax * w, -ay * h, w, h);
+      } else {
+        ctx.drawImage(img, -ax * w, -ay * h, w, h);
+      }
+      ctx.restore();
+    }
+  }
+  if (ctxAlpha !== 1) ctx.globalAlpha = 1;
+}
+
 /** Anything Draw.tiles can render — levels expose a `render` channel; the
  *  game calls this instead (data never draws itself). Generic so the skin
  *  type-checks against the level's legend. */
@@ -402,6 +531,7 @@ export const Draw = {
   opacity,
   text,
   sprite,
+  sprites,
   tiles,
   particles,
 };

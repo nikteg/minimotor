@@ -212,7 +212,7 @@ export function createRoadHud(getState: () => HudState) {
     for (const rect of buildings) {
       ctx.fillRect(mx(rect.x), my(rect.y), (rect.w / WORLD.w) * map.w, (rect.h / WORLD.h) * map.h);
     }
-    for (const [, pickup] of pickupWorld.query(Pickup)) {
+    for (const pickup of pickupWorld.dense(Pickup)) {
       const x = mx(pickup.x);
       const y = my(pickup.y);
       if (pickup.kind === "weapon") {

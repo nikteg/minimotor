@@ -1361,7 +1361,7 @@ Loop.run({
       ctx.globalAlpha = 1;
       ctx.lineCap = "butt";
       for (const prop of props) drawProp(ctx, prop);
-      for (const [, pickup] of pickupWorld.query(Pickup)) drawPickup(ctx, pickup);
+      for (const pickup of pickupWorld.dense(Pickup)) drawPickup(ctx, pickup);
       for (const enemy of enemies) if (enemy.dead <= 0) drawEnemy(ctx, enemy, player);
       for (const death of enemyDeaths) drawEnemyDeath(ctx, death);
       for (const remote of remotes.values()) {

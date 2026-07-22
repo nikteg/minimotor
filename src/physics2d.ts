@@ -16,19 +16,20 @@
 // Box2D wants internally are converted at the boundary (`pixelsPerMeter`).
 //
 // Composes with the ECS without glue: a Body2D is plain data, so hold it in a
-// component and copy the transform into the built-in Sprite once per step —
+// component and copy the transform into a `Sprites.Sprite` once per step —
 // the body simulates, the sprite renders:
 //
 //   const Phys = ECS.component("Phys"); // { body: Body2D }
 //   world.system("physics", () => phys.step(Loop.step));
 //   world.system("sync", (w) => {
-//     for (const [, s, p] of w.query(ECS.Sprite, Phys)) {
+//     for (const [, s, p] of w.query(Sprites.Sprite, Phys)) {
 //       s.x = p.body.x; s.y = p.body.y; s.rot = p.body.rot;
 //     }
 //   });
 
 import { type Body as PlanckBody, Box, Circle, RevoluteJoint, Vec2, World } from "planck";
-import { component, Sprite, type Ecs as EcsWorld } from "./ecs/index.js";
+import { component, type Ecs as EcsWorld } from "./ecs/index.js";
+import { Sprite } from "./sprites.js";
 
 /** Options for `Physics2D.world()`. */
 export interface Physics2DOptions {
@@ -409,7 +410,7 @@ export interface AttachOptions {
  *
  *    Physics2D.attach(world, phys);
  *    world.spawn(
- *      ECS.Sprite.with({ x, y, img: crateTex, w: s, h: s }),
+ *      Sprites.Sprite.with({ x, y, img: crateTex, w: s, h: s }),
  *      Physics2D.Phys.with({ body: phys.box(x, y, s, s) }),
  *    );
  *

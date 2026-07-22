@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { component, create, Sprite, type Entity } from "../index.js";
+import { component, create, type Entity } from "../index.js";
 
 const Position = component<{ x: number; y: number }>("Position");
 const Velocity = component<{ x: number; y: number }>("Velocity");
@@ -210,110 +210,32 @@ describe("ECS systems", () => {
   });
 });
 
-describe("ECS drawSprites", () => {
-  // Minimal 2D-context stand-in that records the calls we assert on.
-  function mockCtx() {
-    const calls: string[] = [];
-    let alpha = 1;
-    const ctx = {
-      calls,
-      set globalAlpha(v: number) {
-        alpha = v;
-      },
-      get globalAlpha() {
-        return alpha;
-      },
-      save: () => calls.push("save"),
-      restore: () => calls.push("restore"),
-      translate: (x: number, y: number) => calls.push(`translate ${x},${y}`),
-      rotate: (r: number) => calls.push(`rotate ${r}`),
-      scale: (x: number, y: number) => calls.push(`scale ${x},${y}`),
-      drawImage: (_img: unknown, dx: number, dy: number, dw: number, dh: number) =>
-        calls.push(`draw ${dx},${dy} ${dw}x${dh} @${alpha}`),
-    };
-    return ctx as unknown as CanvasRenderingContext2D & { calls: string[] };
-  }
-
-  const img = { width: 20, height: 20 } as HTMLCanvasElement;
-
-  it("centers by default and infers size from the image", () => {
+describe("ECS dense() — generic component-store accessor", () => {
+  it("returns a component's live backing array, content-agnostic", () => {
     const w = create();
-    w.spawn(Sprite.with({ x: 100, y: 50, img }));
-    const ctx = mockCtx();
-    w.drawSprites(ctx);
-    // Untransformed fast path: no translate, absolute coords.
-    // Default anchor 0.5 → 100-10, 50-10; size 20x20; alpha 1.
-    expect(ctx.calls).toContain("draw 90,40 20x20 @1");
-    expect(ctx.calls.filter((c) => c === "save")).toHaveLength(0);
+    expect(w.dense(Position)).toHaveLength(0); // empty before anything holds it
+    w.spawn(Position.with({ x: 100, y: 50 }));
+    w.spawn(Position.with({ x: 1, y: 2 }), Velocity.with({ x: 9, y: 9 }));
+    expect(w.dense(Position)).toHaveLength(2);
+    expect(w.dense(Velocity)).toHaveLength(1);
+    expect(
+      w
+        .dense(Position)
+        .map((p) => p.x)
+        .sort((a, b) => a - b),
+    ).toEqual([1, 100]);
   });
 
-  it("respects explicit size, anchor and alpha", () => {
+  it("hands out the store's own array — elements mutate through it", () => {
     const w = create();
-    w.spawn(Sprite.with({ x: 0, y: 0, img, w: 40, h: 10, ax: 0, ay: 1, alpha: 0.5 }));
-    const ctx = mockCtx();
-    w.drawSprites(ctx);
-    expect(ctx.calls).toContain("draw 0,-10 40x10 @0.5"); // ax0 → 0, ay1 → -10
+    w.spawn(Position.with({ x: 0, y: 0 }));
+    w.dense(Position)[0].x = 42;
+    expect([...w.query(Position)][0][1].x).toBe(42);
   });
 
-  it("draws in ascending z order", () => {
+  it("shares one empty result for absent stores (no per-call alloc)", () => {
     const w = create();
-    w.spawn(Sprite.with({ x: 3, y: 0, img, z: 10 }));
-    w.spawn(Sprite.with({ x: 1, y: 0, img, z: -5 }));
-    w.spawn(Sprite.with({ x: 2, y: 0, img, z: 0 }));
-    const ctx = mockCtx();
-    w.drawSprites(ctx);
-    // Fast path draws at x - 10 (anchor 0.5 of the 20px image).
-    const order = ctx.calls.filter((c) => c.startsWith("draw")).map((c) => c.split(" ")[1]);
-    expect(order).toEqual(["-9,-10", "-8,-10", "-7,-10"]);
-  });
-
-  it("skips invisible and fully transparent sprites", () => {
-    const w = create();
-    w.spawn(Sprite.with({ x: 0, y: 0, img, visible: false }));
-    w.spawn(Sprite.with({ x: 0, y: 0, img, alpha: 0 }));
-    const ctx = mockCtx();
-    w.drawSprites(ctx);
-    expect(ctx.calls.filter((c) => c.startsWith("draw"))).toHaveLength(0);
-  });
-
-  it("applies rotation and scale only when non-default", () => {
-    const w = create();
-    w.spawn(Sprite.with({ x: 0, y: 0, img })); // no rot/scale
-    w.spawn(Sprite.with({ x: 0, y: 0, img, rot: 1, scale: 2 }));
-    const ctx = mockCtx();
-    w.drawSprites(ctx);
-    expect(ctx.calls.filter((c) => c.startsWith("rotate"))).toEqual(["rotate 1"]);
-    expect(ctx.calls.filter((c) => c.startsWith("scale"))).toEqual(["scale 2,2"]);
-  });
-
-  it("flips about the anchor with a negative scale", () => {
-    const w = create();
-    w.spawn(Sprite.with({ x: 0, y: 0, img, flipX: true }));
-    const ctx = mockCtx();
-    w.drawSprites(ctx);
-    expect(ctx.calls).toContain("scale -1,1");
-    expect(ctx.calls).toContain("draw -10,-10 20x20 @1"); // anchored offset unchanged
-  });
-
-  it("interpolates between the previous and current step positions", () => {
-    const w = create();
-    w.spawn(Sprite.with({ x: 0, y: 0, img }));
-    w.system("move", (wo) => {
-      for (const [, s] of wo.query(Sprite)) s.x += 10;
-    });
-    w.update(); // snapshot px=0, then move to x=10
-    const ctx = mockCtx();
-    w.drawSprites(ctx, { alpha: 0.5 });
-    expect(ctx.calls).toContain("draw -5,-10 20x20 @1"); // rendered at x=5
-  });
-
-  it("culls sprites outside the view rect", () => {
-    const w = create();
-    w.spawn(Sprite.with({ x: 1000, y: 0, img }));
-    w.spawn(Sprite.with({ x: 10, y: 10, img }));
-    const ctx = mockCtx();
-    w.drawSprites(ctx, { view: { x: 0, y: 0, w: 100, h: 100 } });
-    expect(ctx.calls.filter((c) => c.startsWith("draw"))).toHaveLength(1);
+    expect(w.dense(Tag)).toBe(w.dense(Position)); // both empty → same frozen array
   });
 });
 

@@ -2,6 +2,9 @@
 // Pre-render expensive drawing operations (shadowBlur, gradients) to an
 // offscreen canvas once, then blit with drawImage each frame.
 
+import { component, type Component, type Ecs } from "./ecs/index.js";
+import type { DrawSprite } from "./engine/index.js";
+
 export interface SpriteCanvas extends HTMLCanvasElement {
   /** Logical size in CSS pixels (the backing store is DPR × logicalSize) */
   logicalSize: number;
@@ -237,4 +240,39 @@ export function contentBounds(
   }
   if (maxX < 0) return { x: 0, y: 0, w, h };
   return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
+}
+
+// ---------- The standard Sprite component (ECS integration) ----------
+// The sprite component + its renderer live OUTSIDE the ECS core: the ECS is a
+// content-agnostic data container, and rendering is a rendering concern. Attach
+// `Sprites.Sprite` to entities, then blit the store with
+// `Draw.sprites(ecs.dense(Sprites.Sprite), { alpha, view })`. Data never draws
+// itself — the ECS holds it, `Draw` renders it, and neither imports the other.
+
+/** The standard sprite component's data: position + texture + presentation.
+ *  Structurally identical to `DrawSprite` (what `Draw.sprites` consumes), so a
+ *  Sprite store drops straight into the renderer with no adapter. */
+export type SpriteData = DrawSprite;
+
+/** The standard sprite component. Bake a texture with `Sprites.getSprite` (or
+ *  load an image), attach `Sprites.Sprite.with({ x, y, img })`, then blit the
+ *  store with `Draw.sprites(ecs.dense(Sprites.Sprite))`. It's just a normal
+ *  component — the ECS gives it no special treatment. */
+export const Sprite: Component<SpriteData> = component<SpriteData>("Sprite");
+
+/** Register the per-step interpolation snapshot for the `Sprite` store on
+ *  `ecs`: each update it records every sprite's current `x`/`y` into `px`/`py`
+ *  BEFORE your systems move them, so `Draw.sprites(list, { alpha: Loop.alpha })`
+ *  can draw one step behind and interpolate — smooth motion on 90/120/144 Hz
+ *  displays. Opt-in (skip it and sprites simply aren't interpolated), and it
+ *  must run before your movement systems, so call it right after
+ *  `ECS.create()`, before registering those. When you teleport a sprite, reset
+ *  `px`/`py` alongside `x`/`y` or it streaks for one frame. */
+export function interpolate(ecs: Ecs): void {
+  ecs.system("sprite-interpolate", (w) => {
+    for (const s of w.dense(Sprite)) {
+      s.px = s.x;
+      s.py = s.y;
+    }
+  });
 }

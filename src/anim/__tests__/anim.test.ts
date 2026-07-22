@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { sheet } from "../sheet.js";
+import { states } from "../states.js";
 import { createClockHandle } from "../../clock.js";
 
 // A 4×3-state sheet over a 128×96 image of 32×32 cells.
@@ -92,5 +93,96 @@ describe("Anim.sheet", () => {
     const cur = s.play("idle");
     // @ts-expect-error — unknown state name
     expect(() => cur.set("rnu")).toThrow(/unknown state/);
+  });
+});
+
+// One image PER state — each a horizontal strip. Idle 4×(24w), run 2×(16w),
+// jump a single 20×20 static frame.
+const idleImg = { width: 96, height: 24 } as HTMLImageElement; // 4 × 24
+const runImg = { width: 32, height: 16 } as HTMLImageElement; // 2 × 16
+const jumpImg = { width: 20, height: 20 } as HTMLImageElement; // 1 frame
+
+const KIT = {
+  idle: { image: idleImg, frames: 4, fps: 10 }, // 100ms per frame
+  run: { image: runImg, frames: 2, fps: 10 },
+  jump: { image: jumpImg },
+  hit: { image: runImg, frames: 2, fps: 10, loop: false },
+} as const;
+
+describe("Anim.states (multi-image)", () => {
+  it("derives per-state cell size from each image and frame count", () => {
+    const kit = states(KIT);
+    expect(kit.rect("idle", 0)).toEqual({ sx: 0, sy: 0, sw: 24, sh: 24 });
+    expect(kit.rect("idle", 2)).toEqual({ sx: 48, sy: 0, sw: 24, sh: 24 });
+    expect(kit.rect("run", 1)).toEqual({ sx: 16, sy: 0, sw: 16, sh: 16 });
+    expect(kit.rect("jump", 0)).toEqual({ sx: 0, sy: 0, sw: 20, sh: 20 }); // whole image
+    expect(kit.rect("idle", 99)).toEqual({ sx: 72, sy: 0, sw: 24, sh: 24 }); // clamped
+  });
+
+  it("exposes the ACTIVE state's image as SpriteLike (switches with set)", () => {
+    const cur = states(KIT).play("idle");
+    expect(cur.sheet.image).toBe(idleImg);
+    cur.set("run");
+    expect(cur.sheet.image).toBe(runImg);
+    expect(cur.rect).toEqual({ sx: 0, sy: 0, sw: 16, sh: 16 });
+  });
+
+  it("cursors derive the frame from the clock — no ticking", () => {
+    const t = stepper();
+    const clock = createClockHandle(t.steps);
+    const cur = states(KIT).play("idle", { clock });
+    expect(cur.frame).toBe(0);
+    t.advanceMs(150);
+    expect(cur.frame).toBe(1);
+    t.advanceMs(300); // 450ms → frame 4 → wraps to 0 (4-frame loop)
+    expect(cur.frame).toBe(0);
+    expect(cur.done).toBe(false);
+  });
+
+  it("set() to the SAME state is a no-op", () => {
+    const t = stepper();
+    const clock = createClockHandle(t.steps);
+    const cur = states(KIT).play("idle", { clock });
+    t.advanceMs(150);
+    cur.set("idle");
+    expect(cur.frame).toBe(1);
+  });
+
+  it("switching states restarts the new state's timeline", () => {
+    const t = stepper();
+    const clock = createClockHandle(t.steps);
+    const cur = states(KIT).play("idle", { clock });
+    t.advanceMs(250);
+    cur.set("run");
+    expect(cur.state).toBe("run");
+    expect(cur.frame).toBe(0);
+    t.advanceMs(150);
+    expect(cur.frame).toBe(1);
+  });
+
+  it("non-looping states hold the last frame and report done", () => {
+    const t = stepper();
+    const clock = createClockHandle(t.steps);
+    const cur = states(KIT).play("hit", { clock });
+    t.advanceMs(1000);
+    expect(cur.frame).toBe(1); // held at the last of 2 frames
+    expect(cur.done).toBe(true);
+  });
+
+  it("a single-frame state never advances", () => {
+    const t = stepper();
+    const clock = createClockHandle(t.steps);
+    const cur = states(KIT).play("jump", { clock });
+    t.advanceMs(1000);
+    expect(cur.frame).toBe(0);
+  });
+
+  it("unknown states throw at play and set", () => {
+    const kit = states(KIT);
+    // @ts-expect-error — unknown state name
+    expect(() => kit.play("nope")).toThrow(/unknown state/);
+    const cur = kit.play("idle");
+    // @ts-expect-error — unknown state name
+    expect(() => cur.set("nope")).toThrow(/unknown state/);
   });
 });

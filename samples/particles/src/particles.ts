@@ -1,6 +1,6 @@
-// Particle system demo: firework sparks on the ECS with the built-in Sprite
+// Particle system demo: firework sparks on the ECS with the standard Sprite
 // component + renderer.
-// Demonstrates: ECS.Sprite (position + texture + alpha), ecs.drawSprites() —
+// Demonstrates: Sprites.Sprite (position + texture + alpha), Draw.sprites(ecs.dense(Sprite)) —
 // no hand-written blit loop — plus an update system that fades sprites out.
 import { Draw, ECS, Loop, Perf, Pointer, Sprites, Stage, UI } from "minimotor";
 
@@ -13,9 +13,10 @@ const view = Stage.init("game", { background: "#000", plugins: [Perf.plugin({ wo
 const NUM = 200;
 const SIZE = 8;
 
-// The standard Sprite component carries x/y/img/alpha; Vel is our own. The
-// spark's alpha doubles as its remaining life, so no separate Life component.
-const { Sprite } = ECS;
+// The standard Sprite component carries x/y/img/alpha; Vel is our own. Sprite
+// lives in the Sprites namespace, not the ECS — the ECS stays sprite-agnostic.
+// The spark's alpha doubles as its remaining life, so no separate Life component.
+const { Sprite } = Sprites;
 const Vel = ECS.component<{ x: number; y: number }>("Vel");
 
 // Pre-render the spark texture once.
@@ -63,7 +64,7 @@ Loop.run({
     ecs.update(); // runs update systems in order, then flushes despawns
   },
   draw() {
-    ecs.drawSprites(Draw.ctx); // built-in: centers + blits every Sprite by z
+    Draw.sprites(ecs.dense(Sprite)); // renderer: centers + blits every Sprite by z
     UI.group({ x: 10, y: 10, w: 230, h: 58, title: "PARTICLES" }, (body) =>
       UI.text(`Sparks ${ecs.count(Sprite)}  ·  click to spawn`, { h: body.remaining, size: 13 }),
     );

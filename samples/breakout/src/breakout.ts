@@ -190,7 +190,9 @@ const scenes = Scenes.create({
       // Shake the playfield only (default camera is identity — this applies the
       // shake). Everything is already in board space thanks to `resolution`.
       Camera.render(() => {
-        for (const [, b] of ecs.query(Block)) {
+        // Draw pass: just the block data, no entity id → dense() (the
+        // collision loop above keeps query() because it despawns).
+        for (const b of ecs.dense(Block)) {
           Draw.rect(b, b.color);
           Draw.rect(b.x, b.y, b.w, 4, "rgba(255,255,255,0.15)");
         }

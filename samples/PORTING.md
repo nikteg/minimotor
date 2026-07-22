@@ -102,7 +102,13 @@ clamp/clampRect/limit` — mutate-first, structural.
 - `Minimotor.World` (shared default) — GONE; create your own.
 - `ECS.component<T>("name")` → `ECS.component<T>()` (label optional).
 - `world.flush()` — GONE (despawn-in-iteration is safe automatically).
-- `world.drawSprites(ctx, opts)` unchanged.
+- `world.drawSprites(ctx, opts)` — GONE, and the ECS no longer knows about
+  sprites at all. The `Sprite` component moved to the `Sprites` namespace
+  (`Sprites.Sprite`, was `ECS.Sprite`); read its store with the generic
+  `ecs.dense(Sprites.Sprite)` and blit with `Draw.sprites(ecs.dense(
+Sprites.Sprite), opts)`. For px/py interpolation call `Sprites.interpolate(
+ecs)` once (opt-in, replaces the old automatic snapshot). Draw owns rendering;
+  the ECS is a content-agnostic data container.
 
 ### Anim
 
@@ -116,6 +122,17 @@ clamp/clampRect/limit` — mutate-first, structural.
   const anim = sheet.play("idle");
   anim.set(cond ? "run" : "idle"); // same-state set is a no-op
   Draw.sprite(anim, entityRect, { flipX }); // bottom-center anchored
+  ```
+- `Anim.states` is BACK — for kits shipped as one image PER state
+  (`idle.png`, `run.png`, …) instead of one packed grid. Same cursor surface as
+  `Anim.sheet.play` (`.set`/`.state`/`.frame`/`.done`, `Draw.sprite`-ready):
+  ```js
+  const kit = Anim.states({
+    idle: { image: art.idle, frames: 4, fps: 6 },
+    run: { image: art.run, frames: 6, fps: 12 },
+    jump: { image: art.jump }, // 1 static frame
+  });
+  const anim = kit.play("idle");
   ```
 - Assets `{ src, sheet: { fw, fh } }` specs → `{ src, sheet: { frame: {...},
 states: {...} } }`.

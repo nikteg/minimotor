@@ -312,7 +312,7 @@ function drawWorld(): void {
   // [#16] Screen space is the default; the camera transforms its block.
   Camera.render(() => {
     Draw.tiles(level, skin); // [#42] data never draws itself
-    ecs.each(Coin, (_e, c) => Draw.circle(c, 8, "#ffd166")); // [#21]
+    for (const c of ecs.dense(Coin)) Draw.circle(c, 8, "#ffd166"); // [#21] data pass, no entity
     if (ghosts) {
       for (const g of ghosts) Draw.rect(g.x, g.y, 32, 32, "#4ecdc466"); // [#49]
     }

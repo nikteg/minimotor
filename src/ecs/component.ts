@@ -1,4 +1,4 @@
-import { Component, ComponentInit, SpriteData } from "./types.js";
+import { Component, ComponentInit } from "./types.js";
 
 let nextComponentId = 0;
 
@@ -16,8 +16,3 @@ export function component<T>(label?: string): Component<T> {
   };
   return self;
 }
-
-/** The engine-standard sprite component. Bake a texture with `Sprites.getSprite`
- *  (or load an image), attach `Sprite.with({ x, y, img })`, then let
- *  `world.drawSprites(ctx)` draw it. */
-export const Sprite = component<SpriteData>("Sprite");

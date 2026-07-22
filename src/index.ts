@@ -86,6 +86,8 @@ export type {
   StageOptions,
   DrawTextOptions,
   DrawSpriteOptions,
+  DrawSprite,
+  DrawSpritesOptions,
   SpriteLike,
   ParticleLike,
   TilesLike,
@@ -93,16 +95,7 @@ export type {
   GradientStops,
 } from "./engine/index.js";
 export type { SceneSpec, SceneStack, GoOptions, SceneStackOptions } from "./scenes.js";
-export type {
-  Component,
-  ComponentInit,
-  Entity,
-  Ecs,
-  System,
-  RenderSystem,
-  SpriteData,
-  DrawSpritesOptions,
-} from "./ecs/index.js";
+export type { Component, ComponentInit, Entity, Ecs, System, RenderSystem } from "./ecs/index.js";
 export type { ClockHandle, Cancel } from "./clock.js";
 export type { SignalBus } from "./signals.js";
 export type {
@@ -120,6 +113,9 @@ export type {
   SheetStateSpec,
   SheetImage,
   FrameRect,
+  StateKit,
+  StateCursor,
+  StateClip,
   Motion,
   AnimateOptions,
   SequenceStep,
@@ -196,7 +192,7 @@ export type {
   ToneOptions,
   ToneSweep,
 } from "./audio/index.js";
-export type { SpriteCanvas, AtlasOptions } from "./sprites.js";
+export type { SpriteCanvas, AtlasOptions, SpriteData } from "./sprites.js";
 export type {
   Weighted,
   GridPoint,

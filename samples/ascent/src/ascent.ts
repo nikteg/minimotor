@@ -614,7 +614,7 @@ function loadLevel(i: number): void {
   for (const e of stale) orbWorld.despawn(e);
   for (const { x, y } of level.orbDefs) {
     orbWorld.spawn(
-      ECS.Sprite.with({
+      Sprites.Sprite.with({
         x,
         y,
         img: crystalSheet,
@@ -947,7 +947,7 @@ Loop.run({
     const bt = performance.now() * 0.004;
     const pcx = player.x + PW / 2;
     const pcy = player.y + PH / 2;
-    orbWorld.each(ECS.Sprite, Orb, (_e, s, o) => {
+    orbWorld.each(Sprites.Sprite, Orb, (_e, s, o) => {
       if (o.cd > 0) o.cd--;
       const readyOrb = o.cd === 0;
       s.sx = cr.sx;
@@ -1010,7 +1010,7 @@ Loop.run({
       drawBackground(ctx);
       drawProps(ctx);
       drawTiles(ctx);
-      orbWorld.drawSprites(ctx); // ECS-owned dash crystals
+      Draw.sprites(orbWorld.dense(Sprites.Sprite)); // ECS-owned dash crystals
       drawExit(ctx);
       Draw.particles(fx);
       drawPlayer(ctx);

@@ -7,7 +7,10 @@ import {
   packAtlas,
   contentBounds,
   tint,
+  Sprite,
+  interpolate,
 } from "../sprites.js";
+import { create } from "../ecs/index.js";
 
 beforeEach(() => {
   clearSpriteCache();
@@ -202,5 +205,28 @@ describe("Sprites.contentBounds", () => {
     withPixels(6, 5, []);
     const box = contentBounds({ width: 6, height: 5 } as HTMLImageElement);
     expect(box).toEqual({ x: 0, y: 0, w: 6, h: 5 });
+  });
+});
+
+describe("Sprites.Sprite + interpolate (ECS integration)", () => {
+  const img = { width: 20, height: 20 } as HTMLCanvasElement;
+
+  it("is just a normal component — the ECS gives it no special treatment", () => {
+    const ecs = create();
+    ecs.spawn(Sprite.with({ x: 5, y: 6, img }));
+    // No interpolate registered → update() does NOT snapshot px/py.
+    ecs.update();
+    expect(ecs.dense(Sprite)[0].px).toBeUndefined();
+  });
+
+  it("interpolate() snapshots px/py BEFORE movement systems run", () => {
+    const ecs = create();
+    interpolate(ecs); // registered first → runs first
+    ecs.system("move", (w) => {
+      for (const s of w.dense(Sprite)) s.x += 10;
+    });
+    ecs.spawn(Sprite.with({ x: 0, y: 0, img }));
+    ecs.update(); // snapshot px=0, then move to x=10
+    expect(ecs.dense(Sprite)[0]).toMatchObject({ x: 10, px: 0, py: 0 });
   });
 });

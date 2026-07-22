@@ -53,67 +53,6 @@ export type System = (world: Ecs) => void;
 /** A render system: runs in the draw phase (via `world.draw(ctx)`). */
 export type RenderSystem = (world: Ecs, ctx: CanvasRenderingContext2D) => void;
 
-/** An image the built-in sprite renderer can blit. A `SpriteCanvas` from
- *  `Sprites.getSprite` carries `logicalSize`, so its on-screen size is inferred
- *  automatically; for other images pass `w`/`h` (or the natural size is used). */
-type SpriteImage = (HTMLCanvasElement | HTMLImageElement | ImageBitmap) & {
-  logicalSize?: number;
-};
-
-/** The engine-standard `Sprite` component: position + texture + presentation.
- *  Attach it and call `world.drawSprites(ctx)` — no hand-written blit loop.
- *  Drop to a manual `ctx` query only for custom visuals. */
-export interface SpriteData {
-  /** Ecs position (logical px). */
-  x: number;
-  y: number;
-  /** Texture to blit (canvas / image / bitmap). */
-  img: SpriteImage;
-  /** On-screen size (logical px). Inferred from `img` when omitted. */
-  w?: number;
-  h?: number;
-  /** Anchor as a fraction of size; 0.5/0.5 (default) centers on `x,y`. */
-  ax?: number;
-  ay?: number;
-  /** Rotation in radians (default 0), applied about the anchor. */
-  rot?: number;
-  /** Uniform scale (default 1). */
-  scale?: number;
-  /** Mirror horizontally / vertically about the anchor (default false). */
-  flipX?: boolean;
-  flipY?: boolean;
-  /** Opacity 0..1 (default 1). */
-  alpha?: number;
-  /** Draw order — lower is drawn first (default 0). */
-  z?: number;
-  /** Skip drawing when false (default true). */
-  visible?: boolean;
-  /** Source sub-rect within `img` (px). Set all four to blit one cell of a
-   *  sprite sheet / texture atlas — an `Anim` writes these each frame. When set,
-   *  on-screen size defaults to `sw`/`sh` instead of the whole image. */
-  sx?: number;
-  sy?: number;
-  sw?: number;
-  sh?: number;
-  /** Position at the previous fixed step. Maintained by `world.update()`;
-   *  `drawSprites` uses it to interpolate when given an `alpha` — don't write
-   *  these yourself (but *do* reset them alongside `x`/`y` when teleporting an
-   *  entity, or it will visibly streak for one frame). */
-  px?: number;
-  py?: number;
-}
-
-/** Options for `world.drawSprites`. */
-export interface DrawSpritesOptions {
-  /** Render interpolation factor 0..1 (pass `Loop.alpha`). Sprites whose
-   *  `px`/`py` snapshots exist are drawn between their previous and current
-   *  step positions — smooth motion on 90/120/144 Hz displays. */
-  alpha?: number;
-  /** Visible world rect (camera view). When given, sprites fully outside it are
-   *  skipped before any transform work. */
-  view?: { x: number; y: number; w: number; h: number };
-}
-
 /** A container of entities, their components, and queries over them. Create
  *  with `ECS.create()` — the blessed instance idiom is `const ecs =
  *  ECS.create()`. ECS worlds are game CONTENT: make one per scene or per
@@ -151,12 +90,14 @@ export interface Ecs {
   update(): void;
   /** Run every render system in order with the given context. */
   draw(ctx: CanvasRenderingContext2D): void;
-  /** Built-in renderer: blit every entity holding the standard `Sprite`
-   *  component, sorted by `z` (ties keep spawn order). Honors anchor, rotation,
-   *  scale, flip, alpha and visibility. Call from a scene `draw` or a render
-   *  system. Pass `{ alpha: Loop.alpha }` for interpolated positions and/or
-   *  `{ view }` to cull off-screen sprites. */
-  drawSprites(ctx: CanvasRenderingContext2D, opts?: DrawSpritesOptions): void;
+  /** The live backing array of a component's data — every row currently
+   *  attached, packed (a sparse set's dense side). This is the zero-copy bridge
+   *  to code that consumes component data in bulk without the ECS knowing what
+   *  that code does: e.g. hand the `Sprite` store to the renderer with
+   *  `Draw.sprites(ecs.dense(Sprites.Sprite), { alpha, view })`. The array is
+   *  the store's own backing — read and mutate elements freely, but don't
+   *  change its length (spawn/despawn own that). Empty when nothing holds `c`. */
+  dense<T>(c: Component<T>): readonly T[];
 
   /** Callback-form query for hot systems: no generator, no per-entity tuple
    *  allocation. Same matching semantics as `query`. */

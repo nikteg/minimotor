@@ -1,7 +1,7 @@
 // Sprite-sheet animation on the ECS.
 // Demonstrates: Sprites.atlas (procedural sprite-sheet baking), Anim.sheet
 // (frame slicing + clock-derived playback), the ECS Sprite source-rect
-// (sx/sy/sw/sh), ecs.drawSprites(), and Goodies.wrap. The sheet is generated
+// (sx/sy/sw/sh), Draw.sprites(ecs.dense(Sprites.Sprite)), and Goodies.wrap. The sheet is generated
 // procedurally so the sample needs no asset files — an 8-frame
 // pulsing/rotating star.
 import {
@@ -66,7 +66,16 @@ function spawnStar(x: number, y: number) {
   const a = Math.random() * Math.PI * 2;
   const speed = 1 + Math.random() * 2;
   ecs.spawn(
-    ECS.Sprite.with({ x, y, img: sheetCanvas, sx: r.sx, sy: r.sy, sw: r.sw, sh: r.sh, scale: 0.8 }),
+    Sprites.Sprite.with({
+      x,
+      y,
+      img: sheetCanvas,
+      sx: r.sx,
+      sy: r.sy,
+      sw: r.sw,
+      sh: r.sh,
+      scale: 0.8,
+    }),
     Vel.with({ x: Math.cos(a) * speed, y: Math.sin(a) * speed }),
     Animated.with({ offset }),
   );
@@ -77,7 +86,7 @@ for (let i = 0; i < 12; i++) spawnStar(Math.random() * view.w, Math.random() * v
 // Write each entity's current frame into the Sprite's source rect — so the
 // built-in renderer shows the right cell. Also drift + wrap.
 ecs.system("animate", (w) => {
-  for (const [, s, v, an] of w.query(ECS.Sprite, Vel, Animated)) {
+  for (const [, s, v, an] of w.query(Sprites.Sprite, Vel, Animated)) {
     const r = starSheet.rect("spin", (spin.frame + an.offset) % FRAMES);
     s.sx = r.sx;
     s.sy = r.sy;
@@ -94,7 +103,11 @@ Loop.run({
     ecs.update();
   },
   draw() {
-    ecs.drawSprites(Draw.ctx); // blits each Sprite's current source rect
-    UI.text(`${ecs.count(ECS.Sprite)} animated sprites · click to add`, { x: 10, y: 8, size: 14 });
+    Draw.sprites(ecs.dense(Sprites.Sprite)); // blits each Sprite's current source rect
+    UI.text(`${ecs.count(Sprites.Sprite)} animated sprites · click to add`, {
+      x: 10,
+      y: 8,
+      size: 14,
+    });
   },
 });
