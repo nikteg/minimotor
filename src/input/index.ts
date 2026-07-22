@@ -3,3 +3,4 @@
 // polling (gamepad).
 export * from "./actions.js";
 export * from "./gamepad.js";
+export * from "./map.js";

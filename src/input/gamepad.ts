@@ -99,10 +99,14 @@ let padsWired = false;
 
 function ensurePadsWired(): void {
   if (padsWired) return;
-  padsWired = true;
-  Loop.onStepStart(() => {
-    for (const pad of defaultPads.values()) pad.poll();
-  });
+  try {
+    Loop.onStepStart(() => {
+      for (const pad of defaultPads.values()) pad.poll();
+    });
+    padsWired = true;
+  } catch {
+    // No default game yet — polling retries wiring on the next gamepad() call.
+  }
 }
 
 /** The default gamepad (or pad `index`), polled on the loop's fixed step.

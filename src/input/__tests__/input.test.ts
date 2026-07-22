@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { wireButton, preventTouchFocus, vibrate, actions, createGamepadTracker } from "../index.js";
+import { wireButton, preventTouchFocus, vibrate, map, createGamepadTracker } from "../index.js";
 import { Stage } from "../../engine/index.js";
 
 beforeEach(() => {
@@ -57,28 +57,125 @@ describe("Input", () => {
     });
   });
 
-  describe("actions", () => {
-    it("maps named actions to any of their bound key codes", () => {
-      // The actions helper reads the default game's Keys — build one.
-      const origGc = HTMLCanvasElement.prototype.getContext;
-      HTMLCanvasElement.prototype.getContext = function (type: string) {
-        if (type !== "2d") return origGc.call(this, type);
-        return { setTransform: vi.fn(), canvas: this } as unknown as CanvasRenderingContext2D;
+  describe("Input.map", () => {
+    // Fake, injectable sources — the map is a pure fusion layer over them.
+    function fakeKeys(held: Set<string>, edges: { pressed: Set<string>; released: Set<string> }) {
+      return {
+        down: (c: string) => held.has(c),
+        pressed: (c: string) => edges.pressed.has(c),
+        released: (c: string) => edges.released.has(c),
       };
-      try {
-        Stage.init(document.createElement("canvas"));
-        const input = actions({ left: ["ArrowLeft", "KeyA"], jump: ["Space"] });
-        expect(input.down("left")).toBe(false);
-        window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyA" }));
-        expect(input.down("left")).toBe(true); // alternate binding counts
-        expect(input.pressed("left")).toBe(true);
-        expect(input.down("jump")).toBe(false);
-        window.dispatchEvent(new KeyboardEvent("keyup", { code: "KeyA" }));
-        expect(input.down("left")).toBe(false);
-        expect(input.released("left")).toBe(true);
-      } finally {
-        HTMLCanvasElement.prototype.getContext = origGc;
-      }
+    }
+    function fakeStickPad(axes: number[], downs = new Set<number>()) {
+      return {
+        connected: true,
+        axis: (i: number) => axes[i] ?? 0,
+        down: (b: number) => downs.has(b),
+        pressed: () => false,
+        released: () => false,
+      };
+    }
+
+    it("fuses key bindings: any binding activates the action", () => {
+      const held = new Set<string>();
+      const edges = { pressed: new Set<string>(), released: new Set<string>() };
+      const input = map(
+        { left: ["ArrowLeft", "KeyA"], jump: ["Space"] },
+        { keys: fakeKeys(held, edges), pad: null, steps: () => 0 },
+      );
+      expect(input.left.down).toBe(false);
+      held.add("KeyA");
+      edges.pressed.add("KeyA");
+      expect(input.left.down).toBe(true); // alternate binding counts
+      expect(input.left.pressed).toBe(true);
+      expect(input.jump.down).toBe(false);
+    });
+
+    it("pad buttons and stick directions activate actions, with per-step edges", () => {
+      let step = 0;
+      const axes = [0, 0];
+      const downs = new Set<number>();
+      const input = map(
+        { right: ["pad:dpad-right", "pad:lstick-right"], jump: ["pad:a"] },
+        {
+          keys: fakeKeys(new Set(), { pressed: new Set(), released: new Set() }),
+          pad: fakeStickPad(axes, downs),
+          steps: () => step,
+        },
+      );
+      expect(input.jump.down).toBe(false);
+      downs.add(0); // Buttons.A
+      step += 1;
+      expect(input.jump.down).toBe(true);
+      expect(input.jump.pressed).toBe(true); // edge on the step it appeared
+      step += 1;
+      expect(input.jump.pressed).toBe(false); // held, no longer an edge
+      downs.delete(0);
+      step += 1;
+      expect(input.jump.released).toBe(true);
+
+      axes[0] = 0.8; // stick right
+      step += 1;
+      expect(input.right.down).toBe(true);
+      expect(input.right.value).toBeCloseTo(0.8); // analog magnitude
+    });
+
+    it("axis fuses opposing actions, analog-aware", () => {
+      let step = 0;
+      const held = new Set<string>();
+      const axes = [0, 0];
+      const input = map(
+        {
+          left: ["KeyA", "pad:lstick-left"],
+          right: ["KeyD", "pad:lstick-right"],
+        },
+        {
+          keys: fakeKeys(held, { pressed: new Set(), released: new Set() }),
+          pad: fakeStickPad(axes),
+          steps: () => step,
+        },
+      );
+      expect(input.axis("left", "right")).toBe(0);
+      held.add("KeyD");
+      step += 1;
+      expect(input.axis("left", "right")).toBe(1); // keys snap to ±1
+      held.delete("KeyD");
+      axes[0] = -0.6;
+      step += 1; // pad activity memoizes per step — new step, fresh sample
+      expect(input.axis("left", "right")).toBeCloseTo(-0.6); // analog
+    });
+
+    it("vector normalizes the keyboard diagonal but preserves analog magnitude", () => {
+      const held = new Set<string>(["KeyD", "KeyS"]);
+      const input = map(
+        { left: ["KeyA"], right: ["KeyD"], up: ["KeyW"], down: ["KeyS"] },
+        {
+          keys: fakeKeys(held, { pressed: new Set(), released: new Set() }),
+          pad: null,
+          steps: () => 0,
+        },
+      );
+      const v = input.vector("left", "right", "up", "down");
+      expect(Math.hypot(v.x, v.y)).toBeCloseTo(1); // no 1.41× diagonal
+      expect(v.x).toBeCloseTo(Math.SQRT1_2);
+    });
+
+    it("rebind replaces bindings and bindings round-trips as JSON", () => {
+      const held = new Set<string>();
+      const input = map(
+        { jump: ["Space"] },
+        {
+          keys: fakeKeys(held, { pressed: new Set(), released: new Set() }),
+          pad: null,
+          steps: () => 0,
+        },
+      );
+      input.rebind("jump", ["KeyJ"]);
+      held.add("Space");
+      expect(input.jump.down).toBe(false); // old binding gone
+      held.add("KeyJ");
+      expect(input.jump.down).toBe(true);
+      expect(JSON.parse(JSON.stringify(input.bindings))).toEqual({ jump: ["KeyJ"] });
     });
   });
 

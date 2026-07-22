@@ -123,7 +123,15 @@ export type {
   PerfOptions,
   Sparkline,
 } from "./perf/index.js";
-export type { GamepadState } from "./input/index.js";
+export type {
+  GamepadState,
+  PadButton,
+  PadCode,
+  Binding,
+  ActionState,
+  InputMap,
+  InputMapOptions,
+} from "./input/index.js";
 export type { State, AnimBridge, FsmOptions, Machine } from "./fsm.js";
 export type { Window, Buffer, Cooldown, JumpGate, JumpGateOptions } from "./timers.js";
 export type { TileMap, TilesConfig, MoveOptions, MoveResult, MoveDir } from "./tiles.js";

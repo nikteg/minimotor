@@ -1,5 +1,3 @@
-import { Keys } from "../engine/index.js";
-
 /** Binds a button element to an action with touch+click+mousedown handling.
  *  mousedown+preventDefault stops the button from grabbing focus
  *  so the spacebar continues working after a click.
@@ -41,55 +39,4 @@ export function vibrate(pattern: number | number[]): boolean {
   } catch {
     return false;
   }
-}
-
-/** Named-action view over the engine's `Keys`, so games stop hand-rolling
- *  "WASD or arrows" checks. Semantics match `Keys` exactly (edge-triggered
- *  `pressed`/`released` per fixed step — read inside `update`).
- *
- *    const input = Minimotor.Input.actions({
- *      left:  ["ArrowLeft", "KeyA"],
- *      right: ["ArrowRight", "KeyD"],
- *      jump:  ["Space", "KeyW"],
- *    });
- *    if (input.down("left")) move(-1);
- *    if (input.pressed("jump")) jump(); */
-export function actions<A extends string>(
-  map: Record<A, string[]>,
-): {
-  /** True while any bound key is held. */
-  down(action: A): boolean;
-  /** True for one update step when any bound key goes down. */
-  pressed(action: A): boolean;
-  /** True for one update step when any bound key goes up. */
-  released(action: A): boolean;
-} {
-  const test = (action: A, check: (code: string) => boolean) => {
-    const codes = map[action];
-    if (!codes) return false;
-    for (const code of codes) if (check(code)) return true;
-    return false;
-  };
-  return {
-    down: (a) => test(a, Keys.down),
-    pressed: (a) => test(a, Keys.pressed),
-    released: (a) => test(a, Keys.released),
-  };
-}
-
-/** Keyboard state tracker — returns a live object where `keys["ArrowLeft"]`
- *  is `true` while that key is held. Independent of the Engine; safe to
- *  call anywhere.
- *  @deprecated Use the engine's `Keys` (or `Input.actions`) instead — this
- *  duplicates the held-key tracking with none of the edge semantics, and its
- *  listeners can never be removed. */
-export function trackKeys(): Record<string, boolean> {
-  const keys: Record<string, boolean> = {};
-  window.addEventListener("keydown", (e) => {
-    keys[e.code] = true;
-  });
-  window.addEventListener("keyup", (e) => {
-    keys[e.code] = false;
-  });
-  return keys;
 }
