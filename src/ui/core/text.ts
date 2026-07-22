@@ -1,8 +1,58 @@
 import { uiCtx } from "./context.js";
 import { Stack, currentLayout, place } from "./stack.js";
 import { centeredText, theme, uiFont } from "./theme.js";
+import { Stage } from "../../engine/index.js";
 
 // ---------- Text ----------
+
+/** Named screen anchors: position HUD text without reading the viewport.
+ *  Anchors respect safe-area insets (notches) on the left/top edges. */
+export type TextAnchor =
+  | "topLeft"
+  | "top"
+  | "topRight"
+  | "left"
+  | "center"
+  | "right"
+  | "bottomLeft"
+  | "bottom"
+  | "bottomRight";
+
+const ANCHOR_H: Record<TextAnchor, 0 | 0.5 | 1> = {
+  topLeft: 0,
+  left: 0,
+  bottomLeft: 0,
+  top: 0.5,
+  center: 0.5,
+  bottom: 0.5,
+  topRight: 1,
+  right: 1,
+  bottomRight: 1,
+};
+const ANCHOR_V: Record<TextAnchor, 0 | 0.5 | 1> = {
+  topLeft: 0,
+  top: 0,
+  topRight: 0,
+  left: 0.5,
+  center: 0.5,
+  right: 0.5,
+  bottomLeft: 1,
+  bottom: 1,
+  bottomRight: 1,
+};
+
+function anchorViewport(ctx: CanvasRenderingContext2D): {
+  w: number;
+  h: number;
+  safeLeft: number;
+  safeTop: number;
+} {
+  try {
+    return Stage.viewport;
+  } catch {
+    return { w: ctx.canvas.width, h: ctx.canvas.height, safeLeft: 0, safeTop: 0 };
+  }
+}
 
 /** A themed text label. */
 export interface TextOptions {
@@ -10,6 +60,11 @@ export interface TextOptions {
    *  slot the width of the text, the row's height / a `size`-tall line). */
   x?: number;
   y?: number;
+  /** Named screen anchor: `x`/`y` become OFFSETS from this point instead of
+   *  absolute coordinates, and the text aligns toward it ("center" centers,
+   *  "topRight" right-aligns, …). The HUD way to say "middle of the screen"
+   *  without reading the viewport. */
+  anchor?: TextAnchor;
   /** Slot sizing overrides when placed in a layout. */
   w?: number;
   h?: number;
@@ -79,9 +134,34 @@ export function text(
   b?: string | TextOptions,
   c?: TextOptions,
 ): void {
-  const [ctx, str, opts] =
+  const [ctx, str, rawOpts] =
     typeof a === "string" ? [uiCtx(), a, (b as TextOptions) ?? {}] : [a, b as string, c ?? {}];
+  let opts = rawOpts;
+  if (opts.anchor) {
+    const view = anchorViewport(ctx);
+    const hx = ANCHOR_H[opts.anchor];
+    const vy = ANCHOR_V[opts.anchor];
+    const baseX = hx === 0 ? view.safeLeft : hx === 0.5 ? view.w / 2 : view.w;
+    const baseY = vy === 0 ? view.safeTop : vy === 0.5 ? view.h / 2 : view.h;
+    const lineH = (opts.size ?? theme.fontSize) + 6;
+    opts = {
+      ...opts,
+      x: baseX + (opts.x ?? 0),
+      y: baseY + (opts.y ?? 0) - vy * lineH,
+      align: opts.align ?? (hx === 0 ? "left" : hx === 0.5 ? "center" : "right"),
+      anchor: undefined,
+    };
+  }
   ctx.save();
+  // UI is ALWAYS screen space, regardless of ambient camera blocks.
+  if (typeof ctx.setTransform === "function") {
+    try {
+      const dpr = Stage.viewport.dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    } catch {
+      // No default game (isolated ctx): leave the transform alone.
+    }
+  }
   ctx.font = opts.font ?? uiFont(opts.size ?? theme.fontSize, opts.bold ?? false);
   const natural = Math.ceil(ctx.measureText(str).width);
   const lineH = (opts.size ?? theme.fontSize) + 6;

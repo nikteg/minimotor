@@ -159,6 +159,22 @@ export interface GameOptions {
 
 export const STEP_MS = 1000 / 60;
 
+// Global fixed-step counter: the engine's heartbeat, shared by every game
+// instance (in practice one runs at a time). Pull-based content (cameras,
+// motions, cursors) folds forward by "steps elapsed since my last read"
+// instead of registering step handlers — see API_PLAN law 4.
+let globalSteps = 0;
+
+/** Number of fixed update steps executed since module load. Monotonic; the
+ *  time base for pull-derived content. */
+export function stepNow(): number {
+  return globalSteps;
+}
+
+function advanceStepCounter(): void {
+  globalSteps += 1;
+}
+
 /** Spiral-of-death guard: at most this many catch-up steps per frame; any
  *  further backlog is dropped (better a one-off slow-motion hitch than a
  *  feedback loop of ever-longer frames). */
@@ -410,6 +426,7 @@ function buildGame(options: GameOptions): Game {
         accumulator = 0;
         break;
       }
+      advanceStepCounter();
       for (const h of stepStartHandlers) h(); // poll-only inputs sample here
       callbacks!.update();
       for (const h of stepHandlers) h(); // timers / tweens advance one step

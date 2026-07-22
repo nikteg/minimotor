@@ -8,7 +8,11 @@ import {
   createGame,
 } from "./game.js";
 import type { KeyCode } from "./keycodes.js";
+import type { Rect } from "./game.js";
 import { applyFullscreen } from "../fullscreen.js";
+import { drawText, type TextHAlign, type TextVAlign } from "../text.js";
+
+type Point = { x: number; y: number };
 
 /** Polled keyboard state. `down` is level-triggered (held); `pressed` and
  *  `released` are edge-triggered and true for exactly one update step per
@@ -156,7 +160,102 @@ export const Loop = {
   },
 };
 
-/** Rendering handle — read inside `draw`. */
+/** Options for `Draw.text` — plain ambient-space text (world-anchored damage
+ *  numbers, name tags). For themed, screen-space HUD text use `UI.text`. */
+export interface DrawTextOptions {
+  x: number;
+  y: number;
+  /** Font size in px (monospace). Default 16. */
+  size?: number;
+  /** Full CSS font string — overrides `size`. */
+  font?: string;
+  /** Fill color. Default "#fff". */
+  color?: string;
+  /** Horizontal anchor of `x`. Default "left". */
+  align?: TextHAlign;
+  /** Vertical anchor of `y`. Default "top". */
+  baseline?: TextVAlign;
+}
+
+// ---------- Ambient-space drawing primitives ----------
+// Draw.* renders in the AMBIENT coordinate space: screen at the top level,
+// world inside `Camera.render` blocks (the camera sets the ctx transform).
+// Data never draws itself — this is the only namespace that knows what a
+// canvas is. Geometry takes positional args for literals plus a structural
+// overload (anything with the fields IS the shape).
+
+function rect(x: number, y: number, w: number, h: number, color: string): void;
+function rect(rect: Rect, color: string): void;
+function rect(a: number | Rect, b: number | string, c?: number, d?: number, e?: string): void {
+  const ctx = requireDefault().ctx;
+  if (typeof a === "number") {
+    ctx.fillStyle = e!;
+    ctx.fillRect(a, b as number, c!, d!);
+  } else {
+    ctx.fillStyle = b as string;
+    ctx.fillRect(a.x, a.y, a.w, a.h);
+  }
+}
+
+function circle(x: number, y: number, r: number, color: string): void;
+function circle(pos: Point, r: number, color: string): void;
+function circle(a: number | Point, b: number, c: number | string, d?: string): void {
+  const ctx = requireDefault().ctx;
+  const [x, y, r, color] =
+    typeof a === "number" ? [a, b, c as number, d!] : [a.x, a.y, b, c as string];
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function line(x1: number, y1: number, x2: number, y2: number, color: string, width?: number): void;
+function line(a: Point, b: Point, color: string, width?: number): void;
+function line(
+  a: number | Point,
+  b: number | Point,
+  c?: number | string,
+  d?: number | string,
+  e?: string,
+  f?: number,
+): void {
+  const ctx = requireDefault().ctx;
+  let x1: number, y1: number, x2: number, y2: number, color: string, width: number;
+  if (typeof a === "number") {
+    x1 = a;
+    y1 = b as number;
+    x2 = c as number;
+    y2 = d as number;
+    color = e!;
+    width = f ?? 1;
+  } else {
+    x1 = a.x;
+    y1 = a.y;
+    x2 = (b as Point).x;
+    y2 = (b as Point).y;
+    color = c as string;
+    width = (d as number | undefined) ?? 1;
+  }
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+}
+
+function text(str: string, opts: DrawTextOptions): void {
+  const ctx = requireDefault().ctx;
+  drawText(ctx, str, opts.x, opts.y, {
+    font: opts.font ?? (opts.size !== undefined ? `${opts.size}px monospace` : undefined),
+    color: opts.color,
+    align: opts.align,
+    baseline: opts.baseline,
+  });
+}
+
+/** Rendering: ambient-space primitives (screen at top level, world inside
+ *  `Camera.render`) plus the raw `ctx` escape hatch. */
 export const Draw = {
   get ctx(): CanvasRenderingContext2D {
     return requireDefault().ctx;
@@ -168,6 +267,10 @@ export const Draw = {
   get alpha(): number {
     return requireDefault().alpha;
   },
+  rect,
+  circle,
+  line,
+  text,
 };
 
 /** Polled keyboard — read inside `update`. */

@@ -34,11 +34,10 @@ import * as Physics from "./physics.js";
 import * as Sprites from "./sprites.js";
 import * as Net from "./net/index.js";
 import * as Perf from "./perf/index.js";
-import * as Camera from "./camera/index.js";
+import { Camera, createCamera } from "./camera/index.js";
 import * as Game from "./game.js";
 import * as Goodies from "./goodies/index.js";
 import * as Gizmos from "./gizmos/index.js";
-import * as Text from "./text.js";
 import * as Tiles from "./tiles.js";
 import * as Transitions from "./transitions.js";
 
@@ -58,10 +57,10 @@ export {
   Net,
   Perf,
   Camera,
+  createCamera,
   Game,
   Goodies,
   Gizmos,
-  Text,
   Tiles,
   Transitions,
   Mathf,
@@ -86,6 +85,7 @@ export type {
   Game as GameHost,
   GameOptions,
   StageOptions,
+  DrawTextOptions,
 } from "./engine/index.js";
 export type { Scene, SceneManager } from "./scenes.js";
 export type {
@@ -112,7 +112,7 @@ export type {
   Parallel,
 } from "./anim/index.js";
 export type { Sweep, Contact, BounceFaces } from "./collision.js";
-export type { ShakeState } from "./camera/index.js";
+export type { CameraOptions, CameraLens, RenderOptions, FollowTarget } from "./camera/index.js";
 export type { ParticleSystem, BurstOptions, Range } from "./particles.js";
 export type {
   PerfStats,
@@ -274,7 +274,6 @@ export const Minimotor = {
   Game,
   Goodies,
   Gizmos,
-  Text,
   Tiles,
   Transitions,
   Mathf,

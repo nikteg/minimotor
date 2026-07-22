@@ -1,6 +1,4 @@
 // ---------- Camera ----------
-// A smooth follow camera (createCamera), a parallax column iterator
-// (scrollColumns), and the default screen-shake facade.
+// The always-existing default camera facade (`Camera`), extra lenses via
+// `createCamera` (minimaps, split screen), pull-based follow/shake.
 export * from "./camera.js";
-export * from "./parallax.js";
-export * from "./shake.js";
