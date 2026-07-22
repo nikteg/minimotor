@@ -5,6 +5,7 @@
 // Split by concern: context / mixer / sfx / music. mixer/sfx re-export
 // wholesale; context/music are re-exported selectively so the shared
 // internals (audioCtx, getNoiseBuffer) stay private.
+export * from "./api.js";
 export * from "./mixer.js";
 export * from "./sfx.js";
 export { ensureAudio } from "./context.js";

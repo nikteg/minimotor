@@ -502,6 +502,10 @@ export const Mixer = {
   ): void {
     Mixer.bus(name).duck(amount, opts);
   },
+  /** Current master volume setting. */
+  get masterVolume(): number {
+    return masterVolume;
+  },
   /** Master volume 0..1 for everything (click-free ramp). */
   setMasterVolume(v: number, rampMs = 20): void {
     masterVolume = v;

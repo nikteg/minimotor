@@ -178,6 +178,12 @@ export type { Transition, TransitionRender, TransitionRun } from "./transitions.
 export type {
   SfxBuilder,
   MusicConfig,
+  SfxSpec,
+  SfxHandle,
+  PlayOptions,
+  BusHandle,
+  MusicOptions,
+  MusicHandle,
   Bus,
   Filter,
   Effect,
