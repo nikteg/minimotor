@@ -16,20 +16,45 @@
 //
 //   if (Minimotor.Assets.loading) UI.bar(x, y, w, h, Minimotor.Assets.progress);
 
-import { sheet as animSheet, type SheetConfig, type SheetImage } from "./anim/index.js";
-import { tint as tintSprite } from "./sprites.js";
+import {
+  sheet as animSheet,
+  type Sheet,
+  type SheetImage,
+  type SheetOptions,
+} from "./anim/index.js";
+import { tint as tintSprite, type SpriteCanvas } from "./sprites.js";
 
 /** A manifest entry: a plain URL, or a `{ src }` spec that composes the loaded
  *  image into a higher-level resource. Extensions decide the loader:
- *  .png/.jpg/.jpeg/.webp/.gif/.bmp → image; .json → parsed JSON. */
+ *  .png/.jpg/.jpeg/.webp/.gif/.bmp → image; .json → parsed JSON;
+ *  .ogg/.mp3/.wav/.m4a → ArrayBuffer (decoded lazily by `Audio.music`/sfx). */
 export type AssetSpec =
   | string
-  /** Slice the loaded image into a sprite-sheet `Animation` (Anim.sheet). */
-  | { src: string; sheet: SheetConfig }
+  /** Slice the loaded image into a named-state `Sheet` (Anim.sheet). */
+  | { src: string; sheet: SheetOptions<string> }
   /** Pre-render a solid-colour silhouette of the image (Sprites.tint). */
   | { src: string; tint: string }
   /** An image with no composition — same as the bare URL, spelled explicitly. */
   | { src: string };
+
+type AudioUrl = `${string}.${"ogg" | "mp3" | "wav" | "m4a"}`;
+type JsonUrl = `${string}.json`;
+
+/** What a manifest entry loads as — the per-key typing behind
+ *  `const art = await Assets.load({ hero: "hero.png" })`. */
+export type LoadedAsset<S extends AssetSpec> = S extends { sheet: SheetOptions<string> }
+  ? Sheet<S["sheet"]["states"] extends Record<infer K extends string, unknown> ? K : string>
+  : S extends { tint: string }
+    ? SpriteCanvas
+    : S extends JsonUrl | { src: JsonUrl }
+      ? unknown
+      : S extends AudioUrl | { src: AudioUrl }
+        ? ArrayBuffer
+        : HTMLImageElement;
+
+/** The typed record `load()` resolves with: keys from the manifest, value
+ *  types from each spec. `art.herp` is a compile error. */
+export type Loaded<M extends AssetManifest> = { [K in keyof M]: LoadedAsset<M[K]> };
 
 /** name → spec. */
 export type AssetManifest = Record<string, AssetSpec>;
@@ -39,6 +64,7 @@ export type ProgressFn = (loaded: number, total: number) => void;
 
 const IMAGE_EXT = /\.(png|jpe?g|webp|gif|bmp)$/i;
 const JSON_EXT = /\.json$/i;
+const AUDIO_EXT = /\.(ogg|mp3|wav|m4a)$/i;
 
 function specSrc(spec: AssetSpec): string {
   return typeof spec === "string" ? spec : spec.src;
@@ -57,6 +83,14 @@ function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
+async function loadAudio(url: string): Promise<ArrayBuffer> {
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Minimotor.Assets: failed to load audio "${url}" (${res.status})`);
+  }
+  return res.arrayBuffer();
+}
+
 async function loadJson(url: string): Promise<unknown> {
   const res = await fetch(url);
   if (!res.ok) {
@@ -68,8 +102,9 @@ async function loadJson(url: string): Promise<unknown> {
 function loadOne(url: string): Promise<unknown> {
   if (IMAGE_EXT.test(url)) return loadImage(url);
   if (JSON_EXT.test(url)) return loadJson(url);
+  if (AUDIO_EXT.test(url)) return loadAudio(url);
   return Promise.reject(
-    new Error(`Minimotor.Assets: unknown asset type for "${url}" (expected image or .json)`),
+    new Error(`Minimotor.Assets: unknown asset type for "${url}" (expected image, .json or audio)`),
   );
 }
 
@@ -87,7 +122,7 @@ export interface AssetStore {
    *  by manifest key. `onProgress` fires as each one completes. The raw
    *  image/JSON also merges into the by-name cache, so `load` can be called in
    *  stages and `image`/`json` still work. */
-  load(manifest: AssetManifest, onProgress?: ProgressFn): Promise<Record<string, unknown>>;
+  load<M extends AssetManifest>(manifest: M, onProgress?: ProgressFn): Promise<Loaded<M>>;
   /** Get a loaded raw asset by name (throws if absent). */
   get<T>(name: string): T;
   /** Get a loaded image (throws if absent or not an image). */
@@ -112,7 +147,7 @@ export function createAssets(): AssetStore {
   let completed = 0;
 
   const store: AssetStore = {
-    async load(manifest, onProgress) {
+    async load<M extends AssetManifest>(manifest: M, onProgress?: ProgressFn) {
       const names = Object.keys(manifest);
       pending += names.length;
       const total = names.length;
@@ -140,7 +175,7 @@ export function createAssets(): AssetStore {
       }
       const failure = settled.find((s) => s.status === "rejected");
       if (failure) throw (failure as PromiseRejectedResult).reason;
-      return result;
+      return result as Loaded<M>;
     },
 
     get<T>(name: string): T {

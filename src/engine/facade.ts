@@ -244,6 +244,61 @@ function line(
   ctx.stroke();
 }
 
+/** Anything Draw.sprite can render: a sheet cursor (`heroSheet.play(...)`)
+ *  or any object exposing a source rect + image. Structural on purpose —
+ *  the engine's anim cursors qualify without an import. */
+export interface SpriteLike {
+  readonly rect: { sx: number; sy: number; sw: number; sh: number };
+  readonly sheet: { image: CanvasImageSource };
+}
+
+export interface DrawSpriteOptions {
+  /** Mirror horizontally (facing). */
+  flipX?: boolean;
+  flipY?: boolean;
+  /** Squash & stretch. Anchored at the rect's bottom-center (feet planted),
+   *  the natural pivot for landing squash. Default 1. */
+  scaleX?: number;
+  scaleY?: number;
+  /** Rotation in radians about the same anchor. */
+  rot?: number;
+  /** Opacity 0..1 (ghosts). */
+  alpha?: number;
+}
+
+function sprite(spr: SpriteLike, at: Rect, opts: DrawSpriteOptions = {}): void {
+  const ctx = requireDefault().ctx;
+  const r = spr.rect;
+  ctx.save();
+  ctx.translate(at.x + at.w / 2, at.y + at.h); // bottom-center anchor
+  ctx.scale((opts.flipX ? -1 : 1) * (opts.scaleX ?? 1), (opts.flipY ? -1 : 1) * (opts.scaleY ?? 1));
+  if (opts.rot) ctx.rotate(opts.rot);
+  if (opts.alpha !== undefined) ctx.globalAlpha = opts.alpha;
+  ctx.drawImage(spr.sheet.image, r.sx, r.sy, r.sw, r.sh, -at.w / 2, -at.h, at.w, at.h);
+  ctx.restore();
+}
+
+/** Anything Draw.tiles can render — levels expose a `render` channel; the
+ *  game calls this instead (data never draws itself). Generic so the skin
+ *  type-checks against the level's legend. */
+export interface TilesLike<S> {
+  render(ctx: CanvasRenderingContext2D, skin: S): void;
+}
+
+function tiles<S>(level: TilesLike<S>, skin: S): void {
+  level.render(requireDefault().ctx, skin);
+}
+
+/** Anything Draw.particles can render — particle systems expose a `render`
+ *  channel; the game calls this instead (data never draws itself). */
+export interface ParticleLike {
+  render(ctx: CanvasRenderingContext2D): void;
+}
+
+function particles(sys: ParticleLike): void {
+  sys.render(requireDefault().ctx);
+}
+
 function text(str: string, opts: DrawTextOptions): void {
   const ctx = requireDefault().ctx;
   drawText(ctx, str, opts.x, opts.y, {
@@ -271,6 +326,9 @@ export const Draw = {
   circle,
   line,
   text,
+  sprite,
+  tiles,
+  particles,
 };
 
 /** Polled keyboard — read inside `update`. */

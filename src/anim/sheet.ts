@@ -1,15 +1,29 @@
-// ---------- Sprite-sheet animation ----------
-// Slice a grid sprite sheet into frames and play them on a timeline. Pure frame
-// math + timing — advance with `update(dtMs)` (e.g. Loop.step per fixed step).
+// ---------- Sprite sheets ----------
+// A sheet is shared, immutable config: image + frame size + named states
+// (one grid row per state). A CURSOR (`sheet.play("idle")`) is a cheap
+// per-entity playback head — a hundred goblins share one sheet.
 //
-//   const run = Minimotor.Anim.sheet(img, { fw: 32, fh: 32, fps: 12 });
-//   run.update(Minimotor.Loop.step);
-//   run.draw(ctx, x, y);                 // standalone, or…
-//   Object.assign(sprite, run.rect);     // …drive an ECS Sprite's source rect
+//   const heroSheet = Anim.sheet(art.hero, {
+//     frame: { w: 32, h: 32 },
+//     states: {
+//       idle: { row: 0, frames: 4, fps: 6 },
+//       run:  { row: 1, frames: 6, fps: 12 },
+//       jump: { row: 2, frames: 1 },
+//     },
+//   });
+//   const anim = heroSheet.play("idle");
+//   anim.set(grounded ? "run" : "jump");    // typed; same-state is a NO-OP
+//   Draw.sprite(anim, player, { flipX });
+//
+// Cursors are pull-derived (API_PLAN law 4): the frame is computed from the
+// clock on read — nothing ticks, holding the clock freezes every cursor, and
+// calling `set` with the current state every step never restarts the loop
+// (the classic stuck-on-frame-0 bug can't be written).
+
+import { Clock, type ClockHandle } from "../clock.js";
 
 /** A rectangular region of the sheet image (px). Matches the `sx/sy/sw/sh`
- *  fields of the ECS `Sprite` component, so `Object.assign(sprite, anim.rect)`
- *  makes a sprite show the current frame. */
+ *  fields of the ECS `Sprite` component. */
 export interface FrameRect {
   sx: number;
   sy: number;
@@ -17,188 +31,122 @@ export interface FrameRect {
   sh: number;
 }
 
-export interface SheetConfig {
-  /** Frame width in px. */
-  fw: number;
-  /** Frame height in px. */
-  fh: number;
-  /** Playback speed in frames per second (default 12). */
+export interface SheetStateSpec {
+  /** Grid row holding this state's frames. */
+  row: number;
+  /** Frame count, left to right from column 0. */
+  frames: number;
+  /** Playback speed in frames/second. Default 12 (ignored for 1 frame). */
   fps?: number;
-  /** Grid columns; defaults to `floor(image.width / fw)`. */
-  cols?: number;
-  /** Which grid cells to play, in order. Defaults to every cell, row-major. */
-  frames?: number[];
-  /** Loop at the end (default true); when false, holds the last frame and sets
+  /** Loop at the end (default true); false holds the last frame and reports
    *  `done`. */
   loop?: boolean;
-  /** Called whenever the visible frame changes, with the new index into
-   *  `frames` — footstep sounds, hit-frame triggers. */
-  onFrame?: (frame: number) => void;
-  /** Called once when a non-looping animation finishes. */
-  onDone?: () => void;
 }
 
-/** Draw options for `Animation.draw`. */
-export interface AnimDrawOptions {
-  /** On-screen size (px); defaults to the frame size. */
-  w?: number;
-  h?: number;
-  /** Anchor fraction; 0.5/0.5 (default) centers on the draw point. */
-  ax?: number;
-  ay?: number;
-}
-
-/** A playing sprite-sheet animation. */
-export interface Animation {
-  /** Advance the timeline by `dtMs` milliseconds. */
-  update(dtMs: number): void;
-  /** Current index into the configured `frames` list. */
-  readonly frame: number;
-  /** Source rect of the current frame (feed into an ECS Sprite). */
-  readonly rect: FrameRect;
-  /** True once a non-looping animation has reached its last frame. */
-  readonly done: boolean;
-  /** Jump back to the first frame and clear `done`. */
-  reset(): void;
-  /** Blit the current frame at `(dx, dy)` with the given options. */
-  draw(ctx: CanvasRenderingContext2D, dx: number, dy: number, opts?: AnimDrawOptions): void;
-}
-
-/** A named set of animation clips with a single active state. Switching clips
- * resets the new clip by default, while repeatedly playing the current state
- * leaves its timeline uninterrupted. */
-export interface AnimationStates<K extends string = string> extends Animation {
-  /** Name of the active animation state. */
-  readonly state: K;
-  /** The active underlying clip. */
-  readonly animation: Animation;
-  /** Switch state. Returns true only when the state changed. */
-  play(state: K, options?: { restart?: boolean }): boolean;
-  /** Reset every clip and return to the initial state. */
-  resetAll(): void;
+export interface SheetOptions<K extends string> {
+  /** Source frame size in the image, in px. */
+  frame: { w: number; h: number };
+  /** Named states — the keys become the cursor's typed vocabulary. */
+  states: Record<K, SheetStateSpec>;
 }
 
 export type SheetImage = CanvasImageSource & { width: number; height: number };
 
-/** Create an animation over a grid sprite sheet. */
-export function sheet(image: SheetImage, config: SheetConfig): Animation {
-  const { fw, fh } = config;
-  const fps = config.fps ?? 12;
-  const loop = config.loop ?? true;
-  const cols = config.cols ?? Math.max(1, Math.floor(image.width / fw));
-  const rows = Math.max(1, Math.floor(image.height / fh));
-  const frames = config.frames ?? Array.from({ length: cols * rows }, (_, i) => i);
-  const stepMs = fps > 0 ? 1000 / fps : Infinity;
+/** A per-entity playback head over a sheet. Everything derives from the
+ *  cursor's clock at read time. */
+export interface SheetCursor<K extends string = string> {
+  readonly sheet: Sheet<K>;
+  /** The active state name. */
+  readonly state: K;
+  /** Switch state. Same-state calls are no-ops (call it every step freely);
+   *  switching resets the new state's timeline. */
+  set(state: K): void;
+  /** Restart the current state's timeline. */
+  reset(): void;
+  /** Current frame index within the state. */
+  readonly frame: number;
+  /** Source rect of the current frame (reused scratch — read, don't hold). */
+  readonly rect: FrameRect;
+  /** True once a non-looping state has reached its last frame. */
+  readonly done: boolean;
+}
 
-  let index = 0; // index into `frames`
-  let acc = 0;
-  let done = false;
+export interface Sheet<K extends string = string> {
+  readonly image: SheetImage;
+  readonly frame: { w: number; h: number };
+  /** Start a playback cursor. `clock` defaults to `Clock.game`. */
+  play(initial: K, opts?: { clock?: ClockHandle }): SheetCursor<K>;
+  /** Source rect for an arbitrary state/frame (manual draws, HUD icons).
+   *  Reused scratch — read, don't hold. */
+  rect(state: K, frame: number): FrameRect;
+}
 
-  function rectFor(cell: number): FrameRect {
-    return { sx: (cell % cols) * fw, sy: Math.floor(cell / cols) * fh, sw: fw, sh: fh };
+/** Slice an image into a named-state sprite sheet. */
+export function sheet<K extends string>(image: SheetImage, opts: SheetOptions<K>): Sheet<K> {
+  const fw = opts.frame.w;
+  const fh = opts.frame.h;
+  const states = opts.states;
+  const scratch: FrameRect = { sx: 0, sy: 0, sw: fw, sh: fh };
+
+  function rectFor(state: K, frame: number): FrameRect {
+    const spec = states[state];
+    const n = Math.max(1, spec.frames);
+    const f = Math.max(0, Math.min(frame, n - 1));
+    scratch.sx = f * fw;
+    scratch.sy = spec.row * fh;
+    scratch.sw = fw;
+    scratch.sh = fh;
+    return scratch;
   }
 
-  const self: Animation = {
-    update(dtMs) {
-      if (done || frames.length <= 1) return;
-      acc += dtMs;
-      let changed = false;
-      while (acc >= stepMs) {
-        acc -= stepMs;
-        if (index + 1 < frames.length) {
-          index++;
-          changed = true;
-        } else if (loop) {
-          index = 0;
-          changed = true;
-        } else {
-          done = true;
-          acc = 0;
-          config.onDone?.();
-          break;
-        }
-      }
-      if (changed) config.onFrame?.(index);
-    },
-    get frame() {
-      return index;
-    },
-    get rect() {
-      return rectFor(frames[index]);
-    },
-    get done() {
-      return done;
-    },
-    reset() {
-      index = 0;
-      acc = 0;
-      done = false;
-    },
-    draw(ctx, dx, dy, opts = {}) {
-      const r = rectFor(frames[index]);
-      const w = opts.w ?? fw;
-      const h = opts.h ?? fh;
-      const ax = opts.ax ?? 0.5;
-      const ay = opts.ay ?? 0.5;
-      ctx.drawImage(image, r.sx, r.sy, r.sw, r.sh, dx - ax * w, dy - ay * h, w, h);
+  const self: Sheet<K> = {
+    image,
+    frame: { w: fw, h: fh },
+    rect: rectFor,
+    play(initial, playOpts = {}) {
+      if (!states[initial]) throw new Error(`Anim.sheet: unknown state "${initial}"`);
+      const clock = playOpts.clock ?? Clock.game;
+      let state = initial;
+      let start = clock.now;
+
+      const frameIndex = (): number => {
+        const spec = states[state];
+        const n = Math.max(1, spec.frames);
+        if (n === 1) return 0;
+        const fps = spec.fps ?? 12;
+        const idx = Math.floor(((clock.now - start) * fps) / 1000);
+        return (spec.loop ?? true) ? idx % n : Math.min(idx, n - 1);
+      };
+
+      return {
+        sheet: self,
+        get state() {
+          return state;
+        },
+        set(next) {
+          if (next === state) return; // the load-bearing no-op
+          if (!states[next]) throw new Error(`Anim.sheet: unknown state "${next}"`);
+          state = next;
+          start = clock.now;
+        },
+        reset() {
+          start = clock.now;
+        },
+        get frame() {
+          return frameIndex();
+        },
+        get rect() {
+          return rectFor(state, frameIndex());
+        },
+        get done() {
+          const spec = states[state];
+          if (spec.loop ?? true) return false;
+          const n = Math.max(1, spec.frames);
+          const fps = spec.fps ?? 12;
+          return clock.now - start >= (n * 1000) / fps;
+        },
+      };
     },
   };
   return self;
-}
-
-/** Combine animations into a named state player.
- *
- * ```ts
- * const hero = Anim.states({ idle: Anim.sheet(idle, idleCfg), run: Anim.sheet(run, runCfg) }, "idle");
- * hero.play(speed === 0 ? "idle" : "run");
- * hero.update(dt);
- * hero.draw(ctx, x, y);
- * ``` */
-export function states<K extends string>(
-  clips: Record<K, Animation>,
-  initial: K,
-): AnimationStates<K> {
-  if (!clips[initial]) throw new Error(`Anim.states: missing initial state "${initial}"`);
-  let current = initial;
-
-  return {
-    update(dtMs) {
-      clips[current].update(dtMs);
-    },
-    get state() {
-      return current;
-    },
-    get animation() {
-      return clips[current];
-    },
-    get frame() {
-      return clips[current].frame;
-    },
-    get rect() {
-      return clips[current].rect;
-    },
-    get done() {
-      return clips[current].done;
-    },
-    play(next, options = {}) {
-      if (!clips[next]) throw new Error(`Anim.states: unknown state "${next}"`);
-      if (next === current) {
-        if (options.restart) clips[current].reset();
-        return false;
-      }
-      current = next;
-      clips[current].reset();
-      return true;
-    },
-    reset() {
-      clips[current].reset();
-    },
-    resetAll() {
-      for (const clip of Object.values<Animation>(clips)) clip.reset();
-      current = initial;
-    },
-    draw(ctx, dx, dy, opts) {
-      clips[current].draw(ctx, dx, dy, opts);
-    },
-  };
 }

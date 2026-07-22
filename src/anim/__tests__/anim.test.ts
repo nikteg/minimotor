@@ -1,106 +1,96 @@
-import { describe, it, expect, vi } from "vitest";
-import { sheet, states } from "../index.js";
+import { describe, expect, it } from "vitest";
+import { sheet } from "../sheet.js";
+import { createClockHandle } from "../../clock.js";
 
-// A sheet 4 cols × 2 rows of 32×32 cells.
-const img = { width: 128, height: 64 } as HTMLImageElement;
+// A 4×3-state sheet over a 128×96 image of 32×32 cells.
+const img = { width: 128, height: 96 } as HTMLImageElement;
 
-describe("Anim.sheet frame math", () => {
-  it("maps the starting cell to a source rect", () => {
-    const a = sheet(img, { fw: 32, fh: 32 });
-    expect(a.rect).toEqual({ sx: 0, sy: 0, sw: 32, sh: 32 });
+function stepper(): { steps: () => number; advanceMs: (ms: number) => void } {
+  let now = 0;
+  return {
+    steps: () => now,
+    advanceMs(ms) {
+      now += ms / (1000 / 60);
+    },
+  };
+}
+
+const OPTS = {
+  frame: { w: 32, h: 32 },
+  states: {
+    idle: { row: 0, frames: 4, fps: 10 }, // 100ms per frame
+    run: { row: 1, frames: 2, fps: 10 },
+    hit: { row: 2, frames: 3, fps: 10, loop: false },
+  },
+} as const;
+
+describe("Anim.sheet", () => {
+  it("maps states/frames to source rects", () => {
+    const s = sheet(img, OPTS);
+    expect(s.rect("idle", 0)).toEqual({ sx: 0, sy: 0, sw: 32, sh: 32 });
+    expect(s.rect("run", 1)).toEqual({ sx: 32, sy: 32, sw: 32, sh: 32 });
+    expect(s.rect("hit", 99)).toEqual({ sx: 64, sy: 64, sw: 32, sh: 32 }); // clamped
   });
 
-  it("advances row-major across the grid at the configured fps", () => {
-    const a = sheet(img, { fw: 32, fh: 32, fps: 10 }); // 100ms/frame, 8 frames
-    a.update(100);
-    expect(a.frame).toBe(1);
-    expect(a.rect).toEqual({ sx: 32, sy: 0, sw: 32, sh: 32 });
-    a.update(300); // → frame 4 = row 1, col 0
-    expect(a.frame).toBe(4);
-    expect(a.rect).toEqual({ sx: 0, sy: 32, sw: 32, sh: 32 });
+  it("cursors derive the frame from the clock — no ticking", () => {
+    const t = stepper();
+    const clock = createClockHandle(t.steps);
+    const cur = sheet(img, OPTS).play("idle", { clock });
+    expect(cur.frame).toBe(0);
+    t.advanceMs(150);
+    expect(cur.frame).toBe(1);
+    t.advanceMs(300); // 450ms → frame 4 → wraps to 0 (4-frame loop)
+    expect(cur.frame).toBe(0);
+    expect(cur.done).toBe(false);
   });
 
-  it("loops by default and holds/report done when loop is false", () => {
-    const looping = sheet(img, { fw: 32, fh: 32, fps: 10, frames: [0, 1] });
-    looping.update(200); // 2 steps → wraps back to 0
-    expect(looping.frame).toBe(0);
-    expect(looping.done).toBe(false);
-
-    const once = sheet(img, { fw: 32, fh: 32, fps: 10, frames: [0, 1], loop: false });
-    once.update(1000); // plenty
-    expect(once.frame).toBe(1); // clamped at last
-    expect(once.done).toBe(true);
+  it("set() to the SAME state is a no-op — calling it every step never restarts", () => {
+    const t = stepper();
+    const clock = createClockHandle(t.steps);
+    const cur = sheet(img, OPTS).play("idle", { clock });
+    t.advanceMs(150);
+    cur.set("idle"); // the classic bug: this must NOT reset to frame 0
+    expect(cur.frame).toBe(1);
   });
 
-  it("uses an explicit frame list and cols override", () => {
-    const a = sheet(img, { fw: 32, fh: 32, fps: 10, cols: 4, frames: [5, 7] });
-    // cell 5 = row 1, col 1
-    expect(a.rect).toEqual({ sx: 32, sy: 32, sw: 32, sh: 32 });
-    a.update(100);
-    expect(a.frame).toBe(1);
-    // cell 7 = row 1, col 3
-    expect(a.rect).toEqual({ sx: 96, sy: 32, sw: 32, sh: 32 });
+  it("switching states restarts the new state's timeline", () => {
+    const t = stepper();
+    const clock = createClockHandle(t.steps);
+    const cur = sheet(img, OPTS).play("idle", { clock });
+    t.advanceMs(250);
+    cur.set("run");
+    expect(cur.state).toBe("run");
+    expect(cur.frame).toBe(0);
+    t.advanceMs(150);
+    expect(cur.frame).toBe(1);
+    expect(cur.rect.sy).toBe(32); // row 1
   });
 
-  it("reset returns to the first frame", () => {
-    const a = sheet(img, { fw: 32, fh: 32, fps: 10 });
-    a.update(250);
-    expect(a.frame).not.toBe(0);
-    a.reset();
-    expect(a.frame).toBe(0);
-    expect(a.done).toBe(false);
+  it("non-looping states hold the last frame and report done", () => {
+    const t = stepper();
+    const clock = createClockHandle(t.steps);
+    const cur = sheet(img, OPTS).play("hit", { clock });
+    t.advanceMs(1000);
+    expect(cur.frame).toBe(2); // held at the last of 3 frames
+    expect(cur.done).toBe(true);
   });
 
-  it("a single-frame animation never advances", () => {
-    const a = sheet(img, { fw: 32, fh: 32, frames: [3] });
-    a.update(9999);
-    expect(a.frame).toBe(0);
+  it("cursors freeze with a held clock (pause for free)", () => {
+    const t = stepper();
+    const clock = createClockHandle(t.steps);
+    const cur = sheet(img, OPTS).play("idle", { clock });
+    t.advanceMs(150);
+    clock.hold();
+    t.advanceMs(500);
+    expect(cur.frame).toBe(1); // frozen mid-cycle
   });
 
-  it("draw blits the current frame's sub-rect, centered by default", () => {
-    const a = sheet(img, { fw: 32, fh: 32, fps: 10 });
-    a.update(100); // frame 1 → sx 32
-    const calls: unknown[][] = [];
-    const ctx = {
-      drawImage: (...args: unknown[]) => calls.push(args),
-    } as unknown as CanvasRenderingContext2D;
-    a.draw(ctx, 100, 50);
-    // drawImage(img, sx, sy, sw, sh, dx-ax*w, dy-ay*h, w, h)
-    expect(calls[0]).toEqual([img, 32, 0, 32, 32, 100 - 16, 50 - 16, 32, 32]);
-  });
-});
-
-describe("Anim.states", () => {
-  it("switches named clips, resets on transitions, and delegates playback", () => {
-    const idle = sheet(img, { fw: 32, fh: 32, fps: 10, frames: [0, 1] });
-    const run = sheet(img, { fw: 32, fh: 32, fps: 10, frames: [2, 3] });
-    const hero = states({ idle, run }, "idle");
-
-    hero.update(100);
-    expect(hero.state).toBe("idle");
-    expect(hero.frame).toBe(1);
-    expect(hero.play("run")).toBe(true);
-    expect(hero.frame).toBe(0);
-    hero.update(100);
-    expect(hero.rect.sx).toBe(96);
-
-    // Re-selecting a state does not interrupt it unless explicitly requested.
-    expect(hero.play("run")).toBe(false);
-    expect(hero.frame).toBe(1);
-    hero.play("run", { restart: true });
-    expect(hero.frame).toBe(0);
-  });
-
-  it("can reset all clips and reports invalid states", () => {
-    const idle = sheet(img, { fw: 32, fh: 32, fps: 10 });
-    const run = sheet(img, { fw: 32, fh: 32, fps: 10 });
-    const hero = states({ idle, run }, "idle");
-    hero.play("run");
-    hero.update(100);
-    hero.resetAll();
-    expect(hero.state).toBe("idle");
-    expect(hero.frame).toBe(0);
-    expect(() => hero.play("missing" as "idle")).toThrow(/unknown state/);
-    expect(() => states({ idle }, "missing" as "idle")).toThrow(/missing initial state/);
+  it("unknown states throw at play and set", () => {
+    const s = sheet(img, OPTS);
+    // @ts-expect-error — unknown state name
+    expect(() => s.play("rnu")).toThrow(/unknown state/);
+    const cur = s.play("idle");
+    // @ts-expect-error — unknown state name
+    expect(() => cur.set("rnu")).toThrow(/unknown state/);
   });
 });

@@ -5,7 +5,7 @@ describe("Fsm", () => {
   it("starts in the initial state and fires its enter", () => {
     const enter = vi.fn();
     const sm = create({ idle: { enter }, run: {} }, "idle");
-    expect(sm.state).toBe("idle");
+    expect(sm.current).toBe("idle");
     expect(sm.is("idle")).toBe(true);
     expect(enter).toHaveBeenCalledTimes(1);
   });
@@ -32,11 +32,11 @@ describe("Fsm", () => {
       },
       "idle",
     );
-    sm.update(16); // stays
-    expect(sm.state).toBe("idle");
+    sm.update(); // stays
+    expect(sm.current).toBe("idle");
     moving = true;
-    sm.update(16); // idle.update returns "run"
-    expect(sm.state).toBe("run");
+    sm.update(); // idle.update returns "run"
+    expect(sm.current).toBe("run");
     expect(order).toEqual(["enter idle", "exit idle", "enter run"]);
   });
 
@@ -49,10 +49,10 @@ describe("Fsm", () => {
       },
       "a",
     );
-    sm.update(16); // a → b, but b.update must not run this tick
-    expect(sm.state).toBe("b");
+    sm.update(); // a → b, but b.update must not run this tick
+    expect(sm.current).toBe("b");
     expect(runUpdate).not.toHaveBeenCalled();
-    sm.update(16);
+    sm.update();
     expect(runUpdate).toHaveBeenCalledTimes(1);
   });
 
@@ -60,7 +60,7 @@ describe("Fsm", () => {
     const change = vi.fn();
     const sm = create({ a: {}, b: {} }, "a", { onChange: change });
     expect(sm.go("b")).toBe(true);
-    expect(sm.state).toBe("b");
+    expect(sm.current).toBe("b");
     expect(change).toHaveBeenCalledWith("a", "b");
     expect(sm.go("b")).toBe(false); // already there
     // @ts-expect-error unknown state
@@ -68,22 +68,11 @@ describe("Fsm", () => {
     expect(change).toHaveBeenCalledTimes(1);
   });
 
-  it("drives an Anim.states-style bridge on the initial state and every change", () => {
-    const played: string[] = [];
-    const anim = { play: (s: string) => (played.push(s), true) };
-    const sm = create({ idle: {}, run: {} }, "idle", { anim });
-    expect(played).toEqual(["idle"]); // initial
-    sm.go("run");
-    expect(played).toEqual(["idle", "run"]);
-    sm.go("run"); // no-op, no extra play
-    expect(played).toEqual(["idle", "run"]);
-  });
-
-  it("passes dtMs to the active update", () => {
-    const seen: number[] = [];
-    const sm = create({ a: { update: (dt) => void seen.push(dt) } }, "a");
-    sm.update(20);
-    sm.update(); // defaults to 0
-    expect(seen).toEqual([20, 0]);
+  it("update takes no arguments — one call per step, closures carry state", () => {
+    let calls = 0;
+    const sm = create({ a: { update: () => void calls++ } }, "a");
+    sm.update();
+    sm.update();
+    expect(calls).toBe(2);
   });
 });

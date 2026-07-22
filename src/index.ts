@@ -85,6 +85,10 @@ export type {
   GameOptions,
   StageOptions,
   DrawTextOptions,
+  DrawSpriteOptions,
+  SpriteLike,
+  ParticleLike,
+  TilesLike,
 } from "./engine/index.js";
 export type { Scene, SceneManager } from "./scenes.js";
 export type {
@@ -99,13 +103,21 @@ export type {
 } from "./ecs/index.js";
 export type { ClockHandle, Cancel } from "./clock.js";
 export type { SignalBus } from "./signals.js";
-export type { AssetStore, AssetManifest, AssetSpec, ProgressFn } from "./assets.js";
 export type {
-  Animation,
-  AnimationStates,
-  SheetConfig,
+  AssetStore,
+  AssetManifest,
+  AssetSpec,
+  ProgressFn,
+  Loaded,
+  LoadedAsset,
+} from "./assets.js";
+export type {
+  Sheet,
+  SheetCursor,
+  SheetOptions,
+  SheetStateSpec,
+  SheetImage,
   FrameRect,
-  AnimDrawOptions,
   Motion,
   AnimateOptions,
   SequenceStep,
@@ -122,7 +134,13 @@ export type {
   MoverBody,
 } from "./collision.js";
 export type { CameraOptions, CameraLens, RenderOptions, FollowTarget } from "./camera/index.js";
-export type { ParticleSystem, BurstOptions, Range } from "./particles.js";
+export type {
+  ParticleSystem,
+  BurstOptions,
+  EmitOptions,
+  ParticleOptions,
+  Range,
+} from "./particles.js";
 export type {
   PerfStats,
   PerfTracker,
@@ -141,9 +159,20 @@ export type {
   InputMap,
   InputMapOptions,
 } from "./input/index.js";
-export type { State, AnimBridge, FsmOptions, Machine } from "./fsm.js";
+export type { State, FsmOptions, Machine } from "./fsm.js";
 export type { Window, Buffer, Cooldown, JumpGate, JumpGateOptions } from "./timers.js";
-export type { TileMap, TilesConfig, MoveOptions, MoveResult, MoveDir } from "./tiles.js";
+export type {
+  Level,
+  GridOptions as TileGridOptions,
+  TileSpec,
+  Cell,
+  Selector,
+  SelectorCell,
+  Skin,
+  SkinValue,
+  TileSet,
+  TileSetOptions,
+} from "./tiles.js";
 export type { Transition, TransitionRender, TransitionRun } from "./transitions.js";
 
 export type {
