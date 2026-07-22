@@ -36,7 +36,7 @@ Signals.on("harvest", (b) => {
   combo.hit();
   const bonus = 10 + (combo.count - 1) * 3;
   hud.score += bonus;
-  UI.float(`+${bonus}`, b.x, b.y - 24, { color: "#ffe066" });
+  UI.floatText(`+${bonus}`, b.x, b.y - 24, { color: "#ffe066" });
   hud.message = `HARVESTED +${bonus}`;
   hud.messageAlpha = 1;
   hud.pulse = 1;
@@ -101,7 +101,7 @@ Loop.run({
     UI.text(`SCORE ${hud.score}   COMBO x${combo.count}   TIME ${hud.elapsed.toFixed(1)}s`, { x: 14, y: 10, size: 16, bold: true, color: "#fff" });
     UI.text("GARDEN", { x: 14, y: 31, size: 16, bold: true, color: "#ff6b6b" });
     UI.bar(88, 41, 95, 8, hud.health / 5, { fill: "#ff6b6b", bg: "#3b2034" });
-    UI.drawFloats();
+    UI.drawFloatText();
     UI.text("CLICK THE GLOWING BUDS · SPACE / click after game over to replay", { x: 14, y: 53, size: 12, color: "dim" });
     if (hud.messageAlpha > 0) { ctx.globalAlpha = hud.messageAlpha; UI.text(hud.message, { x: 14, y: vp.h - 40, size: 20, bold: true, color: "#ffe066" }); ctx.globalAlpha = 1; }
     if (hud.pulse > 0) { ctx.strokeStyle = `rgba(255,224,102,${hud.pulse})`; ctx.lineWidth = 3; ctx.strokeRect(5, 5, vp.w - 10, vp.h - 10); }

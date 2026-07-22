@@ -21,7 +21,7 @@ function resetRun() {
   Camera.snap();
 }
 function hitCourier(d) {
-  lives--; courier.invuln = 2; Sfx.hit(); UI.float("DAMAGE", courier.x, courier.y - 24, { color: "#ff6b6b" });
+  lives--; courier.invuln = 2; Sfx.hit(); UI.floatText("DAMAGE", courier.x, courier.y - 24, { color: "#ff6b6b" });
   d.x = courier.x + 180; d.y = courier.y - 140; courier.x = Math.max(40, courier.x - 100);
   fx.burst({ at: courier, count: 24, color: ["#ff6b6b", "#ffe066"], speed: [0.7, 3], life: [250, 700] });
   if (lives <= 0) { state = "lost"; Sfx.lose(); }
@@ -68,7 +68,7 @@ Loop.run({
         const wp = Camera.toWorld(Pointer); // mouse picking, one call
         if (Math.hypot(wp.x - beacon.x, wp.y - beacon.y) < 80 && Math.hypot(courier.x - beacon.x, courier.y - beacon.y) < 115) {
           fx.burst({ at: beacon, count: 50, color: ["#ffe066", "#4ecdc4", "#b197fc"], speed: [1.3, 5], life: [500, 1000], gravity: 0.03 });
-          Sfx.pickup(); UI.float("DOCKED", beacon.x, beacon.y - 38, { color: "#64f0c8" });
+          Sfx.pickup(); UI.floatText("DOCKED", beacon.x, beacon.y - 38, { color: "#64f0c8" });
           beaconIndex++; if (beaconIndex >= beacons.length) { state = "won"; Sfx.win(); }
         }
       }
@@ -109,7 +109,7 @@ Loop.run({
       }
       for (const d of drones) { ctx.save(); ctx.translate(d.x, d.y); ctx.rotate(Math.atan2(courier.y - d.y, courier.x - d.x)); ctx.fillStyle = "#ff6b6b"; ctx.strokeStyle = "#ffb199"; ctx.beginPath(); ctx.moveTo(11, 0); ctx.lineTo(-8, -7); ctx.lineTo(-4, 0); ctx.lineTo(-8, 7); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore(); }
       if (courier.invuln <= 0 || Math.floor(elapsed * 12) % 2) { ctx.save(); ctx.translate(courier.x, courier.y); ctx.rotate(courier.angle); ctx.fillStyle = "#142f43"; ctx.strokeStyle = "#64f0c8"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(18, 0); ctx.lineTo(-11, -10); ctx.lineTo(-6, 0); ctx.lineTo(-11, 10); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore(); }
-      UI.drawFloats(); // damage/docked pops live in world space
+      UI.drawFloatText(); // damage/docked pops live in world space
       Draw.particles(fx);
     });
     UI.panel({ x: 8, y: 7, w: 520, h: 42, bg: "rgba(8,11,24,.86)", border: "#30496e" });

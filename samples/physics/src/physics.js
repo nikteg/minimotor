@@ -1,7 +1,7 @@
 // Rigid-body physics: the opt-in Physics2D adapter (planck / Box2D) driven by
 // the fixed-step loop — composed with the ECS. Each body lives in a `Phys`
 // component next to the built-in Sprite; a sync system copies the transform
-// over each step, and world.drawSprites renders everything. No custom draw
+// over each step, and ecs.drawSprites renders everything. No custom draw
 // code for the bodies at all.
 // Demonstrates: Physics2D.world/box/circle/walls/pin, onContact, deferred
 // destroy, wake() on resize, the ECS body-in-a-component pattern, and the
@@ -11,11 +11,11 @@ import { Physics2D } from "minimotor/physics2d";
 
 const { ECS, Pointer, Keys, Mathf, Camera, Audio, Sprites, Loop, UI } = Minimotor;
 
-const world = ECS.world();
+const ecs = ECS.create();
 const { Phys } = Physics2D; // the standard body-holding component
 
 let vp = Minimotor.Stage.init("game", {
-  plugins: [Minimotor.Perf.plugin({ world })],
+  plugins: [Minimotor.Perf.plugin({ world: ecs })],
 });
 
 const phys = Physics2D.world(); // gravity 1800 px/s² down
@@ -76,7 +76,7 @@ function spawnCrate(x, y) {
   const s = Mathf.randRange(24, 46);
   const body = phys.box(x, y, s, s, { friction: 0.5, restitution: 0.05, data: "crate" });
   body.rot = Mathf.randRange(0, Math.PI / 2);
-  world.spawn(
+  ecs.spawn(
     ECS.Sprite.with({ x, y, img: crateTex(Mathf.randItem(CRATE_COLORS)), w: s, h: s }),
     Phys.with({ body }),
   );
@@ -90,15 +90,15 @@ function spawnBall(x, y) {
     density: 0.6,
     data: "ball",
   });
-  world.spawn(ECS.Sprite.with({ x, y, img: ballTex, w: r * 2, h: r * 2 }), Phys.with({ body }));
+  ecs.spawn(ECS.Sprite.with({ x, y, img: ballTex, w: r * 2, h: r * 2 }), Phys.with({ body }));
 }
 
 function reset() {
-  for (const [e, p] of world.query(Phys)) {
+  for (const [e, p] of ecs.query(Phys)) {
     p.body.destroy();
-    world.despawn(e);
+    ecs.despawn(e);
   }
-  world.flush();
+  ecs.flush();
   for (let i = 0; i < 8; i++) spawnCrate(Mathf.randRange(60, vp.w - 60), Mathf.randRange(0, 200));
   for (let i = 0; i < 5; i++) spawnBall(Mathf.randRange(60, vp.w - 60), Mathf.randRange(0, 150));
 }
@@ -116,8 +116,8 @@ phys.onContact((a, b) => {
 // The ready-made binding: registers the step + sprite-sync systems (position
 // and rotation — transforms only). Presentation is our own system on top:
 // dim sleeping bodies so the solver's rest detection is visible.
-Physics2D.attach(world, phys, { stepMs: Loop.step });
-world.system("dim-sleepers", (w) => {
+Physics2D.attach(ecs, phys, { stepMs: Loop.step });
+ecs.system("dim-sleepers", (w) => {
   for (const [, s, p] of w.query(ECS.Sprite, Phys)) {
     s.alpha = p.body.awake ? 1 : 0.55;
   }
@@ -136,7 +136,7 @@ Minimotor.Loop.run({
       }
     }
     if (Keys.pressed("KeyR")) reset();
-    world.update(); // runs physics + sync systems, then flushes despawns
+    ecs.update(); // runs physics + sync systems, then flushes despawns
   },
 
   draw(ctx) {
@@ -158,7 +158,7 @@ Minimotor.Loop.run({
     ctx.arc(anchor.x, anchor.y, 5, 0, Math.PI * 2);
     ctx.fill();
 
-    world.drawSprites(ctx); // every body, via the built-in renderer
+    ecs.drawSprites(ctx); // every body, via the built-in renderer
     ctx.restore();
 
     UI.text(`bodies: ${phys.count}`, { x: 10, y: 6, size: 14 });

@@ -66,7 +66,7 @@ Camera.follow(body, {
   damping: 0.12,
   zoom: 0.85,
 });
-let engineTimer = 0;
+const engine = Audio.engine({ idleHz: 42, revHz: 165, gears: 6, drive: 1.4, volume: 0.9 });
 let lapTime = 0, lastLap = 0, bestLap = 0, prevLap = 0, gateLock = -1;
 let state = "countdown", cdTime = 0, redLit = 0, goFlash = 0;
 
@@ -126,16 +126,14 @@ Loop.run({
       Audio.Sfx.blip(660, 0.09);
     }
 
-    // Engine drone: a short pitched tone retriggered every few steps, its
-    // frequency tracking speed. (The original sample called a nonexistent
-    // Audio.engineSound() — a latent crash — so this is a minimal real
-    // stand-in on the new synth API.)
-    engineTimer -= 1;
-    if ((throttle || steer) && engineTimer <= 0) {
-      const rev = 42 + Math.min(1, car.speed / MAX_SPEED) * 150; // idle → redline
-      Audio.tone({ wave: "sawtooth", freq: rev, gain: 0.05, release: 0.12, filter: { type: "lowpass", freq: 900 } });
-      engineTimer = 6;
-    }
+    // Continuous engine drone, revving with speed + load (Audio.engine).
+    engine.update({
+      throttle: throttle ? 1 : 0,
+      speed: car.speed,
+      maxSpeed: MAX_SPEED,
+      load: car.engineLoad,
+      slip: Math.min(1, car.tireSlip / 220),
+    });
 
     if (Keys.pressed("KeyR")) reset();
   },

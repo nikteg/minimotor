@@ -1,14 +1,14 @@
 // Particle system demo: firework sparks on the ECS with the built-in Sprite
 // component + renderer.
-// Demonstrates: ECS.Sprite (position + texture + alpha), world.drawSprites() —
+// Demonstrates: ECS.Sprite (position + texture + alpha), ecs.drawSprites() —
 // no hand-written blit loop — plus an update system that fades sprites out.
 import { Draw, ECS, Loop, Perf, Pointer, Sprites, Stage, UI } from "minimotor";
 
-const world = ECS.create();
+const ecs = ECS.create();
 
 // The perf HUD shows this world's live entity count (`ents`).
 // The viewport is LIVE (mutated on resize); the engine owns clearing.
-const view = Stage.init("game", { background: "#000", plugins: [Perf.plugin({ world })] });
+const view = Stage.init("game", { background: "#000", plugins: [Perf.plugin({ world: ecs })] });
 
 const NUM = 200;
 const SIZE = 8;
@@ -34,7 +34,7 @@ function spawnBurst(x, y) {
   for (let i = 0; i < NUM; i++) {
     const a = Math.random() * Math.PI * 2;
     const speed = 1 + Math.random() * 5;
-    world.spawn(
+    ecs.spawn(
       Sprite.with({ x, y, img: sparkCanvas, alpha: 1 }),
       Vel.with({ x: Math.cos(a) * speed, y: Math.sin(a) * speed }),
     );
@@ -45,7 +45,7 @@ spawnBurst(view.w / 2, view.h / 2);
 
 // Simulation system: move, gravity, fade the sprite's alpha (= life), despawn at
 // zero. Despawning mid-query is safe — the world buffers it until iteration ends.
-world.system("integrate", (w) => {
+ecs.system("integrate", (w) => {
   const G = 0.21; // px/step² — a soft firework gravity
   for (const [e, s, v] of w.query(Sprite, Vel)) {
     s.x += v.x;
@@ -60,12 +60,12 @@ Loop.run({
   update() {
     // Click/tap anywhere to spawn sparks (pointer is polled, no listeners).
     if (Pointer.pressed) spawnBurst(Pointer.x, Pointer.y);
-    world.update(); // runs update systems in order, then flushes despawns
+    ecs.update(); // runs update systems in order, then flushes despawns
   },
   draw() {
-    world.drawSprites(Draw.ctx); // built-in: centers + blits every Sprite by z
+    ecs.drawSprites(Draw.ctx); // built-in: centers + blits every Sprite by z
     UI.group({ x: 10, y: 10, w: 230, h: 58, title: "PARTICLES" }, (body) =>
-      UI.text(`Sparks ${world.count(Sprite)}  ·  click to spawn`, { h: body.remaining, size: 13 }),
+      UI.text(`Sparks ${ecs.count(Sprite)}  ·  click to spawn`, { h: body.remaining, size: 13 }),
     );
   },
 });

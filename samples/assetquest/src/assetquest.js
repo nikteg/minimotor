@@ -82,7 +82,7 @@ Loop.run({
     if (Keys.down("ArrowUp") || Keys.down("KeyW")) move(0, -player.speed);
     if (Keys.down("ArrowDown") || Keys.down("KeyS")) move(0, player.speed);
     for (const r of relics) if (!r.got && Collision.circleHit(player.x, player.y, BODY_R, r.x, r.y, 9)) {
-      r.got = true; score++; Sfx.pickup(); UI.float("+1 KEY", r.x, r.y - 22, { color: "#ffe066" });
+      r.got = true; score++; Sfx.pickup(); UI.floatText("+1 KEY", r.x, r.y - 22, { color: "#ffe066" });
       fx.burst({ at: r, count: 18, color: ["#ffe066", "#fff"], speed: [0.5, 2.5], life: [300, 650], gravity: 0.022 });
     }
     if (score === relics.length && Collision.circleHit(player.x, player.y, BODY_R, gate.x, gate.y, 13)) {
@@ -118,7 +118,7 @@ Loop.run({
     Draw.sprite(hero, { x: player.x - 23, y: player.y - 23, w: 46, h: 46 });
     // Pickup/gate bursts live in world coordinates, so render them under the
     // same map offset as the player instead of at raw screen coordinates.
-    UI.drawFloats();
+    UI.drawFloatText();
     Draw.particles(fx);
     ctx.restore();
     UI.panel({ x: 8, y: 7, w: 350, h: 38, bg: "rgba(8,14,27,.85)", border: "#38557e" });

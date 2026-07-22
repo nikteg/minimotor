@@ -137,7 +137,7 @@ function hurt() {
   if (player.invuln > 0) return;
   lives--; player.invuln = 1.5; player.hurtTimer = 0.35; SFX.hurt();
   Particles.burst(player.x, player.y - 20, { count: 20, colors: ["#ff6b6b", "#ffe066"], speed: [55, 180], life: [280, 700], gravity: 280 });
-  UI.float("OUCH!", player.x, player.y - 50, { color: "#ff6b6b" });
+  UI.floatText("OUCH!", player.x, player.y - 50, { color: "#ff6b6b" });
   if (lives === 0) { state = "gameover"; SFX.death(); } else respawn();
 }
 function movePlayer(dx, dy) {
@@ -358,7 +358,7 @@ Loop.run({
       if (Collision.rectsOverlap(rect(player), rect(enemy))) {
         if (player.vy > 55 && player.y - player.h / 2 < enemy.y - enemy.h / 2) {
           enemy.dead = true; player.vy = -270; SFX.stomp(); Camera.shake(3.5, 190); // punch on a kill
-          UI.float("+100", enemy.x, enemy.y - 45, { color: "#ffe066" });
+          UI.floatText("+100", enemy.x, enemy.y - 45, { color: "#ffe066" });
           Particles.burst(enemy.x, enemy.y - 20, { count: 18, colors: ["#ff9f43", "#ffe066"], speed: [45, 160], life: [260, 620], gravity: 180 });
         } else hurt();
       }
@@ -367,10 +367,10 @@ Loop.run({
       if (coin.got) { coin.pop += dt; continue; }
       if (!Collision.circleHit(player.x, player.y, 0, coin.x, coin.y, 27)) continue;
       coin.got = true; coin.pop = 0; SFX.coin(); // no shake on a pickup
-      UI.float("FRUIT!", coin.x, coin.y - 26, { color: "#fff3a3" });
+      UI.floatText("FRUIT!", coin.x, coin.y - 26, { color: "#fff3a3" });
       Particles.burst(coin.x, coin.y, { count: 24, colors: ["#fff", "#fff3a3", "#ffe066", "#ffb347"], size: [2, 5], speed: [55, 205], life: [300, 680], gravity: 105 });
       Particles.burst(coin.x, coin.y, { count: 8, angle: -Math.PI / 2, spread: 0.55, colors: "#ffffff", size: [2, 4], speed: [115, 210], life: [190, 370] });
-      if (coins.every((c) => c.got)) { SFX.unlock(); UI.float("GOAL UNLOCKED!", player.x, player.y - 60, { color: "#64f0c8" }); }
+      if (coins.every((c) => c.got)) { SFX.unlock(); UI.floatText("GOAL UNLOCKED!", player.x, player.y - 60, { color: "#64f0c8" }); }
     }
     if (player.y > map.worldH + 70) hurt();
     if (coins.every((coin) => coin.got) && Collision.circleHit(player.x, player.y, 0, goal.x, goal.y, 38)) { state = "won"; SFX.win(); }
@@ -407,7 +407,7 @@ Loop.run({
     // The radish art faces left by default, so face = +1 when moving left.
     for (const enemy of enemies) if (!enemy.dead) drawFlipped(enemyAnim, ctx, enemy.x, enemy.y - 20, enemy.vx < 0 ? 1 : -1, { w: 42, h: 53 });
     if (player.invuln <= 0 || Math.floor(elapsed * 12) % 2) drawFlipped(playerAnim, ctx, player.x, player.y - 18, player.facing, { w: 48, h: 48 });
-    UI.drawFloats(ctx); Particles.draw(ctx); ctx.restore();
+    UI.drawFloatText(ctx); Particles.draw(ctx); ctx.restore();
     ctx.restore(); // camera shake
     ctx.restore(); // end letterbox — the HUD below is drawn in SCREEN space at a
     // fixed pixel size, so the world can be scaled/zoomed independently of it.

@@ -367,7 +367,7 @@ Loop.run({
       if (hit) confirming = null;
     }
 
-    UI.drawFloats();
+    UI.drawFloatText();
     UI.drawTips(); // tooltips on the very top
   },
 });

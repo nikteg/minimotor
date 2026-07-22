@@ -398,7 +398,7 @@ function toggleAi() {
   aiPlaying = !aiPlaying;
   cancelAi?.();
   cancelAi = aiPlaying ? Clock.game.every(520, aiStep) : null;
-  UI.float(aiPlaying ? "AI playing" : "AI paused", Pointer.x, Pointer.y, { color: "#ffd43b" });
+  UI.floatText(aiPlaying ? "AI playing" : "AI paused", Pointer.x, Pointer.y, { color: "#ffd43b" });
 }
 
 function tryAutoMoveToFoundation(sourcePile, sourceIndex) {
@@ -453,7 +453,7 @@ function tryUndo() {
   history.pop();
   restore(history[history.length - 1]);
   Audio.Sfx.blip(440, 0.05);
-  UI.float("Undo", Pointer.x, Pointer.y, { color: "#fff" });
+  UI.floatText("Undo", Pointer.x, Pointer.y, { color: "#fff" });
 }
 
 function findHint() {
@@ -509,7 +509,7 @@ const fsm = Fsm.create(
         if (input.hint.pressed) hintFlash.charge();
         if (input.fullscreen.pressed) toggleFullscreen();
         if (input.autoMove.pressed && !tryAutoMoveAny()) {
-          UI.float("No auto move", Pointer.x, Pointer.y, { color: "#ff6b6b" });
+          UI.floatText("No auto move", Pointer.x, Pointer.y, { color: "#ff6b6b" });
         }
         return null;
       },
@@ -770,7 +770,7 @@ const scenes = Scenes.create({
       deal();
       fsm.go("playing");
       gameStartedAt = performance.now();
-      UI.clearFloats();
+      UI.clearFloatText();
       fx.clear();
       aiPlaying = false;
       cancelAi?.();
@@ -781,7 +781,7 @@ const scenes = Scenes.create({
       aiVisited = new Set();
       Clock.game.after(400, () => {
         const pos = screenPoint(LOGICAL_W / 2, LOGICAL_H / 2);
-        UI.float("Good luck!", pos.x, pos.y, { color: "#4ecdc4" });
+        UI.floatText("Good luck!", pos.x, pos.y, { color: "#4ecdc4" });
       });
     },
     update: () => {
@@ -794,7 +794,7 @@ const scenes = Scenes.create({
       drawPiles(ctx);
       drawHud(ctx);
 
-      UI.drawFloats();
+      UI.drawFloatText();
       UI.drawTips();
     },
   },
@@ -877,7 +877,7 @@ const scenes = Scenes.create({
 Signals.on("move", () => {});
 Signals.on("win", ({ time }) => {
   const pos = screenPoint(LOGICAL_W / 2, LOGICAL_H / 2 - 100);
-  UI.float(`Win in ${time}s!`, pos.x, pos.y, { color: "#ffd43b", font: "bold 18px monospace" });
+  UI.floatText(`Win in ${time}s!`, pos.x, pos.y, { color: "#ffd43b", font: "bold 18px monospace" });
 });
 
 // ---- Bootstrap ----

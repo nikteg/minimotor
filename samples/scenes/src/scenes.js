@@ -55,7 +55,7 @@ const scenes = Scenes.create({
       player.y = view.h / 2;
       scores.reset();
       timeLeft = 15 * 60; // 15 seconds
-      UI.clearFloats(); // no leftover "+1"s from the last round
+      UI.clearFloatText(); // no leftover "+1"s from the last round
       placeTarget();
     },
     update() {
@@ -77,7 +77,7 @@ const scenes = Scenes.create({
       if (Collision.circleHit(px, py, player.size / 2, target.x, target.y, target.r)) {
         scores.add(1);
         Audio.Sfx.coin();
-        UI.float("+1", target.x, target.y - 20, { color: "#ffd43b" });
+        UI.floatText("+1", target.x, target.y - 20, { color: "#ffd43b" });
         placeTarget();
       }
 
@@ -103,7 +103,7 @@ const scenes = Scenes.create({
       UI.bar(12, 54, 140, 8, timeLeft / (15 * 60), { fill: "#ffd43b" });
       UI.text("P to pause", { x: 12, y: view.h - 28, size: 16, color: "#fff" });
 
-      UI.drawFloats(); // score pops, on top of everything
+      UI.drawFloatText(); // score pops, on top of everything
     },
   },
 
