@@ -269,7 +269,7 @@ export function focusPrevious(): void {
 // ---------- Floating text ----------
 
 /** Options for a floating text. */
-export interface FloatOptions {
+export interface FloatTextOptions {
   /** Rise speed in px/s (negative = up). Default -50. */
   vy?: number;
   /** Lifetime in ms. Default 900. */
@@ -293,8 +293,8 @@ export interface FloatText {
 
 /** A pool of rising, fading texts. Pure — drive `advance(dt)` yourself (the
  *  `UI` facade wires it to the fixed step for you). */
-export interface FloatManager {
-  spawn(text: string, x: number, y: number, opts?: FloatOptions): void;
+export interface FloatTextManager {
+  spawn(text: string, x: number, y: number, opts?: FloatTextOptions): void;
   /** Age every text by `dt` ms; expired ones are removed. */
   advance(dt: number): void;
   /** Draw all live texts, centered on their (drifting) position. */
@@ -303,7 +303,7 @@ export interface FloatManager {
   readonly size: number;
 }
 
-export function createFloats(): FloatManager {
+export function createFloatText(): FloatTextManager {
   const texts: FloatText[] = [];
   return {
     spawn(text, x, y, opts = {}) {
@@ -786,7 +786,7 @@ export function tooltip(msg: string): void {
 }
 
 /** Draw the pending tooltip near the pointer, clamped to the viewport. Call
- *  LAST in draw (after `drawFloats`, after any modal) so it sits on top. */
+ *  LAST in draw (after `drawFloatText`, after any modal) so it sits on top. */
 export function drawTips(maybeCtx?: CanvasRenderingContext2D): void {
   const ctx = maybeCtx ?? uiCtx();
   if (!tipShown || performance.now() - tipShown.since < 350) return;
@@ -814,7 +814,7 @@ export function drawTips(maybeCtx?: CanvasRenderingContext2D): void {
 
 // ---------- Default facade (aged by the default Loop's fixed step) ----------
 
-export let floats = createFloats();
+export let floats = createFloatText();
 
 export let spinAngle = 0;
 
@@ -955,25 +955,25 @@ export function ensureWired(): void {
 }
 
 /** Spawn a rising, fading text at (x, y) — score pops, damage numbers,
- *  pickup labels. Aged on the fixed step; draw with `drawFloats`. */
-export function float(str: string, x: number, y: number, opts?: FloatOptions): void {
+ *  pickup labels. Aged on the fixed step; draw with `drawFloatText`. */
+export function floatText(str: string, x: number, y: number, opts?: FloatTextOptions): void {
   ensureWired();
   floats.spawn(str, x, y, opts);
 }
 
 /** Draw all live floating texts. Call late in `draw` so they sit on top. */
-export function drawFloats(ctx?: CanvasRenderingContext2D): void {
+export function drawFloatText(ctx?: CanvasRenderingContext2D): void {
   floats.draw(ctx ?? uiCtx());
 }
 
 /** Remove all floating texts (e.g. on scene change). */
-export function clearFloats(): void {
+export function clearFloatText(): void {
   floats.clear();
 }
 
 /** Reset floats, theme and Loop wiring — for tests. */
 export function _reset(): void {
-  floats = createFloats();
+  floats = createFloatText();
   setTheme({});
   tipRequest = null;
   tipShown = null;

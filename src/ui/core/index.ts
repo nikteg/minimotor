@@ -9,10 +9,10 @@
 // no plumbing. Pass one explicitly only for isolated games/offscreen work
 // (`UI.begin(ctx)` per frame, or the `(ctx, opts)` call form):
 //
-//   Minimotor.UI.float("+100", x, y, { color: "#ffd43b" }); // spawn (update)
+//   Minimotor.UI.floatText("+100", x, y, { color: "#ffd43b" }); // spawn (update)
 //   if (Minimotor.UI.button({ x, y, label: "PLAY" })) start();
 //   Minimotor.UI.bar(10, 10, 120, 10, hp / maxHp);
-//   Minimotor.UI.drawFloats(); // late in draw: floats, then tooltips
+//   Minimotor.UI.drawFloatText(); // late in draw: texts, then tooltips
 //   Minimotor.UI.drawTips();
 //
 // Colors and fonts come from the active theme — `UI.setTheme({...})` restyles

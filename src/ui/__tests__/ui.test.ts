@@ -7,7 +7,7 @@ import {
   button,
   buttonState,
   col,
-  createFloats,
+  createFloatText,
   defaultTheme,
   getTheme,
   idScope,
@@ -55,9 +55,9 @@ const mockCtx = () => {
   return { ctx, calls };
 };
 
-describe("UI floats", () => {
+describe("UI floatText", () => {
   it("rise, fade and expire on the fixed step", () => {
-    const floats = createFloats();
+    const floats = createFloatText();
     floats.spawn("+100", 50, 200, { vy: -100, life: 500 });
     expect(floats.size).toBe(1);
 
@@ -74,7 +74,7 @@ describe("UI floats", () => {
   });
 
   it("clear() empties the pool", () => {
-    const floats = createFloats();
+    const floats = createFloatText();
     floats.spawn("a", 0, 0);
     floats.spawn("b", 0, 0);
     expect(floats.size).toBe(2);

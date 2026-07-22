@@ -308,6 +308,146 @@ export const recipes = {
   }),
 };
 
+// ---------- Engine sound: a looping, revving motor ----------
+
+export interface EngineOptions {
+  /** Pitch (Hz) at idle. Default 42. */
+  idleHz?: number;
+  /** Pitch (Hz) at redline. Default 165. */
+  revHz?: number;
+  /** Gear count — rev sweeps up then snaps down per gear. Default 5. */
+  gears?: number;
+  /** How aggressively load pulls the pitch up (0..2). Default 1. */
+  drive?: number;
+  /** Overall level 0..1. Default 0.5. */
+  volume?: number;
+  /** Bus to route through. Default the sfx bus. */
+  bus?: BusHandle;
+}
+
+/** Per-frame engine telemetry. All optional; sensible zero defaults. */
+export interface EngineDrive {
+  /** Accelerator 0..1 — drives the audible load/volume. */
+  throttle?: number;
+  /** Current speed and its max, mapped to the gear/rev curve. */
+  speed?: number;
+  maxSpeed?: number;
+  /** Explicit engine load 0..1 (overrides throttle for volume when given). */
+  load?: number;
+  /** Tyre slip 0..1 — adds a bit of noisy grit (screech). */
+  slip?: number;
+}
+
+export interface EngineHandle {
+  /** Feed telemetry each frame; pitch/gain follow (click-free ramps). */
+  update(drive: EngineDrive): void;
+  /** Silence and tear down the oscillators. */
+  stop(): void;
+}
+
+/** A continuous, gear-shifting engine drone built from a detuned sawtooth pair
+ *  through a low-pass, plus a slip-driven noise layer. Persistent (unlike the
+ *  one-shot `sfx`) — real-time, outside the clock system. Feed it telemetry:
+ *
+ *    const engine = Audio.engine({ gears: 6 });
+ *    // each frame: engine.update({ throttle, speed: car.speed, maxSpeed, slip }); */
+export function engine(opts: EngineOptions = {}): EngineHandle {
+  wireUnlock();
+  const idleHz = opts.idleHz ?? 42;
+  const revHz = opts.revHz ?? 165;
+  const gears = Math.max(1, opts.gears ?? 5);
+  const drive = opts.drive ?? 1;
+  const volume = opts.volume ?? 0.5;
+  const busName = (opts.bus ?? buses.sfx).name;
+
+  interface Nodes {
+    ctx: AudioContext;
+    oscA: OscillatorNode;
+    oscB: OscillatorNode;
+    lp: BiquadFilterNode;
+    gain: GainNode;
+    noise: AudioBufferSourceNode;
+    noiseGain: GainNode;
+  }
+  let n: Nodes | null = null;
+  let stopped = false;
+
+  function build(): Nodes | null {
+    try {
+      const ctx = ensureAudio();
+      const gain = ctx.createGain();
+      gain.gain.value = 0;
+      const lp = ctx.createBiquadFilter();
+      lp.type = "lowpass";
+      lp.frequency.value = 1400;
+      lp.connect(gain);
+      gain.connect(Mixer.bus(busName).input);
+      const oscA = ctx.createOscillator();
+      const oscB = ctx.createOscillator();
+      oscA.type = oscB.type = "sawtooth";
+      oscB.detune.value = -12;
+      oscA.connect(lp);
+      oscB.connect(lp);
+      oscA.start();
+      oscB.start();
+      // Slip grit: white noise through the same low-pass, its own gain.
+      const noiseGain = ctx.createGain();
+      noiseGain.gain.value = 0;
+      noiseGain.connect(lp);
+      const buf = ctx.createBuffer(1, ctx.sampleRate * 0.5, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+      const noise = ctx.createBufferSource();
+      noise.buffer = buf;
+      noise.loop = true;
+      noise.connect(noiseGain);
+      noise.start();
+      return { ctx, oscA, oscB, lp, gain, noise, noiseGain };
+    } catch {
+      return null; // no WebAudio — silent, non-fatal
+    }
+  }
+
+  return {
+    update(d) {
+      if (stopped) return;
+      if (!n && isUnlocked()) n = build();
+      if (!n) return;
+      const throttle = Math.max(0, Math.min(1, d.throttle ?? 0));
+      const norm = d.maxSpeed ? Math.max(0, Math.min(1, (d.speed ?? 0) / d.maxSpeed)) : 0;
+      const load = Math.max(0, Math.min(1, d.load ?? throttle));
+      const slip = Math.max(0, Math.min(1, d.slip ?? 0));
+      // Rev = fractional position within the current gear (snaps down on shift).
+      const gearRev = (norm * gears) % 1;
+      const hz = idleHz + (revHz - idleHz) * (0.25 + 0.75 * gearRev) * (0.6 + 0.4 * drive * load);
+      const t = n.ctx.currentTime;
+      const rampTo = (p: AudioParam, v: number) => {
+        p.cancelScheduledValues(t);
+        p.setValueAtTime(p.value, t);
+        p.linearRampToValueAtTime(v, t + 0.05);
+      };
+      rampTo(n.oscA.frequency, hz);
+      rampTo(n.oscB.frequency, hz);
+      rampTo(n.lp.frequency, 700 + 1800 * load);
+      rampTo(n.gain.gain, volume * (0.12 + 0.5 * load));
+      rampTo(n.noiseGain.gain, volume * 0.25 * slip);
+    },
+    stop() {
+      stopped = true;
+      if (!n) return;
+      try {
+        n.oscA.stop();
+        n.oscB.stop();
+        n.noise.stop();
+        n.gain.disconnect();
+      } catch {
+        /* already torn down */
+      }
+      n = null;
+    },
+  };
+}
+
 // ---------- Music: a decoded track on the music bus ----------
 
 export interface MusicOptions {
