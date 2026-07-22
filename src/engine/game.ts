@@ -62,16 +62,17 @@ export interface EnginePlugin {
   onResize?: (game: Game) => void;
 }
 
-/** The per-frame callbacks. Both receive their most-used dependency as an
- *  argument (a no-arg function is still assignable, so taking nothing stays
- *  fine); input is read from the polled namespaces (`Minimotor.Keys` /
- *  `Minimotor.Pointer`) or, for an isolated game, its props. */
+/** The per-frame callbacks. Input is read from the polled namespaces
+ *  (`Minimotor.Keys` / `Minimotor.Pointer`) or, for an isolated game, its
+ *  props. */
 export interface GameCallbacks {
-  /** Fixed-timestep simulation. May run 0..N times per rendered frame.
-   *  `stepMs` is the fixed step (1000/60) — the amount of simulated time this
-   *  call represents. */
-  update: (stepMs: number) => void;
-  /** Render. Runs once per rendered frame with the drawing context. */
+  /** Fixed-timestep simulation. May run 0..N times per rendered frame; every
+   *  call represents exactly one fixed step (1000/60 ms), so THE STEP IS THE
+   *  TIME UNIT — write constants in px/step and px/step². Read `Loop.step`
+   *  when real milliseconds are needed. */
+  update: () => void;
+  /** Render. Runs once per rendered frame with the drawing context (the raw
+   *  escape hatch — idiomatic code uses `Draw.*` and doesn't take it). */
   draw: (ctx: CanvasRenderingContext2D) => void;
 }
 
@@ -145,16 +146,15 @@ export interface GameOptions {
    *  while the game runs. Default: Space + arrow keys. Pass `[]` to suppress
    *  nothing. */
   preventKeys?: KeyCode[];
-}
-
-/** Fluent host-builder. Configure, then `build()` into a `Game`. */
-export interface GameBuilder {
-  /** Register a lifecycle plugin (e.g. `Perf.plugin()`). */
-  use(plugin: EnginePlugin): GameBuilder;
+  /** Backdrop color. When set, the ENGINE owns clearing: the canvas is
+   *  filled with this color at the start of every frame (no `clearRect`
+   *  boilerplate) and it is the single source of truth for the background —
+   *  don't also set one in CSS. Omit to keep clearing in game hands. */
+  background?: string;
+  /** Lifecycle plugins (e.g. `Perf.plugin()`). */
+  plugins?: EnginePlugin[];
   /** Auto-pause while a coarse-pointer device is held in portrait. */
-  pauseOnPortrait(): GameBuilder;
-  /** Initialise the canvas and produce a runnable `Game`. */
-  build(): Game;
+  pauseOnPortrait?: boolean;
 }
 
 export const STEP_MS = 1000 / 60;
@@ -168,24 +168,8 @@ const DEFAULT_PREVENT_KEYS = ["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "Arr
 
 /** Create an isolated game. Prefer `Minimotor.Stage.init()` for app code;
  *  this stays exported for tests and multi-game scenarios. */
-export function createGame(options: GameOptions): GameBuilder {
-  const plugins: EnginePlugin[] = [];
-  let pauseOnPortrait = false;
-
-  const builder: GameBuilder = {
-    use(plugin) {
-      plugins.push(plugin);
-      return builder;
-    },
-    pauseOnPortrait() {
-      pauseOnPortrait = true;
-      return builder;
-    },
-    build() {
-      return buildGame(options, plugins, pauseOnPortrait);
-    },
-  };
-  return builder;
+export function createGame(options: GameOptions): Game {
+  return buildGame(options);
 }
 
 function resolveCanvas(canvas: string | HTMLCanvasElement): HTMLCanvasElement {
@@ -195,10 +179,22 @@ function resolveCanvas(canvas: string | HTMLCanvasElement): HTMLCanvasElement {
   return el as HTMLCanvasElement;
 }
 
-function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrait: boolean): Game {
+function buildGame(options: GameOptions): Game {
+  const plugins = [...(options.plugins ?? [])];
+  const pauseOnPortrait = options.pauseOnPortrait ?? false;
   const canvas = resolveCanvas(options.canvas);
-  let viewport = readViewport(canvas);
+  // The viewport is a LIVE object: same identity forever, fields mutated in
+  // place on resize — holders never go stale.
+  const viewport = readViewport(canvas);
   const ctx = viewport.ctx;
+
+  const background = options.background ?? null;
+  if (background) canvas.style.background = background;
+  const clearFrame = () => {
+    if (!background) return;
+    ctx.fillStyle = background;
+    ctx.fillRect(0, 0, viewport.w, viewport.h);
+  };
 
   // ---- Input state (polled; edge sets are cleared once a step consumes them) ----
   const heldKeys = new Set<string>();
@@ -353,7 +349,7 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
     ptr.wheel = 0;
   };
   const handleResize = () => {
-    viewport = readViewport(canvas);
+    Object.assign(viewport, readViewport(canvas)); // live: mutate in place
     canvasRect = null;
     for (const p of plugins) p.onResize?.(game);
     for (const h of resizeHandlers) h(viewport);
@@ -389,6 +385,7 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
       // No step will consume edge input while paused — drop it so a key pressed
       // mid-pause doesn't fire pressed() on the first step after resume().
       consumeEdges();
+      clearFrame();
       for (const p of plugins) p.beforeDraw?.(game);
       callbacks!.draw(ctx);
       for (const p of plugins) p.afterDraw?.(game);
@@ -414,7 +411,7 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
         break;
       }
       for (const h of stepStartHandlers) h(); // poll-only inputs sample here
-      callbacks!.update(STEP_MS);
+      callbacks!.update();
       for (const h of stepHandlers) h(); // timers / tweens advance one step
       // Each step observes the current press, then it's consumed — so pressed()
       // is true for exactly one step, even if this frame runs several.
@@ -425,6 +422,7 @@ function buildGame(options: GameOptions, plugins: EnginePlugin[], pauseOnPortrai
     timings.steps = Math.min(steps, MAX_CATCHUP_STEPS);
     for (const p of plugins) p.afterUpdate?.(game);
 
+    clearFrame();
     for (const p of plugins) p.beforeDraw?.(game);
     const drawStart = performance.now();
     callbacks!.draw(ctx);

@@ -1,5 +1,14 @@
-import { EnginePlugin, Game, GameCallbacks, STEP_MS, Viewport, createGame } from "./game.js";
+import {
+  EnginePlugin,
+  Game,
+  GameCallbacks,
+  GameOptions,
+  STEP_MS,
+  Viewport,
+  createGame,
+} from "./game.js";
 import type { KeyCode } from "./keycodes.js";
+import { applyFullscreen } from "../fullscreen.js";
 
 /** Polled keyboard state. `down` is level-triggered (held); `pressed` and
  *  `released` are edge-triggered and true for exactly one update step per
@@ -66,26 +75,25 @@ function requireDefault(): Game {
   return defaultGame;
 }
 
-export interface StageOptions {
-  /** Lifecycle plugins (e.g. `Perf.plugin()`). */
-  plugins?: EnginePlugin[];
-  /** Auto-pause while a coarse-pointer device is held in portrait. */
-  pauseOnPortrait?: boolean;
-  /** Key codes to `preventDefault()` on. Default: Space + arrow keys. */
-  preventKeys?: KeyCode[];
-}
+/** Everything `GameOptions` offers except the canvas (Stage.init's first
+ *  argument), plus document-level concerns that only make sense for the
+ *  default game. */
+export type StageOptions = Omit<GameOptions, "canvas"> & {
+  /** Inject the fullscreen stylesheet (fill the window, no scrollbars,
+   *  safe-area handling) before building the game. */
+  fullscreen?: boolean;
+};
 
 /** Canvas / viewport / screen. `init` builds the default engine and returns
- *  its viewport so setup code can read `vp.w` / `vp.h` / `vp.dpr`. */
+ *  its viewport — a LIVE object (same identity forever, mutated on resize),
+ *  so `view.w` / `view.h` / `view.dpr` never go stale. */
 export const Stage = {
   init(canvas: string | HTMLCanvasElement, opts: StageOptions = {}): Viewport {
     // Re-init replaces the default game — tear the old one down first so its
     // rAF loop and window listeners don't leak.
     defaultGame?.destroy();
-    let builder = createGame({ canvas, preventKeys: opts.preventKeys });
-    if (opts.pauseOnPortrait) builder = builder.pauseOnPortrait();
-    for (const p of opts.plugins ?? []) builder = builder.use(p);
-    defaultGame = builder.build();
+    if (opts.fullscreen) applyFullscreen();
+    defaultGame = createGame({ canvas, ...opts });
     return defaultGame.viewport;
   },
   get viewport(): Viewport {
@@ -93,6 +101,10 @@ export const Stage = {
   },
   get canvas(): HTMLCanvasElement {
     return requireDefault().canvas;
+  },
+  /** Inject the fullscreen stylesheet (idempotent). */
+  fullscreen(): void {
+    applyFullscreen();
   },
   onResize(handler: (vp: Viewport) => void): () => void {
     return requireDefault().onResize(handler);

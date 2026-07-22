@@ -18,7 +18,11 @@ const origGc = HTMLCanvasElement.prototype.getContext;
 beforeEach(() => {
   HTMLCanvasElement.prototype.getContext = function (type: string) {
     if (type !== "2d") return origGc.call(this, type);
-    return { setTransform: vi.fn(), canvas: this } as unknown as CanvasRenderingContext2D;
+    return {
+      setTransform: vi.fn(),
+      fillRect: vi.fn(),
+      canvas: this,
+    } as unknown as CanvasRenderingContext2D;
   };
   rafCallback = null;
   vi.stubGlobal("requestAnimationFrame", (cb: (t: number) => void) => {
@@ -39,7 +43,7 @@ function build(canvasId = "game"): { game: Game; canvas: HTMLCanvasElement } {
   const canvas = document.createElement("canvas");
   canvas.id = canvasId;
   document.body.appendChild(canvas);
-  const game = createGame({ canvas: canvasId }).build();
+  const game = createGame({ canvas: canvasId });
   return { game, canvas };
 }
 
@@ -60,19 +64,22 @@ describe("createGame", () => {
 
   it("accepts a canvas element directly", () => {
     const canvas = document.createElement("canvas");
-    const game = createGame({ canvas }).build();
+    const game = createGame({ canvas });
     expect(game.canvas).toBe(canvas);
   });
 
   it("throws for a missing canvas id", () => {
-    expect(() => createGame({ canvas: "nope" }).build()).toThrow(/not found/);
+    expect(() => createGame({ canvas: "nope" })).toThrow(/not found/);
   });
 
-  it("returns the builder from use() and pauseOnPortrait() for chaining", () => {
+  it("accepts plugins via options and registers late ones via game.use()", () => {
     const canvas = document.createElement("canvas");
-    const builder = createGame({ canvas });
-    expect(builder.use({ name: "x" })).toBe(builder);
-    expect(builder.pauseOnPortrait()).toBe(builder);
+    const early = vi.fn();
+    const late = vi.fn();
+    const game = createGame({ canvas, plugins: [{ name: "early", onInit: early }] });
+    expect(early).toHaveBeenCalledTimes(1);
+    game.use({ name: "late", onInit: late });
+    expect(late).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -89,14 +96,14 @@ describe("run / loop", () => {
     return { game, update, draw };
   }
 
-  it("passes the fixed step to update and the ctx to draw", () => {
+  it("calls update with no arguments (the step IS the time unit) and passes ctx to draw", () => {
     const { game } = build();
     const update = vi.fn();
     const draw = vi.fn();
     game.run({ update, draw });
     tick(16);
     tick(36); // 20ms → one step
-    expect(update).toHaveBeenCalledWith(1000 / 60);
+    expect(update).toHaveBeenCalledWith();
     expect(draw).toHaveBeenCalledWith(game.ctx);
   });
 
@@ -396,7 +403,7 @@ describe("input", () => {
 
   it("honors a custom preventKeys set", () => {
     const canvas = document.createElement("canvas");
-    const game = createGame({ canvas, preventKeys: ["KeyZ"] }).build();
+    const game = createGame({ canvas, preventKeys: ["KeyZ"] });
     const ez = new KeyboardEvent("keydown", { code: "KeyZ", cancelable: true });
     window.dispatchEvent(ez);
     expect(ez.defaultPrevented).toBe(true);
@@ -407,21 +414,53 @@ describe("input", () => {
   });
 });
 
+describe("live viewport & background", () => {
+  it("keeps viewport identity across resize, mutating fields in place", () => {
+    const { game } = build();
+    const vp = game.viewport;
+    Object.defineProperty(window, "innerWidth", { value: 999, configurable: true });
+    window.dispatchEvent(new Event("resize"));
+    expect(game.viewport).toBe(vp); // same object — holders never go stale
+    expect(vp.w).toBe(999);
+  });
+
+  it("fills the configured background at the start of every frame", () => {
+    const canvas = document.createElement("canvas");
+    const game = createGame({ canvas, background: "#123456" });
+    const ctx = game.ctx as unknown as { fillRect: ReturnType<typeof vi.fn>; fillStyle?: string };
+    game.run({ update: vi.fn(), draw: vi.fn() });
+    tick(16);
+    expect(ctx.fillRect).toHaveBeenCalledWith(0, 0, game.viewport.w, game.viewport.h);
+    expect(ctx.fillStyle).toBe("#123456");
+  });
+
+  it("does not clear when no background is configured", () => {
+    const { game } = build();
+    const ctx = game.ctx as unknown as { fillRect: ReturnType<typeof vi.fn> };
+    game.run({ update: vi.fn(), draw: vi.fn() });
+    tick(16);
+    expect(ctx.fillRect).not.toHaveBeenCalled();
+  });
+});
+
 describe("plugins", () => {
   it("invokes lifecycle hooks around update and draw", () => {
     const canvas = document.createElement("canvas");
     const calls: string[] = [];
     const hook = (name: string) => () => calls.push(name);
-    const game = createGame({ canvas })
-      .use({
-        name: "spy",
-        onInit: hook("init"),
-        beforeUpdate: hook("beforeUpdate"),
-        afterUpdate: hook("afterUpdate"),
-        beforeDraw: hook("beforeDraw"),
-        afterDraw: hook("afterDraw"),
-      })
-      .build();
+    const game = createGame({
+      canvas,
+      plugins: [
+        {
+          name: "spy",
+          onInit: hook("init"),
+          beforeUpdate: hook("beforeUpdate"),
+          afterUpdate: hook("afterUpdate"),
+          beforeDraw: hook("beforeDraw"),
+          afterDraw: hook("afterDraw"),
+        },
+      ],
+    });
     game.run({ update: vi.fn(), draw: vi.fn() });
     tick(16);
     tick(48); // enough for one update step
@@ -440,7 +479,7 @@ describe("pauseOnPortrait", () => {
       vi.fn(() => ({ matches: true, addEventListener: vi.fn() })),
     );
     const canvas = document.createElement("canvas");
-    const game = createGame({ canvas }).pauseOnPortrait().build();
+    const game = createGame({ canvas, pauseOnPortrait: true });
     expect(game.paused).toBe(true);
   });
 
@@ -450,7 +489,7 @@ describe("pauseOnPortrait", () => {
       vi.fn(() => ({ matches: false, addEventListener: vi.fn() })),
     );
     const canvas = document.createElement("canvas");
-    const game = createGame({ canvas }).pauseOnPortrait().build();
+    const game = createGame({ canvas, pauseOnPortrait: true });
     expect(game.paused).toBe(false);
   });
 });

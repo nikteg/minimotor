@@ -38,7 +38,6 @@ import * as Camera from "./camera/index.js";
 import * as Game from "./game.js";
 import * as Goodies from "./goodies/index.js";
 import * as Gizmos from "./gizmos/index.js";
-import * as Fullscreen from "./fullscreen.js";
 import * as Text from "./text.js";
 import * as Tiles from "./tiles.js";
 import * as Transitions from "./transitions.js";
@@ -62,7 +61,6 @@ export {
   Game,
   Goodies,
   Gizmos,
-  Fullscreen,
   Text,
   Tiles,
   Transitions,
@@ -86,7 +84,6 @@ export type {
   FrameTimings,
   GameCallbacks,
   Game as GameHost,
-  GameBuilder,
   GameOptions,
   StageOptions,
 } from "./engine/index.js";
@@ -277,7 +274,6 @@ export const Minimotor = {
   Game,
   Goodies,
   Gizmos,
-  Fullscreen,
   Text,
   Tiles,
   Transitions,
