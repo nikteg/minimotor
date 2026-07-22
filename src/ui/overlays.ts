@@ -131,12 +131,19 @@ export interface ConfirmOptions {
  *      if (hit === "JOIN") join(server);
  *      if (hit) confirming = null;
  *    } */
+export function confirm(text: string): "yes" | "no" | null;
 export function confirm(opts: ConfirmOptions): string | null;
 export function confirm(ctx: CanvasRenderingContext2D, opts: ConfirmOptions): string | null;
 export function confirm(
-  a: CanvasRenderingContext2D | ConfirmOptions,
+  a: CanvasRenderingContext2D | ConfirmOptions | string,
   b?: ConfirmOptions,
 ): string | null {
+  // Question sugar (API_PLAN #47): a yes/no dialog in one call. Draw it every
+  // frame the question is open; the answer arrives as the return value.
+  if (typeof a === "string") {
+    const hit = confirm({ id: `confirm:${a}`, title: a, buttons: ["No", "Yes"] });
+    return hit === "Yes" ? "yes" : hit === "No" ? "no" : null;
+  }
   const [ctx, opts] = withCtx(a, b);
   const lines = opts.lines ?? [];
   const buttons = opts.buttons ?? ["OK"];

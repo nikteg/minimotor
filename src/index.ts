@@ -90,7 +90,7 @@ export type {
   ParticleLike,
   TilesLike,
 } from "./engine/index.js";
-export type { Scene, SceneManager } from "./scenes.js";
+export type { SceneSpec, SceneStack, GoOptions, SceneStackOptions } from "./scenes.js";
 export type {
   Component,
   ComponentInit,

@@ -20,6 +20,11 @@ import {
   uiPointer,
   widgetId,
   withCtx,
+  runContainer,
+  anchorViewport,
+  ANCHOR_H,
+  ANCHOR_V,
+  type TextAnchor,
 } from "./core/index.js";
 import { clamp } from "../mathf.js";
 import { pointInRect } from "../collision.js";
@@ -111,10 +116,16 @@ function variantColors(opts: ButtonStyle): {
  *
  *  Hit-testing uses the polled `Pointer` in canvas coordinates — draw the
  *  button untransformed (outside camera/letterbox transforms). */
+export function button(label: string, opts?: Omit<ButtonOptions, "label">): boolean;
 export function button(opts: ButtonOptions): boolean;
 export function button(ctx: CanvasRenderingContext2D, opts: ButtonOptions): boolean;
-export function button(a: CanvasRenderingContext2D | ButtonOptions, b?: ButtonOptions): boolean {
-  const [ctx, opts] = withCtx(a, b);
+export function button(
+  a: CanvasRenderingContext2D | ButtonOptions | string,
+  b?: ButtonOptions | Omit<ButtonOptions, "label">,
+): boolean {
+  // Label-first sugar: `if (UI.button("Resume")) ...` (API_PLAN #43).
+  if (typeof a === "string") return button({ ...(b as Omit<ButtonOptions, "label">), label: a });
+  const [ctx, opts] = withCtx(a, b as ButtonOptions);
   ctx.save();
   ctx.font = opts.font ?? uiFont(theme.fontSize + 2, true);
   // Auto width: the label plus comfortable padding.
@@ -181,10 +192,79 @@ export interface PanelOptions {
   font?: string;
 }
 
+/** Options for the container form of `panel` — a panel that LAYS OUT its
+ *  children (a column with gap/pad), anchored to the screen or positioned
+ *  absolutely. Auto-height panels measure their children and remember the
+ *  height per `id` (one-frame lag on first appearance — standard IM). */
+export interface PanelContainerOptions {
+  /** Named screen anchor (center for menus). x/y become offsets from it. */
+  anchor?: TextAnchor;
+  x?: number;
+  y?: number;
+  /** Panel width. Default 260. */
+  w?: number;
+  /** Panel height. Omit to size to the children (measured, 1-frame lag). */
+  h?: number;
+  /** Inner padding. Default 16. */
+  pad?: number;
+  /** Gap between children. Default 10. */
+  gap?: number;
+  /** Identity for the height memo (defaults to anchor+size). */
+  id?: string;
+  title?: string;
+  bg?: string;
+  border?: string;
+}
+
+const panelHeights = new Map<string, number>();
+
+function panelContainer<R>(opts: PanelContainerOptions, children: () => R): R {
+  const ctx = uiCtx();
+  const w = opts.w ?? 260;
+  const pad = opts.pad ?? 16;
+  const key = opts.id ?? `panel:${opts.anchor ?? "abs"}:${w}`;
+  const h = opts.h ?? panelHeights.get(key) ?? 64;
+  let x = opts.x ?? 0;
+  let y = opts.y ?? 0;
+  if (opts.anchor) {
+    const view = anchorViewport(ctx);
+    const hx = ANCHOR_H[opts.anchor];
+    const vy = ANCHOR_V[opts.anchor];
+    const baseX = hx === 0 ? view.safeLeft : hx === 0.5 ? view.w / 2 : view.w;
+    const baseY = vy === 0 ? view.safeTop : vy === 0.5 ? view.h / 2 : view.h;
+    x = baseX - hx * w + (opts.x ?? 0);
+    y = baseY - vy * h + (opts.y ?? 0);
+  }
+  panel(ctx, { x, y, w, h, title: opts.title, bg: opts.bg, border: opts.border });
+  const top = opts.title ? 32 : 0;
+  let measured = h;
+  const out = runContainer(
+    "col",
+    { x, y: y + top, w, h: h - top },
+    opts.gap ?? 10,
+    pad,
+    "start",
+    (st) => {
+      const r = children();
+      const ext = st.extent;
+      measured = ext.y + ext.h - y + pad;
+      return r;
+    },
+  );
+  if (opts.h === undefined) panelHeights.set(key, measured);
+  return out;
+}
+
 export function panel(opts: PanelOptions): void;
 export function panel(ctx: CanvasRenderingContext2D, opts: PanelOptions): void;
-export function panel(a: CanvasRenderingContext2D | PanelOptions, b?: PanelOptions): void {
-  const [ctx, opts] = withCtx(a, b);
+export function panel<R>(opts: PanelContainerOptions, children: () => R): R;
+export function panel<R>(
+  a: CanvasRenderingContext2D | PanelOptions | PanelContainerOptions,
+  b?: PanelOptions | (() => R),
+): R | void {
+  // Container form: `UI.panel({ anchor: "center", w: 260 }, () => {...})`.
+  if (typeof b === "function") return panelContainer(a as PanelContainerOptions, b);
+  const [ctx, opts] = withCtx(a as CanvasRenderingContext2D | PanelOptions, b as PanelOptions);
   ctx.save();
   drawBox(ctx, opts.x, opts.y, opts.w, opts.h, {
     fill: opts.bg ?? theme.panelBg,
@@ -236,10 +316,21 @@ export interface ToggleOptions {
 /** Draw a checkbox + label; returns the (possibly flipped) new value:
  *
  *    hideFull = UI.toggle(ctx, { x, y, label: "Hide full", on: hideFull }); */
+export function toggle(
+  label: string,
+  on: boolean,
+  opts?: Omit<ToggleOptions, "label" | "on">,
+): boolean;
 export function toggle(opts: ToggleOptions): boolean;
 export function toggle(ctx: CanvasRenderingContext2D, opts: ToggleOptions): boolean;
-export function toggle(a: CanvasRenderingContext2D | ToggleOptions, b?: ToggleOptions): boolean {
-  const [ctx, opts] = withCtx(a, b);
+export function toggle(
+  a: CanvasRenderingContext2D | ToggleOptions | string,
+  b?: ToggleOptions | boolean,
+  c?: Omit<ToggleOptions, "label" | "on">,
+): boolean {
+  // Label-first sugar: `muted = UI.toggle("Mute", muted)` (API_PLAN #43).
+  if (typeof a === "string") return toggle({ ...c, label: a, on: b as boolean });
+  const [ctx, opts] = withCtx(a, b as ToggleOptions);
   const size = opts.size ?? 16;
   ctx.save();
   ctx.font = opts.font ?? uiFont();
@@ -459,10 +550,22 @@ let sliderDrag: string | null = null;
  *  or click anywhere on the track:
  *
  *    volume = UI.slider(ctx, { x, y, w: 140, value: volume, label: "VOL" }); */
+export function slider(
+  label: string,
+  value: number,
+  opts?: Omit<SliderOptions, "label" | "value">,
+): number;
 export function slider(opts: SliderOptions): number;
 export function slider(ctx: CanvasRenderingContext2D, opts: SliderOptions): number;
-export function slider(a: CanvasRenderingContext2D | SliderOptions, b?: SliderOptions): number {
-  const [ctx, opts] = withCtx(a, b);
+export function slider(
+  a: CanvasRenderingContext2D | SliderOptions | string,
+  b?: SliderOptions | number,
+  c?: Omit<SliderOptions, "label" | "value">,
+): number {
+  // Label-first, value-in/value-out sugar (API_PLAN #43):
+  //   Audio.buses.music.volume = UI.slider("Music", Audio.buses.music.volume);
+  if (typeof a === "string") return slider({ ...c, label: a, value: b as number });
+  const [ctx, opts] = withCtx(a, b as SliderOptions);
   const min = opts.min ?? 0;
   const max = opts.max ?? 1;
   const slot = place(opts, opts.w ?? 140, opts.h ?? 30);

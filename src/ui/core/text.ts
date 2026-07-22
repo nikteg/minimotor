@@ -18,7 +18,7 @@ export type TextAnchor =
   | "bottom"
   | "bottomRight";
 
-const ANCHOR_H: Record<TextAnchor, 0 | 0.5 | 1> = {
+export const ANCHOR_H: Record<TextAnchor, 0 | 0.5 | 1> = {
   topLeft: 0,
   left: 0,
   bottomLeft: 0,
@@ -29,7 +29,7 @@ const ANCHOR_H: Record<TextAnchor, 0 | 0.5 | 1> = {
   right: 1,
   bottomRight: 1,
 };
-const ANCHOR_V: Record<TextAnchor, 0 | 0.5 | 1> = {
+export const ANCHOR_V: Record<TextAnchor, 0 | 0.5 | 1> = {
   topLeft: 0,
   top: 0,
   topRight: 0,
@@ -41,7 +41,7 @@ const ANCHOR_V: Record<TextAnchor, 0 | 0.5 | 1> = {
   bottomRight: 1,
 };
 
-function anchorViewport(ctx: CanvasRenderingContext2D): {
+export function anchorViewport(ctx: CanvasRenderingContext2D): {
   w: number;
   h: number;
   safeLeft: number;

@@ -1,3 +1,4 @@
+import { gamepad, Buttons } from "../../input/gamepad.js";
 import { setBegunCtx, uiCtx, withCtx } from "./context.js";
 import { idScopes, requiredWidgetId } from "./identity.js";
 import { hoverCursor, rawPointer, uiPointer } from "./input.js";
@@ -805,6 +806,31 @@ export let spinAngle = 0;
 
 export let wired = false;
 
+// Pad navigation drives the SAME focus machine as Tab/Enter (API_PLAN #46):
+// dpad up/down traverse, dpad left/right feed the focused widget (sliders),
+// A activates. Spatial (geometry-based) traversal is a planned refinement.
+function padNav(): void {
+  let pad: ReturnType<typeof gamepad>;
+  try {
+    pad = gamepad();
+  } catch {
+    return;
+  }
+  if (!pad.connected) return;
+  if (pad.pressed(Buttons.DpadDown)) {
+    focusVisible = true;
+    moveWidgetFocus(1);
+  }
+  if (pad.pressed(Buttons.DpadUp)) {
+    focusVisible = true;
+    moveWidgetFocus(-1);
+  }
+  if (!focusedWidget) return;
+  if (pad.pressed(Buttons.A)) keyboardActivation = focusedWidget;
+  if (pad.pressed(Buttons.DpadLeft)) keyboardCommand = { id: focusedWidget, key: "ArrowLeft" };
+  if (pad.pressed(Buttons.DpadRight)) keyboardCommand = { id: focusedWidget, key: "ArrowRight" };
+}
+
 export function ensureWired(): void {
   if (!focusKeyboardWired && typeof window !== "undefined") {
     focusKeyboardWired = true;
@@ -854,6 +880,7 @@ export function ensureWired(): void {
     Loop.onStep(() => {
       floats.advance(Loop.step);
       spinAngle += 0.12; // ~7 rad/s at 60 steps
+      padNav();
     });
     // Frame-end housekeeping for the immediate-mode state machines.
     Loop.onFrame(() => {

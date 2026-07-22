@@ -1,208 +1,129 @@
-import { describe, it, expect, vi } from "vitest";
-import { createSceneManager, type Scene } from "../scenes.js";
+import { describe, expect, it, vi } from "vitest";
+import { Scenes } from "../scenes.js";
+import { createClockHandle, type ClockHandle } from "../clock.js";
 
-function spyScene(log: string[], name: string): Scene {
-  return {
-    enter: () => log.push(`${name}:enter`),
-    update: () => log.push(`${name}:update`),
-    draw: () => log.push(`${name}:draw`),
-    exit: () => log.push(`${name}:exit`),
-  };
+function makeClock(): ClockHandle {
+  let steps = 0;
+  const clock = createClockHandle(() => steps++);
+  return clock;
 }
 
-describe("SceneManager", () => {
-  it("go enters the scene and makes it active", () => {
-    const log: string[] = [];
-    const m = createSceneManager();
-    m.define("menu", spyScene(log, "menu"));
-    m.go("menu");
-    expect(m.active).toBe("menu");
-    expect(m.stack).toEqual(["menu"]);
-    expect(log).toEqual(["menu:enter"]);
+describe("Scenes.create (typed stack)", () => {
+  it("enters the FIRST scene in the map on creation", () => {
+    const enter = vi.fn();
+    const scenes = Scenes.create({ title: { enter }, playing: {} }, { clock: makeClock() });
+    expect(scenes.active).toBe("title");
+    expect(enter).toHaveBeenCalledTimes(1);
   });
 
-  it("go exits the whole current stack before entering the new scene", () => {
-    const log: string[] = [];
-    const m = createSceneManager();
-    m.define("a", spyScene(log, "a"));
-    m.define("b", spyScene(log, "b"));
-    m.define("c", spyScene(log, "c"));
-    m.go("a");
-    m.push("b");
-    log.length = 0;
-    m.go("c");
-    // top-first exit, then enter the new scene
-    expect(log).toEqual(["b:exit", "a:exit", "c:enter"]);
-    expect(m.stack).toEqual(["c"]);
+  it("is structurally GameCallbacks: update ticks the top scene only", () => {
+    const titleUpdate = vi.fn();
+    const playUpdate = vi.fn();
+    const scenes = Scenes.create(
+      { title: { update: titleUpdate }, playing: { update: playUpdate } },
+      { clock: makeClock() },
+    );
+    scenes.update();
+    scenes.go("playing");
+    scenes.update();
+    expect(titleUpdate).toHaveBeenCalledTimes(1);
+    expect(playUpdate).toHaveBeenCalledTimes(1);
   });
 
-  it("push overlays: only the top updates, all draw bottom-to-top", () => {
-    const log: string[] = [];
-    const m = createSceneManager();
-    m.define("play", spyScene(log, "play"));
-    m.define("pause", spyScene(log, "pause"));
-    m.go("play");
-    m.push("pause");
-    log.length = 0;
-
-    m.update();
-    m.draw();
-    expect(log).toEqual(["pause:update", "play:draw", "pause:draw"]);
+  it("go replaces the stack, firing exits then enter", () => {
+    const order: string[] = [];
+    const scenes = Scenes.create(
+      {
+        a: { exit: () => order.push("exit a") },
+        b: { enter: () => order.push("enter b") },
+      },
+      { clock: makeClock() },
+    );
+    scenes.go("b");
+    expect(order).toEqual(["exit a", "enter b"]);
+    expect(scenes.stack).toEqual(["b"]);
   });
 
-  it("skips scenes covered by an opaque scene when drawing", () => {
-    const log: string[] = [];
-    const m = createSceneManager();
-    m.define("menu", spyScene(log, "menu"));
-    m.define("play", { ...spyScene(log, "play"), opaque: true });
-    m.define("pause", spyScene(log, "pause"));
-    m.go("menu");
-    m.push("play");
-    m.push("pause");
-    log.length = 0;
-    m.draw();
-    // "menu" sits under the opaque "play" — never drawn.
-    expect(log).toEqual(["play:draw", "pause:draw"]);
+  it("push overlays: below keeps drawing, only the top updates", () => {
+    const drew: string[] = [];
+    const below = vi.fn();
+    const scenes = Scenes.create(
+      {
+        playing: { update: below, draw: () => drew.push("playing") },
+        paused: { draw: () => drew.push("paused") },
+      },
+      { clock: makeClock() },
+    );
+    scenes.push("paused");
+    scenes.update();
+    expect(below).not.toHaveBeenCalled(); // gated
+    scenes.draw({} as CanvasRenderingContext2D);
+    expect(drew).toEqual(["playing", "paused"]); // bottom-to-top re-draw
   });
 
-  it("pop exits the top and resumes the one beneath", () => {
-    const log: string[] = [];
-    const m = createSceneManager();
-    m.define("play", spyScene(log, "play"));
-    m.define("pause", spyScene(log, "pause"));
-    m.go("play");
-    m.push("pause");
-    log.length = 0;
-
-    m.pop();
-    expect(log).toEqual(["pause:exit"]);
-    expect(m.active).toBe("play");
-
-    log.length = 0;
-    m.update();
-    expect(log).toEqual(["play:update"]);
+  it("draw starts at the topmost opaque scene", () => {
+    const drew: string[] = [];
+    const scenes = Scenes.create(
+      {
+        world: { draw: () => drew.push("world") },
+        cover: { draw: () => drew.push("cover"), opaque: true },
+        toast: { draw: () => drew.push("toast") },
+      },
+      { clock: makeClock() },
+    );
+    scenes.push("cover");
+    scenes.push("toast");
+    scenes.draw({} as CanvasRenderingContext2D);
+    expect(drew).toEqual(["cover", "toast"]); // world is covered
   });
 
-  it("throws on navigating to an undefined scene", () => {
-    const m = createSceneManager();
-    expect(() => m.go("nope")).toThrow(/no scene defined/);
-    expect(() => m.push("nope")).toThrow(/no scene defined/);
+  it("push holds the game clock; pop releases it (the time boundary)", () => {
+    const clock = makeClock();
+    const scenes = Scenes.create({ playing: {}, paused: {} }, { clock });
+    expect(clock.held).toBe(false);
+    scenes.push("paused");
+    expect(clock.held).toBe(true);
+    scenes.pop();
+    expect(clock.held).toBe(false);
   });
 
-  it("tolerates empty stack and optional hooks", () => {
-    const m = createSceneManager();
-    expect(m.active).toBeUndefined();
-    expect(() => {
-      m.update();
-      m.draw();
-      m.pop();
-    }).not.toThrow();
-
-    // A scene with no hooks is fine.
-    m.define("bare", {});
-    m.go("bare");
-    expect(() => {
-      m.update();
-      m.draw();
-    }).not.toThrow();
+  it("holdsTime: false keeps world time flowing under the modal", () => {
+    const clock = makeClock();
+    const scenes = Scenes.create({ playing: {}, paused: { holdsTime: false } }, { clock });
+    scenes.push("paused");
+    expect(clock.held).toBe(false); // live-world pause menu
   });
 
-  it("define replaces an existing scene under the same name", () => {
-    const log: string[] = [];
-    const m = createSceneManager();
-    m.define("s", { enter: () => log.push("first") });
-    m.define("s", { enter: () => log.push("second") });
-    m.go("s");
-    expect(log).toEqual(["second"]);
+  it("stacked modals: the hold survives until the last holder pops", () => {
+    const clock = makeClock();
+    const scenes = Scenes.create({ playing: {}, inventory: {}, dialog: {} }, { clock });
+    scenes.push("inventory");
+    scenes.push("dialog");
+    expect(clock.held).toBe(true);
+    scenes.pop();
+    expect(clock.held).toBe(true); // inventory still holds
+    scenes.pop();
+    expect(clock.held).toBe(false);
   });
 
-  it("auto-drives a world-only scene, but a hook takes over", () => {
-    const m = createSceneManager();
-    const fakeCtx = {} as CanvasRenderingContext2D;
-
-    const auto = { update: vi.fn(), draw: vi.fn() };
-    const manual = { update: vi.fn(), draw: vi.fn() };
-    m.define("auto", { world: auto as never });
-    m.define("manual", { world: manual as never, update() {}, draw() {} });
-
-    m.go("auto");
-    m.update();
-    m.draw(fakeCtx);
-    expect(auto.update).toHaveBeenCalledTimes(1);
-    expect(auto.draw).toHaveBeenCalledWith(fakeCtx);
-
-    // A scene that defines its own hooks controls the world itself — no auto-drive.
-    m.go("manual");
-    m.update();
-    m.draw(fakeCtx);
-    expect(manual.update).not.toHaveBeenCalled();
-    expect(manual.draw).not.toHaveBeenCalled();
-  });
-});
-
-describe("Scenes default facade", () => {
-  it("wires into Loop once and drives the manager", async () => {
-    // Fresh module registry: import the facade and drive it through a fake Loop.
-    vi.resetModules();
-    const runSpy = vi.fn();
-    vi.doMock("../engine/index.js", () => ({
-      Loop: { run: runSpy, onStep: vi.fn(), step: 1000 / 60 },
-      Draw: { ctx: {} },
-      Stage: { viewport: { w: 800, h: 600 } },
-    }));
-    const { Scenes } = await import("../scenes.js");
-
-    const log: string[] = [];
-    Scenes.define("play", spyScene(log, "play"));
-    Scenes.go("play");
-    Scenes.push("play"); // second navigation must NOT re-wire the Loop
-
-    expect(runSpy).toHaveBeenCalledTimes(1);
-    const callbacks = runSpy.mock.calls[0][0] as { update(): void; draw(): void };
-    log.length = 0;
-    callbacks.update();
-    callbacks.draw();
-    // stack is [play, play] after go+push → top updates, both draw
-    expect(log).toEqual(["play:update", "play:draw", "play:draw"]);
-
-    vi.doUnmock("../engine/index.js");
+  it("go releases any modal hold (fresh stack, fresh time)", () => {
+    const clock = makeClock();
+    const scenes = Scenes.create({ playing: {}, paused: {}, title: {} }, { clock });
+    scenes.push("paused");
+    expect(clock.held).toBe(true);
+    scenes.go("title");
+    expect(clock.held).toBe(false);
   });
 
-  it("go with a transition swaps behind full coverage", async () => {
-    vi.resetModules();
-    const runSpy = vi.fn();
-    const onStepSpy = vi.fn();
-    vi.doMock("../engine/index.js", () => ({
-      Loop: { run: runSpy, onStep: onStepSpy, step: 100 },
-      Draw: { ctx: {} },
-      Stage: { viewport: { w: 800, h: 600 } },
-    }));
-    const { Scenes } = await import("../scenes.js");
+  it("unknown scene names throw", () => {
+    const scenes = Scenes.create({ only: {} }, { clock: makeClock() });
+    // @ts-expect-error unknown name
+    expect(() => scenes.go("nope")).toThrow(/no scene/);
+    // @ts-expect-error unknown name
+    expect(() => scenes.push("nope")).toThrow(/no scene/);
+  });
 
-    const log: string[] = [];
-    Scenes.define("a", spyScene(log, "a"));
-    Scenes.define("b", spyScene(log, "b"));
-    Scenes.go("a");
-    expect(Scenes.active).toBe("a");
-
-    const render = vi.fn();
-    Scenes.go("b", { durationMs: 400, render });
-    expect(Scenes.active).toBe("a"); // swap is deferred to the midpoint
-
-    const stepTransition = onStepSpy.mock.calls[0][0] as () => void;
-    const { draw } = runSpy.mock.calls[0][0] as { draw(): void };
-    stepTransition(); // 100ms — covering
-    draw();
-    expect(render).toHaveBeenLastCalledWith(expect.anything(), 0.5, { w: 800, h: 600 });
-    expect(Scenes.active).toBe("a");
-    stepTransition(); // 200ms — midpoint: swap fires
-    expect(Scenes.active).toBe("b");
-    stepTransition();
-    stepTransition(); // 400ms — done; overlay no longer draws
-    render.mockClear();
-    draw();
-    expect(render).not.toHaveBeenCalled();
-
-    vi.doUnmock("../engine/index.js");
+  it("requires at least one scene", () => {
+    expect(() => Scenes.create({} as Record<string, never>)).toThrow(/at least one/);
   });
 });
