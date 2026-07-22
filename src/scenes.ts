@@ -13,7 +13,7 @@
 // you `go`/`push`, so game code never calls `Loop.run` when using scenes.
 
 import { Loop, Draw, Stage } from "./engine/index.js";
-import type { World } from "./ecs/index.js";
+import type { Ecs } from "./ecs/index.js";
 import { run as runTransition, type Transition, type TransitionRun } from "./transitions.js";
 
 /** A game screen. Every hook is optional. `update` runs on the fixed timestep
@@ -38,7 +38,7 @@ export interface Scene {
    *  A full-screen play scene under a pause overlay is the typical win. */
   opaque?: boolean;
   /** Optional ECS world; auto-driven only when `update`/`draw` are absent. */
-  world?: World;
+  world?: Ecs;
 }
 
 /** Manages a stack of named scenes. Pure — no Loop/DOM dependency — so the

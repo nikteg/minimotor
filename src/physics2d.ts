@@ -28,7 +28,7 @@
 //   });
 
 import { type Body as PlanckBody, Box, Circle, RevoluteJoint, Vec2, World } from "planck";
-import { component, Sprite, type World as EcsWorld } from "./ecs/index.js";
+import { component, Sprite, type Ecs as EcsWorld } from "./ecs/index.js";
 
 /** Options for `Physics2D.world()`. */
 export interface Physics2DOptions {

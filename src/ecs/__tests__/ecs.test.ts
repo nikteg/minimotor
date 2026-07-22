@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { component, world, Sprite, type Entity } from "../index.js";
+import { component, create, Sprite, type Entity } from "../index.js";
 
 const Position = component<{ x: number; y: number }>("Position");
 const Velocity = component<{ x: number; y: number }>("Velocity");
@@ -11,7 +11,7 @@ function ids(world: ReturnType<typeof world>, ...cs: Parameters<typeof world.que
 
 describe("ECS entities & components", () => {
   it("spawns with components and reads them back", () => {
-    const w = world();
+    const w = create();
     const e = w.spawn(Position.with({ x: 1, y: 2 }), Velocity.with({ x: 3, y: 4 }));
     expect(w.alive(e)).toBe(true);
     expect(w.get(e, Position)).toEqual({ x: 1, y: 2 });
@@ -20,7 +20,7 @@ describe("ECS entities & components", () => {
   });
 
   it("add overwrites, remove detaches", () => {
-    const w = world();
+    const w = create();
     const e = w.spawn();
     w.add(e, Position, { x: 0, y: 0 });
     w.add(e, Position, { x: 9, y: 9 });
@@ -31,7 +31,7 @@ describe("ECS entities & components", () => {
   });
 
   it("despawn removes the entity and all its components", () => {
-    const w = world();
+    const w = create();
     const e = w.spawn(Position.with({ x: 0, y: 0 }), Velocity.with({ x: 0, y: 0 }));
     w.despawn(e);
     expect(w.alive(e)).toBe(false);
@@ -41,7 +41,7 @@ describe("ECS entities & components", () => {
   });
 
   it("size tracks live entities through spawn/despawn/clear", () => {
-    const w = world();
+    const w = create();
     expect(w.size).toBe(0);
     const a = w.spawn(Position.with({ x: 0, y: 0 }));
     w.spawn();
@@ -57,7 +57,7 @@ describe("ECS entities & components", () => {
 
 describe("ECS generational ids", () => {
   it("a recycled slot invalidates the old handle", () => {
-    const w = world();
+    const w = create();
     const a = w.spawn(Position.with({ x: 1, y: 1 }));
     w.despawn(a);
     const b = w.spawn(Position.with({ x: 2, y: 2 })); // reuses a's slot, new generation
@@ -69,7 +69,7 @@ describe("ECS generational ids", () => {
   });
 
   it("operations on a dead handle are no-ops", () => {
-    const w = world();
+    const w = create();
     const e = w.spawn();
     w.despawn(e);
     expect(() => {
@@ -83,7 +83,7 @@ describe("ECS generational ids", () => {
 
 describe("ECS queries", () => {
   it("yields only entities holding every component, with typed tuples", () => {
-    const w = world();
+    const w = create();
     const moving = w.spawn(Position.with({ x: 0, y: 0 }), Velocity.with({ x: 1, y: 2 }));
     w.spawn(Position.with({ x: 5, y: 5 })); // no Velocity — excluded
 
@@ -97,14 +97,14 @@ describe("ECS queries", () => {
   });
 
   it("empty when any component has no entities", () => {
-    const w = world();
+    const w = create();
     w.spawn(Position.with({ x: 0, y: 0 }));
     expect([...w.query(Position, Velocity)]).toEqual([]);
     expect([...w.query(Tag)]).toEqual([]);
   });
 
   it("drives from the smallest set (correct regardless of arg order)", () => {
-    const w = world();
+    const w = create();
     for (let i = 0; i < 100; i++) w.spawn(Position.with({ x: i, y: 0 }));
     const rare = w.spawn(Position.with({ x: -1, y: 0 }), Velocity.with({ x: 0, y: 0 }));
     expect(ids(w, Velocity, Position)).toEqual([rare]);
@@ -114,7 +114,7 @@ describe("ECS queries", () => {
 
 describe("ECS iteration safety (command buffer)", () => {
   it("despawns during a query apply after it finishes, not mid-walk", () => {
-    const w = world();
+    const w = create();
     const spawned: Entity[] = [];
     for (let i = 0; i < 6; i++) spawned.push(w.spawn(Position.with({ x: i, y: 0 })));
 
@@ -131,7 +131,7 @@ describe("ECS iteration safety (command buffer)", () => {
   });
 
   it("entities spawned during a query are not visited until the next one", () => {
-    const w = world();
+    const w = create();
     w.spawn(Position.with({ x: 0, y: 0 }));
     let visited = 0;
     for (const _row of w.query(Position)) {
@@ -145,7 +145,7 @@ describe("ECS iteration safety (command buffer)", () => {
   });
 
   it("nested queries flush only when the outer one completes", () => {
-    const w = world();
+    const w = create();
     const a = w.spawn(Position.with({ x: 0, y: 0 }));
     const b = w.spawn(Position.with({ x: 1, y: 0 }));
     for (const [outer] of w.query(Position)) {
@@ -163,7 +163,7 @@ describe("ECS iteration safety (command buffer)", () => {
 
 describe("ECS systems", () => {
   it("runs update systems in order then flushes buffered changes", () => {
-    const w = world();
+    const w = create();
     const order: string[] = [];
     w.spawn(Position.with({ x: 0, y: 0 }), Velocity.with({ x: 2, y: 3 }));
 
@@ -186,7 +186,7 @@ describe("ECS systems", () => {
   });
 
   it("render systems receive the ctx", () => {
-    const w = world();
+    const w = create();
     w.spawn(Position.with({ x: 5, y: 7 }));
     const ctx = {} as CanvasRenderingContext2D;
     const drawn: Array<[number, number]> = [];
@@ -199,7 +199,7 @@ describe("ECS systems", () => {
   });
 
   it("system() replaces a system registered under the same name", () => {
-    const w = world();
+    const w = create();
     const first = vi.fn();
     const second = vi.fn();
     w.system("s", first);
@@ -237,7 +237,7 @@ describe("ECS drawSprites", () => {
   const img = { width: 20, height: 20 } as HTMLCanvasElement;
 
   it("centers by default and infers size from the image", () => {
-    const w = world();
+    const w = create();
     w.spawn(Sprite.with({ x: 100, y: 50, img }));
     const ctx = mockCtx();
     w.drawSprites(ctx);
@@ -248,7 +248,7 @@ describe("ECS drawSprites", () => {
   });
 
   it("respects explicit size, anchor and alpha", () => {
-    const w = world();
+    const w = create();
     w.spawn(Sprite.with({ x: 0, y: 0, img, w: 40, h: 10, ax: 0, ay: 1, alpha: 0.5 }));
     const ctx = mockCtx();
     w.drawSprites(ctx);
@@ -256,7 +256,7 @@ describe("ECS drawSprites", () => {
   });
 
   it("draws in ascending z order", () => {
-    const w = world();
+    const w = create();
     w.spawn(Sprite.with({ x: 3, y: 0, img, z: 10 }));
     w.spawn(Sprite.with({ x: 1, y: 0, img, z: -5 }));
     w.spawn(Sprite.with({ x: 2, y: 0, img, z: 0 }));
@@ -268,7 +268,7 @@ describe("ECS drawSprites", () => {
   });
 
   it("skips invisible and fully transparent sprites", () => {
-    const w = world();
+    const w = create();
     w.spawn(Sprite.with({ x: 0, y: 0, img, visible: false }));
     w.spawn(Sprite.with({ x: 0, y: 0, img, alpha: 0 }));
     const ctx = mockCtx();
@@ -277,7 +277,7 @@ describe("ECS drawSprites", () => {
   });
 
   it("applies rotation and scale only when non-default", () => {
-    const w = world();
+    const w = create();
     w.spawn(Sprite.with({ x: 0, y: 0, img })); // no rot/scale
     w.spawn(Sprite.with({ x: 0, y: 0, img, rot: 1, scale: 2 }));
     const ctx = mockCtx();
@@ -287,7 +287,7 @@ describe("ECS drawSprites", () => {
   });
 
   it("flips about the anchor with a negative scale", () => {
-    const w = world();
+    const w = create();
     w.spawn(Sprite.with({ x: 0, y: 0, img, flipX: true }));
     const ctx = mockCtx();
     w.drawSprites(ctx);
@@ -296,7 +296,7 @@ describe("ECS drawSprites", () => {
   });
 
   it("interpolates between the previous and current step positions", () => {
-    const w = world();
+    const w = create();
     w.spawn(Sprite.with({ x: 0, y: 0, img }));
     w.system("move", (wo) => {
       for (const [, s] of wo.query(Sprite)) s.x += 10;
@@ -308,7 +308,7 @@ describe("ECS drawSprites", () => {
   });
 
   it("culls sprites outside the view rect", () => {
-    const w = world();
+    const w = create();
     w.spawn(Sprite.with({ x: 1000, y: 0, img }));
     w.spawn(Sprite.with({ x: 10, y: 10, img }));
     const ctx = mockCtx();
@@ -319,7 +319,7 @@ describe("ECS drawSprites", () => {
 
 describe("ECS each (callback queries)", () => {
   it("visits matching entities with the same semantics as query", () => {
-    const w = world();
+    const w = create();
     const e1 = w.spawn(Position.with({ x: 1, y: 2 }), Velocity.with({ x: 3, y: 4 }));
     w.spawn(Position.with({ x: 9, y: 9 })); // no Velocity → not visited
     const rows: [Entity, number, number][] = [];
@@ -328,7 +328,7 @@ describe("ECS each (callback queries)", () => {
   });
 
   it("defers structural changes issued during iteration", () => {
-    const w = world();
+    const w = create();
     w.spawn(Position.with({ x: 0, y: 0 }));
     w.spawn(Position.with({ x: 1, y: 0 }));
     let visited = 0;

@@ -6,7 +6,7 @@
 //   const Position = Minimotor.ECS.component<{ x: number; y: number }>("Position");
 //   const Velocity = Minimotor.ECS.component<{ x: number; y: number }>("Velocity");
 //
-//   const world = Minimotor.ECS.world();            // or Minimotor.World (default)
+//   const world = Minimotor.ECS.world();            // or Minimotor.Ecs (default)
 //   const e = world.spawn(Position.with({ x: 0, y: 0 }), Velocity.with({ x: 1, y: 0 }));
 //
 //   for (const [id, pos, vel] of world.query(Position, Velocity)) {
@@ -48,10 +48,10 @@ type AnyInit = ComponentInit<any>;
 export type Entity = number & { readonly __entity: unique symbol };
 
 /** A simulation system: runs in the update phase (via `world.update()`). */
-export type System = (world: World) => void;
+export type System = (world: Ecs) => void;
 
 /** A render system: runs in the draw phase (via `world.draw(ctx)`). */
-export type RenderSystem = (world: World, ctx: CanvasRenderingContext2D) => void;
+export type RenderSystem = (world: Ecs, ctx: CanvasRenderingContext2D) => void;
 
 /** An image the built-in sprite renderer can blit. A `SpriteCanvas` from
  *  `Sprites.getSprite` carries `logicalSize`, so its on-screen size is inferred
@@ -64,7 +64,7 @@ type SpriteImage = (HTMLCanvasElement | HTMLImageElement | ImageBitmap) & {
  *  Attach it and call `world.drawSprites(ctx)` — no hand-written blit loop.
  *  Drop to a manual `ctx` query only for custom visuals. */
 export interface SpriteData {
-  /** World position (logical px). */
+  /** Ecs position (logical px). */
   x: number;
   y: number;
   /** Texture to blit (canvas / image / bitmap). */
@@ -114,13 +114,16 @@ export interface DrawSpritesOptions {
   view?: { x: number; y: number; w: number; h: number };
 }
 
-/** A container of entities, their components, and queries over them. Create with
- *  `ECS.world()`; a shared default is exposed as `Minimotor.World`. */
-export interface World {
+/** A container of entities, their components, and queries over them. Create
+ *  with `ECS.create()` — the blessed instance idiom is `const ecs =
+ *  ECS.create()`. ECS worlds are game CONTENT: make one per scene or per
+ *  game, drop it to tear it down. */
+export interface Ecs {
   /** Create an entity, optionally attaching components. Returns its id. */
   spawn(...inits: AnyInit[]): Entity;
-  /** Mark an entity (and all its components) for removal. Deferred if a query is
-   *  iterating; applied on the next flush. */
+  /** Mark an entity (and all its components) for removal. Safe inside
+   *  `each`/`query`: deferred automatically and applied when the outermost
+   *  iteration ends — no skipped-element bugs, nothing to call. */
   despawn(e: Entity): void;
   /** Is this exact handle still live? (False for a recycled/despawned slot.) */
   alive(e: Entity): boolean;
@@ -134,10 +137,8 @@ export interface World {
   remove(e: Entity, c: AnyComponent): void;
   /** How many entities currently have this component. */
   count(c: AnyComponent): number;
-  /** Total live entities (despawns land after the deferred flush). */
+  /** Total live entities (despawns land once the outermost iteration ends). */
   readonly size: number;
-  /** Apply any buffered structural changes now (auto-run when queries finish). */
-  flush(): void;
   /** Remove every entity and component (systems are kept). */
   clear(): void;
 

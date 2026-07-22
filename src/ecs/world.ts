@@ -1,6 +1,6 @@
 import { Sprite } from "./component.js";
 import type { AnyComponent } from "./types.js";
-import { Entity, RenderSystem, SpriteData, System, World } from "./types.js";
+import { Entity, RenderSystem, SpriteData, System, Ecs } from "./types.js";
 
 // Entity id packing: id = generation * CAP + index. Plain arithmetic (not
 // bit-shifts) to sidestep 32-bit sign issues on large generations.
@@ -44,7 +44,7 @@ function removeAt(st: Store, index: number): void {
   st.slotOf[index] = undefined;
 }
 
-export function world(): World {
+export function create(): Ecs {
   const generations: number[] = [];
   const alive: boolean[] = [];
   const free: number[] = [];
@@ -111,7 +111,7 @@ export function world(): World {
     free.push(index);
   }
 
-  const self: World = {
+  const self: Ecs = {
     spawn(...inits) {
       let index: number;
       if (free.length) {
@@ -175,8 +175,6 @@ export function world(): World {
     count(c) {
       return stores.get(c.id)?.dense.length ?? 0;
     },
-
-    flush,
 
     clear() {
       stores.clear();
@@ -341,10 +339,10 @@ export function world(): World {
       } finally {
         if (--iterating === 0) flush();
       }
-    }) as World["each"],
+    }) as Ecs["each"],
 
     // Implementation is one loose signature; the typed overloads live on the
-    // World interface, so the cast just bridges impl → declared overloads.
+    // Ecs interface, so the cast just bridges impl → declared overloads.
     query: ((...cs: AnyComponent[]): Iterable<[Entity, ...unknown[]]> => {
       const gen = function* (): Generator<[Entity, ...unknown[]]> {
         if (cs.length === 0) return;
@@ -384,7 +382,7 @@ export function world(): World {
         }
       };
       return { [Symbol.iterator]: gen };
-    }) as World["query"],
+    }) as Ecs["query"],
   };
 
   return self;

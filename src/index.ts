@@ -91,7 +91,7 @@ export type {
   Component,
   ComponentInit,
   Entity,
-  World,
+  Ecs,
   System,
   RenderSystem,
   SpriteData,
@@ -146,9 +146,6 @@ export type { Window, Buffer, Cooldown, JumpGate, JumpGateOptions } from "./time
 export type { TileMap, TilesConfig, MoveOptions, MoveResult, MoveDir } from "./tiles.js";
 export type { Transition, TransitionRender, TransitionRun } from "./transitions.js";
 
-// A shared default world (`Minimotor.World`) for the common single-world case;
-// games that need isolation or per-scene worlds call `ECS.world()` for their own.
-const defaultWorld = ECS.world();
 export type {
   SfxBuilder,
   MusicConfig,
@@ -298,7 +295,6 @@ export const Minimotor = {
   Mathf,
   Scenes,
   ECS,
-  World: defaultWorld,
   Clock,
   Signals,
   Assets,
