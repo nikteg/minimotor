@@ -1,0 +1,8 @@
+services:
+  minimotor_web:
+    networks:
+      - nginx
+
+networks:
+  nginx:
+    external: true

@@ -10,7 +10,7 @@ services:
       - "8765" # internal only — reached by nginx over the compose network
 
   # Plain nginx: serves the static showcase, proxies /ws-* to the sidecar.
-  web:
+  minimotor_web:
     build:
       context: .
       target: web
