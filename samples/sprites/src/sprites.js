@@ -1,15 +1,14 @@
 // Sprite-sheet animation on the ECS.
-// Demonstrates: Sprites.bakeSheet (procedural sprite-sheet baking), Anim.sheet
-// (frame slicing + timing), the ECS Sprite source-rect (sx/sy/sw/sh),
-// world.drawSprites(), and Goodies.wrap. The sheet is generated procedurally so
-// the sample needs no asset files — an 8-frame pulsing/rotating star.
-import { Minimotor } from "minimotor";
+// Demonstrates: Sprites.atlas (procedural sprite-sheet baking), Anim.sheet
+// (frame slicing + clock-derived playback), the ECS Sprite source-rect
+// (sx/sy/sw/sh), ecs.drawSprites(), and Goodies.wrap. The sheet is generated
+// procedurally so the sample needs no asset files — an 8-frame
+// pulsing/rotating star.
+import { Anim, Draw, ECS, Goodies, Loop, Mathf, Perf, Pointer, Sprites, Stage, UI } from "minimotor";
 
-const { ECS, Anim, Sprites, Draw, Goodies, Loop, Pointer, Mathf, UI } = Minimotor;
-const world = ECS.world();
+const ecs = ECS.create();
 
-let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin({ world })] });
-Minimotor.Stage.onResize((next) => (vp = next)); // wrap bounds read vp live
+const view = Stage.init("game", { background: "#12141c", plugins: [Perf.plugin({ world: ecs })] });
 
 const FRAMES = 8;
 const CELL = 64;
@@ -38,48 +37,52 @@ const sheetCanvas = Sprites.atlas(
   { origin: "center" },
 );
 
-const Vel = ECS.component("Vel");
-const Animated = ECS.component("Anim"); // holds the per-entity Animation
+// One clock-derived playback cursor drives every star; per-entity frame
+// offsets desync the timelines.
+const starSheet = Anim.sheet(sheetCanvas, {
+  frame: { w: CELL, h: CELL },
+  states: { spin: { row: 0, frames: FRAMES, fps: 12 } },
+});
+const spin = starSheet.play("spin");
+
+const Vel = ECS.component();
+const Animated = ECS.component(); // holds the per-entity frame offset
 
 function spawnStar(x, y) {
-  const anim = Anim.sheet(sheetCanvas, { fw: CELL, fh: CELL, fps: 12 });
-  anim.update(Mathf.randRange(0, (FRAMES / 12) * 1000)); // desync the timelines
+  const offset = Mathf.randInt(0, FRAMES - 1); // desync the timelines
+  const r = starSheet.rect("spin", offset);
   const a = Math.random() * Math.PI * 2;
   const speed = 1 + Math.random() * 2;
-  world.spawn(
-    ECS.Sprite.with({ x, y, img: sheetCanvas, ...anim.rect, scale: 0.8 }),
+  ecs.spawn(
+    ECS.Sprite.with({ x, y, img: sheetCanvas, sx: r.sx, sy: r.sy, sw: r.sw, sh: r.sh, scale: 0.8 }),
     Vel.with({ x: Math.cos(a) * speed, y: Math.sin(a) * speed }),
-    Animated.with({ anim }),
+    Animated.with({ offset }),
   );
 }
 
-for (let i = 0; i < 12; i++) spawnStar(Math.random() * vp.w, Math.random() * vp.h);
+for (let i = 0; i < 12; i++) spawnStar(Math.random() * view.w, Math.random() * view.h);
 
-// Advance each animation and write its current frame into the Sprite's source
-// rect — so the built-in renderer shows the right cell. Also drift + wrap.
-world.system("animate", (w) => {
+// Write each entity's current frame into the Sprite's source rect — so the
+// built-in renderer shows the right cell. Also drift + wrap.
+ecs.system("animate", (w) => {
   for (const [, s, v, an] of w.query(ECS.Sprite, Vel, Animated)) {
-    an.anim.update(Loop.step);
-    const r = an.anim.rect;
+    const r = starSheet.rect("spin", (spin.frame + an.offset) % FRAMES);
     s.sx = r.sx;
     s.sy = r.sy;
     s.sw = r.sw;
     s.sh = r.sh;
-    s.x = Goodies.wrap(s.x + v.x, vp.w);
-    s.y = Goodies.wrap(s.y + v.y, vp.h);
+    s.x = Goodies.wrap(s.x + v.x, view.w);
+    s.y = Goodies.wrap(s.y + v.y, view.h);
   }
 });
 
 Loop.run({
   update() {
     if (Pointer.pressed) spawnStar(Pointer.x, Pointer.y);
-    world.update();
+    ecs.update();
   },
   draw() {
-    const { ctx } = Draw;
-    ctx.fillStyle = "#12141c";
-    ctx.fillRect(0, 0, vp.w, vp.h);
-    world.drawSprites(ctx); // blits each Sprite's current source rect
-    UI.text(`${world.count(ECS.Sprite)} animated sprites · click to add`, { x: 10, y: 8, size: 14 });
+    ecs.drawSprites(Draw.ctx); // blits each Sprite's current source rect
+    UI.text(`${ecs.count(ECS.Sprite)} animated sprites · click to add`, { x: 10, y: 8, size: 14 });
   },
 });

@@ -1,7 +1,22 @@
 // Road Rivals — top-down shooter + enterable car + WebSocket multiplayer.
 // Local movement/vehicle simulation is authoritative. Remote actors are drawn
 // 100 ms in the past from Net.createInterpolator snapshot buffers.
-import { Minimotor } from "minimotor";
+import {
+  Camera,
+  Collision,
+  Draw,
+  ECS,
+  Gizmos,
+  Keys,
+  Loop,
+  Mathf,
+  Mouse,
+  Net,
+  Perf,
+  Stage,
+  Transitions,
+  UI,
+} from "minimotor";
 import { Physics2D } from "minimotor/physics2d";
 import { CAR_TYPES, WEAPONS, WORLD, fleetPoints, roadsX, roadsY } from "./config.js";
 import { createRoadAudio } from "./audio.js";
@@ -19,25 +34,12 @@ import {
   drawWorld,
 } from "./visuals.js";
 
-const {
-  Stage,
-  Loop,
-  Draw,
-  Keys,
-  Mouse,
-  Mathf,
-  Net,
-  Perf,
-  Audio,
-  UI,
-  Camera,
-  Collision,
-  Gizmos,
-  Transitions,
-  ECS,
-} = Minimotor;
 const meter = Perf.createNetMeter();
-let vp = Stage.init("game", { plugins: [Perf.plugin({ net: meter })] });
+// The viewport is LIVE (mutated on resize); the engine clears to `background`.
+const vp = Stage.init("game", {
+  background: "#101719",
+  plugins: [Perf.plugin({ net: meter })],
+});
 
 const clientNo = Number(new URLSearchParams(location.search).get("client") || 1);
 const id = `${clientNo}-${Math.random().toString(36).slice(2, 7)}`;
@@ -77,22 +79,11 @@ const cars = fleetPoints(clientNo).map((point, index) => ({
 }));
 let car = cars[0];
 let carBody = null;
-const camera = Camera.createCamera({
-  worldW: WORLD.w,
-  worldH: WORLD.h,
-  viewW: vp.w,
-  viewH: vp.h,
-  damping: 0.16,
-  deadZoneX: 0,
-  deadZoneY: 0,
-});
+// The game lerps `cameraFocus` itself (mouse-look offset + spectator target),
+// so the default camera follows it rigidly; the world clamp comes for free.
 const cameraFocus = { x: spawn.x, y: spawn.y };
-camera.snapTo(cameraFocus.x, cameraFocus.y);
-Stage.onResize((next) => {
-  vp = next;
-  camera.setView(next.w, next.h);
-  camera.snapTo(cameraFocus.x, cameraFocus.y);
-});
+Camera.follow(cameraFocus, { world: WORLD, damping: 1 });
+Camera.snap();
 const bullets = [];
 const sparks = [];
 const explosions = [];
@@ -120,7 +111,7 @@ const {
 const enemies = [];
 const botById = new Map();
 const Pickup = ECS.component("RoadRivalsPickup");
-const pickupWorld = ECS.world();
+const pickupWorld = ECS.create();
 const pickupEntities = new Map();
 
 // Box2D/Planck owns rigid collision and impulse transfer. The driving model

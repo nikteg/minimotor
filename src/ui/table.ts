@@ -132,6 +132,10 @@ export function table<Row>(opts: TableOptions<Row>): TableResult<Row> {
     if (sortable) {
       const hit = listItem({
         id: opts.id ? `${opts.id}:h:${c.key}` : undefined,
+        // Sort headers are a POINTER affordance — keep them out of the
+        // keyboard tab sequence (tabIndex < 0) so they don't grab the first
+        // tab stops ahead of the primary controls above the table.
+        tabIndex: -1,
         x: r.x,
         y: opts.y,
         w: r.w,

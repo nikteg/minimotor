@@ -2,14 +2,13 @@
 // component + renderer.
 // Demonstrates: ECS.Sprite (position + texture + alpha), world.drawSprites() —
 // no hand-written blit loop — plus an update system that fades sprites out.
-import { Minimotor } from "minimotor";
+import { Draw, ECS, Loop, Perf, Pointer, Sprites, Stage, UI } from "minimotor";
 
-const { ECS, Pointer, Draw, UI } = Minimotor;
-const world = ECS.world();
+const world = ECS.create();
 
 // The perf HUD shows this world's live entity count (`ents`).
-let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin({ world })] });
-Minimotor.Stage.onResize((next) => (vp = next)); // clear/HUD read vp live
+// The viewport is LIVE (mutated on resize); the engine owns clearing.
+const view = Stage.init("game", { background: "#000", plugins: [Perf.plugin({ world })] });
 
 const NUM = 200;
 const SIZE = 8;
@@ -20,7 +19,7 @@ const { Sprite } = ECS;
 const Vel = ECS.component("Vel"); // { x, y }
 
 // Pre-render the spark texture once.
-const sparkCanvas = Minimotor.Sprites.getSprite("spark", SIZE * 3, vp.dpr, (ctx) => {
+const sparkCanvas = Sprites.getSprite("spark", SIZE * 3, view.dpr, (ctx) => {
   const g = ctx.createRadialGradient(0, 0, 0, 0, 0, SIZE);
   g.addColorStop(0, "rgba(255,255,200,1)");
   g.addColorStop(0.3, "rgba(255,150,50,0.8)");
@@ -42,12 +41,12 @@ function spawnBurst(x, y) {
   }
 }
 
-spawnBurst(vp.w / 2, vp.h / 2);
+spawnBurst(view.w / 2, view.h / 2);
 
 // Simulation system: move, gravity, fade the sprite's alpha (= life), despawn at
 // zero. Despawning mid-query is safe — the world buffers it until iteration ends.
 world.system("integrate", (w) => {
-  const G = Minimotor.Physics.GRAVITY * 0.3;
+  const G = 0.21; // px/step² — a soft firework gravity
   for (const [e, s, v] of w.query(Sprite, Vel)) {
     s.x += v.x;
     s.y += v.y;
@@ -57,16 +56,14 @@ world.system("integrate", (w) => {
   }
 });
 
-Minimotor.Loop.run({
+Loop.run({
   update() {
     // Click/tap anywhere to spawn sparks (pointer is polled, no listeners).
     if (Pointer.pressed) spawnBurst(Pointer.x, Pointer.y);
     world.update(); // runs update systems in order, then flushes despawns
   },
   draw() {
-    const { ctx } = Draw;
-    ctx.clearRect(0, 0, vp.w, vp.h);
-    world.drawSprites(ctx); // built-in: centers + blits every Sprite by z
+    world.drawSprites(Draw.ctx); // built-in: centers + blits every Sprite by z
     UI.group({ x: 10, y: 10, w: 230, h: 58, title: "PARTICLES" }, (body) =>
       UI.text(`Sparks ${world.count(Sprite)}  ·  click to spawn`, { h: body.remaining, size: 13 }),
     );

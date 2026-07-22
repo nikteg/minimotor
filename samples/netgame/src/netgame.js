@@ -10,14 +10,16 @@
 //   blended between snapshots, so they glide instead of teleporting at the
 //   network's packet rate (we deliberately send at only 20 Hz to prove it),
 // - Perf.createNetMeter in the HUD for live traffic rates.
-import { Minimotor } from "minimotor";
+import { Audio, Draw, Keys, Loop, Mathf, Net, Perf, Stage, UI } from "minimotor";
 
-const meter = Minimotor.Perf.createNetMeter();
-let vp = Minimotor.Stage.init("game", {
-  plugins: [Minimotor.Perf.plugin({ net: meter })],
+const meter = Perf.createNetMeter();
+// The viewport is LIVE (mutated on resize) — movement clamps read it fresh.
+const vp = Stage.init("game", {
+  background: "#14141c",
+  plugins: [Perf.plugin({ net: meter })],
 });
-Minimotor.Stage.onResize((next) => (vp = next)); // movement clamps read vp live
-const { Net, Loop, Keys, Draw, Audio, Mathf, UI } = Minimotor;
+
+const sfx = Audio.sfx({ join: Audio.recipes.coin() });
 
 const PALETTE = ["#4ecdc4", "#ffd43b", "#ff6b6b", "#69db7c", "#b197fc", "#ffa94d"];
 const id = Math.random().toString(36).slice(2, 8);
@@ -48,7 +50,7 @@ transport.onMessage = (bytes) => {
   if (!p) {
     p = { interp: Net.createInterpolator({ delayMs: 100 }), color: msg.color };
     others.set(msg.id, p);
-    Audio.Sfx.coin(); // someone joined
+    sfx.join.play(); // someone joined
   }
   p.lastSeen = performance.now();
   p.interp.push({ x: msg.x, y: msg.y });
@@ -64,7 +66,7 @@ let step = 0;
 
 Loop.run({
   update() {
-    const speed = 4.5;
+    const speed = 4.5; // px/step
     if (Keys.down("ArrowLeft") || Keys.down("KeyA")) me.x -= speed;
     if (Keys.down("ArrowRight") || Keys.down("KeyD")) me.x += speed;
     if (Keys.down("ArrowUp") || Keys.down("KeyW")) me.y -= speed;
@@ -86,27 +88,20 @@ Loop.run({
   },
 
   draw() {
-    const { ctx } = Draw;
-    ctx.fillStyle = "#14141c";
-    ctx.fillRect(0, 0, vp.w, vp.h);
-
     // Remote players — sampled from their snapshot buffers, 100 ms in the past.
     for (const p of others.values()) {
       const s = p.interp.sample();
       if (!s) continue;
-      ctx.fillStyle = p.color ?? "#8aa";
-      ctx.beginPath();
-      ctx.arc(s.x, s.y, 16, 0, Math.PI * 2);
-      ctx.fill();
+      Draw.circle(s, 16, p.color ?? "#8aa");
     }
 
     // You.
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.arc(me.x, me.y, 16, 0, Math.PI * 2);
-    ctx.fill();
+    Draw.circle(me, 16, color);
+    const { ctx } = Draw; // raw-ctx escape hatch for the outline ring
     ctx.strokeStyle = "#fff";
     ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(me.x, me.y, 16, 0, Math.PI * 2);
     ctx.stroke();
 
     UI.text(

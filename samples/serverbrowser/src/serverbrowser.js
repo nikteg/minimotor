@@ -3,14 +3,12 @@
 // frame; there is no widget tree and no DOM.
 // Demonstrates: UI.panel / tabs / toggle / row / scrollbar (wheel + thumb
 // drag + track paging via Pointer.wheel/framePressed) / button (incl.
-// disabled) / float, plus Clock.after driving a fake refresh and join.
+// disabled) / float, plus Clock.ui.after driving a fake refresh and join.
 // The server list is mock data — swap fetchServers() for a real request.
-import { Minimotor } from "minimotor";
+import { Clock, Keys, Loop, Mathf, Perf, Stage, UI } from "minimotor";
 
-const { Keys, Mathf, Clock, UI } = Minimotor;
-
-let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
-Minimotor.Stage.onResize((next) => (vp = next));
+// The viewport is LIVE (mutated on resize) — layout() reads it fresh each frame.
+const vp = Stage.init("game", { background: "#0b0e14", plugins: [Perf.plugin()] });
 
 // ---- mock data -------------------------------------------------------------
 
@@ -94,7 +92,7 @@ function refresh() {
   if (refreshing) return;
   refreshing = true;
   status = "";
-  Clock.after(700, () => {
+  Clock.ui.after(700, () => {
     servers = fetchServers();
     selected = null;
     refreshing = false;
@@ -103,7 +101,7 @@ function refresh() {
 
 function join(server) {
   status = `Connecting to ${server.name}…`;
-  Clock.after(900, () => {
+  Clock.ui.after(900, () => {
     status = Math.random() < 0.8 ? `Connected to ${server.name}!` : "Connection failed (mock)";
   });
 }
@@ -142,7 +140,7 @@ function layout() {
 
 const pingColor = (ping) => (ping < 60 ? "#6bff9e" : ping < 130 ? "#ffd43b" : "#ff6b6b");
 
-Minimotor.Loop.run({
+Loop.run({
   update() {
     if (Keys.pressed("KeyR")) refresh();
     if (Keys.pressed("Escape")) {
@@ -151,10 +149,7 @@ Minimotor.Loop.run({
     }
   },
 
-  draw(ctx) {
-    ctx.fillStyle = "#0b0e14";
-    ctx.fillRect(0, 0, vp.w, vp.h);
-
+  draw() {
     const L = layout();
     UI.panel({ x: L.x, y: L.y, w: L.w, h: L.h, title: "SERVER BROWSER" });
 

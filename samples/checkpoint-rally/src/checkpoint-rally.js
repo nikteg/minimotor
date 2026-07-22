@@ -4,13 +4,18 @@
 // Gizmos.car driving model steers it (throttle/brake/steer/handbrake → drift).
 // Smooth road-edge walls keep the car on the circuit; there are no mid-track
 // obstacles. Focus: Gizmos.car (drives an injected physics body), Physics2D,
-// Camera.createCamera (dead-zone follow) and Gizmos.checkpointRoute (gates/laps).
+// Camera.follow (dead-zone follow) and Gizmos.checkpointRoute (gates/laps).
 // Space = handbrake for drifts. A corner minimap sits below the HUD.
-import { Minimotor } from "minimotor";
+import { Audio, Camera, Collision, Draw, Gizmos, Input, Keys, Loop, Mathf, Perf, Stage, UI } from "minimotor";
 import { Physics2D } from "minimotor/physics2d";
-const { Gizmos, Collision, Input, Loop, UI, Mathf, Camera, Draw, Audio, Keys } = Minimotor;
-let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
-const actions = Input.actions({ left: ["ArrowLeft", "KeyA"], right: ["ArrowRight", "KeyD"], gas: ["ArrowUp", "KeyW"], brake: ["ArrowDown", "KeyS"] });
+
+const view = Stage.init("game", { background: "#12161f", plugins: [Perf.plugin()] });
+const input = Input.map({
+  left: ["ArrowLeft", "KeyA"],
+  right: ["ArrowRight", "KeyD"],
+  gas: ["ArrowUp", "KeyW"],
+  brake: ["ArrowDown", "KeyS"],
+});
 
 // ---- The circuit: a smooth closed loop of waypoints across a large world. ----
 const worldW = 3200, worldH = 2200;
@@ -53,9 +58,15 @@ function nearestOnTrack(px, py) {
 }
 const car = Gizmos.car(body, { acceleration: 900, grip: 7.5, steer: 0.8 });
 
-const cam = Camera.createCamera({ worldW, worldH, viewW: vp.w, viewH: vp.h, damping: 0.12, deadZoneX: 0.14, deadZoneY: 0.14 });
-cam.zoom = 0.85;
-let engine = null;
+// The always-existing default camera: dead-zone follow over the big world.
+// Shake isn't used here; the zoom pulls back a touch for road context.
+Camera.follow(body, {
+  world: { w: worldW, h: worldH },
+  deadzone: { w: 200, h: 150 },
+  damping: 0.12,
+  zoom: 0.85,
+});
+let engineTimer = 0;
 let lapTime = 0, lastLap = 0, bestLap = 0, prevLap = 0, gateLock = -1;
 let state = "countdown", cdTime = 0, redLit = 0, goFlash = 0;
 
@@ -66,13 +77,13 @@ function reset() {
   body.vx = body.vy = body.spin = 0; body.wake();
   lapTime = 0; lastLap = 0; bestLap = 0; prevLap = 0; route.reset(); gateLock = -1;
   state = "countdown"; cdTime = 0; redLit = 0; goFlash = 0;
-  cam.snapTo(body.x, body.y);
+  Camera.snap();
 }
 reset();
-Minimotor.Stage.onResize((next) => { vp = next; cam.setView(vp.w, vp.h); });
 
 Loop.run({
-  update(stepMs) {
+  update() {
+    const stepMs = Loop.step; // real ms per fixed step — lap clocks stay in ms
     if (state === "countdown") {
       cdTime += stepMs;
       body.vx = body.vy = body.spin = 0; // hold on the line
@@ -80,13 +91,12 @@ Loop.run({
       if (lit !== redLit) { redLit = lit; Audio.Sfx.blip(300, 0.08); }
       if (cdTime >= GREEN_AT) { state = "racing"; goFlash = 900; lapTime = 0; Audio.Sfx.blip(720, 0.12); }
       if (Keys.pressed("KeyR")) reset();
-      cam.snapTo(body.x, body.y);
       return;
     }
     goFlash = Math.max(0, goFlash - stepMs);
     const dt = stepMs / 1000; lapTime += stepMs;
-    const throttle = (actions.down("gas") ? 1 : 0) - (actions.down("brake") ? 1 : 0);
-    const steer = (actions.down("right") ? 1 : 0) - (actions.down("left") ? 1 : 0);
+    const throttle = input.axis("brake", "gas");
+    const steer = input.axis("left", "right");
     const handbrake = Keys.down("Space");
     // The car gizmo sets the body's tyre-space velocity; step integrates it.
     car.drive({ throttle, steer, handbrake }, dt);
@@ -116,46 +126,52 @@ Loop.run({
       Audio.Sfx.blip(660, 0.09);
     }
 
-    if (!engine && (throttle || steer)) engine = Audio.engineSound({ idleHz: 42, revHz: 165, gears: 6, drive: 2.6, volume: 1.0 });
-    if (engine) engine.update({ speed: car.speed, maxSpeed: MAX_SPEED, load: car.engineLoad, slip: Math.min(1, car.tireSlip / 220) });
+    // Engine drone: a short pitched tone retriggered every few steps, its
+    // frequency tracking speed. (The original sample called a nonexistent
+    // Audio.engineSound() — a latent crash — so this is a minimal real
+    // stand-in on the new synth API.)
+    engineTimer -= 1;
+    if ((throttle || steer) && engineTimer <= 0) {
+      const rev = 42 + Math.min(1, car.speed / MAX_SPEED) * 150; // idle → redline
+      Audio.tone({ wave: "sawtooth", freq: rev, gain: 0.05, release: 0.12, filter: { type: "lowpass", freq: 900 } });
+      engineTimer = 6;
+    }
 
     if (Keys.pressed("KeyR")) reset();
-    cam.update(body.x, body.y, Draw.frameScale);
   },
-  draw(ctx) {
-    ctx.fillStyle = "#12161f"; ctx.fillRect(0, 0, vp.w, vp.h);
-    ctx.save();
-    ctx.translate(-cam.x * cam.zoom, -cam.y * cam.zoom);
-    ctx.scale(cam.zoom, cam.zoom);
+  draw() {
+    // Everything on the circuit draws in world space inside the camera block.
+    Camera.render(() => {
+      const ctx = Draw.ctx; // path-heavy road rendering — the raw escape hatch
 
-    ctx.strokeStyle = "#1b2331"; ctx.lineWidth = 2;
-    for (let x = 0; x <= worldW; x += 200) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, worldH); ctx.stroke(); }
-    for (let y = 0; y <= worldH; y += 200) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(worldW, y); ctx.stroke(); }
+      ctx.strokeStyle = "#1b2331"; ctx.lineWidth = 2;
+      for (let x = 0; x <= worldW; x += 200) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, worldH); ctx.stroke(); }
+      for (let y = 0; y <= worldH; y += 200) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(worldW, y); ctx.stroke(); }
 
-    strokeLoop(ctx, track, "#5a6675", (ROAD_HW + 7) * 2);
-    strokeLoop(ctx, track, "#3a444f", ROAD_HW * 2);
-    ctx.setLineDash([26, 30]); strokeLoop(ctx, track, "#c7d0dc", 3); ctx.setLineDash([]);
+      strokeLoop(ctx, track, "#5a6675", (ROAD_HW + 7) * 2);
+      strokeLoop(ctx, track, "#3a444f", ROAD_HW * 2);
+      ctx.setLineDash([26, 30]); strokeLoop(ctx, track, "#c7d0dc", 3); ctx.setLineDash([]);
 
-    gates.forEach((g, i) => {
-      const next = i === route.next;
-      ctx.strokeStyle = next ? "#ffe066" : "#4ecdc4"; ctx.lineWidth = 6;
-      ctx.beginPath(); ctx.arc(g.x, g.y, GATE_R, 0, Math.PI * 2); ctx.stroke();
-      UI.text(ctx, String(i + 1), { x: g.x - 18, y: g.y - 20, w: 36, h: 40, size: 34, bold: true, align: "center", color: next ? "#ffe066" : "#4ecdc4" });
+      gates.forEach((g, i) => {
+        const next = i === route.next;
+        ctx.strokeStyle = next ? "#ffe066" : "#4ecdc4"; ctx.lineWidth = 6;
+        ctx.beginPath(); ctx.arc(g.x, g.y, GATE_R, 0, Math.PI * 2); ctx.stroke();
+        Draw.text(String(i + 1), { x: g.x, y: g.y, size: 34, align: "center", baseline: "middle", color: next ? "#ffe066" : "#4ecdc4" });
+      });
+
+      ctx.save(); ctx.translate(body.x, body.y); ctx.rotate(body.rot);
+      ctx.fillStyle = "#ff6b6b"; ctx.fillRect(-20, -11, 40, 22);
+      ctx.fillStyle = "#fff"; ctx.fillRect(6, -6, 9, 12);
+      ctx.restore();
     });
-
-    ctx.save(); ctx.translate(body.x, body.y); ctx.rotate(body.rot);
-    ctx.fillStyle = "#ff6b6b"; ctx.fillRect(-20, -11, 40, 22);
-    ctx.fillStyle = "#fff"; ctx.fillRect(6, -6, 9, 12);
-    ctx.restore();
-    ctx.restore();
 
     const fmt = (ms) => ms ? `${(ms / 1000).toFixed(2)}s` : "—";
     UI.group({ x: 10, y: 10, w: 360, h: 60, title: "CHECKPOINT RALLY" }, (b) =>
       UI.text(`Lap ${route.lap}   This ${fmt(lapTime)}   Last ${fmt(lastLap)}   Best ${fmt(bestLap)}`, { h: b.remaining, size: 11 }));
-    UI.text(ctx, "Arrows/WASD drive · Space handbrake · reach gates 1→N in order · R restart", { x: 12, y: vp.h - 28, size: 11, color: "dim" });
+    UI.text("Arrows/WASD drive · Space handbrake · reach gates 1→N in order · R restart", { x: 12, y: view.h - 28, size: 11, color: "dim" });
 
-    drawMinimap(ctx);
-    drawLights(ctx);
+    drawMinimap(Draw.ctx);
+    drawLights(Draw.ctx);
   },
 });
 
@@ -188,12 +204,12 @@ function drawLights(ctx) {
   const racing = state !== "countdown";
   if (racing && goFlash <= 0) return;
   const n = 3, r = 22, gap = 16, w = n * (r * 2) + (n - 1) * gap;
-  const x0 = vp.w / 2 - w / 2, y = 74;
+  const x0 = view.w / 2 - w / 2, y = 74;
   ctx.fillStyle = "rgba(8,10,16,.9)"; ctx.fillRect(x0 - 16, y - r - 14, w + 32, r * 2 + 28);
   for (let i = 0; i < n; i++) {
     const cx = x0 + r + i * (r * 2 + gap);
     ctx.fillStyle = racing ? "#39d353" : (i < redLit ? "#ff4136" : "#3a1414");
     ctx.beginPath(); ctx.arc(cx, y, r, 0, Math.PI * 2); ctx.fill();
   }
-  UI.text(ctx, racing ? "GO!" : "GET READY", { x: 0, y: y + r + 16, w: vp.w, size: 20, bold: true, align: "center", color: racing ? "#39d353" : "#ffe066" });
+  UI.text(racing ? "GO!" : "GET READY", { x: 0, y: y + r + 16, w: view.w, size: 20, bold: true, align: "center", color: racing ? "#39d353" : "#ffe066" });
 }

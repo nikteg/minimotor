@@ -1,13 +1,11 @@
 // Bounce: a glowing ball ricochets around the walls; every wall hit counts a
 // bounce AND speeds the ball up. Simple on purpose, but juiced — each bounce
-// fires spark Particles, a short Camera.shake and a soft synth boop, and the
+// fires spark particles, a short Camera.shake and a soft synth boop, and the
 // ball trails and glows. It plays itself; watch it escalate.
-import { Minimotor } from "minimotor";
+import { Audio, Camera, Draw, Gizmos, Loop, Mathf, Particles, Perf, Stage, UI } from "minimotor";
 
-const { Stage, Loop, Draw, UI, Audio, Particles, Camera, Gizmos, Mathf } = Minimotor;
-
-let vp = Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
-Stage.onResize((next) => (vp = next)); // wall bounds read vp live
+// The viewport is LIVE (mutated on resize) — wall bounds read it directly.
+const view = Stage.init("game", { plugins: [Perf.plugin()] });
 
 Audio.Mixer.compressor(); // keep stacked bounce notes clean
 Audio.Mixer.reverb("hall", { seconds: 0.9, decay: 2.2, wet: 0.4 });
@@ -16,7 +14,7 @@ Audio.Mixer.bus("sfx").send("hall", 0.08); // a little space/tail, not a wash
 const BALL = 30;
 const SPEEDUP = 1.06; // each bounce speeds the ball up…
 const MAX_SPEED = 60; // …to a very high ceiling so it can't tunnel out
-const ball = { x: vp.w / 2, y: vp.h / 2, w: BALL, h: BALL, vx: 2.4, vy: 3.1 };
+const ball = { x: view.w / 2, y: view.h / 2, w: BALL, h: BALL, vx: 2.4, vy: 3.1 };
 
 const clampSpeed = (v) => Mathf.clamp(v * SPEEDUP, -MAX_SPEED, MAX_SPEED);
 
@@ -30,6 +28,7 @@ const partials = [
 const trail = Gizmos.trail(12); // bounded motion ring
 let bounces = 0;
 const ballFlash = Gizmos.flash(140); // white "hit" blink on the ball itself
+const fx = Particles.create();
 
 function bounceFx(x, y) {
   Camera.shake(3, 120);
@@ -61,9 +60,10 @@ function bounceFx(x, y) {
       osc.stop(now + 0.32);
     }
   });
-  Particles.burst(x, y, {
-    count: 14, speed: [40, 190], size: [2, 5], life: [220, 520],
-    colors: ["#ffd36b", "#ff6b6b", "#ffffff"],
+  fx.burst({
+    at: { x, y },
+    count: 14, speed: [0.7, 3.2], size: [2, 5], life: [220, 520],
+    color: ["#ffd36b", "#ff6b6b", "#ffffff"],
   });
 }
 
@@ -77,60 +77,57 @@ Loop.run({
     const r = BALL / 2, cx = ball.x + r, cy = ball.y + r;
     let scored = false;
     if (ball.x < 0) { ball.x = 0; ball.vx = clampSpeed(-ball.vx); scored = true; bounceFx(0, cy); }
-    if (ball.x + ball.w > vp.w) { ball.x = vp.w - ball.w; ball.vx = clampSpeed(-ball.vx); scored = true; bounceFx(vp.w, cy); }
+    if (ball.x + ball.w > view.w) { ball.x = view.w - ball.w; ball.vx = clampSpeed(-ball.vx); scored = true; bounceFx(view.w, cy); }
     if (ball.y < 0) { ball.y = 0; ball.vy = clampSpeed(-ball.vy); scored = true; bounceFx(cx, 0); }
-    if (ball.y + ball.h > vp.h) { ball.y = vp.h - ball.h; ball.vy = clampSpeed(-ball.vy); scored = true; bounceFx(cx, vp.h); }
+    if (ball.y + ball.h > view.h) { ball.y = view.h - ball.h; ball.vy = clampSpeed(-ball.vy); scored = true; bounceFx(cx, view.h); }
     if (scored) bounces++;
-
-    ballFlash.tick(Loop.step);
 
     trail.push(cx, cy);
   },
   draw() {
     const { ctx } = Draw;
-    const bg = ctx.createLinearGradient(0, 0, 0, vp.h);
+    const bg = ctx.createLinearGradient(0, 0, 0, view.h);
     bg.addColorStop(0, "#141726");
     bg.addColorStop(1, "#0a0b12");
     ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, vp.w, vp.h);
+    ctx.fillRect(0, 0, view.w, view.h);
 
-    ctx.save();
-    ctx.translate(Camera.shakeX(), Camera.shakeY());
-
-    // Motion trail (oldest = faintest/smallest).
-    const pts = trail.points;
-    for (let i = pts.length - 1; i >= 0; i--) {
-      const p = pts[i], k = i / pts.length;
-      ctx.globalAlpha = (1 - k) * 0.35;
-      ctx.fillStyle = "#ff6b6b";
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, (BALL / 2) * (1 - k * 0.6), 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-
-    // Ball: soft glow + body + a specular highlight.
-    const r = BALL / 2, cx = ball.x + r, cy = ball.y + r;
-    const glow = ctx.createRadialGradient(cx, cy, 2, cx, cy, r * 2.2);
-    glow.addColorStop(0, "rgba(255,150,150,0.5)");
-    glow.addColorStop(1, "rgba(255,107,107,0)");
-    ctx.fillStyle = glow;
-    ctx.fillRect(cx - r * 2.2, cy - r * 2.2, r * 4.4, r * 4.4);
-    ctx.fillStyle = "#ff6b6b";
-    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = "rgba(255,255,255,0.6)";
-    ctx.beginPath(); ctx.arc(cx - r * 0.3, cy - r * 0.3, r * 0.28, 0, Math.PI * 2); ctx.fill();
-
-    // Hit flash (Gizmos.flash): blink the ball toward white on each bounce.
-    if (ballFlash.value > 0) {
-      ctx.globalAlpha = ballFlash.value;
-      ctx.fillStyle = "#ffffff";
-      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    // The default camera is identity — this block just applies the shake.
+    Camera.render(() => {
+      // Motion trail (oldest = faintest/smallest).
+      const pts = trail.points;
+      for (let i = pts.length - 1; i >= 0; i--) {
+        const p = pts[i], k = i / pts.length;
+        ctx.globalAlpha = (1 - k) * 0.35;
+        ctx.fillStyle = "#ff6b6b";
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, (BALL / 2) * (1 - k * 0.6), 0, Math.PI * 2);
+        ctx.fill();
+      }
       ctx.globalAlpha = 1;
-    }
 
-    Particles.draw(ctx);
-    ctx.restore();
+      // Ball: soft glow + body + a specular highlight.
+      const r = BALL / 2, cx = ball.x + r, cy = ball.y + r;
+      const glow = ctx.createRadialGradient(cx, cy, 2, cx, cy, r * 2.2);
+      glow.addColorStop(0, "rgba(255,150,150,0.5)");
+      glow.addColorStop(1, "rgba(255,107,107,0)");
+      ctx.fillStyle = glow;
+      ctx.fillRect(cx - r * 2.2, cy - r * 2.2, r * 4.4, r * 4.4);
+      ctx.fillStyle = "#ff6b6b";
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.6)";
+      ctx.beginPath(); ctx.arc(cx - r * 0.3, cy - r * 0.3, r * 0.28, 0, Math.PI * 2); ctx.fill();
+
+      // Hit flash (Gizmos.flash): blink the ball toward white on each bounce.
+      if (ballFlash.value > 0) {
+        ctx.globalAlpha = ballFlash.value;
+        ctx.fillStyle = "#ffffff";
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+
+      Draw.particles(fx);
+    });
 
     UI.group({ x: 10, y: 10, w: 200, h: 60, title: "BOUNCE" }, (body) => {
       UI.text(`Bounces ${bounces}`, { h: body.remaining, size: 13 });

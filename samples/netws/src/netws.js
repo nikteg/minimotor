@@ -1,10 +1,9 @@
 // WebSocket console: connect to any server and echo messages back and forth.
-// Demonstrates: Minimotor.Net.connect — transport.sendJson, transport.onMessage
+// Demonstrates: Net.connect — transport.sendJson, transport.onMessage
 // (string frames now arrive decoded), transport.onClose and polling
 // transport.state. No game loop; the engine's networking works standalone.
-import { Minimotor } from "minimotor";
+import { Net } from "minimotor";
 
-const { Net } = Minimotor;
 const dec = new TextDecoder();
 
 const $ = (id) => document.getElementById(id);

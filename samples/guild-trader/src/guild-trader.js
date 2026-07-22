@@ -1,9 +1,8 @@
 // GUILD TRADER: RPG inventory drag/drop, stack merging, dialogue and loot recipes.
-import { Minimotor } from "minimotor";
+import { Draw, Gizmos, Goodies, Loop, Perf, Pointer, Stage, UI } from "minimotor";
 
-const { Goodies, Gizmos, Loop, UI, Pointer } = Minimotor;
-let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
-Minimotor.Stage.onResize((next) => (vp = next));
+// Live viewport; the engine owns the background clear.
+const vp = Stage.init("game", { background: "#101722", plugins: [Perf.plugin()] });
 
 const items = {
   potion: { name: "POTION", color: "#ff6b6b", max: 5 },
@@ -42,7 +41,7 @@ function addItem(item) {
 function drawInventory(ctx, layout) {
   const region = layout.next(undefined, 104);
   UI.grid({ ...region, cols: 4, rows: 2, gap: 8 }, (rect, i) => {
-    ctx.fillStyle = "#182536"; ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    Draw.rect(rect, "#182536");
     ctx.strokeStyle = "#3a5568"; ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1);
     const stack = slots[i];
     if (stack) UI.dragSource({ id: `slot:${i}`, ...rect, payload: { index: i } });
@@ -56,7 +55,7 @@ function drawInventory(ctx, layout) {
     }
     if (stack && UI.draggedItem()?.sourceId !== `slot:${i}`) {
       const icon = Math.min(22, rect.h - 20);
-      ctx.fillStyle = stack.item.color; ctx.fillRect(rect.x + (rect.w - icon) / 2, rect.y + 5, icon, icon);
+      Draw.rect(rect.x + (rect.w - icon) / 2, rect.y + 5, icon, icon, stack.item.color);
       UI.text(ctx, stack.item.name, { x: rect.x + 3, y: rect.y + rect.h - 18, w: rect.w - 6, h: 14, size: 9, align: "center" });
       UI.text(ctx, `×${stack.count}`, { x: rect.x + rect.w - 22, y: rect.y + 3, w: 18, h: 14, size: 9, align: "right" });
     }
@@ -66,7 +65,6 @@ function drawInventory(ctx, layout) {
 Loop.run({
   update() {},
   draw(ctx) {
-    ctx.fillStyle = "#101722"; ctx.fillRect(0, 0, vp.w, vp.h);
     const frame = { x: Math.max(12, (vp.w - 640) / 2), y: 12, w: Math.min(640, vp.w - 24), h: 292 };
     const half = (frame.w - 12) / 2;
 

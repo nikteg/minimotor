@@ -7,11 +7,10 @@
 // Play it: A S D F G H J K L ; are the white keys (C major from C4), W E T Y U
 // O P the black keys. Z/X shift octaves, 1-4 pick the waveform. Click the
 // on-screen piano too. B toggles a backing groove, N picks the next one.
-import { Minimotor } from "minimotor";
+import { Audio, Draw, Keys, Loop, Mathf, Perf, Pointer, Stage, UI } from "minimotor";
 
-let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
-Minimotor.Stage.onResize((next) => (vp = next)); // piano + bars lay out from vp
-const { Audio, Keys, Pointer, Text, Mathf, Loop, UI } = Minimotor;
+// The viewport is LIVE (mutated on resize) — piano + bars lay out from it.
+const vp = Stage.init("game", { background: "#12141c", plugins: [Perf.plugin()] });
 
 const midiFreq = (m) => 440 * 2 ** ((m - 69) / 12);
 
@@ -275,8 +274,6 @@ Loop.run({
   },
 
   draw(ctx) {
-    ctx.fillStyle = "#12141c";
-    ctx.fillRect(0, 0, vp.w, vp.h);
     const p = piano();
 
     // Visualizer bars fill the space above the piano.
@@ -329,7 +326,7 @@ Loop.run({
       const mv = UI.slider({ id: "mx-master", label: "Master", value: masterVol, w: 210, format: (v) => `${Math.round(v * 100)}%` });
       if (mv !== masterVol) {
         masterVol = mv;
-        Audio.Mixer.setMasterVolume(mv);
+        Audio.master.volume = mv;
       }
       const rw = UI.slider({ id: "mx-wet", label: "Verb", value: reverbWet, w: 210, format: (v) => `${Math.round(v * 100)}%` });
       if (rw !== reverbWet) {
@@ -367,9 +364,12 @@ Loop.run({
     }
 
     if (litUntil.size === 0) {
-      Text.drawCentered(ctx, "play with the keyboard or click the keys · shape it in SYNTH", vp.w / 2, p.y - 26, {
+      Draw.text("play with the keyboard or click the keys · shape it in SYNTH", {
+        x: vp.w / 2,
+        y: p.y - 26,
         font: "15px monospace",
         color: "#aab",
+        align: "center",
       });
     }
   },

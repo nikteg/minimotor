@@ -1,10 +1,14 @@
 // DUNGEON SCOUT: grid recipes in a tiny roguelike — a SEEDED layout (seedRng),
 // a distance-from-hero heatmap (distanceField), plus line-of-sight fog.
-import { Minimotor } from "minimotor";
-const { Goodies, Gizmos, Input, Loop, UI, Pointer } = Minimotor;
-let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
-Minimotor.Stage.onResize((next) => (vp = next));
-const actions = Input.actions({ up: ["ArrowUp", "KeyW"], down: ["ArrowDown", "KeyS"], left: ["ArrowLeft", "KeyA"], right: ["ArrowRight", "KeyD"] });
+import { Draw, Gizmos, Goodies, Input, Keys, Loop, Perf, Pointer, Stage, UI } from "minimotor";
+
+const view = Stage.init("game", { background: "#0d1118", plugins: [Perf.plugin()] });
+const input = Input.map({
+  up: ["ArrowUp", "KeyW"],
+  down: ["ArrowDown", "KeyS"],
+  left: ["ArrowLeft", "KeyA"],
+  right: ["ArrowRight", "KeyD"],
+});
 const COLS = 20, ROWS = 12, CELL = 28;
 let map, hero, exit, reachable, visible, field, maxDist;
 let seed = 1; // R advances the seed; the same seed always rebuilds the same map
@@ -40,11 +44,10 @@ function tryMove(dx, dy) { const x = hero.x + dx, y = hero.y + dy; if (map[y]?.[
 generate();
 
 Loop.run({ update() {
-  if (actions.pressed("up")) tryMove(0, -1); else if (actions.pressed("down")) tryMove(0, 1); else if (actions.pressed("left")) tryMove(-1, 0); else if (actions.pressed("right")) tryMove(1, 0);
-  if (Minimotor.Keys.pressed("KeyR")) { seed = (seed + 1) >>> 0; generate(); }
-}, draw(ctx) {
-  ctx.fillStyle = "#0d1118"; ctx.fillRect(0, 0, vp.w, vp.h);
-  const ox = Math.round((vp.w - COLS * CELL) / 2), oy = 86;
+  if (input.up.pressed) tryMove(0, -1); else if (input.down.pressed) tryMove(0, 1); else if (input.left.pressed) tryMove(-1, 0); else if (input.right.pressed) tryMove(1, 0);
+  if (Keys.pressed("KeyR")) { seed = (seed + 1) >>> 0; generate(); }
+}, draw() {
+  const ox = Math.round((view.w - COLS * CELL) / 2), oy = 86;
   // A titled `group` owns the header: the title strip and the body text below
   // are laid out with the theme's padding — no hand-tuned y under the strip.
   // `h: body.remaining` fills the padded body so the line centers in it.
@@ -53,15 +56,14 @@ Loop.run({ update() {
   });
   for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
     const key = `${x},${y}`, seen = visible.has(key), wall = map[y][x] === 1;
-    ctx.fillStyle = !seen ? "#080b10" : wall ? "#394558" : reachable.has(key) ? heat(field.at(x, y)) : "#18202b";
-    ctx.fillRect(ox + x * CELL + 1, oy + y * CELL + 1, CELL - 2, CELL - 2);
+    const color = !seen ? "#080b10" : wall ? "#394558" : reachable.has(key) ? heat(field.at(x, y)) : "#18202b";
+    Draw.rect(ox + x * CELL + 1, oy + y * CELL + 1, CELL - 2, CELL - 2, color);
   }
-  ctx.fillStyle = "#ffe066"; ctx.fillRect(ox + exit.x * CELL + 8, oy + exit.y * CELL + 8, 12, 12);
-  ctx.fillStyle = "#4ecdc4"; ctx.beginPath(); ctx.arc(ox + hero.x * CELL + CELL / 2, oy + hero.y * CELL + CELL / 2, 8, 0, Math.PI * 2); ctx.fill();
+  Draw.rect(ox + exit.x * CELL + 8, oy + exit.y * CELL + 8, 12, 12, "#ffe066");
+  Draw.circle(ox + hero.x * CELL + CELL / 2, oy + hero.y * CELL + CELL / 2, 8, "#4ecdc4");
   const gx = Math.floor((Pointer.x - ox) / CELL), gy = Math.floor((Pointer.y - oy) / CELL);
   if (gx >= 0 && gy >= 0 && gx < COLS && gy < ROWS) {
     const line = Goodies.gridLine(hero.x, hero.y, gx, gy);
-    ctx.fillStyle = "rgba(255,224,102,.35)";
-    for (const p of line) ctx.fillRect(ox + p.x * CELL + 10, oy + p.y * CELL + 10, 8, 8);
+    for (const p of line) Draw.rect(ox + p.x * CELL + 10, oy + p.y * CELL + 10, 8, 8, "rgba(255,224,102,.35)");
   }
 } });

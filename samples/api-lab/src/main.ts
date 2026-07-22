@@ -84,7 +84,13 @@ const sfx = Audio.sfx({
   jump: { shape: "square", freq: { from: 520, to: 880 }, ms: 90, volume: 0.4 },
   coin: Audio.recipes.coin(), // [#36]
   dash: Audio.recipes.whoosh(),
-  thud: { noise: true, freq: 120, ms: 150, volume: 0.6, filter: { type: "lowpass", freq: { from: 200, to: 60 } } },
+  thud: {
+    noise: true,
+    freq: 120,
+    ms: 150,
+    volume: 0.6,
+    filter: { type: "lowpass", freq: { from: 200, to: 60 } },
+  },
 });
 
 // [#38] Settings are just the default buses + Storage — no settings system.
@@ -93,9 +99,12 @@ Audio.buses.music.volume = audioPrefs.music;
 Audio.buses.sfx.volume = audioPrefs.sfx;
 
 // [#48]/[#50] One symmetric ROOM; offline is a normal outcome.
-const room = await Net.join(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws-signal`, {
-  room: "api-lab",
-}).catch(() => null);
+const room = await Net.join(
+  `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws-signal`,
+  {
+    room: "api-lab",
+  },
+).catch(() => null);
 
 // [#49] Declarative replication: share position, get interpolated ghosts.
 const ghosts = room
@@ -268,7 +277,14 @@ function updateWorld(): void {
     if (Collision.circleRect(c.x, c.y, 10, player)) {
       ecs.despawn(e);
       score += 1;
-      fx.burst({ at: c, count: 12, speed: [1, 3], life: [200, 400], size: [1, 3], color: "#ffd166" }); // [#28]
+      fx.burst({
+        at: c,
+        count: 12,
+        speed: [1, 3],
+        life: [200, 400],
+        size: [1, 3],
+        color: "#ffd166",
+      }); // [#28]
       sfx.coin.play({ pitch: [0.95, 1.15] }); // [#36] tuple = per-play jitter
     }
   });
@@ -306,7 +322,8 @@ function drawWorld(): void {
     Draw.particles(fx); // [#28]
   });
   UI.text(`Coins: ${score}/${TOTAL_COINS}`, { x: 10, y: 8, color: "#888" }); // [#6]
-  if (room) UI.text(`${room.peers.length + 1} online`, { anchor: "topRight", x: -10, y: 8, color: "#888" }); // [#33]
+  if (room)
+    UI.text(`${room.peers.length + 1} online`, { anchor: "topRight", x: -10, y: 8, color: "#888" }); // [#33]
 }
 
 let confirmRestart = false;

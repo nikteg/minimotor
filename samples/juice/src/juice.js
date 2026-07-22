@@ -1,25 +1,26 @@
 // Juice demo: impact feedback with the engine's Particles, Camera.shake and
 // Input.vibrate (plus Mathf randoms for variety).
-// Demonstrates: Minimotor.Particles.burst (CPU emitter, aged on the fixed step),
-// Camera.shake (decaying screen-shake — translate the scene by shakeX/Y),
+// Demonstrates: Particles.create() + fx.burst (CPU emitter, clock-derived),
+// Camera.shake (decaying screen-shake — applied inside Camera.render),
 // Input.vibrate (haptics, no-op on desktop) and Mathf.randRange / randItem.
-import { Minimotor } from "minimotor";
+import { Audio, Camera, Draw, Input, Loop, Mathf, Particles, Perf, Pointer, Stage, UI } from "minimotor";
 
-let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
-Minimotor.Stage.onResize((next) => (vp = next)); // impact positions read vp live
-const { Particles, Camera, Input, Mathf, Pointer, Loop, Audio, UI } = Minimotor;
+const view = Stage.init("game", { background: "#14141c", plugins: [Perf.plugin()] });
 
 const COLORS = ["#ff6b6b", "#4ecdc4", "#ffe066", "#a06bff", "#6bff9e", "#ff9f43"];
 
+const fx = Particles.create();
+
 // One shared "impact" — a burst, a shake and a buzz, all scaled by `power`.
 function impact(x, y, power) {
-  Particles.burst(x, y, {
+  fx.burst({
+    at: { x, y },
     count: Math.round(14 * power),
-    colors: COLORS,
-    speed: [50 * power, 220 * power],
+    color: COLORS,
+    speed: [(50 * power) / 60, (220 * power) / 60], // old px/s ÷ 60 → px/step
     size: [2, 5],
     life: [400, 900],
-    gravity: 500,
+    gravity: 500 / 3600, // old px/s² → px/step²
   });
   Camera.shake(5 * power, 200 + 60 * power);
   Input.vibrate(Math.min(80, 12 * power));
@@ -35,49 +36,34 @@ Loop.run({
     if (Pointer.pressed) impact(Pointer.x, Pointer.y, 3);
     // …and keep spraying while held, with a low rumble and a soft crackle.
     else if (Pointer.down) {
-      Particles.burst(Pointer.x, Pointer.y, {
+      fx.burst({
+        at: { x: Pointer.x, y: Pointer.y },
         count: 4,
-        colors: COLORS,
-        speed: [40, 170],
+        color: COLORS,
+        speed: [40 / 60, 170 / 60],
         size: [2, 4],
         life: [300, 700],
-        gravity: 500,
+        gravity: 500 / 3600,
       });
       Camera.shake(2, 120);
       if (sprayTick++ % 4 === 0) Audio.Sfx.blip(Mathf.randRange(180, 320), 0.04, 0.08);
     }
   },
 
-  // The loop hands draw its ctx (update gets the fixed step in ms).
-  draw(ctx) {
-    ctx.clearRect(0, 0, vp.w, vp.h);
+  draw() {
+    // Everything except the HUD draws inside the camera block, where the
+    // shake offset applies — the whole scene kicks on impact while the label
+    // stays readable.
+    Camera.render(() => {
+      // Faint grid — makes the screen-shake obvious.
+      for (let x = 0; x <= view.w; x += 40) Draw.line(x, 0, x, view.h, "rgba(255,255,255,0.05)");
+      for (let y = 0; y <= view.h; y += 40) Draw.line(0, y, view.w, y, "rgba(255,255,255,0.05)");
 
-    // Everything except the HUD is drawn under the shake offset, so the whole
-    // scene kicks on impact while the label stays readable.
-    ctx.save();
-    ctx.translate(Camera.shakeX(), Camera.shakeY());
+      Draw.particles(fx);
+    });
 
-    // Faint grid — makes the screen-shake obvious.
-    ctx.strokeStyle = "rgba(255,255,255,0.05)";
-    ctx.lineWidth = 1;
-    for (let x = 0; x <= vp.w; x += 40) {
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, vp.h);
-      ctx.stroke();
-    }
-    for (let y = 0; y <= vp.h; y += 40) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(vp.w, y);
-      ctx.stroke();
-    }
-
-    Particles.draw(ctx);
-    ctx.restore();
-
-    UI.group({ x: 12, y: 12, w: Math.min(360, vp.w - 24), h: 60, title: "JUICE" }, (body) => {
-      UI.text(`Particles ${Particles.count}   ·   click for a big impact, hold to spray`, {
+    UI.group({ x: 12, y: 12, w: Math.min(360, view.w - 24), h: 60, title: "JUICE" }, (body) => {
+      UI.text(`Particles ${fx.count}   ·   click for a big impact, hold to spray`, {
         h: body.remaining,
         size: 12,
       });

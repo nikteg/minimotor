@@ -1,43 +1,49 @@
 // Tilemap demo: Minimotor.Tiles.
-// - The level is a plain number[][] built below (0 = air, 1 = grass, 2 = dirt,
-//   3 = brick); tiles blit from a small procedurally-baked atlas.
-// - map.moveAABB drives the platformer collision: it sweeps the player rect
-//   against the solid tiles and reports which faces made contact.
-// - map.draw culls to the camera view — the HUD shows drawn vs total tiles.
+// - The level is an ASCII grid ("g" grass, "d" dirt, "b" brick) built below;
+//   tiles blit from a small procedurally-baked atlas via the skin.
+// - Collision.moveAndSlide drives the platformer collision: it sweeps the
+//   player rect against the solid tiles and reports which faces made contact.
+// - Draw.tiles culls to the camera view.
 // - Works with keyboard (←→/AD + Space) and a gamepad (left stick + A).
-import { Minimotor } from "minimotor";
+import { Audio, Camera, Collision, Draw, Input, Keys, Loop, Perf, Sprites, Stage, Tiles, UI } from "minimotor";
 
-let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
-const { Loop, Keys, Draw, Tiles, Camera, Input, Audio, UI, Sprites } = Minimotor;
-Minimotor.Stage.onResize((next) => {
-  vp = next;
-  cam.setView(vp.w, vp.h); // keep following/clamping to the real screen
-});
+Stage.init("game", { background: "#1b2432", plugins: [Perf.plugin()] });
 
 const TW = 24;
 const COLS = 120;
 const ROWS = 20;
 
 // ---- Level: ground with gaps, platforms, brick pillars ----
-const level = Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
+// Same procedural shape as ever, emitted as the ASCII grid Tiles.grid parses.
+const cells = Array.from({ length: ROWS }, () => new Array(COLS).fill("."));
 for (let cx = 0; cx < COLS; cx++) {
   if (cx % 19 === 17 || cx % 19 === 18) continue; // gaps to jump
-  level[ROWS - 2][cx] = 1; // grass
-  level[ROWS - 1][cx] = 2; // dirt below
+  cells[ROWS - 2][cx] = "g"; // grass
+  cells[ROWS - 1][cx] = "d"; // dirt below
 }
 for (let i = 0; i < 14; i++) {
   const px = 8 + i * 8;
   const py = ROWS - 5 - (i % 3) * 2;
-  for (let cx = px; cx < Math.min(px + 4, COLS); cx++) level[py][cx] = 1;
+  for (let cx = px; cx < Math.min(px + 4, COLS); cx++) cells[py][cx] = "g";
 }
 for (let i = 0; i < 6; i++) {
   const px = 14 + i * 18;
-  for (let cy = ROWS - 4; cy < ROWS - 2; cy++) level[cy][px] = 3; // brick pillars
+  for (let cy = ROWS - 4; cy < ROWS - 2; cy++) cells[cy][px] = "b"; // brick pillars
 }
+const ascii = cells.map((row) => row.join("")).join("\n");
+
+const level = Tiles.grid(ascii, {
+  size: TW,
+  legend: {
+    g: { solid: true },
+    d: { solid: true },
+    b: { solid: true },
+  },
+});
 
 // ---- Atlas: three 24px tiles baked once (grass / dirt / brick) ----
 // Sprites.atlas owns the canvas/context; each tile draws from its own top-left
-// corner (the default origin), then grid consumes the strip as its atlas.
+// corner (the default origin). The skin maps legend chars to atlas cells.
 const atlas = Sprites.atlas(TW, TW, 3, (g, i) => {
   if (i === 0) {
     g.fillStyle = "#7a5230"; // grass tile: dirt body…
@@ -60,22 +66,16 @@ const atlas = Sprites.atlas(TW, TW, 3, (g, i) => {
   }
 });
 
-const map = Tiles.grid(level, { tw: TW, atlas });
+const cell = (i) => ({ image: atlas, sx: i * TW, sy: 0, sw: TW, sh: TW });
+const skin = { g: cell(0), d: cell(1), b: cell(2) };
 
 // ---- Player: an AABB moved by the engine's kinematic tile solver ----
-const player = { x: TW * 2, y: 0, w: 16, h: 22, vy: 0, onGround: false };
+const player = { x: TW * 2, y: 0, w: 16, h: 22, vel: { x: 0, y: 0 }, grounded: false };
 
-const cam = Camera.createCamera({
-  worldW: map.worldW,
-  worldH: map.worldH, // shorter than the view → the camera centers it vertically
-  viewW: vp.w,
-  viewH: vp.h,
-  damping: 0.12,
-});
-cam.snapTo(player.x, player.y);
+Camera.follow(player, { world: level.rect, damping: 0.12 });
+Camera.snap();
 
 const pad = Input.gamepad();
-let tilesDrawn = 0;
 
 Loop.run({
   update() {
@@ -84,61 +84,41 @@ Loop.run({
       (Keys.down("ArrowLeft") || Keys.down("KeyA") ? -1 : 0) +
       (Keys.down("ArrowRight") || Keys.down("KeyD") ? 1 : 0) +
       stick;
-    const dx = Math.max(-1, Math.min(1, move)) * 3.4;
+    player.vel.x = Math.max(-1, Math.min(1, move)) * 3.4;
 
     const jump =
       Keys.pressed("Space") || Keys.pressed("KeyW") || pad.pressed(Input.Buttons.A);
-    if (jump && player.onGround) {
-      player.vy = -11;
+    if (jump && player.grounded) {
+      player.vel.y = -11;
       Audio.Sfx.jump();
     }
-    player.vy = Math.min(player.vy + 0.55, 12);
+    player.vel.y = Math.min(player.vel.y + 0.55, 12);
 
-    // One kinematic step: sweep the player rect by (dx, vy) against the solid
-    // tiles. X and Y resolve independently; the result reports each contact.
-    const hit = map.moveAABB(player, dx, player.vy);
-    player.x = hit.rect.x;
-    player.y = hit.rect.y;
-    player.onGround = hit.bottom;
-    if (hit.top || hit.bottom) player.vy = 0; // stop on ceiling or floor
+    // One kinematic step: sweep the player rect by its velocity against the
+    // solid tiles. Blocked components are zeroed and `grounded` maintained.
+    Collision.moveAndSlide(player, level);
 
     // Fell into a gap → respawn at the start.
-    if (player.y > map.worldH + 200) {
+    if (player.y > level.rect.h + 200) {
       player.x = TW * 2;
       player.y = 0;
-      player.vy = 0;
-      cam.snapTo(player.x, player.y);
+      player.vel.y = 0;
+      Camera.snap();
       Audio.Sfx.blip(140, 0.3); // fell — respawn
     }
-
-    cam.update(player.x + player.w / 2, player.y + player.h / 2);
   },
 
   draw() {
-    const { ctx } = Draw;
-    ctx.fillStyle = "#1b2432"; // sky
-    ctx.fillRect(0, 0, vp.w, vp.h);
+    Camera.render(() => {
+      Draw.tiles(level, skin);
+      Draw.rect(player, "#ffd43b");
+      Draw.rect(player.x + (player.vel.y < 0 ? 4 : 3), player.y + 5, 3, 3, "#14141c");
+      Draw.rect(player.x + 10, player.y + 5, 3, 3, "#14141c");
+    });
 
-    ctx.save();
-    // Round the camera offset for a crisper image (the map itself is seam-proof
-    // — Tiles composites into an internal buffer — but a whole-pixel translate
-    // avoids resampling blur on the player and map alike).
-    const camX = Math.round(cam.x);
-    const camY = Math.round(cam.y);
-    ctx.translate(-camX, -camY);
-    tilesDrawn = map.draw(ctx, { x: camX, y: camY, w: vp.w, h: vp.h });
-
-    ctx.fillStyle = "#ffd43b";
-    ctx.fillRect(player.x, player.y, player.w, player.h);
-    ctx.fillStyle = "#14141c";
-    ctx.fillRect(player.x + (player.vy < 0 ? 4 : 3), player.y + 5, 3, 3);
-    ctx.fillRect(player.x + 10, player.y + 5, 3, 3);
-    ctx.restore();
-
-    const total = COLS * ROWS;
     UI.text("←→/AD move   Space/W jump   (gamepad: stick + A)", { x: 12, y: 10, color: "dim" });
     UI.text(
-      `tiles drawn: ${tilesDrawn} of ${total} (culled to camera)` +
+      `${COLS}×${ROWS} tiles (drawing culls to the camera view)` +
         (pad.connected ? "   🎮 connected" : ""),
       { x: 12, y: 28, color: "dim" },
     );

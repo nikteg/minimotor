@@ -119,11 +119,25 @@ export function focusCandidates(): FocusEntry[] {
   const entries = focusOverlayActive
     ? focusRegistry.filter((entry) => entry.overlay)
     : focusRegistry;
-  return entries
-    .filter((entry) => !entry.disabled && entry.tabIndex >= 0)
-    .map((entry, order) => ({ entry, order }))
-    .sort((a, b) => a.entry.tabIndex - b.entry.tabIndex || a.order - b.order)
-    .map(({ entry }) => entry);
+  return (
+    entries
+      .filter((entry) => !entry.disabled && entry.tabIndex >= 0)
+      .map((entry, order) => ({ entry, order }))
+      // DOM tab-order semantics: a POSITIVE tabIndex is focused before the
+      // default 0 (positives ascending), then everything at 0 in registration
+      // order. So explicit chrome (tabs/buttons at 10/20/…) leads the sequence
+      // and content that just defaults to 0 (list rows) follows — not the other
+      // way around.
+      .sort((a, b) => {
+        const ta = a.entry.tabIndex;
+        const tb = b.entry.tabIndex;
+        if (ta > 0 && tb > 0) return ta - tb || a.order - b.order;
+        if (ta > 0) return -1;
+        if (tb > 0) return 1;
+        return a.order - b.order;
+      })
+      .map(({ entry }) => entry)
+  );
 }
 
 export function setWidgetFocus(id: string | null): void {

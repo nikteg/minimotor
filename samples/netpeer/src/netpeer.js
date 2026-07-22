@@ -1,5 +1,5 @@
 // Peer-to-peer demo: a real WebRTC data channel, both ends in one page.
-// Demonstrates: Minimotor.Net.createPeer — onSignal / applySignal handshake,
+// Demonstrates: Net.createPeer — onSignal / applySignal handshake,
 // transport.sendJson / onMessage, and transport.state.
 //
 // Normally the two peers run on different machines and you relay their signaling
@@ -8,16 +8,16 @@
 // other's applySignal — so the handshake, the ICE and the data channel are all
 // genuine, no server required. Move your mouse on the LEFT pane; the dot on the
 // RIGHT is drawn only from bytes that traveled peer→peer over the channel.
-import { Minimotor } from "minimotor";
+import { Draw, Keys, Loop, Net, Perf, Pointer, Stage, UI } from "minimotor";
 
 // Host-side network meter, shown in the Perf HUD (top-right): message and byte
 // rates for the cursor stream going out and the acks coming back.
-const meter = Minimotor.Perf.createNetMeter();
-let vp = Minimotor.Stage.init("game", {
-  plugins: [Minimotor.Perf.plugin({ net: meter })],
+const meter = Perf.createNetMeter();
+// The viewport is LIVE (mutated on resize) — both panes lay out from it.
+const vp = Stage.init("game", {
+  background: "#0e1116",
+  plugins: [Perf.plugin({ net: meter })],
 });
-Minimotor.Stage.onResize((next) => (vp = next)); // both panes lay out from vp
-const { Net, Pointer, Keys, Loop, UI } = Minimotor;
 
 const dec = new TextDecoder();
 
@@ -81,17 +81,11 @@ Loop.run({
     }
   },
 
-  draw(ctx) {
-    ctx.clearRect(0, 0, vp.w, vp.h);
+  draw() {
     const half = vp.w / 2;
 
     // Divider + pane labels.
-    ctx.strokeStyle = "#2a3340";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(half, 0);
-    ctx.lineTo(half, vp.h);
-    ctx.stroke();
+    Draw.line(half, 0, half, vp.h, "#2a3340", 2);
 
     UI.text("YOU  (host)  — move your mouse here", { x: 16, y: 13, size: 15, bold: true, color: "dim" });
     UI.text("PEER (guest) — drawn from received bytes", {
@@ -103,19 +97,13 @@ Loop.run({
     });
 
     // Your dot (left pane).
-    ctx.fillStyle = "#4ecdc4";
-    ctx.beginPath();
-    ctx.arc(localN.x * half, localN.y * vp.h, 12, 0, Math.PI * 2);
-    ctx.fill();
+    Draw.circle(localN.x * half, localN.y * vp.h, 12, "#4ecdc4");
 
     // Peer's dot (right pane) — raw last packet, or sampled from the
     // interpolator's snapshot buffer (~100ms in the past, gliding).
     const shown = interpolate ? (interp.sample() ?? remoteN) : remoteN;
     if (shown) {
-      ctx.fillStyle = "#ffe066";
-      ctx.beginPath();
-      ctx.arc(half + shown.x * half, shown.y * vp.h, 12, 0, Math.PI * 2);
-      ctx.fill();
+      Draw.circle(half + shown.x * half, shown.y * vp.h, 12, "#ffe066");
     }
 
     // Status.

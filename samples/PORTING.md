@@ -8,6 +8,7 @@ Samples import named exports: `import { Stage, Loop, Draw, ... } from "minimotor
 ## Breaking changes cheat sheet (old → new)
 
 ### Engine core
+
 - `let vp = Stage.init(...)` + `Stage.onResize((n) => (vp = n))` →
   `const view = Stage.init(...)` — the viewport is LIVE (mutated in place).
   Delete resize-rebinding handlers; `Stage.onResize(fn)` still exists for
@@ -24,24 +25,28 @@ Samples import named exports: `import { Stage, Loop, Draw, ... } from "minimotor
   `Stage.init(c, { fullscreen: true })` or `Stage.fullscreen()`.
 
 ### Drawing (screen space is the DEFAULT; world lives in camera blocks)
+
 - `ctx.fillStyle = c; ctx.fillRect(x, y, w, h)` → `Draw.rect(x, y, w, h, c)`
   or `Draw.rect(rectObj, c)` (anything with x/y/w/h).
 - circles → `Draw.circle(x, y, r, c)` / `Draw.circle(pos, r, c)`;
   lines → `Draw.line(x1, y1, x2, y2, c, width?)` / `Draw.line(a, b, c, w?)`.
 - `Text.drawText(ctx, s, x, y, style)` → `Draw.text(s, { x, y, size, color,
-  align, baseline })` (plain/world text) or `UI.text(s, {...})` (themed HUD).
+align, baseline })` (plain/world text) or `UI.text(s, {...})` (themed HUD).
   The `Text` namespace is GONE.
 - `UI.text` gains `anchor: "center" | "topRight" | ...` — x/y become offsets.
 - Raw ctx still available (`draw(ctx)` param or `Draw.ctx`) as the escape
   hatch — fine for gradient/path-heavy scenes; don't force-port those.
 
 ### Camera (a default camera ALWAYS exists; identity until configured)
+
 - `createCamera({ worldW, worldH, viewW, viewH, damping, deadZoneX/Y })` +
   `cam.update(tx, ty)` + manual `ctx.translate(-cam.x, -cam.y)` →
   ```js
   Camera.follow(player, { world: { w, h }, deadzone: { w, h }, damping: 0.15 });
   // draw():
-  Camera.render(() => { /* world-space Draw.* calls */ });
+  Camera.render(() => {
+    /* world-space Draw.* calls */
+  });
   /* top level = screen space (HUD) */
   ```
 - `cam.sx(x)/sy(y)/wx/wy` → `Camera.toScreen(pos)` / `Camera.toWorld(pos)`
@@ -54,6 +59,7 @@ Samples import named exports: `import { Stage, Loop, Draw, ... } from "minimotor
 - `Camera.snap()` after teleports/scene entry (replaces `snapTo`).
 
 ### Input
+
 - `Input.actions({ jump: ["Space"] })` / `trackKeys()` →
   `Input.map({ jump: ["Space", "pad:a"] })`; call sites:
   `input.jump.pressed/down/released`, `input.axis("left", "right")`,
@@ -62,6 +68,7 @@ Samples import named exports: `import { Stage, Loop, Draw, ... } from "minimotor
 - `Input.gamepad()` unchanged; menus are pad-navigable automatically.
 
 ### Time
+
 - `Clock.after/every(ms, fn)` → `Clock.game.after/every(ms, fn)` (or
   `Clock.ui.*` for interface timers).
 - `Tween.to(obj, { x: 10 }, ms, ease)` → a Motion:
@@ -72,12 +79,13 @@ Samples import named exports: `import { Stage, Loop, Draw, ... } from "minimotor
 - Slow-mo/pause: `Clock.game.scale` / `.hold()`.
 
 ### Collision & physics
+
 - `Physics.applyGravity(body, floorY)` / `jump` / `variableJump` — GONE:
   ```js
-  body.vel.y += GRAVITY;                                  // game constants
+  body.vel.y += GRAVITY; // game constants
   if (gate.try(input.jump.pressed, body.grounded)) body.vel.y = JUMP;
   if (input.jump.released && body.vel.y < 0) body.vel.y *= 0.45;
-  Collision.moveAndSlide(body, solids);                   // or slide(...)
+  Collision.moveAndSlide(body, solids); // or slide(...)
   ```
   Bodies are plain `{ x, y, w, h, vel: { x, y }, grounded }` (velocity is a
   nested Vec2 now, NOT vx/vy).
@@ -86,9 +94,10 @@ Samples import named exports: `import { Stage, Loop, Draw, ... } from "minimotor
   `hit.up/down/left/right` + `hit.impact`.
 - `jumpGate.update(grounded, pressed, dt)` → `gate.try(pressed, grounded)`.
 - `Vec2` namespace exists: `add/sub/scale/addScaled/len/norm/dist/lerp/
-  clamp/clampRect/limit` — mutate-first, structural.
+clamp/clampRect/limit` — mutate-first, structural.
 
 ### ECS
+
 - `ECS.world()` → `ECS.create()`; idiom `const ecs = ECS.create()`.
 - `Minimotor.World` (shared default) — GONE; create your own.
 - `ECS.component<T>("name")` → `ECS.component<T>()` (label optional).
@@ -96,6 +105,7 @@ Samples import named exports: `import { Stage, Loop, Draw, ... } from "minimotor
 - `world.drawSprites(ctx, opts)` unchanged.
 
 ### Anim
+
 - `Anim.sheet(img, { fw, fh, fps, frames })` + `anim.update(dt)` +
   `anim.draw(ctx, x, y)` / `Anim.states({...}, "idle")` →
   ```js
@@ -104,13 +114,14 @@ Samples import named exports: `import { Stage, Loop, Draw, ... } from "minimotor
     states: { idle: { row: 0, frames: 4, fps: 6 }, run: { row: 1, frames: 6, fps: 12 } },
   });
   const anim = sheet.play("idle");
-  anim.set(cond ? "run" : "idle");          // same-state set is a no-op
+  anim.set(cond ? "run" : "idle"); // same-state set is a no-op
   Draw.sprite(anim, entityRect, { flipX }); // bottom-center anchored
   ```
 - Assets `{ src, sheet: { fw, fh } }` specs → `{ src, sheet: { frame: {...},
-  states: {...} } }`.
+states: {...} } }`.
 
 ### Particles
+
 - `Particles.burst(x, y, { colors })` (singleton) →
   `const fx = Particles.create();` then
   `fx.burst({ at: { x, y }, color, speed: [a, b], life: [a, b] })`.
@@ -120,12 +131,16 @@ Samples import named exports: `import { Stage, Loop, Draw, ... } from "minimotor
 - Continuous: `fx.emit({ at, chance: 0.4, ... })` each step.
 
 ### Tiles
+
 - `Tiles.grid(numberMatrix, { tw, colors, solid })` → ASCII + legend + skin:
   ```js
-  const level = Tiles.grid(`
+  const level = Tiles.grid(
+    `
   ..o..
   #####
-  `, { size: 32, legend: { "#": { solid: true } } });
+  `,
+    { size: 32, legend: { "#": { solid: true } } },
+  );
   const skin = { "#": "#3a3f4a" };
   // draw (world pass):   Draw.tiles(level, skin);
   // collide:             Collision.moveAndSlide(body, level);
@@ -136,6 +151,7 @@ Samples import named exports: `import { Stage, Loop, Draw, ... } from "minimotor
   (`tiles.pick`, `tiles.anim`, `tiles.auto16`) as skin values.
 
 ### Scenes
+
 - `Scenes.define("a", {...}); Scenes.go("a")` (global) →
   ```js
   const scenes = Scenes.create({ first: {...}, second: {...} }); // first key opens
@@ -148,6 +164,7 @@ Samples import named exports: `import { Stage, Loop, Draw, ... } from "minimotor
 - Scene `world:` auto-drive is GONE — call `ecs.update()` / draw explicitly.
 
 ### UI
+
 - Label-first shapes: `UI.button("Play")`, `UI.slider("Music", vol)` →
   returns the new value, `UI.toggle("Mute", muted)`.
 - `UI.panel({ anchor: "center", w: 260, gap: 10 }, () => { ...children... })`
@@ -156,9 +173,10 @@ Samples import named exports: `import { Stage, Loop, Draw, ... } from "minimotor
 - Everything else (tabs/table/list/textInput/...) unchanged.
 
 ### Audio
+
 - `ensureAudio()` calls — DELETE (first gesture unlocks automatically).
 - `Sfx.coin()`-style presets → `const sfx = Audio.sfx({ coin:
-  Audio.recipes.coin(), ... }); sfx.coin.play({ pitch: [0.95, 1.1] })`.
+Audio.recipes.coin(), ... }); sfx.coin.play({ pitch: [0.95, 1.1] })`.
   `Audio.tone(...)` / `playSfx` still exist (low tier) — fine to keep.
 - `Sfx.setVolume/setOn` → `Audio.buses.sfx.volume` / `.muted`;
   `Mixer.setMasterVolume` → `Audio.master.volume`.
@@ -166,6 +184,7 @@ Samples import named exports: `import { Stage, Loop, Draw, ... } from "minimotor
   `Audio.music(arrayBuffer, { loop, volume })`.
 
 ### Net
+
 - `Net.host({ signal })` / `Net.join({ signal })` (asymmetric) →
   `Net.hostSession(...)` / `Net.joinSession(...)` (renamed, still there),
   OR the new symmetric room:
@@ -174,6 +193,7 @@ Samples import named exports: `import { Stage, Loop, Draw, ... } from "minimotor
 - `createInterpolator` / `createRoster` unchanged.
 
 ## Ground rules
+
 - Samples stay plain `.js` (except api-lab). Keep each sample's structure
   and behavior; this is a mechanical port, not a redesign.
 - Don't reintroduce `clearRect`/manual camera translates where the new API

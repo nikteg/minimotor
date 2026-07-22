@@ -1,22 +1,22 @@
 // Swept collision demo: why Collision.sweptAABB beats a point-in-time overlap
 // test for fast movers.
-// Demonstrates: Minimotor.Collision.sweptAABB(box, dx, dy, target) vs
-// rectsOverlap. A projectile flies right into a thin wall; at high speed a
-// per-frame overlap test misses it entirely ("tunneling") while the swept test
-// catches the crossing and reports where + on which face it hit.
+// Demonstrates: Collision.sweptAABB(box, dx, dy, target) vs rectsOverlap. A
+// projectile flies right into a thin wall; at high speed a per-frame overlap
+// test misses it entirely ("tunneling") while the swept test catches the
+// crossing and reports where + on which face it hit.
 //
 // Controls:  Space = toggle method (swept ⇄ per-frame)   ↑/↓ = speed
-import { Minimotor } from "minimotor";
+import { Audio, Collision, Draw, Keys, Loop, Perf, Stage, UI } from "minimotor";
 
-let vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
-Minimotor.Stage.onResize((next) => (vp = next)); // wall/reset derive from vp
-const { Collision, Keys, Loop, UI } = Minimotor;
+// The viewport is LIVE (mutated on resize) — wall/reset derive from it; the
+// engine owns clearing via `background`.
+const view = Stage.init("game", { background: "#101418", plugins: [Perf.plugin()] });
 
-const midY = () => vp.h / 2;
+const midY = () => view.h / 2;
 
 // A thin wall in the middle of the screen — thin enough that a fast projectile
 // steps clean over it in one frame.
-const wall = () => ({ x: vp.w / 2 - 3, y: midY() - 90, w: 6, h: 180 });
+const wall = () => ({ x: view.w / 2 - 3, y: midY() - 90, w: 6, h: 180 });
 
 const proj = { x: 0, y: 0, w: 18, h: 18 };
 let speed = 60; // px per step; well above the wall's 6px width
@@ -60,38 +60,32 @@ Loop.run({
       // (start + motion·t); the per-frame test only knows "somewhere overlapping".
       const contactX = swept ? prevX + speed * hit.t : proj.x;
       stats.hits++;
-      Minimotor.Audio.Sfx.blip(880, 0.05); // clean catch
+      Audio.Sfx.blip(880, 0.05); // clean catch
       flash = { x: contactX + proj.w, y: proj.y + proj.h / 2, tunneled: false };
       flashAge = 0;
       reset();
     } else if (trulyCrossed) {
       // The projectile is now past the wall without a hit being registered.
       stats.tunneled++;
-      Minimotor.Audio.Sfx.blip(120, 0.25); // the miss buzz
+      Audio.Sfx.blip(120, 0.25); // the miss buzz
       flash = { x: w.x + w.w / 2, y: midY(), tunneled: true };
       flashAge = 0;
       reset();
-    } else if (proj.x > vp.w) {
+    } else if (proj.x > view.w) {
       reset();
     }
 
     flashAge++;
   },
 
-  draw(ctx) {
-    ctx.clearRect(0, 0, vp.w, vp.h);
-    const w = wall();
+  draw() {
+    Draw.rect(wall(), "#4ecdc4");
+    Draw.rect(proj, "#ffe066");
 
-    // Wall.
-    ctx.fillStyle = "#4ecdc4";
-    ctx.fillRect(w.x, w.y, w.w, w.h);
-
-    // Projectile.
-    ctx.fillStyle = "#ffe066";
-    ctx.fillRect(proj.x, proj.y, proj.w, proj.h);
-
-    // Outcome marker: green ring at the contact point, or a red "tunneled" mark.
+    // Outcome marker: green ring at the contact point, or a red "tunneled"
+    // mark. Stroked + fading shapes — the raw ctx escape hatch.
     if (flash && flashAge < 40) {
+      const { ctx } = Draw;
       const a = 1 - flashAge / 40;
       ctx.globalAlpha = a;
       if (flash.tunneled) {
@@ -118,7 +112,7 @@ Loop.run({
     UI.text(`speed:  ${speed} px/step`, { x: 16, y: 34, size: 16 });
     UI.text(`hits: ${stats.hits}`, { x: 16, y: 62, size: 16, color: "#6bff9e" });
     UI.text(`tunneled: ${stats.tunneled}`, { x: 120, y: 62, size: 16, color: "#ff5252" });
-    UI.text("Space = toggle method    ↑/↓ = speed", { x: 16, y: vp.h - 33, size: 13, color: "dim" });
+    UI.text("Space = toggle method    ↑/↓ = speed", { x: 16, y: view.h - 33, size: 13, color: "dim" });
     if (!swept && speed > proj.w) {
       UI.text("↑ speed high enough to tunnel — watch the per-frame test miss", { x: 16, y: 90, size: 14, color: "#ff5252" });
     }

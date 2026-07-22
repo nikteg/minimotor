@@ -90,6 +90,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: here("./samples/index.html"),
+        apiLab: here("./samples/api-lab/index.html"),
         scenes: here("./samples/scenes/index.html"),
         sprites: here("./samples/sprites/index.html"),
         minimal: here("./samples/minimal/index.html"),

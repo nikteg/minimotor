@@ -1,22 +1,15 @@
 // SOLITAIRE: classic Klondike built with a broad sweep of Minimotor primitives.
-// Demonstrates: Stage / Loop / Keys / Pointer / Draw, Scenes + Transitions,
-// UI immediate-mode widgets + drag/drop, Input.actions, Audio.Sfx, Storage,
-// Timers, Clock/Tween, Signals, Fsm, Text, Particles, Collision, Mathf,
-// Game.letterbox, Goodies.shuffle & gridFormation, Fullscreen.applyFullscreen,
-// Perf.plugin, Sprites.getSprite, and Anim.sheet for a win sparkle.
-import { Minimotor } from "minimotor";
-
-const {
-  Stage, Loop, Draw, Keys, Pointer,
-  Scenes, Transitions,
-  UI, Input, Audio, Storage,
-  Timers, Clock, Tween, Signals, Fsm,
-  Text, Particles, Collision, Mathf,
-  Game, Goodies, Fullscreen, Perf,
-  Sprites, Anim,
-} = Minimotor;
-
-Fullscreen.applyFullscreen();
+// Demonstrates: Stage / Loop / Pointer / Draw, Scenes.create + Transitions,
+// UI immediate-mode widgets + drag/drop, Input.map, Audio.Sfx, Storage,
+// Timers, Clock.game timers, Anim motions (the AI's card glide + win cascade),
+// Signals, Fsm, Particles.create, Collision, Mathf, Game.letterbox,
+// Goodies.shuffle & gridFormation, Perf.plugin, Sprites.getSprite, and
+// Anim.sheet for a win sparkle.
+import {
+  Anim, Audio, Clock, Collision, Draw, Fsm, Game, Goodies, Input, Loop,
+  Mathf, Particles, Perf, Pointer, Scenes, Signals, Sprites, Stage, Storage,
+  Timers, Transitions, UI,
+} from "minimotor";
 
 // ---- Constants & helpers ----
 const SUITS = ["♠", "♥", "♣", "♦"];
@@ -43,13 +36,13 @@ function isRed(suit) {
 }
 
 // ---- Game state ----
-let vp = Stage.init("game", { plugins: [Perf.plugin()] });
-Stage.onResize((next) => {
-  vp = next;
+// The viewport is LIVE (mutated in place on resize); the resize handler only
+// re-layouts and re-bakes DPR-dependent sprites.
+const vp = Stage.init("game", { fullscreen: true, background: "#062", plugins: [Perf.plugin()] });
+Stage.onResize(() => {
   layoutBoard();
   Sprites.clearSpriteCache();
   buildCardBackSprite();
-  buildSparkleSheet();
 });
 
 let scale = 1;
@@ -73,6 +66,8 @@ let aiStockPasses = 0;
 let aiVisited = new Set();
 let gameStartedAt = 0;
 let stats = { wins: 0, games: 0, bestTime: 0 };
+
+const fx = Particles.create();
 
 const statsKey = "solitaire_stats_v1";
 
@@ -139,7 +134,6 @@ function pointInLogicalRect(px, py, rect) {
 
 // ---- Sprite assets (card back + sparkle animation) ----
 let cardBackSprite = null;
-let sparkleAnim = null;
 
 function buildCardBackSprite() {
   cardBackSprite = Sprites.getSprite("card-back", CARD_W, vp.dpr, (ctx) => {
@@ -159,26 +153,31 @@ function buildCardBackSprite() {
   });
 }
 
-function buildSparkleSheet() {
-  const size = 64;
-  const sheet = Sprites.getLayer("sparkle-sheet", size * 8, size, vp.dpr, (ctx) => {
-    for (let i = 0; i < 8; i++) {
-      ctx.save();
-      ctx.translate(i * size + size / 2, size / 2);
-      ctx.rotate((i / 8) * Math.PI);
-      ctx.fillStyle = `rgba(255, 223, 100, ${1 - i / 9})`;
-      ctx.beginPath();
-      ctx.moveTo(0, -size * 0.4);
-      ctx.quadraticCurveTo(size * 0.12, -size * 0.12, size * 0.38, 0);
-      ctx.quadraticCurveTo(size * 0.12, size * 0.12, 0, size * 0.4);
-      ctx.quadraticCurveTo(-size * 0.12, size * 0.12, -size * 0.38, 0);
-      ctx.quadraticCurveTo(-size * 0.12, -size * 0.12, 0, -size * 0.4);
-      ctx.fill();
-      ctx.restore();
-    }
-  });
-  sparkleAnim = Anim.sheet(sheet, { fw: size, fh: size, fps: 16, loop: true });
-}
+// An 8-frame rotating sparkle, baked once into a 1:1 atlas and played as a
+// clock-derived sheet cursor (nothing ticks it).
+const SPARKLE_SIZE = 64;
+const sparkleAtlas = Sprites.atlas(
+  SPARKLE_SIZE,
+  SPARKLE_SIZE,
+  8,
+  (ctx, i) => {
+    const size = SPARKLE_SIZE;
+    ctx.rotate((i / 8) * Math.PI);
+    ctx.fillStyle = `rgba(255, 223, 100, ${1 - i / 9})`;
+    ctx.beginPath();
+    ctx.moveTo(0, -size * 0.4);
+    ctx.quadraticCurveTo(size * 0.12, -size * 0.12, size * 0.38, 0);
+    ctx.quadraticCurveTo(size * 0.12, size * 0.12, 0, size * 0.4);
+    ctx.quadraticCurveTo(-size * 0.12, size * 0.12, -size * 0.38, 0);
+    ctx.quadraticCurveTo(-size * 0.12, -size * 0.12, 0, -size * 0.4);
+    ctx.fill();
+  },
+  { origin: "center" },
+);
+const sparkleAnim = Anim.sheet(sparkleAtlas, {
+  frame: { w: SPARKLE_SIZE, h: SPARKLE_SIZE },
+  states: { spin: { row: 0, frames: 8, fps: 16 } },
+}).play("spin");
 
 // ---- Deck & deal ----
 function freshDeck() {
@@ -311,14 +310,30 @@ function aiQueueMove(source, index, target, targetType, targetIndex) {
   const destination = targetType === "foundation"
     ? layout.foundations[targetIndex]
     : { ...layout.tableau[targetIndex], y: layout.tableau[targetIndex].y + target.length * CARD_GAP_V };
-  aiMotion = { cards, x: sourceRect.x, y: sourceRect.y, source, index, target, targetType };
-  Tween.to(aiMotion, { x: destination.x, y: destination.y }, 360, Mathf.easeInOut, () => {
-    if (!aiMotion) return;
-    const motion = aiMotion;
-    aiMotion = null;
-    moveCards(motion.source, motion.index, motion.target);
-    if (motion.targetType === "foundation") checkWin();
-  });
+  // A clock-derived motion glides the cards; the move lands when it's done
+  // (polled in the playing state's update).
+  aiMotion = {
+    cards,
+    from: { x: sourceRect.x, y: sourceRect.y },
+    to: { x: destination.x, y: destination.y },
+    t: Anim.animate({ ms: 360, ease: Mathf.easeInOut }),
+    source, index, target, targetType,
+  };
+}
+
+function aiMotionPos() {
+  const t = aiMotion.t.value;
+  return {
+    x: Mathf.lerp(aiMotion.from.x, aiMotion.to.x, t),
+    y: Mathf.lerp(aiMotion.from.y, aiMotion.to.y, t),
+  };
+}
+
+function finishAiMotion() {
+  const motion = aiMotion;
+  aiMotion = null;
+  moveCards(motion.source, motion.index, motion.target);
+  if (motion.targetType === "foundation") checkWin();
 }
 
 function aiSignature() {
@@ -327,7 +342,7 @@ function aiSignature() {
 }
 
 function aiStep() {
-  if (Scenes.active !== "play" || fsm.state !== "playing" || aiMotion) return;
+  if (scenes.active !== "play" || fsm.current !== "playing" || aiMotion) return;
   const signature = aiSignature();
   if (aiVisited.has(signature)) {
     // Never give up: reset the search frontier and inspect the stock again.
@@ -382,7 +397,7 @@ function aiStep() {
 function toggleAi() {
   aiPlaying = !aiPlaying;
   cancelAi?.();
-  cancelAi = aiPlaying ? Clock.every(520, aiStep) : null;
+  cancelAi = aiPlaying ? Clock.game.every(520, aiStep) : null;
   UI.float(aiPlaying ? "AI playing" : "AI paused", Pointer.x, Pointer.y, { color: "#ffd43b" });
 }
 
@@ -427,7 +442,7 @@ function checkWin() {
     cancelAi = null;
     Signals.emit("win", { time: timeSec });
     fsm.go("won");
-    Scenes.push("won");
+    scenes.push("won");
   }
 }
 
@@ -462,7 +477,7 @@ function findHint() {
 }
 
 // ---- Input ----
-const input = Input.actions({
+const input = Input.map({
   newGame: ["KeyN"],
   undo: ["KeyU"],
   hint: ["KeyH"],
@@ -485,13 +500,15 @@ const fsm = Fsm.create(
         gameTime = performance.now() - gameStartedAt;
         undoCd.tick(Loop.step);
         hintFlash.tick(Loop.step);
-        if (input.pressed("newGame")) {
-          Scenes.go("menu");
+        if (aiMotion?.t.done) finishAiMotion();
+        if (input.newGame.pressed) {
+          scenes.go("play", { transition: Transitions.fade(300) });
           return null;
         }
-        if (input.pressed("undo")) tryUndo();
-        if (input.pressed("hint")) hintFlash.charge();
-        if (input.pressed("autoMove") && !tryAutoMoveAny()) {
+        if (input.undo.pressed) tryUndo();
+        if (input.hint.pressed) hintFlash.charge();
+        if (input.fullscreen.pressed) toggleFullscreen();
+        if (input.autoMove.pressed && !tryAutoMoveAny()) {
           UI.float("No auto move", Pointer.x, Pointer.y, { color: "#ff6b6b" });
         }
         return null;
@@ -672,10 +689,11 @@ function drawPiles(ctx) {
     });
   });
 
-  // AI's animated drag preview
+  // AI's animated drag preview (a clock-derived glide between the piles)
   if (aiMotion) {
+    const at = aiMotionPos();
     aiMotion.cards.forEach((card, i) => {
-      const pos = screenPoint(aiMotion.x, aiMotion.y + i * CARD_GAP_V);
+      const pos = screenPoint(at.x, at.y + i * CARD_GAP_V);
       drawCard(ctx, card, pos.x, pos.y, CARD_W * scale, CARD_H * scale, true);
     });
   }
@@ -722,7 +740,7 @@ function drawHud(ctx) {
 
   const toolbarY = (LOGICAL_H - 42) * scale + offsetY;
   const toolbar = UI.stack({ x: MARGIN * scale + offsetX, y: toolbarY, gap: 10 * scale });
-  if (UI.button({ at: toolbar, label: "NEW (N)", variant: "primary", h: 32 * scale })) Scenes.go("play", Transitions.fade(300));
+  if (UI.button({ at: toolbar, label: "NEW (N)", variant: "primary", h: 32 * scale })) scenes.go("play", { transition: Transitions.fade(300) });
   if (UI.button({ at: toolbar, label: "UNDO (U)", h: 32 * scale })) tryUndo();
   if (UI.button({ at: toolbar, label: "HINT (H)", h: 32 * scale })) hintFlash.charge();
   if (UI.button({ at: toolbar, label: aiPlaying ? "PAUSE AI" : "AI PLAY", h: 32 * scale })) toggleAi();
@@ -742,91 +760,116 @@ function toggleFullscreen() {
 }
 
 // ---- Scenes ----
-Scenes.define("play", {
-  opaque: true,
-  enter: () => {
-    loadStats();
-    stats.games++;
-    saveStats();
-    deal();
-    fsm.go("playing");
-    gameStartedAt = performance.now();
-    UI.clearFloats();
-    Particles.clear();
-    aiPlaying = false;
-    cancelAi?.();
-    cancelAi = null;
-    aiMotion = null;
-    aiLastMove = null;
-    aiStockPasses = 0;
-    aiVisited = new Set();
-    Clock.after(400, () => {
-      const pos = screenPoint(LOGICAL_W / 2, LOGICAL_H / 2);
-      UI.float("Good luck!", pos.x, pos.y, { color: "#4ecdc4" });
-    });
-  },
-  update: () => {
-    fsm.update(Loop.step);
-    sparkleAnim?.update(Loop.step);
-  },
-  draw: () => {
-    const ctx = Draw.ctx;
-    Game.drawLetterbox(ctx, vp.w, vp.h, LOGICAL_W, LOGICAL_H, "#062", "#0b3d2e");
-
-    drawPiles(ctx);
-    drawHud(ctx);
-
-    UI.drawFloats(ctx);
-    UI.drawTips(ctx);
-  },
-});
-
-Scenes.define("won", {
-  enter: () => {
-    fsm.go("won");
-    Audio.Sfx.coin();
-    const cx = LOGICAL_W / 2;
-    const cy = LOGICAL_H / 2;
-    const centerScreen = screenPoint(cx, cy);
-    Particles.burst(centerScreen.x, centerScreen.y, { count: 80, speed: [60, 260], colors: ["#ffd43b", "#4ecdc4", "#ff6b6b", "#fff"], gravity: 120, life: [600, 1400] });
-    const positions = Goodies.gridFormation(52, 13, CARD_W + 2, CARD_H + 2, cx, cy + 40);
-    foundations.forEach((pile, si) => {
-      pile.forEach((card, ri) => {
-        const pos = positions[si * 13 + ri];
-        Tween.to(card, { x: pos.x - CARD_W / 2, y: pos.y - CARD_H / 2 }, 600, Mathf.easeInOut);
+const scenes = Scenes.create({
+  play: {
+    opaque: true,
+    enter: () => {
+      loadStats();
+      stats.games++;
+      saveStats();
+      deal();
+      fsm.go("playing");
+      gameStartedAt = performance.now();
+      UI.clearFloats();
+      fx.clear();
+      aiPlaying = false;
+      cancelAi?.();
+      cancelAi = null;
+      aiMotion = null;
+      aiLastMove = null;
+      aiStockPasses = 0;
+      aiVisited = new Set();
+      Clock.game.after(400, () => {
+        const pos = screenPoint(LOGICAL_W / 2, LOGICAL_H / 2);
+        UI.float("Good luck!", pos.x, pos.y, { color: "#4ecdc4" });
       });
-    });
-  },
-  update: () => {
-    sparkleAnim?.update(Loop.step);
-    if (input.pressed("newGame")) Scenes.go("play", Transitions.fade(300));
-  },
-  draw: () => {
-    const ctx = Draw.ctx;
+    },
+    update: () => {
+      fsm.update();
+    },
+    draw: () => {
+      const ctx = Draw.ctx;
+      Game.drawLetterbox(ctx, vp.w, vp.h, LOGICAL_W, LOGICAL_H, "#062", "#0b3d2e");
 
-    // Re-draw play underneath so the win scene is an overlay
-    Game.drawLetterbox(ctx, vp.w, vp.h, LOGICAL_W, LOGICAL_H, "#062", "rgba(11,61,46,0.7)");
+      drawPiles(ctx);
+      drawHud(ctx);
 
-    foundations.forEach((pile) => {
-      pile.forEach((card) => {
-        if (card.x !== undefined) {
-          const pos = screenPoint(card.x, card.y);
-          drawCard(ctx, card, pos.x, pos.y, CARD_W * scale, CARD_H * scale);
-        }
+      UI.drawFloats();
+      UI.drawTips();
+    },
+  },
+
+  won: {
+    // Pushed as an overlay over `play`; the win cascade, sparkle and confetti
+    // all live on Clock.game, so keep world time flowing under the modal.
+    holdsTime: false,
+    enter: () => {
+      fsm.go("won");
+      Audio.Sfx.coin();
+      const cx = LOGICAL_W / 2;
+      const cy = LOGICAL_H / 2;
+      const centerScreen = screenPoint(cx, cy);
+      fx.burst({
+        at: centerScreen,
+        count: 80,
+        speed: [60 / 60, 260 / 60], // old px/s ÷ 60 → px/step
+        color: ["#ffd43b", "#4ecdc4", "#ff6b6b", "#fff"],
+        gravity: 120 / 3600, // old px/s² → px/step²
+        life: [600, 1400],
       });
-    });
+      const positions = Goodies.gridFormation(52, 13, CARD_W + 2, CARD_H + 2, cx, cy + 40);
+      foundations.forEach((pile, si) => {
+        pile.forEach((card, ri) => {
+          const pos = positions[si * 13 + ri];
+          card.fly = {
+            from: { x: layout.foundations[si].x, y: layout.foundations[si].y },
+            to: { x: pos.x - CARD_W / 2, y: pos.y - CARD_H / 2 },
+            t: Anim.animate({ ms: 600, ease: Mathf.easeInOut }),
+          };
+        });
+      });
+    },
+    update: () => {
+      fsm.update();
+      if (input.newGame.pressed) scenes.go("play", { transition: Transitions.fade(300) });
+    },
+    draw: () => {
+      const ctx = Draw.ctx;
 
-    Particles.draw(ctx);
-    const sparklePos = screenPoint(LOGICAL_W / 2, LOGICAL_H / 2 - 60);
-    if (sparkleAnim) sparkleAnim.draw(ctx, sparklePos.x, sparklePos.y, { w: 64 * scale, h: 64 * scale });
+      // `play` re-draws beneath us (non-opaque push); dim the board.
+      Game.drawLetterbox(ctx, vp.w, vp.h, LOGICAL_W, LOGICAL_H, "#062", "rgba(11,61,46,0.7)");
 
-    const titlePos = screenPoint(LOGICAL_W / 2, LOGICAL_H / 2 - 60);
-    const subPos = screenPoint(LOGICAL_W / 2, LOGICAL_H / 2 - 12);
-    Text.drawCentered(ctx, "YOU WON!", titlePos.x, titlePos.y, { font: "bold 38px monospace", color: "#ffd43b" });
-    Text.drawCentered(ctx, `Time ${formatTime(gameTime)}   Moves ${moves}`, subPos.x, subPos.y, { font: "16px monospace", color: "#fff" });
+      foundations.forEach((pile) => {
+        pile.forEach((card) => {
+          if (card.fly) {
+            const t = card.fly.t.value;
+            const pos = screenPoint(
+              Mathf.lerp(card.fly.from.x, card.fly.to.x, t),
+              Mathf.lerp(card.fly.from.y, card.fly.to.y, t),
+            );
+            drawCard(ctx, card, pos.x, pos.y, CARD_W * scale, CARD_H * scale);
+          }
+        });
+      });
 
-    const btnY = (LOGICAL_H / 2 + 30) * scale + offsetY;
-    if (UI.button({ x: vp.w / 2 - 170, y: btnY, w: 160, h: 42, label: "PLAY AGAIN" })) Scenes.go("play", Transitions.fade(300));
+      Draw.particles(fx);
+      const sparkleSize = 64 * scale;
+      const sparklePos = screenPoint(LOGICAL_W / 2, LOGICAL_H / 2 - 60);
+      Draw.sprite(sparkleAnim, {
+        x: sparklePos.x - sparkleSize / 2,
+        y: sparklePos.y - sparkleSize / 2,
+        w: sparkleSize,
+        h: sparkleSize,
+      });
+
+      const titlePos = screenPoint(LOGICAL_W / 2, LOGICAL_H / 2 - 60);
+      const subPos = screenPoint(LOGICAL_W / 2, LOGICAL_H / 2 - 12);
+      Draw.text("YOU WON!", { x: titlePos.x, y: titlePos.y, font: "bold 38px monospace", color: "#ffd43b", align: "center", baseline: "middle" });
+      Draw.text(`Time ${formatTime(gameTime)}   Moves ${moves}`, { x: subPos.x, y: subPos.y, font: "16px monospace", color: "#fff", align: "center", baseline: "middle" });
+
+      const btnY = (LOGICAL_H / 2 + 30) * scale + offsetY;
+      if (UI.button({ x: vp.w / 2 - 170, y: btnY, w: 160, h: 42, label: "PLAY AGAIN" })) scenes.go("play", { transition: Transitions.fade(300) });
+    },
   },
 });
 
@@ -840,5 +883,4 @@ Signals.on("win", ({ time }) => {
 // ---- Bootstrap ----
 layoutBoard();
 buildCardBackSprite();
-buildSparkleSheet();
-Scenes.go("play");
+Loop.run(scenes); // "play" (the first key) opens

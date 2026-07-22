@@ -1,19 +1,20 @@
 // Pure-WebRTC multiplayer: one client HOSTS, everyone else JOINS.
-// Demonstrates: Minimotor.Net.host() / Net.join() — a star topology where the
-// host holds a data channel to each guest and fans state out, while a WebSocket
-// carries only the signaling handshake (SDP/ICE). Once the channels open, cursor
-// traffic goes peer→peer and never touches the server.
+// Demonstrates: Net.hostSession() / Net.joinSession() — a star topology where
+// the host holds a data channel to each guest and fans state out, while a
+// WebSocket carries only the signaling handshake (SDP/ICE). Once the channels
+// open, cursor traffic goes peer→peer and never touches the server.
+// (For the higher-level symmetric flavour — everyone calls the same
+// Net.join(url, { room }) and shares state via Net.sync — see api-lab.)
 //
 // Open this page in two tabs (or two machines): click HOST in one, JOIN in the
 // others. Move your mouse — every connected cursor shows up in every tab. The
 // host relays: guests send their cursor to the host, the host merges them with
 // its own and broadcasts the whole set back. Close the host tab and the server
 // promotes the oldest guest; the survivors re-negotiate to it automatically.
-import { Minimotor } from "minimotor";
+import { Draw, Loop, Net, Pointer, Stage, UI } from "minimotor";
 
-let vp = Minimotor.Stage.init("game");
-Minimotor.Stage.onResize((next) => (vp = next));
-const { Net, Pointer, UI, Loop } = Minimotor;
+// The viewport is LIVE (mutated on resize) — layout reads it fresh each frame.
+const vp = Stage.init("game", { background: "#0e1116" });
 
 // Same-origin signaling relay hosted by the dev/preview server (vite.config.ts
 // mounts `signaling()` here). Swap for your own deployment in production.
@@ -40,7 +41,7 @@ function startHost() {
   role = "host";
   status = "connecting to relay…";
   cursors.clear();
-  const room = Net.host({ signal: SIGNAL });
+  const room = Net.hostSession({ signal: SIGNAL });
   session = room;
   room.onGuestJoin = () => (status = `hosting — ${room.guests.length} guest(s)`);
   room.onGuestLeave = (id) => {
@@ -54,7 +55,7 @@ function startGuest() {
   role = "guest";
   status = "connecting to relay…";
   cursors.clear();
-  const me = Net.join({ signal: SIGNAL });
+  const me = Net.joinSession({ signal: SIGNAL });
   session = me;
   me.onOpen = () => (status = `joined — host ${me.hostId}`);
   me.onClose = () => (status = "channel closed — waiting for a new host…");
@@ -96,9 +97,7 @@ Loop.run({
     }
   },
 
-  draw(ctx) {
-    ctx.clearRect(0, 0, vp.w, vp.h);
-
+  draw() {
     if (!role) {
       UI.text("WebRTC Host / Join", { x: vp.w / 2, y: vp.h / 2 - 80, size: 28, bold: true, align: "center" });
       UI.text("Open this page in another tab and pick the opposite role.", {
@@ -109,30 +108,25 @@ Loop.run({
         align: "center",
       });
       const cx = vp.w / 2;
-      if (UI.button(ctx, { x: cx - 170, y: vp.h / 2, w: 160, h: 48, label: "HOST A ROOM", variant: "primary" })) {
+      if (UI.button("HOST A ROOM", { x: cx - 170, y: vp.h / 2, w: 160, h: 48, variant: "primary" })) {
         startHost();
       }
-      if (UI.button(ctx, { x: cx + 10, y: vp.h / 2, w: 160, h: 48, label: "JOIN A ROOM" })) {
+      if (UI.button("JOIN A ROOM", { x: cx + 10, y: vp.h / 2, w: 160, h: 48 })) {
         startGuest();
       }
       return;
     }
 
-    // Every known cursor, host + guests alike.
+    // Every known cursor, host + guests alike ("d9" ≈ 85% alpha for others).
     for (const [id, c] of cursors) {
       const mine = (role === "host" && id === (session.id || "host")) || (role === "guest" && id === session.id);
-      ctx.fillStyle = hueOf(id);
-      ctx.globalAlpha = mine ? 1 : 0.85;
-      ctx.beginPath();
-      ctx.arc(c.x * vp.w, c.y * vp.h, mine ? 13 : 10, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalAlpha = 1;
+      Draw.circle(c.x * vp.w, c.y * vp.h, mine ? 13 : 10, mine ? hueOf(id) : hueOf(id) + "d9");
       UI.text(mine ? `${id} (you)` : id, { x: c.x * vp.w + 16, y: c.y * vp.h - 6, size: 12, color: "dim" });
     }
 
     UI.text(`role: ${role}`, { x: 16, y: 20, size: 15, bold: true });
     UI.text(status, { x: 16, y: 42, size: 14, color: "#ffb454" });
     UI.text(`cursors: ${cursors.size}`, { x: 16, y: 62, size: 13, color: "dim" });
-    if (UI.button(ctx, { x: 16, y: vp.h - 56, w: 120, h: 38, label: "LEAVE" })) leave();
+    if (UI.button("LEAVE", { x: 16, y: vp.h - 56, w: 120, h: 38 })) leave();
   },
 });
