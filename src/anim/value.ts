@@ -1,18 +1,22 @@
-// ---------- Composable value animations ----------
-// A polled tween of a single number: build with `animate`, `tick(dtMs)` each
-// step and read `value` — the same poll style as Timers/charges. Compose with
-// `sequence` (one after another) and `parallel` (all at once). Unlike
-// `Tween.to` this isn't tied to an object's fields or the Clock — it just
-// produces a value you apply however you like (alpha, scale, a flash, a shake).
+// ---------- Value animations (pull-derived) ----------
+// A Motion derives its value from a clock AT READ TIME — nothing ticks,
+// nothing registers, dropping the reference is the teardown. Holding or
+// scaling the clock bends every motion on it for free: pause freeze,
+// slow-mo, hit-stop. Finished motions hold their end value, so the
+// replace-on-edge pattern needs no cleanup:
+//
+//   let squash = Anim.animate({ from: 1, to: 1, ms: 0 });
+//   if (landed) squash = Anim.animate({ from: 0.6, to: 1, ms: 150, ease: easeOut });
+//   Draw.sprite(anim, player, { scaleY: squash.value });
+
+import { Clock, type ClockHandle } from "../clock.js";
 
 export interface Motion {
-  /** Advance by `dtMs`. */
-  tick(dtMs: number): void;
-  /** Current animated value. */
+  /** Current animated value — derived from the clock on read. */
   readonly value: number;
   /** True once finished (never while looping). */
   readonly done: boolean;
-  /** Restart from the beginning. */
+  /** Restart from the clock's current now. */
   reset(): void;
 }
 
@@ -21,7 +25,7 @@ export interface AnimateOptions {
   from?: number;
   /** End value. Default 1. */
   to?: number;
-  /** Duration in ms. */
+  /** Duration in ms (of the owning clock's time). */
   ms: number;
   /** Easing 0..1 → 0..1 (e.g. `Mathf.easeOut`). Default linear. */
   ease?: (t: number) => number;
@@ -31,10 +35,14 @@ export interface AnimateOptions {
   loop?: boolean;
   /** Reverse each repeat (ping-pong); implies `loop`. Default false. */
   yoyo?: boolean;
+  /** The time this motion lives in. Default `Clock.game` (world content);
+   *  interface effects use `UI.animate` / `Clock.ui.animate`. */
+  clock?: ClockHandle;
 }
 
 /** A one-shot (or looping) tween from `from` to `to` over `ms`. */
 export function animate(opts: AnimateOptions): Motion {
+  const clock = opts.clock ?? Clock.game;
   const from = opts.from ?? 0;
   const to = opts.to ?? 1;
   const dur = Math.max(1, opts.ms);
@@ -42,9 +50,10 @@ export function animate(opts: AnimateOptions): Motion {
   const delay = Math.max(0, opts.delay ?? 0);
   const yoyo = opts.yoyo ?? false;
   const loop = opts.loop || yoyo;
-  let elapsed = 0;
+  let start = clock.now;
+
   const at = (): number => {
-    const e = elapsed - delay;
+    const e = clock.now - start - delay;
     if (e <= 0) return from;
     const t = e / dur;
     if (!loop) return from + (to - from) * ease(Math.min(1, t));
@@ -53,59 +62,81 @@ export function animate(opts: AnimateOptions): Motion {
     if (yoyo && cycle % 2 === 1) p = 1 - p;
     return from + (to - from) * ease(p);
   };
+
   return {
-    tick(dtMs) {
-      elapsed += dtMs;
-    },
     get value() {
       return at();
     },
     get done() {
-      return !loop && elapsed - delay >= dur;
+      return !loop && clock.now - start - delay >= dur;
     },
     reset() {
-      elapsed = 0;
+      start = clock.now;
     },
   };
 }
 
-/** Run motions one after another — `value` follows the active step, `done`
- *  when the last finishes. A stalled step's leftover time isn't carried into
- *  the next (one-step boundary error), which is imperceptible for UI/juice. */
-export function sequence(steps: Motion[]): Motion {
-  let i = 0;
+/** One step of a `sequence` — an `AnimateOptions` without clock/looping
+ *  (those belong to the sequence as a whole). */
+export type SequenceStep = Omit<AnimateOptions, "clock" | "loop" | "yoyo">;
+
+/** Play steps one after another on a single derived timeline. `value`
+ *  follows the active step; `done` when the last finishes. */
+export function sequence(
+  steps: SequenceStep[],
+  opts: { clock?: ClockHandle; loop?: boolean } = {},
+): Motion {
+  const clock = opts.clock ?? Clock.game;
+  const segs = steps.map((s) => ({
+    from: s.from ?? 0,
+    to: s.to ?? 1,
+    dur: Math.max(1, s.ms),
+    delay: Math.max(0, s.delay ?? 0),
+    ease: s.ease ?? ((t: number) => t),
+  }));
+  const total = segs.reduce((sum, s) => sum + s.delay + s.dur, 0);
+  let start = clock.now;
+
+  const at = (): number => {
+    let e = clock.now - start;
+    if (opts.loop && total > 0) e = ((e % total) + total) % total;
+    for (const s of segs) {
+      if (e < s.delay) return s.from;
+      if (e < s.delay + s.dur) return s.from + (s.to - s.from) * s.ease((e - s.delay) / s.dur);
+      e -= s.delay + s.dur;
+    }
+    return segs.length > 0 ? segs[segs.length - 1].to : 0;
+  };
+
   return {
-    tick(dtMs) {
-      if (i >= steps.length) return;
-      steps[i].tick(dtMs);
-      while (i < steps.length && steps[i].done) i++;
-    },
     get value() {
-      return steps.length ? steps[Math.min(i, steps.length - 1)].value : 0;
+      return at();
     },
     get done() {
-      return i >= steps.length;
+      return !opts.loop && clock.now - start >= total;
     },
     reset() {
-      i = 0;
-      for (const s of steps) s.reset();
+      start = clock.now;
     },
   };
 }
 
-/** A group of motions ticked together. `done` when all finish; read the
- *  individual `tracks` for their values (`value` returns the first track's). */
+/** A group of motions started together on the same clock. `done` when all
+ *  finish; read the individual `tracks` for their values (`value` returns
+ *  the first track's). */
 export interface Parallel extends Motion {
   readonly tracks: readonly Motion[];
 }
 
-export function parallel(tracks: Motion[]): Parallel {
+export function parallel(
+  specs: Omit<AnimateOptions, "clock">[],
+  opts: { clock?: ClockHandle } = {},
+): Parallel {
+  const clock = opts.clock ?? Clock.game;
+  const tracks = specs.map((s) => animate({ ...s, clock }));
   return {
-    tick(dtMs) {
-      for (const t of tracks) t.tick(dtMs);
-    },
     get value() {
-      return tracks.length ? tracks[0].value : 0;
+      return tracks.length > 0 ? tracks[0].value : 0;
     },
     get done() {
       return tracks.every((t) => t.done);

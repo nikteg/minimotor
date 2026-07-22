@@ -6,7 +6,6 @@ import { randFreeCell, shuffle, addToInventory, beatClock, nearest } from "../go
 import { patrol, trail, undoStack, seedRng } from "../gizmos/index.js";
 import { grid } from "../ui/index.js";
 import { createRoster } from "../net/index.js";
-import { animate, sequence, parallel } from "../anim/index.js";
 
 describe("Mathf.approach", () => {
   it("moves toward target without overshooting", () => {
@@ -203,57 +202,6 @@ describe("Gizmos.trail", () => {
       { x: 3, y: 3 },
       { x: 2, y: 2 },
     ]); // newest first, capped
-  });
-});
-
-describe("Anim.animate / sequence / parallel", () => {
-  it("tweens from→to over ms, honoring delay and done", () => {
-    const a = animate({ from: 0, to: 10, ms: 100, delay: 20 });
-    expect(a.value).toBe(0);
-    a.tick(20); // consume delay
-    expect(a.value).toBe(0);
-    a.tick(50);
-    expect(a.value).toBeCloseTo(5);
-    expect(a.done).toBe(false);
-    a.tick(50);
-    expect(a.value).toBe(10);
-    expect(a.done).toBe(true);
-    a.reset();
-    expect(a.done).toBe(false);
-  });
-
-  it("yoyo ping-pongs and never reports done", () => {
-    const a = animate({ from: 0, to: 1, ms: 100, yoyo: true });
-    a.tick(50);
-    expect(a.value).toBeCloseTo(0.5); // up
-    a.tick(100);
-    expect(a.value).toBeCloseTo(0.5); // back down on the second cycle
-    expect(a.done).toBe(false);
-  });
-
-  it("sequence runs steps in order", () => {
-    const s = sequence([
-      animate({ from: 0, to: 1, ms: 100 }),
-      animate({ from: 1, to: 5, ms: 100 }),
-    ]);
-    s.tick(100); // first step finishes
-    expect(s.done).toBe(false);
-    s.tick(50); // into second step
-    expect(s.value).toBeCloseTo(3);
-    s.tick(50);
-    expect(s.done).toBe(true);
-    expect(s.value).toBe(5);
-  });
-
-  it("parallel ticks all tracks and is done only when all are", () => {
-    const a = animate({ from: 0, to: 1, ms: 100 });
-    const b = animate({ from: 0, to: 1, ms: 200 });
-    const p = parallel([a, b]);
-    p.tick(100);
-    expect(a.done).toBe(true);
-    expect(p.done).toBe(false); // b still running
-    p.tick(100);
-    expect(p.done).toBe(true);
   });
 });
 

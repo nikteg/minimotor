@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { car, charges, checkpointRoute, combo, flash, seedRng, shuffleBag } from "../index.js";
+import { createClockHandle } from "../../clock.js";
 
 describe("Gizmos.seedRng", () => {
   it("is deterministic per seed and stays in [0, 1)", () => {
@@ -80,14 +81,16 @@ describe("Gizmos.charges", () => {
 });
 
 describe("Gizmos.flash", () => {
-  it("jumps to 1 on hit and fades linearly to 0", () => {
-    const f = flash(100);
+  it("jumps to 1 on hit and fades to 0 on its clock", () => {
+    let steps = 0;
+    const clock = createClockHandle(() => steps);
+    const f = flash(100, undefined, clock);
     expect(f.active).toBe(false);
     f.hit();
     expect(f.value).toBe(1);
-    f.tick(50);
+    steps += 50 / (1000 / 60);
     expect(f.value).toBeCloseTo(0.5);
-    f.tick(50);
+    steps += 50 / (1000 / 60);
     expect(f.value).toBe(0);
     expect(f.active).toBe(false);
   });

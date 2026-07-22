@@ -19,7 +19,7 @@ import {
 import * as UI from "./ui/index.js";
 import { Particles } from "./particles.js";
 import { Scenes } from "./scenes.js";
-import { Clock, Tween } from "./clock.js";
+import { Clock } from "./clock.js";
 import { Signals } from "./signals.js";
 import { Assets } from "./assets.js";
 import * as ECS from "./ecs/index.js";
@@ -67,7 +67,6 @@ export {
   Scenes,
   ECS,
   Clock,
-  Tween,
   Signals,
   Assets,
   Anim,
@@ -98,7 +97,7 @@ export type {
   SpriteData,
   DrawSpritesOptions,
 } from "./ecs/index.js";
-export type { ClockManager, Cancel } from "./clock.js";
+export type { ClockHandle, Cancel } from "./clock.js";
 export type { SignalBus } from "./signals.js";
 export type { AssetStore, AssetManifest, AssetSpec, ProgressFn } from "./assets.js";
 export type {
@@ -109,6 +108,7 @@ export type {
   AnimDrawOptions,
   Motion,
   AnimateOptions,
+  SequenceStep,
   Parallel,
 } from "./anim/index.js";
 export type { Sweep, Contact, BounceFaces } from "./collision.js";
@@ -281,7 +281,6 @@ export const Minimotor = {
   ECS,
   World: defaultWorld,
   Clock,
-  Tween,
   Signals,
   Assets,
   Anim,

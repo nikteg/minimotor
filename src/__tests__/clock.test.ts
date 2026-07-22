@@ -1,92 +1,197 @@
-import { describe, it, expect, vi } from "vitest";
-import { createClock } from "../clock.js";
-import { easeOut, linear } from "../mathf.js";
+import { describe, expect, it, vi } from "vitest";
+import { createClockHandle, _driveClocks } from "../clock.js";
+import { animate, sequence, parallel } from "../anim/value.js";
 
-describe("Clock timers", () => {
-  it("after fires once at/after the delay, then is gone", () => {
-    const c = createClock();
-    const fn = vi.fn();
-    c.after(100, fn);
-    c.advance(60);
-    expect(fn).not.toHaveBeenCalled();
-    c.advance(60); // total 120 >= 100
-    expect(fn).toHaveBeenCalledTimes(1);
-    expect(c.size).toBe(0);
-    c.advance(1000);
-    expect(fn).toHaveBeenCalledTimes(1);
+// Hand-cranked step source: 1 step = 1000/60 ms of derived clock time.
+function stepper(): { steps: () => number; advanceMs: (ms: number) => void } {
+  let now = 0;
+  return {
+    steps: () => now,
+    advanceMs(ms) {
+      now += ms / (1000 / 60);
+    },
+  };
+}
+
+describe("ClockHandle (pull-derived time)", () => {
+  it("now derives from the step counter", () => {
+    const t = stepper();
+    const clock = createClockHandle(t.steps);
+    expect(clock.now).toBe(0);
+    t.advanceMs(500);
+    expect(clock.now).toBeCloseTo(500);
   });
 
-  it("every repeats and can catch up multiple fires in one big step", () => {
-    const c = createClock();
+  it("hold freezes now; release resumes without jumping", () => {
+    const t = stepper();
+    const clock = createClockHandle(t.steps);
+    t.advanceMs(100);
+    clock.hold();
+    t.advanceMs(400);
+    expect(clock.now).toBeCloseTo(100); // frozen
+    clock.release();
+    t.advanceMs(50);
+    expect(clock.now).toBeCloseTo(150); // the held 400ms never happened
+  });
+
+  it("scale bends time and rebases cleanly", () => {
+    const t = stepper();
+    const clock = createClockHandle(t.steps);
+    t.advanceMs(100);
+    clock.scale = 0.5;
+    expect(clock.now).toBeCloseTo(100); // no jump on change
+    t.advanceMs(100);
+    expect(clock.now).toBeCloseTo(150); // half speed
+    clock.scale = 2;
+    t.advanceMs(100);
+    expect(clock.now).toBeCloseTo(350); // double speed
+  });
+
+  it("after fires once when due, via the driver", () => {
+    const t = stepper();
+    const clock = createClockHandle(t.steps);
     const fn = vi.fn();
-    c.every(100, fn);
-    c.advance(250); // fires at 100 and 200 → 2
-    expect(fn).toHaveBeenCalledTimes(2);
-    c.advance(100); // 300 → once more
+    clock.after(100, fn);
+    t.advanceMs(60);
+    _driveClocks();
+    expect(fn).not.toHaveBeenCalled();
+    t.advanceMs(60);
+    _driveClocks();
+    expect(fn).toHaveBeenCalledTimes(1);
+    t.advanceMs(1000);
+    _driveClocks();
+    expect(fn).toHaveBeenCalledTimes(1); // one-shot
+  });
+
+  it("every repeats and catches up over a large gap", () => {
+    const t = stepper();
+    const clock = createClockHandle(t.steps);
+    const fn = vi.fn();
+    clock.every(100, fn);
+    t.advanceMs(350);
+    _driveClocks();
     expect(fn).toHaveBeenCalledTimes(3);
   });
 
-  it("cancel stops a pending timer", () => {
-    const c = createClock();
+  it("cancel prevents firing", () => {
+    const t = stepper();
+    const clock = createClockHandle(t.steps);
     const fn = vi.fn();
-    const cancel = c.after(100, fn);
+    const cancel = clock.after(100, fn);
     cancel();
-    c.advance(500);
+    t.advanceMs(500);
+    _driveClocks();
     expect(fn).not.toHaveBeenCalled();
-    expect(c.size).toBe(0);
   });
 
-  it("a repeating timer can cancel itself from its callback", () => {
-    const c = createClock();
-    let n = 0;
-    const cancel = c.every(50, () => {
-      n++;
-      if (n === 2) cancel();
-    });
-    c.advance(500); // would fire 10x, but self-cancels after 2
-    expect(n).toBe(2);
+  it("timers on a held clock never come due", () => {
+    const t = stepper();
+    const clock = createClockHandle(t.steps);
+    const fn = vi.fn();
+    clock.after(100, fn);
+    clock.hold();
+    t.advanceMs(5000);
+    _driveClocks();
+    expect(fn).not.toHaveBeenCalled();
+    clock.release();
+    t.advanceMs(120);
+    _driveClocks();
+    expect(fn).toHaveBeenCalledTimes(1);
   });
 });
 
-describe("Clock tweens", () => {
-  it("interpolates fields and lands exactly on the target", () => {
-    const c = createClock();
-    const obj = { x: 0, alpha: 1 };
-    c.tween(obj, { x: 100, alpha: 0 }, 100, linear);
-    c.advance(50);
-    expect(obj.x).toBeCloseTo(50);
-    expect(obj.alpha).toBeCloseTo(0.5);
-    c.advance(50);
-    expect(obj.x).toBe(100);
-    expect(obj.alpha).toBe(0);
-    expect(c.size).toBe(0);
+describe("Motion (clock-derived value animation)", () => {
+  it("derives value from elapsed clock time — no ticking", () => {
+    const t = stepper();
+    const clock = createClockHandle(t.steps);
+    const m = animate({ from: 0, to: 10, ms: 100, clock });
+    expect(m.value).toBe(0);
+    t.advanceMs(50);
+    expect(m.value).toBeCloseTo(5);
+    t.advanceMs(100);
+    expect(m.value).toBe(10); // finished motions hold their end value
+    expect(m.done).toBe(true);
   });
 
-  it("applies easing", () => {
-    const c = createClock();
-    const obj = { v: 0 };
-    c.tween(obj, { v: 100 }, 100, easeOut);
-    c.advance(50); // easeOut(0.5) = 0.75
-    expect(obj.v).toBeCloseTo(75);
+  it("freezes with a held clock — pause needs no cooperation", () => {
+    const t = stepper();
+    const clock = createClockHandle(t.steps);
+    const m = animate({ from: 0, to: 10, ms: 100, clock });
+    t.advanceMs(30);
+    clock.hold();
+    const frozen = m.value;
+    t.advanceMs(500);
+    expect(m.value).toBeCloseTo(frozen);
+    clock.release();
+    t.advanceMs(70);
+    expect(m.value).toBeCloseTo(10);
   });
 
-  it("fires onDone once at completion", () => {
-    const c = createClock();
-    const done = vi.fn();
-    c.tween({ x: 0 }, { x: 1 }, 100, linear, done);
-    c.advance(100);
-    expect(done).toHaveBeenCalledTimes(1);
-    c.advance(100);
-    expect(done).toHaveBeenCalledTimes(1);
+  it("clock.animate is sugar for animate({ clock })", () => {
+    const t = stepper();
+    const clock = createClockHandle(t.steps);
+    const m = clock.animate({ from: 0, to: 4, ms: 100 });
+    t.advanceMs(50);
+    expect(m.value).toBeCloseTo(2);
   });
 
-  it("cancel stops a tween mid-flight and leaves the value where it was", () => {
-    const c = createClock();
-    const obj = { x: 0 };
-    const cancel = c.tween(obj, { x: 100 }, 100, linear);
-    c.advance(30);
-    cancel();
-    c.advance(1000);
-    expect(obj.x).toBeCloseTo(30);
+  it("delay holds the start value, then plays", () => {
+    const t = stepper();
+    const clock = createClockHandle(t.steps);
+    const m = animate({ from: 1, to: 2, ms: 100, delay: 100, clock });
+    t.advanceMs(50);
+    expect(m.value).toBe(1); // still in delay
+    t.advanceMs(100); // 50ms into the ramp
+    expect(m.value).toBeCloseTo(1.5);
+  });
+
+  it("yoyo ping-pongs and never reports done", () => {
+    const t = stepper();
+    const clock = createClockHandle(t.steps);
+    const yo = animate({ from: 0, to: 10, ms: 100, yoyo: true, clock });
+    t.advanceMs(50);
+    expect(yo.value).toBeCloseTo(5); // halfway up
+    t.advanceMs(100); // 150ms: halfway back down
+    expect(yo.value).toBeCloseTo(5);
+    t.advanceMs(50); // 200ms: back at the start
+    expect(yo.value).toBeCloseTo(0);
+    expect(yo.done).toBe(false);
+  });
+
+  it("sequence plays steps on one timeline", () => {
+    const t = stepper();
+    const clock = createClockHandle(t.steps);
+    const m = sequence(
+      [
+        { from: 0, to: 1, ms: 100 },
+        { from: 1, to: 0, ms: 100 },
+      ],
+      { clock },
+    );
+    t.advanceMs(50);
+    expect(m.value).toBeCloseTo(0.5);
+    t.advanceMs(100); // 50ms into step 2
+    expect(m.value).toBeCloseTo(0.5);
+    t.advanceMs(100);
+    expect(m.done).toBe(true);
+    expect(m.value).toBe(0); // holds the last step's end
+  });
+
+  it("parallel starts tracks together and finishes when all do", () => {
+    const t = stepper();
+    const clock = createClockHandle(t.steps);
+    const p = parallel(
+      [
+        { from: 0, to: 1, ms: 100 },
+        { from: 0, to: 2, ms: 200 },
+      ],
+      { clock },
+    );
+    t.advanceMs(100);
+    expect(p.tracks[0].done).toBe(true);
+    expect(p.done).toBe(false);
+    t.advanceMs(100);
+    expect(p.done).toBe(true);
+    expect(p.tracks[1].value).toBe(2);
   });
 });

@@ -61,3 +61,14 @@ export type {
   TextOptions,
   Theme,
 } from "./core/index.js";
+
+// ---------- Interface time ----------
+import { animate as animateValue, type AnimateOptions, type Motion } from "../anim/value.js";
+import { Clock } from "../clock.js";
+
+/** A Motion in INTERFACE time (`Clock.ui`) — pause-menu pulses, HUD flashes.
+ *  Never frozen by modal pushes, never bent by slow-mo. World effects use
+ *  `Anim.animate` (game time). */
+export function animate(opts: Omit<AnimateOptions, "clock">): Motion {
+  return animateValue({ ...opts, clock: Clock.ui });
+}

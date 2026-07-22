@@ -1,194 +1,183 @@
-// ---------- Clock & Tween ----------
-// Deterministic time: both advance on the fixed update step (via Loop.onStep),
-// so timers and tweens pause with the loop, survive multi-step frames, and stay
-// replay-safe. Times are in milliseconds; each step is Loop.step (1000/60).
+// ---------- Clocks ----------
+// Time as a first-class value. `Clock.game` is gameplay time — held by modal
+// scene pushes, scalable for slow-motion. `Clock.ui` is interface time and
+// never stops by convention (pause-menu pulses). `Clock.create()` makes
+// custom timelines (cutscenes, a boss with its own holdable clock).
 //
-//   Minimotor.Clock.after(600, unlock);            // one-shot
-//   Minimotor.Clock.every(1000, spawnWave);        // repeating; returns a canceler
-//   Minimotor.Tween.to(text, { y: text.y - 30, alpha: 0 }, 450, Mathf.easeOut);
+// A clock DERIVES its `now` from the engine's fixed-step counter — pull,
+// don't push — so holding or scaling it bends every value derived from it
+// (motions, sheet cursors, animated tiles) with zero cooperation from them:
+//
+//   Clock.game.hold();        // hit-stop: the world freezes mid-air
+//   Clock.game.scale = 0.5;   // slow-mo: the world, not the HUD
+//
+// Timers (`after`/`every`) are the stated scheduling exception to the pull
+// law: they must FIRE code, so clocks with pending timers are driven from the
+// loop's fixed step. A clock with no pending timers is referenced by nothing
+// and GCs away with its owner.
 
-import { Loop } from "./engine/index.js";
-import { linear } from "./mathf.js";
+import { Loop, STEP_MS, stepNow } from "./engine/index.js";
+import { animate as animateValue, type AnimateOptions, type Motion } from "./anim/value.js";
 
-type Ease = (t: number) => number;
+/** A running timer; call to cancel early. */
+export type Cancel = () => void;
 
-interface Timer {
-  remaining: number;
+export interface ClockHandle {
+  /** Milliseconds elapsed on THIS clock (frozen while held, bent by scale). */
+  readonly now: number;
+  readonly held: boolean;
+  /** Time multiplier: 0.5 = slow motion, 2 = fast forward. Rebases cleanly —
+   *  changing it never jumps `now`. */
+  scale: number;
+  /** Freeze the clock (idempotent). Every derived value freezes with it. */
+  hold(): void;
+  /** Resume from a hold (idempotent). */
+  release(): void;
+  /** Run `fn` once after `ms` (in this clock's time). Returns a canceler. */
+  after(ms: number, fn: () => void): Cancel;
+  /** Run `fn` every `ms` (in this clock's time). Returns a canceler. */
+  every(ms: number, fn: () => void): Cancel;
+  /** A Motion in this clock's time — see `Anim.animate`. */
+  animate(opts: Omit<AnimateOptions, "clock">): Motion;
+}
+
+interface TimerJob {
+  due: number;
   interval: number; // 0 = one-shot
   fn: () => void;
   dead: boolean;
 }
 
-interface TweenJob {
-  target: Record<string, number>;
-  from: Record<string, number>;
-  delta: Record<string, number>;
-  keys: string[];
-  elapsed: number;
-  duration: number;
-  ease: Ease;
-  onDone?: () => void;
-  dead: boolean;
+// Clocks with pending timers register a fire closure here; the loop's step
+// drives them. Fire returns false when the clock has no timers left, which
+// drops it from the set (nothing references an idle clock).
+const driven = new Set<() => boolean>();
+let driverWired = false;
+
+function fireAll(): void {
+  for (const fire of [...driven]) {
+    if (!fire()) driven.delete(fire);
+  }
 }
 
-/** A running timer/tween; call to cancel early. */
-export type Cancel = () => void;
-
-/** Manages timers and tweens over a supplied millisecond clock. Pure — no Loop
- *  dependency — so it's testable by driving `advance(dt)` directly. */
-export interface ClockManager {
-  after(ms: number, fn: () => void): Cancel;
-  every(ms: number, fn: () => void): Cancel;
-  tween(
-    target: Record<string, number>,
-    to: Record<string, number>,
-    ms: number,
-    ease?: Ease,
-    onDone?: () => void,
-  ): Cancel;
-  /** Advance every timer and tween by `dt` milliseconds. */
-  advance(dt: number): void;
-  /** Cancel everything. */
-  clear(): void;
-  /** Count of live timers + tweens (for tests/introspection). */
-  readonly size: number;
+function ensureDriver(): void {
+  if (driverWired) return;
+  try {
+    Loop.onStep(fireAll);
+    driverWired = true;
+  } catch {
+    // No default game yet: steps aren't advancing, so nothing can come due.
+    // Wiring retries on the next timer registration.
+  }
 }
 
-export function createClock(): ClockManager {
-  const timers = new Set<Timer>();
-  const tweens = new Set<TweenJob>();
+/** Drive timer firing manually — for tests without a running loop. */
+export function _driveClocks(): void {
+  fireAll();
+}
 
-  return {
+/** Build a clock over a fixed-step source (injectable for tests). */
+export function createClockHandle(steps: () => number = stepNow): ClockHandle {
+  let anchorSteps = steps();
+  let anchorMs = 0;
+  let scaleV = 1;
+  let held = false;
+  const timers = new Set<TimerJob>();
+
+  const nowMs = (): number =>
+    held ? anchorMs : anchorMs + (steps() - anchorSteps) * STEP_MS * scaleV;
+  const rebase = (): void => {
+    anchorMs = nowMs();
+    anchorSteps = steps();
+  };
+
+  const fire = (): boolean => {
+    const now = nowMs();
+    for (const t of [...timers]) {
+      while (!t.dead && t.due <= now) {
+        t.fn();
+        if (t.interval > 0) t.due += t.interval;
+        else {
+          t.dead = true;
+          timers.delete(t);
+        }
+      }
+    }
+    return timers.size > 0;
+  };
+
+  const schedule = (t: TimerJob): Cancel => {
+    timers.add(t);
+    driven.add(fire);
+    ensureDriver();
+    return () => {
+      t.dead = true;
+      timers.delete(t);
+    };
+  };
+
+  const handle: ClockHandle = {
+    get now() {
+      return nowMs();
+    },
+    get held() {
+      return held;
+    },
+    get scale() {
+      return scaleV;
+    },
+    set scale(v: number) {
+      rebase();
+      scaleV = v;
+    },
+    hold() {
+      if (!held) {
+        rebase();
+        held = true;
+      }
+    },
+    release() {
+      if (held) {
+        anchorSteps = steps();
+        held = false;
+      }
+    },
     after(ms, fn) {
-      const t: Timer = { remaining: ms, interval: 0, fn, dead: false };
-      timers.add(t);
-      return () => {
-        t.dead = true;
-        timers.delete(t);
-      };
+      return schedule({ due: nowMs() + ms, interval: 0, fn, dead: false });
     },
-
     every(ms, fn) {
-      const t: Timer = { remaining: ms, interval: ms, fn, dead: false };
-      timers.add(t);
-      return () => {
-        t.dead = true;
-        timers.delete(t);
-      };
+      return schedule({ due: nowMs() + ms, interval: Math.max(ms, 0), fn, dead: false });
     },
-
-    tween(target, to, ms, ease = linear, onDone) {
-      const keys = Object.keys(to);
-      const from: Record<string, number> = {};
-      const delta: Record<string, number> = {};
-      for (const k of keys) {
-        from[k] = target[k];
-        delta[k] = to[k] - target[k];
-      }
-      const job: TweenJob = {
-        target,
-        from,
-        delta,
-        keys,
-        elapsed: 0,
-        duration: ms,
-        ease,
-        onDone,
-        dead: false,
-      };
-      tweens.add(job);
-      return () => {
-        job.dead = true;
-        tweens.delete(job);
-      };
-    },
-
-    advance(dt) {
-      // Timers. A repeating timer can fire multiple times in a big step; guard
-      // against a zero interval turning into an infinite loop.
-      for (const t of timers) {
-        if (t.dead) continue;
-        t.remaining -= dt;
-        while (t.remaining <= 0 && !t.dead) {
-          t.fn();
-          if (t.interval > 0) t.remaining += t.interval;
-          else {
-            t.dead = true;
-            timers.delete(t);
-          }
-        }
-      }
-
-      // Tweens.
-      for (const job of tweens) {
-        if (job.dead) continue;
-        job.elapsed += dt;
-        const raw = job.duration <= 0 ? 1 : Math.min(1, job.elapsed / job.duration);
-        const e = job.ease(raw);
-        for (const k of job.keys) job.target[k] = job.from[k] + job.delta[k] * e;
-        if (raw >= 1) {
-          job.dead = true;
-          tweens.delete(job);
-          job.onDone?.();
-        }
-      }
-    },
-
-    clear() {
-      timers.clear();
-      tweens.clear();
-    },
-
-    get size() {
-      return timers.size + tweens.size;
+    animate(opts) {
+      return animateValue({ ...opts, clock: handle });
     },
   };
+  return handle;
 }
 
-// ---------- Default facades (driven by the default Loop's fixed step) ----------
+let gameClock = createClockHandle();
+let uiClock = createClockHandle();
 
-let clock = createClock();
-let wired = false;
-
-function ensureWired(): void {
-  if (wired) return;
-  wired = true;
-  Loop.onStep(() => clock.advance(Loop.step));
-}
-
+/** The two ambient clocks + custom timelines. */
 export const Clock = {
-  /** Run `fn` once after `ms`. Returns a canceler. */
-  after(ms: number, fn: () => void): Cancel {
-    ensureWired();
-    return clock.after(ms, fn);
+  /** Gameplay time: held by modal scene pushes, scalable for slow-mo. The
+   *  default clock for all game content (motions, cursors, animated tiles). */
+  get game(): ClockHandle {
+    return gameClock;
   },
-  /** Run `fn` every `ms`. Returns a canceler. */
-  every(ms: number, fn: () => void): Cancel {
-    ensureWired();
-    return clock.every(ms, fn);
+  /** Interface time: never held by convention — pause menus stay alive. */
+  get ui(): ClockHandle {
+    return uiClock;
   },
-  /** Reset all timers and Loop wiring — for tests. */
+  /** A custom timeline with the full toolkit (cutscenes, boss clocks). */
+  create(): ClockHandle {
+    return createClockHandle();
+  },
+  /** Reset the ambient clocks and timer wiring — for tests. */
   _reset(): void {
-    clock = createClock();
-    wired = false;
-  },
-};
-
-export const Tween = {
-  /** Animate numeric fields of `target` toward `to` over `ms`, easing optional.
-   *  Returns a canceler. */
-  to(
-    target: Record<string, number>,
-    to: Record<string, number>,
-    ms: number,
-    ease?: Ease,
-    onDone?: () => void,
-  ): Cancel {
-    ensureWired();
-    return clock.tween(target, to, ms, ease, onDone);
-  },
-  /** Reset — for tests. Shares the clock with `Clock`, so this resets both. */
-  _reset(): void {
-    Clock._reset();
+    gameClock = createClockHandle();
+    uiClock = createClockHandle();
+    driven.clear();
+    driverWired = false;
   },
 };
