@@ -1,30 +1,41 @@
 import { describe, expect, it } from "vitest";
 import { buffer, cooldown, jumpGate, window } from "../timers.js";
+import { createClockHandle } from "../clock.js";
+
+// A hand-cranked clock: advance by ms; timers derive from `now`.
+function clockAt() {
+  let now = 0;
+  const clock = createClockHandle(() => now);
+  return { clock, advance: (ms: number) => (now += ms / (1000 / 60)) };
+}
 
 describe("Timers.window (coyote/grace)", () => {
   it("is active for the duration after charge, then closes", () => {
-    const w = window(100);
+    const t = clockAt();
+    const w = window(100, t.clock);
     expect(w.active).toBe(false);
     w.charge();
     expect(w.active).toBe(true);
-    expect(w.remaining).toBe(100);
-    w.tick(60);
+    expect(w.remaining).toBeCloseTo(100);
+    t.advance(60);
     expect(w.active).toBe(true);
-    w.tick(60); // 120 > 100
+    t.advance(60); // 120 > 100
     expect(w.active).toBe(false);
     expect(w.remaining).toBe(0);
   });
 
   it("recharging refills the window", () => {
-    const w = window(100);
+    const t = clockAt();
+    const w = window(100, t.clock);
     w.charge();
-    w.tick(80);
+    t.advance(80);
     w.charge(); // still grounded
-    expect(w.remaining).toBe(100);
+    expect(w.remaining).toBeCloseTo(100);
   });
 
   it("expire() closes it immediately", () => {
-    const w = window(100);
+    const t = clockAt();
+    const w = window(100, t.clock);
     w.charge();
     w.expire();
     expect(w.active).toBe(false);
@@ -33,7 +44,8 @@ describe("Timers.window (coyote/grace)", () => {
 
 describe("Timers.buffer (input buffering)", () => {
   it("consume returns true once within the window, then clears", () => {
-    const b = buffer(120);
+    const t = clockAt();
+    const b = buffer(120, t.clock);
     expect(b.consume()).toBe(false);
     b.trigger();
     expect(b.armed).toBe(true);
@@ -42,22 +54,24 @@ describe("Timers.buffer (input buffering)", () => {
   });
 
   it("expires if not consumed in time", () => {
-    const b = buffer(120);
+    const t = clockAt();
+    const b = buffer(120, t.clock);
     b.trigger();
-    b.tick(130);
+    t.advance(130);
     expect(b.consume()).toBe(false);
   });
 });
 
 describe("Timers.cooldown", () => {
   it("blocks until the delay elapses, restarts on use", () => {
-    const cd = cooldown(500);
+    const t = clockAt();
+    const cd = cooldown(500, t.clock);
     expect(cd.ready()).toBe(true);
     cd.use();
     expect(cd.ready()).toBe(false);
-    cd.tick(400);
+    t.advance(400);
     expect(cd.ready()).toBe(false);
-    cd.tick(100);
+    t.advance(100);
     expect(cd.ready()).toBe(true);
     cd.use();
     expect(cd.ready()).toBe(false);
@@ -65,43 +79,56 @@ describe("Timers.cooldown", () => {
 });
 
 describe("Timers.jumpGate", () => {
+  // The gate reads real time via its clock; advance ~1 step between tries.
+  function gateAt(opts = {}) {
+    const t = clockAt();
+    const g = jumpGate({ coyoteMs: 100, bufferMs: 120, clock: t.clock, ...opts });
+    return { g, step: () => t.advance(1000 / 60) };
+  }
+
   it("fires when grounded and pressed on the same step", () => {
-    const g = jumpGate({ coyoteMs: 100, bufferMs: 120 });
+    const { g } = gateAt();
     expect(g.try(true, true)).toBe(true);
     expect(g.try(false, true)).toBe(false); // no press
   });
 
   it("coyote time: fires shortly after leaving the ground", () => {
-    const g = jumpGate({ coyoteMs: 100, bufferMs: 120 });
+    const { g, step } = gateAt();
     g.try(false, true); // grounded, charge coyote
-    // Now airborne; press within the coyote window a couple steps later.
+    step();
     expect(g.try(false, false)).toBe(false);
+    step();
     expect(g.try(true, false)).toBe(true); // ~33ms after takeoff < 100
   });
 
   it("coyote expires after the window", () => {
-    const g = jumpGate({ coyoteMs: 100, bufferMs: 120 });
+    const { g, step } = gateAt();
     g.try(false, true);
-    for (let i = 0; i < 8; i++) g.try(false, false); // ~133ms airborne
+    for (let i = 0; i < 8; i++) {
+      step();
+      g.try(false, false); // ~133ms airborne
+    }
     expect(g.try(true, false)).toBe(false); // too late
   });
 
   it("jump buffering: a press just before landing fires on touchdown", () => {
-    const g = jumpGate({ coyoteMs: 100, bufferMs: 120 });
-    // Airborne, press buffered (no coyote left → doesn't fire yet).
+    const { g, step } = gateAt();
     g.try(false, true); // ground once
-    for (let i = 0; i < 8; i++) g.try(false, false); // burn coyote
+    for (let i = 0; i < 8; i++) {
+      step();
+      g.try(false, false); // burn coyote
+    }
     expect(g.try(true, false)).toBe(false); // buffered, airborne
-    // Land within the buffer window → fires.
-    expect(g.try(false, true)).toBe(true);
+    step();
+    expect(g.try(false, true)).toBe(true); // land within the buffer window
   });
 
   it("only one jump per takeoff (no lingering-coyote double jump)", () => {
-    const g = jumpGate({ coyoteMs: 100, bufferMs: 120 });
+    const { g, step } = gateAt();
     expect(g.try(true, true)).toBe(true); // jump
-    // Still 'grounded' the same/next step but shouldn't immediately re-fire
-    // without a fresh press+ground; a held press isn't an edge.
+    step();
     expect(g.try(false, false)).toBe(false);
+    step();
     expect(g.try(true, false)).toBe(false); // coyote was expired on fire
   });
 });

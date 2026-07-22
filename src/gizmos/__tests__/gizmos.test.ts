@@ -35,23 +35,32 @@ describe("Gizmos.shuffleBag", () => {
   });
 });
 
+// Shared hand-cranked clock (1 unit = 1 ms of derived time).
+function clockMs() {
+  let now = 0;
+  const clock = createClockHandle(() => now);
+  return { clock, advance: (ms) => (now += ms / (1000 / 60)) };
+}
+
 describe("Gizmos.combo", () => {
   it("counts hits and scales the multiplier, resetting when the window lapses", () => {
-    const c = combo({ windowMs: 100, step: 1 });
+    const t = clockMs();
+    const c = combo({ windowMs: 100, step: 1, clock: t.clock });
     expect(c.multiplier).toBe(1);
     c.hit();
     c.hit();
     expect(c.count).toBe(2);
     expect(c.multiplier).toBe(2);
-    c.tick(60);
+    t.advance(60);
     expect(c.count).toBe(2);
-    c.tick(60); // window lapsed
+    t.advance(60); // window lapsed
     expect(c.count).toBe(0);
     expect(c.active).toBe(false);
   });
 
   it("caps the multiplier and reset() clears the streak", () => {
-    const c = combo({ windowMs: 100, step: 0.5, max: 2 });
+    const t = clockMs();
+    const c = combo({ windowMs: 100, step: 0.5, max: 2, clock: t.clock });
     for (let i = 0; i < 10; i++) c.hit();
     expect(c.multiplier).toBe(2);
     c.reset();
@@ -61,19 +70,21 @@ describe("Gizmos.combo", () => {
 
 describe("Gizmos.charges", () => {
   it("spends and refills one charge per interval", () => {
-    const ch = charges({ max: 2, refillMs: 100, start: 0 });
+    const t = clockMs();
+    const ch = charges({ max: 2, refillMs: 100, start: 0, clock: t.clock });
     expect(ch.use()).toBe(false); // empty
-    ch.tick(100);
+    t.advance(100);
     expect(ch.count).toBe(1);
     expect(ch.use()).toBe(true);
-    ch.tick(250); // fills 2 (capped), leftover discarded
+    t.advance(250); // fills 2 (capped), leftover discarded
     expect(ch.count).toBe(2);
     expect(ch.fraction).toBe(1);
   });
 
   it("refill() tops up instantly and fraction tracks progress", () => {
-    const ch = charges({ max: 1, refillMs: 200, start: 0 });
-    ch.tick(100);
+    const t = clockMs();
+    const ch = charges({ max: 1, refillMs: 200, start: 0, clock: t.clock });
+    t.advance(100);
     expect(ch.fraction).toBeCloseTo(0.5);
     ch.refill();
     expect(ch.count).toBe(1);

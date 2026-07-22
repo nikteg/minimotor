@@ -1,12 +1,13 @@
 // ---------- Combo: a decaying hit streak ----------
 // The stateful member of the scoring family. (The pure raters — timingGrade,
-// scoreRank, beatClock — stay in Goodies.scoring.)
+// scoreRank, beatClock — stay in Goodies.scoring.) Clock-derived: the streak
+// decays as `Clock.game` advances — no tick(), just `hit()` and read.
+
+import { Clock, type ClockHandle } from "../clock.js";
 
 export interface Combo {
   /** Register a successful hit: extends the streak and refreshes the window. */
   hit(): void;
-  /** Decay the window by `dtMs`; when it lapses the streak resets to 0. */
-  tick(dtMs: number): void;
   /** Force the streak back to 0 (a miss or reset). */
   reset(): void;
   /** Consecutive hits inside the window. */
@@ -22,44 +23,44 @@ export interface Combo {
 
 /** A decaying hit-streak multiplier — the arcade staple where landing hits in
  *  quick succession builds a bonus that fades if you stall. `hit()` on each
- *  success, `tick(stepMs)` each step; read `count` for the "x N" display and
- *  `multiplier` for scoring.
+ *  success; read `count`/`multiplier`. Decays on its clock (default
+ *  `Clock.game`, so it freezes on pause).
  *
  *    const combo = Minimotor.Gizmos.combo({ windowMs: 2000 });
- *    // on hit: combo.hit(); score += points * combo.multiplier;
- *    // each step: combo.tick(Loop.step); */
-export function combo(options: { windowMs?: number; step?: number; max?: number } = {}): Combo {
+ *    // on hit: combo.hit(); score += points * combo.multiplier; */
+export function combo(
+  options: { windowMs?: number; step?: number; max?: number; clock?: ClockHandle } = {},
+): Combo {
   const windowMs = Math.max(1, options.windowMs ?? 2000);
   const step = options.step ?? 1;
   const cap = options.max ?? Infinity;
+  const clock = options.clock ?? Clock.game;
   let count = 0;
-  let remaining = 0;
+  let lastHit = -Infinity;
+
+  const lapsed = () => clock.now - lastHit >= windowMs;
+  const live = () => (lapsed() ? 0 : count);
+
   return {
     hit() {
-      count++;
-      remaining = windowMs;
-    },
-    tick(dtMs) {
-      if (remaining > 0) {
-        remaining = Math.max(0, remaining - dtMs);
-        if (remaining === 0) count = 0;
-      }
+      count = live() + 1; // a hit after the window lapsed restarts at 1
+      lastHit = clock.now;
     },
     reset() {
       count = 0;
-      remaining = 0;
+      lastHit = -Infinity;
     },
     get count() {
-      return count;
+      return live();
     },
     get multiplier() {
-      return Math.min(cap, 1 + Math.max(0, count - 1) * step);
+      return Math.min(cap, 1 + Math.max(0, live() - 1) * step);
     },
     get fraction() {
-      return remaining / windowMs;
+      return lapsed() ? 0 : Math.max(0, 1 - (clock.now - lastHit) / windowMs);
     },
     get active() {
-      return count > 0;
+      return live() > 0;
     },
   };
 }

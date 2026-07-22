@@ -4,6 +4,7 @@
 // stay in Goodies.pacing.)
 
 import { clamp } from "../mathf.js";
+import { Clock, type ClockHandle } from "../clock.js";
 
 export interface CheckpointRoute {
   readonly next: number;
@@ -51,8 +52,6 @@ export interface Charges {
   readonly fraction: number;
   /** Spend `n` (default 1) if available; true when the spend succeeded. */
   use(n?: number): boolean;
-  /** Advance the refill timer by `dtMs`. */
-  tick(dtMs: number): void;
   /** Instantly refill to full (touching the ground, a big pickup, respawn). */
   refill(): void;
   /** Grant `n` charges without touching refill progress, clamped to `max`. */
@@ -60,54 +59,72 @@ export interface Charges {
 }
 
 /** A pool of charges that regenerates over time — dashes, an ability meter,
- *  regenerating ammo, hyperspace jumps. `use()` spends, `tick(stepMs)` refills
- *  one charge every `refillMs`, and `refill()` tops it off instantly (e.g. on
- *  landing). `fraction` drives a recharge bar.
+ *  regenerating ammo, hyperspace jumps. `use()` spends, regen adds one charge
+ *  every `refillMs` (derived from the clock — no tick), and `refill()` tops it
+ *  off instantly (e.g. on landing). `fraction` drives a recharge bar. Regen
+ *  freezes when its clock is held.
  *
  *    const dash = Minimotor.Gizmos.charges({ max: 1, refillMs: 0 }); // ground-only
  *    if (onGround) dash.refill();
  *    if (pressDash && dash.use()) doDash(); */
-export function charges(options: { max: number; refillMs: number; start?: number }): Charges {
+export function charges(options: {
+  max: number;
+  refillMs: number;
+  start?: number;
+  clock?: ClockHandle;
+}): Charges {
   const max = Math.max(0, Math.floor(options.max));
   const refillMs = Math.max(1, options.refillMs);
+  const clock = options.clock ?? Clock.game;
   let count = clamp(Math.floor(options.start ?? max), 0, max);
-  let progress = 0;
+  let accrueSince = clock.now; // when the current partial charge began
+
+  // Lazy fold: bank whole charges accrued since `accrueSince`, on every read
+  // or mutation. At full, the accrual clock parks at "now".
+  const settle = () => {
+    if (count >= max) {
+      accrueSince = clock.now;
+      return;
+    }
+    const gained = Math.floor((clock.now - accrueSince) / refillMs);
+    if (gained > 0) {
+      count = Math.min(max, count + gained);
+      accrueSince += gained * refillMs;
+      if (count >= max) accrueSince = clock.now;
+    }
+  };
+
   return {
     get count() {
+      settle();
       return count;
     },
     get max() {
       return max;
     },
     get fraction() {
-      return count >= max ? 1 : progress / refillMs;
+      settle();
+      return count >= max ? 1 : (clock.now - accrueSince) / refillMs;
     },
     use(n = 1) {
+      settle();
       if (n <= 0) return true;
       if (count >= n) {
+        const wasFull = count >= max;
         count -= n;
+        if (wasFull) accrueSince = clock.now; // spend restarts the regen timer
         return true;
       }
       return false;
     },
-    tick(dtMs) {
-      if (count >= max) {
-        progress = 0;
-        return;
-      }
-      progress += dtMs;
-      while (progress >= refillMs && count < max) {
-        progress -= refillMs;
-        count++;
-      }
-      if (count >= max) progress = 0;
-    },
     refill() {
       count = max;
-      progress = 0;
+      accrueSince = clock.now;
     },
     add(n = 1) {
+      settle();
       count = clamp(count + Math.floor(n), 0, max);
+      if (count >= max) accrueSince = clock.now;
     },
   };
 }
