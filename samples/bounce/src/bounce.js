@@ -2,7 +2,7 @@
 // bounce AND speeds the ball up. Simple on purpose, but juiced — each bounce
 // fires spark particles, a short Camera.shake and a soft synth boop, and the
 // ball trails and glows. It plays itself; watch it escalate.
-import { Audio, Camera, Draw, Gizmos, Loop, Mathf, Particles, Perf, Stage, UI } from "minimotor";
+import { Audio, Camera, Collision, Draw, Gizmos, Loop, Mathf, Particles, Perf, Stage, UI, Vec2 } from "minimotor";
 
 // The viewport is LIVE (mutated on resize) — wall bounds read it directly.
 const view = Stage.init("game", { plugins: [Perf.plugin()] });
@@ -14,7 +14,8 @@ Audio.Mixer.bus("sfx").send("hall", 0.08); // a little space/tail, not a wash
 const BALL = 30;
 const SPEEDUP = 1.06; // each bounce speeds the ball up…
 const MAX_SPEED = 60; // …to a very high ceiling so it can't tunnel out
-const ball = { x: view.w / 2, y: view.h / 2, w: BALL, h: BALL, vx: 2.4, vy: 3.1 };
+// The ball is a Vec2 (x/y) AND a Rect (w/h) with a nested velocity Vec2.
+const ball = { x: view.w / 2, y: view.h / 2, w: BALL, h: BALL, vel: { x: 2.4, y: 3.1 } };
 
 const clampSpeed = (v) => Mathf.clamp(v * SPEEDUP, -MAX_SPEED, MAX_SPEED);
 
@@ -30,13 +31,9 @@ let bounces = 0;
 const ballFlash = Gizmos.flash(140); // white "hit" blink on the ball itself
 const fx = Particles.create();
 
-function bounceFx(x, y) {
-  Camera.shake(3, 120);
-  ballFlash.hit();
-  // A full, warm marimba-ish note (not a thin blip): a sub for body, a sine
-  // fundamental and an octave of triangle shimmer, all glided down slightly and
-  // shaped by a lowpass that opens then closes, plus a soft fade. Pitch rises
-  // with every bounce and never resets or caps.
+function bounceNote() {
+  // A full, warm marimba-ish note (custom filter automation → the playSfx
+  // escape hatch). Pitch rises with every bounce and never resets or caps.
   Audio.playSfx((ctx, now, out) => {
     const f = 300 + bounces * 12;
     const filt = ctx.createBiquadFilter();
@@ -60,6 +57,12 @@ function bounceFx(x, y) {
       osc.stop(now + 0.32);
     }
   });
+}
+
+function bounceFx(x, y) {
+  Camera.shake(3, 120);
+  ballFlash.hit();
+  bounceNote();
   fx.burst({
     at: { x, y },
     count: 14, speed: [0.7, 3.2], size: [2, 5], life: [220, 520],
@@ -67,63 +70,56 @@ function bounceFx(x, y) {
   });
 }
 
+const bounds = { x: 0, y: 0, w: view.w, h: view.h };
+
 Loop.run({
   update() {
-    ball.x += ball.vx;
-    ball.y += ball.vy;
+    Vec2.add(ball, ball.vel); // integrate position by velocity
 
-    // Each wall hit reflects AND speeds the ball up (clamped very high), so runs
-    // escalate without the ball ever tunnelling through a wall.
+    // Collision.bounceInBounds reflects the velocity off any wall it crossed
+    // and clamps the ball back inside; we react per contact face — speed up,
+    // spark, boop — and count it.
+    bounds.w = view.w;
+    bounds.h = view.h;
     const r = BALL / 2, cx = ball.x + r, cy = ball.y + r;
-    let scored = false;
-    if (ball.x < 0) { ball.x = 0; ball.vx = clampSpeed(-ball.vx); scored = true; bounceFx(0, cy); }
-    if (ball.x + ball.w > view.w) { ball.x = view.w - ball.w; ball.vx = clampSpeed(-ball.vx); scored = true; bounceFx(view.w, cy); }
-    if (ball.y < 0) { ball.y = 0; ball.vy = clampSpeed(-ball.vy); scored = true; bounceFx(cx, 0); }
-    if (ball.y + ball.h > view.h) { ball.y = view.h - ball.h; ball.vy = clampSpeed(-ball.vy); scored = true; bounceFx(cx, view.h); }
-    if (scored) bounces++;
+    const hit = Collision.bounceInBounds(ball, ball.vel, bounds);
+    if (hit.hit) {
+      if (hit.left || hit.right) ball.vel.x = clampSpeed(ball.vel.x);
+      if (hit.top || hit.bottom) ball.vel.y = clampSpeed(ball.vel.y);
+      bounces++;
+      bounceFx(hit.left ? 0 : hit.right ? view.w : cx, hit.top ? 0 : hit.bottom ? view.h : cy);
+    }
 
-    trail.push(cx, cy);
+    trail.push(ball.x + r, ball.y + r);
   },
   draw() {
-    const { ctx } = Draw;
-    const bg = ctx.createLinearGradient(0, 0, 0, view.h);
-    bg.addColorStop(0, "#141726");
-    bg.addColorStop(1, "#0a0b12");
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, view.w, view.h);
+    // Background gradient (screen space, top level).
+    Draw.rect(0, 0, view.w, view.h, Draw.linear(0, 0, 0, view.h, [[0, "#141726"], [1, "#0a0b12"]]));
 
     // The default camera is identity — this block just applies the shake.
     Camera.render(() => {
       // Motion trail (oldest = faintest/smallest).
       const pts = trail.points;
-      for (let i = pts.length - 1; i >= 0; i--) {
-        const p = pts[i], k = i / pts.length;
-        ctx.globalAlpha = (1 - k) * 0.35;
-        ctx.fillStyle = "#ff6b6b";
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, (BALL / 2) * (1 - k * 0.6), 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.globalAlpha = 1;
+      Draw.opacity(0.35, () => {
+        for (let i = pts.length - 1; i >= 0; i--) {
+          const p = pts[i], k = i / pts.length;
+          Draw.opacity(1 - k, () => Draw.circle(p.x, p.y, (BALL / 2) * (1 - k * 0.6), "#ff6b6b"));
+        }
+      });
 
       // Ball: soft glow + body + a specular highlight.
       const r = BALL / 2, cx = ball.x + r, cy = ball.y + r;
-      const glow = ctx.createRadialGradient(cx, cy, 2, cx, cy, r * 2.2);
-      glow.addColorStop(0, "rgba(255,150,150,0.5)");
-      glow.addColorStop(1, "rgba(255,107,107,0)");
-      ctx.fillStyle = glow;
-      ctx.fillRect(cx - r * 2.2, cy - r * 2.2, r * 4.4, r * 4.4);
-      ctx.fillStyle = "#ff6b6b";
-      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = "rgba(255,255,255,0.6)";
-      ctx.beginPath(); ctx.arc(cx - r * 0.3, cy - r * 0.3, r * 0.28, 0, Math.PI * 2); ctx.fill();
+      const glow = Draw.radial(cx, cy, 2, cx, cy, r * 2.2, [
+        [0, "rgba(255,150,150,0.5)"],
+        [1, "rgba(255,107,107,0)"],
+      ]);
+      Draw.rect(cx - r * 2.2, cy - r * 2.2, r * 4.4, r * 4.4, glow);
+      Draw.circle(cx, cy, r, "#ff6b6b");
+      Draw.circle(cx - r * 0.3, cy - r * 0.3, r * 0.28, "rgba(255,255,255,0.6)");
 
       // Hit flash (Gizmos.flash): blink the ball toward white on each bounce.
       if (ballFlash.value > 0) {
-        ctx.globalAlpha = ballFlash.value;
-        ctx.fillStyle = "#ffffff";
-        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
-        ctx.globalAlpha = 1;
+        Draw.opacity(ballFlash.value, () => Draw.circle(cx, cy, r, "#ffffff"));
       }
 
       Draw.particles(fx);
