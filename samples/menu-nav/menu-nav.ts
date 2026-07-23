@@ -204,11 +204,11 @@ Loop.run({
 
     UI.idScope("opt", () => {
       UI.col({ x: 24, y: 82, w: 440, gap: 12 }, () => {
-        // Tabs + sub-tabs: clickable, and switched by the shoulders/keys above,
-        // but tabIndex:-1 so focus navigation only walks the option widgets.
+        // Tabs + sub-tabs are in the tab order too: Tab / D-pad reach them and
+        // ← → switch the focused strip (a focused UI.tabs cycles on arrows). The
+        // LB/RB · LT/RT · Q/E/Z/X shortcuts still jump straight regardless of focus.
         tab = UI.tabs({
           id: uiId("tabs"),
-          tabIndex: -1,
           items: TABS.map((t) => t.name),
           active: tab,
           w: 440,
@@ -216,7 +216,6 @@ Loop.run({
         sub = Math.min(sub, TABS[tab].subs.length - 1);
         sub = UI.tabs({
           id: uiId("subtabs"),
-          tabIndex: -1,
           items: TABS[tab].subs,
           active: sub,
           w: 440,
