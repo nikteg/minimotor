@@ -304,8 +304,19 @@ describe("UI closure containers", () => {
   it("a root container without a rect throws", () => {
     const { ctx } = btnCtx();
     begin(ctx);
-    expect(() => row(() => button({ label: "x" }))).toThrow(/explicit x\/y\/w\/h/);
+    // A root needs a position; width/height now auto-size when omitted.
+    expect(() => row(() => button({ label: "x" }))).toThrow(/explicit x\/y/);
     _reset();
+  });
+
+  it("a root container auto-sizes with only x/y (no w/h)", () => {
+    const { ctx } = btnCtx();
+    // Two frames: the first seeds the content-size cache, the second uses it.
+    for (let frame = 0; frame < 2; frame++) {
+      begin(ctx);
+      expect(() => col({ x: 10, y: 10, gap: 4 }, () => button({ label: "Hello" }))).not.toThrow();
+      _reset();
+    }
   });
 });
 

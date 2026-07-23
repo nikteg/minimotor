@@ -18,6 +18,7 @@ import {
   Keys,
   Loop,
   Mathf,
+  OnscreenInput,
   Particles,
   Perf,
   Sprites,
@@ -36,11 +37,22 @@ const TILE = 48; // collision cell (world px)
 const FW = 32; // player frame size in its source strips
 Stage.init("game", { resolution: { w: GAME_W, h: GAME_H }, plugins: [Perf.plugin()] });
 
-const input = Input.map({
-  left: ["ArrowLeft", "KeyA", "pad:dpad-left", "pad:lstick-left"],
-  right: ["ArrowRight", "KeyD", "pad:dpad-right", "pad:lstick-right"],
-  jump: ["ArrowUp", "KeyW", "Space", "pad:a"],
+// On-screen touch gamepad — renders in the true window corners (outside the
+// letterbox bars), auto-hidden on desktop and shown on touch devices.
+const pad = OnscreenInput.gamepad({
+  opacity: 0.55,
+  stick: { anchor: { side: "left", x: 84, y: 84 }, radius: 54 },
+  buttons: [{ anchor: { side: "right", x: 70, y: 74 }, r: 34, button: "a", label: "JUMP" }],
 });
+
+const input = Input.map(
+  {
+    left: ["ArrowLeft", "KeyA", "pad:dpad-left", "pad:lstick-left"],
+    right: ["ArrowRight", "KeyD", "pad:dpad-right", "pad:lstick-right"],
+    jump: ["ArrowUp", "KeyW", "Space", "pad:a"],
+  },
+  { pad },
+);
 
 // -- Feel constants, in per-step units (px/step, px/step²) --------------------
 const MOVE = 2.6; // top run speed
@@ -643,5 +655,9 @@ Loop.run({
         },
       );
     }
+
+    // On-screen touch controls, drawn in true window corners (outside the
+    // letterbox). Auto-hidden on desktop.
+    OnscreenInput.drawControls(pad);
   },
 });

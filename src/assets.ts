@@ -100,6 +100,18 @@ async function loadJson(url: string): Promise<unknown> {
 }
 
 function loadOne(url: string): Promise<unknown> {
+  // Bundlers inline small assets as `data:` URIs (e.g. Vite under
+  // `assetsInlineLimit`), which carry a MIME type instead of a file extension —
+  // so `new URL("./x.png", import.meta.url)` can resolve to `data:image/png;…`.
+  // Route those by MIME so a build-inlined asset loads exactly like its on-disk
+  // `.png`/`.json`/`.ogg` form (this is why samples that work in `vite` dev
+  // could 'fail to load' once built). `fetch` handles `data:` URIs too.
+  if (url.startsWith("data:")) {
+    if (/^data:image\//i.test(url)) return loadImage(url);
+    if (/^data:application\/json/i.test(url)) return loadJson(url);
+    if (/^data:audio\//i.test(url)) return loadAudio(url);
+    return loadImage(url); // unknown MIME: images are the common inlined case
+  }
   if (IMAGE_EXT.test(url)) return loadImage(url);
   if (JSON_EXT.test(url)) return loadJson(url);
   if (AUDIO_EXT.test(url)) return loadAudio(url);

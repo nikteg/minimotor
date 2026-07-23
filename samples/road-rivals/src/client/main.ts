@@ -7,11 +7,13 @@ import {
   Draw,
   ECS,
   Gizmos,
+  Input,
   Keys,
   Loop,
   Mathf,
   Mouse,
   Net,
+  OnscreenInput,
   Perf,
   Stage,
   Transitions,
@@ -246,6 +248,17 @@ const meter = Perf.createNetMeter();
 const vp = Stage.init("game", {
   background: "#101719",
   plugins: [Perf.plugin({ net: meter })],
+});
+
+// On-screen touch gamepad: left stick steers, GAS/BRAKE buttons. Autohide keeps
+// it hidden on desktop and shown on touch (default), so keyboard is unaffected.
+const pad = OnscreenInput.gamepad({
+  opacity: 0.55,
+  stick: { anchor: { side: "left", x: 92, y: 92 }, radius: 62 },
+  buttons: [
+    { anchor: { side: "right", x: 78, y: 82 }, r: 40, button: "a", label: "GAS" },
+    { anchor: { side: "right", x: 168, y: 132 }, r: 34, button: "b", label: "BRAKE" },
+  ],
 });
 
 const clientNo = Number(new URLSearchParams(location.search).get("client") || 1);
@@ -659,12 +672,24 @@ function carHits(x: number, y: number) {
 // rolling + aerodynamic drag limit speed without an arbitrary hard clamp.
 function updateCar(dt: number) {
   const config = CAR_TYPES[car.type];
-  const throttle =
-    (Keys.down("KeyW") || Keys.down("ArrowUp") ? 1 : 0) -
-    (Keys.down("KeyS") || Keys.down("ArrowDown") ? 1 : 0);
-  const steerInput =
-    (Keys.down("KeyD") || Keys.down("ArrowRight") ? 1 : 0) -
-    (Keys.down("KeyA") || Keys.down("ArrowLeft") ? 1 : 0);
+  const throttle = Math.max(
+    -1,
+    Math.min(
+      1,
+      (Keys.down("KeyW") || Keys.down("ArrowUp") ? 1 : 0) -
+        (Keys.down("KeyS") || Keys.down("ArrowDown") ? 1 : 0) +
+        (pad.down(Input.Buttons.A) ? 1 : 0),
+    ),
+  );
+  const steerInput = Math.max(
+    -1,
+    Math.min(
+      1,
+      (Keys.down("KeyD") || Keys.down("ArrowRight") ? 1 : 0) -
+        (Keys.down("KeyA") || Keys.down("ArrowLeft") ? 1 : 0) +
+        pad.axis(0),
+    ),
+  );
   car.angle = carBody.rot;
   car.vx = carBody.vx;
   car.vy = carBody.vy;
@@ -677,7 +702,7 @@ function updateCar(dt: number) {
   else if (throttle < 0) forward += (forward > 35 ? -1250 : -config.acceleration * 0.56) * dt;
   const drag = 0.72 + Math.abs(forward) * 0.00155;
   forward *= Math.exp(-drag * dt);
-  const handbrake = Keys.down("Space");
+  const handbrake = Keys.down("Space") || pad.down(Input.Buttons.B);
   engineLoad = Math.abs(throttle);
   // Handbrake: lock the rear wheels. They scrub off forward speed and lose grip
   // so the tail slides; the `yawGain` boost below lets steering kick the car
@@ -1569,5 +1594,6 @@ Loop.run({
       ctx.stroke();
       Loop.setCursor("none");
     }
+    OnscreenInput.drawControls(pad);
   },
 });

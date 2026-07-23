@@ -104,6 +104,10 @@ import * as Tiles from "./tiles.js";
  *  and `Transitions.wipe` are ready-made; a `Transition` is plain data, and the
  *  pure fixed-step runner `Transitions.run` fires the swap at full coverage. */
 import * as Transitions from "./transitions.js";
+/** Opt-in on-screen touch gamepad. `OnscreenInput.gamepad(config)` returns a
+ *  `GamepadState` for `Input.map({ pad })` and `OnscreenInput.drawControls(pad)`
+ *  renders it — touch and a hardware pad share one code path. */
+import * as OnscreenInput from "./onscreen.js";
 
 export {
   Stage,
@@ -134,7 +138,16 @@ export {
   Fsm,
   Timers,
   Particles,
+  OnscreenInput,
 };
+export type {
+  Anchor,
+  StickSpec,
+  ButtonSpec,
+  HapticsConfig,
+  OnscreenGamepadConfig,
+  OnscreenPad,
+} from "./onscreen.js";
 export type {
   Rect,
   Viewport,
@@ -411,6 +424,7 @@ export const Minimotor = {
   Particles,
   Collision,
   UI,
+  OnscreenInput,
 };
 
 export default Minimotor;

@@ -29,6 +29,17 @@ describe("Assets", () => {
     expect(a.get("tiles")).toBeInstanceOf(HTMLImageElement);
   });
 
+  it("routes data: URIs by MIME type (bundlers inline small assets)", async () => {
+    // A `new URL("./x.png", import.meta.url)` can resolve to a `data:image/…`
+    // URI once the bundler inlines it — no `.png` extension to route on. It must
+    // still load as an image (this broke ascent/pixel-adventure once BUILT while
+    // working under `vite` dev, where the URL kept its extension).
+    const a = createAssets();
+    await a.load({ hero: "data:image/png;base64,iVBORw0KGgo=" });
+    expect(a.has("hero")).toBe(true);
+    expect(a.image("hero")).toBeInstanceOf(HTMLImageElement);
+  });
+
   it("loads and parses JSON via fetch", async () => {
     vi.stubGlobal(
       "fetch",

@@ -2,14 +2,24 @@ import { panel } from "./controls.js";
 import {
   LayoutChildren,
   LayoutOptions,
+  cachedContentSize,
+  containerKey,
   containerRect,
   currentLayout,
   layoutArgs,
+  measuredContainerSize,
   roundRectPath,
   runContainer,
+  storeContentSize,
   theme,
   uiCtx,
 } from "./core/index.js";
+
+// A ROOT container (pinned x/y) shrink-wraps any axis the caller omits; the
+// cross axis (a col's width, a row's height) is shrink-wrapped via `fitCross`
+// so children take their natural cross size instead of filling.
+const isRootContainer = (opts: LayoutOptions): boolean =>
+  opts.x !== undefined && opts.y !== undefined;
 
 /** Lay children out left-to-right. Root call needs an explicit rect; nested
  *  calls reserve a slot from the enclosing container (full parent height, a
@@ -25,8 +35,23 @@ export function row<R>(children: LayoutChildren<R>): R;
 export function row<R>(opts: LayoutOptions, children: LayoutChildren<R>): R;
 export function row<R>(a: LayoutOptions | LayoutChildren<R>, b?: LayoutChildren<R>): R {
   const [opts, children] = layoutArgs(a, b);
-  const rect = containerRect("row", opts);
-  return runContainer("row", rect, opts.gap ?? 8, opts.pad ?? 0, opts.align ?? "start", children);
+  const key = containerKey(opts, "row");
+  const rect = containerRect("row", opts, cachedContentSize(key));
+  const pad = opts.pad ?? 0;
+  const fitCross = isRootContainer(opts) && opts.h === undefined; // a row's cross is height
+  return runContainer(
+    "row",
+    rect,
+    opts.gap ?? 8,
+    pad,
+    opts.align ?? "start",
+    (st) => {
+      const r = children(st);
+      storeContentSize(key, measuredContainerSize(st, rect.x, rect.y, pad));
+      return r;
+    },
+    fitCross,
+  );
 }
 
 /** Lay children out top-to-bottom. See `row`. */
@@ -34,8 +59,23 @@ export function col<R>(children: LayoutChildren<R>): R;
 export function col<R>(opts: LayoutOptions, children: LayoutChildren<R>): R;
 export function col<R>(a: LayoutOptions | LayoutChildren<R>, b?: LayoutChildren<R>): R {
   const [opts, children] = layoutArgs(a, b);
-  const rect = containerRect("col", opts);
-  return runContainer("col", rect, opts.gap ?? 8, opts.pad ?? 0, opts.align ?? "start", children);
+  const key = containerKey(opts, "col");
+  const rect = containerRect("col", opts, cachedContentSize(key));
+  const pad = opts.pad ?? 0;
+  const fitCross = isRootContainer(opts) && opts.w === undefined; // a col's cross is width
+  return runContainer(
+    "col",
+    rect,
+    opts.gap ?? 8,
+    pad,
+    opts.align ?? "start",
+    (st) => {
+      const r = children(st);
+      storeContentSize(key, measuredContainerSize(st, rect.x, rect.y, pad));
+      return r;
+    },
+    fitCross,
+  );
 }
 
 /** A `group` is a bordered/optionally-titled box that also lays its children
@@ -56,7 +96,10 @@ export interface GroupOptions extends LayoutOptions {
  *  panel; the body is inset below the title strip and padded by `theme.pad`. */
 export function group<R>(opts: GroupOptions, children: LayoutChildren<R>): R {
   const dir = opts.dir ?? "col";
-  const rect = containerRect(dir, opts);
+  const key = containerKey(opts, "group");
+  const rect = containerRect(dir, opts, cachedContentSize(key));
+  const fitCross =
+    isRootContainer(opts) && (dir === "col" ? opts.w === undefined : opts.h === undefined);
   panel({
     x: rect.x,
     y: rect.y,
@@ -70,14 +113,22 @@ export function group<R>(opts: GroupOptions, children: LayoutChildren<R>): R {
   // 2px below for the bottom border so body content centers in the visible gap
   // under the strip, not biased low by the unaccounted-for bottom border.
   const top = opts.title ? 32 : 0;
+  const pad = opts.pad ?? theme.pad;
   const body = { x: rect.x, y: rect.y + top, w: rect.w, h: rect.h - top - (opts.title ? 2 : 0) };
   return runContainer(
     dir,
     body,
     opts.gap ?? 8,
-    opts.pad ?? theme.pad,
+    pad,
     opts.align ?? "start",
-    children,
+    (st) => {
+      const r = children(st);
+      // Measure from the OUTER top-left so the title band + both pads are
+      // included; stored for next frame's box + parent slot.
+      storeContentSize(key, measuredContainerSize(st, rect.x, rect.y, pad));
+      return r;
+    },
+    fitCross,
   );
 }
 

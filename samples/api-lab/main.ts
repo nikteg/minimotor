@@ -15,6 +15,7 @@ import {
   Loop,
   Mathf,
   Net,
+  OnscreenInput,
   Particles,
   Scenes,
   Stage,
@@ -28,14 +29,27 @@ import {
 // [#1]/[#3] Live viewport, engine-owned background.
 Stage.init("game", { background: "#222" });
 
-// [#8] Named actions over fused devices; zero wiring.
-const input = Input.map({
-  left: ["ArrowLeft", "KeyA", "pad:dpad-left", "pad:lstick-left"],
-  right: ["ArrowRight", "KeyD", "pad:dpad-right", "pad:lstick-right"],
-  jump: ["Space", "ArrowUp", "KeyW", "pad:a"],
-  dash: ["ShiftLeft", "ShiftRight", "KeyX", "pad:b"],
-  pause: ["Escape", "pad:start"],
+// On-screen touch gamepad; autohides on desktop, shows on touch.
+const pad = OnscreenInput.gamepad({
+  opacity: 0.55,
+  stick: { anchor: { side: "left", x: 90, y: 90 }, radius: 60 },
+  buttons: [
+    { anchor: { side: "right", x: 78, y: 82 }, r: 38, button: "a", label: "JUMP" },
+    { anchor: { side: "right", x: 162, y: 130 }, r: 32, button: "b", label: "DASH" },
+  ],
 });
+
+// [#8] Named actions over fused devices; zero wiring.
+const input = Input.map(
+  {
+    left: ["ArrowLeft", "KeyA", "pad:dpad-left", "pad:lstick-left"],
+    right: ["ArrowRight", "KeyD", "pad:dpad-right", "pad:lstick-right"],
+    jump: ["Space", "ArrowUp", "KeyW", "pad:a"],
+    dash: ["ShiftLeft", "ShiftRight", "KeyX", "pad:b"],
+    pause: ["Escape", "pad:start"],
+  },
+  { pad },
+);
 
 // [#5] Per-step units (px/step, px/step²); [#11] feel constants are game data.
 const MOVE = 3;
@@ -322,6 +336,7 @@ function drawWorld(): void {
   UI.text(`Coins: ${score}/${TOTAL_COINS}`, { x: 10, y: 8, color: "#888" }); // [#6]
   if (room)
     UI.text(`${room.peers.length + 1} online`, { anchor: "topRight", x: -10, y: 8, color: "#888" }); // [#33]
+  OnscreenInput.drawControls(pad); // window-space overlay, painted at end-of-frame
 }
 
 let confirmRestart = false;

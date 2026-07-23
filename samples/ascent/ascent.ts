@@ -24,9 +24,11 @@ import {
   ECS,
   Fsm,
   Gizmos,
+  Input,
   Keys,
   Loop,
   Mathf,
+  OnscreenInput,
   Particles,
   Perf,
   Sprites,
@@ -39,6 +41,16 @@ import type { SheetCursor, SpriteLike } from "minimotor";
 
 let vp = Stage.init("game", { plugins: [Perf.plugin()] });
 Stage.onResize((next) => (vp = next));
+
+// On-screen touch gamepad (hidden on desktop, shown on touch by default).
+const pad = OnscreenInput.gamepad({
+  opacity: 0.55,
+  stick: { anchor: { side: "left", x: 88, y: 88 }, radius: 58 },
+  buttons: [
+    { anchor: { side: "right", x: 76, y: 80 }, r: 36, button: "a", label: "JUMP" },
+    { anchor: { side: "right", x: 158, y: 128 }, r: 30, button: "b", label: "DASH" },
+  ],
+});
 
 // ---------------------------------------------------------------------------
 // World grid — 16px cells (the 8px tiles are drawn at 2×).
@@ -768,18 +780,27 @@ function wallOn(dir: number): boolean {
 // Input
 // ---------------------------------------------------------------------------
 const key = {
-  left: () => Keys.down("ArrowLeft") || Keys.down("KeyA"),
-  right: () => Keys.down("ArrowRight") || Keys.down("KeyD"),
-  up: () => Keys.down("ArrowUp") || Keys.down("KeyW"),
-  down: () => Keys.down("ArrowDown") || Keys.down("KeyS"),
+  left: () => Keys.down("ArrowLeft") || Keys.down("KeyA") || pad.axis(0) < -0.35,
+  right: () => Keys.down("ArrowRight") || Keys.down("KeyD") || pad.axis(0) > 0.35,
+  up: () => Keys.down("ArrowUp") || Keys.down("KeyW") || pad.axis(1) < -0.35,
+  down: () => Keys.down("ArrowDown") || Keys.down("KeyS") || pad.axis(1) > 0.35,
   jumpPress: () =>
     Keys.pressed("KeyC") ||
     Keys.pressed("KeyZ") ||
     Keys.pressed("Space") ||
-    Keys.pressed("ArrowUp"),
+    Keys.pressed("ArrowUp") ||
+    pad.pressed(Input.Buttons.A),
   jumpHeld: () =>
-    Keys.down("KeyC") || Keys.down("KeyZ") || Keys.down("Space") || Keys.down("ArrowUp"),
-  dashPress: () => Keys.pressed("KeyX") || Keys.pressed("ShiftLeft") || Keys.pressed("KeyK"),
+    Keys.down("KeyC") ||
+    Keys.down("KeyZ") ||
+    Keys.down("Space") ||
+    Keys.down("ArrowUp") ||
+    pad.down(Input.Buttons.A),
+  dashPress: () =>
+    Keys.pressed("KeyX") ||
+    Keys.pressed("ShiftLeft") ||
+    Keys.pressed("KeyK") ||
+    pad.pressed(Input.Buttons.B),
 };
 
 // ---------------------------------------------------------------------------
@@ -1024,6 +1045,8 @@ Loop.run({
       ctx.fillRect(0, 0, vp.w, vp.h);
     }
     if (won) drawWin(ctx);
+
+    OnscreenInput.drawControls(pad);
   },
 });
 

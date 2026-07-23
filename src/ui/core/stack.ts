@@ -1,5 +1,8 @@
 // ---------- Stack (layout) ----------
 
+import { widgetId } from "./identity.js";
+import type { IdPart } from "./identity.js";
+
 /** Options for `stack()` — a one-axis layout cursor. */
 export interface StackOptions {
   /** Starting corner. With `align: "end"` this is the FAR edge (right edge
@@ -21,12 +24,19 @@ export interface StackOptions {
   /** Total main-axis length of the container (width for a row, height for a
    *  column). Enables `fill`/`remaining`. The closure containers set it. */
   length?: number;
+  /** Shrink-wrap the CROSS axis: children take their natural size across the
+   *  stack (a col's width, a row's height) instead of filling it. Set by an
+   *  auto-sized container so it can measure its content. Default false. */
+  fitCross?: boolean;
 }
 
 /** A layout cursor from `stack()`: hands out rects along one axis. */
 export interface Stack {
   /** Main axis. */
   readonly dir: "row" | "col";
+  /** True when the container shrink-wraps its cross axis — widgets should
+   *  place at their natural cross size rather than filling. `place` reads it. */
+  readonly fitCross: boolean;
   /** Reserve the next slot and advance. For rows pass the width (height
    *  defaults from the stack); for columns pass the height as the second
    *  argument (width defaults from the stack). */
@@ -96,6 +106,7 @@ export function stack(opts: StackOptions): Stack {
 
   return {
     dir,
+    fitCross: opts.fitCross ?? false,
     next: advance,
     fill(reserve = 0) {
       const avail = Math.max(0, remaining() - reserve);
@@ -143,24 +154,34 @@ export function place(
   const pinned = opts.x !== undefined || opts.y !== undefined;
   const st = pinned ? undefined : (opts.at ?? currentLayout());
   if (st) {
-    // In a row the main axis is width (pass autoW); in a column it's height
-    // and the width fills the column (pass undefined so the stack's cross
-    // width applies unless the caller overrides).
-    return st.dir === "row" ? st.next(opts.w ?? autoW, opts.h) : st.next(opts.w, opts.h);
+    // Main axis: rows pass the widget's natural width, cols its natural height.
+    // Cross axis: fill the container (pass undefined) UNLESS it shrink-wraps
+    // (`fitCross`), where the widget's natural cross size is used instead.
+    if (st.dir === "row") {
+      return st.next(opts.w ?? autoW, opts.h ?? (st.fitCross ? defaultH : undefined));
+    }
+    return st.next(opts.w ?? (st.fitCross ? autoW : undefined), opts.h);
   }
   return { x: opts.x ?? 0, y: opts.y ?? 0, w: opts.w ?? autoW, h: opts.h ?? defaultH };
 }
 
 /** Options shared by the closure containers. */
 export interface LayoutOptions {
-  /** Explicit rect — required for a ROOT container (no parent layout). */
+  /** Explicit rect — a ROOT container (no parent layout) needs `x`/`y`/`w`;
+   *  `h` is optional and auto-measured from the children when omitted. */
   x?: number;
   /** Explicit top (see `x`). */
   y?: number;
   /** Explicit width. When nested, the slot reserved from the parent. */
   w?: number;
-  /** Explicit height. When nested in a column parent, the row's own height. */
+  /** Explicit height. OMIT to auto-size to the children's measured height
+   *  (see the module note on auto-height). Give it to pin a fixed height. */
   h?: number;
+  /** Stable id for the auto-height cache. Optional: falls back to the
+   *  `idScope` call-order, then to a position-derived key for pinned
+   *  containers. Set it when several unpinned containers would otherwise
+   *  collide (dynamic/conditional lists). */
+  id?: IdPart;
   /** Gap between children in px. Default 8. */
   gap?: number;
   /** Inner padding in px. `row`/`col` default to 0 (flush structural flow);
@@ -180,6 +201,7 @@ export function runContainer<R>(
   pad: number,
   align: "start" | "end",
   children: (layout: Stack) => R,
+  fitCross = false,
 ): R {
   const inner = { x: rect.x + pad, y: rect.y + pad, w: rect.w - pad * 2, h: rect.h - pad * 2 };
   // For align:"end" the cursor starts at the far edge and grows backward.
@@ -201,6 +223,7 @@ export function runContainer<R>(
     w: dir === "col" ? inner.w : undefined,
     // Main-axis length enables fill()/remaining inside the callback.
     length: dir === "row" ? inner.w : inner.h,
+    fitCross,
   });
   layoutStack.push(st);
   try {
@@ -210,27 +233,80 @@ export function runContainer<R>(
   }
 }
 
+// ---------- Auto-height (last-frame content-size cache) ----------
+// Immediate mode can't know children's height before drawing the container's
+// box, so — like Dear ImGui's auto-fit — we cache the height MEASURED from the
+// children this frame and reuse it to size (and draw) the box next frame. A
+// container with a stable key self-corrects after one frame; static UIs are
+// steady from frame two. Callers pass no `h` to opt in.
+
+/** Measured content box of a container (width and height). */
+export interface ContentSize {
+  w: number;
+  h: number;
+}
+
+const contentSizes = new Map<string, ContentSize>();
+
+/** Cache key for a container's auto-size: explicit `id`, else the idScope
+ *  call-order id, else a position key for pinned containers, else none. */
+export function containerKey(opts: LayoutOptions, kind: string): string | undefined {
+  if (opts.id !== undefined) return `${kind}:${opts.id}`;
+  const auto = widgetId(undefined, kind);
+  if (auto) return auto;
+  if (opts.x !== undefined && opts.y !== undefined) {
+    return `${kind}@${opts.x}:${opts.y}:${opts.w ?? "auto"}`;
+  }
+  return undefined;
+}
+
+/** Last-frame measured size for `key` (undefined on the first frame). */
+export function cachedContentSize(key: string | undefined): ContentSize | undefined {
+  return key ? contentSizes.get(key) : undefined;
+}
+
+/** Store this frame's measured container size for next frame. */
+export function storeContentSize(key: string | undefined, size: ContentSize): void {
+  if (key) contentSizes.set(key, size);
+}
+
+/** Full container size implied by the children placed into `st`, measured from
+ *  the container's outer top-left and closed with one `pad` on each far edge. */
+export function measuredContainerSize(
+  st: Stack,
+  outerLeft: number,
+  outerTop: number,
+  pad: number,
+): ContentSize {
+  const e = st.extent;
+  return { w: e.x + e.w - outerLeft + pad, h: e.y + e.h - outerTop + pad };
+}
+
 // Resolve a container's own rect: explicit if given, else reserve a slot from
-// the parent layout (declared main-axis size, cross inherited).
+// the parent layout. `auto` is last frame's measured size, used for whichever
+// of width/height the caller omitted (auto-sizing). A ROOT container (pinned
+// x/y) may omit both and shrink-wrap; a NESTED container fills its parent's
+// cross axis and only auto-sizes along the main axis.
 export function containerRect(
   dir: "row" | "col",
   opts: LayoutOptions,
+  auto?: ContentSize,
 ): { x: number; y: number; w: number; h: number } {
-  if (
-    opts.x !== undefined &&
-    opts.y !== undefined &&
-    opts.w !== undefined &&
-    opts.h !== undefined
-  ) {
-    return { x: opts.x, y: opts.y, w: opts.w, h: opts.h };
+  const w = opts.w ?? auto?.w;
+  const h = opts.h ?? auto?.h;
+  if (opts.x !== undefined && opts.y !== undefined) {
+    // Root: pinned position; each omitted axis auto-measured (small first-frame
+    // fallback, corrected next frame).
+    return { x: opts.x, y: opts.y, w: w ?? 120, h: h ?? (dir === "row" ? 34 : 40) };
   }
   const parent = currentLayout();
   if (!parent) {
-    throw new Error("Minimotor.UI: a root row/col/group needs explicit x/y/w/h");
+    throw new Error("Minimotor.UI: a root row/col/group needs explicit x/y");
   }
-  // A row's natural extent along a column parent is its height (default 34);
-  // a col's along a row parent is its width. Cross fills the parent.
-  return parent.next(opts.w, opts.h ?? (dir === "row" ? 34 : undefined));
+  // Nested: reserve a slot from the parent. Size along the PARENT's main axis
+  // (width for a row parent, height for a col parent) from auto/explicit; pass
+  // undefined on the cross axis so the parent's slot fills it.
+  return parent.dir === "row" ? parent.next(w, opts.h) : parent.next(opts.w, h);
 }
 
 /** A container's children callback — receives the layout cursor for
