@@ -47,6 +47,9 @@ function removeAt(st: Store, index: number): void {
   st.slotOf[index] = undefined;
 }
 
+/** Create a fresh ECS world — its own entities, component stores, and
+ *  systems, sharing nothing with other worlds. The blessed idiom is `const ecs
+ *  = ECS.create()`; make one per scene or per game and drop it to tear down. */
 export function create(): Ecs {
   const generations: number[] = [];
   const alive: boolean[] = [];

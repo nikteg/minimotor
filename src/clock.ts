@@ -22,9 +22,12 @@ import { animate as animateValue, type AnimateOptions, type Motion } from "./ani
 /** A running timer; call to cancel early. */
 export type Cancel = () => void;
 
+/** A timeline: `now` derives from the fixed-step counter, and it's holdable,
+ *  scalable, and can schedule timers/motions in its own time. */
 export interface ClockHandle {
   /** Milliseconds elapsed on THIS clock (frozen while held, bent by scale). */
   readonly now: number;
+  /** True while the clock is frozen by `hold()`. */
   readonly held: boolean;
   /** Time multiplier: 0.5 = slow motion, 2 = fast forward. Rebases cleanly —
    *  changing it never jumps `now`. */

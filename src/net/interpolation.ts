@@ -12,6 +12,8 @@
 
 import { lerp } from "../mathf.js";
 
+/** Options for `createInterpolator`: render delay, buffer size, blend, and an
+ *  injectable clock. */
 export interface InterpolatorOptions<T> {
   /** How far behind real time to render, in ms. Should cover at least one
    *  packet interval plus jitter; default 100 (two packets at 20 Hz). */
@@ -26,6 +28,8 @@ export interface InterpolatorOptions<T> {
   now?: () => number;
 }
 
+/** A snapshot buffer that renders remote state a fixed delay in the past,
+ *  blended between the two surrounding snapshots. */
 export interface Interpolator<T> {
   /** Record a snapshot. `atMs` defaults to arrival time; pass the sender's
    *  timestamp when the protocol carries one (steadier under receive jitter).
@@ -55,6 +59,10 @@ function defaultLerp<T>(a: T, b: T, t: number): T {
   return out as T;
 }
 
+/** Create a snapshot interpolator for a remote entity: `push` incoming states,
+ *  `sample()` each frame to read the blended state as of (now − `delayMs`). The
+ *  default `lerp` blends numeric fields and copies the rest; see
+ *  `InterpolatorOptions` to tune `delayMs`/`maxSnapshots`/`lerp`. */
 export function createInterpolator<T>(opts: InterpolatorOptions<T> = {}): Interpolator<T> {
   const delay = opts.delayMs ?? 100;
   const max = opts.maxSnapshots ?? 32;

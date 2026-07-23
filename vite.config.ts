@@ -1,5 +1,6 @@
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import type { Server } from "node:http";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
 import { WebSocketServer } from "ws";
@@ -81,6 +82,26 @@ function sampleSockets(): Plugin {
   };
 }
 
+// Inject the landing page's code snippets from REAL, type-checked files in
+// samples/_examples/ — so `<code data-example="tiles"></code>` is filled with
+// the actual contents of samples/_examples/tiles.ts at dev-serve and build
+// time. The examples are part of the `verify:samples` typecheck, so a broken
+// snippet fails the build instead of shipping wrong code on the front page.
+function landingExamples(): Plugin {
+  const dir = here("./samples/_examples");
+  const escapeHtml = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return {
+    name: "minimotor-landing-examples",
+    transformIndexHtml(html) {
+      return html.replace(/<code data-example="([\w-]+)"><\/code>/g, (_m, name: string) => {
+        const src = readFileSync(join(dir, `${name}.ts`), "utf8").replace(/\s+$/, "");
+        return `<code data-example="${name}" data-lang="ts">${escapeHtml(src)}</code>`;
+      });
+    },
+  };
+}
+
 // The samples live inside the engine package (packages/minimotor/samples) and
 // serve as the showcase for the public API. Vite's root is the samples folder,
 // so the gallery is at "/" and each game at "/<game>/". Game code imports the
@@ -89,7 +110,7 @@ function sampleSockets(): Plugin {
 // what an external consumer writes.
 export default defineConfig({
   root: here("./samples"),
-  plugins: [sampleSockets()],
+  plugins: [sampleSockets(), landingExamples()],
   resolve: {
     // Most-specific first: the plain "minimotor" entry must not swallow the
     // "/physics2d" subpath (string aliases also match "<find>/…" prefixes).

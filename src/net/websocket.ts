@@ -2,6 +2,10 @@ import { Transport, WsConfig } from "./types.js";
 
 // ---------- WebSocket ----------
 
+/** Open a WebSocket `Transport` to `config.url`, connecting immediately.
+ *  Optional `config.reconnectMs`, `config.heartbeatMs`, and
+ *  `config.idleTimeoutMs` add auto-reconnect and dead-link detection; see
+ *  `WsConfig`. Wire `onMessage`/`onState`/`onClose` on the returned transport. */
 export function connect(config: WsConfig): Transport {
   const binaryType: BinaryType = config.binaryType ?? "arraybuffer";
   const reconnectMs = config.reconnectMs ?? 0;

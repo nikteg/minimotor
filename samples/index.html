@@ -179,8 +179,8 @@
 
       /* ---------- code examples ---------- */
       .examples {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+        display: flex;
+        flex-direction: column;
         gap: 18px;
       }
       figure.snippet {
@@ -334,21 +334,30 @@
     <nav>
       <div class="wrap">
         <a class="brand" href="#top">
-          <!-- compact logo -->
-          <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
-            <rect
-              x="2"
-              y="4"
-              width="28"
-              height="24"
-              rx="5"
-              fill="none"
-              stroke="#4ecdc4"
-              stroke-width="2.4"
-            />
-            <rect x="8" y="18" width="4" height="6" rx="1" fill="#4ecdc4" />
-            <rect x="14" y="13" width="4" height="11" rx="1" fill="#4ecdc4" />
-            <rect x="20" y="9" width="4" height="15" rx="1" fill="#ffd166" />
+          <!-- compact logo: a filled moped engine with an m -->
+          <svg width="26" height="26" viewBox="-2 -2 36 36" aria-hidden="true">
+            <g transform="rotate(-7 16 16)">
+              <!-- cooling fins (gaps show the page bg — no bg colour needed) -->
+              <rect x="9.4" y="2.2" width="13.2" height="2.6" rx="1.3" fill="#4ecdc4" />
+              <rect x="9.4" y="5.6" width="13.2" height="2.6" rx="1.3" fill="#4ecdc4" />
+              <rect x="10.6" y="9.0" width="10.8" height="2.6" rx="1.3" fill="#4ecdc4" />
+              <!-- crankcase / engine block -->
+              <rect x="3.6" y="12" width="24.8" height="15.8" rx="5.5" fill="#4ecdc4" />
+              <!-- drive-shaft stub -->
+              <rect x="27.4" y="16.4" width="4.2" height="5" rx="1.5" fill="#4ecdc4" />
+              <!-- the m -->
+              <text
+                x="16"
+                y="26"
+                font-family="ui-monospace, monospace"
+                font-size="16"
+                font-weight="800"
+                fill="#ffd166"
+                text-anchor="middle"
+              >
+                m
+              </text>
+            </g>
           </svg>
           minimotor
         </a>
@@ -362,21 +371,26 @@
     <a id="top"></a>
     <header class="hero">
       <div class="logo-lg">
-        <!-- Big logo: a canvas/stage framing rising "motion" bars -->
-        <svg width="96" height="96" viewBox="0 0 32 32" role="img" aria-label="Minimotor logo">
-          <rect
-            x="1.5"
-            y="3.5"
-            width="29"
-            height="25"
-            rx="6"
-            fill="#16191e"
-            stroke="#4ecdc4"
-            stroke-width="2.2"
-          />
-          <rect x="7" y="18" width="4.2" height="6.5" rx="1.2" fill="#4ecdc4" />
-          <rect x="13.9" y="12.5" width="4.2" height="12" rx="1.2" fill="#4ecdc4" />
-          <rect x="20.8" y="8" width="4.2" height="16.5" rx="1.2" fill="#ffd166" />
+        <!-- Big logo: a filled moped engine (finned cylinder + crankcase) with an m -->
+        <svg width="104" height="104" viewBox="-2 -2 36 36" role="img" aria-label="Minimotor logo">
+          <g transform="rotate(-7 16 16)">
+            <rect x="9.4" y="2.2" width="13.2" height="2.6" rx="1.3" fill="#4ecdc4" />
+            <rect x="9.4" y="5.6" width="13.2" height="2.6" rx="1.3" fill="#4ecdc4" />
+            <rect x="10.6" y="9.0" width="10.8" height="2.6" rx="1.3" fill="#4ecdc4" />
+            <rect x="3.6" y="12" width="24.8" height="15.8" rx="5.5" fill="#4ecdc4" />
+            <rect x="27.4" y="16.4" width="4.2" height="5" rx="1.5" fill="#4ecdc4" />
+            <text
+              x="16"
+              y="26"
+              font-family="ui-monospace, monospace"
+              font-size="16"
+              font-weight="800"
+              fill="#ffd166"
+              text-anchor="middle"
+            >
+              m
+            </text>
+          </g>
         </svg>
       </div>
       <h1><span class="accent">mini</span>motor</h1>
@@ -413,20 +427,7 @@
               <span><b>Move a square</b> — Stage, Loop, Keys, Draw</span>
               <button class="copy" type="button">Copy</button>
             </figcaption>
-            <pre><code data-lang="ts">import { Stage, Loop, Keys, Draw } from "minimotor";
-
-Stage.init("game", { background: "#111" });
-const p = { x: 100, y: 100 };
-
-Loop.run({
-  update() {
-    if (Keys.down("ArrowLeft")) p.x -= 3;
-    if (Keys.down("ArrowRight")) p.x += 3;
-  },
-  draw() {
-    Draw.rect(p.x, p.y, 32, 32, "#4ecdc4");
-  },
-});</code></pre>
+            <pre><code data-example="square"></code></pre>
           </figure>
 
           <figure class="snippet">
@@ -434,18 +435,7 @@ Loop.run({
               <span><b>Tiles &amp; collision</b> — the level is the source</span>
               <button class="copy" type="button">Copy</button>
             </figcaption>
-            <pre><code data-lang="ts">import { Tiles, Collision } from "minimotor";
-
-const level = Tiles.grid("....o....\n#########", {
-  size: 32,
-  legend: { "#": { solid: true } },
-});
-
-const body = { x: 40, y: 0, w: 24, h: 24, vel: { x: 2, y: 0 }, grounded: false };
-
-// swept move-and-slide against the tilemap:
-const hit = Collision.moveAndSlide(body, level);
-if (hit.down) body.vel.y = 0;</code></pre>
+            <pre><code data-example="tiles"></code></pre>
           </figure>
 
           <figure class="snippet">
@@ -453,19 +443,7 @@ if (hit.down) body.vel.y = 0;</code></pre>
               <span><b>Animate a sprite</b> — one image per state</span>
               <button class="copy" type="button">Copy</button>
             </figcaption>
-            <pre><code data-lang="ts">import { Anim, Assets, Draw } from "minimotor";
-
-const art = await Assets.load({ idle: "idle.png", run: "run.png", jump: "jump.png" });
-const hero = Anim.states({
-  idle: { image: art.idle, frames: 4, fps: 6 },
-  run: { image: art.run, frames: 6, fps: 12 },
-  jump: { image: art.jump },
-});
-const anim = hero.play("idle");
-
-const player = { x: 0, y: 0, w: 32, h: 48 };
-anim.set(player.y < 0 ? "jump" : "run"); // typed to the state keys
-Draw.sprite(anim, player, { flipX: true });</code></pre>
+            <pre><code data-example="anim"></code></pre>
           </figure>
 
           <figure class="snippet">
@@ -473,19 +451,7 @@ Draw.sprite(anim, player, { flipX: true });</code></pre>
               <span><b>Follow camera + ECS</b> — data never draws itself</span>
               <button class="copy" type="button">Copy</button>
             </figcaption>
-            <pre><code data-lang="ts">import { Camera, ECS, Draw, Sprites, Tiles, Loop } from "minimotor";
-
-const level = Tiles.grid("#########", { size: 32, legend: { "#": { solid: true } } });
-const skin = { "#": "#3a3f4a" } satisfies Tiles.Skin&lt;typeof level&gt;;
-const ecs = ECS.create();
-const player = { x: 0, y: 0, w: 32, h: 32 };
-
-Camera.follow(player, { world: level.rect, damping: 0.15 });
-Camera.render(() => {
-  Draw.tiles(level, skin);
-  Draw.sprites(ecs.dense(Sprites.Sprite), { alpha: Loop.alpha });
-});
-Draw.text("Score 0", { x: 10, y: 8 }); // screen space</code></pre>
+            <pre><code data-example="camera"></code></pre>
           </figure>
         </div>
       </section>

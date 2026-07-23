@@ -10,15 +10,18 @@
 /** The slice of a WebSocket connection a room uses. `ws`'s WebSocket satisfies
  *  it structurally, so callers pass their sockets with no cast or `ws` import. */
 export interface ServerSocket {
+  /** Send a (already-serialized) string frame to this client. */
   send(data: string): void;
   /** 1 === OPEN in the `ws`/browser convention; `undefined` is treated as open
    *  (test doubles need not model it). */
   readyState?: number;
+  /** Subscribe to a socket event (`"message"`, `"close"`). */
   on(event: string, handler: (...args: unknown[]) => void): void;
 }
 
 /** The slice of a WebSocket *server* a room uses — `ws`'s WebSocketServer. */
 export interface SocketServer {
+  /** Subscribe to new client connections. */
   on(event: "connection", handler: (socket: ServerSocket) => void): void;
 }
 
@@ -26,9 +29,11 @@ export interface SocketServer {
 export interface RoomClient {
   /** Stable id for this connection, unique within the room. */
   readonly id: string;
+  /** The underlying connection. */
   readonly socket: ServerSocket;
 }
 
+/** Lifecycle callbacks for `serve`: join, per-client message, and leave. */
 export interface RoomOptions<Recv> {
   /** A client connected (after it's added to `room.clients`). */
   onJoin?(client: RoomClient): void;
@@ -38,6 +43,7 @@ export interface RoomOptions<Recv> {
   onLeave?(client: RoomClient): void;
 }
 
+/** A server-side room: the live client list plus JSON send/broadcast/relay. */
 export interface Room<Send> {
   /** Currently-connected clients (live array; don't mutate). */
   readonly clients: RoomClient[];

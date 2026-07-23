@@ -6,15 +6,17 @@ import { Bus, Mixer } from "./mixer.js";
 // in advance against audioCtx.currentTime. This keeps the melody steady
 // even if timers jitter, and it won't break if the interval gets throttled.
 
+/** Config for `Music.start` — the music channel's volume, step length, and
+ *  per-step note scheduler. */
 export interface MusicConfig {
-  // Master volume for the music channel.
+  /** Master volume for the music channel `0..1`. */
   volume: number;
-  // Length of one schedule step in milliseconds (e.g. a sixteenth note).
+  /** Length of one schedule step in ms (e.g. a sixteenth note). */
   stepMs: number;
-  // Called for each step; book notes via Music.note/kick/noiseHit.
-  // `when` is the audio clock time (seconds) when the step should play.
+  /** Called for each step; book notes via `Music.note` / `Music.kick` /
+   *  `Music.noiseHit`. `when` is the audio-clock time (seconds) the step plays. */
   schedule: (step: number, when: number) => void;
-  // localStorage key to remember on/off between visits (optional).
+  /** `localStorage` key to remember on/off between visits (optional). */
   storageKey?: string;
 }
 
@@ -86,6 +88,8 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
+/** The procedural music channel: a look-ahead Web Audio step scheduler with a
+ *  persisted on/off toggle. Book notes from a `MusicConfig.schedule`. */
 export const Music = {
   // On/off state is reflected in the music bus gain, so the scheduler can keep
   // running even when muted - switching is instant and click-free.
@@ -93,8 +97,9 @@ export const Music = {
    *  the persisted preference silently go out of sync with this flag. */
   on: true,
 
-  // Starts the music channel. Call on the first user gesture (browsers
-  // require a gesture to unlock audio). Safe to call multiple times.
+  /** Start the music channel with a `MusicConfig`. Call on the first user
+   *  gesture (browsers require one to unlock audio). Idempotent — safe to call
+   *  repeatedly. Restores on/off from `config.storageKey` when given. */
   start(config: MusicConfig): void {
     if (musicStarted) return;
     musicConfig = config;
@@ -120,6 +125,8 @@ export const Music = {
     }
   },
 
+  /** Turn music on/off — reflected in the music bus gain (click-free), so the
+   *  scheduler keeps running while muted. Persists to `storageKey`. */
   setOn(on: boolean): void {
     Music.on = on;
     if (musicConfig?.storageKey) {
@@ -132,7 +139,8 @@ export const Music = {
     musicBus?.setOn(on, 50);
   },
 
-  // Simple synth note with attack/release curve, routed through the music channel.
+  /** Book a synth note at audio-clock time `when`: a `type` oscillator at `freq`
+   *  Hz, peak `vol` `0..1`, over `dur` seconds (attack/release envelope). */
   note(freq: number, dur: number, type: OscillatorType, vol: number, when: number): void {
     if (!audioCtx || !musicBus) return;
     const osc = audioCtx.createOscillator();
@@ -147,7 +155,7 @@ export const Music = {
     osc.stop(when + dur + 0.02);
   },
 
-  // Kick drum: a descending sine tone.
+  /** Book a kick drum at `when` — a short descending sine thump. */
   kick(when: number): void {
     if (!audioCtx || !musicBus) return;
     const osc = audioCtx.createOscillator();
@@ -162,7 +170,8 @@ export const Music = {
     osc.stop(when + 0.25);
   },
 
-  // Hi-hat/snare: filtered noise from a reusable noise buffer.
+  /** Book a hi-hat/snare at `when`: filtered noise (`filterType` at `freq` Hz),
+   *  peak `vol` `0..1`, over `dur` seconds. */
   noiseHit(
     when: number,
     dur: number,

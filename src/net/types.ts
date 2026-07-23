@@ -16,6 +16,8 @@
 
 // ---------- Configuration ----------
 
+/** Configuration for a WebSocket transport (`connect`): URL, reconnect,
+ *  heartbeat, and idle-timeout behaviour. */
 export interface WsConfig {
   /** WebSocket URL (e.g. "wss://server.example/game") */
   url: string;
@@ -36,6 +38,7 @@ export interface WsConfig {
   idleTimeoutMs?: number;
 }
 
+/** WebRTC peer configuration (`createPeer`): ICE servers and trickle mode. */
 export interface RtcConfig {
   /** STUN / TURN servers for NAT traversal */
   iceServers?: RTCIceServer[];
@@ -46,13 +49,18 @@ export interface RtcConfig {
 /** A signaling message exchanged out-of-band between WebRTC peers.
  *  The game is responsible for delivering these (e.g. via a WebSocket relay). */
 export interface Signal {
+  /** Signal kind: `"offer"`/`"answer"` carry `sdp`; `"candidate"` carries `candidate`. */
   type: "offer" | "answer" | "candidate";
+  /** Session description (present on `"offer"`/`"answer"`). */
   sdp?: string;
+  /** A single ICE candidate (present on `"candidate"`). */
   candidate?: RTCIceCandidateInit;
 }
 
 // ---------- Transport interface ----------
 
+/** The common interface for a binary message channel — implemented by both the
+ *  WebSocket and WebRTC transports. */
 export interface Transport {
   /** Send binary data over the transport. Throws if not connected. */
   send(data: Uint8Array): void;

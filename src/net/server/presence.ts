@@ -6,6 +6,7 @@
 // silent — the server-side mirror of the client's `Net.createRoster`, replacing
 // the hand-rolled `Map<id, { …, seenAt }>` + manual timeout sweep.
 
+/** Options for `createPresence`: idle timeout and an injectable clock. */
 export interface PresenceOptions {
   /** Expire an entry not `set`/`touch`ed within this many ms. Default 6000. */
   timeoutMs?: number;
@@ -13,6 +14,8 @@ export interface PresenceOptions {
   now?: () => number;
 }
 
+/** A server-side registry of each player's latest state that expires anyone who
+ *  goes quiet. */
 export interface Presence<T> {
   /** Store `id`'s latest state and stamp it seen now. */
   set(id: string, state: T): void;

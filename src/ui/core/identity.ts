@@ -1,5 +1,6 @@
 // ---------- Widget identity ----------
 
+/** One segment of a widget id — a `string` or `number` — as taken by `ids`. */
 export type IdPart = string | number;
 
 /** Build stable readable widget ids without repeating a prefix.

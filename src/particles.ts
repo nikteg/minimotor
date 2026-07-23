@@ -68,7 +68,12 @@ export interface EmitOptions extends Omit<BurstOptions, "count"> {
 /** A particle system: emit with `burst`/`emit`, render via
  *  `Draw.particles(sys)`. Simulation is pull-derived from the clock. */
 export interface ParticleSystem {
+  /** Emit a one-shot puff of `opts.count` particles at once (impacts, coin
+   *  pickups, death bursts). See `BurstOptions` for shape/spread/color. */
   burst(opts: BurstOptions): void;
+  /** Immediate-mode emission: call EVERY step the effect should burn (e.g. from
+   *  inside `ecs.each`). `opts.chance` gates stateless probabilistic emission of
+   *  one particle per call. */
   emit(opts: EmitOptions): void;
   /** Remove all particles (round reset). */
   clear(): void;
@@ -78,6 +83,7 @@ export interface ParticleSystem {
   render(ctx: CanvasRenderingContext2D): void;
 }
 
+/** Config for a particle system — the clock it lives in and (test) RNG source. */
 export interface ParticleOptions {
   /** The time this system lives in. Default `Clock.game` (freezes on hold). */
   clock?: ClockHandle;
@@ -121,6 +127,9 @@ function dotFor(color: string): HTMLCanvasElement | null {
 const STEP_MS = 1000 / 60;
 const MAX_FOLD_STEPS = 240;
 
+/** Create a particle system. Its simulation is pull-derived from `options.clock`
+ *  (default `Clock.game`, so a held clock freezes it); pass `options.rng` to make
+ *  emission deterministic in tests. Make as many as the draw order needs. */
 function create(options: ParticleOptions = {}): ParticleSystem {
   const rng = options.rng ?? Math.random;
   const clock = options.clock ?? Clock.game;

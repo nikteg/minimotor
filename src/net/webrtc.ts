@@ -17,6 +17,11 @@ function whenGatheringComplete(conn: RTCPeerConnection, cb: () => void) {
   conn.addEventListener("icegatheringstatechange", onChange);
 }
 
+/** Create a WebRTC data-channel peer. The channel is unreliable/unordered
+ *  (UDP-like) for low latency. The caller side calls `connect()` to make the
+ *  offer; both sides relay signaling out-of-band via `onSignal` / `applySignal`
+ *  (see `RtcConfig` for `iceServers` and `trickle`). Use `.transport` to
+ *  send/receive once connected. */
 export function createPeer(config: RtcConfig = {}): {
   transport: Transport;
   /** Call when you want to start the connection (creates an offer). */

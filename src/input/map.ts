@@ -47,6 +47,7 @@ export type PadButton =
   | "rstick-left"
   | "rstick-right";
 
+/** A gamepad binding string: a `PadButton` under the `pad:` prefix. */
 export type PadCode = `pad:${PadButton}`;
 
 /** One entry in an action's binding list: a key code or a pad code. */
@@ -79,6 +80,8 @@ export interface InputMapMethods<A extends string> {
   readonly bindings: Record<A, Binding[]>;
 }
 
+/** A typed action map from `map()`: each action name reads as an `ActionState`,
+ *  plus the `axis`/`vector`/`rebind`/`bindings` methods. */
 export type InputMap<A extends string> = { readonly [K in A]: ActionState } & InputMapMethods<A>;
 
 const PAD_BUTTON_INDEX: Partial<Record<PadButton, number>> = {
@@ -120,6 +123,7 @@ interface KeysLike {
   released(code: string): boolean;
 }
 
+/** Options for `map()`: injectable key, pad and step sources (mainly for tests). */
 export interface InputMapOptions {
   /** Key source — defaults to the engine's `Keys`. Injectable for tests. */
   keys?: KeysLike;

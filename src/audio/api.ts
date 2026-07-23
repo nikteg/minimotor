@@ -57,6 +57,7 @@ function isUnlocked(): boolean {
  *  `Audio.buses.music`) always exist — a settings screen is three sliders +
  *  `Storage`, zero plumbing. Custom buses via `Audio.bus`. */
 export interface BusHandle {
+  /** The bus's name (`"sfx"`, `"music"`, or a custom bus name). */
   readonly name: string;
   /** Channel volume 0..1 (click-free). */
   volume: number;
@@ -174,6 +175,7 @@ export interface SfxSpec {
   layers?: Array<Omit<SfxSpec, "layers"> & { delayMs?: number }>;
 }
 
+/** Per-play overrides for `SfxHandle.play` (pitch, volume, bus). */
 export interface PlayOptions {
   /** Playback-rate style pitch multiplier; a `[min, max]` tuple rolls a
    *  fresh jitter per play (footsteps, coins). */
@@ -184,7 +186,10 @@ export interface PlayOptions {
   bus?: BusHandle;
 }
 
+/** A ready-to-play sound effect built from an `SfxSpec`. */
 export interface SfxHandle {
+  /** Play the sound once. `PlayOptions` tweak pitch/volume/bus per play; a
+   *  pre-unlock play is dropped with a dev warn. */
   play(opts?: PlayOptions): void;
   /** The spec — plain data; tweak it or serialize it. */
   readonly spec: SfxSpec;
@@ -261,6 +266,7 @@ export function sfx<K extends string>(
  *    coin: Audio.Recipes.coin(),
  *    boom: { ...Audio.Recipes.explosion(), ms: 400 }, */
 export const Recipes = {
+  /** A two-note ascending sine sparkle — pickups, coins. */
   coin: (): SfxSpec => ({
     shape: "sine",
     freq: 988,
@@ -268,38 +274,46 @@ export const Recipes = {
     volume: 0.25,
     layers: [{ shape: "sine", freq: 1319, ms: 250, volume: 0.25, delayMs: 80 }],
   }),
+  /** A rising triangle sweep — the classic jump. */
   jump: (): SfxSpec => ({ shape: "triangle", freq: { from: 220, to: 660 }, ms: 180, volume: 0.3 }),
+  /** A short filtered-noise thud, cutoff diving down — impacts. */
   hit: (): SfxSpec => ({
     noise: true,
     ms: 120,
     volume: 0.4,
     filter: { type: "lowpass", freq: { from: 2000, to: 200 } },
   }),
+  /** A long, dark filtered-noise boom. */
   explosion: (): SfxSpec => ({
     noise: true,
     ms: 500,
     volume: 0.5,
     filter: { type: "lowpass", freq: { from: 1200, to: 80 } },
   }),
+  /** A fast descending sawtooth zap. */
   laser: (): SfxSpec => ({
     shape: "sawtooth",
     freq: { from: 1800, to: 220 },
     ms: 150,
     volume: 0.3,
   }),
+  /** A rising square sweep — power-ups, level-ups. */
   powerup: (): SfxSpec => ({
     shape: "square",
     freq: { from: 440, to: 1760 },
     ms: 320,
     volume: 0.3,
   }),
+  /** A short square blip — menu ticks, UI feedback. */
   blip: (): SfxSpec => ({ shape: "square", freq: 880, ms: 80, volume: 0.25 }),
+  /** A tiny bright noise tick — button clicks. */
   click: (): SfxSpec => ({
     noise: true,
     ms: 35,
     volume: 0.2,
     filter: { type: "highpass", freq: 5000 },
   }),
+  /** A swept band-pass noise whoosh — dashes, swipes. */
   whoosh: (): SfxSpec => ({
     noise: true,
     ms: 260,
@@ -310,6 +324,7 @@ export const Recipes = {
 
 // ---------- Engine sound: a looping, revving motor ----------
 
+/** Config for a looping engine sound — idle/rev pitch, gears, drive, level. */
 export interface EngineOptions {
   /** Pitch (Hz) at idle. Default 42. */
   idleHz?: number;
@@ -329,8 +344,9 @@ export interface EngineOptions {
 export interface EngineDrive {
   /** Accelerator 0..1 — drives the audible load/volume. */
   throttle?: number;
-  /** Current speed and its max, mapped to the gear/rev curve. */
+  /** Current speed, mapped through `maxSpeed` to the gear/rev curve. */
   speed?: number;
+  /** Top speed — `speed / maxSpeed` gives the `0..1` rev position. */
   maxSpeed?: number;
   /** Explicit engine load 0..1 (overrides throttle for volume when given). */
   load?: number;
@@ -338,6 +354,7 @@ export interface EngineDrive {
   slip?: number;
 }
 
+/** A running engine sound: feed it `EngineDrive` each frame, `stop` to end. */
 export interface EngineHandle {
   /** Feed telemetry each frame; pitch/gain follow (click-free ramps). */
   update(drive: EngineDrive): void;
@@ -568,19 +585,24 @@ export function engine(opts: EngineOptions = {}): EngineHandle {
 
 // ---------- Music: a decoded track on the music bus ----------
 
+/** Config for `Audio.music` — loop flag and per-track volume. */
 export interface MusicOptions {
+  /** Loop the track. Default `false`. */
   loop?: boolean;
   /** Track volume 0..1 (its own gain, under the music bus). Default 1. */
   volume?: number;
 }
 
+/** A decoded music track on the music bus; `play`/`stop`/`fade` control it. */
 export interface MusicHandle {
   /** Start (idempotent — already-playing is a no-op). Called before the
    *  first gesture, it starts automatically on unlock. */
   play(): void;
+  /** Stop the track and release its source (a fresh `play()` starts over). */
   stop(): void;
   /** Ramp THIS track's volume over `ms` (scene-hook ducking). */
   fade(volume: number, ms: number): void;
+  /** Whether the track is currently sounding. */
   readonly playing: boolean;
 }
 

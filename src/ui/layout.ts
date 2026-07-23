@@ -41,12 +41,19 @@ export function col<R>(a: LayoutOptions | LayoutChildren<R>, b?: LayoutChildren<
 /** A `group` is a bordered/optionally-titled box that also lays its children
  *  out (a column by default). Combines `panel` + `col` in one call. */
 export interface GroupOptions extends LayoutOptions {
+  /** Optional title, drawn in the panel's title strip. */
   title?: string;
+  /** Body layout axis. Default `"col"`. */
   dir?: "row" | "col";
+  /** Panel fill color — passes through to `panel`. */
   bg?: string;
+  /** Panel border color — passes through to `panel`. */
   border?: string;
 }
 
+/** Draw a `panel` and lay its children out inside the body — a `col` by
+ *  default, or a `row` via `dir`. `title`/`bg`/`border` pass through to the
+ *  panel; the body is inset below the title strip and padded by `theme.pad`. */
 export function group<R>(opts: GroupOptions, children: LayoutChildren<R>): R {
   const dir = opts.dir ?? "col";
   const rect = containerRect(dir, opts);

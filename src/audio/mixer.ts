@@ -112,14 +112,17 @@ export interface Filter {
 /** A mixer channel: sources connect to `input`, then flow through any inserted
  *  filters and the channel gain into the master bus. */
 export interface Bus {
+  /** The bus's name (its mixer key, e.g. `"sfx"` / `"music"`). */
   readonly name: string;
   /** Head of the chain — connect sound sources here. */
   readonly input: AudioNode;
   /** Channel volume 0..1 (click-free ramp, default 20ms). */
   setVolume(v: number, rampMs?: number): void;
+  /** Current channel volume `0..1`. */
   readonly volume: number;
   /** Mute/unmute without losing the volume setting. */
   setOn(on: boolean, rampMs?: number): void;
+  /** Whether the channel is unmuted. */
   readonly on: boolean;
   /** Insert a dynamic biquad filter (input → filters… → gain); returns a handle
    *  to sweep it live. */
@@ -137,17 +140,22 @@ export interface Bus {
 
 /** A shared effect that buses send into; its wet output returns to the master. */
 export interface Effect {
+  /** The effect's name (its mixer key, e.g. `"hall"`). */
   readonly name: string;
   /** The effect's input node (buses' sends connect here). */
   readonly input: AudioNode;
   /** Wet output level 0..1. */
   setWet(level: number, rampMs?: number): void;
+  /** Current wet output level `0..1`. */
   readonly wet: number;
 }
 
 /** A feedback delay/echo effect. */
 export interface DelayEffect extends Effect {
+  /** Delay/echo time in `seconds` (click-free ramp). */
   setTime(seconds: number, rampMs?: number): void;
+  /** Feedback `amount` `0..1` — longer values lengthen the echo tail
+   *  (click-free ramp). */
   setFeedback(amount: number, rampMs?: number): void;
 }
 
@@ -511,6 +519,7 @@ export const Mixer = {
     masterVolume = v;
     if (masterGain && masterOn) rampParam(masterGain.gain, v, rampMs);
   },
+  /** Whether the master is unmuted. */
   get on(): boolean {
     return masterOn;
   },

@@ -18,12 +18,17 @@
 /** The minimal body the car drives. Rotation in radians; velocities in px/s;
  *  `spin` is angular velocity in rad/s. `Physics2D.Body2D` satisfies this. */
 export interface DrivableBody {
+  /** Heading in radians. */
   rot: number;
+  /** Velocity x, px/s. */
   vx: number;
+  /** Velocity y, px/s. */
   vy: number;
+  /** Angular velocity, rad/s. */
   spin: number;
 }
 
+/** Tuning for `car()`: engine, grip, steering and drag. All optional. */
 export interface CarConfig {
   /** Engine acceleration, px/s². Default 920. */
   acceleration?: number;
@@ -37,6 +42,7 @@ export interface CarConfig {
   drag?: number;
 }
 
+/** Per-step driver input passed to `car.drive()`. */
 export interface DriveInput {
   /** -1 (reverse/brake) .. 1 (accelerate). */
   throttle?: number;
@@ -46,6 +52,7 @@ export interface DriveInput {
   handbrake?: boolean;
 }
 
+/** An arcade-car controller returned by `car()`: read-only telemetry plus `drive()`. */
 export interface Car {
   /** Smoothed steer angle (radians-ish), for rendering the wheels. */
   readonly steerAngle: number;

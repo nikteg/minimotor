@@ -6,7 +6,11 @@ const WINDOW = 60; // frames of history (matches the perf tracker)
  *  renders right-aligned bars scaled to the window's max. Ring buffer —
  *  no allocations after creation. */
 export interface Sparkline {
+  /** Record one sample, evicting the oldest once at capacity. */
   push(v: number): void;
+  /** Draw the history as bars in the box `x`,`y`,`w`,`h`, filled with `color`.
+   *  Heights scale to the window's max; newest bar sits flush with the right
+   *  edge. No-op until the first `push`. */
   draw(
     ctx: CanvasRenderingContext2D,
     x: number,
@@ -17,6 +21,8 @@ export interface Sparkline {
   ): void;
 }
 
+/** Create a fixed-capacity sparkline backed by a ring buffer — `capacity`
+ *  samples of history (default `WINDOW`), no allocations after creation. */
 export function createSparkline(capacity = WINDOW): Sparkline {
   const vals = new Float64Array(capacity);
   let head = 0; // next slot to overwrite

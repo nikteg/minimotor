@@ -18,6 +18,7 @@ import { clamp } from "../mathf.js";
 /** Anything with a position; a Rect-shaped target is followed by its center. */
 export type FollowTarget = { x: number; y: number; w?: number; h?: number };
 
+/** Config for a camera lens — world bounds, follow/deadzone/damping, zoom, fit. */
 export interface CameraOptions {
   /** World rect the camera clamps its view to; `{w, h}` means origin 0,0.
    *  Omit for an unclamped camera. */
@@ -43,6 +44,7 @@ export interface CameraOptions {
   steps?: () => number;
 }
 
+/** Options for `Camera.render` — the screen sub-rect (`into`) the lens maps onto. */
 export interface RenderOptions {
   /** Destination rect in SCREEN space. The lens maps its world rect into
    *  this rect (uniform scale, centered) and clips to it. Omitted: the whole
@@ -50,10 +52,13 @@ export interface RenderOptions {
   into?: Rect;
 }
 
+/** A world→screen lens: position, zoom, follow, shake, and space conversions. */
 export interface CameraLens {
   /** Top-left of the visible world rect (before shake). */
   x: number;
+  /** Top-left `y` of the visible world rect (before shake). */
   y: number;
+  /** Magnification. `>1` zooms in; `1` is identity. */
   zoom: number;
   /** The visible world rect — culling, minimap viewfinders. Reused scratch
    *  object: read, don't hold. */
@@ -366,36 +371,51 @@ export const Camera = {
   layer(factor: number, fn: () => void): void {
     def().layer(factor, fn);
   },
+  /** Impact shake on the default camera: `amplitude` px decaying linearly
+   *  over `ms`. Restacking keeps the stronger amplitude and restarts the fade. */
   shake(amplitude: number, ms: number): void {
     def().shake(amplitude, ms);
   },
+  /** Jump the default camera straight to its desired position (scene entry —
+   *  no visible lerp). */
   snap(): void {
     def().snap();
   },
+  /** Screen point → world point through the default camera.
+   *  `Camera.toWorld(Pointer)` is mouse picking. */
   toWorld(p: Vec2, out?: Vec2): Vec2 {
     return def().toWorld(p, out);
   },
+  /** World point → screen point through the default camera (off-screen
+   *  markers, HUD callouts). */
   toScreen(p: Vec2, out?: Vec2): Vec2 {
     return def().toScreen(p, out);
   },
+  /** Top-left `x` of the default camera's visible world rect (before shake).
+   *  Reading folds pending steps forward; writing sets it directly. */
   get x(): number {
     return def().x;
   },
   set x(v: number) {
     def().x = v;
   },
+  /** Top-left `y` of the default camera's visible world rect (before shake).
+   *  Reading folds pending steps forward; writing sets it directly. */
   get y(): number {
     return def().y;
   },
   set y(v: number) {
     def().y = v;
   },
+  /** Default camera magnification. `>1` zooms in; `1` is identity. */
   get zoom(): number {
     return def().zoom;
   },
   set zoom(v: number) {
     def().zoom = v;
   },
+  /** The default camera's visible world rect — culling, minimap viewfinders.
+   *  Reused scratch object: read, don't hold. */
   get rect(): Rect {
     return def().rect;
   },

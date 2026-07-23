@@ -38,14 +38,17 @@ export type ButtonVariant = "default" | "primary" | "danger" | "ghost";
 
 /** Style knobs for `button()`. Every color defaults from the theme. */
 export interface ButtonStyle {
+  /** Full font string for the label. Default bold `theme.fontSize + 2`. */
   font?: string;
   /** Preset look — see `ButtonVariant`. Default `"default"`. */
   variant?: ButtonVariant;
   /** Label color. */
   color?: string;
-  /** Fill when idle / hovered / held down. */
+  /** Fill when idle. */
   bg?: string;
+  /** Fill when hovered. */
   bgHover?: string;
+  /** Fill when held down (pressed). */
   bgActive?: string;
   /** Corner radius override (px). Defaults to `theme.radius`. */
   radius?: number;
@@ -59,11 +62,15 @@ export interface ButtonOptions extends ButtonStyle {
   id?: string;
   /** Keyboard traversal order. Negative values exclude the button. */
   tabIndex?: number;
+  /** Top-left x in logical px. */
   x?: number;
+  /** Top-left y in logical px. */
   y?: number;
   /** Omit to auto-size to the label (+ padding). */
   w?: number;
+  /** Button height in logical px. Default `30`. */
   h?: number;
+  /** Text drawn centered on the button. */
   label: string;
   /** Place in this layout stack — supplies x/y (and h); auto width. */
   at?: Stack;
@@ -181,14 +188,23 @@ export function button(
 /** A framed box with an optional title strip — visual grouping for menus,
  *  dialogs and HUD clusters. Purely decorative; it captures no input. */
 export interface PanelOptions {
+  /** Left edge in px. */
   x: number;
+  /** Top edge in px. */
   y: number;
+  /** Width in px. */
   w: number;
+  /** Height in px. */
   h: number;
+  /** Optional title; when set, a title strip is drawn along the top. */
   title?: string;
+  /** Fill color. Default `theme.panelBg`. */
   bg?: string;
+  /** Border color. Default `theme.border`. */
   border?: string;
+  /** Title text color. Default `theme.accent`. */
   titleColor?: string;
+  /** Title font. Default a bold `theme.fontSize + 1` UI font. */
   font?: string;
 }
 
@@ -255,6 +271,10 @@ function panelContainer<R>(opts: PanelContainerOptions, children: () => R): R {
   return out;
 }
 
+/** Draw a framed box (value form, `PanelOptions`) or — when passed a
+ *  `children` callback — a self-laying-out panel (`PanelContainerOptions`) that
+ *  flows children down a padded column and can `anchor` to the screen. Optional
+ *  `title` strip; captures no input either way. */
 export function panel(opts: PanelOptions): void;
 export function panel(ctx: CanvasRenderingContext2D, opts: PanelOptions): void;
 export function panel<R>(opts: PanelContainerOptions, children: () => R): R;
@@ -295,19 +315,27 @@ export function panel<R>(
 export interface ToggleOptions {
   /** Stable identity enables Tab focus and keyboard activation. */
   id?: string;
+  /** Keyboard traversal order. Negative values exclude the toggle. */
   tabIndex?: number;
+  /** Grayed out and unclickable. */
   disabled?: boolean;
+  /** Top-left x in logical px. */
   x?: number;
+  /** Top-left y in logical px. */
   y?: number;
   /** Slot height when placed in a layout (the box centers within it). */
   h?: number;
+  /** Text drawn right of the box (also part of the click target). */
   label: string;
   /** Current value — pass your state in, assign the return value back. */
   on: boolean;
   /** Place in this layout stack — supplies x/y; width is the box + label. */
   at?: Stack;
+  /** Box side length in px. Default `16`. */
   size?: number;
+  /** Label font. Default `uiFont()`. */
   font?: string;
+  /** Label color. Default `theme.text`. */
   color?: string;
   /** Shown near the pointer after hovering a moment (see `drawTips`). */
   tooltip?: string;
@@ -381,18 +409,24 @@ export function toggle(
 export interface TabsOptions {
   /** Stable identity enables Tab focus and arrow-key selection. */
   id?: string;
+  /** Position in the keyboard tab order. */
   tabIndex?: number;
+  /** Left edge in px. */
   x?: number;
+  /** Top edge in px. */
   y?: number;
   /** Total width, split equally between the tabs. Omit to auto-size every
    *  cell to the widest label. */
   w?: number;
+  /** Strip height in px. Default `30`. */
   h?: number;
+  /** Tab labels, left to right. */
   items: string[];
   /** Current tab index — pass your state in, assign the return value back. */
   active: number;
   /** Place in this layout stack — supplies x/y (and h); auto width. */
   at?: Stack;
+  /** Label font. Default a bold `theme.fontSize` UI font. */
   font?: string;
 }
 
@@ -462,15 +496,25 @@ export function tabs(a: CanvasRenderingContext2D | TabsOptions, b?: TabsOptions)
 export interface ListItemOptions {
   /** Stable identity enables Tab focus and Enter/Space activation. */
   id?: string;
+  /** Position in the keyboard tab order. */
   tabIndex?: number;
+  /** Skip input and focus; the row is drawn without hover/click. */
   disabled?: boolean;
+  /** Left edge in px. */
   x: number;
+  /** Top edge in px. */
   y: number;
+  /** Width in px. */
   w: number;
+  /** Height in px. */
   h: number;
+  /** Draw the selected background plus an accent bar down the left edge. */
   selected?: boolean;
+  /** Idle background. Default transparent (no fill). */
   bg?: string;
+  /** Hover background. Default a faint white tint. */
   bgHover?: string;
+  /** Selected background. Default a faint accent tint. */
   bgSelected?: string;
   /** Shown near the pointer after hovering a moment (see `drawTips`). */
   tooltip?: string;
@@ -519,13 +563,19 @@ export function listItem(
 
 /** A horizontal value slider. */
 export interface SliderOptions {
+  /** Top-left x in logical px. */
   x?: number;
+  /** Top-left y in logical px. */
   y?: number;
+  /** Widget width in px (label + track). Default `140`. */
   w?: number;
+  /** Slot height in px. Default `30`. */
   h?: number;
+  /** Place in this layout stack — supplies x/y (and h). */
   at?: Stack;
-  /** Value range. Default 0..1. */
+  /** Range minimum. Default `0`. */
   min?: number;
+  /** Range maximum. Default `1`. */
   max?: number;
   /** Current value — pass your state in, assign the return value back. */
   value: number;
@@ -537,9 +587,13 @@ export interface SliderOptions {
   format?: (v: number) => string;
   /** Identity for drag tracking and keyboard focus. Defaults to the position. */
   id?: string;
+  /** Keyboard traversal order. Negative values exclude the slider. */
   tabIndex?: number;
+  /** Grayed out; ignores pointer and arrow keys. */
   disabled?: boolean;
+  /** Label/value font. Default `uiFont()`. */
   font?: string;
+  /** Label and value-text color. Default `theme.text`. */
   color?: string;
 }
 
@@ -640,8 +694,11 @@ export function slider(
 
 /** Style knobs for `spinner()`. */
 export interface SpinnerOptions {
+  /** Arc radius in px. Default `8`. */
   r?: number;
+  /** Stroke color. Default `theme.accent`. */
   color?: string;
+  /** Stroke width in px. Default `3`. */
   lineWidth?: number;
 }
 

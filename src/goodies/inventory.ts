@@ -4,9 +4,13 @@ import { clamp } from "../mathf.js";
 // Moving items between slots the way players expect: fill an empty slot, merge
 // same-item stacks up to their cap, or swap two different stacks.
 
+/** One occupied inventory slot: `count` of `item`, capped at `max` per stack. */
 export interface ItemStack<T> {
+  /** What the stack holds. */
   item: T;
+  /** How many are in this stack. */
   count: number;
+  /** Per-stack cap — a stack never merges past this. */
   max: number;
 }
 

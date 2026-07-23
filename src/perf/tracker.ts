@@ -1,8 +1,14 @@
+/** A frame-timing snapshot: `fps` plus last/min/max/avg frame durations. */
 export interface PerfStats {
+  /** Frames per second, rounded, from the rolling average frame time. */
   fps: number;
+  /** The most recent frame's duration in ms, rounded to 0.1. */
   frameMs: number;
+  /** Shortest frame time over the window, in ms (rounded to 0.1). */
   minMs: number;
+  /** Longest frame time over the window, in ms (rounded to 0.1) — the spike. */
   maxMs: number;
+  /** Mean frame time over the window, in ms (rounded to 0.1). */
   avgMs: number;
 }
 

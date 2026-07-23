@@ -21,9 +21,11 @@ export type TransitionRender = (
   vp: Pick<Viewport, "w" | "h">,
 ) => void;
 
+/** A scene transition as plain data: total `durationMs` plus how to `render` coverage. */
 export interface Transition {
   /** Full duration in ms — half covering, half revealing. */
   durationMs: number;
+  /** Draws the coverage overlay at coverage `t` — see `TransitionRender`. */
   render: TransitionRender;
 }
 

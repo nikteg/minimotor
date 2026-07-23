@@ -14,13 +14,18 @@ const isOpen = (s: ServerSocket): boolean => s.readyState === undefined || s.rea
 export interface MatchRoom<Send> {
   /** The join code that names this room. */
   readonly code: string;
+  /** Live membership of this room (don't mutate). */
   readonly clients: RoomClient[];
+  /** JSON-encode and send to one client in this room. */
   send(client: RoomClient, msg: Send): void;
+  /** JSON-encode and send to every client in this room. */
   broadcast(msg: Send): void;
   /** Send to every client in the room except `from`. */
   relay(from: RoomClient, msg: Send): void;
 }
 
+/** Configuration for `matchmake`: the `route` that assigns a client to a room
+ *  code, plus per-room join/message/leave callbacks. */
 export interface MatchOptions<Send, Recv> {
   /** Map a message from a not-yet-joined client to a room code — usually the
    *  first `{ join: code }` message. Return `null` to leave the client
@@ -35,6 +40,7 @@ export interface MatchOptions<Send, Recv> {
   onLeave?(client: RoomClient, room: MatchRoom<Send>): void;
 }
 
+/** A running matchmaker: read-only access to the currently open `MatchRoom`s. */
 export interface Matchmaker<Send> {
   /** The currently non-empty rooms. */
   readonly rooms: MatchRoom<Send>[];

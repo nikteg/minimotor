@@ -45,6 +45,7 @@ export interface Sweep {
   /** Surface normal of the hit face on `b`: (±1,0) for a vertical face,
    *  (0,±1) for a horizontal one. */
   nx: number;
+  /** `y` component of that hit-face normal (see `nx`). */
   ny: number;
 }
 
@@ -100,8 +101,11 @@ export function sweptAABB(a: Rect, dx: number, dy: number, b: Rect): Sweep | nul
 /** A contact: unit normal (pointing OUT of the obstacle, toward the mover) and
  *  penetration `depth` — add `nx*depth, ny*depth` to the mover to separate it. */
 export interface Contact {
+  /** `x` of the unit normal, pointing out of the obstacle toward the mover. */
   nx: number;
+  /** `y` of the unit normal, pointing out of the obstacle toward the mover. */
   ny: number;
+  /** Penetration depth along the normal; slide `nx*depth, ny*depth` to separate. */
   depth: number;
 }
 
@@ -156,10 +160,15 @@ export function separateCircles(
 
 /** Which walls a body bounced off this step. */
 export interface BounceFaces {
+  /** True if any wall was bounced off this step (`left || right || top || bottom`). */
   hit: boolean;
+  /** Bounced off the left wall of `bounds` this step. */
   left: boolean;
+  /** Bounced off the right wall of `bounds` this step. */
   right: boolean;
+  /** Bounced off the top wall of `bounds` this step. */
   top: boolean;
+  /** Bounced off the bottom wall of `bounds` this step. */
   bottom: boolean;
 }
 
@@ -210,6 +219,8 @@ export type Solid = Rect & { oneWay?: boolean };
 /** Anything that can answer "which solids are near this area?" — tile maps
  *  implement this for O(1) broadphase. `out` is appended to and returned. */
 export interface SolidSource {
+  /** Append every `Solid` overlapping `area` (broadphase) to `out` and return
+   *  it. Over-reporting is fine; the sweep discards non-hits. */
   solidsNear(area: Rect, out: Solid[]): Solid[];
 }
 
@@ -221,17 +232,24 @@ export type Solids = Solid[] | SolidSource | Array<Solid | SolidSource>;
  *  the first blocking surface — 0 when contact-free. Reused scratch object:
  *  read, don't hold. */
 export interface Contacts {
+  /** Blocked moving up — the mover's top hit a ceiling (bonk). */
   up: boolean;
+  /** Blocked moving down — landed on a floor/platform (`grounded`). */
   down: boolean;
+  /** Blocked moving left — hit a wall on the left. */
   left: boolean;
+  /** Blocked moving right — hit a wall on the right. */
   right: boolean;
+  /** Entry speed (px/step) into the first blocking surface; `0` if contact-free. */
   impact: number;
 }
 
 /** A body moveAndSlide can drive: position + size + velocity + grounded.
  *  Structural — any plain object with the fields qualifies. */
 export interface MoverBody extends Rect {
+  /** Velocity in px/step; `moveAndSlide` zeroes the blocked components. */
   vel: { x: number; y: number };
+  /** Resting on a floor — set by `moveAndSlide` to its `down` contact. */
   grounded: boolean;
 }
 

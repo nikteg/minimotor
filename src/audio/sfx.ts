@@ -6,10 +6,9 @@ import { Mixer } from "./mixer.js";
 // Sound effects route through the mixer's built-in "sfx" bus (mute/volume is a
 // single knob; add filters/sends via `Mixer.bus("sfx")`).
 
-// All sound effects should go through this: sound MUST NEVER crash the
-// game (e.g. when AudioContext is missing or blocked by the browser).
-// A thrown error here would otherwise bubble up through update() and
-// stop the entire game loop.
+/** Run a `SfxBuilder`, wiring its nodes into the `"sfx"` bus. Crash-safe: a
+ *  missing or browser-blocked `AudioContext` is swallowed (silence beats a
+ *  frozen game — a throw here would bubble through `update()` and kill the loop). */
 export function playSfx(build: SfxBuilder): void {
   try {
     const ctx = ensureAudio();
@@ -135,9 +134,11 @@ export function tone(opts: ToneOptions): void {
  *  presets, so every game doesn't re-implement the same blip. All presets are
  *  crash-safe (playSfx). */
 export const Sfx = {
+  /** Whether the SFX bus is unmuted. */
   get on(): boolean {
     return Mixer.bus("sfx").on;
   },
+  /** Mute/unmute all SFX (click-free). */
   setOn(on: boolean): void {
     Mixer.bus("sfx").setOn(on);
   },

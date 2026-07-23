@@ -32,6 +32,7 @@ type UppercaseLetter =
   | "Z";
 type Digit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
 
+/** Well-known `KeyboardEvent.code` values as a union (open via `string & {}`) for `Keys`. */
 export type KeyCode =
   | `Key${UppercaseLetter}`
   | `Digit${Digit}`

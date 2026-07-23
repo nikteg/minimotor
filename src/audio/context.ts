@@ -10,8 +10,10 @@ export type SfxBuilder = (ctx: AudioContext, now: number, out: AudioNode) => voi
 
 export let audioCtx: AudioContext | null = null;
 
-// Lazy init: AudioContext must not be created before a user gesture,
-// so always call via playSfx/Music.start (which runs on first action).
+/** Get the shared `AudioContext`, creating it lazily on first call and resuming
+ *  it when `suspended`. Must run from a user gesture (browsers block audio
+ *  before one) — reach it via `playSfx` / `Music.start`, which fire on the first
+ *  action. */
 export function ensureAudio(): AudioContext {
   if (!audioCtx) {
     const AC =

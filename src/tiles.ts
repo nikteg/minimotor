@@ -34,6 +34,7 @@ export interface TileSpec {
   oneWay?: boolean;
 }
 
+/** Options for `grid()` (exported as `Tiles.GridOptions`): tile `size` and char `legend`. */
 export interface GridOptions<L extends Record<string, TileSpec>> {
   /** World size of one tile, in px. */
   size: number;
@@ -46,7 +47,9 @@ export interface GridOptions<L extends Record<string, TileSpec>> {
 export interface Level<C extends string = string> {
   /** Tile size in px. */
   readonly size: number;
+  /** Grid width in tiles. */
   readonly cols: number;
+  /** Grid height in tiles. */
   readonly rows: number;
   /** The world rect (`cols*size` × `rows*size` at origin) — feed it to
    *  `Camera.follow({ world })` and `Vec2.clampRect`. */
@@ -72,18 +75,26 @@ export interface Level<C extends string = string> {
 
 /** A resolved source cell of a tileset image. */
 export interface Cell {
+  /** The tileset image this cell is cut from. */
   image: CanvasImageSource;
+  /** Source sub-rect x in `image`, px. */
   sx: number;
+  /** Source sub-rect y in `image`, px. */
   sy: number;
+  /** Source sub-rect width in `image`, px. */
   sw: number;
+  /** Source sub-rect height in `image`, px. */
   sh: number;
 }
 
 /** Everything a selector may consider: the cell coords and whether a
  *  neighbor holds the SAME legend char (autotiling connectivity). */
 export interface SelectorCell {
+  /** Cell column. */
   cx: number;
+  /** Cell row. */
   cy: number;
+  /** The legend char at this cell. */
   char: string;
   /** True when the cell at (cx+dx, cy+dy) holds the same char. */
   neighbor(dx: number, dy: number): boolean;
@@ -101,6 +112,7 @@ export type SkinValue = string | Cell | Selector | null;
  *  completeness against the legend. */
 export type Skin<L> = L extends Level<infer C> ? Record<C, SkinValue> : never;
 
+/** Options for `Tiles.set()`: source cell `size` and a `names` → `[col, row]` map. */
 export interface TileSetOptions<N extends string> {
   /** Source cell size in the image, px. */
   size: number;

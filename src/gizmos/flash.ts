@@ -9,6 +9,7 @@
 import { animate, type Motion } from "../anim/index.js";
 import type { ClockHandle } from "../clock.js";
 
+/** A hit-flash latch returned by `flash()`: `hit()` to trigger, read `value` (1 → 0). */
 export interface Flash {
   /** Trigger the flash (intensity jumps to 1). */
   hit(): void;

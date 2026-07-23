@@ -262,6 +262,8 @@ export function focusNext(): void {
   moveWidgetFocus(1);
 }
 
+/** Move to the previous widget in the most recently drawn tab order. The
+ *  reverse of `focusNext`. */
 export function focusPrevious(): void {
   moveWidgetFocus(-1);
 }
@@ -294,15 +296,20 @@ export interface FloatText {
 /** A pool of rising, fading texts. Pure — drive `advance(dt)` yourself (the
  *  `UI` facade wires it to the fixed step for you). */
 export interface FloatTextManager {
+  /** Spawn a rising text at `(x, y)`; `opts` tunes drift/lifetime/color/font. */
   spawn(text: string, x: number, y: number, opts?: FloatTextOptions): void;
   /** Age every text by `dt` ms; expired ones are removed. */
   advance(dt: number): void;
   /** Draw all live texts, centered on their (drifting) position. */
   draw(ctx: CanvasRenderingContext2D): void;
+  /** Remove every text at once. */
   clear(): void;
+  /** Number of live texts currently in the pool. */
   readonly size: number;
 }
 
+/** Create a fresh, empty `FloatTextManager` pool. The `UI` facade keeps a
+ *  shared one (`UI.floatText`); make your own for an isolated set of texts. */
 export function createFloatText(): FloatTextManager {
   const texts: FloatText[] = [];
   return {
@@ -358,20 +365,38 @@ export function createFloatText(): FloatTextManager {
 
 // ---------- Text input ----------
 
+/** Inputs to `textInput`: the controlled `value`, geometry, and native
+ *  `<input>` hints. */
 export interface TextInputOptions {
   /** Stable identity. May be omitted inside `UI.idScope()`. */
   id?: string;
+  /** Current text — controlled; pass your state in, assign the result's
+   *  `value` back. */
   value: string;
+  /** Top-left x in logical px. */
   x?: number;
+  /** Top-left y in logical px. */
   y?: number;
+  /** Field width in px. Default `180`. */
   w?: number;
+  /** Field height in px. Default `32`. */
   h?: number;
+  /** Place in this layout stack — supplies x/y (and h). */
   at?: Stack;
+  /** Muted text shown while empty and unfocused. */
   placeholder?: string;
+  /** Grayed out; ignores input. */
   disabled?: boolean;
+  /** Max character count (native `maxLength`). */
   maxLength?: number;
+  /** Native input `type` — `"password"` masks with bullets; the rest steer
+   *  mobile keyboards/validation. Default `"text"`. */
   type?: "text" | "password" | "email" | "number" | "search";
+  /** Native `inputmode` hint for the on-screen keyboard (e.g. `"numeric"`,
+   *  `"decimal"`). */
   inputMode?: "text" | "decimal" | "numeric" | "tel" | "search" | "email" | "url";
+  /** Accessible name for the hidden `<input>`. Falls back to `placeholder`,
+   *  then `id`. */
   ariaLabel?: string;
   /** Keyboard traversal order. Negative values exclude the field. */
   tabIndex?: number;
@@ -379,10 +404,16 @@ export interface TextInputOptions {
   blurOnSubmit?: boolean;
 }
 
+/** What `textInput` returns this frame: current `value` plus changed/submitted/
+ *  focused flags. */
 export interface TextInputResult {
+  /** The field's current text — assign it back to your state. */
   value: string;
+  /** `true` for the one frame the text changed. */
   changed: boolean;
+  /** `true` for the one frame Enter was pressed. */
   submitted: boolean;
+  /** `true` while the field holds keyboard focus. */
   focused: boolean;
 }
 
@@ -529,33 +560,57 @@ export function textInput(
 
 // ---------- Select dropdown ----------
 
+/** One entry in a `select` dropdown: a `label` and the `value` it yields. */
 export interface SelectOption<T> {
+  /** Text shown for this option. */
   label: string;
+  /** Value returned when this option is chosen. */
   value: T;
+  /** Non-selectable (grayed in the list). */
   disabled?: boolean;
 }
 
+/** Inputs to `select`: the controlled `value`, the `options` list, geometry,
+ *  and native `<select>` hints. */
 export interface SelectOptions<T> {
   /** Stable identity. May be omitted inside `UI.idScope()`. */
   id?: string;
+  /** Current value — controlled; matched against `options` by `Object.is`.
+   *  Assign the result's `value` back. */
   value: T;
+  /** The selectable options (label + value). */
   options: readonly SelectOption<T>[];
+  /** Top-left x in logical px. */
   x?: number;
+  /** Top-left y in logical px. */
   y?: number;
+  /** Control width in px. Default `180`; the drop menu matches it. */
   w?: number;
+  /** Control height in px. Default `32`. */
   h?: number;
+  /** Place in this layout stack — supplies x/y (and h). */
   at?: Stack;
+  /** Grayed out; won't open. */
   disabled?: boolean;
+  /** Shown when no option matches `value`. Default `"Select…"`. */
   placeholder?: string;
+  /** Max option rows shown at once; the list windows around the current
+   *  selection. Default `8`. */
   maxVisible?: number;
+  /** Accessible name for the hidden `<select>`. Falls back to `id`. */
   ariaLabel?: string;
   /** Keyboard traversal order. Negative values exclude the select. */
   tabIndex?: number;
 }
 
+/** What `select` returns this frame: the selected `value` plus changed/open
+ *  flags. */
 export interface SelectResult<T> {
+  /** Currently selected value — assign it back to your state. */
   value: T;
+  /** `true` for the one frame the selection changed. */
   changed: boolean;
+  /** `true` while the drop menu is open. */
   open: boolean;
 }
 

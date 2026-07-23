@@ -11,6 +11,7 @@ import { serve, type Room, type RoomClient, type SocketServer } from "./room.js"
 
 /** Client → server: relay `signal` to peer `to`. */
 export interface SignalRelay {
+  /** Discriminant tag; always `"signal"`. */
   type: "signal";
   /** Target peer id (learned from `welcome`/`peer-join`). */
   to: string;

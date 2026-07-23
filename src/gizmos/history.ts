@@ -4,6 +4,7 @@
 // to restore. Both ends clone, so stored states can't be mutated behind your
 // back, and the buffer is bounded so long sessions don't grow without limit.
 
+/** A capped stack of cloned state snapshots for undo, returned by `undoStack()`. */
 export interface UndoStack<S> {
   /** Snapshot the current state (call BEFORE applying a move). */
   push(state: S): void;
@@ -13,6 +14,7 @@ export interface UndoStack<S> {
   readonly canUndo: boolean;
   /** Number of snapshots held. */
   readonly size: number;
+  /** Drop all snapshots (new level, reset). */
   clear(): void;
 }
 

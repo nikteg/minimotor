@@ -4,47 +4,82 @@ import { Loop } from "../engine/index.js";
 
 // ---------- Drag and drop ----------
 
+/** Inputs to `dragSource`: the draggable rect, its identity, and the `payload`
+ *  it carries. */
 export interface DragSourceOptions<T> {
+  /** Stable identity for this source across frames. */
   id: string;
+  /** Draggable rect left edge in px. */
   x: number;
+  /** Draggable rect top edge in px. */
   y: number;
+  /** Draggable rect width in px. */
   w: number;
+  /** Draggable rect height in px. */
   h: number;
+  /** Value carried to the drop target; retained only while dragging. */
   payload: T;
+  /** Skip input — the rect is not draggable. */
   disabled?: boolean;
 }
 
+/** What `dragSource` returns this frame: hover and active-drag flags. */
 export interface DragSourceState {
+  /** Pointer is over the source rect. */
   hovered: boolean;
+  /** This source is the one currently being dragged. */
   dragging: boolean;
 }
 
+/** Inputs to `dropTarget`: the target rect, its identity, and an optional
+ *  `accepts` predicate. */
 export interface DropTargetOptions<T> {
+  /** Stable identity for this target across frames. */
   id: string;
+  /** Target rect left edge in px. */
   x: number;
+  /** Target rect top edge in px. */
   y: number;
+  /** Target rect width in px. */
   w: number;
+  /** Target rect height in px. */
   h: number;
+  /** Predicate deciding whether a dragged `payload` may drop here. Omit to
+   *  accept everything. */
   accepts?: (payload: T, sourceId: string) => boolean;
 }
 
+/** A completed drop: which source and target, and the `payload` transferred. */
 export interface DropResult<T> {
+  /** `id` of the source the payload came from. */
   sourceId: string;
+  /** `id` of the target it was dropped on. */
   targetId: string;
+  /** The dragged payload. */
   payload: T;
 }
 
+/** What `dropTarget` returns this frame: hover/can-drop flags and the landed
+ *  `DropResult` on the release frame. */
 export interface DropTargetState<T> {
+  /** A drag is currently over this target. */
   hovered: boolean;
+  /** Hovered AND the payload passed `accepts` — a drop would land. */
   canDrop: boolean;
+  /** Set on the release frame when a drop landed here, else `null`. */
   dropped: DropResult<T> | null;
 }
 
+/** The in-flight drag: its source, `payload`, and a suggested preview position
+ *  for rendering. */
 export interface DraggedItem<T> {
+  /** `id` of the source being dragged. */
   sourceId: string;
+  /** The payload being dragged. */
   payload: T;
   /** Suggested preview top-left, preserving where the source was grabbed. */
   x: number;
+  /** Suggested preview top (see `x`). */
   y: number;
 }
 

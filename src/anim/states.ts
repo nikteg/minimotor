@@ -61,6 +61,8 @@ export interface StateCursor<K extends string = string> {
   readonly done: boolean;
 }
 
+/** A shared, immutable multi-image state kit (one image per state); `play`
+ *  starts a cheap per-entity `StateCursor`. */
 export interface StateKit<K extends string = string> {
   /** Start a playback cursor. `clock` defaults to `Clock.game`. */
   play(initial: K, opts?: { clock?: ClockHandle }): StateCursor<K>;

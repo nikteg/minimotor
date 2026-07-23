@@ -11,7 +11,9 @@
 import type { Rect } from "./engine/index.js";
 
 export interface Vec2 {
+  /** Horizontal component. */
   x: number;
+  /** Vertical component. */
   y: number;
 }
 
@@ -41,6 +43,9 @@ function clampRect(v: Vec2, xOrRect: number | Rect, y?: number, w?: number, h?: 
   return v;
 }
 
+/** Structural 2D vector math over anything with `x`/`y` (`add`, `sub`, `scale`,
+ *  `len`, `dot`, `dist`, `angle`, `lerp`, …). Producers write into `out` when
+ *  given, else mutate the first argument — hot paths stay allocation-free. */
 export const Vec2 = {
   /** a + b, into `out` (default: mutates `a`). */
   add(a: Vec2, b: Vec2, out?: Vec2): Vec2 {

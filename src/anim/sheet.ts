@@ -25,12 +25,17 @@ import { Clock, type ClockHandle } from "../clock.js";
 /** A rectangular region of the sheet image (px). Matches the `sx/sy/sw/sh`
  *  fields of the ECS `Sprite` component. */
 export interface FrameRect {
+  /** Source x of the frame's top-left in the sheet image (px). */
   sx: number;
+  /** Source y of the frame's top-left in the sheet image (px). */
   sy: number;
+  /** Source width of the frame (px). */
   sw: number;
+  /** Source height of the frame (px). */
   sh: number;
 }
 
+/** One named state's frames within a sheet's grid (a row and its frame count). */
 export interface SheetStateSpec {
   /** Grid row holding this state's frames. */
   row: number;
@@ -43,6 +48,8 @@ export interface SheetStateSpec {
   loop?: boolean;
 }
 
+/** Config for `Anim.sheet` — the source frame size plus the named states packed
+ *  into the grid. */
 export interface SheetOptions<K extends string> {
   /** Source frame size in the image, in px. */
   frame: { w: number; h: number };
@@ -50,11 +57,14 @@ export interface SheetOptions<K extends string> {
   states: Record<K, SheetStateSpec>;
 }
 
+/** An image source usable as a sheet: a `CanvasImageSource` with known
+ *  `width`/`height`. */
 export type SheetImage = CanvasImageSource & { width: number; height: number };
 
 /** A per-entity playback head over a sheet. Everything derives from the
  *  cursor's clock at read time. */
 export interface SheetCursor<K extends string = string> {
+  /** The sheet this cursor plays over. */
   readonly sheet: Sheet<K>;
   /** The active state name. */
   readonly state: K;
@@ -71,8 +81,11 @@ export interface SheetCursor<K extends string = string> {
   readonly done: boolean;
 }
 
+/** A single-image, named-state sprite sheet; `play` starts a per-entity cursor. */
 export interface Sheet<K extends string = string> {
+  /** The source image sliced by this sheet. */
   readonly image: SheetImage;
+  /** Source frame size in the image, in px. */
   readonly frame: { w: number; h: number };
   /** Start a playback cursor. `clock` defaults to `Clock.game`. */
   play(initial: K, opts?: { clock?: ClockHandle }): SheetCursor<K>;

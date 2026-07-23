@@ -6,11 +6,15 @@
 import { clamp } from "../mathf.js";
 import { Clock, type ClockHandle } from "../clock.js";
 
+/** An in-order checkpoint/lap tracker, returned by `checkpointRoute()`. */
 export interface CheckpointRoute {
+  /** Index of the next checkpoint expected (0-based; wraps to `0` each lap). */
   readonly next: number;
+  /** Laps completed so far. */
   readonly lap: number;
   /** Accept a checkpoint only in order. Returns true when accepted. */
   visit(index: number): boolean;
+  /** Reset to lap `0`, next checkpoint `0`. */
   reset(): void;
 }
 
@@ -44,9 +48,11 @@ export function checkpointRoute(checkpoints: number): CheckpointRoute {
   };
 }
 
+/** A time-regenerating pool of charges, returned by `charges()`. */
 export interface Charges {
   /** Whole charges available right now. */
   readonly count: number;
+  /** Capacity — `count` and `add`/`refill` never exceed this. */
   readonly max: number;
   /** Progress toward the next charge, 0..1 (1 when full). */
   readonly fraction: number;

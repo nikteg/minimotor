@@ -27,16 +27,26 @@ export interface TableColumn<Row> {
 
 /** Current sort: which column `key`, ascending (`1`) or descending (`-1`). */
 export interface TableSort {
+  /** `key` of the column currently sorted on. */
   key: string;
+  /** Sort direction: `1` ascending, `-1` descending. */
   dir: 1 | -1;
 }
 
+/** Inputs to `table`: geometry, `columns`, `rows`, and the controlled
+ *  sort/scroll/selection state. */
 export interface TableOptions<Row> {
+  /** Left edge in px. */
   x: number;
+  /** Top edge in px. */
   y: number;
+  /** Width in px (header strip + rows), including the scrollbar gutter. */
   w: number;
+  /** Total height in px, header strip included. */
   h: number;
+  /** Column definitions, left to right. */
   columns: TableColumn<Row>[];
+  /** The data rows; left untouched — the table sorts a copy. */
   rows: Row[];
   /** Current sort — pass state in, assign the result's `sort` back. */
   sort: TableSort;
@@ -53,9 +63,12 @@ export interface TableOptions<Row> {
   selected?: Row | null;
   /** Scrollbar width when the list overflows. Default 10. */
   scrollW?: number;
+  /** Stable prefix for the header, row, list and scrollbar widget ids. */
   id?: string;
 }
 
+/** What `table` returns this frame: the updated sort, scroll offset, and
+ *  selection to assign back. */
 export interface TableResult<Row> {
   /** Updated sort — a header click may have changed the key/direction. */
   sort: TableSort;

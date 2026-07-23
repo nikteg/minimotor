@@ -11,6 +11,7 @@
 
 import { Clock, type ClockHandle } from "../clock.js";
 
+/** A live tween handle: `value` and `done` derive from the owning clock on read. */
 export interface Motion {
   /** Current animated value — derived from the clock on read. */
   readonly value: number;
@@ -20,6 +21,7 @@ export interface Motion {
   reset(): void;
 }
 
+/** Config for `Anim.animate` — a tween from `from` to `to` over `ms`. */
 export interface AnimateOptions {
   /** Start value. Default 0. */
   from?: number;
@@ -125,9 +127,14 @@ export function sequence(
  *  finish; read the individual `tracks` for their values (`value` returns
  *  the first track's). */
 export interface Parallel extends Motion {
+  /** The member motions, one per spec, in the order given. Read each track's
+   *  `value` to drive independent properties (e.g. `x`, `y`, `scale`). */
   readonly tracks: readonly Motion[];
 }
 
+/** Start a group of `animate` motions together on one clock. `done` when every
+ *  track finishes; `value` returns the first track's — read `tracks` for the
+ *  rest. Per-spec clocks are ignored (the group owns the clock). */
 export function parallel(
   specs: Omit<AnimateOptions, "clock">[],
   opts: { clock?: ClockHandle } = {},

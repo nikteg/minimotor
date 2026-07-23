@@ -9,9 +9,13 @@ import { clip } from "./layout.js";
  *  off-by-one in `first`/`last` is a classic bug). The callback draws one row
  *  into its rect; pass your scroll `offset` in and store the returned value. */
 export interface ListOptions {
+  /** Left edge in px. */
   x: number;
+  /** Top edge in px. */
   y: number;
+  /** Width in px (includes the scrollbar gutter when one is shown). */
   w: number;
+  /** Visible height in px; rows outside it are windowed out. */
   h: number;
   /** Row height in px. */
   rowH: number;
@@ -23,9 +27,13 @@ export interface ListOptions {
   gap?: number;
   /** Scrollbar width when one is needed. Default 10. */
   scrollW?: number;
+  /** Stable prefix for the scrollbar's widget id. */
   id?: string;
 }
 
+/** Draw a windowed vertical list per `ListOptions`, calling `row(index, rect)`
+ *  only for the currently visible rows. Handles clipping, the scrollbar and the
+ *  mouse wheel; returns the new (clamped) scroll `offset` to store back. */
 export function list(
   opts: ListOptions,
   row: (index: number, rect: { x: number; y: number; w: number; h: number }) => void,
@@ -68,16 +76,24 @@ export function list(
  *  rect to the callback. Removes the column-width arithmetic that `row`/`col`
  *  still force for grids. */
 export interface GridOptions {
+  /** Left edge of the grid area, px. */
   x: number;
+  /** Top edge of the grid area, px. */
   y: number;
+  /** Total width of the grid area, px (split across `cols`). */
   w: number;
+  /** Total height of the grid area, px (split across `rows`). */
   h: number;
+  /** Number of columns. */
   cols: number;
+  /** Number of rows. */
   rows: number;
   /** Gap between cells in px. Default 0. */
   gap?: number;
 }
 
+/** Split `w`×`h` into an even `cols`×`rows` cell grid (minus `gap`) and call
+ *  `cell(rect, index, col, row)` for each cell in row-major order. */
 export function grid(
   opts: GridOptions,
   cell: (
@@ -106,9 +122,11 @@ export function grid(
 
 /** A vertical scrollbar bound to a content/view extent. */
 export interface ScrollbarOptions {
-  /** Track position + height (the bar is vertical). */
+  /** Track left x in logical px (the bar is vertical). */
   x: number;
+  /** Track top y in logical px. */
   y: number;
+  /** Track height in logical px. */
   h: number;
   /** Track width. Default 10. */
   w?: number;
@@ -123,7 +141,9 @@ export interface ScrollbarOptions {
   /** Identity for drag tracking across frames. Defaults to the track
    *  position — pass an explicit id if the bar moves while dragged. */
   id?: string;
+  /** Track (groove) color. Default `rgba(255,255,255,0.07)`. */
   track?: string;
+  /** Thumb color when idle. Default `theme.border` (accent while hovered/dragged). */
   thumb?: string;
 }
 

@@ -23,6 +23,7 @@ export interface Wheel {
   across: number;
 }
 
+/** Tuning for `skidmarks()`: mark lifetime, density, wheel layout and stroke. */
 export interface SkidmarksOptions {
   /** Seconds a mark lives before fully fading. `Infinity` = permanent. Default 9. */
   life?: number;
@@ -45,6 +46,7 @@ export interface SkidmarksOptions {
   width?: number;
 }
 
+/** Per-step input to `Skidmarks.trace()`: whether the tyres are scrubbing and how dark. */
 export interface TraceInput {
   /** Are the tyres scrubbing this step? (No mark laid when false.) */
   marking: boolean;
@@ -52,6 +54,7 @@ export interface TraceInput {
   alpha?: number;
 }
 
+/** A skid-mark gadget returned by `skidmarks()`: `trace()` each step, `draw()` under the car. */
 export interface Skidmarks {
   /** Advance the marks by `dt`, and — if `marking` — lay a segment under each
    *  tyre from its previous position. Call once per fixed step. */

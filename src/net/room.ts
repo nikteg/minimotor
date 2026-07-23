@@ -34,6 +34,8 @@ interface Envelope {
   d: unknown; // payload
 }
 
+/** Options for `join`: the room to group into and how long to await the relay's
+ *  welcome, plus the inherited `RtcConfig`. */
 export interface RoomOptions extends RtcConfig {
   /** Room name — matchmaking folds into join. Appended to the signal URL as
    *  `?room=`; grouping requires relay support (the default dev relay hosts
@@ -53,6 +55,7 @@ export interface Room<Msg = unknown> {
   /** True while we are the relaying host (internal detail, exposed for
    *  debugging/net meters). */
   readonly hosting: boolean;
+  /** True once `close()` has torn the room down. */
   readonly closed: boolean;
   /** Send to every other member. */
   send(msg: Msg): void;
@@ -60,6 +63,7 @@ export interface Room<Msg = unknown> {
   onMessage(fn: (from: string, msg: Msg) => void): () => void;
   /** Membership changes (relay-tracked). Return unsubscribe. */
   onJoin(fn: (id: string) => void): () => void;
+  /** A member left. Returns unsubscribe. */
   onLeave(fn: (id: string) => void): () => void;
   /** Tear the room down (channels + signaling socket). */
   close(): void;
@@ -228,6 +232,8 @@ interface SyncEnvelope<T> {
   s: T;
 }
 
+/** Options for `sync`: broadcast rate, the local-state sampler, and the
+ *  interpolation delay applied to remote peers. */
 export interface SyncOptions<T> {
   /** Broadcasts per second. Default 15. */
   hz?: number;
@@ -246,7 +252,9 @@ export interface SyncOptions<T> {
 
 /** The other members' interpolated states — iterate it in draw. */
 export interface PeerStates<T> extends Iterable<T & { id: string }> {
+  /** How many peers currently have a state. */
   readonly size: number;
+  /** The ids of those peers. */
   readonly ids: string[];
   /** Stop broadcasting and listening (also stops when the room closes). */
   stop(): void;

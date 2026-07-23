@@ -5,6 +5,7 @@
 
 import { Clock, type ClockHandle } from "../clock.js";
 
+/** A decaying hit-streak multiplier returned by `combo()`. */
 export interface Combo {
   /** Register a successful hit: extends the streak and refreshes the window. */
   hit(): void;

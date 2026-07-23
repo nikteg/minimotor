@@ -17,9 +17,12 @@ export interface Theme {
   textDim: string;
   /** Disabled label text. */
   textDisabled: string;
-  /** Widget fill, idle / hovered / held. */
+  /** Widget fill when idle. */
   bg: string;
+  /** Widget fill when hovered. */
   bgHover: string;
+  /** Widget fill when held/pressed — also the recessed tone for insets
+   *  (checkbox well) and disabled/inactive fills. */
   bgActive: string;
   /** Widget border when not hovered. */
   border: string;
@@ -51,6 +54,8 @@ export interface Theme {
   textPad: number;
 }
 
+/** The built-in `Theme` — the base every `setTheme` override is merged over
+ *  (so overrides never compound) and the reset target for `getTheme`. */
 export const defaultTheme: Theme = {
   font: "monospace",
   fontSize: 13,

@@ -42,6 +42,7 @@ export interface SceneSpec {
   holdsTime?: boolean;
 }
 
+/** Options for `SceneStack.go` — an optional covering `transition`. */
 export interface GoOptions {
   /** Cover the swap with a transition (`Transitions.fade(300)`): the overlay
    *  covers the screen first, the swap happens behind it. */
@@ -69,11 +70,16 @@ export interface SceneStack<K extends string> {
   draw(ctx: CanvasRenderingContext2D): void;
 }
 
+/** Config for `Scenes.create` — the clock modal pushes hold. */
 export interface SceneStackOptions {
   /** The clock modal pushes hold. Default `Clock.game`. */
   clock?: ClockHandle;
 }
 
+/** Build a typed scene stack from a `map` of named `SceneSpec`s. The first key
+ *  is the opening scene (entered immediately). The result is structurally
+ *  `GameCallbacks`, so `Loop.run(scenes)` is the whole handoff. Throws if `map`
+ *  is empty. */
 function create<K extends string>(
   map: Record<K, SceneSpec>,
   options: SceneStackOptions = {},

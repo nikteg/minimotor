@@ -59,8 +59,11 @@ export function popover(a: CanvasRenderingContext2D | PopoverOptions, b?: Popove
 
 /** A centered dialog over a dimmed backdrop. */
 export interface ModalOptions {
+  /** Dialog width in px. */
   w: number;
+  /** Dialog height in px. */
   h: number;
+  /** Optional title, drawn in the panel's title strip. */
   title?: string;
 }
 
@@ -104,6 +107,7 @@ export function modal(
 export interface ConfirmOptions {
   /** Stable prefix for keyboard-focusable action buttons. */
   id?: string;
+  /** Dialog title, drawn in the panel's title strip. */
   title?: string;
   /** Body lines. The first is drawn in the primary text color, the rest
    *  dimmed — lead + detail. */
@@ -207,16 +211,23 @@ export function confirm(
 export interface DialogOptions {
   /** Stable prefix for keyboard-focusable choices. */
   id?: string;
+  /** Speaker name, drawn in the box's title strip. */
   speaker?: string;
+  /** Body text, one entry per line. */
   lines: string[];
   /** Optional response/action labels. Returns the clicked label. */
   choices?: string[];
+  /** Box left. Default centers the box horizontally. */
   x?: number;
+  /** Box top. Default pins the box near the bottom of the viewport. */
   y?: number;
+  /** Box width. Default `min(680, viewport width - 24)`. */
   w?: number;
+  /** Box height. Default sizes to the lines (plus choices row). */
   h?: number;
   /** Optional portrait drawn on the left. */
   portrait?: CanvasImageSource;
+  /** Portrait square size in px. Default `72`. Ignored without `portrait`. */
   portraitSize?: number;
   /** Small footer hint when there are no explicit choices. */
   hint?: string;

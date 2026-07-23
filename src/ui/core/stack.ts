@@ -5,6 +5,7 @@ export interface StackOptions {
   /** Starting corner. With `align: "end"` this is the FAR edge (right edge
    *  for rows, bottom for columns) and slots grow backwards from it. */
   x: number;
+  /** Starting corner (see `x`). */
   y: number;
   /** Main axis. Default `"row"`. */
   dir?: "row" | "col";
@@ -154,8 +155,11 @@ export function place(
 export interface LayoutOptions {
   /** Explicit rect — required for a ROOT container (no parent layout). */
   x?: number;
+  /** Explicit top (see `x`). */
   y?: number;
+  /** Explicit width. When nested, the slot reserved from the parent. */
   w?: number;
+  /** Explicit height. When nested in a column parent, the row's own height. */
   h?: number;
   /** Gap between children in px. Default 8. */
   gap?: number;

@@ -16,6 +16,8 @@ export function load<T>(key: string, fallback: T): T {
   }
 }
 
+/** Store any JSON-serializable `value` under `key`. Never throws — if storage
+ *  is unavailable or the quota is exceeded, it silently does nothing. */
 export function save(key: string, value: unknown): void {
   try {
     localStorage.setItem(key, JSON.stringify(value));

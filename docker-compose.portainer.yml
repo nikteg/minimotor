@@ -1,7 +1,16 @@
 services:
+  # nginx needs BOTH the external `nginx` network (for the reverse proxy) and
+  # the compose `default` network (to reach the `ws` sidecar). Declaring
+  # `networks:` here REPLACES the implicit default attachment, so `default`
+  # must be listed explicitly — otherwise nginx lands on `nginx` only, cannot
+  # resolve `ws`, and (see tools/nginx.conf) the whole site goes down with it.
   minimotor_web:
     networks:
+      - default
       - nginx
+
+  # `ws` is not overridden, so it keeps its implicit `default` attachment —
+  # the shared network nginx reaches it on.
 
 networks:
   nginx:

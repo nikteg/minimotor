@@ -40,6 +40,69 @@ const checker = program.getTypeChecker();
 const docOf = (sym) =>
   sym ? ts.displayPartsToString(sym.getDocumentationComment(checker)).trim() : "";
 
+// A re-exported namespace (`import * as Anim from "..."`) keeps its doc on the
+// import STATEMENT, which the symbol API doesn't expose (the alias resolves
+// straight to the module, past the comment). Read the leading `/** … */` block
+// off the declaration's source text instead. Returns the comment body with the
+// `*` gutter stripped, or "" if there's no JSDoc block.
+function leadingBlockDoc(sym) {
+  // `export { Anim }` re-exports the imported namespace: the export specifier
+  // carries no comment, but the `import * as Anim` it aliases does. Collect
+  // declarations across the immediate-alias chain so we reach that import.
+  const decls = [];
+  let s = sym;
+  const seen = new Set();
+  while (s && !seen.has(s)) {
+    seen.add(s);
+    for (const d of s.declarations ?? []) decls.push(d);
+    s = s.getFlags() & ts.SymbolFlags.Alias ? checker.getImmediateAliasedSymbol(s) : null;
+  }
+  for (const decl of decls) {
+    // The module's own SourceFile declaration has no import comment to read.
+    if (ts.isSourceFile(decl)) continue;
+    // Walk up to the statement that carries the leading comment (NamespaceImport
+    // → ImportClause → ImportDeclaration).
+    let node = decl;
+    while (node.parent && !ts.isSourceFile(node.parent)) node = node.parent;
+    const src = node.getSourceFile();
+    const text = src.getFullText();
+    const ranges = ts.getLeadingCommentRanges(text, node.getFullStart()) ?? [];
+    for (let i = ranges.length - 1; i >= 0; i--) {
+      const r = ranges[i];
+      if (r.kind !== ts.SyntaxKind.MultiLineCommentTrivia) continue;
+      const raw = text.slice(r.pos, r.end);
+      if (!raw.startsWith("/**")) continue;
+      const body = raw
+        .slice(3, -2)
+        .split("\n")
+        .map((l) => l.replace(/^\s*\* */, "").trimEnd())
+        .join("\n")
+        .trim();
+      if (body) return body;
+    }
+  }
+  return "";
+}
+
+// A facade object built from shorthands (`Draw = { rect, circle, … }`) emits
+// its members in the `.d.ts` as `rect: typeof rect` — the property carries NO
+// JSDoc of its own; the docs live on the referenced function's declaration. So
+// when a function-valued property has no doc, follow its TYPE to the function
+// symbol and use ITS doc. Guarded to call signatures so a plain `foo: Rect`
+// prop never inherits the `Rect` interface's doc by mistake.
+function memberDoc(sym, type) {
+  const own = docOf(sym);
+  if (own) return own;
+  if (type && type.getCallSignatures().length > 0) {
+    const target = type.getSymbol?.();
+    if (target && target !== sym) {
+      const d = docOf(target);
+      if (d) return d;
+    }
+  }
+  return "";
+}
+
 const sig = (type) =>
   checker
     .typeToString(
@@ -90,7 +153,11 @@ function describe(rawSym) {
       .filter((m) => !(m.getFlags() & ts.SymbolFlags.Alias) || checker.getAliasedSymbol(m))
       .map((mem) => memberEntry(mem))
       .filter(Boolean);
-    return { name, kind: "namespace", doc: docOf(sym), members };
+    // A re-exported namespace (`import * as Anim`) carries its doc on the
+    // import statement, which the symbol API skips past — read it off the
+    // source text. Fall back to the module's / alias's own doc comment.
+    const doc = leadingBlockDoc(rawSym) || docOf(rawSym) || docOf(sym);
+    return { name, kind: "namespace", doc, members };
   }
   if (isObjectNamespace) {
     return {
@@ -126,7 +193,7 @@ function describe(rawSym) {
       decl && ts.isTypeAliasDeclaration(decl)
         ? decl.type.getText().replace(/import\([^)]*\)\./g, "")
         : sig(checker.getDeclaredTypeOfSymbol(sym));
-    return { name, kind: "type", doc: docOf(sym), signature: `= ${rhs}`, members: [] };
+    return { name, kind: "type", doc: docOf(sym), signature: rhs, members: [] };
   }
   // Fallback: a plain const value.
   return { name, kind: "value", doc: docOf(sym), signature: type ? sig(type) : "", members: [] };
@@ -173,13 +240,13 @@ function memberEntry(m, depth = 0) {
     const own = type.getProperties().filter(isOwnMember);
     if (own.length && own.some(isMethod)) {
       const members = own.map((p) => memberEntry(p, depth + 1)).filter(Boolean);
-      if (members.length) return { name, kind: "namespace", doc: docOf(sym), members };
+      if (members.length) return { name, kind: "namespace", doc: memberDoc(sym, type), members };
     }
   }
   // Methods render as `name(args) => ret`; other props as `name: Type`.
   const isFn = type.getCallSignatures().length > 0;
   const signature = isFn ? name + sig(type) : `${name}: ${sig(type)}`;
-  return { name, kind: isFn ? "function" : "value", signature, doc: docOf(sym) };
+  return { name, kind: isFn ? "function" : "value", signature, doc: memberDoc(sym, type) };
 }
 
 // ---- collect all modules ----
@@ -201,20 +268,30 @@ for (const [label, file] of entries) {
 // ---- render ----
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
+// Turn any identifier that names a documented export into a link to its anchor.
+// Runs on a token's TEXT (Shiki bundles names with surrounding punctuation like
+// `StageOptions) ` into one token, so whole-token matching misses them).
+function linkifyText(text) {
+  let out = "";
+  let last = 0;
+  let m;
+  const RE = /[A-Za-z_][A-Za-z0-9_]*/g;
+  while ((m = RE.exec(text))) {
+    out += esc(text.slice(last, m.index));
+    const target = linkTarget.get(m[0]);
+    out += target ? `<a class="tlink" href="#${esc(target)}">${esc(m[0])}</a>` : esc(m[0]);
+    last = m.index + m[0].length;
+  }
+  return out + esc(text.slice(last));
+}
+
 // Highlight a TS snippet with Shiki → inline-colored spans (works for a single
 // signature line and for multi-line code examples alike).
 function highlightSig(code) {
   const { tokens } = shiki.codeToTokens(code, { lang: "typescript", theme: THEME });
   return tokens
     .map((line) =>
-      line
-        .map((t) => {
-          const span = `<span style="color:${t.color}">${esc(t.content)}</span>`;
-          // A token that names a documented export → link to its anchor.
-          const target = linkTarget.get(t.content);
-          return target ? `<a class="tlink" href="#${esc(target)}">${span}</a>` : span;
-        })
-        .join(""),
+      line.map((t) => `<span style="color:${t.color}">${linkifyText(t.content)}</span>`).join(""),
     )
     .join("\n");
 }
@@ -429,7 +506,7 @@ function navMembers(members, path, depth = 0) {
       // Sub-namespaces show their qualified name (Audio.Music); leaf methods the
       // bare name. Slightly indented under their namespace, each with a kind icon.
       const label = isSub ? id : m.name;
-      const self = `<a class="sub" style="padding-left:${20 + depth * 12}px" href="#${esc(id)}" data-name="${esc(id.toLowerCase())}"><span class="ico ${m.kind}">${ICON[m.kind] ?? "?"}</span>${esc(label)}</a>`;
+      const self = `<a class="sub" style="padding-left:${14 + depth * 11}px" href="#${esc(id)}" data-name="${esc(id.toLowerCase())}"><span class="ico ${m.kind}">${ICON[m.kind] ?? "?"}</span><span class="lbl">${esc(label)}</span></a>`;
       return isSub ? self + navMembers(m.members, id, depth + 1) : self;
     })
     .join("");
@@ -437,7 +514,7 @@ function navMembers(members, path, depth = 0) {
 const nav = allItems
   .map(
     (it) =>
-      `<a href="#${esc(it.slug)}" data-name="${esc(it.label.toLowerCase())}"><span class="ico ${it.kind}">${ICON[it.kind] ?? "?"}</span>${esc(it.label)}</a>` +
+      `<a href="#${esc(it.slug)}" data-name="${esc(it.label.toLowerCase())}"><span class="ico ${it.kind}">${ICON[it.kind] ?? "?"}</span><span class="lbl">${esc(it.label)}</span></a>` +
       // Only namespaces list members in the sidebar (functions / sub-namespaces);
       // interface data-fields would just be noise.
       (it.kind === "namespace" && it.members?.length ? navMembers(it.members, it.slug) : ""),
@@ -466,9 +543,11 @@ const html = `<!doctype html>
   .layout{display:grid;grid-template-columns:230px 1fr;max-width:1180px;margin:0 auto}
   /* align-self:start stops the grid from stretching the aside to full content
      height, which would defeat position:sticky. */
-  aside{align-self:start;border-right:1px solid var(--border);padding:20px 12px;position:sticky;top:57px;height:calc(100vh - 57px);overflow:auto}
-  aside a{display:flex;align-items:center;gap:7px;color:var(--dim);font-size:.85rem;padding:3px 8px;border-radius:6px;font-family:ui-monospace,monospace}
+  aside{align-self:start;border-right:1px solid var(--border);padding:20px 10px;position:sticky;top:57px;height:calc(100vh - 57px);overflow-y:auto;overflow-x:hidden}
+  aside a{display:flex;align-items:center;gap:7px;min-width:0;color:var(--dim);font-size:.85rem;padding:3px 8px;border-radius:6px;font-family:ui-monospace,monospace}
   aside a:hover{color:var(--text);background:var(--panel)}
+  /* Ellipsis-truncate long member names so the sidebar never scrolls sideways. */
+  aside a .lbl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   /* member sub-links: slightly indented, dimmer; icon distinguishes the kind */
   aside a.sub{font-size:.8rem;color:var(--dim)}
   aside a.sub:hover{color:var(--text)}
@@ -504,17 +583,40 @@ const html = `<!doctype html>
   /* token colors come from Shiki as inline styles */
   .mdoc{display:block;color:var(--dim);font-size:.82rem;margin-top:3px}
   footer{color:var(--dim);text-align:center;padding:30px;border-top:1px solid var(--border)}
+  /* Header buttons: hidden on desktop, shown on mobile. */
+  .hbtn{display:none;background:var(--panel);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:1rem;line-height:1;padding:7px 10px;cursor:pointer}
+  .hbtn:hover{border-color:var(--accent)}
+  #backdrop{display:none}
+  @media(max-width:760px){
+    header{padding:0 12px;gap:10px}
+    .hbtn{display:inline-flex;align-items:center}
+    #searchBtn{margin-left:auto}
+    .rlabel{display:none}
+    /* Filter collapses behind the search button; it drops down over the header
+       when opened. */
+    header input{display:none}
+    header.search-open input{display:block;position:absolute;left:12px;right:12px;top:9px;width:auto;margin:0}
+    .layout{grid-template-columns:1fr}
+    /* Sidebar becomes an off-canvas drawer toggled by the menu button. */
+    aside{position:fixed;top:56px;left:0;bottom:0;height:auto;width:min(82vw,300px);background:var(--bg);z-index:9;transform:translateX(-100%);transition:transform .22s ease;padding:16px 12px}
+    body.nav-open aside{transform:none}
+    body.nav-open #backdrop{display:block;position:fixed;inset:56px 0 0 0;background:rgba(0,0,0,.5);z-index:8}
+    main{padding:22px 18px 70px}
+  }
 </style></head>
 <body>
 <header>
+  <button id="menuBtn" class="hbtn" aria-label="Toggle navigation" aria-expanded="false">☰</button>
   <a class="brand" href="../">
-    <svg width="24" height="24" viewBox="0 0 32 32"><rect x="2" y="4" width="28" height="24" rx="5" fill="none" stroke="#4ecdc4" stroke-width="2.4"/><rect x="8" y="18" width="4" height="6" rx="1" fill="#4ecdc4"/><rect x="14" y="13" width="4" height="11" rx="1" fill="#4ecdc4"/><rect x="20" y="9" width="4" height="15" rx="1" fill="#ffd166"/></svg>
+    <svg width="26" height="26" viewBox="-2 -2 36 36"><g transform="rotate(-7 16 16)"><rect x="9.4" y="2.2" width="13.2" height="2.6" rx="1.3" fill="#4ecdc4"/><rect x="9.4" y="5.6" width="13.2" height="2.6" rx="1.3" fill="#4ecdc4"/><rect x="10.6" y="9.0" width="10.8" height="2.6" rx="1.3" fill="#4ecdc4"/><rect x="3.6" y="12" width="24.8" height="15.8" rx="5.5" fill="#4ecdc4"/><rect x="27.4" y="16.4" width="4.2" height="5" rx="1.5" fill="#4ecdc4"/><text x="16" y="26" font-family="ui-monospace,monospace" font-size="16" font-weight="800" fill="#ffd166" text-anchor="middle">m</text></g></svg>
     minimotor
   </a>
-  <span style="color:var(--dim)">API reference</span>
+  <span class="rlabel" style="color:var(--dim)">API reference</span>
+  <button id="searchBtn" class="hbtn" aria-label="Search" aria-expanded="false">🔍</button>
   <input id="filter" type="search" placeholder="Filter types…" autocomplete="off" list="api-names" />
   <datalist id="api-names">${datalist}</datalist>
 </header>
+<div id="backdrop"></div>
 <div class="layout">
   <aside id="nav">${nav}</aside>
   <main>
@@ -527,6 +629,21 @@ const html = `<!doctype html>
   f.addEventListener("input",()=>{const q=f.value.toLowerCase();
     for(const el of items) el.style.display = !q||el.dataset.name.includes(q)?"":"none";
     for(const el of links) el.style.display = !q||el.dataset.name.includes(q)?"":"none";
+  });
+  // Mobile: menu button toggles the nav drawer; search button reveals the filter.
+  const body=document.body,menuBtn=document.getElementById("menuBtn"),
+    searchBtn=document.getElementById("searchBtn"),header=document.querySelector("header"),
+    backdrop=document.getElementById("backdrop");
+  const setNav=(open)=>{body.classList.toggle("nav-open",open);menuBtn.setAttribute("aria-expanded",open);};
+  menuBtn.addEventListener("click",()=>setNav(!body.classList.contains("nav-open")));
+  backdrop.addEventListener("click",()=>setNav(false));
+  // Close the drawer after picking an entry.
+  document.getElementById("nav").addEventListener("click",(e)=>{if(e.target.closest("a"))setNav(false);});
+  searchBtn.addEventListener("click",()=>{
+    const open=!header.classList.contains("search-open");
+    header.classList.toggle("search-open",open);
+    searchBtn.setAttribute("aria-expanded",open);
+    if(open)f.focus(); else {f.value="";f.dispatchEvent(new Event("input"));}
   });
 </script>
 </body></html>`;

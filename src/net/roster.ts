@@ -5,6 +5,8 @@ import { Interpolator, createInterpolator } from "./interpolation.js";
 // the same bookkeeping: make an interpolator on first sight, stamp last-seen,
 // prune peers that went quiet, and detect joins. `createRoster` is that, once.
 
+/** Options for `createRoster`: interpolation delay, idle timeout, blend, and an
+ *  injectable clock. */
 export interface RosterOptions<T> {
   /** Interpolation delay passed to each peer's interpolator (see
    *  `createInterpolator`). */
@@ -17,6 +19,8 @@ export interface RosterOptions<T> {
   now?: () => number;
 }
 
+/** Tracks remote peers: interpolates each one's state, detects joins, and
+ *  prunes any that go quiet. */
 export interface Roster<T> {
   /** Feed a state update for peer `id` (creating its interpolator on first
    *  sight and stamping last-seen). `{ isNew }` flags a just-joined peer. */
@@ -28,8 +32,11 @@ export interface Roster<T> {
   prune(atMs?: number): string[];
   /** Interpolated `[id, state]` for every peer that has a sample yet. */
   sample(atMs?: number): Array<[string, T]>;
+  /** The tracked peer ids. */
   readonly ids: string[];
+  /** How many peers are tracked. */
   readonly size: number;
+  /** Forget every peer. */
   clear(): void;
 }
 

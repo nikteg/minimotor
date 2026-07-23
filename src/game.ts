@@ -18,6 +18,8 @@ export interface ScoreTracker {
   save(): void;
 }
 
+/** Make a `ScoreTracker` persisting `best` under `storageKey` in localStorage
+ *  (loaded now, re-saved whenever the score passes it). */
 export function createScoreTracker(storageKey: string): ScoreTracker {
   let _score = 0;
   let _best = Storage.load(storageKey, 0);
@@ -102,6 +104,9 @@ export interface LetterboxView {
   contains(sx: number, sy: number, r: { x: number; y: number; w: number; h: number }): boolean;
 }
 
+/** Build a `LetterboxView` fitting a fixed `gameW`×`gameH` logical area into a
+ *  `viewW`×`viewH` viewport, with the logical↔screen mappings (including the
+ *  screen→logical inverse for pointer hit-testing). Build once per frame. */
 export function letterboxView(
   gameW: number,
   gameH: number,

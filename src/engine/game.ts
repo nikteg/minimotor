@@ -1,5 +1,5 @@
-import type { Keys, Pointer } from "./facade.js";
-import { clearDefaultGame } from "./facade.js";
+import type { Keys, Pointer } from "./input.js";
+import { clearDefaultGame } from "./default-game.js";
 import type { KeyCode } from "./keycodes.js";
 
 // ---------- Minimal game framework ----------
@@ -22,15 +22,24 @@ import type { KeyCode } from "./keycodes.js";
 // `draw`. It isn't type-enforced, but edge input (`pressed`/`released`) is only
 // meaningful per fixed update step.
 
+/** An axis-aligned rectangle: `x`/`y` top-left, `w`/`h` size. */
 export interface Rect {
+  /** Left edge. */
   x: number;
+  /** Top edge. */
   y: number;
+  /** Width. */
   w: number;
+  /** Height. */
   h: number;
 }
 
+/** The live canvas surface: element, 2D context, logical size, DPR, safe-area
+ *  insets, and the base letterbox transform. */
 export interface Viewport {
+  /** The backing canvas element (sized to the full window × `dpr`). */
   canvas: HTMLCanvasElement;
+  /** The canvas 2D context, pre-set to the base logical→device transform. */
   ctx: CanvasRenderingContext2D;
   /** Logical width. Fills the window, or the fixed `resolution.w` when the
    *  stage is letterboxed. */
@@ -47,13 +56,16 @@ export interface Viewport {
    *  Everything draws under this; `resetTransform(ctx)` re-applies it after a
    *  camera block. `scale` is 1 (offset 0) when the stage isn't letterboxed. */
   scale: number;
+  /** Letterbox bar offset in canvas-CSS px, left edge (0 when not letterboxed). */
   offsetX: number;
+  /** Letterbox bar offset in canvas-CSS px, top edge (0 when not letterboxed). */
   offsetY: number;
 }
 
 /** Plugins hook into the game lifecycle; each hook receives the `Game`.
  *  Register with the builder's `use()` or `Loop.use()`. */
 export interface EnginePlugin {
+  /** Plugin name, for identification/debugging. */
   name: string;
   /** Called once after the canvas is ready, before the first frame. */
   onInit?: (game: Game) => void;
@@ -87,18 +99,26 @@ export interface GameCallbacks {
  *  `updateMs` covers every fixed step run that frame; `steps` is how many ran
  *  (0 on idle frames, >1 when catching up). */
 export interface FrameTimings {
+  /** Wall-clock ms spent in every fixed update step run this frame. */
   updateMs: number;
+  /** Wall-clock ms spent in this frame's `draw`. */
   drawMs: number;
+  /** How many fixed steps ran this frame (0 when idle, >1 when catching up). */
   steps: number;
 }
 
 /** An isolated built game. Its state (`keys`, `ctx`, …) is read directly; the
  *  `Minimotor.*` namespaces expose the same surface on the default instance. */
 export interface Game {
+  /** The backing canvas element. */
   readonly canvas: HTMLCanvasElement;
+  /** The 2D drawing context (`draw` gets the same one as its argument). */
   readonly ctx: CanvasRenderingContext2D;
+  /** The live viewport (same object forever; fields mutate in place on resize). */
   readonly viewport: Viewport;
+  /** Polled keyboard state — read in `update` (`Minimotor.Keys` on the default game). */
   readonly keys: Keys;
+  /** Polled pointer state — read in `update` (`Minimotor.Pointer` on the default game). */
   readonly pointer: Pointer;
   /** Real time since the previous frame, in fixed steps. */
   readonly frameScale: number;
@@ -107,6 +127,7 @@ export interface Game {
    *  `prev + (curr - prev) * alpha` for stutter-free motion on non-60 Hz
    *  displays. */
   readonly alpha: number;
+  /** True while paused: `update` is frozen but `draw` keeps running. */
   readonly paused: boolean;
   /** Last frame's update/draw cost (see `FrameTimings`). The same object is
    *  mutated each frame — read, don't hold. */
@@ -150,6 +171,8 @@ export interface Game {
   destroy(): void;
 }
 
+/** Config for building a game instance — canvas, resolution, plugins, and
+ *  input/clear behavior. */
 export interface GameOptions {
   /** Canvas element id (without `#`) or the element itself. */
   canvas: string | HTMLCanvasElement;

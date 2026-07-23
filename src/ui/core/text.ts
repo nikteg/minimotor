@@ -59,6 +59,7 @@ export interface TextOptions {
   /** Position. In a layout, omit and it flows like any widget (reserving a
    *  slot the width of the text, the row's height / a `size`-tall line). */
   x?: number;
+  /** Top y in logical px (see `x`). */
   y?: number;
   /** Named screen anchor: `x`/`y` become OFFSETS from this point instead of
    *  absolute coordinates, and the text aligns toward it ("center" centers,
@@ -67,7 +68,9 @@ export interface TextOptions {
   anchor?: TextAnchor;
   /** Slot sizing overrides when placed in a layout. */
   w?: number;
+  /** Slot height override in px (see `w`). */
   h?: number;
+  /** Place in this layout stack — flows the label like any widget. */
   at?: Stack;
   /** Font size in px. Default `theme.fontSize`. */
   size?: number;
@@ -84,7 +87,9 @@ export interface TextOptions {
    *  `padY` override one. Handy for insetting a label from a panel edge.
    *  Defaults to `theme.textPad` (0) when omitted. */
   pad?: number;
+  /** Horizontal-only inset override in px (see `pad`). */
   padX?: number;
+  /** Vertical-only inset override in px (see `pad`). */
   padY?: number;
   /** Word-wrap to multiple lines within the available width instead of
    *  squeezing one line to fit. The lines are stacked and vertically centered

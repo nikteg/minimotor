@@ -3,7 +3,7 @@
 // Engine runtime: Stage / Loop / Draw / Keys / Pointer / Mouse (backed by one default
 // game built via Stage.init). Services & helpers: Audio, Sprites, Storage, etc.
 // Isolated game instances (tests / multiple games) are created with
-// `Stage.createGame`; extra camera lenses with `Camera.create`.
+// `Stage.create`; extra camera lenses with `Camera.create`.
 
 import { Stage, Loop, Draw, Keys, Pointer, Mouse } from "./engine/index.js";
 import { Vec2 } from "./vec2.js";
@@ -19,28 +19,90 @@ import {
   slide,
   moveAndSlide,
 } from "./collision.js";
+/** Immediate-mode UI: buttons, panels, lists, tables, dialogs, drag-and-drop.
+ *  Widgets are drawn and polled every frame from their options — no retained
+ *  widget tree, no event handlers to wire up. */
 import * as UI from "./ui/index.js";
 import { Particles } from "./particles.js";
 import { Scenes } from "./scenes.js";
 import { Clock } from "./clock.js";
 import { Signals } from "./signals.js";
 import { Assets } from "./assets.js";
+/** Tiny archetype-free entity-component-system. `ECS.component` declares a
+ *  component and `ECS.create` builds a world; then `world.spawn`,
+ *  `world.query`/`world.dense` and `world.system` handle iteration and per-step
+ *  logic. Content-agnostic — render via `Sprites.Sprite` + `Draw.sprites`. */
 import * as ECS from "./ecs/index.js";
+/** Frame-based sprite animation: `Anim.sheet` (one strip, many frames),
+ *  `Anim.states` (one image per state, switched by key) and composable value
+ *  tweens (`Anim.animate`, `Anim.sequence`, `Anim.parallel`). Cursors here are
+ *  `Draw.sprite`-ready. */
 import * as Anim from "./anim/index.js";
+/** General finite state machine: `Fsm.create(states, initial)` builds a machine
+ *  of named states with `enter`/`update`/`exit`. `machine.update()` runs the
+ *  active state and transitions on the name it returns; `machine.go(name)`
+ *  forces one. Drives per-entity behavior (idle/run/jump, AI) and anim states. */
 import * as Fsm from "./fsm.js";
+/** Polled timing latches read as booleans, derived from a `Clock` (so pause and
+ *  slow-mo affect them). `Timers.window` (coyote grace), `Timers.buffer` (early
+ *  press buffering), `Timers.cooldown` (reuse gate), and `Timers.jumpGate` (the
+ *  first two composed into forgiving-jump timing). */
 import * as Timers from "./timers.js";
+/** WebAudio helpers that own the `AudioContext`, timing and volume. `Audio.sfx`
+ *  builds crash-safe sound effects, `Audio.music` schedules a song,
+ *  `Audio.bus`/`Audio.master` mix, and `Audio.tone`/`Audio.engine` synthesize. */
 import * as Audio from "./audio/index.js";
+/** Small math helpers (named à la Unity so it never shadows `Math`):
+ *  interpolation (`Mathf.lerp`, `Mathf.damp`, `Mathf.approach`), ranges
+ *  (`Mathf.clamp`, `Mathf.remap`), oscillators (`Mathf.pingPong`, `Mathf.wave`),
+ *  plus randomness and 0..1 easing curves. */
 import * as Mathf from "./mathf.js";
+/** Keyboard/action mapping and device input. `Input.map` binds keys/pad buttons
+ *  to named actions with edge state, `Input.gamepad` polls a pad, plus DOM
+ *  helpers `Input.wireButton` and `Input.vibrate`. */
 import * as Input from "./input/index.js";
+/** Crash-safe `localStorage` wrapper: `Storage.load(key, fallback)` and
+ *  `Storage.save(key, value)` round-trip any JSON-serializable value and never
+ *  throw — private browsing, quota, or corrupt data all fall back silently. */
 import * as Storage from "./storage.js";
+/** Offscreen pre-rendering and sprite-sheet baking. `Sprites.getSprite`/
+ *  `Sprites.getLayer` cache expensive draws, `Sprites.tint` recolors, and
+ *  `Sprites.atlas`/`Sprites.packAtlas` build sheets for `Anim.sheet`/`Tiles.grid`
+ *  — plus the standard `Sprites.Sprite` ECS component. */
 import * as Sprites from "./sprites.js";
+/** Dependency-free multiplayer building blocks. `Net.join(url, { room })` opens
+ *  a symmetric room and `Net.sync` declaratively replicates state, with
+ *  `Net.createInterpolator` smoothing snapshots and `Net.createRoster` tracking
+ *  peers; host/guest star sessions back host-authoritative designs. */
 import * as Net from "./net/index.js";
+/** FPS / frame-time monitoring. `Perf.createPerfTracker` rolls min/max/avg over
+ *  a window, `Perf.drawPerfHud` renders an on-canvas overlay, `Perf.plugin`
+ *  wires both into the loop, and `Perf.createNetMeter` tracks throughput. */
 import * as Perf from "./perf/index.js";
 import { Camera } from "./camera/index.js";
+/** Neutral game building blocks: `Game.createScoreTracker` persists score/best,
+ *  `Game.letterbox`/`Game.letterboxView` fit a fixed logical area into the
+ *  viewport (with screen→logical pointer hit-testing), and `Game.formatClock`
+ *  renders `m:ss`. */
 import * as Game from "./game.js";
+/** Pure, dependency-free game recipes (call one, get a value) that recur across
+ *  genres: `Goodies.leadTarget`/`Goodies.nearest` (steering), `Goodies.floodFill`/
+ *  `Goodies.lineOfSight` (grid), `Goodies.weightedPick`/`Goodies.rollDice`
+ *  (random), `Goodies.wrap` (toroidal). Stateful gadgets live in `Gizmos`. */
 import * as Goodies from "./goodies/index.js";
+/** Stateful game gadgets you create once then tick/mutate (the sibling of
+ *  `Goodies`): `Gizmos.combo`, `Gizmos.patrol`, `Gizmos.trail`, `Gizmos.charges`,
+ *  `Gizmos.checkpointRoute`, `Gizmos.seedRng`/`Gizmos.shuffleBag`,
+ *  `Gizmos.undoStack`, and `Gizmos.car`/`Gizmos.skidmarks`. */
 import * as Gizmos from "./gizmos/index.js";
+/** ASCII-grid levels as pure data: `Tiles.grid(ascii, { size, legend })` builds
+ *  a queryable, `SolidSource` `Level` (feed to `Collision.moveAndSlide`);
+ *  `Tiles.set` slices a tileset image into named cells plus `pick`/`anim`/
+ *  `auto16` selectors, joined to a level by a `Skin` at `Draw.tiles`. */
 import * as Tiles from "./tiles.js";
+/** Cover → swap → reveal scene transitions passed to `Scenes.go`. `Transitions.fade`
+ *  and `Transitions.wipe` are ready-made; a `Transition` is plain data, and the
+ *  pure fixed-step runner `Transitions.run` fires the swap at full coverage. */
 import * as Transitions from "./transitions.js";
 
 export {
@@ -240,6 +302,10 @@ export type {
   RosterOptions,
 } from "./net/index.js";
 
+/** Pure, allocation-free collision geometry. `Collision.moveAndSlide`/
+ *  `Collision.slide` do swept platformer resolution against `Solids`, plus
+ *  overlap tests `Collision.rectsOverlap`, `Collision.circleRect`,
+ *  `Collision.sweptAABB` and the `Collision.bounceInBounds` wall reflector. */
 const Collision = {
   rectsOverlap,
   slide,

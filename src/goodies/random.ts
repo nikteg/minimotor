@@ -11,8 +11,12 @@ export function chance(probability: number, rng: () => number = Math.random): bo
   return rng() < clamp(probability, 0, 1);
 }
 
+/** One entry in a weighted table for `weightedPick`. */
 export interface Weighted<T> {
+  /** The value returned when this entry is picked. */
   value: T;
+  /** Relative likelihood. Non-positive weights are ignored; probability is
+   *  `weight` over the sum of positive weights. */
   weight: number;
 }
 
@@ -59,8 +63,11 @@ export function rollDice(count: number, sides: number, rng: () => number = Math.
   return total;
 }
 
+/** The outcome of a `damageRoll`. */
 export interface DamageRoll {
+  /** Damage dealt — a non-negative rounded integer, crit multiplier already applied. */
   amount: number;
+  /** Whether this roll critically hit (rolled under `critChance`). */
   critical: boolean;
 }
 

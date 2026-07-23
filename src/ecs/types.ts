@@ -21,7 +21,9 @@
 
 /** A component handle. Carries the element type `T` for typed queries. */
 export interface Component<T> {
+  /** Dense numeric id, assigned on registration — the query bitset index. */
   readonly id: number;
+  /** Label passed to `ECS.define` — for debugging and `Perf` overlays. */
   readonly name: string;
   /** Pair this component with data for `world.spawn(...)`. */
   with(data: T): ComponentInit<T>;
@@ -29,7 +31,9 @@ export interface Component<T> {
 
 /** A component + its initial data, produced by `Component.with()`. */
 export interface ComponentInit<T> {
+  /** The component type this data attaches to. */
   readonly component: Component<T>;
+  /** The initial value, stored on the entity when spawned. */
   readonly data: T;
 }
 
@@ -117,6 +121,10 @@ export interface Ecs {
     fn: (e: Entity, a: A, b: B, c: C, d: D) => void,
   ): void;
 
+  /** Iterate every entity carrying all the given components, yielding
+   *  `[entity, ...data]` tuples (data in argument order). Walks the smallest
+   *  matching store; structural changes during iteration are deferred (see the
+   *  module header). Prefer `each` in hot loops — it allocates no tuple. */
   query<A>(a: Component<A>): Iterable<[Entity, A]>;
   query<A, B>(a: Component<A>, b: Component<B>): Iterable<[Entity, A, B]>;
   query<A, B, C>(a: Component<A>, b: Component<B>, c: Component<C>): Iterable<[Entity, A, B, C]>;

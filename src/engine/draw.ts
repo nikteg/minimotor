@@ -1,210 +1,15 @@
-import {
-  EnginePlugin,
-  Game,
-  GameCallbacks,
-  GameOptions,
-  STEP_MS,
-  Viewport,
-  createGame,
-} from "./game.js";
-import type { KeyCode } from "./keycodes.js";
+import { requireDefault } from "./default-game.js";
 import type { Rect } from "./game.js";
-import { applyFullscreen } from "../fullscreen.js";
 import { drawText, type TextHAlign, type TextVAlign } from "../text.js";
 
 type Point = { x: number; y: number };
 
-/** Polled keyboard state. `down` is level-triggered (held); `pressed` and
- *  `released` are edge-triggered and true for exactly one update step per
- *  physical transition — that's why no `onKeyDown` callback is needed.
- *
- *    if (Minimotor.Keys.down("ArrowLeft")) move();   // held
- *    if (Minimotor.Keys.pressed("Space"))  jump();   // this step only
- *    if (Minimotor.Keys.released("KeyR"))  letGo(); */
-export interface Keys {
-  /** True while the key is held. */
-  down(code: KeyCode): boolean;
-  /** True for one update step when the key goes down (ignores auto-repeat). */
-  pressed(code: KeyCode): boolean;
-  /** True for one update step when the key goes up. */
-  released(code: KeyCode): boolean;
-}
-
-/** Polled pointer (mouse + touch) in logical CSS pixels, relative to the
- *  canvas. `pressed`/`released` are edge-triggered like `Keys`. */
-export interface Pointer {
-  /** Logical x within the canvas; -1 before the first event. */
-  readonly x: number;
-  /** Logical y within the canvas; -1 before the first event. */
-  readonly y: number;
-  /** True when the latest pointer position lies inside the canvas. */
-  readonly inside: boolean;
-  /** True while a button/touch is held. */
-  readonly down: boolean;
-  /** True for one update step when the press begins. */
-  readonly pressed: boolean;
-  /** True for one update step when the press ends. */
-  readonly released: boolean;
-  /** True for the whole rendered frame in which the press ended. `released`
-   *  is consumed by the fixed steps before `draw` runs — draw-phase hit
-   *  testing (`UI.button`) reads this instead. */
-  readonly frameReleased: boolean;
-  /** True for the whole rendered frame in which a press began — the
-   *  draw-phase counterpart of `pressed` (drag starts in `UI.scrollbar`). */
-  readonly framePressed: boolean;
-  /** Wheel scroll this frame in logical px (positive = down). Accumulated
-   *  across the frame's wheel events, cleared at frame end. */
-  readonly wheel: number;
-}
-
-// ---------- Global default-engine facade ----------
-// The whole engine is reached as `Minimotor.*` namespaces backed by ONE default
-// game built by `Stage.init()`. Game code reads these instead of importing a
-// game instance. `createGame()` above stays for isolated instances (tests).
-
-let defaultGame: Game | null = null;
-
-/** Clear the default-game slot if `g` holds it — called from a game's own
- *  `destroy()` in game.ts, which can't reassign this imported binding. */
-export function clearDefaultGame(g: Game): void {
-  if (defaultGame === g) defaultGame = null;
-}
-
-function requireDefault(): Game {
-  if (!defaultGame) {
-    throw new Error(
-      "Minimotor: call Minimotor.Stage.init(canvas) before using Stage / Loop / Keys / Pointer / Draw",
-    );
-  }
-  return defaultGame;
-}
-
-/** Everything `GameOptions` offers except the canvas (Stage.init's first
- *  argument), plus document-level concerns that only make sense for the
- *  default game. */
-export type StageOptions = Omit<GameOptions, "canvas"> & {
-  /** Inject the fullscreen stylesheet (fill the window, no scrollbars,
-   *  safe-area handling) before building the game. */
-  fullscreen?: boolean;
-};
-
-/** Canvas / viewport / screen. `init` builds the default engine and returns
- *  its viewport — a LIVE object (same identity forever, mutated on resize),
- *  so `view.w` / `view.h` / `view.dpr` never go stale. */
-export const Stage = {
-  /** Build the default instance and start driving `Stage`/`Loop`/`Draw` — call
-   *  this once, first. `canvas` is a `<canvas>` element or its id. Returns the
-   *  LIVE `Viewport` (a stable object mutated on resize, so `view.w`/`view.h`
-   *  never go stale). Options include `background` (engine clears each frame),
-   *  `resolution` (fixed logical size, letterboxed), `fullscreen` and
-   *  `plugins`. Calling it again tears down the previous default and replaces
-   *  it.
-   *
-   *    const view = Stage.init("game", { background: "#111" }); */
-  init(canvas: string | HTMLCanvasElement, opts: StageOptions = {}): Viewport {
-    // Re-init replaces the default game — tear the old one down first so its
-    // rAF loop and window listeners don't leak.
-    defaultGame?.destroy();
-    if (opts.fullscreen) applyFullscreen();
-    defaultGame = createGame({ canvas, ...opts });
-    return defaultGame.viewport;
-  },
-  /** Build an ISOLATED instance (its own loop, input and canvas) instead of the
-   *  shared default that `init` sets up — for tests, or running several
-   *  independent instances on one page. Read its state off the returned handle
-   *  rather than the `Stage`/`Loop`/`Draw` facades. */
-  create(opts: GameOptions): Game {
-    return createGame(opts);
-  },
-  /** The LIVE viewport — the same object `init` returned, mutated in place on
-   *  resize. Read `viewport.w`/`viewport.h` (logical size), `dpr`, safe-area
-   *  insets. */
-  get viewport(): Viewport {
-    return requireDefault().viewport;
-  },
-  /** The backing `<canvas>` element (escape hatch for direct DOM access). */
-  get canvas(): HTMLCanvasElement {
-    return requireDefault().canvas;
-  },
-  /** Inject the fullscreen stylesheet (idempotent). */
-  fullscreen(): void {
-    applyFullscreen();
-  },
-  /** Re-apply the base (letterbox) transform — see `Game.resetTransform`.
-   *  Screen-space widgets use this to escape a camera block. */
-  resetTransform(): void {
-    requireDefault().resetTransform();
-  },
-  /** Run `handler` whenever the viewport changes (window resize, orientation,
-   *  DPR change) — for re-laying-out UI or re-baking sized sprites. Returns an
-   *  unsubscribe function. The viewport itself is live, so simple games rarely
-   *  need this. */
-  onResize(handler: (vp: Viewport) => void): () => void {
-    return requireDefault().onResize(handler);
-  },
-};
-
-/** The fixed-timestep game loop, driving the default instance. */
-export const Loop = {
-  /** Start the loop with your `update` (fixed step) and `draw` (per frame)
-   *  callbacks — the heart of every game. Pass a `Scenes` stack here too (it
-   *  IS a `GameCallbacks`). Idempotent: calling again swaps the callbacks.
-   *
-   *    Loop.run({ update() { … }, draw() { … } }); */
-  run(callbacks: GameCallbacks): void {
-    requireDefault().run(callbacks);
-  },
-  /** Freeze `update` (simulation stops); `draw` keeps running so pause overlays
-   *  still render. Resume with `resume`. */
-  pause(): void {
-    requireDefault().pause();
-  },
-  /** Resume updates after `pause`. */
-  resume(): void {
-    requireDefault().resume();
-  },
-  /** Stop the loop entirely (no more update/draw). A later `run` restarts it
-   *  with a fresh clock. */
-  stop(): void {
-    requireDefault().stop();
-  },
-  /** Register an `EnginePlugin` (e.g. `Perf.plugin()`) after `init` — its
-   *  lifecycle hooks fire from the next frame. */
-  use(plugin: EnginePlugin): void {
-    requireDefault().use(plugin);
-  },
-  /** Subscribe to each fixed update step; returns unsubscribe. */
-  onStep(handler: () => void): () => void {
-    return requireDefault().onStep(handler);
-  },
-  /** Subscribe to the start of each fixed step (before `update`); returns
-   *  unsubscribe. */
-  onStepStart(handler: () => void): () => void {
-    return requireDefault().onStepStart(handler);
-  },
-  /** Subscribe to the end of each rendered frame; returns unsubscribe. */
-  onFrame(handler: () => void): () => void {
-    return requireDefault().onFrame(handler);
-  },
-  /** Request a CSS cursor for this frame (reset every frame) — see
-   *  `Game.setCursor`. */
-  setCursor(cursor: string): void {
-    requireDefault().setCursor(cursor);
-  },
-  /** Fixed update timestep in milliseconds (1000 / 60). */
-  get step(): number {
-    return STEP_MS;
-  },
-  /** Render interpolation factor 0..1 — see `Game.alpha`. */
-  get alpha(): number {
-    return requireDefault().alpha;
-  },
-};
-
 /** Options for `Draw.text` — plain ambient-space text (world-anchored damage
  *  numbers, name tags). For themed, screen-space HUD text use `UI.text`. */
 export interface DrawTextOptions {
+  /** Ambient-space x of the text, anchored by `align`. */
   x: number;
+  /** Ambient-space y of the text, anchored by `baseline`. */
   y: number;
   /** Font size in px (monospace). Default 16. */
   size?: number;
@@ -231,6 +36,10 @@ export type Fill = string | CanvasGradient;
 /** Gradient color stops: `[offset 0..1, color]` pairs. */
 export type GradientStops = Array<[number, string]>;
 
+/** Fill a rectangle. Positional (`rect(x, y, w, h, color)`) or structural
+ *  (`rect(someRect, color)` — anything with `x`/`y`/`w`/`h`). `color` is a CSS
+ *  color or a `Draw.linear`/`Draw.radial` gradient. Screen space at the top
+ *  level, world space inside `Camera.render`. */
 function rect(x: number, y: number, w: number, h: number, color: Fill): void;
 function rect(rect: Rect, color: Fill): void;
 function rect(a: number | Rect, b: number | Fill, c?: number, d?: number, e?: Fill): void {
@@ -244,6 +53,8 @@ function rect(a: number | Rect, b: number | Fill, c?: number, d?: number, e?: Fi
   }
 }
 
+/** Fill a circle of radius `r`. Positional (`circle(x, y, r, color)`) or with a
+ *  point (`circle(pos, r, color)`). */
 function circle(x: number, y: number, r: number, color: Fill): void;
 function circle(pos: Point, r: number, color: Fill): void;
 function circle(a: number | Point, b: number, c: number | Fill, d?: Fill): void {
@@ -256,6 +67,9 @@ function circle(a: number | Point, b: number, c: number | Fill, d?: Fill): void 
   ctx.fill();
 }
 
+/** Stroke a line between two points, `width` px thick (default 1). Positional
+ *  (`line(x1, y1, x2, y2, color, width?)`) or point form (`line(a, b, color,
+ *  width?)`). */
 function line(x1: number, y1: number, x2: number, y2: number, color: Fill, width?: number): void;
 function line(a: Point, b: Point, color: Fill, width?: number): void;
 function line(
@@ -352,17 +166,22 @@ function opacity(value: number, fn: () => void): void {
  *  or any object exposing a source rect + image. Structural on purpose —
  *  the engine's anim cursors qualify without an import. */
 export interface SpriteLike {
+  /** The current frame's source sub-rect within `sheet.image` (px). */
   readonly rect: { sx: number; sy: number; sw: number; sh: number };
+  /** The sheet the frame is blitted from. */
   readonly sheet: { image: CanvasImageSource };
 }
 
+/** Per-sprite options for `Draw.sprite` — flip, squash/stretch, rotation, opacity. */
 export interface DrawSpriteOptions {
   /** Mirror horizontally (facing). */
   flipX?: boolean;
+  /** Mirror vertically. */
   flipY?: boolean;
   /** Squash & stretch. Anchored at the rect's bottom-center (feet planted),
    *  the natural pivot for landing squash. Default 1. */
   scaleX?: number;
+  /** Vertical squash & stretch about the bottom-center anchor. Default 1. */
   scaleY?: number;
   /** Rotation in radians about the same anchor. */
   rot?: number;
@@ -370,6 +189,11 @@ export interface DrawSpriteOptions {
   alpha?: number;
 }
 
+/** Blit a single animated sprite: `spr` is anything `SpriteLike` (an
+ *  `Anim.sheet`/`Anim.states` cursor), `at` is the destination `Rect`. Anchored
+ *  bottom-center (feet planted). `opts`: `flipX`/`flipY`, `scaleX`/`scaleY`
+ *  (squash & stretch), `rot`, `alpha`. For many ECS sprites at once use
+ *  `Draw.sprites`. */
 function sprite(spr: SpriteLike, at: Rect, opts: DrawSpriteOptions = {}): void {
   const ctx = requireDefault().ctx;
   const r = spr.rect;
@@ -398,28 +222,57 @@ type BlitImage = CanvasImageSource & { width: number; height: number; logicalSiz
 /** One entry the batch renderer can blit. The ECS `Sprite` component's data
  *  matches this structurally. */
 export interface DrawSprite {
+  /** Ambient-space x of the anchor point (world inside `Camera.render`). */
   x: number;
+  /** Ambient-space y of the anchor point. */
   y: number;
+  /** Source image blitted. */
   img: BlitImage;
+  /** Destination width. Defaults to `sw` when clipped, else the image's
+   *  `logicalSize`/`width`. */
   w?: number;
+  /** Destination height. Defaults to `sh` when clipped, else the image's
+   *  `logicalSize`/`height`. */
   h?: number;
+  /** Horizontal anchor as a fraction of `w`: `0` left, `0.5` center (default),
+   *  `1` right. `x` lands on this point. */
   ax?: number;
+  /** Vertical anchor as a fraction of `h`: `0` top, `0.5` center (default),
+   *  `1` bottom. `y` lands on this point. */
   ay?: number;
+  /** Rotation in radians about the anchor. Default `0`. */
   rot?: number;
+  /** Uniform scale about the anchor. Default `1`. */
   scale?: number;
+  /** Mirror horizontally (facing). */
   flipX?: boolean;
+  /** Mirror vertically. */
   flipY?: boolean;
+  /** Opacity `0..1`. `<= 0` skips the blit. Default `1`. */
   alpha?: number;
+  /** Draw order — lower draws first (behind). Ties keep iteration order.
+   *  Default `0`. */
   z?: number;
+  /** `false` skips drawing this sprite. Default (drawn) when omitted. */
   visible?: boolean;
+  /** Source-rect x in `img` (px). With `sy`/`sw`/`sh`, blits a sub-region
+   *  (a sheet cell) instead of the whole image. */
   sx?: number;
+  /** Source-rect y in `img` (px). */
   sy?: number;
+  /** Source-rect width in `img` (px) — presence (with `sh`) marks the sprite
+   *  as clipped. */
   sw?: number;
+  /** Source-rect height in `img` (px). */
   sh?: number;
+  /** Previous-step x — blended toward `x` by `opts.alpha` for interpolated
+   *  motion. Needs `py` too. */
   px?: number;
+  /** Previous-step y — blended toward `y` by `opts.alpha`. */
   py?: number;
 }
 
+/** Options for the batched `Draw.sprites` — interpolation `alpha` and cull `view`. */
 export interface DrawSpritesOptions {
   /** Interpolation factor 0..1 (`Loop.alpha`): blends px/py→x/y for stutter-
    *  free motion on non-60 Hz displays. */
@@ -519,9 +372,14 @@ function sprites(list: Iterable<DrawSprite>, opts: DrawSpritesOptions = {}): voi
  *  game calls this instead (data never draws itself). Generic so the skin
  *  type-checks against the level's legend. */
 export interface TilesLike<S> {
+  /** Paint the level into `ctx` using `skin`. Called by `Draw.tiles` — the
+   *  game never invokes it directly. */
   render(ctx: CanvasRenderingContext2D, skin: S): void;
 }
 
+/** Paint a tile level (from `Tiles.grid`) with a `skin` mapping each legend key
+ *  to a fill. In the ambient space — put it inside `Camera.render` to scroll
+ *  with the world. The `skin` type-checks against the level's legend. */
 function tiles<S>(level: TilesLike<S>, skin: S): void {
   level.render(requireDefault().ctx, skin);
 }
@@ -529,13 +387,20 @@ function tiles<S>(level: TilesLike<S>, skin: S): void {
 /** Anything Draw.particles can render — particle systems expose a `render`
  *  channel; the game calls this instead (data never draws itself). */
 export interface ParticleLike {
+  /** Blit the system's live particles to `ctx`. Called by `Draw.particles` —
+   *  the game never invokes it directly. */
   render(ctx: CanvasRenderingContext2D): void;
 }
 
+/** Render a particle system (`Particles.create()`), typically inside a
+ *  `Camera.render` block for world-space effects. */
 function particles(sys: ParticleLike): void {
   sys.render(requireDefault().ctx);
 }
 
+/** Draw plain ambient-space text (world-anchored damage numbers, name tags) —
+ *  see `DrawTextOptions` for `x`/`y`/`size`/`color`/`align`/`baseline`. For
+ *  themed, screen-space HUD text use `UI.text`. */
 function text(str: string, opts: DrawTextOptions): void {
   const ctx = requireDefault().ctx;
   drawText(ctx, str, opts.x, opts.y, {
@@ -549,9 +414,13 @@ function text(str: string, opts: DrawTextOptions): void {
 /** Rendering: ambient-space primitives (screen at top level, world inside
  *  `Camera.render`) plus the raw `ctx` escape hatch. */
 export const Draw = {
+  /** The raw 2D canvas context — the escape hatch for effects the `Draw.*`
+   *  primitives don't cover (gradients, paths, compositing). Under the current
+   *  ambient transform (screen, or world inside `Camera.render`). */
   get ctx(): CanvasRenderingContext2D {
     return requireDefault().ctx;
   },
+  /** Real time since the previous frame, in fixed steps (see `Game.frameScale`). */
   get frameScale(): number {
     return requireDefault().frameScale;
   },
@@ -571,44 +440,3 @@ export const Draw = {
   tiles,
   particles,
 };
-
-/** Polled keyboard — read inside `update`. */
-export const Keys: Keys = {
-  down: (code) => requireDefault().keys.down(code),
-  pressed: (code) => requireDefault().keys.pressed(code),
-  released: (code) => requireDefault().keys.released(code),
-};
-
-/** Polled pointer — read inside `update`. */
-export const Pointer: Pointer = {
-  get x() {
-    return requireDefault().pointer.x;
-  },
-  get y() {
-    return requireDefault().pointer.y;
-  },
-  get inside() {
-    return requireDefault().pointer.inside;
-  },
-  get down() {
-    return requireDefault().pointer.down;
-  },
-  get pressed() {
-    return requireDefault().pointer.pressed;
-  },
-  get released() {
-    return requireDefault().pointer.released;
-  },
-  get frameReleased() {
-    return requireDefault().pointer.frameReleased;
-  },
-  get framePressed() {
-    return requireDefault().pointer.framePressed;
-  },
-  get wheel() {
-    return requireDefault().pointer.wheel;
-  },
-};
-
-/** Mouse-oriented alias for the normalized canvas-relative pointer position. */
-export const Mouse: Pointer = Pointer;

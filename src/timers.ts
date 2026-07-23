@@ -30,6 +30,8 @@ export interface Window {
   readonly remaining: number;
 }
 
+/** Make a grace `Window` of `ms`, deriving from `clock` (default `Clock.game`).
+ *  Starts closed until the first `charge()`. */
 export function window(ms: number, clock: ClockHandle = Clock.game): Window {
   let until = -Infinity;
   return {
@@ -60,6 +62,8 @@ export interface Buffer {
   readonly armed: boolean;
 }
 
+/** Make a `Buffer` with a `ms` window, deriving from `clock` (default
+ *  `Clock.game`). Starts disarmed until the first `trigger()`. */
 export function buffer(ms: number, clock: ClockHandle = Clock.game): Buffer {
   let until = -Infinity;
   return {
@@ -89,6 +93,8 @@ export interface Cooldown {
   readonly remaining: number;
 }
 
+/** Make a `Cooldown` of `ms`, deriving from `clock` (default `Clock.game`).
+ *  Starts `ready()` until the first `use()`. */
 export function cooldown(ms: number, clock: ClockHandle = Clock.game): Cooldown {
   let readyAt = -Infinity;
   return {
@@ -124,6 +130,7 @@ export interface JumpGate {
   try(pressed: boolean, grounded: boolean): boolean;
   /** The underlying latches, exposed for HUD/debug or extra rules. */
   readonly coyote: Window;
+  /** The jump-press `Buffer` (see `coyote`). */
   readonly buffer: Buffer;
 }
 

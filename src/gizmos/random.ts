@@ -22,11 +22,13 @@ export function seedRng(seed: number): () => number {
   };
 }
 
+/** A without-replacement random bag returned by `shuffleBag()`; auto-reshuffles when drained. */
 export interface ShuffleBag<T> {
   /** Draw one item; automatically refills after the last item. */
   next(): T | undefined;
   /** Reshuffle a fresh copy of the source items. */
   reset(): void;
+  /** Items left before the bag auto-reshuffles (`0` right after the last draw). */
   readonly remaining: number;
 }
 

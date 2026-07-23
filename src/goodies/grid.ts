@@ -5,14 +5,21 @@ import { clamp } from "../mathf.js";
 // distance fields. `passable`/`blocks` predicates keep these map-agnostic — the
 // game owns what a wall is.
 
+/** Integer cell coordinates on a tile grid. */
 export interface GridPoint {
+  /** Column. */
   x: number;
+  /** Row. */
   y: number;
 }
 
+/** Options for `gridNeighbors()`: 8-way toggle and optional bounds to clip against. */
 export interface GridNeighborOptions {
+  /** Include the four diagonals (8-way) as well as the cardinals. Default false. */
   diagonal?: boolean;
+  /** Grid width — neighbours with `x < 0` or `x >= cols` are clipped. Unbounded when omitted. */
   cols?: number;
+  /** Grid height — neighbours with `y < 0` or `y >= rows` are clipped. Unbounded when omitted. */
   rows?: number;
 }
 
@@ -76,6 +83,7 @@ export function floodFill(
   return found;
 }
 
+/** A multi-source BFS distance map returned by `distanceField()`. */
 export interface DistanceField {
   /** Step distance from the nearest source to (x, y); `Infinity` if
    *  unreachable. */

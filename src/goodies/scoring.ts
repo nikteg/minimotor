@@ -3,6 +3,7 @@
 // hit, `scoreRank` labels a final score, `beatClock` turns a clock into beat
 // timing. The stateful streak gadget — `combo` — lives in Gizmos.scoring.
 
+/** A rhythm-hit accuracy grade returned by `timingGrade()`, strictest to loosest. */
 export type TimingGrade = "perfect" | "great" | "good" | "miss";
 
 /** Grade the absolute distance from a rhythm event. Windows are inclusive and
@@ -36,6 +37,7 @@ export function scoreRank(
   return ranks[index];
 }
 
+/** Beat timing for a moment in a track, returned by `beatClock()`. */
 export interface Beat {
   /** Whole beats elapsed. */
   beat: number;

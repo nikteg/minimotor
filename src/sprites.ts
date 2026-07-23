@@ -5,6 +5,7 @@
 import { component, type Component, type Ecs } from "./ecs/index.js";
 import type { DrawSprite } from "./engine/index.js";
 
+/** An offscreen canvas pre-rendered for blitting, tagged with its `logicalSize`. */
 export interface SpriteCanvas extends HTMLCanvasElement {
   /** Logical size in CSS pixels (the backing store is DPR × logicalSize) */
   logicalSize: number;

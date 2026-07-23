@@ -13,9 +13,14 @@ export function approachAngle(current: number, target: number, maxDelta: number)
   return wrap(current + Math.sign(delta) * Math.max(0, maxDelta), -Math.PI, Math.PI);
 }
 
+/** A firing solution: the intercept point and when the shot lands. */
 export interface LeadTarget {
+  /** Aim-point x — where the target will be at `time`. */
   x: number;
+  /** Aim-point y. */
   y: number;
+  /** Time until impact, in the same time units as the velocities/speed passed
+   *  in. Always `> 0`. */
   time: number;
 }
 
