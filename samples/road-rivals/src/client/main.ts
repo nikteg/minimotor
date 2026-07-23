@@ -259,16 +259,28 @@ const vp = Stage.init("game", {
   preventNavigation: true,
 });
 
-// On-screen touch gamepad: left stick steers, GAS/BRAKE buttons. Autohide keeps
-// it hidden on desktop and shown on touch (default), so keyboard is unaffected.
+// On-screen touch twin-stick pad: LEFT stick moves/steers+throttles, RIGHT stick
+// aims + auto-fires, HANDBRAKE (hold) and a contextual ENTER/EXIT CAR button.
+// Autohide keeps it hidden on desktop and shown on touch (default), so keyboard
+// + mouse are unaffected. `tryToggleCar`/`nearestEnterableCar`/`player` are used
+// only inside the button callbacks, which run at frame/tap time (well after init).
 const pad = OnscreenInput.gamepad({
   opacity: 0.55,
-  stick: { anchor: { side: "left", x: 92, y: 92 }, radius: 62 },
+  stick: { anchor: { side: "left", x: 100, y: 100 }, radius: 64 },
+  rightStick: { anchor: { side: "right", x: 100, y: 100 }, radius: 64 },
   buttons: [
-    { anchor: { side: "right", x: 150, y: 88 }, r: 40, button: "a", label: "GAS" },
-    { anchor: { side: "right", x: 82, y: 162 }, r: 34, button: "b", label: "BRAKE" },
+    { anchor: { side: "right", x: 96, y: 216 }, r: 34, button: "b", label: "BRAKE" },
+    {
+      anchor: { side: "left", x: 96, y: 216 },
+      r: 34,
+      label: "CAR",
+      onTap: () => tryToggleCar(),
+      disabled: () => !player.inCar && !nearestEnterableCar(),
+    },
   ],
 });
+// Right-stick magnitude past this engages stick-aim + continuous fire.
+const AIM_DEADZONE = 0.3;
 
 const clientNo = Number(new URLSearchParams(location.search).get("client") || 1);
 const id = `${clientNo}-${Math.random().toString(36).slice(2, 7)}`;
@@ -702,13 +714,15 @@ function carHits(x: number, y: number) {
 // rolling + aerodynamic drag limit speed without an arbitrary hard clamp.
 function updateCar(dt: number) {
   const config = CAR_TYPES[car.type];
+  // Left stick Y drives the throttle (screen-down axis is positive, so up = fwd,
+  // down = reverse/brake); the old GAS button is folded into stick-forward.
   const throttle = Math.max(
     -1,
     Math.min(
       1,
       (Keys.down("KeyW") || Keys.down("ArrowUp") ? 1 : 0) -
-        (Keys.down("KeyS") || Keys.down("ArrowDown") ? 1 : 0) +
-        (pad.down(Input.Buttons.A) ? 1 : 0),
+        (Keys.down("KeyS") || Keys.down("ArrowDown") ? 1 : 0) -
+        pad.axis(1),
     ),
   );
   const steerInput = Math.max(
@@ -839,9 +853,24 @@ function cursorAimAngle(origin: { x: number; y: number } = player) {
   return Math.atan2(Mouse.y - screenY, Mouse.x - screenX);
 }
 
+// True while the right stick is pushed past the deadzone (touch aim is live).
+function rightStickEngaged() {
+  return OnscreenInput.visible(pad) && Math.hypot(pad.axis(2), pad.axis(3)) > AIM_DEADZONE;
+}
+
+// Aim source: right stick when the pad is up and engaged; otherwise the mouse —
+// but never the (stale) mouse while the pad is visible, so touch play holds its
+// last facing instead of snapping to a leftover cursor position.
+function resolveAimAngle(origin: { x: number; y: number }) {
+  if (OnscreenInput.visible(pad)) {
+    return rightStickEngaged() ? Math.atan2(pad.axis(3), pad.axis(2)) : player.angle;
+  }
+  return cursorAimAngle(origin);
+}
+
 function shoot() {
   const origin = player.inCar ? car : player;
-  const aim = cursorAimAngle(origin);
+  const aim = resolveAimAngle(origin);
   const weapon = WEAPONS[activeWeapon];
   player.angle = aim;
   const shotBase = `${id}:${performance.now().toFixed(1)}`;
@@ -1342,14 +1371,22 @@ Loop.run({
       if (Keys.pressed("KeyE")) tryToggleCar();
       if (player.inCar) updateCar(dt);
       else {
-        const dx =
+        // Keyboard OR left stick (x = strafe, y = up/down); normalise only when
+        // the combined vector exceeds 1 so analog magnitude (walk speed) survives.
+        let dx =
           (Keys.down("KeyD") || Keys.down("ArrowRight") ? 1 : 0) -
-          (Keys.down("KeyA") || Keys.down("ArrowLeft") ? 1 : 0);
-        const dy =
+          (Keys.down("KeyA") || Keys.down("ArrowLeft") ? 1 : 0) +
+          pad.axis(0);
+        let dy =
           (Keys.down("KeyS") || Keys.down("ArrowDown") ? 1 : 0) -
-          (Keys.down("KeyW") || Keys.down("ArrowUp") ? 1 : 0);
-        const len = Math.hypot(dx, dy) || 1;
-        moveCircle(player, (dx / len) * 220 * dt, (dy / len) * 220 * dt, 13);
+          (Keys.down("KeyW") || Keys.down("ArrowUp") ? 1 : 0) +
+          pad.axis(1);
+        const len = Math.hypot(dx, dy);
+        if (len > 1) {
+          dx /= len;
+          dy /= len;
+        }
+        moveCircle(player, dx * 220 * dt, dy * 220 * dt, 13);
         moveCircle(player, player.knockX * dt, player.knockY * dt, 13);
         const knockDrag = Math.exp(-2.8 * dt);
         player.knockX *= knockDrag;
@@ -1357,7 +1394,12 @@ Loop.run({
       }
 
       shotCooldown -= dt;
-      if (!player.inCar && Mouse.inside && Mouse.down && shotCooldown <= 0) wantsToShoot = true;
+      // Touch: auto-fire while the right stick is engaged. Desktop: mouse click.
+      if (!player.inCar && shotCooldown <= 0) {
+        wantsToShoot = OnscreenInput.visible(pad)
+          ? rightStickEngaged()
+          : Mouse.inside && Mouse.down;
+      }
     }
     for (const fleetCar of cars) {
       if (fleetCar.respawn > 0) {
@@ -1401,9 +1443,7 @@ Loop.run({
     updateEngineSound(engineLoad, tireSlip);
 
     if (gameState === "alive") {
-      const aimX = camera.wx(Mouse.x);
-      const aimY = camera.wy(Mouse.y);
-      player.angle = Math.atan2(aimY - player.y, aimX - player.x);
+      player.angle = resolveAimAngle(player.inCar ? car : player);
       if (wantsToShoot) shotCooldown = shoot();
     }
 
@@ -1443,7 +1483,7 @@ Loop.run({
           : player;
     let cameraTargetX = target.x;
     let cameraTargetY = target.y;
-    if (gameState === "alive" && Mouse.inside) {
+    if (gameState === "alive" && Mouse.inside && !OnscreenInput.visible(pad)) {
       cameraTargetX += (Mouse.x - vp.w / 2) * 0.42;
       cameraTargetY += (Mouse.y - vp.h / 2) * 0.42;
     }
@@ -1717,7 +1757,7 @@ Loop.run({
       }
     }
     transition?.draw(ctx, vp);
-    if (gameState === "alive" && Mouse.inside) {
+    if (gameState === "alive" && Mouse.inside && !OnscreenInput.visible(pad)) {
       ctx.strokeStyle = "rgba(255,255,255,0.9)";
       ctx.lineWidth = 2;
       ctx.beginPath();

@@ -70,6 +70,10 @@ export interface ButtonSpec {
   onHold?: (down: boolean) => void;
   /** Per-button haptics override. */
   haptics?: boolean | HapticsConfig;
+  /** Evaluated each frame: return `true` to gray the button out and ignore
+   *  touches on it (e.g. an "ENTER CAR" button that's live only when near a
+   *  car). Omit for an always-active button. */
+  disabled?: () => boolean;
 }
 
 /** Shape of an on-screen gamepad — see the module header for the flow. */
@@ -86,8 +90,12 @@ export interface OnscreenGamepadConfig {
   opacity?: number;
   /** Default haptics for mapped buttons. Default false. */
   haptics?: boolean | HapticsConfig;
-  /** The left analog stick. */
+  /** The left analog stick — binds to `lstick` axes 0/1. */
   stick?: StickSpec;
+  /** An optional RIGHT analog stick — binds to `rstick` axes 2/3 (`pad:rstick-*`
+   *  or `pad.axis(2)`/`pad.axis(3)`). Add it for twin-stick controls (move with
+   *  the left, aim/fire with the right). */
+  rightStick?: StickSpec;
   /** The button cluster (>= 2 recommended) plus any custom buttons. */
   buttons?: ButtonSpec[];
 }
@@ -176,15 +184,18 @@ interface ResolvedConfig {
   opacity: number;
   haptics: boolean | HapticsConfig;
   stick?: StickSpec;
+  rightStick?: StickSpec;
   buttons: ButtonSpec[];
 }
 
-type TouchTarget = { kind: "stick" } | { kind: "button"; spec: ButtonSpec };
+type Which = "left" | "right";
+type TouchTarget = { kind: "stick"; which: Which } | { kind: "button"; spec: ButtonSpec };
 
 interface PadInternal {
   cfg: ResolvedConfig;
   tracker: GamepadState & { poll(): void };
   stick: { x: number; y: number };
+  rstick: { x: number; y: number };
   pointers: Map<number, TouchTarget>;
   lastSource: "touch" | "hardware";
   coarse: boolean;
@@ -227,7 +238,8 @@ function synthFromTouch(st: PadInternal): RawPad {
     const idx = padButtonIndex(target.spec.button);
     if (idx !== undefined && idx < buttons.length) buttons[idx].pressed = true;
   }
-  return { connected: true, buttons, axes: [st.stick.x, st.stick.y] };
+  // Axes 0/1 = left stick, 2/3 = right stick (standard mapping).
+  return { connected: true, buttons, axes: [st.stick.x, st.stick.y, st.rstick.x, st.rstick.y] };
 }
 
 // ---------- Coordinate mapping ----------
@@ -285,22 +297,30 @@ function fireHaptics(cfg: ResolvedConfig, spec: ButtonSpec, phase: "press" | "re
 
 function hitTest(st: PadInternal, x: number, y: number): TouchTarget | null {
   for (const spec of st.cfg.buttons) {
+    if (spec.disabled?.()) continue; // grayed-out button ignores touches
     const c = anchorCenter(spec.anchor);
     if (Math.hypot(x - c.x, y - c.y) <= spec.r) return { kind: "button", spec };
   }
-  if (st.cfg.stick) {
-    const c = anchorCenter(st.cfg.stick.anchor);
-    // Generous grab: anywhere within ~1.6× the travel radius starts the stick.
-    if (Math.hypot(x - c.x, y - c.y) <= st.cfg.stick.radius * 1.6) return { kind: "stick" };
+  // Generous grab: anywhere within ~1.6× the travel radius starts a stick.
+  const sticks: [Which, StickSpec | undefined][] = [
+    ["left", st.cfg.stick],
+    ["right", st.cfg.rightStick],
+  ];
+  for (const [which, spec] of sticks) {
+    if (!spec) continue;
+    const c = anchorCenter(spec.anchor);
+    if (Math.hypot(x - c.x, y - c.y) <= spec.radius * 1.6) return { kind: "stick", which };
   }
   return null;
 }
 
-function updateStick(st: PadInternal, x: number, y: number): void {
-  const s = st.cfg.stick;
+function updateStick(st: PadInternal, which: Which, x: number, y: number): void {
+  const s = which === "left" ? st.cfg.stick : st.cfg.rightStick;
   if (!s) return;
   const c = anchorCenter(s.anchor);
-  st.stick = computeStick(x - c.x, y - c.y, s.radius, s.deadzone ?? 0);
+  const v = computeStick(x - c.x, y - c.y, s.radius, s.deadzone ?? 0);
+  if (which === "left") st.stick = v;
+  else st.rstick = v;
 }
 
 function attachListeners(st: PadInternal): void {
@@ -339,7 +359,7 @@ function attachListeners(st: PadInternal): void {
     }
     st.pointers.set(e.pointerId, target);
     st.lastSource = "touch";
-    if (target.kind === "stick") updateStick(st, x, y);
+    if (target.kind === "stick") updateStick(st, target.which, x, y);
     else {
       target.spec.onHold?.(true);
       fireHaptics(st.cfg, target.spec, "press");
@@ -350,7 +370,7 @@ function attachListeners(st: PadInternal): void {
     const target = st.pointers.get(e.pointerId);
     if (!target || target.kind !== "stick") return;
     const { x, y } = toWindow(e.clientX, e.clientY);
-    updateStick(st, x, y);
+    updateStick(st, target.which, x, y);
   });
 
   const release = (e: PointerEvent) => {
@@ -358,8 +378,13 @@ function attachListeners(st: PadInternal): void {
     if (!target) return;
     st.pointers.delete(e.pointerId);
     if (target.kind === "stick") {
-      // Another finger might still hold the stick — recompute from survivors.
-      if (![...st.pointers.values()].some((t) => t.kind === "stick")) st.stick = { x: 0, y: 0 };
+      // Another finger might still hold THIS stick — clear only when none do.
+      const which = target.which;
+      const held = [...st.pointers.values()].some((t) => t.kind === "stick" && t.which === which);
+      if (!held) {
+        if (which === "left") st.stick = { x: 0, y: 0 };
+        else st.rstick = { x: 0, y: 0 };
+      }
     } else {
       target.spec.onHold?.(false);
       target.spec.onTap?.();
@@ -408,6 +433,7 @@ export function gamepad(config: OnscreenGamepadConfig = {}): OnscreenPad {
     opacity: config.opacity ?? 0.5,
     haptics: config.haptics ?? false,
     stick: config.stick,
+    rightStick: config.rightStick,
     buttons: config.buttons ?? [],
   };
 
@@ -415,6 +441,7 @@ export function gamepad(config: OnscreenGamepadConfig = {}): OnscreenPad {
     cfg,
     tracker: undefined as unknown as GamepadState & { poll(): void },
     stick: { x: 0, y: 0 },
+    rstick: { x: 0, y: 0 },
     pointers: new Map(),
     lastSource: "touch",
     coarse: typeof matchMedia === "function" ? matchMedia("(pointer: coarse)").matches : true,
@@ -452,6 +479,15 @@ export function drawControls(pad: OnscreenPad): void {
   st.wantPaint = true; // actual paint runs from the onFrame hook, post-clip
 }
 
+/** Whether the on-screen controls are currently faded in (touch is the live
+ *  input on a coarse pointer). Use it to suppress desktop-only affordances while
+ *  the virtual pad is up — e.g. disable mouse-aim so it doesn't fight the right
+ *  stick. Reflects the autohide fade, so it eases in/out with the controls. */
+export function visible(pad: OnscreenPad): boolean {
+  const st = registry.get(pad);
+  return !!st && st.fade > 0.05;
+}
+
 /** The real render, run from `onFrame` (after the clipped draw) in window space. */
 function paint(st: PadInternal): void {
   if (!st.wantPaint) return;
@@ -482,28 +518,33 @@ function paint(st: PadInternal): void {
   ctx.textBaseline = "middle";
   ctx.lineWidth = 2;
 
-  // Stick: base ring + knob offset by the live vector.
-  if (st.cfg.stick) {
-    const c = anchorCenter(st.cfg.stick.anchor);
-    const r = st.cfg.stick.radius;
+  // Sticks: base ring + knob offset by the live vector (left, then right).
+  const drawStick = (spec: StickSpec | undefined, v: { x: number; y: number }) => {
+    if (!spec) return;
+    const c = anchorCenter(spec.anchor);
+    const r = spec.radius;
     ctx.beginPath();
     ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
     ctx.fillStyle = th.track;
     ctx.fill();
     ctx.strokeStyle = th.border;
     ctx.stroke();
-    const knobR = r * 0.42;
-    const active = st.stick.x !== 0 || st.stick.y !== 0;
     ctx.beginPath();
-    ctx.arc(c.x + st.stick.x * r, c.y + st.stick.y * r, knobR, 0, Math.PI * 2);
-    ctx.fillStyle = active ? th.accent : th.accentSoft;
+    ctx.arc(c.x + v.x * r, c.y + v.y * r, r * 0.42, 0, Math.PI * 2);
+    ctx.fillStyle = v.x !== 0 || v.y !== 0 ? th.accent : th.accentSoft;
     ctx.fill();
-  }
+  };
+  drawStick(st.cfg.stick, st.stick);
+  drawStick(st.cfg.rightStick, st.rstick);
 
-  // Buttons: filled disc, brighter while a finger holds it, label centered.
+  // Buttons: filled disc, brighter while a finger holds it, grayed when disabled.
   for (const spec of st.cfg.buttons) {
+    const disabled = spec.disabled?.() ?? false;
     const c = anchorCenter(spec.anchor);
-    const held = [...st.pointers.values()].some((tt) => tt.kind === "button" && tt.spec === spec);
+    const held =
+      !disabled && [...st.pointers.values()].some((tt) => tt.kind === "button" && tt.spec === spec);
+    ctx.save();
+    if (disabled) ctx.globalAlpha *= 0.4;
     ctx.beginPath();
     ctx.arc(c.x, c.y, spec.r, 0, Math.PI * 2);
     ctx.fillStyle = held ? th.accent : th.bg;
@@ -514,6 +555,7 @@ function paint(st: PadInternal): void {
       ctx.fillStyle = held ? th.bgActive : th.text;
       ctx.fillText(spec.label, c.x, c.y + 1);
     }
+    ctx.restore();
   }
 
   ctx.restore();
