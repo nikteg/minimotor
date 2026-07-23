@@ -139,8 +139,11 @@ const ROW_H = 30;
 const FOOTER_H = 40;
 
 function layout(): Layout {
-  const w = Math.max(560, Math.min(760, vp.w - 40));
-  const h = Math.max(320, Math.min(560, vp.h - 40));
+  // Cap to the viewport (minus a margin) so the panel never overflows a narrow
+  // phone; clamp the preferred size on larger screens. No hard MIN — a min
+  // wider than the viewport is exactly what pushed content off both edges.
+  const w = Math.min(760, vp.w - 24);
+  const h = Math.min(560, vp.h - 24);
   const x = Math.round((vp.w - w) / 2);
   const y = Math.round((vp.h - h) / 2);
   const L = { x, y, w, h } as Layout;

@@ -212,14 +212,21 @@ function readHardware(index: number | null): RawPad | null {
 }
 
 /** Build the touch-driven synthetic pad from the current pointer state. */
+// Standard mapping is 16 buttons — ALWAYS emit the full array so a released
+// button reports `pressed:false` rather than dropping out. A shrinking array
+// left the tracker's `for i < buttons.length` poll loop skipping now-absent
+// indices, so their `held` bit stuck true and the button only ever fired
+// `pressed` once (e.g. a touch pad could jump once and never again).
+const STANDARD_BUTTONS = 16;
+
 function synthFromTouch(st: PadInternal): RawPad {
   const buttons: { pressed: boolean }[] = [];
+  for (let i = 0; i < STANDARD_BUTTONS; i++) buttons[i] = { pressed: false };
   for (const target of st.pointers.values()) {
     if (target.kind !== "button" || target.spec.button === undefined) continue;
     const idx = padButtonIndex(target.spec.button);
-    if (idx !== undefined) buttons[idx] = { pressed: true };
+    if (idx !== undefined && idx < buttons.length) buttons[idx].pressed = true;
   }
-  for (let i = 0; i < buttons.length; i++) buttons[i] ??= { pressed: false };
   return { connected: true, buttons, axes: [st.stick.x, st.stick.y] };
 }
 

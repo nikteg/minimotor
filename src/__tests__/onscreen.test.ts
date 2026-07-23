@@ -118,6 +118,25 @@ describe("OnscreenInput", () => {
       expect(pad.released(0)).toBe(true);
     });
 
+    it("fires pressed AGAIN after a release (no stuck held bit)", () => {
+      // The touch pad emits a FULL-length button array so a released button
+      // reports pressed:false rather than dropping out — otherwise the tracker's
+      // poll loop skips the absent index and its held bit sticks, so the button
+      // fires pressed only once (the 'jump once and never again' bug).
+      const full = (down: boolean): RawPad => ({ connected: true, buttons: btns(down), axes: [] });
+      let cur = full(false);
+      const pad = createGamepadTracker(() => fuseGamepad(cur, null) as unknown as Gamepad);
+
+      for (let cycle = 0; cycle < 3; cycle++) {
+        cur = full(true);
+        pad.poll();
+        expect(pad.pressed(0)).toBe(true); // pressed fires on EVERY press
+        cur = full(false);
+        pad.poll();
+        expect(pad.down(0)).toBe(false); // and the release always registers
+      }
+    });
+
     it("applies the tracker deadzone to fused axes", () => {
       let touch: RawPad = { connected: true, buttons: [], axes: [0.6, 0.1] };
       const pad = createGamepadTracker(() => fuseGamepad(touch, null) as unknown as Gamepad);

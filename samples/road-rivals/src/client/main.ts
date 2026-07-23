@@ -119,6 +119,11 @@ interface Remote {
   lastSeen: number;
   life: number;
   interp: Interpolator<RemoteState>;
+  // Previous interpolated car pose, used to derive skid marks locally (no
+  // extra netcode). Null when the remote isn't in a live car, so a respawn or
+  // teleport can't sweep a streak across the map.
+  prevCar: { x: number; y: number; a: number } | null;
+  tireMarkTimer: number;
 }
 interface Bullet {
   x: number;
@@ -590,6 +595,8 @@ transport.onMessage = (bytes) => {
       lastSeen: performance.now(),
       life: msg.life ?? 0,
       interp: Net.createInterpolator<RemoteState>({ delayMs: 100, lerp: blendState }),
+      prevCar: null,
+      tireMarkTimer: 0,
     };
     remotes.set(msg.id ?? "", remote);
   }
@@ -597,6 +604,7 @@ transport.onMessage = (bytes) => {
   if (remote.life !== msg.life) {
     remote.life = msg.life ?? 0;
     remote.interp.clear(); // respawns/teleports must snap, never sweep
+    remote.prevCar = null; // ...and must not draw a skid across the teleport
   }
   remote.interp.push(msg as unknown as RemoteState);
 };
@@ -948,6 +956,19 @@ function repelCarFrom(x: number, y: number, radius: number) {
   return true;
 }
 
+// Rear-wheel world positions for a car centred at (x, y) facing `angle`.
+// Shared by the local car and remote cars so their skid marks are identical.
+function rearWheels(x: number, y: number, angle: number): [Wheel, Wheel] {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  const rearX = x - c * 21;
+  const rearY = y - s * 21;
+  return [
+    { x: rearX - s * 11, y: rearY + c * 11 },
+    { x: rearX + s * 11, y: rearY - c * 11 },
+  ];
+}
+
 function updateTireMarks(dt: number) {
   for (let i = tireMarks.length - 1; i >= 0; i--) {
     tireMarks[i].life -= dt;
@@ -960,14 +981,7 @@ function updateTireMarks(dt: number) {
   tireMarkTimer -= dt;
   const speed = Math.hypot(car.vx, car.vy);
   const marking = tireSlip > 24 || Keys.down("Space") || speed > 300;
-  const c = Math.cos(car.angle);
-  const s = Math.sin(car.angle);
-  const rearX = car.x - c * 21;
-  const rearY = car.y - s * 21;
-  const wheels: [Wheel, Wheel] = [
-    { x: rearX - s * 11, y: rearY + c * 11 },
-    { x: rearX + s * 11, y: rearY - c * 11 },
-  ];
+  const wheels = rearWheels(car.x, car.y, car.angle);
   if (marking && previousRearWheels && tireMarkTimer <= 0) {
     const alpha = Mathf.clamp(0.18 + tireSlip / 420, 0.18, 0.58);
     for (let i = 0; i < 2; i++) {
@@ -983,6 +997,53 @@ function updateTireMarks(dt: number) {
     tireMarkTimer = 0.025;
   }
   previousRearWheels = wheels;
+}
+
+// Remote cars leave skid marks too, generated locally from their interpolated
+// motion (no protocol change). We derive speed and lateral (car-space) slip
+// from the per-frame change in the interpolated car pose, mirroring the local
+// car's `tireSlip`/threshold and alpha ramp, and feed the SAME `tireMarks`
+// array so remote marks age and render through the existing path.
+function updateRemoteTireMarks(dt: number) {
+  if (dt <= 0) return;
+  for (const remote of remotes.values()) {
+    const state = remote.interp.sample();
+    // Only a live, in-car remote lays rubber. Anything else clears tracking so
+    // a later re-entry or teleport can't sweep a streak across the map.
+    if (!state || state.phase !== "alive" || state.mode === "foot" || state.carAlive === false) {
+      remote.prevCar = null;
+      continue;
+    }
+    const prev = remote.prevCar;
+    remote.tireMarkTimer -= dt;
+    if (prev && remote.tireMarkTimer <= 0) {
+      const dx = state.cx - prev.x;
+      const dy = state.cy - prev.y;
+      const speed = Math.hypot(dx, dy) / dt;
+      const c = Math.cos(state.ca);
+      const s = Math.sin(state.ca);
+      // Lateral (sideways) speed in car space — the same quantity the local
+      // car uses as `tireSlip` (minus the unobservable handbrake bonus).
+      const slip = Math.abs(-s * dx + c * dy) / dt;
+      if (slip > 24 || speed > 300) {
+        const alpha = Mathf.clamp(0.18 + slip / 420, 0.18, 0.58);
+        const prevWheels = rearWheels(prev.x, prev.y, prev.a);
+        const wheels = rearWheels(state.cx, state.cy, state.ca);
+        for (let i = 0; i < 2; i++) {
+          tireMarks.push({
+            ...prevWheels[i],
+            x2: wheels[i].x,
+            y2: wheels[i].y,
+            life: 9,
+            alpha,
+          });
+        }
+        if (tireMarks.length > 700) tireMarks.splice(0, tireMarks.length - 700);
+        remote.tireMarkTimer = 0.025;
+      }
+    }
+    remote.prevCar = { x: state.cx, y: state.cy, a: state.ca };
+  }
 }
 
 function updateActors(dt: number) {
@@ -1308,6 +1369,7 @@ Loop.run({
       player.y = car.y;
     }
     updateTireMarks(dt);
+    updateRemoteTireMarks(dt);
     updateExplosions(dt);
     updateProjectiles(dt);
     if (gameState !== "alive" || !player.inCar) {

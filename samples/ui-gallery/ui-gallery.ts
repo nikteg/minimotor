@@ -9,9 +9,13 @@
 // current value in and returns the (possibly changed) value, which we store
 // straight back — the immediate-mode round-trip.
 import { Draw, Loop, Pointer, Stage, UI } from "minimotor";
-import type { TableSort } from "minimotor";
+import type { TableSort, Theme } from "minimotor";
 
-Stage.init("game", { background: "#12141c" });
+// No letterbox `resolution`: rendering at native scale keeps text crisp on
+// high-DPI (Retina) screens — a fractional letterbox factor softens glyphs.
+// We keep the live viewport handle and read `view.w`/`view.h` fresh each frame
+// so the column layout can REFLOW to the window width instead of scaling.
+const view = Stage.init("game", { background: "#12141c" });
 
 // ---- interactive state (the round-trip target for each widget) ----
 let tab = 0; // UI.tabs active index
@@ -41,6 +45,56 @@ let tableSel: Player | null = null;
 // drag & drop — two bins of items; a drop moves an item across
 let binLoadout: string[] = ["Sword", "Shield"];
 let binStash: string[] = ["Potion", "Torch", "Rope", "Key"];
+
+// ---- theme picker ----
+// Each preset is a `Partial<Theme>` merged over the DEFAULT theme by
+// `UI.setTheme` (overrides never compound). "Teal" is the built-in default, so
+// it passes `{}`. The colored presets swap the accent trio; "Slate Light"
+// flips the whole palette bright.
+const themePresets: { label: string; value: string; preset: Partial<Theme> }[] = [
+  { label: "Teal", value: "teal", preset: {} },
+  {
+    label: "Amber",
+    value: "amber",
+    preset: { accent: "#ffb454", accentSoft: "#a9772f", primary: "#ffb454" },
+  },
+  {
+    label: "Crimson",
+    value: "crimson",
+    preset: { accent: "#ff6b6b", accentSoft: "#a24444", primary: "#ff6b6b" },
+  },
+  {
+    label: "Emerald",
+    value: "emerald",
+    preset: { accent: "#4ade80", accentSoft: "#2f8f57", primary: "#4ade80" },
+  },
+  {
+    label: "Violet",
+    value: "violet",
+    preset: { accent: "#a78bfa", accentSoft: "#6f5ab0", primary: "#a78bfa" },
+  },
+  {
+    label: "Slate Light",
+    value: "slate-light",
+    preset: {
+      accent: "#2563eb",
+      accentSoft: "#7aa2e8",
+      primary: "#2563eb",
+      text: "#1b2330",
+      textDim: "#5a6675",
+      textDisabled: "#9aa5b1",
+      bg: "#e6ebf1",
+      bgHover: "#dce3ec",
+      bgActive: "#cdd6e2",
+      border: "#b3bfce",
+      panelBg: "rgba(244,247,250,0.96)",
+      track: "rgba(0,0,0,0.12)",
+      dim: "rgba(30,40,60,0.35)",
+      danger: "#e5484d",
+    },
+  },
+];
+let currentTheme = "teal"; // drives the Theme select; re-applied on change
 
 const uiId = UI.ids("ui-gallery");
 
@@ -91,15 +145,37 @@ Loop.run({
       color: "#8b94a0",
     });
 
+    // ---- responsive column layout ----
+    // Four ~300px columns want ~316px each (300 + gap). Fit as many across the
+    // LIVE viewport width as we can; wrapped columns stack DOWN by band. This
+    // reflows to the window instead of scaling the board, so nothing runs off
+    // the right edge on a narrow window while text stays native/crisp on a wide
+    // one. On a very small phone, wrapped columns may fall below the fold —
+    // crisp-but-tall beats blurry.
+    const baseX = 24;
+    const baseY = 64;
+    const colStep = 316;
+    const colW = 300;
+    const bandH = 540; // vertical stride for wrapped rows (clears the tallest column)
+    const cols = Math.max(1, Math.floor((view.w - baseX) / colStep));
+    const colPos = (i: number) => ({
+      x: baseX + (i % cols) * colStep,
+      y: baseY + Math.floor(i / cols) * bandH,
+    });
+    const c0 = colPos(0); // Buttons / Toggles / Select
+    const c1 = colPos(1); // Tabs / Progress / Overlays
+    const c2 = colPos(2); // List + Table
+    const c3 = colPos(3); // Drag & drop
+
     // Columns 1 & 2 FLOW inside parent columns: each group is pinned by neither
     // width nor height — it fills the column's width and AUTO-SIZES its height
     // from its children, so the sections stack with a gap and never overlap
     // (the whole point of the auto-sizing containers). `idScope` gives the
     // nested containers stable ids so their measured size caches frame-to-frame.
-    let popoverAnchor: Rect = { x: 344, y: 360, w: 0, h: 0 };
+    let popoverAnchor: Rect = { x: c1.x, y: c1.y + 300, w: 0, h: 0 };
     UI.idScope("panels", () => {
       // ================= COLUMN 1 =================
-      UI.col({ x: 24, y: 64, w: 300, gap: 16 }, () => {
+      UI.col({ x: c0.x, y: c0.y, w: colW, gap: 16 }, () => {
         // Buttons — every variant, two per row so the row fits the column.
         UI.group({ title: "Buttons", gap: 8 }, () => {
           UI.row({ gap: 8 }, () => {
@@ -183,7 +259,7 @@ Loop.run({
       });
 
       // ================= COLUMN 2 =================
-      UI.col({ x: 344, y: 64, w: 300, gap: 16 }, () => {
+      UI.col({ x: c1.x, y: c1.y, w: colW, gap: 16 }, () => {
         UI.group({ title: "Tabs", gap: 10 }, () => {
           tab = UI.tabs({ id: uiId("tabs"), items: tabPages, active: tab, w: 256 });
           if (tab === 0)
@@ -236,10 +312,10 @@ Loop.run({
     });
 
     // ================= COLUMN 3 =================
-    const col3 = 664;
+    const col3 = c2.x;
 
     // ---- List: a windowed, scrollable, selectable list ----
-    const listBox: Rect = { x: col3, y: 64, w: 250, h: 210 };
+    const listBox: Rect = { x: col3, y: c2.y, w: colW, h: 210 };
     UI.panel({ ...listBox, title: "List" });
     const listArea: Rect = {
       x: listBox.x + 10,
@@ -264,7 +340,7 @@ Loop.run({
     );
 
     // ---- Table: sortable headers + windowed, selectable rows ----
-    const tableBox: Rect = { x: col3, y: 292, w: 250, h: 232 };
+    const tableBox: Rect = { x: col3, y: c2.y + 228, w: colW, h: 232 };
     UI.panel({ ...tableBox, title: "Table" });
     const res = UI.table<Player>({
       x: tableBox.x + 10,
@@ -296,8 +372,8 @@ Loop.run({
     tableSel = res.selected;
 
     // ================= COLUMN 4 : Drag & drop =================
-    const col4 = 940;
-    const ddBox: Rect = { x: col4, y: 64, w: 300, h: 300 };
+    const col4 = c3.x;
+    const ddBox: Rect = { x: col4, y: c3.y, w: 300, h: 300 };
     UI.panel({ ...ddBox, title: "Drag & drop" });
     UI.text("Drag items between the two bins", {
       x: ddBox.x + 12,
@@ -436,6 +512,28 @@ Loop.run({
         choices: ["Neat", "Close"],
       });
       if (answer) dialogOpen = false;
+    }
+
+    // ---- Theme picker (top-right) ----
+    // Drawn LATE so its open drop-menu renders above the panels. Explicit x/y
+    // pin it to the top-right regardless of draw order; it reflows with view.w.
+    const selW = 168;
+    const selX = Math.max(baseX, view.w - baseX - selW);
+    const selY = 14;
+    Draw.text("Theme", { x: selX, y: 2, size: 12, color: "#8b94a0" });
+    const themeSel = UI.select({
+      id: uiId("theme"),
+      value: currentTheme,
+      options: themePresets.map((t) => ({ label: t.label, value: t.value })),
+      x: selX,
+      y: selY,
+      w: selW,
+      ariaLabel: "Theme",
+    });
+    if (themeSel.changed) {
+      currentTheme = themeSel.value;
+      const chosen = themePresets.find((t) => t.value === currentTheme);
+      UI.setTheme(chosen ? chosen.preset : {});
     }
 
     // Floating combat/score texts, then tooltips — always on the very top.

@@ -201,6 +201,12 @@ export interface GameOptions {
 
 export const STEP_MS = 1000 / 60;
 
+// Two fresh presses within this window count as a double-press / double-click;
+// the pointer variant also requires the second press to land within
+// DOUBLE_CLICK_SLOP logical px of the first.
+const DOUBLE_PRESS_MS = 300;
+const DOUBLE_CLICK_SLOP = 24;
+
 // Global fixed-step counter: the engine's heartbeat, shared by every game
 // instance (in practice one runs at a time). Pull-based content (cameras,
 // motions, cursors) folds forward by "steps elapsed since my last read"
@@ -302,11 +308,17 @@ function buildGame(options: GameOptions): Game {
   const heldKeys = new Set<string>();
   const pressedKeys = new Set<string>();
   const releasedKeys = new Set<string>();
+  // Double-press: a fresh press within DOUBLE_MS of the previous fresh press of
+  // the same key (auto-repeat ignored). Cleared with the other edge sets, so
+  // `doublePressed` is true for exactly one step, like `pressed`.
+  const doublePressedKeys = new Set<string>();
+  const lastKeyDownAt = new Map<string, number>();
 
   const keys: Keys = {
     down: (code) => heldKeys.has(code),
     pressed: (code) => pressedKeys.has(code),
     released: (code) => releasedKeys.has(code),
+    doublePressed: (code) => doublePressedKeys.has(code),
   };
 
   const ptr = {
@@ -316,10 +328,14 @@ function buildGame(options: GameOptions): Game {
     down: false,
     pressed: false,
     released: false,
+    doublePressed: false,
     frameReleased: false,
     framePressed: false,
     wheel: 0,
   };
+  let lastPointerDownAt = Number.NEGATIVE_INFINITY;
+  let lastPointerDownX = 0;
+  let lastPointerDownY = 0;
   const pointer: Pointer = {
     get x() {
       return ptr.x;
@@ -338,6 +354,9 @@ function buildGame(options: GameOptions): Game {
     },
     get released() {
       return ptr.released;
+    },
+    get doublePressed() {
+      return ptr.doublePressed;
     },
     get frameReleased() {
       return ptr.frameReleased;
@@ -377,7 +396,14 @@ function buildGame(options: GameOptions): Game {
     // Do not prevent Space/arrows or leak typing into game actions.
     if (editingText(e.target)) return;
     if (preventKeys.has(e.code)) e.preventDefault();
-    if (!heldKeys.has(e.code)) pressedKeys.add(e.code); // ignore auto-repeat
+    if (!heldKeys.has(e.code)) {
+      pressedKeys.add(e.code); // ignore auto-repeat
+      const t = performance.now();
+      if (t - (lastKeyDownAt.get(e.code) ?? Number.NEGATIVE_INFINITY) <= DOUBLE_PRESS_MS) {
+        doublePressedKeys.add(e.code);
+      }
+      lastKeyDownAt.set(e.code, t);
+    }
     heldKeys.add(e.code);
   };
   const onKeyUp = (e: KeyboardEvent) => {
@@ -409,6 +435,18 @@ function buildGame(options: GameOptions): Game {
   };
   const onPointerDown = (e: PointerEvent) => {
     setPointer(e);
+    const t = performance.now();
+    // Double-click: a second press within DOUBLE_PRESS_MS and close to the
+    // first (guards against a double-tap that's really two separate targets).
+    if (
+      t - lastPointerDownAt <= DOUBLE_PRESS_MS &&
+      Math.hypot(ptr.x - lastPointerDownX, ptr.y - lastPointerDownY) <= DOUBLE_CLICK_SLOP
+    ) {
+      ptr.doublePressed = true;
+    }
+    lastPointerDownAt = t;
+    lastPointerDownX = ptr.x;
+    lastPointerDownY = ptr.y;
     ptr.down = true;
     ptr.pressed = true;
     ptr.framePressed = true; // survives the steps; cleared at frame end
@@ -434,8 +472,10 @@ function buildGame(options: GameOptions): Game {
   function consumeEdges() {
     pressedKeys.clear();
     releasedKeys.clear();
+    doublePressedKeys.clear();
     ptr.pressed = false;
     ptr.released = false;
+    ptr.doublePressed = false;
   }
 
   const stepHandlers = new Set<() => void>();

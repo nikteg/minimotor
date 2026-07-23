@@ -381,6 +381,10 @@ export function toggle(
   if (state.hover && opts.tooltip) tooltip(opts.tooltip);
   const on = clicked ? !opts.on : opts.on;
 
+  // Dim a locked/disabled checkbox AND its label so it reads as unavailable
+  // (covers the box, the check, and the text — all drawn under this alpha).
+  if (opts.disabled) ctx.globalAlpha *= 0.45;
+
   // Checkbox radius scales down with the theme so a big radius doesn't turn
   // the little box into a circle.
   const boxR = Math.min(theme.radius, 4);
@@ -481,7 +485,8 @@ export function tabs(a: CanvasRenderingContext2D | TabsOptions, b?: TabsOptions)
       ctx.fillRect(x, rect.y + rect.h - 3, cellW - 2, 3);
     }
     ctx.fillStyle = isActive ? theme.text : theme.textDim;
-    ctx.fillText(label, x + cellW / 2, rect.y + rect.h / 2, cellW - 10);
+    ctx.textAlign = "center";
+    centeredText(ctx, label, x + cellW / 2, rect.y + rect.h / 2, cellW - 10);
   });
   ctx.restore();
   ctx.restore();
@@ -623,17 +628,21 @@ export function slider(
   const min = opts.min ?? 0;
   const max = opts.max ?? 1;
   const slot = place(opts, opts.w ?? 140, opts.h ?? 30);
-  // Reserve room for the label inside the slot's left edge so the label and
-  // track stay within the widget's slot even when it's placed flush-left in a
-  // container (a bare left-hung label would spill outside the box). The value
-  // still trails the track on the right, as before.
+  const fmt = (v: number) => (opts.format ? opts.format(v) : `${Math.round(v)}`);
+  // Reserve room INSIDE the slot for both the left label and the right value
+  // readout, so the track sits between them and neither spills past the
+  // widget's box. The value width is taken from the range extremes (not the
+  // live value) so the track doesn't resize — and the knob doesn't wobble —
+  // while dragging.
   ctx.save();
   ctx.font = opts.font ?? uiFont();
   const labelSpace = opts.label ? Math.ceil(ctx.measureText(opts.label).width) + 10 : 0;
+  const valueSpace =
+    Math.ceil(Math.max(ctx.measureText(fmt(min)).width, ctx.measureText(fmt(max)).width)) + 12;
   ctx.restore();
   const sx = slot.x + labelSpace;
   const sy = slot.y + slot.h / 2;
-  const sw = Math.max(10, slot.w - labelSpace);
+  const sw = Math.max(10, slot.w - labelSpace - valueSpace);
   const id = widgetId(opts.id, "slider") ?? `${sx}:${sy}`;
   const knobR = 7;
   const p = uiPointer();
@@ -682,9 +691,8 @@ export function slider(
   ctx.fillStyle = sliderDrag === id || hover ? theme.accent : theme.accentSoft;
   ctx.fill();
   ctx.fillStyle = opts.color ?? theme.text;
-  ctx.textAlign = "left";
-  const valueText = opts.format ? opts.format(value) : `${Math.round(value)}`;
-  centeredText(ctx, valueText, sx + sw + 12, sy);
+  ctx.textAlign = "right";
+  centeredText(ctx, fmt(value), slot.x + slot.w, sy);
   ctx.restore();
   if (keyboardFocused) drawFocusRing(ctx, hit);
   return value;

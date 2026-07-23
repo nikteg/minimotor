@@ -153,6 +153,21 @@ export function drawBox(
  *  baseline sits visibly high for most fonts. Honors the current textAlign.
  *  `maxW` clamps rendering (canvas squeezes the glyphs) so a label can never
  *  spill out of its widget. */
+/** Trim `text` with a trailing ellipsis until it fits `maxW` (binary search).
+ *  Returns the string unchanged when it already fits. */
+export function ellipsize(ctx: CanvasRenderingContext2D, text: string, maxW: number): string {
+  if (maxW <= 0 || ctx.measureText(text).width <= maxW) return text;
+  const ell = "…";
+  let lo = 0;
+  let hi = text.length;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (ctx.measureText(text.slice(0, mid) + ell).width <= maxW) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo > 0 ? text.slice(0, lo) + ell : ell;
+}
+
 export function centeredText(
   ctx: CanvasRenderingContext2D,
   text: string,
@@ -164,14 +179,18 @@ export function centeredText(
   // textBaseline — pin it before measuring, or state leaked from caller
   // drawing (e.g. "middle") skews the correction.
   ctx.textBaseline = "alphabetic";
-  const m = ctx.measureText(text);
+  // Clip to width with an ellipsis rather than passing `maxW` to fillText,
+  // which SQUISHES the glyphs horizontally. (Multi-line wrapping is handled by
+  // the caller via `wrapLines`; this keeps a single line from stretching.)
+  const str = maxW !== undefined ? ellipsize(ctx, text, maxW) : text;
+  const m = ctx.measureText(str);
   const asc = m.actualBoundingBoxAscent ?? 0;
   const desc = m.actualBoundingBoxDescent ?? 0;
   if (asc || desc) {
-    ctx.fillText(text, x, cy + (asc - desc) / 2, maxW);
+    ctx.fillText(str, x, cy + (asc - desc) / 2);
   } else {
     // Metrics unavailable (mocked ctx) — middle baseline is the best we have.
     ctx.textBaseline = "middle";
-    ctx.fillText(text, x, cy, maxW);
+    ctx.fillText(str, x, cy);
   }
 }

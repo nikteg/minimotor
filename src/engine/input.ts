@@ -15,6 +15,10 @@ export interface Keys {
   pressed(code: KeyCode): boolean;
   /** True for one update step when the key goes up. */
   released(code: KeyCode): boolean;
+  /** True for one update step when the key is pressed twice in quick
+   *  succession (within ~300ms) — double-tap a direction to dash, etc. Auto-
+   *  repeat doesn't count; the second tap also fires `pressed`. */
+  doublePressed(code: KeyCode): boolean;
 }
 
 /** Polled pointer (mouse + touch) in logical CSS pixels, relative to the
@@ -32,6 +36,9 @@ export interface Pointer {
   readonly pressed: boolean;
   /** True for one update step when the press ends. */
   readonly released: boolean;
+  /** True for one update step on a double-click — a second press within
+   *  ~300ms and close to the first. */
+  readonly doublePressed: boolean;
   /** True for the whole rendered frame in which the press ended. `released`
    *  is consumed by the fixed steps before `draw` runs — draw-phase hit
    *  testing (`UI.button`) reads this instead. */
@@ -49,6 +56,7 @@ export const Keys: Keys = {
   down: (code) => requireDefault().keys.down(code),
   pressed: (code) => requireDefault().keys.pressed(code),
   released: (code) => requireDefault().keys.released(code),
+  doublePressed: (code) => requireDefault().keys.doublePressed(code),
 };
 
 /** Polled pointer — read inside `update`. */
@@ -70,6 +78,9 @@ export const Pointer: Pointer = {
   },
   get released() {
     return requireDefault().pointer.released;
+  },
+  get doublePressed() {
+    return requireDefault().pointer.doublePressed;
   },
   get frameReleased() {
     return requireDefault().pointer.frameReleased;
