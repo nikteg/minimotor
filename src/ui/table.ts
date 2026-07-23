@@ -185,12 +185,18 @@ export function table<Row>(opts: TableOptions<Row>): TableResult<Row> {
       offset: opts.offset,
       scrollW,
       id: opts.id ? `${opts.id}:list` : undefined,
+      // Rows are keyboard-navigable: the list registers every row's id (so Tab
+      // reaches all of them) and auto-scrolls to the focused one. The per-row
+      // listItem below uses the SAME id but tabIndex:-1, so it draws the focus
+      // ring + handles Enter without adding a duplicate tab stop.
+      rowId: opts.id ? (i) => `${opts.id}:r:${i}` : undefined,
     },
     (i, rowRect) => {
       const rowData = rows[i];
       const isSel = opts.selected !== undefined && rowData === opts.selected;
       const clicked = listItem({
         id: opts.id ? `${opts.id}:r:${i}` : undefined,
+        tabIndex: -1,
         x: rowRect.x,
         y: rowRect.y,
         w: rowRect.w,

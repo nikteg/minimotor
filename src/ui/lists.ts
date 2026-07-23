@@ -1,6 +1,14 @@
 import { pointInRect } from "../collision.js";
 import { clamp } from "../mathf.js";
-import { hoverCursor, theme, uiPointer, withCtx } from "./core/index.js";
+import {
+  focusedId,
+  hoverCursor,
+  registerFocusable,
+  theme,
+  uiCtx,
+  uiPointer,
+  withCtx,
+} from "./core/index.js";
 import { clip } from "./layout.js";
 
 /** A vertically-scrolling windowed list. Owns the clip, the visible-range
@@ -29,6 +37,12 @@ export interface ListOptions {
   scrollW?: number;
   /** Stable prefix for the scrollbar's widget id. */
   id?: string;
+  /** Make the rows keyboard-navigable: given a row index, return the focusable
+   *  id its widget uses. The list then registers EVERY row (not only the visible
+   *  window) so Tab can reach them all, and auto-scrolls to keep the focused row
+   *  on screen instead of the tab order jumping straight to the next widget.
+   *  The row widget should set `tabIndex: -1` so the list owns the tab entry. */
+  rowId?: (index: number) => string;
 }
 
 /** Draw a windowed vertical list per `ListOptions`, calling `row(index, rect)`
@@ -46,6 +60,27 @@ export function list(
   const listW = opts.w - (scrollW ? scrollW + 4 : 0);
   const max = Math.max(0, content - opts.h);
   let offset = clamp(opts.offset, 0, max);
+
+  // Keyboard navigation: register ALL rows as focusables (so Tab reaches every
+  // row, not just the visible window), then scroll so the focused one is in
+  // view. Runs before the draw so a just-focused off-screen row scrolls in this
+  // same frame.
+  if (opts.rowId) {
+    const ctx = uiCtx();
+    const focused = focusedId();
+    let focusedIndex = -1;
+    for (let i = 0; i < opts.count; i++) {
+      const rid = opts.rowId(i);
+      registerFocusable(ctx, { id: rid });
+      if (rid === focused) focusedIndex = i;
+    }
+    if (focusedIndex >= 0) {
+      const top = focusedIndex * step;
+      if (top < offset) offset = top;
+      else if (top + opts.rowH > offset + opts.h) offset = top + opts.rowH - opts.h;
+      offset = clamp(offset, 0, max);
+    }
+  }
 
   clip({ x: opts.x, y: opts.y, w: listW, h: opts.h }, () => {
     const first = Math.max(0, Math.floor(offset / step));
