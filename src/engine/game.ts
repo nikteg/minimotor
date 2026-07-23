@@ -52,6 +52,10 @@ export interface Viewport {
   safeLeft: number;
   /** Safe area top inset */
   safeTop: number;
+  /** Safe area right inset */
+  safeRight: number;
+  /** Safe area bottom inset (home indicator etc.) */
+  safeBottom: number;
   /** Base device→canvas transform (dpr × letterbox scale, plus bar offset).
    *  Everything draws under this; `resetTransform(ctx)` re-applies it after a
    *  camera block. `scale` is 1 (offset 0) when the stage isn't letterboxed. */
@@ -699,10 +703,6 @@ function buildGame(options: GameOptions): Game {
 }
 
 function readViewport(canvas: HTMLCanvasElement, resolution?: { w: number; h: number }): Viewport {
-  // Known quirk: the canvas is sized to the full window, but fullscreenCSS
-  // offsets it by the safe-area insets — on a notched device the far edge
-  // overflows by the inset. Draw HUD elements inside `safeLeft`/`safeTop`
-  // and keep gameplay away from the extreme edges.
   const winW = window.innerWidth;
   const winH = window.innerHeight;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -712,8 +712,38 @@ function readViewport(canvas: HTMLCanvasElement, resolution?: { w: number; h: nu
   canvas.style.height = winH + "px";
   const ctx = canvas.getContext("2d")!;
 
+  // Safe-area insets (from fullscreenCSS's `--sai-*` custom properties; non-zero
+  // only when the viewport meta carries viewport-fit=cover, e.g. on notched iOS).
+  const rootStyle = getComputedStyle(document.documentElement);
+  const sai = (name: string) => parseFloat(rootStyle.getPropertyValue(name)) || 0;
+  const safeTop = sai("--sai-top");
+  const safeRight = sai("--sai-right");
+  const safeBottom = sai("--sai-bottom");
+  const safeLeft = sai("--sai-left");
+
+  // iPhone landscape reports the notch inset on BOTH sides; tag which edge
+  // actually holds it (dataset.notch) for anything that wants to know. The
+  // letterbox itself centers within the symmetric insets, so the notch always
+  // lands in a bar regardless of side.
+  if (/iPhone/.test(navigator.userAgent)) {
+    let angle: number | null = null;
+    const win = window as unknown as { orientation?: number };
+    if (typeof win.orientation === "number") angle = win.orientation;
+    else if (screen.orientation && typeof screen.orientation.angle === "number")
+      angle = screen.orientation.angle;
+    document.documentElement.dataset.notch =
+      angle === 90 ? "left" : angle === -90 || angle === 270 ? "right" : "none";
+  }
+
+  // The notch-free rectangle, in CSS px — the letterbox fits INSIDE this.
+  const availX = safeLeft;
+  const availY = safeTop;
+  const availW = Math.max(1, winW - safeLeft - safeRight);
+  const availH = Math.max(1, winH - safeTop - safeBottom);
+
   // Letterbox: a fixed logical resolution fitted (uniform, centered) into the
-  // window; otherwise the logical size IS the window and scale is 1.
+  // SAFE rectangle; otherwise the logical size IS the full window (games inset
+  // their own HUD using the reported safe insets).
   let w = winW;
   let h = winH;
   let scale = 1;
@@ -722,34 +752,25 @@ function readViewport(canvas: HTMLCanvasElement, resolution?: { w: number; h: nu
   if (resolution) {
     w = resolution.w;
     h = resolution.h;
-    scale = Math.min(winW / w, winH / h);
-    offsetX = (winW - w * scale) / 2;
-    offsetY = (winH - h * scale) / 2;
+    scale = Math.min(availW / w, availH / h);
+    offsetX = availX + (availW - w * scale) / 2;
+    offsetY = availY + (availH - h * scale) / 2;
   }
   // Base transform maps logical coords → device pixels (dpr × letterbox).
   ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * offsetX, dpr * offsetY);
 
-  const rootStyle = getComputedStyle(document.documentElement);
-  let safeLeft = parseFloat(rootStyle.getPropertyValue("--sai-left")) || 0;
-  const safeTop = parseFloat(rootStyle.getPropertyValue("--sai-top")) || 0;
-
-  // iPhone notch detection: the same inset appears on both sides in landscape.
-  // 90 = notch left, -90 / 270 = notch right.
-  if (/iPhone/.test(navigator.userAgent)) {
-    let angle: number | null = null;
-    const win = window as unknown as { orientation?: number };
-    if (typeof win.orientation === "number") angle = win.orientation;
-    else if (screen.orientation && typeof screen.orientation.angle === "number")
-      angle = screen.orientation.angle;
-    if (angle === -90 || angle === 270) {
-      safeLeft = 0;
-      document.documentElement.dataset.notch = "right";
-    } else if (angle === 90) {
-      document.documentElement.dataset.notch = "left";
-    } else {
-      document.documentElement.dataset.notch = "none";
-    }
-  }
-
-  return { canvas, ctx, w, h, dpr, safeLeft, safeTop, scale, offsetX, offsetY };
+  return {
+    canvas,
+    ctx,
+    w,
+    h,
+    dpr,
+    safeLeft,
+    safeTop,
+    safeRight,
+    safeBottom,
+    scale,
+    offsetX,
+    offsetY,
+  };
 }

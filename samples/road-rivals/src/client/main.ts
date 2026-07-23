@@ -254,6 +254,15 @@ const meter = Perf.createNetMeter();
 const vp = Stage.init("game", {
   background: "#101719",
   plugins: [Perf.plugin({ net: meter })],
+  // Fixed 16:9 logical stage, letterboxed INSIDE the safe area — so on a notched
+  // phone the play field never draws under the notch/home-indicator (the bars
+  // absorb it) and the aspect ratio is stable across devices. Tune the numbers to
+  // taste: larger = more world visible (more zoomed out).
+  resolution: { w: 1600, h: 900 },
+  barColor: "#0a0d0f",
+  // Inject the engine's fullscreen handling: viewport-fit=cover so the safe-area
+  // insets are real, no user zoom, and the letterbox fits inside the safe area.
+  fullscreen: true,
   // Block trackpad swipe-back / overscroll so a stray gesture can't navigate
   // away mid-match.
   preventNavigation: true,
