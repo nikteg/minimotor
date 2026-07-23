@@ -1,4 +1,5 @@
-import { ButtonVariant, PanelOptions, button, panel } from "./controls.js";
+import { ButtonVariant, button } from "./button.js";
+import { PanelOptions, panel } from "./panel.js";
 import {
   cachedContentSize,
   centeredText,
@@ -12,9 +13,9 @@ import {
   uiCtx,
   uiFont,
   withCtx,
-} from "./core/index.js";
-import { pointInRect } from "../collision.js";
-import { Stage } from "../engine/index.js";
+} from "../core/index.js";
+import { pointInRect } from "../../collision.js";
+import { Stage } from "../../engine/index.js";
 
 // ---------- Popover ----------
 

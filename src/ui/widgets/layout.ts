@@ -1,4 +1,4 @@
-import { panel } from "./controls.js";
+import { panel } from "./panel.js";
 import {
   AutoContainerConfig,
   LayoutChildren,
@@ -17,11 +17,11 @@ import {
   theme,
   uiCtx,
   uiPointer,
-} from "./core/index.js";
+} from "../core/index.js";
 import { scrollbar } from "./lists.js";
-import { pointInRect } from "../collision.js";
-import { Stage } from "../engine/index.js";
-import { clamp } from "../mathf.js";
+import { pointInRect } from "../../collision.js";
+import { Stage } from "../../engine/index.js";
+import { clamp } from "../../mathf.js";
 
 // Persisted scroll offset + a scrollbar fade alpha per scrolling container,
 // keyed by its scrollbar id.

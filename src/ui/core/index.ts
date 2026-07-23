@@ -20,9 +20,11 @@
 //
 // This is the kernel barrel: widgets and index.ts import from "./core/index.js".
 // Split: context / theme (+ draw helpers) / stack (layout primitives) /
-// identity / input (pointer + buttonState) / text / frame (the coupled focus +
-// overlay + editor + tooltip + float machinery, the per-frame ensureWired
-// housekeeping, and the frame-welded textInput/select).
+// identity / input (pointer + buttonState) / text / focus (the focusable
+// registry + keyboard/pad nav) / lifecycle (the per-frame runtime — overlay-pass
+// flags, tooltip + float machinery, the ensureWired housekeeping, and the
+// frame-end/reset hooks widgets register into). Widgets live in ../widgets and
+// depend on this kernel, never the other way around.
 
 export * from "./context.js";
 export * from "./theme.js";
@@ -31,4 +33,4 @@ export * from "./identity.js";
 export * from "./input.js";
 export * from "./text.js";
 export * from "./focus.js";
-export * from "./frame.js";
+export * from "./lifecycle.js";

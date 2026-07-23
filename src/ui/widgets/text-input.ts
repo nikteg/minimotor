@@ -1,58 +1,29 @@
+// ---------- Text input ----------
+// The themed text field: a canvas control backed by a hidden native <input> /
+// <textarea>, mirroring the element's live caret/selection so the canvas text is
+// selectable and Cmd/Ctrl+C copies it. A widget on the kernel — it evicts its
+// native editor and clears its per-frame seen-set via the lifecycle hooks
+// (onFrameEnd / onReset), so core never imports it back.
 import {
+  Stack,
+  centeredText,
+  drawBox,
   drawFocusRing,
-  focusEndFrame,
+  ensureWired,
   focusFromPointer,
-  markFocusTrap,
-  markFocusableOverlay,
-  padNav,
+  onFrameEnd,
+  onReset,
+  place,
   registerFocusable,
-  resetFocus,
-  wireFocusKeyboard,
-} from "./focus.js";
-import { setBegunCtx, uiCtx, withCtx } from "./context.js";
-import { idScopes, requiredWidgetId } from "./identity.js";
-import { hoverCursor, rawPointer, setCursor, uiPointer } from "./input.js";
-import { Stack, place } from "./stack.js";
-import { centeredText, drawBox, setTheme, theme, uiFont } from "./theme.js";
-import { wrapLines } from "./text.js";
-import { button, panel } from "../controls.js";
+  requiredWidgetId,
+  setCursor,
+  theme,
+  uiFont,
+  uiPointer,
+  withCtx,
+  wrapLines,
+} from "../core/index.js";
 import { pointInRect } from "../../collision.js";
-import { clamp } from "../../mathf.js";
-import { Loop, Pointer, Stage } from "../../engine/index.js";
-
-// ---------- Drag state (shared: widgets set it, the frame loop cancels it) ----
-export interface ActiveDrag {
-  sourceId: string;
-  payload: unknown;
-  offsetX: number;
-  offsetY: number;
-}
-
-export let activeDrag: ActiveDrag | null = null;
-
-/** Set/clear the active drag from the dragdrop widgets (they can't reassign an
- *  imported binding). */
-export function setActiveDrag(d: ActiveDrag | null): void {
-  activeDrag = d;
-}
-
-/** Mark that an overlay ran this frame and open its live-input pass — called by
- *  the overlay widgets (popover/modal), which can't reassign the imported flags. */
-export function enterOverlay(): void {
-  overlaySeen = true;
-  markFocusTrap();
-  inOverlayPass = true;
-}
-
-// ---------- Shared input (overlay capture + hover cursor) ----------
-
-// While an overlay (modal OR open popover) is up, widgets drawn outside its
-// pass must go dead — otherwise a click "through" it still lands on them.
-export let overlaySeen = false; // an overlay ran this frame
-
-export let overlayActive = false; // an overlay ran last frame → block the background
-
-export let inOverlayPass = false; // the rest of the frame belongs to the overlay
 
 export interface TextEditor {
   id: string;
@@ -86,130 +57,6 @@ export let textEditor: TextEditor | null = null;
 // id evict an earlier focused field's editor at frame-end (you couldn't focus
 // any field but the last one). Same shape as `selectSeen`. Cleared each frame.
 export const textInputSeen = new Set<string>();
-
-export interface SelectEditor {
-  id: string;
-  select: HTMLSelectElement;
-  index: number;
-  changed: boolean;
-  open: boolean;
-  justOpened: boolean;
-}
-
-export let selectEditor: SelectEditor | null = null;
-
-// Ids of every select drawn THIS frame. A Set, not a single id: with more than
-// one select on screen, a single "last seen" id let a later-drawn select's id
-// evict an earlier open select at frame-end (its menu vanished on the click
-// that opened it). Cleared each frame.
-export const selectSeen = new Set<string>();
-
-export interface SelectOverlayRequest<T = unknown> {
-  ctx: CanvasRenderingContext2D;
-  opts: SelectOptions<T> & { id: string };
-  rect: { x: number; y: number; w: number; h: number };
-}
-
-export let selectOverlayRequest: SelectOverlayRequest | null = null;
-
-export let selectCommit: { id: string; index: number } | null = null;
-
-// ---------- Floating text ----------
-
-/** Options for a floating text. */
-export interface FloatTextOptions {
-  /** Rise speed in px/s (negative = up). Default -50. */
-  vy?: number;
-  /** Lifetime in ms. Default 900. */
-  life?: number;
-  /** Fill color. Default "#fff". */
-  color?: string;
-  /** Font. Default "bold 14px monospace". */
-  font?: string;
-}
-
-export interface FloatText {
-  text: string;
-  x: number;
-  y: number;
-  vy: number;
-  life: number;
-  remaining: number;
-  color: string;
-  font: string;
-}
-
-/** A pool of rising, fading texts. Pure — drive `advance(dt)` yourself (the
- *  `UI` facade wires it to the fixed step for you). */
-export interface FloatTextManager {
-  /** Spawn a rising text at `(x, y)`; `opts` tunes drift/lifetime/color/font. */
-  spawn(text: string, x: number, y: number, opts?: FloatTextOptions): void;
-  /** Age every text by `dt` ms; expired ones are removed. */
-  advance(dt: number): void;
-  /** Draw all live texts, centered on their (drifting) position. */
-  draw(ctx: CanvasRenderingContext2D): void;
-  /** Remove every text at once. */
-  clear(): void;
-  /** Number of live texts currently in the pool. */
-  readonly size: number;
-}
-
-/** Create a fresh, empty `FloatTextManager` pool. The `UI` facade keeps a
- *  shared one (`UI.floatText`); make your own for an isolated set of texts. */
-export function createFloatText(): FloatTextManager {
-  const texts: FloatText[] = [];
-  return {
-    spawn(text, x, y, opts = {}) {
-      texts.push({
-        text,
-        x,
-        y,
-        vy: opts.vy ?? -50,
-        life: opts.life ?? 900,
-        remaining: opts.life ?? 900,
-        color: opts.color ?? "#fff",
-        font: opts.font ?? "bold 14px monospace",
-      });
-    },
-
-    advance(dt) {
-      for (let i = texts.length - 1; i >= 0; i--) {
-        const t = texts[i];
-        t.remaining -= dt;
-        if (t.remaining <= 0) {
-          texts.splice(i, 1);
-          continue;
-        }
-        t.y += (t.vy * dt) / 1000;
-      }
-    },
-
-    draw(ctx) {
-      if (texts.length === 0) return;
-      ctx.save();
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      for (const t of texts) {
-        // Full strength, then fade out over the last half of the lifetime.
-        ctx.globalAlpha = Math.min(1, (2 * t.remaining) / t.life);
-        ctx.fillStyle = t.color;
-        ctx.font = t.font;
-        ctx.fillText(t.text, t.x, t.y);
-      }
-      ctx.restore();
-    },
-
-    clear() {
-      texts.length = 0;
-    },
-
-    get size() {
-      return texts.length;
-    },
-  };
-}
-
-// ---------- Text input ----------
 
 /** Inputs to `textInput`: the controlled `value`, geometry, and native
  *  `<input>` hints. */
@@ -489,6 +336,7 @@ export function textInput(
 ): TextInputResult {
   const [ctx, opts] = withCtx(a, b);
   ensureWired();
+  ensureTextInputHooks();
   const id = requiredWidgetId(opts.id, "textInput");
   textInputSeen.add(id);
   // `rows` sets the visible line count. rows > 1 (or an explicit `multiline`)
@@ -720,410 +568,25 @@ export function textInput(
   return { value, changed, submitted, focused };
 }
 
-// ---------- Select dropdown ----------
-
-/** One entry in a `select` dropdown: a `label` and the `value` it yields. */
-export interface SelectOption<T> {
-  /** Text shown for this option. */
-  label: string;
-  /** Value returned when this option is chosen. */
-  value: T;
-  /** Non-selectable (grayed in the list). */
-  disabled?: boolean;
-}
-
-/** Inputs to `select`: the controlled `value`, the `options` list, geometry,
- *  and native `<select>` hints. */
-export interface SelectOptions<T> {
-  /** Stable identity. May be omitted inside `UI.idScope()`. */
-  id?: string;
-  /** Current value — controlled; matched against `options` by `Object.is`.
-   *  Assign the result's `value` back. */
-  value: T;
-  /** The selectable options (label + value). */
-  options: readonly SelectOption<T>[];
-  /** Top-left x in logical px. */
-  x?: number;
-  /** Top-left y in logical px. */
-  y?: number;
-  /** Control width in px. Default `180`; the drop menu matches it. */
-  w?: number;
-  /** Control height in px. Default `32`. */
-  h?: number;
-  /** Place in this layout stack — supplies x/y (and h). */
-  at?: Stack;
-  /** Grayed out; won't open. */
-  disabled?: boolean;
-  /** Shown when no option matches `value`. Default `"Select…"`. */
-  placeholder?: string;
-  /** Max option rows shown at once; the list windows around the current
-   *  selection. Default `8`. */
-  maxVisible?: number;
-  /** Accessible name for the hidden `<select>`. Falls back to `id`. */
-  ariaLabel?: string;
-  /** Keyboard traversal order. Negative values exclude the select. */
-  tabIndex?: number;
-}
-
-/** What `select` returns this frame: the selected `value` plus changed/open
- *  flags. */
-export interface SelectResult<T> {
-  /** Currently selected value — assign it back to your state. */
-  value: T;
-  /** `true` for the one frame the selection changed. */
-  changed: boolean;
-  /** `true` while the drop menu is open. */
-  open: boolean;
-}
-
-export function removeSelectEditor(): void {
-  selectEditor?.select.remove();
-  selectEditor = null;
-}
-
-export function openSelectEditor<T>(
-  opts: SelectOptions<T> & { id: string },
-  index: number,
-  menuOpen = true,
-): void {
-  removeSelectEditor();
-  const select = document.createElement("select");
-  select.setAttribute("aria-label", opts.ariaLabel ?? opts.id);
-  select.tabIndex = -1;
-  select.dataset.minimotorUi = "true";
-  Object.assign(select.style, {
-    position: "fixed",
-    left: "-1000px",
-    top: "0",
-    width: "1px",
-    height: "1px",
-    opacity: "0",
-    pointerEvents: "none",
-  });
-  for (let i = 0; i < opts.options.length; i++) {
-    const option = document.createElement("option");
-    option.value = String(i);
-    option.textContent = opts.options[i].label;
-    option.disabled = opts.options[i].disabled ?? false;
-    select.appendChild(option);
-  }
-  select.value = index >= 0 ? String(index) : "";
-  const editor: SelectEditor = {
-    id: opts.id,
-    select,
-    index,
-    changed: false,
-    open: menuOpen,
-    justOpened: menuOpen,
-  };
-  select.addEventListener("change", () => {
-    editor.index = Number(select.value);
-    editor.changed = true;
-  });
-  select.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      editor.open = !editor.open;
-      editor.justOpened = editor.open;
-    } else if (event.key === "Escape") {
-      editor.open = false;
-      select.blur();
-    }
-  });
-  document.body.appendChild(select);
-  selectEditor = editor;
-  select.focus({ preventScroll: true });
-}
-
-/** Themed dropdown backed by a hidden native `<select>`. Clicking opens a
- * canvas option list; focused native arrow-key navigation updates the same
- * controlled value. */
-export function select<T>(opts: SelectOptions<T>): SelectResult<T>;
-export function select<T>(ctx: CanvasRenderingContext2D, opts: SelectOptions<T>): SelectResult<T>;
-export function select<T>(
-  a: CanvasRenderingContext2D | SelectOptions<T>,
-  b?: SelectOptions<T>,
-): SelectResult<T> {
-  const [ctx, opts] = withCtx(a, b);
-  ensureWired();
-  const id = requiredWidgetId(opts.id, "select");
-  const resolvedOpts = { ...opts, id };
-  selectSeen.add(id);
-  const rect = place(opts, opts.w ?? 180, opts.h ?? 32);
-  const currentIndex = opts.options.findIndex((option) => Object.is(option.value, opts.value));
-  const keyboardFocused = registerFocusable(ctx, {
-    id,
-    disabled: opts.disabled,
-    tabIndex: opts.tabIndex,
-    native: true,
-    focus: () => {
-      if (selectEditor?.id === id) selectEditor.select.focus({ preventScroll: true });
-      else openSelectEditor(resolvedOpts, currentIndex, false);
-    },
-    blur: () => {
-      if (selectEditor?.id === id) {
-        selectEditor.open = false;
-        selectEditor.select.blur();
-      }
-    },
-  });
-  const p = selectEditor?.id === id ? rawPointer() : uiPointer();
-  const hovered = !opts.disabled && pointInRect(p.x, p.y, rect);
-  if (hovered) hoverCursor(true);
-
-  if (hovered && p.released && !opts.disabled) {
-    focusFromPointer(ctx, id);
-    if (selectEditor?.id === id) {
-      selectEditor.open = !selectEditor.open;
-      selectEditor.justOpened = selectEditor.open;
-      selectEditor.select.focus({ preventScroll: true });
-    } else openSelectEditor(resolvedOpts, currentIndex);
-  }
-  let editor = selectEditor?.id === id ? selectEditor : null;
-  const committed = selectCommit?.id === id ? selectCommit.index : -1;
-  if (committed >= 0) selectCommit = null;
-  let value =
-    committed >= 0
-      ? (opts.options[committed]?.value ?? opts.value)
-      : editor && editor.index >= 0
-        ? (opts.options[editor.index]?.value ?? opts.value)
-        : opts.value;
-  let changed = committed >= 0 || (editor?.changed ?? false);
-  const selected = opts.options.find((option) => Object.is(option.value, value));
-
-  ctx.save();
-  drawBox(ctx, rect.x, rect.y, rect.w, rect.h, {
-    fill: opts.disabled ? theme.bgActive : theme.bg,
-    stroke: editor ? theme.accent : hovered ? theme.accentSoft : theme.border,
-  });
-  ctx.font = uiFont();
-  ctx.fillStyle = selected ? theme.text : theme.textDim;
-  ctx.textAlign = "left";
-  centeredText(
-    ctx,
-    selected?.label ?? opts.placeholder ?? "Select…",
-    rect.x + 10,
-    rect.y + rect.h / 2,
-    rect.w - 36,
-  );
-  ctx.fillStyle = theme.textDim;
-  ctx.beginPath();
-  ctx.moveTo(rect.x + rect.w - 20, rect.y + rect.h / 2 - 3);
-  ctx.lineTo(rect.x + rect.w - 10, rect.y + rect.h / 2 - 3);
-  ctx.lineTo(rect.x + rect.w - 15, rect.y + rect.h / 2 + 3);
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
-  if (keyboardFocused) drawFocusRing(ctx, rect);
-
-  if (editor?.open) {
-    markFocusableOverlay(id);
-    // Defer the menu until frame-end so siblings drawn later in the callback
-    // layout cannot paint over it. Input is still captured immediately.
-    overlaySeen = true;
-    inOverlayPass = true;
-    selectOverlayRequest = { ctx, opts: resolvedOpts, rect } as SelectOverlayRequest;
-    editor.changed = false;
-  }
-  return { value, changed, open: !!editor?.open };
-}
-
-export function drawSelectOverlay(): void {
-  const request = selectOverlayRequest;
-  selectOverlayRequest = null;
-  if (!request || !selectEditor?.open || selectEditor.id !== request.opts.id) return;
-  const { ctx, opts, rect } = request;
-  const editor = selectEditor;
-  const p = rawPointer();
-  const value = editor.index >= 0 ? opts.options[editor.index]?.value : opts.value;
-  // Clamp the upper bound to ≥ 1 so an empty option list still yields 1 row of
-  // space (a plain clamp then works — the lower bound wins on an empty list).
-  const visible = clamp(opts.maxVisible ?? 8, 1, Math.max(1, opts.options.length));
-  const itemH = 30;
-  const menuH = visible * itemH + 4;
-  const vp = Stage.viewport;
-  const menuY = rect.y + rect.h + menuH <= vp.h - 4 ? rect.y + rect.h + 2 : rect.y - menuH - 2;
-  const menu = { x: rect.x, y: menuY, w: rect.w, h: menuH };
-
-  ctx.save();
-  ctx.fillStyle = theme.bgActive;
-  ctx.fillRect(menu.x, menu.y, menu.w, menu.h);
-  ctx.restore();
-  panel(ctx, { ...menu, bg: theme.bgActive });
-  const start = Math.max(
-    0,
-    Math.min(opts.options.length - visible, editor.index - Math.floor(visible / 2)),
-  );
-  for (let i = start; i < Math.min(opts.options.length, start + visible); i++) {
-    const option = opts.options[i];
-    if (
-      button(ctx, {
-        x: menu.x + 2,
-        y: menu.y + 2 + (i - start) * itemH,
-        w: menu.w - 4,
-        h: itemH,
-        label: option.label,
-        disabled: option.disabled,
-        variant: Object.is(option.value, value) ? "primary" : "ghost",
-      })
-    ) {
-      editor.index = i;
-      editor.select.value = String(i);
-      editor.index = i;
-      editor.select.value = String(i);
-      editor.open = false;
-      selectCommit = { id: opts.id, index: i }; // observed by select() next draw
-      return;
-    }
-  }
-  if (
-    !editor.justOpened &&
-    p.released &&
-    !pointInRect(p.x, p.y, rect) &&
-    !pointInRect(p.x, p.y, menu)
-  ) {
-    removeSelectEditor();
-    return;
-  }
-  editor.justOpened = false;
-}
-
-// ---------- Tooltip ----------
-
-export let tipRequest: string | null = null; // asked for this frame
-
-export let tipShown: { text: string; since: number } | null = null; // hover-stable
-
-/** Request a tooltip for this frame (call while your hit-area is hovered —
- *  widgets with a `tooltip` option do this for you). Drawn by `drawTips`
- *  after the hover has held ~350 ms. */
-export function tooltip(msg: string): void {
-  ensureWired();
-  tipRequest = msg;
-}
-
-/** Draw the pending tooltip near the pointer, clamped to the viewport. Call
- *  LAST in draw (after `drawFloatText`, after any modal) so it sits on top. */
-export function drawTips(maybeCtx?: CanvasRenderingContext2D): void {
-  const ctx = maybeCtx ?? uiCtx();
-  if (!tipShown || performance.now() - tipShown.since < 350) return;
-  const msg = tipShown.text;
-  const vp = Stage.viewport;
-  ctx.save();
-  ctx.font = uiFont(theme.fontSize - 1);
-  const w = ctx.measureText(msg).width + 16;
-  const h = 24;
-  let x = Pointer.x + 14;
-  let y = Pointer.y + 20;
-  if (x + w > vp.w - 4) x = vp.w - 4 - w;
-  if (y + h > vp.h - 4) y = Pointer.y - 8 - h;
-  drawBox(ctx, x, y, w, h, {
-    fill: theme.panelBg,
-    stroke: theme.border,
-    border: 1,
-    radius: Math.min(theme.radius, 6),
-  });
-  ctx.fillStyle = theme.text;
-  ctx.textAlign = "left";
-  centeredText(ctx, msg, x + 8, y + h / 2);
-  ctx.restore();
-}
-
-// ---------- Default facade (aged by the default Loop's fixed step) ----------
-
-export let floats = createFloatText();
-
-export let spinAngle = 0;
-
-export let wired = false;
-
-export function ensureWired(): void {
-  wireFocusKeyboard();
-  if (wired) return;
-  // Registering the loop hooks needs the default game; without one
-  // (headless/tests) the calls throw — stay unwired and retry next call.
-  try {
-    Loop.onStep(() => {
-      floats.advance(Loop.step);
-      spinAngle += 0.12; // ~7 rad/s at 60 steps
-      padNav();
-    });
-    // Frame-end housekeeping for the immediate-mode state machines.
-    Loop.onFrame(() => {
-      // Deferred overlays render above every ordinary widget in the user's
-      // draw callback (and still see frame-scoped pointer release edges).
-      drawSelectOverlay();
-      setBegunCtx(null); // re-begin() each frame when overriding the ctx
-      // Complete this frame's keyboard registry (after every widget, including
-      // deferred overlays, registered) and run the overlay focus trap.
-      focusEndFrame();
-      // Overlay capture: what was drawn this frame gates input next frame.
-      overlayActive = overlaySeen;
-      overlaySeen = false;
-      inOverlayPass = false;
-      // Tooltip hover-stability: same text keeps its timer; a change restarts.
-      if (tipRequest) {
-        if (tipShown?.text !== tipRequest) {
-          tipShown = { text: tipRequest, since: performance.now() };
-        }
-      } else {
-        tipShown = null;
-      }
-      tipRequest = null;
-      // Native editing bridges only live while their immediate-mode widget is
-      // still submitted every frame.
-      if (textEditor && !textInputSeen.has(textEditor.id)) removeTextEditor();
-      if (selectEditor && !selectSeen.has(selectEditor.id)) removeSelectEditor();
-      textInputSeen.clear();
-      selectSeen.clear();
-      // A release not consumed by any drop target cancels the drag.
-      try {
-        if (activeDrag && Pointer.frameReleased) activeDrag = null;
-      } catch {
-        activeDrag = null;
-      }
-    });
-    wired = true;
-  } catch {
-    // no default game yet
-  }
-}
-
-/** Spawn a rising, fading text at (x, y) — score pops, damage numbers,
- *  pickup labels. Aged on the fixed step; draw with `drawFloatText`. */
-export function floatText(str: string, x: number, y: number, opts?: FloatTextOptions): void {
-  ensureWired();
-  floats.spawn(str, x, y, opts);
-}
-
-/** Draw all live floating texts. Call late in `draw` so they sit on top. */
-export function drawFloatText(ctx?: CanvasRenderingContext2D): void {
-  floats.draw(ctx ?? uiCtx());
-}
-
-/** Remove all floating texts (e.g. on scene change). */
-export function clearFloatText(): void {
-  floats.clear();
-}
-
-/** Reset floats, theme and Loop wiring — for tests. */
-export function _reset(): void {
-  floats = createFloatText();
-  setTheme({});
-  tipRequest = null;
-  tipShown = null;
-  overlaySeen = false;
-  overlayActive = false;
-  inOverlayPass = false;
-  activeDrag = null;
-  removeTextEditor();
-  removeSelectEditor();
+// Native editing bridges only live while their immediate-mode widget is still
+// submitted every frame; drop the editor when its field stops drawing.
+function textInputEndFrame(): void {
+  if (textEditor && !textInputSeen.has(textEditor.id)) removeTextEditor();
   textInputSeen.clear();
-  selectSeen.clear();
-  selectOverlayRequest = null;
-  selectCommit = null;
-  resetFocus();
-  idScopes.length = 0;
-  setBegunCtx(null);
-  wired = false;
+}
+
+/** Reset text-input state — for tests (run via the kernel's onReset). */
+function resetTextInput(): void {
+  removeTextEditor();
+  textInputSeen.clear();
+}
+
+// Register the frame-end eviction + reset with the lifecycle the first time a
+// field is drawn, so core never has to import this widget.
+let hooksRegistered = false;
+function ensureTextInputHooks(): void {
+  if (hooksRegistered) return;
+  hooksRegistered = true;
+  onFrameEnd(textInputEndFrame);
+  onReset(resetTextInput);
 }

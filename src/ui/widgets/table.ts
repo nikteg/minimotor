@@ -1,5 +1,5 @@
-import { listItem } from "./controls.js";
-import { text, uiCtx } from "./core/index.js";
+import { listItem } from "./list-item.js";
+import { text, uiCtx } from "../core/index.js";
 import { list } from "./lists.js";
 
 // ---------- Table ----------

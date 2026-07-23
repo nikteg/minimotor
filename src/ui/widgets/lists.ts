@@ -1,5 +1,5 @@
-import { pointInRect } from "../collision.js";
-import { clamp } from "../mathf.js";
+import { pointInRect } from "../../collision.js";
+import { clamp } from "../../mathf.js";
 import {
   focusedId,
   hoverCursor,
@@ -8,7 +8,7 @@ import {
   uiCtx,
   uiPointer,
   withCtx,
-} from "./core/index.js";
+} from "../core/index.js";
 import { clip } from "./layout.js";
 
 /** A vertically-scrolling windowed list. Owns the clip, the visible-range

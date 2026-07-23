@@ -5,8 +5,8 @@ import {
   setCursor,
   uiPointer,
   type ActiveDrag,
-} from "./core/index.js";
-import { pointInRect } from "../collision.js";
+} from "../core/index.js";
+import { pointInRect } from "../../collision.js";
 
 // ---------- Drag and drop ----------
 

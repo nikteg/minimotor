@@ -1,4 +1,4 @@
-import { ensureWired, inOverlayPass, overlayActive } from "./frame.js";
+import { ensureWired, inOverlayPass, overlayActive } from "./lifecycle.js";
 import { Pointer, Stage } from "../../engine/index.js";
 import { pointInRect } from "../../collision.js";
 

@@ -6,7 +6,7 @@
 // (`inOverlayPass`), which still lives in frame.ts alongside the overlay widgets.
 import { gamepad, Buttons } from "../../input/gamepad.js";
 import { roundRectPath, theme } from "./theme.js";
-import { inOverlayPass } from "./frame.js";
+import { inOverlayPass } from "./lifecycle.js";
 
 // Focusables register in draw order each frame. Keyboard events happen between
 // frames, so they operate on the last complete registry rather than a retained
@@ -240,13 +240,19 @@ export function padNav(): void {
     else if (sx < -T && lastNavStick.x >= -T) stickH = -1;
     lastNavStick = { x: sx, y: sy };
   }
-  if (pad.pressed(Buttons.DpadDown) || stickV > 0) {
+  const down = pad.pressed(Buttons.DpadDown) || stickV > 0;
+  const up = pad.pressed(Buttons.DpadUp) || stickV < 0;
+  if (down || up) {
     focusVisible = true;
-    moveWidgetFocus(1);
-  }
-  if (pad.pressed(Buttons.DpadUp) || stickV < 0) {
-    focusVisible = true;
-    moveWidgetFocus(-1);
+    const dir: 1 | -1 = down ? 1 : -1;
+    const before = focusedWidget;
+    moveWidgetFocus(dir);
+    // Focus didn't move — a single candidate, or a trapped overlay (an open
+    // select's menu). Feed the direction to the focused widget as an arrow
+    // command so it can consume it (walk the option list) instead of stalling.
+    if (focusedWidget && focusedWidget === before) {
+      keyboardCommand = { id: focusedWidget, key: dir > 0 ? "ArrowDown" : "ArrowUp" };
+    }
   }
   if (!focusedWidget) return;
   if (pad.pressed(Buttons.A)) keyboardActivation = focusedWidget;
