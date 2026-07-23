@@ -1,12 +1,15 @@
 import { ButtonVariant, PanelOptions, button, panel } from "./controls.js";
 import {
+  cachedContentSize,
   centeredText,
   enterOverlay,
   ensureWired,
   rawPointer,
+  runAutoSized,
   stack,
   text,
   theme,
+  uiCtx,
   uiFont,
   withCtx,
 } from "./core/index.js";
@@ -16,11 +19,18 @@ import { Stage } from "../engine/index.js";
 // ---------- Popover ----------
 
 /** An anchored floating panel (dropdown, filter flyout). */
-export interface PopoverOptions extends PanelOptions {
+export interface PopoverOptions extends Omit<PanelOptions, "h"> {
   /** Open state — pass yours in, assign the return value back. */
   open: boolean;
   /** Identity across frames. Defaults to the position. */
   id?: string;
+  /** Explicit height. OMIT when using the `children` form — the box then
+   *  AUTO-SIZES to its content (measured last frame, à la `group`). */
+  h?: number;
+  /** Gap between children (children form). Default 8. */
+  gap?: number;
+  /** Inner padding (children form). Default 12. */
+  pad?: number;
 }
 
 // Whether each popover was open LAST frame — the click that opens one lands
@@ -36,23 +46,55 @@ const popoverWasOpen = new Map<string, boolean>();
  *    if (UI.button(trigger)) filtersOpen = !filtersOpen;
  *    filtersOpen = UI.popover({ x, y, w: 240, h: 120, open: filtersOpen });
  *    if (filtersOpen) { ...toggles/sliders at x/y... } */
+/** A floating panel that closes on an outside click. The VALUE form draws a
+ *  fixed box (`h` required) you fill yourself; the CHILDREN form
+ *  (`popover(opts, () => {...})`) lays widgets out inside and AUTO-SIZES its
+ *  height to them (omit `h`). Returns the open state — assign it back. A close
+ *  button inside the closure can't override that return, so set your own flag:
+ *  `if (closed) open = false;`. */
 export function popover(opts: PopoverOptions): boolean;
 export function popover(ctx: CanvasRenderingContext2D, opts: PopoverOptions): boolean;
-export function popover(a: CanvasRenderingContext2D | PopoverOptions, b?: PopoverOptions): boolean {
-  const [ctx, opts] = withCtx(a, b);
+export function popover(opts: PopoverOptions, children: () => void): boolean;
+export function popover(
+  ctx: CanvasRenderingContext2D,
+  opts: PopoverOptions,
+  children: () => void,
+): boolean;
+export function popover(
+  a: CanvasRenderingContext2D | PopoverOptions,
+  b?: PopoverOptions | (() => void),
+  c?: () => void,
+): boolean {
+  const aIsCtx = typeof (a as CanvasRenderingContext2D)?.fillRect === "function";
+  const ctx = aIsCtx ? (a as CanvasRenderingContext2D) : uiCtx();
+  const opts = (aIsCtx ? b : a) as PopoverOptions;
+  const children = (aIsCtx ? c : (b as (() => void) | undefined)) as (() => void) | undefined;
   ensureWired();
   const id = opts.id ?? `${opts.x}:${opts.y}`;
+  // Share the one auto-size cache (`containerKey`-style key) — no popover-only
+  // height map. The children form auto-sizes height from last frame's measured
+  // content; the value form keeps the explicit `h`.
+  const key = `popover:${id}`;
+  const pad = opts.pad ?? 12;
+  const top = opts.title ? 32 : 0;
+  const h = opts.h ?? (children ? (cachedContentSize(key)?.h ?? 72) : 0);
+  const rect = { x: opts.x, y: opts.y, w: opts.w, h };
+
   const was = popoverWasOpen.get(id) ?? false;
   let open = opts.open;
   // Raw pointer: while open we're the overlay — uiPointer would be dead.
   const p = rawPointer();
-  if (open && was && p.released && !pointInRect(p.x, p.y, opts)) open = false;
+  if (open && was && p.released && !pointInRect(p.x, p.y, rect)) open = false;
   popoverWasOpen.set(id, open);
-  if (open) {
-    enterOverlay();
-    panel(ctx, opts);
+  if (!open) return false;
+
+  enterOverlay();
+  panel(ctx, { ...opts, h: rect.h });
+  if (children) {
+    const body = { x: rect.x, y: rect.y + top, w: rect.w, h: rect.h - top };
+    runAutoSized(key, rect, body, "col", opts.gap ?? 8, pad, "start", false, children);
   }
-  return open;
+  return true;
 }
 
 // ---------- Modal ----------

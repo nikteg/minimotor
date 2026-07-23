@@ -28,6 +28,10 @@ export interface StackOptions {
    *  stack (a col's width, a row's height) instead of filling it. Set by an
    *  auto-sized container so it can measure its content. Default false. */
   fitCross?: boolean;
+  /** Flex-wrap: when a slot would overflow `length` on the main axis, start a
+   *  new line (rows wrap downward, cols wrap sideways) offset by the tallest/
+   *  widest slot of the line just finished. Needs `length`. Default false. */
+  wrap?: boolean;
 }
 
 /** A layout cursor from `stack()`: hands out rects along one axis. */
@@ -37,6 +41,10 @@ export interface Stack {
   /** True when the container shrink-wraps its cross axis — widgets should
    *  place at their natural cross size rather than filling. `place` reads it. */
   readonly fitCross: boolean;
+  /** True when the container flex-wraps its children onto new lines. Nested
+   *  containers read it (via `containerRect`) to reserve a NATURAL cross size
+   *  so line breaks measure correctly. */
+  readonly wrap: boolean;
   /** Reserve the next slot and advance. For rows pass the width (height
    *  defaults from the stack); for columns pass the height as the second
    *  argument (width defaults from the stack). */
@@ -72,10 +80,31 @@ export function stack(opts: StackOptions): Stack {
   let cy = opts.y;
   let last: { x: number; y: number; w: number; h: number } | null = null;
   let ext: { x: number; y: number; w: number; h: number } | null = null;
+  // Flex-wrap only makes sense start-aligned with a known main-axis length.
+  const wrapping = (opts.wrap ?? false) && !back && opts.length !== undefined;
+  let lineCross = 0; // tallest (row) / widest (col) slot in the current line
 
   const advance = (w?: number, h?: number) => {
     const W = w ?? (dir === "col" ? (opts.w ?? 120) : 100);
     const H = h ?? (dir === "row" ? (opts.h ?? 30) : 30);
+    if (wrapping) {
+      const mainStart = dir === "row" ? opts.x : opts.y;
+      const mainCur = dir === "row" ? cx : cy;
+      const mainSize = dir === "row" ? W : H;
+      // A slot that would spill past the length starts a new line (unless it's
+      // the first on this line — an oversize lone slot just overflows).
+      if (mainCur - mainStart > 0.5 && mainCur - mainStart + mainSize > (opts.length ?? 0) + 0.5) {
+        if (dir === "row") {
+          cx = opts.x;
+          cy += lineCross + gapPx;
+        } else {
+          cy = opts.y;
+          cx += lineCross + gapPx;
+        }
+        lineCross = 0;
+      }
+      lineCross = Math.max(lineCross, dir === "row" ? H : W);
+    }
     const rect =
       dir === "row"
         ? { x: back ? cx - W : cx, y: cy, w: W, h: H }
@@ -107,6 +136,7 @@ export function stack(opts: StackOptions): Stack {
   return {
     dir,
     fitCross: opts.fitCross ?? false,
+    wrap: wrapping,
     next: advance,
     fill(reserve = 0) {
       const avail = Math.max(0, remaining() - reserve);
@@ -189,6 +219,17 @@ export interface LayoutOptions {
   pad?: number;
   /** Main-axis alignment within the container's own slot when nested. */
   align?: "start" | "end";
+  /** Overflow behavior along the main axis, like CSS. `"visible"` (default)
+   *  auto-grows the box to its content. `"auto"`/`"scroll"` cap the box (at `h`,
+   *  or at the room down to the viewport bottom) and scroll the content inside
+   *  with a scrollbar + wheel; a titled `group` keeps its title fixed and scrolls
+   *  only the body. `"hidden"` clips to the box without scrolling. */
+  overflow?: "visible" | "hidden" | "auto" | "scroll";
+  /** Flex-wrap: children that would overflow the main axis wrap onto a new line
+   *  (a row wraps downward, a col sideways), each line offset by the previous
+   *  line's tallest/widest child. Needs a bounded main axis (`w` for a row, `h`
+   *  for a col) to know where to break. Default false. */
+  wrap?: boolean;
 }
 
 // Run `children` with a fresh layout cursor over `rect`'s interior. The
@@ -202,6 +243,7 @@ export function runContainer<R>(
   align: "start" | "end",
   children: (layout: Stack) => R,
   fitCross = false,
+  wrap = false,
 ): R {
   const inner = { x: rect.x + pad, y: rect.y + pad, w: rect.w - pad * 2, h: rect.h - pad * 2 };
   // For align:"end" the cursor starts at the far edge and grows backward.
@@ -224,6 +266,7 @@ export function runContainer<R>(
     // Main-axis length enables fill()/remaining inside the callback.
     length: dir === "row" ? inner.w : inner.h,
     fitCross,
+    wrap,
   });
   layoutStack.push(st);
   try {
@@ -305,8 +348,13 @@ export function containerRect(
   }
   // Nested: reserve a slot from the parent. Size along the PARENT's main axis
   // (width for a row parent, height for a col parent) from auto/explicit; pass
-  // undefined on the cross axis so the parent's slot fills it.
-  return parent.dir === "row" ? parent.next(w, opts.h) : parent.next(opts.w, h);
+  // undefined on the cross axis so the parent's slot fills it — UNLESS the parent
+  // wraps, where the cross size must be this container's NATURAL size so line
+  // breaks and line heights measure correctly.
+  if (parent.dir === "row") {
+    return parent.next(w, opts.h ?? (parent.wrap ? auto?.h : undefined));
+  }
+  return parent.next(opts.w ?? (parent.wrap ? auto?.w : undefined), h);
 }
 
 /** A container's children callback — receives the layout cursor for
@@ -319,4 +367,96 @@ export function layoutArgs<R>(
   b?: LayoutChildren<R>,
 ): [LayoutOptions, LayoutChildren<R>] {
   return typeof a === "function" ? [{}, a] : [a, b as LayoutChildren<R>];
+}
+
+// ---------- The one auto-sizing container primitive ----------
+// Every self-sizing container (row / col / group / popover) is the same shape:
+// resolve a rect (auto-measuring any omitted axis from last frame), optionally
+// paint a backdrop, run children under a fresh cursor, then measure + cache
+// their extent for next frame. These two helpers hold that logic ONCE so no
+// widget hand-rolls its own size cache.
+
+/** Run a container's children over `body`, then cache their measured extent
+ *  (taken from the OUTER top-left `outer`, so a title band + both pads are
+ *  included) under `key` for next-frame auto-sizing. The shared tail of every
+ *  auto-sizing container. */
+export function runAutoSized<R>(
+  key: string | undefined,
+  outer: { x: number; y: number },
+  body: { x: number; y: number; w: number; h: number },
+  dir: "row" | "col",
+  gap: number,
+  pad: number,
+  align: "start" | "end",
+  fitCross: boolean,
+  children: LayoutChildren<R>,
+  wrap = false,
+): R {
+  return runContainer(
+    dir,
+    body,
+    gap,
+    pad,
+    align,
+    (st) => {
+      const r = children(st);
+      storeContentSize(key, measuredContainerSize(st, outer.x, outer.y, pad));
+      return r;
+    },
+    fitCross,
+    wrap,
+  );
+}
+
+/** Extra knobs an auto-sizing container passes to `autoContainer`. */
+export interface AutoContainerConfig {
+  /** Inner padding in px. */
+  pad: number;
+  /** Gap between children in px. */
+  gap: number;
+  /** Main-axis alignment within the container's own slot. */
+  align: "start" | "end";
+  /** Shrink-wrap the cross axis (a root container along its free axis). */
+  fitCross: boolean;
+  /** Flex-wrap children onto new lines when they overflow the main axis. */
+  wrap?: boolean;
+  /** Body inset from the rect's top — a title strip. Default 0. */
+  top?: number;
+  /** Extra height removed from the body — a title's bottom border. Default 0. */
+  bottom?: number;
+  /** Paint the container's backdrop given its resolved rect, before children
+   *  run (e.g. `group`/`popover` draw a `panel`). Layout containers omit it. */
+  box?: (rect: { x: number; y: number; w: number; h: number }) => void;
+}
+
+/** The single auto-sizing container: resolve the rect from `opts` (auto-sizing
+ *  any omitted axis from last frame's cached content), paint the optional
+ *  backdrop, lay the children out and cache their size for next frame. `row`,
+ *  `col`, `group` (and, via `runAutoSized`, `popover`) are thin wrappers over
+ *  this — the auto-size machinery lives here, not in each widget. */
+export function autoContainer<R>(
+  kind: string,
+  dir: "row" | "col",
+  opts: LayoutOptions,
+  cfg: AutoContainerConfig,
+  children: LayoutChildren<R>,
+): R {
+  const key = containerKey(opts, kind);
+  const rect = containerRect(dir, opts, cachedContentSize(key));
+  cfg.box?.(rect);
+  const top = cfg.top ?? 0;
+  const bottom = cfg.bottom ?? 0;
+  const body = { x: rect.x, y: rect.y + top, w: rect.w, h: rect.h - top - bottom };
+  return runAutoSized(
+    key,
+    rect,
+    body,
+    dir,
+    cfg.gap,
+    cfg.pad,
+    cfg.align,
+    cfg.fitCross,
+    children,
+    cfg.wrap ?? false,
+  );
 }

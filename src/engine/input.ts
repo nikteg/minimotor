@@ -36,9 +36,14 @@ export interface Pointer {
   readonly pressed: boolean;
   /** True for one update step when the press ends. */
   readonly released: boolean;
-  /** True for one update step on a double-click — a second press within
-   *  ~300ms and close to the first. */
+  /** True for one update step on a double-click — the OS double-click interval
+   *  (native `dblclick`), or a fast/touch second press within ~300ms close to
+   *  the first. Read inside `update`; draw-phase UI reads `frameDoublePressed`. */
   readonly doublePressed: boolean;
+  /** True for the whole rendered frame in which a double-click happened — the
+   *  draw-phase counterpart of `doublePressed` (text fields select a word on
+   *  it). `doublePressed` is consumed by the fixed steps before `draw` runs. */
+  readonly frameDoublePressed: boolean;
   /** True for the whole rendered frame in which the press ended. `released`
    *  is consumed by the fixed steps before `draw` runs — draw-phase hit
    *  testing (`UI.button`) reads this instead. */
@@ -81,6 +86,9 @@ export const Pointer: Pointer = {
   },
   get doublePressed() {
     return requireDefault().pointer.doublePressed;
+  },
+  get frameDoublePressed() {
+    return requireDefault().pointer.frameDoublePressed;
   },
   get frameReleased() {
     return requireDefault().pointer.frameReleased;

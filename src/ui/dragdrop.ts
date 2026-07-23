@@ -1,6 +1,12 @@
-import { activeDrag, rawPointer, setActiveDrag, uiPointer, type ActiveDrag } from "./core/index.js";
+import {
+  activeDrag,
+  rawPointer,
+  setActiveDrag,
+  setCursor,
+  uiPointer,
+  type ActiveDrag,
+} from "./core/index.js";
 import { pointInRect } from "../collision.js";
-import { Loop } from "../engine/index.js";
 
 // ---------- Drag and drop ----------
 
@@ -97,7 +103,11 @@ export function dragSource<T>(opts: DragSourceOptions<T>): DragSourceState {
     });
   }
   const dragging = activeDrag?.sourceId === opts.id;
-  if (hovered || dragging) Loop.setCursor(dragging ? "grabbing" : "grab");
+  // "grabbing" while this source drags (priority 1, so a target's "copy" at 2
+  // wins over it regardless of draw order); "grab" only when nothing is being
+  // dragged, so OTHER sources don't fight the drag cursor mid-drag.
+  if (dragging) setCursor("grabbing", 1);
+  else if (hovered && !activeDrag) setCursor("grab", 0);
   return { hovered, dragging };
 }
 
@@ -109,7 +119,10 @@ export function dropTarget<T>(opts: DropTargetOptions<T>): DropTargetState<T> {
   const accepted = drag ? (opts.accepts?.(drag.payload as T, drag.sourceId) ?? true) : false;
   const hovered = !!drag && pointInRect(p.x, p.y, opts);
   const canDrop = hovered && accepted;
-  if (canDrop) Loop.setCursor("copy");
+  // Highest priority (2) so it wins over the dragged source's "grabbing" no
+  // matter the draw order — a valid target shows "copy", an invalid one
+  // "not-allowed". This makes the cursor symmetric in both drag directions.
+  if (hovered) setCursor(canDrop ? "copy" : "not-allowed", 2);
   let dropped: DropResult<T> | null = null;
   if (canDrop && p.released && drag) {
     dropped = { sourceId: drag.sourceId, targetId: opts.id, payload: drag.payload as T };

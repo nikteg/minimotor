@@ -8,7 +8,7 @@ import {
   STEP_MS,
   type Viewport,
 } from "./game.js";
-import { applyFullscreen } from "../fullscreen.js";
+import { applyFullscreen, preventNavigation } from "../fullscreen.js";
 
 /** Everything `GameOptions` offers except the canvas (Stage.init's first
  *  argument), plus document-level concerns that only make sense for the
@@ -17,6 +17,10 @@ export type StageOptions = Omit<GameOptions, "canvas"> & {
   /** Inject the fullscreen stylesheet (fill the window, no scrollbars,
    *  safe-area handling) before building the game. */
   fullscreen?: boolean;
+  /** Block accidental browser navigation (trackpad swipe-back, touch
+   *  overscroll) so a stray gesture can't drop the game — see
+   *  `Stage.preventNavigation`. */
+  preventNavigation?: boolean;
 };
 
 /** Canvas / viewport / screen. `init` builds the default engine and returns
@@ -37,6 +41,7 @@ export const Stage = {
     // rAF loop and window listeners don't leak.
     getDefaultGame()?.destroy();
     if (opts.fullscreen) applyFullscreen();
+    if (opts.preventNavigation) preventNavigation(true);
     const game = createGame({ canvas, ...opts });
     setDefaultGame(game);
     return game.viewport;
@@ -62,10 +67,25 @@ export const Stage = {
   fullscreen(): void {
     applyFullscreen();
   },
+  /** Block accidental browser navigation while playing — the back/forward the
+   *  browser fires on a two-finger trackpad swipe or a touch overscroll — so a
+   *  stray gesture can't unload the game. Pass `false` to release. Idempotent. */
+  preventNavigation(prevent = true): void {
+    preventNavigation(prevent);
+  },
   /** Re-apply the base (letterbox) transform — see `Game.resetTransform`.
    *  Screen-space widgets use this to escape a camera block. */
   resetTransform(): void {
     requireDefault().resetTransform();
+  },
+  /** Request a CSS cursor for THIS frame (`"pointer"`, `"grab"`, `"text"`,
+   *  `"none"`, …) — see `Game.setCursor`. Reset every frame, so hover cursors
+   *  clear themselves; call it each frame the state holds. Higher `priority`
+   *  (default 0) wins when several are requested. The cursor is a canvas
+   *  presentation concern, so it lives on `Stage` (which owns the canvas) — not
+   *  `Loop`. `UI.setCursor` forwards here for widget code. */
+  setCursor(cursor: string, priority?: number): void {
+    requireDefault().setCursor(cursor, priority);
   },
   /** Run `handler` whenever the viewport changes (window resize, orientation,
    *  DPR change) — for re-laying-out UI or re-baking sized sprites. Returns an
@@ -117,11 +137,6 @@ export const Loop = {
   /** Subscribe to the end of each rendered frame; returns unsubscribe. */
   onFrame(handler: () => void): () => void {
     return requireDefault().onFrame(handler);
-  },
-  /** Request a CSS cursor for this frame (reset every frame) — see
-   *  `Game.setCursor`. */
-  setCursor(cursor: string): void {
-    requireDefault().setCursor(cursor);
   },
   /** Fixed update timestep in milliseconds (1000 / 60). */
   get step(): number {

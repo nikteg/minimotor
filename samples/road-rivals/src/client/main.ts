@@ -1654,7 +1654,7 @@ Loop.run({
       ctx.moveTo(Mouse.x, Mouse.y + 5);
       ctx.lineTo(Mouse.x, Mouse.y + 13);
       ctx.stroke();
-      Loop.setCursor("none");
+      Stage.setCursor("none");
     }
     OnscreenInput.drawControls(pad);
   },

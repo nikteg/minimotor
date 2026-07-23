@@ -149,8 +149,9 @@ export interface Game {
   onFrame(handler: () => void): () => void;
   /** Request a CSS cursor for THIS frame (e.g. `"pointer"` over a clickable).
    *  Applied at frame end and reset every frame, so hover cursors clear
-   *  themselves — call it each frame the hover holds. */
-  setCursor(cursor: string): void;
+   *  themselves — call it each frame the hover holds. `priority` (default 0)
+   *  breaks ties when several are requested: highest wins. */
+  setCursor(cursor: string, priority?: number): void;
   /** Re-apply the base (letterbox) transform: logical coords → device pixels.
    *  Screen-space UI calls this to escape a camera block back to the letterbox
    *  base (not raw device space). */
@@ -329,6 +330,7 @@ function buildGame(options: GameOptions): Game {
     pressed: false,
     released: false,
     doublePressed: false,
+    frameDoublePressed: false,
     frameReleased: false,
     framePressed: false,
     wheel: 0,
@@ -357,6 +359,9 @@ function buildGame(options: GameOptions): Game {
     },
     get doublePressed() {
       return ptr.doublePressed;
+    },
+    get frameDoublePressed() {
+      return ptr.frameDoublePressed;
     },
     get frameReleased() {
       return ptr.frameReleased;
@@ -433,16 +438,22 @@ function buildGame(options: GameOptions): Game {
     ptr.y = (cssY - viewport.offsetY) / viewport.scale;
     ptr.inside = ptr.x >= 0 && ptr.y >= 0 && ptr.x <= viewport.w && ptr.y <= viewport.h;
   };
+  const markDoublePress = () => {
+    ptr.doublePressed = true; // one update step (consumed like `pressed`)
+    ptr.frameDoublePressed = true; // whole frame, for draw-phase UI
+  };
   const onPointerDown = (e: PointerEvent) => {
     setPointer(e);
     const t = performance.now();
-    // Double-click: a second press within DOUBLE_PRESS_MS and close to the
-    // first (guards against a double-tap that's really two separate targets).
+    // Fast-path / touch double-tap: a second press within DOUBLE_PRESS_MS and
+    // close to the first. The native `dblclick` listener below additionally
+    // fires on the OS's own double-click interval (usually wider) so a mouse
+    // double-click matches the user's system setting exactly — the two union.
     if (
       t - lastPointerDownAt <= DOUBLE_PRESS_MS &&
       Math.hypot(ptr.x - lastPointerDownX, ptr.y - lastPointerDownY) <= DOUBLE_CLICK_SLOP
     ) {
-      ptr.doublePressed = true;
+      markDoublePress();
     }
     lastPointerDownAt = t;
     lastPointerDownX = ptr.x;
@@ -450,6 +461,12 @@ function buildGame(options: GameOptions): Game {
     ptr.down = true;
     ptr.pressed = true;
     ptr.framePressed = true; // survives the steps; cleared at frame end
+  };
+  // The browser's `dblclick` respects the OS double-click SPEED and slop — the
+  // faithful "same as on my system" window, which no API exposes to read.
+  const onDblClick = (e: MouseEvent) => {
+    setPointer(e);
+    markDoublePress();
   };
   const onWheel = (e: WheelEvent) => {
     ptr.wheel += e.deltaY;
@@ -461,6 +478,7 @@ function buildGame(options: GameOptions): Game {
     ptr.frameReleased = true; // survives the steps; cleared at frame end
   };
   canvas.addEventListener("pointerdown", onPointerDown);
+  canvas.addEventListener("dblclick", onDblClick);
   window.addEventListener("pointermove", setPointer);
   canvas.addEventListener("wheel", onWheel, { passive: true });
   window.addEventListener("pointerup", onPointerUp);
@@ -484,15 +502,20 @@ function buildGame(options: GameOptions): Game {
   const resizeHandlers = new Set<(vp: Viewport) => void>();
 
   // Per-frame cursor request (setCursor): applied at frame end, then reset —
-  // a hover cursor clears itself the frame the hover stops.
+  // a hover cursor clears itself the frame the hover stops. The HIGHEST
+  // priority wins (ties → last writer), so e.g. a drop target's "copy" beats a
+  // drag source's "grabbing" no matter which draws first.
   let cursorRequest: string | null = null;
+  let cursorPriority = -1;
   const endFrame = () => {
     for (const h of frameHandlers) h();
     const cursor = cursorRequest ?? "";
     if (canvas.style.cursor !== cursor) canvas.style.cursor = cursor;
     cursorRequest = null;
+    cursorPriority = -1;
     ptr.frameReleased = false;
     ptr.framePressed = false;
+    ptr.frameDoublePressed = false;
     ptr.wheel = 0;
   };
   const handleResize = () => {
@@ -614,8 +637,11 @@ function buildGame(options: GameOptions): Game {
       frameHandlers.add(handler);
       return () => frameHandlers.delete(handler);
     },
-    setCursor(cursor) {
-      cursorRequest = cursor;
+    setCursor(cursor, priority = 0) {
+      if (priority >= cursorPriority) {
+        cursorRequest = cursor;
+        cursorPriority = priority;
+      }
     },
     resetTransform,
     use(plugin) {
@@ -658,6 +684,7 @@ function buildGame(options: GameOptions): Game {
       window.removeEventListener("orientationchange", handleOrient);
       screen.orientation?.removeEventListener?.("change", handleOrient);
       canvas.removeEventListener("pointerdown", onPointerDown);
+      canvas.removeEventListener("dblclick", onDblClick);
       canvas.removeEventListener("wheel", onWheel);
       if (portraitMq && portraitApply) portraitMq.removeEventListener?.("change", portraitApply);
       stepHandlers.clear();

@@ -701,12 +701,12 @@ function drawPiles(ctx: CanvasRenderingContext2D) {
       payload: { type: "stock" },
       disabled: true,
     });
-    if (stockSource.hovered) Loop.setCursor("pointer");
+    if (stockSource.hovered) Stage.setCursor("pointer");
   } else {
     drawEmptySlot(ctx, stockRect, "↺");
   }
   if (pointInLogicalRect(Pointer.x, Pointer.y, layout.stock)) {
-    Loop.setCursor("pointer");
+    Stage.setCursor("pointer");
     if (Pointer.frameReleased) drawFromStock();
   }
 
@@ -726,7 +726,7 @@ function drawPiles(ctx: CanvasRenderingContext2D) {
         from: { type: "waste", index: waste.length - 1 },
       },
     });
-    if (src.hovered) Loop.setCursor("grab");
+    if (src.hovered) Stage.setCursor("grab");
   } else {
     drawEmptySlot(ctx, wasteRect);
   }
@@ -749,7 +749,7 @@ function drawPiles(ctx: CanvasRenderingContext2D) {
           from: { type: "foundation", col: i, index: pile.length - 1 },
         },
       });
-      if (src.hovered) Loop.setCursor("grab");
+      if (src.hovered) Stage.setCursor("grab");
     } else {
       drawEmptySlot(ctx, rect, FOUNDATION_SUITS[i]);
     }
@@ -814,7 +814,7 @@ function drawPiles(ctx: CanvasRenderingContext2D) {
               from: { type: "tableau", col, index: idx },
             },
           });
-          if (src.hovered) Loop.setCursor("grab");
+          if (src.hovered) Stage.setCursor("grab");
         }
       }
 

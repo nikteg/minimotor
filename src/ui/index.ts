@@ -37,6 +37,7 @@ export {
   ids,
   idScope,
   select,
+  setCursor,
   setTheme,
   stack,
   text,

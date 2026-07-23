@@ -32,3 +32,36 @@ export function applyFullscreen(): void {
   style.textContent = fullscreenCSS;
   document.head.appendChild(style);
 }
+
+// ---------- Navigation guard ----------
+
+let navWheel: ((e: WheelEvent) => void) | null = null;
+
+/** Stop stray browser navigation — the back/forward the OS fires on a two-finger
+ *  trackpad swipe or a touch overscroll — so a game doesn't lose its state to an
+ *  accidental gesture. Sets `overscroll-behavior: none` on the document and
+ *  swallows horizontal-dominant wheel events (the trackpad swipe-back signal);
+ *  vertical scrolling and the engine's own wheel input are untouched. Pass
+ *  `false` to release. Idempotent. */
+export function preventNavigation(prevent = true): void {
+  if (typeof document === "undefined") return;
+  const root = document.documentElement;
+  if (prevent) {
+    root.style.overscrollBehavior = "none";
+    if (document.body) document.body.style.overscrollBehavior = "none";
+    if (!navWheel) {
+      navWheel = (e) => {
+        // A horizontal-dominant wheel is the trackpad back/forward swipe.
+        if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) e.preventDefault();
+      };
+      window.addEventListener("wheel", navWheel, { passive: false });
+    }
+  } else {
+    root.style.overscrollBehavior = "";
+    if (document.body) document.body.style.overscrollBehavior = "";
+    if (navWheel) {
+      window.removeEventListener("wheel", navWheel);
+      navWheel = null;
+    }
+  }
+}

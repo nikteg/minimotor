@@ -120,16 +120,20 @@ export function grid(
 
 // ---------- Scrollbar ----------
 
-/** A vertical scrollbar bound to a content/view extent. */
+/** A scrollbar bound to a content/view extent, vertical or horizontal. */
 export interface ScrollbarOptions {
-  /** Track left x in logical px (the bar is vertical). */
+  /** Track left x in logical px. */
   x: number;
   /** Track top y in logical px. */
   y: number;
-  /** Track height in logical px. */
+  /** Track height in logical px — the bar's LENGTH when vertical (`axis: "y"`),
+   *  its THICKNESS when horizontal. */
   h: number;
-  /** Track width. Default 10. */
+  /** Track width — the bar's THICKNESS when vertical (default 10), its LENGTH
+   *  when horizontal (`axis: "x"`, required then). */
   w?: number;
+  /** Orientation. `"y"` (default) scrolls vertically; `"x"` horizontally. */
+  axis?: "x" | "y";
   /** Visible extent, in content px. */
   view: number;
   /** Total content extent, in content px. */
@@ -145,6 +149,10 @@ export interface ScrollbarOptions {
   track?: string;
   /** Thumb color when idle. Default `theme.border` (accent while hovered/dragged). */
   thumb?: string;
+  /** Overall opacity 0..1 for a fade in/out (e.g. only show while the pointer is
+   *  in the scrolled area). Default 1. The offset math still runs at any
+   *  opacity, so a faded bar can still be dragged. */
+  opacity?: number;
 }
 
 // One drag at a time, tracked across frames by the scrollbar's id.
@@ -165,39 +173,63 @@ export function scrollbar(
   let offset = clamp(opts.offset, 0, max);
   if (max <= 0) return 0; // everything fits — draw nothing
 
+  // Map onto a main (scroll) axis + a cross (thickness) axis so one body serves
+  // both orientations. Vertical: length=h, thickness=w. Horizontal: length=w,
+  // thickness=h; the pointer coordinate and thumb travel switch to x.
+  const horiz = opts.axis === "x";
   const id = opts.id ?? `${opts.x}:${opts.y}`;
-  const w = opts.w ?? 10;
-  const thumbH = Math.max(24, (opts.view / opts.content) * opts.h);
-  const range = opts.h - thumbH;
-  let thumbY = opts.y + (offset / max) * range;
+  const thickness = horiz ? opts.h : (opts.w ?? 10);
+  const length = horiz ? (opts.w ?? 0) : opts.h;
+  const alongStart = horiz ? opts.x : opts.y;
+  const thumbLen = Math.max(24, (opts.view / opts.content) * length);
+  const range = length - thumbLen;
+  let along = alongStart + (offset / max) * range;
   const p = uiPointer();
+  const pAlong = horiz ? p.x : p.y;
+  const trackRect = {
+    x: opts.x,
+    y: opts.y,
+    w: horiz ? length : thickness,
+    h: horiz ? thickness : length,
+  };
+  const thumbRect = () =>
+    horiz
+      ? { x: along, y: opts.y, w: thumbLen, h: thickness }
+      : { x: opts.x, y: along, w: thickness, h: thumbLen };
 
-  const overThumb = pointInRect(p.x, p.y, { x: opts.x, y: thumbY, w, h: thumbH });
-  const overTrack = pointInRect(p.x, p.y, { x: opts.x, y: opts.y, w, h: opts.h });
+  const overThumb = pointInRect(p.x, p.y, thumbRect());
+  const overTrack = pointInRect(p.x, p.y, trackRect);
   hoverCursor(overTrack || scrollDrag?.id === id);
 
   if (!p.down) scrollDrag = null;
   if (p.pressed && overThumb && !scrollDrag) {
-    scrollDrag = { id, grab: p.y - thumbY };
+    scrollDrag = { id, grab: pAlong - along };
   } else if (p.released && overTrack && !overThumb && scrollDrag?.id !== id) {
     // Track click: page toward the click.
-    offset += p.y < thumbY ? -opts.view : opts.view;
+    offset += pAlong < along ? -opts.view : opts.view;
   }
   if (scrollDrag?.id === id && range > 0) {
-    offset = ((p.y - scrollDrag.grab - opts.y) / range) * max;
+    offset = ((pAlong - scrollDrag.grab - alongStart) / range) * max;
   }
   if (opts.wheelArea && pointInRect(p.x, p.y, opts.wheelArea)) {
     offset += p.wheel;
   }
 
   offset = clamp(offset, 0, max);
-  thumbY = opts.y + (offset / max) * range;
+  along = alongStart + (offset / max) * range;
 
-  ctx.save();
-  ctx.fillStyle = opts.track ?? "rgba(255,255,255,0.07)";
-  ctx.fillRect(opts.x, opts.y, w, opts.h);
-  ctx.fillStyle = scrollDrag?.id === id || overThumb ? theme.accent : (opts.thumb ?? theme.border);
-  ctx.fillRect(opts.x + 1, thumbY, w - 2, thumbH);
-  ctx.restore();
+  const opacity = opts.opacity ?? 1;
+  if (opacity > 0.01) {
+    ctx.save();
+    ctx.globalAlpha *= opacity;
+    ctx.fillStyle = opts.track ?? "rgba(255,255,255,0.07)";
+    ctx.fillRect(trackRect.x, trackRect.y, trackRect.w, trackRect.h);
+    ctx.fillStyle =
+      scrollDrag?.id === id || overThumb ? theme.accent : (opts.thumb ?? theme.border);
+    const t = thumbRect();
+    if (horiz) ctx.fillRect(t.x, t.y + 1, t.w, t.h - 2);
+    else ctx.fillRect(t.x + 1, t.y, t.w - 2, t.h);
+    ctx.restore();
+  }
   return offset;
 }

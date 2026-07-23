@@ -25,6 +25,9 @@ let disabledToggle = false; // UI.toggle (disabled demo)
 let volume = 65; // UI.slider (0..100)
 let zoom = 1.5; // UI.slider (0.5..3, stepped)
 let name = ""; // UI.textInput
+let notes = ""; // UI.textInput (multiline)
+let chatDraft = ""; // UI.textInput (chat: clears on send, keeps focus)
+let chatLog: string[] = ["gg", "nice shot!"]; // chat history
 let quality = "high"; // UI.select value
 let selectedItem = 1; // UI.list selection
 let listOffset = 0; // UI.list scroll offset
@@ -51,29 +54,68 @@ let binStash: string[] = ["Potion", "Torch", "Rope", "Key"];
 // `UI.setTheme` (overrides never compound). "Teal" is the built-in default, so
 // it passes `{}`. The colored presets swap the accent trio; "Slate Light"
 // flips the whole palette bright.
+// Presets vary more than accent color: each also tweaks corner radius, border
+// weight, and font family/size so the whole UI feels different, not just tinted.
 const themePresets: { label: string; value: string; preset: Partial<Theme> }[] = [
-  { label: "Teal", value: "teal", preset: {} },
+  // Classic terminal: monospace, square corners (the engine default).
+  { label: "Teal", value: "teal", preset: { radius: 0, borderWidth: 2, font: "monospace" } },
   {
+    // Soft & rounded, thin borders, humanist sans.
     label: "Amber",
     value: "amber",
-    preset: { accent: "#ffb454", accentSoft: "#a9772f", primary: "#ffb454" },
+    preset: {
+      accent: "#ffb454",
+      accentSoft: "#a9772f",
+      primary: "#ffb454",
+      radius: 12,
+      borderWidth: 1,
+      font: "system-ui, sans-serif",
+      fontSize: 14,
+    },
   },
   {
+    // Bold & blocky: square corners, heavy borders.
     label: "Crimson",
     value: "crimson",
-    preset: { accent: "#ff6b6b", accentSoft: "#a24444", primary: "#ff6b6b" },
+    preset: {
+      accent: "#ff6b6b",
+      accentSoft: "#a24444",
+      primary: "#ff6b6b",
+      radius: 0,
+      borderWidth: 3,
+      font: "'Courier New', monospace",
+    },
   },
   {
+    // Friendly rounded sans.
     label: "Emerald",
     value: "emerald",
-    preset: { accent: "#4ade80", accentSoft: "#2f8f57", primary: "#4ade80" },
+    preset: {
+      accent: "#4ade80",
+      accentSoft: "#2f8f57",
+      primary: "#4ade80",
+      radius: 8,
+      borderWidth: 2,
+      font: "'Trebuchet MS', system-ui, sans-serif",
+      fontSize: 14,
+    },
   },
   {
+    // Pill-shaped, serif — an editorial look.
     label: "Violet",
     value: "violet",
-    preset: { accent: "#a78bfa", accentSoft: "#6f5ab0", primary: "#a78bfa" },
+    preset: {
+      accent: "#a78bfa",
+      accentSoft: "#6f5ab0",
+      primary: "#a78bfa",
+      radius: 16,
+      borderWidth: 2,
+      font: "Georgia, 'Times New Roman', serif",
+      fontSize: 15,
+    },
   },
   {
+    // Light mode, rounded, sans.
     label: "Slate Light",
     value: "slate-light",
     preset: {
@@ -91,6 +133,10 @@ const themePresets: { label: string; value: string; preset: Partial<Theme> }[] =
       track: "rgba(0,0,0,0.12)",
       dim: "rgba(30,40,60,0.35)",
       danger: "#e5484d",
+      radius: 8,
+      borderWidth: 1,
+      font: "system-ui, sans-serif",
+      fontSize: 14,
     },
   },
 ];
@@ -146,327 +192,381 @@ Loop.run({
     });
 
     // ---- responsive column layout ----
-    // Four ~300px columns want ~316px each (300 + gap). Fit as many across the
-    // LIVE viewport width as we can; wrapped columns stack DOWN by band. This
-    // reflows to the window instead of scaling the board, so nothing runs off
-    // the right edge on a narrow window while text stays native/crisp on a wide
-    // one. On a very small phone, wrapped columns may fall below the fold —
-    // crisp-but-tall beats blurry.
+    // The whole board is ONE wrapping row of flowing columns — no absolute
+    // positioning. `wrap: true` breaks the ~300px columns onto a new line when
+    // the window is too narrow (each new line clears the previous line's tallest
+    // column, so nothing overlaps), and each column AUTO-SIZES its height from
+    // its children. `idScope` gives the nested containers stable cache ids.
     const baseX = 24;
     const baseY = 64;
-    const colStep = 316;
     const colW = 300;
-    const bandH = 540; // vertical stride for wrapped rows (clears the tallest column)
-    const cols = Math.max(1, Math.floor((view.w - baseX) / colStep));
-    const colPos = (i: number) => ({
-      x: baseX + (i % cols) * colStep,
-      y: baseY + Math.floor(i / cols) * bandH,
-    });
-    const c0 = colPos(0); // Buttons / Toggles / Select
-    const c1 = colPos(1); // Tabs / Progress / Overlays
-    const c2 = colPos(2); // List + Table
-    const c3 = colPos(3); // Drag & drop
-
-    // Columns 1 & 2 FLOW inside parent columns: each group is pinned by neither
-    // width nor height — it fills the column's width and AUTO-SIZES its height
-    // from its children, so the sections stack with a gap and never overlap
-    // (the whole point of the auto-sizing containers). `idScope` gives the
-    // nested containers stable ids so their measured size caches frame-to-frame.
-    let popoverAnchor: Rect = { x: c1.x, y: c1.y + 300, w: 0, h: 0 };
+    const th = UI.getTheme(); // drag & drop bins/preview paint from the live theme
+    let popoverAnchor: Rect = { x: baseX, y: baseY, w: 0, h: 0 };
     UI.idScope("panels", () => {
-      // ================= COLUMN 1 =================
-      UI.col({ x: c0.x, y: c0.y, w: colW, gap: 16 }, () => {
-        // Buttons — every variant, two per row so the row fits the column.
-        UI.group({ title: "Buttons", gap: 8 }, () => {
-          UI.row({ gap: 8 }, () => {
-            if (UI.button({ id: uiId("btn-default"), label: "Default" }))
-              UI.floatText("clicked", 120, 120);
-            UI.button({ id: uiId("btn-primary"), label: "Primary", variant: "primary" });
-          });
-          UI.row({ gap: 8 }, () => {
-            UI.button({ id: uiId("btn-danger"), label: "Danger", variant: "danger" });
-            UI.button({ id: uiId("btn-ghost"), label: "Ghost", variant: "ghost" });
-          });
-          UI.row({ gap: 8 }, () => {
-            UI.button({
-              id: uiId("btn-disabled"),
-              label: "Disabled",
-              disabled: true,
-              tooltip: "This button is disabled",
+      UI.row(
+        { x: baseX, y: baseY, w: view.w - baseX * 2, gap: 16, wrap: true, id: uiId("board") },
+        () => {
+          // ================= COLUMN 1 (scrolls within a fixed height) =========
+          // `overflow: "auto"` + a fixed `h`: the stacked groups scroll inside
+          // the 460px box when they overflow it. (Auto-height overflow — filling
+          // to the window bottom — also works, but needs a pinned top; here the
+          // column flows, so we bound it explicitly.)
+          UI.col({ w: colW, gap: 16, overflow: "auto", h: 460, id: uiId("col1") }, () => {
+            // Theme picker — a normal group flowing with the rest (its drop-menu
+            // is a frame-end overlay, so it still renders above the panels).
+            UI.group({ title: "Theme", gap: 8 }, () => {
+              const themeSel = UI.select({
+                id: uiId("theme"),
+                value: currentTheme,
+                options: themePresets.map((t) => ({ label: t.label, value: t.value })),
+                ariaLabel: "Theme",
+              });
+              if (themeSel.changed) {
+                currentTheme = themeSel.value;
+                const chosen = themePresets.find((t) => t.value === currentTheme);
+                UI.setTheme(chosen ? chosen.preset : {});
+              }
             });
-            UI.button({
-              id: uiId("btn-tip"),
-              label: "Hover me",
-              tooltip: "A tooltip appears after a moment",
+
+            // Buttons — every variant, two per row so the row fits the column.
+            UI.group({ title: "Buttons", gap: 8 }, () => {
+              UI.row({ gap: 8 }, () => {
+                if (UI.button({ id: uiId("btn-default"), label: "Default" }))
+                  UI.floatText("clicked", 120, 120);
+                UI.button({ id: uiId("btn-primary"), label: "Primary", variant: "primary" });
+              });
+              UI.row({ gap: 8 }, () => {
+                UI.button({ id: uiId("btn-danger"), label: "Danger", variant: "danger" });
+                UI.button({ id: uiId("btn-ghost"), label: "Ghost", variant: "ghost" });
+              });
+              UI.row({ gap: 8 }, () => {
+                UI.button({
+                  id: uiId("btn-disabled"),
+                  label: "Disabled",
+                  disabled: true,
+                  tooltip: "This button is disabled",
+                });
+                UI.button({
+                  id: uiId("btn-tip"),
+                  label: "Hover me",
+                  tooltip: "A tooltip appears after a moment",
+                });
+              });
+            });
+
+            UI.group({ title: "Toggles & Sliders", gap: 10 }, () => {
+              sound = UI.toggle({ id: uiId("tg-sound"), label: "Sound enabled", on: sound });
+              showFps = UI.toggle({ id: uiId("tg-fps"), label: "Show FPS", on: showFps });
+              disabledToggle = UI.toggle({
+                id: uiId("tg-disabled"),
+                label: "Locked option",
+                on: disabledToggle,
+                disabled: true,
+              });
+              volume = UI.slider({
+                id: uiId("sl-volume"),
+                label: "Vol",
+                value: volume,
+                min: 0,
+                max: 100,
+                format: (v) => `${Math.round(v)}%`,
+              });
+              zoom = UI.slider({
+                id: uiId("sl-zoom"),
+                label: "Zoom",
+                value: zoom,
+                min: 0.5,
+                max: 3,
+                step: 0.25,
+                format: (v) => `${v.toFixed(2)}x`,
+              });
+            });
+
+            UI.group({ title: "Select & Text input", gap: 10 }, () => {
+              UI.text("Quality preset", { color: "dim", size: 12 });
+              quality = UI.select({
+                id: uiId("select-quality"),
+                value: quality,
+                options: [
+                  { label: "Low", value: "low" },
+                  { label: "Medium", value: "medium" },
+                  { label: "High", value: "high" },
+                  { label: "Ultra", value: "ultra" },
+                ],
+                ariaLabel: "Quality preset",
+              }).value;
+              UI.text("Player name", { color: "dim", size: 12 });
+              name = UI.textInput({
+                id: uiId("input-name"),
+                value: name,
+                placeholder: "Type a name…",
+                maxLength: 16,
+                ariaLabel: "Player name",
+              }).value;
+              UI.text(name ? `Hello, ${name}!` : "(nothing entered)", {
+                color: name ? "accent" : "dim",
+                size: 12,
+              });
+              UI.text("Notes (multiline — drag to select, ⌘C to copy)", {
+                color: "dim",
+                size: 12,
+              });
+              notes = UI.textInput({
+                id: uiId("input-notes"),
+                value: notes,
+                rows: 3,
+                placeholder: "Write a few lines…",
+                ariaLabel: "Notes",
+              }).value;
             });
           });
-        });
 
-        UI.group({ title: "Toggles & Sliders", gap: 10 }, () => {
-          sound = UI.toggle({ id: uiId("tg-sound"), label: "Sound enabled", on: sound });
-          showFps = UI.toggle({ id: uiId("tg-fps"), label: "Show FPS", on: showFps });
-          disabledToggle = UI.toggle({
-            id: uiId("tg-disabled"),
-            label: "Locked option",
-            on: disabledToggle,
-            disabled: true,
-          });
-          volume = UI.slider({
-            id: uiId("sl-volume"),
-            label: "Vol",
-            value: volume,
-            min: 0,
-            max: 100,
-            format: (v) => `${Math.round(v)}%`,
-          });
-          zoom = UI.slider({
-            id: uiId("sl-zoom"),
-            label: "Zoom",
-            value: zoom,
-            min: 0.5,
-            max: 3,
-            step: 0.25,
-            format: (v) => `${v.toFixed(2)}x`,
-          });
-        });
+          // ================= COLUMN 2 =================
+          UI.col({ w: colW, gap: 16, id: uiId("col2") }, () => {
+            UI.group({ title: "Tabs", gap: 10 }, () => {
+              tab = UI.tabs({ id: uiId("tabs"), items: tabPages, active: tab, w: 256 });
+              if (tab === 0)
+                UI.text("A neutral summary of the current session.", { wrap: true, h: 40, w: 256 });
+              else if (tab === 1) UI.text("Kills 42 · Deaths 17 · Assists 9", { color: "accent" });
+              else
+                UI.text("12:04 joined · 12:07 first blood · 12:31 win", {
+                  color: "dim",
+                  wrap: true,
+                  h: 40,
+                  w: 256,
+                });
+            });
 
-        UI.group({ title: "Select & Text input", gap: 10 }, () => {
-          UI.text("Quality preset", { color: "dim", size: 12 });
-          quality = UI.select({
-            id: uiId("select-quality"),
-            value: quality,
-            options: [
-              { label: "Low", value: "low" },
-              { label: "Medium", value: "medium" },
-              { label: "High", value: "high" },
-              { label: "Ultra", value: "ultra" },
-            ],
-            ariaLabel: "Quality preset",
-          }).value;
-          UI.text("Player name", { color: "dim", size: 12 });
-          name = UI.textInput({
-            id: uiId("input-name"),
-            value: name,
-            placeholder: "Type a name…",
-            maxLength: 16,
-            ariaLabel: "Player name",
-          }).value;
-          UI.text(name ? `Hello, ${name}!` : "(nothing entered)", {
-            color: name ? "accent" : "dim",
-            size: 12,
-          });
-        });
-      });
+            UI.group({ title: "Progress bar (UI.bar)", gap: 10 }, () => {
+              progress = UI.slider({
+                id: uiId("sl-progress"),
+                label: "Load",
+                value: progress,
+                min: 0,
+                max: 1,
+                format: (v) => `${Math.round(v * 100)}%`,
+              });
+              // bar() is a raw draw call — reserve a slot from the layout for geometry.
+              UI.row({ h: 16 }, (st) => {
+                const r = st.next(220, 12);
+                UI.bar(r.x, r.y, 220, 12, progress);
+              });
+              busy = UI.toggle({ id: uiId("tg-busy"), label: "Working…", on: busy });
+              UI.row({ h: 24 }, (st) => {
+                const r = st.next(20, 20);
+                if (busy) UI.spinner(r.x + 10, r.y + 10);
+              });
+            });
 
-      // ================= COLUMN 2 =================
-      UI.col({ x: c1.x, y: c1.y, w: colW, gap: 16 }, () => {
-        UI.group({ title: "Tabs", gap: 10 }, () => {
-          tab = UI.tabs({ id: uiId("tabs"), items: tabPages, active: tab, w: 256 });
-          if (tab === 0)
-            UI.text("A neutral summary of the current session.", { wrap: true, h: 40, w: 256 });
-          else if (tab === 1) UI.text("Kills 42 · Deaths 17 · Assists 9", { color: "accent" });
-          else
-            UI.text("12:04 joined · 12:07 first blood · 12:31 win", {
+            UI.group({ title: "Overlays", gap: 8 }, () => {
+              UI.row({ gap: 8 }, (st) => {
+                if (UI.button({ id: uiId("open-popover"), label: "Popover" }))
+                  popoverOpen = !popoverOpen;
+                popoverAnchor = st.last ?? popoverAnchor;
+                if (UI.button({ id: uiId("open-modal"), label: "Modal" })) modalOpen = true;
+              });
+              UI.row({ gap: 8 }, () => {
+                if (UI.button({ id: uiId("open-dialog"), label: "Dialog" })) dialogOpen = true;
+                if (UI.button({ id: uiId("open-confirm"), label: "Confirm", variant: "danger" }))
+                  confirmOpen = true;
+              });
+            });
+
+            // A row with overflow: "auto" fills the group width and scrolls
+            // horizontally when its chips are wider than it.
+            UI.group({ title: "Horizontal scroll", gap: 8 }, () => {
+              UI.row({ overflow: "auto", gap: 8, id: uiId("hscroll") }, () => {
+                for (let i = 1; i <= 8; i++)
+                  UI.button({ id: uiId(`chip-${i}`), label: `Tag ${i}` });
+              });
+            });
+
+            // Chat: the `submitted` flag is Enter; `blurOnSubmit: false` keeps
+            // focus; clearing `value` on submit empties the box (works even while
+            // focused). No dedicated chat API needed.
+            UI.group({ title: "Chat", gap: 6 }, () => {
+              for (const m of chatLog.slice(-3)) UI.text(`• ${m}`, { size: 12, color: "dim" });
+              const sent = UI.textInput({
+                id: uiId("chat"),
+                value: chatDraft,
+                placeholder: "Message… (Enter to send)",
+                blurOnSubmit: false,
+                maxLength: 80,
+                ariaLabel: "Chat message",
+              });
+              chatDraft = sent.value;
+              if (sent.submitted && sent.value.trim()) {
+                chatLog.push(sent.value.trim());
+                chatDraft = ""; // cleared while focused — the controlled-value fix
+              }
+            });
+          });
+
+          // ================= COLUMN 3 : List + Table =================
+          // list/table are raw rect widgets — reserve a fixed-height slot from
+          // the flowing column and hand each its slot rect.
+          UI.col({ w: colW, gap: 16, id: uiId("col3") }, (st) => {
+            const listBox = st.next(colW, 210);
+            UI.panel({ ...listBox, title: "List" });
+            const listArea: Rect = {
+              x: listBox.x + 10,
+              y: listBox.y + 40,
+              w: listBox.w - 20,
+              h: listBox.h - 50,
+            };
+            listOffset = UI.list(
+              {
+                ...listArea,
+                rowH: 28,
+                gap: 2,
+                count: listItems.length,
+                offset: listOffset,
+                id: uiId("list"),
+              },
+              (i, rect) => {
+                if (UI.listItem({ id: uiId(`li-${i}`), ...rect, selected: i === selectedItem }))
+                  selectedItem = i;
+                UI.text(listItems[i], { x: rect.x + 10, y: rect.y, h: rect.h });
+              },
+            );
+
+            const tableBox = st.next(colW, 232);
+            UI.panel({ ...tableBox, title: "Table" });
+            const res = UI.table<Player>({
+              x: tableBox.x + 10,
+              y: tableBox.y + 40,
+              w: tableBox.w - 20,
+              h: tableBox.h - 50,
+              rowH: 26,
+              id: uiId("table"),
+              rows: players,
+              sort: tableSort,
+              offset: tableOffset,
+              selected: tableSel,
+              columns: [
+                { key: "name", label: "PLAYER", value: (p) => p.name },
+                { key: "score", label: "SCORE", width: 60, align: "right", value: (p) => p.score },
+                {
+                  key: "kd",
+                  label: "K/D",
+                  width: 48,
+                  align: "right",
+                  value: (p) => p.kd,
+                  cell: (p, r) =>
+                    UI.text(p.kd.toFixed(1), {
+                      ...r,
+                      align: "right",
+                      color: p.kd >= 2 ? "accent" : "dim",
+                    }),
+                },
+              ],
+            });
+            tableSort = res.sort;
+            tableOffset = res.offset;
+            tableSel = res.selected;
+          });
+
+          // ================= COLUMN 4 : Drag & drop =================
+          // Bins/items are raw Draw.rect fills painted from the live theme (a
+          // light theme would otherwise show hardcoded dark boxes).
+          UI.col({ w: colW, gap: 16, id: uiId("col4") }, (st) => {
+            const ddBox = st.next(colW, 300);
+            UI.panel({ ...ddBox, title: "Drag & drop" });
+            UI.text("Drag items between the two bins", {
+              x: ddBox.x + 12,
+              y: ddBox.y + 38,
               color: "dim",
-              wrap: true,
-              h: 40,
-              w: 256,
+              size: 12,
             });
-        });
-
-        UI.group({ title: "Progress bar (UI.bar)", gap: 10 }, () => {
-          progress = UI.slider({
-            id: uiId("sl-progress"),
-            label: "Load",
-            value: progress,
-            min: 0,
-            max: 1,
-            format: (v) => `${Math.round(v * 100)}%`,
+            const binW = (ddBox.w - 36) / 2;
+            const binTop = ddBox.y + 62;
+            const binH = ddBox.h - 74;
+            const bins: { id: string; title: string; items: string[] }[] = [
+              { id: "loadout", title: "LOADOUT", items: binLoadout },
+              { id: "stash", title: "STASH", items: binStash },
+            ];
+            bins.forEach((bin, bi) => {
+              const bx = ddBox.x + 12 + bi * (binW + 12);
+              const target = UI.dropTarget<{ item: string; from: string }>({
+                id: `bin:${bin.id}`,
+                x: bx,
+                y: binTop,
+                w: binW,
+                h: binH,
+                accepts: (payload) => payload.from !== bin.id,
+              });
+              Draw.rect(bx, binTop, binW, binH, target.canDrop ? th.bgHover : th.bgActive);
+              UI.text(bin.title, {
+                x: bx + 8,
+                y: binTop + 6,
+                size: 11,
+                bold: true,
+                color: "accent",
+              });
+              bin.items.forEach((item, ii) => {
+                const iy = binTop + 26 + ii * 30;
+                const src = UI.dragSource({
+                  id: `item:${bin.id}:${item}`,
+                  x: bx + 6,
+                  y: iy,
+                  w: binW - 12,
+                  h: 26,
+                  payload: { item, from: bin.id },
+                });
+                // The dragged item follows the pointer; draw its origin dimmed.
+                const dragging = src.dragging;
+                Draw.rect(bx + 6, iy, binW - 12, 26, dragging ? th.bgActive : th.bg);
+                UI.text(item, { x: bx + 14, y: iy, h: 26, color: dragging ? "dim" : undefined });
+              });
+              // Apply a completed drop: move the item across.
+              if (target.dropped) {
+                const { item, from } = target.dropped.payload;
+                if (from === "loadout") binLoadout = binLoadout.filter((x) => x !== item);
+                else binStash = binStash.filter((x) => x !== item);
+                if (bin.id === "loadout") binLoadout = [...binLoadout, item];
+                else binStash = [...binStash, item];
+              }
+            });
           });
-          // bar() is a raw draw call — reserve a slot from the layout for geometry.
-          UI.row({ h: 16 }, (st) => {
-            const r = st.next(220, 12);
-            UI.bar(r.x, r.y, 220, 12, progress);
-          });
-          busy = UI.toggle({ id: uiId("tg-busy"), label: "Working…", on: busy });
-          UI.row({ h: 24 }, (st) => {
-            const r = st.next(20, 20);
-            if (busy) UI.spinner(r.x + 10, r.y + 10);
-          });
-        });
-
-        UI.group({ title: "Overlays", gap: 8 }, () => {
-          UI.row({ gap: 8 }, (st) => {
-            if (UI.button({ id: uiId("open-popover"), label: "Popover" }))
-              popoverOpen = !popoverOpen;
-            popoverAnchor = st.last ?? popoverAnchor;
-            if (UI.button({ id: uiId("open-modal"), label: "Modal" })) modalOpen = true;
-          });
-          UI.row({ gap: 8 }, () => {
-            if (UI.button({ id: uiId("open-dialog"), label: "Dialog" })) dialogOpen = true;
-            if (UI.button({ id: uiId("open-confirm"), label: "Confirm", variant: "danger" }))
-              confirmOpen = true;
-          });
-        });
-      });
-    });
-
-    // ================= COLUMN 3 =================
-    const col3 = c2.x;
-
-    // ---- List: a windowed, scrollable, selectable list ----
-    const listBox: Rect = { x: col3, y: c2.y, w: colW, h: 210 };
-    UI.panel({ ...listBox, title: "List" });
-    const listArea: Rect = {
-      x: listBox.x + 10,
-      y: listBox.y + 40,
-      w: listBox.w - 20,
-      h: listBox.h - 50,
-    };
-    listOffset = UI.list(
-      {
-        ...listArea,
-        rowH: 28,
-        gap: 2,
-        count: listItems.length,
-        offset: listOffset,
-        id: uiId("list"),
-      },
-      (i, rect) => {
-        if (UI.listItem({ id: uiId(`li-${i}`), ...rect, selected: i === selectedItem }))
-          selectedItem = i;
-        UI.text(listItems[i], { x: rect.x + 10, y: rect.y, h: rect.h });
-      },
-    );
-
-    // ---- Table: sortable headers + windowed, selectable rows ----
-    const tableBox: Rect = { x: col3, y: c2.y + 228, w: colW, h: 232 };
-    UI.panel({ ...tableBox, title: "Table" });
-    const res = UI.table<Player>({
-      x: tableBox.x + 10,
-      y: tableBox.y + 40,
-      w: tableBox.w - 20,
-      h: tableBox.h - 50,
-      rowH: 26,
-      id: uiId("table"),
-      rows: players,
-      sort: tableSort,
-      offset: tableOffset,
-      selected: tableSel,
-      columns: [
-        { key: "name", label: "PLAYER", value: (p) => p.name },
-        { key: "score", label: "SCORE", width: 60, align: "right", value: (p) => p.score },
-        {
-          key: "kd",
-          label: "K/D",
-          width: 48,
-          align: "right",
-          value: (p) => p.kd,
-          cell: (p, r) =>
-            UI.text(p.kd.toFixed(1), { ...r, align: "right", color: p.kd >= 2 ? "accent" : "dim" }),
         },
-      ],
-    });
-    tableSort = res.sort;
-    tableOffset = res.offset;
-    tableSel = res.selected;
-
-    // ================= COLUMN 4 : Drag & drop =================
-    const col4 = c3.x;
-    const ddBox: Rect = { x: col4, y: c3.y, w: 300, h: 300 };
-    UI.panel({ ...ddBox, title: "Drag & drop" });
-    UI.text("Drag items between the two bins", {
-      x: ddBox.x + 12,
-      y: ddBox.y + 38,
-      color: "dim",
-      size: 12,
-    });
-
-    // Two drop-target columns; each lists its items as drag sources.
-    const binW = (ddBox.w - 36) / 2;
-    const binTop = ddBox.y + 62;
-    const binH = ddBox.h - 74;
-    const bins: { id: string; title: string; items: string[] }[] = [
-      { id: "loadout", title: "LOADOUT", items: binLoadout },
-      { id: "stash", title: "STASH", items: binStash },
-    ];
-    bins.forEach((bin, bi) => {
-      const bx = ddBox.x + 12 + bi * (binW + 12);
-      const target = UI.dropTarget<{ item: string; from: string }>({
-        id: `bin:${bin.id}`,
-        x: bx,
-        y: binTop,
-        w: binW,
-        h: binH,
-        accepts: (payload) => payload.from !== bin.id,
-      });
-      Draw.rect(
-        bx,
-        binTop,
-        binW,
-        binH,
-        target.canDrop ? "rgba(78,205,196,0.18)" : "rgba(255,255,255,0.04)",
       );
-      UI.text(bin.title, { x: bx + 8, y: binTop + 6, size: 11, bold: true, color: "accent" });
-      bin.items.forEach((item, ii) => {
-        const iy = binTop + 26 + ii * 30;
-        const src = UI.dragSource({
-          id: `item:${bin.id}:${item}`,
-          x: bx + 6,
-          y: iy,
-          w: binW - 12,
-          h: 26,
-          payload: { item, from: bin.id },
-        });
-        // The dragged item follows the pointer; draw its origin dimmed.
-        const dragging = src.dragging;
-        Draw.rect(bx + 6, iy, binW - 12, 26, dragging ? "rgba(255,255,255,0.06)" : "#232838");
-        UI.text(item, { x: bx + 14, y: iy, h: 26, color: dragging ? "dim" : undefined });
-      });
-      // Apply a completed drop: move the item across.
-      if (target.dropped) {
-        const { item, from } = target.dropped.payload;
-        if (from === "loadout") binLoadout = binLoadout.filter((x) => x !== item);
-        else binStash = binStash.filter((x) => x !== item);
-        if (bin.id === "loadout") binLoadout = [...binLoadout, item];
-        else binStash = [...binStash, item];
-      }
     });
-    // Drag preview: a chip trailing the pointer.
+
+    // Drag preview: a chip trailing the pointer, above the flowing board.
     const dragged = UI.draggedItem<{ item: string; from: string }>();
     if (dragged) {
-      Draw.rect(Pointer.x + 8, Pointer.y + 8, 90, 24, "#4ecdc4");
+      Draw.rect(Pointer.x + 8, Pointer.y + 8, 90, 24, th.accent);
       UI.text(dragged.payload.item, {
         x: Pointer.x + 8,
         y: Pointer.y + 8,
         w: 90,
         h: 24,
         align: "center",
-        color: "#06231f",
+        color: th.bgActive,
       });
     }
 
     // ================= OVERLAYS — drawn LAST so they sit on top and
     //                   deaden the widgets behind them =================
 
-    // Popover anchored beneath its trigger button.
-    popoverOpen = UI.popover({
-      x: popoverAnchor.x,
-      y: popoverAnchor.y + popoverAnchor.h + 6,
-      w: 220,
-      h: 96,
-      title: "Popover",
-      open: popoverOpen,
-    });
-    if (popoverOpen) {
-      UI.col(
-        { x: popoverAnchor.x + 12, y: popoverAnchor.y + popoverAnchor.h + 42, w: 196, gap: 8 },
-        () => {
-          UI.text("A floating anchored panel.", { color: "dim", size: 12 });
-          if (UI.button({ id: uiId("pop-close"), label: "Close", w: 196 })) popoverOpen = false;
-        },
-      );
-    }
+    // Popover anchored beneath its trigger button — the CHILDREN form, so the
+    // box auto-sizes to its content (no manual height). A close button inside
+    // can't override the returned open-state, so it sets a flag we apply after.
+    let popClose = false;
+    popoverOpen = UI.popover(
+      {
+        x: popoverAnchor.x,
+        y: popoverAnchor.y + popoverAnchor.h + 6,
+        w: 220,
+        title: "Popover",
+        open: popoverOpen,
+      },
+      () => {
+        UI.text("A floating anchored panel.", { color: "dim", size: 12, wrap: true, w: 196 });
+        if (UI.button({ id: uiId("pop-close"), label: "Close" })) popClose = true;
+      },
+    );
+    if (popClose) popoverOpen = false;
 
     // Modal: dim + centered panel; draw contents into the returned rect.
     if (modalOpen) {
@@ -512,28 +612,6 @@ Loop.run({
         choices: ["Neat", "Close"],
       });
       if (answer) dialogOpen = false;
-    }
-
-    // ---- Theme picker (top-right) ----
-    // Drawn LATE so its open drop-menu renders above the panels. Explicit x/y
-    // pin it to the top-right regardless of draw order; it reflows with view.w.
-    const selW = 168;
-    const selX = Math.max(baseX, view.w - baseX - selW);
-    const selY = 14;
-    Draw.text("Theme", { x: selX, y: 2, size: 12, color: "#8b94a0" });
-    const themeSel = UI.select({
-      id: uiId("theme"),
-      value: currentTheme,
-      options: themePresets.map((t) => ({ label: t.label, value: t.value })),
-      x: selX,
-      y: selY,
-      w: selW,
-      ariaLabel: "Theme",
-    });
-    if (themeSel.changed) {
-      currentTheme = themeSel.value;
-      const chosen = themePresets.find((t) => t.value === currentTheme);
-      UI.setTheme(chosen ? chosen.preset : {});
     }
 
     // Floating combat/score texts, then tooltips — always on the very top.
