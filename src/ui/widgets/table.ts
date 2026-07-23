@@ -1,4 +1,4 @@
-import { listItem } from "./list-item.js";
+import { listItem } from "./lists.js";
 import { text, uiCtx } from "../core/index.js";
 import { list } from "./lists.js";
 

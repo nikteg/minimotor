@@ -1,5 +1,17 @@
 // ---------- spinner ----------
-import { ensureWired, spinAngle, theme, uiCtx } from "../core/index.js";
+import { ensureWired, onStep, theme, uiCtx } from "../core/index.js";
+
+// Rotation phase, advanced on the fixed step (via onStep) so it pauses with the
+// loop. ~7 rad/s at 60 steps.
+let spinAngle = 0;
+let hooksRegistered = false;
+function ensureSpinnerHooks(): void {
+  if (hooksRegistered) return;
+  hooksRegistered = true;
+  onStep(() => {
+    spinAngle += 0.12;
+  });
+}
 
 /** Style knobs for `spinner()`. */
 export interface SpinnerOptions {
@@ -32,7 +44,8 @@ export function spinner(
     typeof a === "number"
       ? [uiCtx(), a, b, (c as SpinnerOptions) ?? {}]
       : [a, b, c as number, d ?? {}];
-  ensureWired(); // the shared step hook advances the angle
+  ensureWired();
+  ensureSpinnerHooks(); // the step hook advances the angle
   ctx.save();
   ctx.strokeStyle = opts.color ?? theme.accent;
   ctx.lineWidth = opts.lineWidth ?? 3;

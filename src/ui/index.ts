@@ -1,10 +1,12 @@
 // ---------- UI ----------
 // Immediate-mode canvas UI kit, split two ways:
 //   core/     the runtime kernel — implicit context, theme, layout primitives,
-//             input, focus, and the per-frame lifecycle (overlay-pass flags,
-//             text-editor / tooltip / float machinery, ensureWired housekeeping).
-//   widgets/  the controls built on the kernel — layout, buttons/toggles/etc,
-//             lists, table, overlays, dragdrop, the native-backed select.
+//             input, focus, and the per-frame lifecycle (overlay-capture flags,
+//             ensureWired housekeeping, and the step/frame-end/reset hooks that
+//             widgets register into).
+//   widgets/  the controls built on the kernel — buttons/toggles/etc, layout,
+//             lists, table, overlays, dragdrop, float-text, tooltip, and the
+//             native-backed select + text-input.
 // The kernel depends on nothing above it; widgets depend on the kernel. The
 // widgets barrel re-exports wholesale (select selectively, so its editor
 // internals stay private); core is re-exported selectively, keeping the public
@@ -15,12 +17,7 @@ export {
   begin,
   blur,
   buttonState,
-  clearFloatText,
-  createFloatText,
   defaultTheme,
-  drawFloatText,
-  drawTips,
-  floatText,
   focus,
   focusedId,
   focusNext,
@@ -34,12 +31,9 @@ export {
   stack,
   text,
   textWidth,
-  tooltip,
   _reset,
 } from "./core/index.js";
 export type {
-  FloatTextManager,
-  FloatTextOptions,
   IdPart,
   LayoutChildren,
   LayoutOptions,

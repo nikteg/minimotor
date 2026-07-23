@@ -11,12 +11,12 @@ import {
   place,
   registerFocusable,
   theme,
-  tooltip,
   uiFont,
   uiPointer,
   widgetId,
   withCtx,
 } from "../core/index.js";
+import { tooltip } from "./tooltip.js";
 
 /** A labeled checkbox. */
 export interface ToggleOptions {

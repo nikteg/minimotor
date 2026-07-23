@@ -11,12 +11,12 @@ import {
   place,
   registerFocusable,
   theme,
-  tooltip,
   uiFont,
   uiPointer,
   widgetId,
   withCtx,
 } from "../core/index.js";
+import { tooltip } from "./tooltip.js";
 import { pointInRect } from "../../collision.js";
 
 /** Button look. `"default"` is the neutral filled button; `"primary"` fills

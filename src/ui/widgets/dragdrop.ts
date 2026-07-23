@@ -1,14 +1,48 @@
 import {
-  activeDrag,
+  ensureWired,
+  onFrameEnd,
+  onReset,
   rawPointer,
-  setActiveDrag,
   setCursor,
   uiPointer,
-  type ActiveDrag,
 } from "../core/index.js";
 import { pointInRect } from "../../collision.js";
+import { Pointer } from "../../engine/index.js";
 
 // ---------- Drag and drop ----------
+
+// The in-flight drag, owned here. A widget sets it on grab; the kernel frame-end
+// hook cancels it on a release no drop target consumed.
+interface ActiveDrag {
+  sourceId: string;
+  payload: unknown;
+  offsetX: number;
+  offsetY: number;
+}
+
+let activeDrag: ActiveDrag | null = null;
+
+function setActiveDrag(d: ActiveDrag | null): void {
+  activeDrag = d;
+}
+
+let hooksRegistered = false;
+function ensureDragHooks(): void {
+  if (hooksRegistered) return;
+  hooksRegistered = true;
+  ensureWired(); // so the frame-end hook actually runs
+  onFrameEnd(() => {
+    // A release not consumed by any drop target cancels the drag.
+    try {
+      if (activeDrag && Pointer.frameReleased) activeDrag = null;
+    } catch {
+      activeDrag = null;
+    }
+  });
+  onReset(() => {
+    activeDrag = null;
+  });
+}
 
 /** Inputs to `dragSource`: the draggable rect, its identity, and the `payload`
  *  it carries. */
@@ -92,6 +126,7 @@ export interface DraggedItem<T> {
 /** Mark a rectangle as draggable. Call every draw frame for each source. The
  * payload is retained only while dragging; render the source however you like. */
 export function dragSource<T>(opts: DragSourceOptions<T>): DragSourceState {
+  ensureDragHooks();
   const p = uiPointer();
   const hovered = !opts.disabled && pointInRect(p.x, p.y, opts);
   if (hovered && p.pressed && !activeDrag) {
@@ -114,8 +149,9 @@ export function dragSource<T>(opts: DragSourceOptions<T>): DragSourceState {
 /** Mark a rectangle as a drop target. On the release frame, `dropped` contains
  * the source id and typed payload. Targets decide compatibility with `accepts`. */
 export function dropTarget<T>(opts: DropTargetOptions<T>): DropTargetState<T> {
+  ensureDragHooks();
   const p = uiPointer();
-  const drag = activeDrag as ActiveDrag | null;
+  const drag = activeDrag;
   const accepted = drag ? (opts.accepts?.(drag.payload as T, drag.sourceId) ?? true) : false;
   const hovered = !!drag && pointInRect(p.x, p.y, opts);
   const canDrop = hovered && accepted;
