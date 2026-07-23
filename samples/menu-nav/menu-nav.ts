@@ -1,91 +1,232 @@
-// Menu Nav — a focus-navigation test bed for the immediate-mode UI.
+// Menu Nav — a full options screen and a test bed for UI navigation.
 //
-// Every widget below is keyboard- AND gamepad-focusable. Move focus with Tab /
-// Shift+Tab or the D-pad ↑↓; activate with Enter / Space / the A button; adjust
-// the slider (and cycle the select) with ← → or the D-pad ←→. The status lines
-// show which widget holds focus and what was last activated.
+// Navigation, three ways (they all drive the same focus machine):
+//   • Keyboard: Tab / Shift+Tab move focus, Enter/Space activate, ← → adjust;
+//     Q/E switch the top tabs, Z/X the sub-tabs.
+//   • Gamepad: D-pad or LEFT STICK move focus, A activates, ← → adjust;
+//     LB/RB (bumpers) switch the top tabs, LT/RT (triggers) the sub-tabs.
+//   • Pointer: click anything.
 //
-// The trick for touch: `OnscreenInput.gamepad` only *feeds* a pad — it doesn't
-// automatically drive UI focus. `UI.setNavPad(pad)` routes UI focus navigation
-// through it, so the on-screen D-pad walks the menu just like a hardware pad.
-import { Draw, Loop, OnscreenInput, Stage, UI } from "minimotor";
+// The on-screen pad is drawn like a real controller — left stick, a D-pad to its
+// right, an A face button, and the LB/RB/LT/RT shoulders above. `UI.setNavPad`
+// routes UI focus through it so the virtual stick/D-pad walk the menu on touch.
+import { Draw, Input, Keys, Loop, OnscreenInput, Stage, UI } from "minimotor";
 
 Stage.init("game", { fullscreen: true, background: "#12141c", preventNavigation: true });
+const uiId = UI.ids("menu-nav");
 
-// A D-pad cluster (left) + an A button (right). `button` names feed the standard
-// `pad:` bindings the focus navigator reads (dpad-up/down/left/right, a).
 const pad = OnscreenInput.gamepad({
   opacity: 0.55,
+  // Left analog stick — moves focus (via setNavPad).
+  stick: { anchor: { side: "left", x: 92, y: 92 }, radius: 56 },
   buttons: [
-    { anchor: { side: "left", x: 116, y: 196 }, r: 30, button: "dpad-up", label: "▲" },
-    { anchor: { side: "left", x: 116, y: 76 }, r: 30, button: "dpad-down", label: "▼" },
-    { anchor: { side: "left", x: 56, y: 136 }, r: 30, button: "dpad-left", label: "◀" },
-    { anchor: { side: "left", x: 176, y: 136 }, r: 30, button: "dpad-right", label: "▶" },
-    { anchor: { side: "right", x: 100, y: 120 }, r: 42, button: "a", label: "A" },
+    // D-pad, to the RIGHT of the left stick.
+    { anchor: { side: "left", x: 252, y: 134 }, r: 24, button: "dpad-up", label: "▲" },
+    { anchor: { side: "left", x: 252, y: 50 }, r: 24, button: "dpad-down", label: "▼" },
+    { anchor: { side: "left", x: 208, y: 92 }, r: 24, button: "dpad-left", label: "◀" },
+    { anchor: { side: "left", x: 296, y: 92 }, r: 24, button: "dpad-right", label: "▶" },
+    // A face button, bottom-right.
+    { anchor: { side: "right", x: 92, y: 92 }, r: 38, button: "a", label: "A" },
+    // Shoulders (LB/RB) + triggers (LT/RT), rendered ABOVE the stick/buttons.
+    { anchor: { side: "left", x: 96, y: 250 }, r: 28, button: "l1", label: "LB" },
+    { anchor: { side: "left", x: 96, y: 314 }, r: 28, button: "l2", label: "LT" },
+    { anchor: { side: "right", x: 96, y: 250 }, r: 28, button: "r1", label: "RB" },
+    { anchor: { side: "right", x: 96, y: 314 }, r: 28, button: "r2", label: "RT" },
   ],
 });
-// Route UI focus navigation through the on-screen pad (fused with hardware pad 0),
-// so its D-pad moves focus and A activates.
-UI.setNavPad(pad);
+UI.setNavPad(pad); // the virtual stick + D-pad now drive UI focus
 
-// Menu state — the immediate-mode round-trip target for each widget.
-let sound = true;
-let showFps = false;
-let volume = 60;
-let quality = "high";
+const TABS = [
+  { name: "Video", subs: ["Display", "Quality"] },
+  { name: "Audio", subs: ["Levels", "Output"] },
+  { name: "Controls", subs: ["Gamepad", "Keybinds"] },
+  { name: "Gameplay", subs: ["General", "HUD"] },
+];
+
+let tab = 0;
+let sub = 0;
+
+// Option state — the immediate-mode round-trip target for each widget.
+let resolution = "1920 × 1080";
+let fullscreen = true;
+let vsync = false;
+let preset = "high";
+let shadows = true;
+let aa = "taa";
+let master = 80;
+let music = 60;
+let sfx = 70;
+let audioDevice = "system";
+let mono = false;
+let sensitivity = 5;
+let invertY = false;
+let difficulty = "normal";
+let tutorials = true;
+let hudOpacity = 90;
+let minimap = true;
 let lastAction = "—";
+
+const Buttons = Input.Buttons;
+
+// Draw the widgets for the active tab + sub-tab. Each widget is focusable, so the
+// D-pad / stick / Tab walk them and ← → / A adjust or activate.
+function renderOptions(): void {
+  const key = `${TABS[tab].name}/${TABS[tab].subs[sub]}`;
+  switch (key) {
+    case "Video/Display":
+      UI.text("Resolution", { color: "dim", size: 12 });
+      resolution = UI.select({
+        id: uiId("res"),
+        value: resolution,
+        options: ["2560 × 1440", "1920 × 1080", "1280 × 720"].map((v) => ({ label: v, value: v })),
+        ariaLabel: "Resolution",
+      }).value;
+      fullscreen = UI.toggle({ id: uiId("fullscreen"), label: "Fullscreen", on: fullscreen });
+      vsync = UI.toggle({ id: uiId("vsync"), label: "V-Sync", on: vsync });
+      break;
+    case "Video/Quality":
+      UI.text("Preset", { color: "dim", size: 12 });
+      preset = UI.select({
+        id: uiId("preset"),
+        value: preset,
+        options: [
+          { label: "Low", value: "low" },
+          { label: "Medium", value: "medium" },
+          { label: "High", value: "high" },
+          { label: "Ultra", value: "ultra" },
+        ],
+        ariaLabel: "Quality preset",
+      }).value;
+      shadows = UI.toggle({ id: uiId("shadows"), label: "Shadows", on: shadows });
+      UI.text("Anti-aliasing", { color: "dim", size: 12 });
+      aa = UI.select({
+        id: uiId("aa"),
+        value: aa,
+        options: [
+          { label: "Off", value: "off" },
+          { label: "FXAA", value: "fxaa" },
+          { label: "TAA", value: "taa" },
+        ],
+        ariaLabel: "Anti-aliasing",
+      }).value;
+      break;
+    case "Audio/Levels":
+      master = UI.slider({ id: uiId("master"), label: "Master", value: master, min: 0, max: 100 });
+      music = UI.slider({ id: uiId("music"), label: "Music", value: music, min: 0, max: 100 });
+      sfx = UI.slider({ id: uiId("sfx"), label: "SFX", value: sfx, min: 0, max: 100 });
+      break;
+    case "Audio/Output":
+      UI.text("Device", { color: "dim", size: 12 });
+      audioDevice = UI.select({
+        id: uiId("device"),
+        value: audioDevice,
+        options: [
+          { label: "System default", value: "system" },
+          { label: "Headphones", value: "phones" },
+          { label: "Speakers", value: "speakers" },
+        ],
+        ariaLabel: "Output device",
+      }).value;
+      mono = UI.toggle({ id: uiId("mono"), label: "Mono downmix", on: mono });
+      break;
+    case "Controls/Gamepad":
+      sensitivity = UI.slider({
+        id: uiId("sens"),
+        label: "Aim sens",
+        value: sensitivity,
+        min: 1,
+        max: 10,
+        step: 1,
+        format: (v) => `${Math.round(v)}`,
+      });
+      invertY = UI.toggle({ id: uiId("invert"), label: "Invert Y", on: invertY });
+      break;
+    case "Controls/Keybinds":
+      if (UI.button({ id: uiId("bind-jump"), label: "Jump — Space" })) lastAction = "Rebind Jump";
+      if (UI.button({ id: uiId("bind-fire"), label: "Fire — L-Click" })) lastAction = "Rebind Fire";
+      if (UI.button({ id: uiId("bind-reset"), label: "Reset to defaults", variant: "danger" }))
+        lastAction = "Reset binds";
+      break;
+    case "Gameplay/General":
+      UI.text("Difficulty", { color: "dim", size: 12 });
+      difficulty = UI.select({
+        id: uiId("difficulty"),
+        value: difficulty,
+        options: [
+          { label: "Story", value: "story" },
+          { label: "Normal", value: "normal" },
+          { label: "Hard", value: "hard" },
+        ],
+        ariaLabel: "Difficulty",
+      }).value;
+      tutorials = UI.toggle({ id: uiId("tutorials"), label: "Show tutorials", on: tutorials });
+      break;
+    case "Gameplay/HUD":
+      hudOpacity = UI.slider({
+        id: uiId("hud"),
+        label: "HUD opacity",
+        value: hudOpacity,
+        min: 0,
+        max: 100,
+        format: (v) => `${Math.round(v)}%`,
+      });
+      minimap = UI.toggle({ id: uiId("minimap"), label: "Minimap", on: minimap });
+      break;
+  }
+}
 
 Loop.run({
   update() {
-    // No simulation — the menu is drawn entirely from widget state.
+    // Bumpers / Q-E switch top tabs; triggers / Z-X switch sub-tabs. Read the
+    // pad edges in the fixed step (that's where `pressed` is one-shot).
+    const nTabs = TABS.length;
+    if (pad.pressed(Buttons.R1) || Keys.pressed("KeyE")) {
+      tab = (tab + 1) % nTabs;
+      sub = 0;
+    }
+    if (pad.pressed(Buttons.L1) || Keys.pressed("KeyQ")) {
+      tab = (tab - 1 + nTabs) % nTabs;
+      sub = 0;
+    }
+    const nSubs = TABS[tab].subs.length;
+    if (pad.pressed(Buttons.R2) || Keys.pressed("KeyX")) sub = (sub + 1) % nSubs;
+    if (pad.pressed(Buttons.L2) || Keys.pressed("KeyZ")) sub = (sub - 1 + nSubs) % nSubs;
   },
 
   draw() {
-    Draw.text("MENU NAV", {
-      x: 24,
-      y: 18,
-      size: 22,
-      color: "#e7ecf0",
-      font: "bold 22px monospace",
-    });
-    Draw.text("Tab / D-pad ↑↓ move · Enter / A activate · ←→ adjust", {
+    Draw.text("OPTIONS", { x: 24, y: 18, size: 22, color: "#e7ecf0", font: "bold 22px monospace" });
+    Draw.text("LB/RB or Q/E: tab · LT/RT or Z/X: sub-tab · stick/D-pad: move · A/Enter: select", {
       x: 24,
       y: 46,
       size: 12,
       color: "#8b94a0",
     });
 
-    // A column of focusable widgets. No explicit ids — `idScope` gives them
-    // stable call-order ids so focus sticks frame-to-frame.
-    UI.idScope("menu", () => {
-      UI.group({ x: 24, y: 80, w: 320, title: "MAIN MENU", gap: 10 }, () => {
-        if (UI.button({ label: "Start Game", variant: "primary" })) lastAction = "Start Game";
-        if (UI.button({ label: "Load" })) lastAction = "Load";
-        sound = UI.toggle({ label: "Sound", on: sound });
-        showFps = UI.toggle({ label: "Show FPS", on: showFps });
-        volume = UI.slider({
-          label: "Volume",
-          value: volume,
-          min: 0,
-          max: 100,
-          format: (v) => `${Math.round(v)}%`,
+    UI.idScope("opt", () => {
+      UI.col({ x: 24, y: 82, w: 440, gap: 12 }, () => {
+        // Tabs + sub-tabs: clickable, and switched by the shoulders/keys above,
+        // but tabIndex:-1 so focus navigation only walks the option widgets.
+        tab = UI.tabs({
+          id: uiId("tabs"),
+          tabIndex: -1,
+          items: TABS.map((t) => t.name),
+          active: tab,
+          w: 440,
         });
-        quality = UI.select({
-          value: quality,
-          options: [
-            { label: "Low", value: "low" },
-            { label: "Medium", value: "medium" },
-            { label: "High", value: "high" },
-            { label: "Ultra", value: "ultra" },
-          ],
-          ariaLabel: "Quality",
-        }).value;
-        if (UI.button({ label: "Quit", variant: "danger" })) lastAction = "Quit";
+        sub = Math.min(sub, TABS[tab].subs.length - 1);
+        sub = UI.tabs({
+          id: uiId("subtabs"),
+          tabIndex: -1,
+          items: TABS[tab].subs,
+          active: sub,
+          w: 440,
+        });
+        UI.group({ title: `${TABS[tab].name} · ${TABS[tab].subs[sub]}`, gap: 10 }, renderOptions);
       });
     });
 
-    UI.text(`Focused: ${UI.focusedId() ?? "—"}`, { x: 24, y: 440, size: 13, color: "dim" });
-    UI.text(`Last activated: ${lastAction}`, { x: 24, y: 464, size: 13, color: "accent" });
+    UI.text(`Focused: ${UI.focusedId() ?? "—"}`, { x: 24, y: 470, size: 13, color: "dim" });
+    UI.text(`Last activated: ${lastAction}`, { x: 24, y: 494, size: 13, color: "accent" });
 
     OnscreenInput.drawControls(pad);
     UI.drawTips();

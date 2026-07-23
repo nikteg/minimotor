@@ -139,6 +139,9 @@ export let focusBeforeOverlay: string | null = null;
 // menus too (a fused pad covers hardware + touch at once).
 export let navPad: ReturnType<typeof gamepad> | null = null;
 
+// Last left-stick vector, for edge-detecting stick-driven menu nav in `padNav`.
+let lastNavStick = { x: 0, y: 0 };
+
 /** Route UI focus navigation (gamepad dpad/A) through `pad` — e.g. an on-screen
  *  gamepad, so its virtual dpad walks the focusable widgets and A activates.
  *  Pass `null` to fall back to hardware pad 0. */
@@ -1241,18 +1244,35 @@ function padNav(): void {
     return;
   }
   if (!pad.connected) return;
-  if (pad.pressed(Buttons.DpadDown)) {
+  // Left-stick nav, edge-detected (one step per flick past the threshold) — ONLY
+  // when a nav pad is explicitly wired via setNavPad, so a game's movement stick
+  // never hijacks menu focus. The d-pad always navigates.
+  let stickV = 0;
+  let stickH = 0;
+  if (navPad) {
+    const T = 0.5;
+    const sx = pad.axis(0);
+    const sy = pad.axis(1);
+    if (sy > T && lastNavStick.y <= T) stickV = 1;
+    else if (sy < -T && lastNavStick.y >= -T) stickV = -1;
+    if (sx > T && lastNavStick.x <= T) stickH = 1;
+    else if (sx < -T && lastNavStick.x >= -T) stickH = -1;
+    lastNavStick = { x: sx, y: sy };
+  }
+  if (pad.pressed(Buttons.DpadDown) || stickV > 0) {
     focusVisible = true;
     moveWidgetFocus(1);
   }
-  if (pad.pressed(Buttons.DpadUp)) {
+  if (pad.pressed(Buttons.DpadUp) || stickV < 0) {
     focusVisible = true;
     moveWidgetFocus(-1);
   }
   if (!focusedWidget) return;
   if (pad.pressed(Buttons.A)) keyboardActivation = focusedWidget;
-  if (pad.pressed(Buttons.DpadLeft)) keyboardCommand = { id: focusedWidget, key: "ArrowLeft" };
-  if (pad.pressed(Buttons.DpadRight)) keyboardCommand = { id: focusedWidget, key: "ArrowRight" };
+  if (pad.pressed(Buttons.DpadLeft) || stickH < 0)
+    keyboardCommand = { id: focusedWidget, key: "ArrowLeft" };
+  if (pad.pressed(Buttons.DpadRight) || stickH > 0)
+    keyboardCommand = { id: focusedWidget, key: "ArrowRight" };
 }
 
 export function ensureWired(): void {
@@ -1407,6 +1427,7 @@ export function _reset(): void {
   keyboardActivation = null;
   keyboardCommand = null;
   navPad = null;
+  lastNavStick = { x: 0, y: 0 };
   idScopes.length = 0;
   setBegunCtx(null);
   wired = false;
