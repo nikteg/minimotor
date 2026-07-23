@@ -265,8 +265,8 @@ const pad = OnscreenInput.gamepad({
   opacity: 0.55,
   stick: { anchor: { side: "left", x: 92, y: 92 }, radius: 62 },
   buttons: [
-    { anchor: { side: "right", x: 78, y: 82 }, r: 40, button: "a", label: "GAS" },
-    { anchor: { side: "right", x: 168, y: 132 }, r: 34, button: "b", label: "BRAKE" },
+    { anchor: { side: "right", x: 150, y: 88 }, r: 40, button: "a", label: "GAS" },
+    { anchor: { side: "right", x: 82, y: 162 }, r: 34, button: "b", label: "BRAKE" },
   ],
 });
 

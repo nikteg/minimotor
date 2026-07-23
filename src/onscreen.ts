@@ -312,7 +312,14 @@ function attachListeners(st: PadInternal): void {
     return; // no default game yet — retry on the next poll/draw
   }
   st.listening = true;
-  canvas.style.touchAction = "none"; // stop the browser eating touches as scroll/zoom
+  // Stop the browser eating touches: `touch-action:none` kills scroll/zoom/
+  // double-tap-zoom; disabling text selection + the iOS long-press callout stops
+  // hold-to-select/magnifier from hijacking a finger that's holding the stick or
+  // a button (which otherwise steals the pointer and leaves the stick stuck).
+  canvas.style.touchAction = "none";
+  canvas.style.userSelect = "none";
+  canvas.style.setProperty("-webkit-user-select", "none");
+  canvas.style.setProperty("-webkit-touch-callout", "none");
 
   // Touch/pen always actuate; a mouse only when the pad is actually on screen
   // (fade > 0), so a hidden autohidden pad never eats desktop clicks.
@@ -361,6 +368,10 @@ function attachListeners(st: PadInternal): void {
   };
   canvas.addEventListener("pointerup", release);
   canvas.addEventListener("pointercancel", release);
+  // Safety net: if the OS steals the pointer for a system gesture (an iOS
+  // long-press, say) without a pointerup/pointercancel, capture is lost — treat
+  // that as a release so the stick/button can't get stuck at its last value.
+  canvas.addEventListener("lostpointercapture", release);
   // The rect is cached for hot-path coordinate math; invalidate on layout change.
   const invalidate = () => {
     rectCache = null;

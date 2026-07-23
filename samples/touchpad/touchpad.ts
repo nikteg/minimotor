@@ -11,8 +11,8 @@ const pad = OnscreenInput.gamepad({
   haptics: true,
   stick: { anchor: { side: "left", x: 92, y: 92 }, radius: 62 },
   buttons: [
-    { anchor: { side: "right", x: 74, y: 74 }, r: 36, button: "a", label: "GO" },
-    { anchor: { side: "right", x: 150, y: 118 }, r: 30, button: "b", label: "◼" },
+    { anchor: { side: "right", x: 138, y: 78 }, r: 36, button: "a", label: "GO" },
+    { anchor: { side: "right", x: 74, y: 146 }, r: 30, button: "b", label: "◼" },
   ],
 });
 

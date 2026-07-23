@@ -9,10 +9,15 @@ export const fullscreenCSS = `
     width: 100%; height: 100%; overflow: hidden;
     background: #000; touch-action: none;
     overscroll-behavior: none;
+    /* No hold-to-select / callout / magnifier hijacking touches (iOS). */
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none;
   }
   canvas {
     display: block;
     position: absolute;
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none;
     /* top/left twice on purpose: the first is the fallback for browsers that
        drop the env() declarations entirely. */
     top: 0; left: 0;
