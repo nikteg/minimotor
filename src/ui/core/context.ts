@@ -1,4 +1,3 @@
-import { uiFont } from "./theme.js";
 import { Draw } from "../../engine/index.js";
 
 // ---------- Implicit context ----------
@@ -24,17 +23,11 @@ export function uiCtx(): CanvasRenderingContext2D {
 
 /** Untangle the two call forms: `widget(opts)` (implicit ctx) and
  *  `widget(ctx, opts)`. */
-export function withCtx<T>(a: CanvasRenderingContext2D | T, b?: T): [CanvasRenderingContext2D, T] {
-  return b === undefined ? [uiCtx(), a as T] : [a as CanvasRenderingContext2D, b];
-}
-
-/** Width of `text` in the given font (default: the theme's base font) —
- *  for sizing custom layouts around labels. */
-export function textWidth(text: string, font?: string): number {
-  const ctx = uiCtx();
-  ctx.save();
-  ctx.font = font ?? uiFont();
-  const w = ctx.measureText(text).width;
-  ctx.restore();
-  return w;
+export function withCtx<T>(
+  ctxOrValue: CanvasRenderingContext2D | T,
+  value?: T,
+): [CanvasRenderingContext2D, T] {
+  return value === undefined
+    ? [uiCtx(), ctxOrValue as T]
+    : [ctxOrValue as CanvasRenderingContext2D, value];
 }

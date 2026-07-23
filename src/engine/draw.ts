@@ -57,10 +57,17 @@ function rect(a: number | Rect, b: number | Fill, c?: number, d?: number, e?: Fi
  *  point (`circle(pos, r, color)`). */
 function circle(x: number, y: number, r: number, color: Fill): void;
 function circle(pos: Point, r: number, color: Fill): void;
-function circle(a: number | Point, b: number, c: number | Fill, d?: Fill): void {
+function circle(
+  xOrCenter: number | Point,
+  yOrRadius: number,
+  radiusOrColor: number | Fill,
+  maybeColor?: Fill,
+): void {
   const ctx = requireDefault().ctx;
   const [x, y, r, color] =
-    typeof a === "number" ? [a, b, c as number, d!] : [a.x, a.y, b, c as Fill];
+    typeof xOrCenter === "number"
+      ? [xOrCenter, yOrRadius, radiusOrColor as number, maybeColor!]
+      : [xOrCenter.x, xOrCenter.y, yOrRadius, radiusOrColor as Fill];
   ctx.fillStyle = color;
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
@@ -73,29 +80,29 @@ function circle(a: number | Point, b: number, c: number | Fill, d?: Fill): void 
 function line(x1: number, y1: number, x2: number, y2: number, color: Fill, width?: number): void;
 function line(a: Point, b: Point, color: Fill, width?: number): void;
 function line(
-  a: number | Point,
-  b: number | Point,
-  c?: number | Fill,
-  d?: number | Fill,
-  e?: Fill,
-  f?: number,
+  x1OrFrom: number | Point,
+  y1OrTo: number | Point,
+  x2OrColor?: number | Fill,
+  y2OrWidth?: number | Fill,
+  maybeColor?: Fill,
+  maybeWidth?: number,
 ): void {
   const ctx = requireDefault().ctx;
   let x1: number, y1: number, x2: number, y2: number, color: Fill, width: number;
-  if (typeof a === "number") {
-    x1 = a;
-    y1 = b as number;
-    x2 = c as number;
-    y2 = d as number;
-    color = e!;
-    width = f ?? 1;
+  if (typeof x1OrFrom === "number") {
+    x1 = x1OrFrom;
+    y1 = y1OrTo as number;
+    x2 = x2OrColor as number;
+    y2 = y2OrWidth as number;
+    color = maybeColor!;
+    width = maybeWidth ?? 1;
   } else {
-    x1 = a.x;
-    y1 = a.y;
-    x2 = (b as Point).x;
-    y2 = (b as Point).y;
-    color = c as Fill;
-    width = (d as number | undefined) ?? 1;
+    x1 = x1OrFrom.x;
+    y1 = x1OrFrom.y;
+    x2 = (y1OrTo as Point).x;
+    y2 = (y1OrTo as Point).y;
+    color = x2OrColor as Fill;
+    width = (y2OrWidth as number | undefined) ?? 1;
   }
   ctx.strokeStyle = color;
   ctx.lineWidth = width;
@@ -136,16 +143,17 @@ function radial(
   x0: number,
   y0: number,
   r0: number,
-  a?: number | GradientStops,
+  x1OrStops?: number | GradientStops,
   y1?: number,
   r1?: number,
-  b?: GradientStops,
+  maybeStops?: GradientStops,
 ): CanvasGradient {
   const ctx = requireDefault().ctx;
-  const g = Array.isArray(a)
+  const g = Array.isArray(x1OrStops)
     ? ctx.createRadialGradient(x0, y0, 0, x0, y0, r0)
-    : ctx.createRadialGradient(x0, y0, r0, a as number, y1!, r1!);
-  for (const [at, color] of Array.isArray(a) ? a : b!) g.addColorStop(at, color);
+    : ctx.createRadialGradient(x0, y0, r0, x1OrStops as number, y1!, r1!);
+  for (const [at, color] of Array.isArray(x1OrStops) ? x1OrStops : maybeStops!)
+    g.addColorStop(at, color);
   return g;
 }
 

@@ -68,14 +68,15 @@ export function slider(
 export function slider(opts: SliderOptions): number;
 export function slider(ctx: CanvasRenderingContext2D, opts: SliderOptions): number;
 export function slider(
-  a: CanvasRenderingContext2D | SliderOptions | string,
-  b?: SliderOptions | number,
-  c?: Omit<SliderOptions, "label" | "value">,
+  ctxOrOptsOrLabel: CanvasRenderingContext2D | SliderOptions | string,
+  optsOrValue?: SliderOptions | number,
+  rest?: Omit<SliderOptions, "label" | "value">,
 ): number {
   // Label-first, value-in/value-out sugar (API_PLAN #43):
   //   Audio.buses.music.volume = UI.slider("Music", Audio.buses.music.volume);
-  if (typeof a === "string") return slider({ ...c, label: a, value: b as number });
-  const [ctx, opts] = withCtx(a, b as SliderOptions);
+  if (typeof ctxOrOptsOrLabel === "string")
+    return slider({ ...rest, label: ctxOrOptsOrLabel, value: optsOrValue as number });
+  const [ctx, opts] = withCtx(ctxOrOptsOrLabel, optsOrValue as SliderOptions);
   const min = opts.min ?? 0;
   const max = opts.max ?? 1;
   const slot = place(opts, opts.w ?? 140, opts.h ?? 30);

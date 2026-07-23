@@ -47,8 +47,11 @@ export interface TabsOptions {
  *    tab = UI.tabs(ctx, { x, y, items: ["All", "Coop", "PvP"], active: tab }); */
 export function tabs(opts: TabsOptions): number;
 export function tabs(ctx: CanvasRenderingContext2D, opts: TabsOptions): number;
-export function tabs(a: CanvasRenderingContext2D | TabsOptions, b?: TabsOptions): number {
-  const [ctx, opts] = withCtx(a, b);
+export function tabs(
+  ctxOrOpts: CanvasRenderingContext2D | TabsOptions,
+  maybeOpts?: TabsOptions,
+): number {
+  const [ctx, opts] = withCtx(ctxOrOpts, maybeOpts);
   ctx.save();
   ctx.font = opts.font ?? uiFont(theme.fontSize, true);
   // Auto width: equal cells sized to the widest label.

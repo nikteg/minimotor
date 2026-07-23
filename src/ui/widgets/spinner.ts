@@ -35,15 +35,15 @@ export function spinner(
   opts?: SpinnerOptions,
 ): void;
 export function spinner(
-  a: CanvasRenderingContext2D | number,
-  b: number,
-  c?: number | SpinnerOptions,
-  d?: SpinnerOptions,
+  ctxOrX: CanvasRenderingContext2D | number,
+  xOrY: number,
+  yOrOpts?: number | SpinnerOptions,
+  maybeOpts?: SpinnerOptions,
 ): void {
   const [ctx, x, y, opts] =
-    typeof a === "number"
-      ? [uiCtx(), a, b, (c as SpinnerOptions) ?? {}]
-      : [a, b, c as number, d ?? {}];
+    typeof ctxOrX === "number"
+      ? [uiCtx(), ctxOrX, xOrY, (yOrOpts as SpinnerOptions) ?? {}]
+      : [ctxOrX, xOrY, yOrOpts as number, maybeOpts ?? {}];
   ensureWired();
   ensureSpinnerHooks(); // the step hook advances the angle
   ctx.save();

@@ -233,10 +233,10 @@ function handleSelectCommand<T>(
 export function select<T>(opts: SelectOptions<T>): SelectResult<T>;
 export function select<T>(ctx: CanvasRenderingContext2D, opts: SelectOptions<T>): SelectResult<T>;
 export function select<T>(
-  a: CanvasRenderingContext2D | SelectOptions<T>,
-  b?: SelectOptions<T>,
+  ctxOrOpts: CanvasRenderingContext2D | SelectOptions<T>,
+  maybeOpts?: SelectOptions<T>,
 ): SelectResult<T> {
-  const [ctx, opts] = withCtx(a, b);
+  const [ctx, opts] = withCtx(ctxOrOpts, maybeOpts);
   ensureWired();
   ensureSelectHooks();
   const id = requiredWidgetId(opts.id, "select");

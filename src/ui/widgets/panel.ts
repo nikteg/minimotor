@@ -108,12 +108,16 @@ export function panel(opts: PanelOptions): void;
 export function panel(ctx: CanvasRenderingContext2D, opts: PanelOptions): void;
 export function panel<R>(opts: PanelContainerOptions, children: () => R): R;
 export function panel<R>(
-  a: CanvasRenderingContext2D | PanelOptions | PanelContainerOptions,
-  b?: PanelOptions | (() => R),
+  ctxOrOpts: CanvasRenderingContext2D | PanelOptions | PanelContainerOptions,
+  optsOrChildren?: PanelOptions | (() => R),
 ): R | void {
   // Container form: `UI.panel({ anchor: "center", w: 260 }, () => {...})`.
-  if (typeof b === "function") return panelContainer(a as PanelContainerOptions, b);
-  const [ctx, opts] = withCtx(a as CanvasRenderingContext2D | PanelOptions, b as PanelOptions);
+  if (typeof optsOrChildren === "function")
+    return panelContainer(ctxOrOpts as PanelContainerOptions, optsOrChildren);
+  const [ctx, opts] = withCtx(
+    ctxOrOpts as CanvasRenderingContext2D | PanelOptions,
+    optsOrChildren as PanelOptions,
+  );
   ctx.save();
   drawBox(ctx, opts.x, opts.y, opts.w, opts.h, {
     fill: opts.bg ?? theme.panelBg,

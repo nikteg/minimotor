@@ -109,6 +109,17 @@ export function resolveColor(c: string | undefined): string {
 /** Greedy word-wrap `str` into lines no wider than `maxW` (font must be set
  *  on `ctx`). A single word wider than `maxW` gets its own line (drawn clamped
  *  by the caller). */
+/** Width of `text` in the given font (default: the theme's base font) —
+ *  for sizing custom layouts around labels. */
+export function textWidth(text: string, font?: string): number {
+  const ctx = uiCtx();
+  ctx.save();
+  ctx.font = font ?? uiFont();
+  const w = ctx.measureText(text).width;
+  ctx.restore();
+  return w;
+}
+
 export function wrapLines(ctx: CanvasRenderingContext2D, str: string, maxW: number): string[] {
   const words = str.split(/\s+/).filter(Boolean);
   const lines: string[] = [];
@@ -135,12 +146,14 @@ export function wrapLines(ctx: CanvasRenderingContext2D, str: string, maxW: numb
 export function text(str: string, opts?: TextOptions): void;
 export function text(ctx: CanvasRenderingContext2D, str: string, opts?: TextOptions): void;
 export function text(
-  a: CanvasRenderingContext2D | string,
-  b?: string | TextOptions,
-  c?: TextOptions,
+  ctxOrText: CanvasRenderingContext2D | string,
+  textOrOpts?: string | TextOptions,
+  maybeOpts?: TextOptions,
 ): void {
   const [ctx, str, rawOpts] =
-    typeof a === "string" ? [uiCtx(), a, (b as TextOptions) ?? {}] : [a, b as string, c ?? {}];
+    typeof ctxOrText === "string"
+      ? [uiCtx(), ctxOrText, (textOrOpts as TextOptions) ?? {}]
+      : [ctxOrText, textOrOpts as string, maybeOpts ?? {}];
   let opts = rawOpts;
   if (opts.anchor) {
     const view = anchorViewport(ctx);

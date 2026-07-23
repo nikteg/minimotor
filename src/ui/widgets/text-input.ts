@@ -331,10 +331,10 @@ export function openTextEditor(opts: TextInputOptions & { id: string }): void {
 export function textInput(opts: TextInputOptions): TextInputResult;
 export function textInput(ctx: CanvasRenderingContext2D, opts: TextInputOptions): TextInputResult;
 export function textInput(
-  a: CanvasRenderingContext2D | TextInputOptions,
-  b?: TextInputOptions,
+  ctxOrOpts: CanvasRenderingContext2D | TextInputOptions,
+  maybeOpts?: TextInputOptions,
 ): TextInputResult {
-  const [ctx, opts] = withCtx(a, b);
+  const [ctx, opts] = withCtx(ctxOrOpts, maybeOpts);
   ensureWired();
   ensureTextInputHooks();
   const id = requiredWidgetId(opts.id, "textInput");

@@ -363,10 +363,12 @@ export type LayoutChildren<R> = (layout: Stack) => R;
 
 /** Untangle `(opts?, children)` vs `(children)`. */
 export function layoutArgs<R>(
-  a: LayoutOptions | LayoutChildren<R>,
-  b?: LayoutChildren<R>,
+  optsOrChildren: LayoutOptions | LayoutChildren<R>,
+  children?: LayoutChildren<R>,
 ): [LayoutOptions, LayoutChildren<R>] {
-  return typeof a === "function" ? [{}, a] : [a, b as LayoutChildren<R>];
+  return typeof optsOrChildren === "function"
+    ? [{}, optsOrChildren]
+    : [optsOrChildren, children as LayoutChildren<R>];
 }
 
 // ---------- The one auto-sizing container primitive ----------

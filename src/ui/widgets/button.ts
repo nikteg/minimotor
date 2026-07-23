@@ -115,12 +115,13 @@ export function button(label: string, opts?: Omit<ButtonOptions, "label">): bool
 export function button(opts: ButtonOptions): boolean;
 export function button(ctx: CanvasRenderingContext2D, opts: ButtonOptions): boolean;
 export function button(
-  a: CanvasRenderingContext2D | ButtonOptions | string,
-  b?: ButtonOptions | Omit<ButtonOptions, "label">,
+  ctxOrOptsOrLabel: CanvasRenderingContext2D | ButtonOptions | string,
+  optsOrRest?: ButtonOptions | Omit<ButtonOptions, "label">,
 ): boolean {
   // Label-first sugar: `if (UI.button("Resume")) ...` (API_PLAN #43).
-  if (typeof a === "string") return button({ ...(b as Omit<ButtonOptions, "label">), label: a });
-  const [ctx, opts] = withCtx(a, b as ButtonOptions);
+  if (typeof ctxOrOptsOrLabel === "string")
+    return button({ ...(optsOrRest as Omit<ButtonOptions, "label">), label: ctxOrOptsOrLabel });
+  const [ctx, opts] = withCtx(ctxOrOptsOrLabel, optsOrRest as ButtonOptions);
   ctx.save();
   ctx.font = opts.font ?? uiFont(theme.fontSize + 2, true);
   // Auto width: the label plus comfortable padding.

@@ -341,13 +341,13 @@ function facadeRender(fn: () => void): void;
 function facadeRender(cam: CameraLens, fn: () => void): void;
 function facadeRender(cam: CameraLens, opts: RenderOptions, fn: () => void): void;
 function facadeRender(
-  a: (() => void) | CameraLens,
-  b?: (() => void) | RenderOptions,
-  c?: () => void,
+  fnOrCam: (() => void) | CameraLens,
+  fnOrOpts?: (() => void) | RenderOptions,
+  maybeFn?: () => void,
 ): void {
-  if (typeof a === "function") return def().render(a);
-  if (typeof b === "function") return a.render(b);
-  return a.render(b ?? {}, c!);
+  if (typeof fnOrCam === "function") return def().render(fnOrCam);
+  if (typeof fnOrOpts === "function") return fnOrCam.render(fnOrOpts);
+  return fnOrCam.render(fnOrOpts ?? {}, maybeFn!);
 }
 
 /** The always-existing default camera. Identity (0, 0, zoom 1) until

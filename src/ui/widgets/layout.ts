@@ -10,7 +10,9 @@ import {
   currentLayout,
   layoutArgs,
   popPointerClip,
+  popUiTransform,
   pushPointerClip,
+  pushUiTransform,
   roundRectPath,
   runAutoSized,
   storeContentSize,
@@ -170,8 +172,11 @@ const isRootContainer = (opts: LayoutOptions): boolean =>
  *    }); */
 export function row<R>(children: LayoutChildren<R>): R;
 export function row<R>(opts: LayoutOptions, children: LayoutChildren<R>): R;
-export function row<R>(a: LayoutOptions | LayoutChildren<R>, b?: LayoutChildren<R>): R {
-  const [opts, children] = layoutArgs(a, b);
+export function row<R>(
+  optsOrChildren: LayoutOptions | LayoutChildren<R>,
+  maybeChildren?: LayoutChildren<R>,
+): R {
+  const [opts, children] = layoutArgs(optsOrChildren, maybeChildren);
   const wrap = opts.wrap ?? false;
   // a row's cross is height; wrapping children take their natural height so lines
   // measure correctly.
@@ -191,8 +196,11 @@ export function row<R>(a: LayoutOptions | LayoutChildren<R>, b?: LayoutChildren<
 /** Lay children out top-to-bottom. See `row`. */
 export function col<R>(children: LayoutChildren<R>): R;
 export function col<R>(opts: LayoutOptions, children: LayoutChildren<R>): R;
-export function col<R>(a: LayoutOptions | LayoutChildren<R>, b?: LayoutChildren<R>): R {
-  const [opts, children] = layoutArgs(a, b);
+export function col<R>(
+  optsOrChildren: LayoutOptions | LayoutChildren<R>,
+  maybeChildren?: LayoutChildren<R>,
+): R {
+  const [opts, children] = layoutArgs(optsOrChildren, maybeChildren);
   const wrap = opts.wrap ?? false;
   // a col's cross is width; wrapping children take their natural width.
   const fitCross = wrap || (isRootContainer(opts) && opts.w === undefined);
@@ -278,6 +286,66 @@ export function clip<R>(
     return children();
   } finally {
     popPointerClip();
+    ctx.restore();
+  }
+}
+
+/** Uniformly scale everything drawn in `children` by `factor`, around the
+ *  top-left origin — both the draw and the pointer, so hit-testing stays
+ *  correct. Nests. Returns the callback's value. The building block `design`
+ *  is built on. */
+export function scaled<R>(factor: number, children: () => R): R {
+  const ctx = uiCtx();
+  ctx.save();
+  ctx.scale(factor, factor);
+  pushUiTransform(factor, 0, 0);
+  try {
+    return children();
+  } finally {
+    popUiTransform();
+    ctx.restore();
+  }
+}
+
+/** Options for `design`: a reference resolution the UI is laid out in, uniformly
+ *  scaled and positioned to fit the viewport. */
+export interface DesignOptions {
+  /** Reference width — position/size widgets as if the screen were this wide. */
+  w: number;
+  /** Reference height (see `w`). */
+  h: number;
+  /** Extra multiplier on the fit scale — a user-facing UI scale (accessibility /
+   *  preference). Default 1. */
+  scale?: number;
+  /** Where the scaled box sits in the viewport. Default "center"; "top-left"
+   *  pins it to the origin. */
+  align?: "center" | "top-left";
+}
+
+/** Lay the UI out at a fixed reference resolution (`opts.w`×`opts.h`), uniformly
+ *  scaled to fit the viewport (forcing the aspect ratio) and centered — so the
+ *  UI keeps a consistent size across screens, independent of the game world /
+ *  camera. `opts.scale` multiplies the fit for a configurable UI scale. Inside,
+ *  lay out with `row`/`col`/etc. in reference-resolution coords; the pointer is
+ *  mapped in so clicks land. Returns the callback's value.
+ *
+ *    UI.design({ w: 1280, h: 720 }, () => {
+ *      if (UI.button({ x: 40, y: 40, label: "PLAY" })) start();
+ *    }); */
+export function design<R>(opts: DesignOptions, children: () => R): R {
+  const vp = Stage.viewport;
+  const fit = Math.min(vp.w / opts.w, vp.h / opts.h) * (opts.scale ?? 1);
+  const ox = opts.align === "top-left" ? 0 : (vp.w - opts.w * fit) / 2;
+  const oy = opts.align === "top-left" ? 0 : (vp.h - opts.h * fit) / 2;
+  const ctx = uiCtx();
+  ctx.save();
+  ctx.translate(ox, oy);
+  ctx.scale(fit, fit);
+  pushUiTransform(fit, ox, oy);
+  try {
+    return children();
+  } finally {
+    popUiTransform();
     ctx.restore();
   }
 }

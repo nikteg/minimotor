@@ -59,13 +59,14 @@ export function toggle(
 export function toggle(opts: ToggleOptions): boolean;
 export function toggle(ctx: CanvasRenderingContext2D, opts: ToggleOptions): boolean;
 export function toggle(
-  a: CanvasRenderingContext2D | ToggleOptions | string,
-  b?: ToggleOptions | boolean,
-  c?: Omit<ToggleOptions, "label" | "on">,
+  ctxOrOptsOrLabel: CanvasRenderingContext2D | ToggleOptions | string,
+  optsOrOn?: ToggleOptions | boolean,
+  rest?: Omit<ToggleOptions, "label" | "on">,
 ): boolean {
   // Label-first sugar: `muted = UI.toggle("Mute", muted)` (API_PLAN #43).
-  if (typeof a === "string") return toggle({ ...c, label: a, on: b as boolean });
-  const [ctx, opts] = withCtx(a, b as ToggleOptions);
+  if (typeof ctxOrOptsOrLabel === "string")
+    return toggle({ ...rest, label: ctxOrOptsOrLabel, on: optsOrOn as boolean });
+  const [ctx, opts] = withCtx(ctxOrOptsOrLabel, optsOrOn as ToggleOptions);
   const size = opts.size ?? 16;
   ctx.save();
   ctx.font = opts.font ?? uiFont();

@@ -62,14 +62,16 @@ export function popover(
   children: () => void,
 ): boolean;
 export function popover(
-  a: CanvasRenderingContext2D | PopoverOptions,
-  b?: PopoverOptions | (() => void),
-  c?: () => void,
+  ctxOrOpts: CanvasRenderingContext2D | PopoverOptions,
+  optsOrChildren?: PopoverOptions | (() => void),
+  maybeChildren?: () => void,
 ): boolean {
-  const aIsCtx = typeof (a as CanvasRenderingContext2D)?.fillRect === "function";
-  const ctx = aIsCtx ? (a as CanvasRenderingContext2D) : uiCtx();
-  const opts = (aIsCtx ? b : a) as PopoverOptions;
-  const children = (aIsCtx ? c : (b as (() => void) | undefined)) as (() => void) | undefined;
+  const firstIsCtx = typeof (ctxOrOpts as CanvasRenderingContext2D)?.fillRect === "function";
+  const ctx = firstIsCtx ? (ctxOrOpts as CanvasRenderingContext2D) : uiCtx();
+  const opts = (firstIsCtx ? optsOrChildren : ctxOrOpts) as PopoverOptions;
+  const children = (firstIsCtx ? maybeChildren : (optsOrChildren as (() => void) | undefined)) as
+    | (() => void)
+    | undefined;
   ensureWired();
   const id = opts.id ?? `${opts.x}:${opts.y}`;
   // Share the one auto-size cache (`containerKey`-style key) — no popover-only
@@ -127,10 +129,10 @@ export function modal(
   opts: ModalOptions,
 ): { x: number; y: number; w: number; h: number };
 export function modal(
-  a: CanvasRenderingContext2D | ModalOptions,
-  b?: ModalOptions,
+  ctxOrOpts: CanvasRenderingContext2D | ModalOptions,
+  maybeOpts?: ModalOptions,
 ): { x: number; y: number; w: number; h: number } {
-  const [ctx, opts] = withCtx(a, b);
+  const [ctx, opts] = withCtx(ctxOrOpts, maybeOpts);
   ensureWired();
   enterOverlay();
   const vp = Stage.viewport;
@@ -182,16 +184,17 @@ export function confirm(text: string): "yes" | "no" | null;
 export function confirm(opts: ConfirmOptions): string | null;
 export function confirm(ctx: CanvasRenderingContext2D, opts: ConfirmOptions): string | null;
 export function confirm(
-  a: CanvasRenderingContext2D | ConfirmOptions | string,
-  b?: ConfirmOptions,
+  ctxOrOptsOrTitle: CanvasRenderingContext2D | ConfirmOptions | string,
+  maybeOpts?: ConfirmOptions,
 ): string | null {
   // Question sugar (API_PLAN #47): a yes/no dialog in one call. Draw it every
   // frame the question is open; the answer arrives as the return value.
-  if (typeof a === "string") {
-    const hit = confirm({ id: `confirm:${a}`, title: a, buttons: ["No", "Yes"] });
+  if (typeof ctxOrOptsOrTitle === "string") {
+    const title = ctxOrOptsOrTitle;
+    const hit = confirm({ id: `confirm:${title}`, title, buttons: ["No", "Yes"] });
     return hit === "Yes" ? "yes" : hit === "No" ? "no" : null;
   }
-  const [ctx, opts] = withCtx(a, b);
+  const [ctx, opts] = withCtx(ctxOrOptsOrTitle, maybeOpts);
   const lines = opts.lines ?? [];
   const buttons = opts.buttons ?? ["OK"];
   const lineH = theme.fontSize + 8;
@@ -288,10 +291,10 @@ export interface DialogOptions {
 export function dialog(opts: DialogOptions): string | null;
 export function dialog(ctx: CanvasRenderingContext2D, opts: DialogOptions): string | null;
 export function dialog(
-  a: CanvasRenderingContext2D | DialogOptions,
-  b?: DialogOptions,
+  ctxOrOpts: CanvasRenderingContext2D | DialogOptions,
+  maybeOpts?: DialogOptions,
 ): string | null {
-  const [ctx, opts] = withCtx(a, b);
+  const [ctx, opts] = withCtx(ctxOrOpts, maybeOpts);
   const vp = Stage.viewport;
   const choices = opts.choices ?? [];
   const portraitSize = opts.portrait ? (opts.portraitSize ?? 72) : 0;

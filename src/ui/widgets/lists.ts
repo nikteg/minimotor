@@ -206,10 +206,10 @@ let scrollDrag: { id: string; grab: number } | null = null;
 export function scrollbar(opts: ScrollbarOptions): number;
 export function scrollbar(ctx: CanvasRenderingContext2D, opts: ScrollbarOptions): number;
 export function scrollbar(
-  a: CanvasRenderingContext2D | ScrollbarOptions,
-  b?: ScrollbarOptions,
+  ctxOrOpts: CanvasRenderingContext2D | ScrollbarOptions,
+  maybeOpts?: ScrollbarOptions,
 ): number {
-  const [ctx, opts] = withCtx(a, b);
+  const [ctx, opts] = withCtx(ctxOrOpts, maybeOpts);
   const max = Math.max(0, opts.content - opts.view);
   let offset = clamp(opts.offset, 0, max);
   if (max <= 0) return 0; // everything fits — draw nothing
@@ -312,10 +312,10 @@ export interface ListItemOptions {
 export function listItem(opts: ListItemOptions): boolean;
 export function listItem(ctx: CanvasRenderingContext2D, opts: ListItemOptions): boolean;
 export function listItem(
-  a: CanvasRenderingContext2D | ListItemOptions,
-  b?: ListItemOptions,
+  ctxOrOpts: CanvasRenderingContext2D | ListItemOptions,
+  maybeOpts?: ListItemOptions,
 ): boolean {
-  const [ctx, opts] = withCtx(a, b);
+  const [ctx, opts] = withCtx(ctxOrOpts, maybeOpts);
   const id = widgetId(opts.id, "list-item");
   const keyboardFocused = registerFocusable(ctx, {
     id,

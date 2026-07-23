@@ -30,18 +30,18 @@ export function bar(
   style?: BarStyle,
 ): void;
 export function bar(
-  a: CanvasRenderingContext2D | number,
-  b: number,
-  c: number,
-  d: number,
-  e: number,
-  f2?: number | BarStyle,
-  g?: BarStyle,
+  ctxOrX: CanvasRenderingContext2D | number,
+  xOrY: number,
+  yOrW: number,
+  wOrH: number,
+  hOrFrac: number,
+  fracOrStyle?: number | BarStyle,
+  maybeStyle?: BarStyle,
 ): void {
   const [ctx, x, y, w, h, frac, style] =
-    typeof a === "number"
-      ? [uiCtx(), a, b, c, d, e, (f2 as BarStyle) ?? {}]
-      : [a, b, c, d, e, f2 as number, g ?? {}];
+    typeof ctxOrX === "number"
+      ? [uiCtx(), ctxOrX, xOrY, yOrW, wOrH, hOrFrac, (fracOrStyle as BarStyle) ?? {}]
+      : [ctxOrX, xOrY, yOrW, wOrH, hOrFrac, fracOrStyle as number, maybeStyle ?? {}];
   const f = clamp(frac, 0, 1);
   const r = Math.min(theme.radius, h / 2);
   ctx.save();
