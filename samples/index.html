@@ -334,29 +334,34 @@
     <nav>
       <div class="wrap">
         <a class="brand" href="#top">
-          <!-- compact logo: a filled moped engine with an m -->
+          <!-- compact logo: a filled moped engine, the m punched out as negative space -->
           <svg width="26" height="26" viewBox="-2 -2 36 36" aria-hidden="true">
+            <defs>
+              <!-- white keeps, black cuts: the m becomes a hole in the block. -->
+              <mask id="mlogo-nav">
+                <rect x="-2" y="-2" width="36" height="36" fill="#fff" />
+                <text
+                  x="16"
+                  y="24"
+                  font-family="ui-monospace, monospace"
+                  font-size="17"
+                  font-weight="800"
+                  fill="#000"
+                  text-anchor="middle"
+                >
+                  m
+                </text>
+              </mask>
+            </defs>
             <g transform="rotate(-7 16 16)">
               <!-- cooling fins (gaps show the page bg — no bg colour needed) -->
               <rect x="9.4" y="2.2" width="13.2" height="2.6" rx="1.3" fill="#4ecdc4" />
               <rect x="9.4" y="5.6" width="13.2" height="2.6" rx="1.3" fill="#4ecdc4" />
               <rect x="10.6" y="9.0" width="10.8" height="2.6" rx="1.3" fill="#4ecdc4" />
-              <!-- crankcase / engine block -->
-              <rect x="3.6" y="12" width="24.8" height="15.8" rx="5.5" fill="#4ecdc4" />
+              <!-- crankcase / engine block, m cut out via the mask -->
+              <rect x="3.6" y="12" width="24.8" height="15.8" rx="5.5" fill="#4ecdc4" mask="url(#mlogo-nav)" />
               <!-- drive-shaft stub -->
               <rect x="27.4" y="16.4" width="4.2" height="5" rx="1.5" fill="#4ecdc4" />
-              <!-- the m -->
-              <text
-                x="16"
-                y="26"
-                font-family="ui-monospace, monospace"
-                font-size="16"
-                font-weight="800"
-                fill="#ffd166"
-                text-anchor="middle"
-              >
-                m
-              </text>
             </g>
           </svg>
           minimotor
@@ -371,25 +376,30 @@
     <a id="top"></a>
     <header class="hero">
       <div class="logo-lg">
-        <!-- Big logo: a filled moped engine (finned cylinder + crankcase) with an m -->
+        <!-- Big logo: a filled moped engine, the m punched out as negative space -->
         <svg width="104" height="104" viewBox="-2 -2 36 36" role="img" aria-label="Minimotor logo">
+          <defs>
+            <mask id="mlogo-hero">
+              <rect x="-2" y="-2" width="36" height="36" fill="#fff" />
+              <text
+                x="16"
+                y="24"
+                font-family="ui-monospace, monospace"
+                font-size="17"
+                font-weight="800"
+                fill="#000"
+                text-anchor="middle"
+              >
+                m
+              </text>
+            </mask>
+          </defs>
           <g transform="rotate(-7 16 16)">
             <rect x="9.4" y="2.2" width="13.2" height="2.6" rx="1.3" fill="#4ecdc4" />
             <rect x="9.4" y="5.6" width="13.2" height="2.6" rx="1.3" fill="#4ecdc4" />
             <rect x="10.6" y="9.0" width="10.8" height="2.6" rx="1.3" fill="#4ecdc4" />
-            <rect x="3.6" y="12" width="24.8" height="15.8" rx="5.5" fill="#4ecdc4" />
+            <rect x="3.6" y="12" width="24.8" height="15.8" rx="5.5" fill="#4ecdc4" mask="url(#mlogo-hero)" />
             <rect x="27.4" y="16.4" width="4.2" height="5" rx="1.5" fill="#4ecdc4" />
-            <text
-              x="16"
-              y="26"
-              font-family="ui-monospace, monospace"
-              font-size="16"
-              font-weight="800"
-              fill="#ffd166"
-              text-anchor="middle"
-            >
-              m
-            </text>
           </g>
         </svg>
       </div>

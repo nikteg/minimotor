@@ -608,7 +608,7 @@ const html = `<!doctype html>
 <header>
   <button id="menuBtn" class="hbtn" aria-label="Toggle navigation" aria-expanded="false">☰</button>
   <a class="brand" href="../">
-    <svg width="26" height="26" viewBox="-2 -2 36 36"><g transform="rotate(-7 16 16)"><rect x="9.4" y="2.2" width="13.2" height="2.6" rx="1.3" fill="#4ecdc4"/><rect x="9.4" y="5.6" width="13.2" height="2.6" rx="1.3" fill="#4ecdc4"/><rect x="10.6" y="9.0" width="10.8" height="2.6" rx="1.3" fill="#4ecdc4"/><rect x="3.6" y="12" width="24.8" height="15.8" rx="5.5" fill="#4ecdc4"/><rect x="27.4" y="16.4" width="4.2" height="5" rx="1.5" fill="#4ecdc4"/><text x="16" y="26" font-family="ui-monospace,monospace" font-size="16" font-weight="800" fill="#ffd166" text-anchor="middle">m</text></g></svg>
+    <svg width="26" height="26" viewBox="-2 -2 36 36"><defs><mask id="mlogo-api"><rect x="-2" y="-2" width="36" height="36" fill="#fff"/><text x="16" y="24" font-family="ui-monospace,monospace" font-size="17" font-weight="800" fill="#000" text-anchor="middle">m</text></mask></defs><g transform="rotate(-7 16 16)"><rect x="9.4" y="2.2" width="13.2" height="2.6" rx="1.3" fill="#4ecdc4"/><rect x="9.4" y="5.6" width="13.2" height="2.6" rx="1.3" fill="#4ecdc4"/><rect x="10.6" y="9.0" width="10.8" height="2.6" rx="1.3" fill="#4ecdc4"/><rect x="3.6" y="12" width="24.8" height="15.8" rx="5.5" fill="#4ecdc4" mask="url(#mlogo-api)"/><rect x="27.4" y="16.4" width="4.2" height="5" rx="1.5" fill="#4ecdc4"/></g></svg>
     minimotor
   </a>
   <span class="rlabel" style="color:var(--dim)">API reference</span>
