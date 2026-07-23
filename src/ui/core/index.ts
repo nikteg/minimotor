@@ -30,4 +30,5 @@ export * from "./stack.js";
 export * from "./identity.js";
 export * from "./input.js";
 export * from "./text.js";
+export * from "./focus.js";
 export * from "./frame.js";
