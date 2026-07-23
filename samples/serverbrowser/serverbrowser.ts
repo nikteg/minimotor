@@ -330,8 +330,11 @@ Loop.run({
     if (
       UI.button({
         at: footBtns,
+        // tabIndex 0 (not a positive value): positive tab stops sort BEFORE the
+        // tabIndex-0 rows, which would put JOIN ahead of the list. At 0 it joins
+        // the document-order group and — drawn after the list — lands right
+        // AFTER the rows, so forward-Tab down the list reaches it.
         id: uiId("join-button"),
-        tabIndex: 50,
         label: "JOIN",
         variant: "primary", // the call to action
         disabled: !selected || refreshing,
