@@ -46,6 +46,24 @@
         border: 0;
         background: #101719;
       }
+      .right {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+      .solo {
+        color: #7fd1c6;
+        text-decoration: none;
+        font-size: 12px;
+        border: 1px solid #2c4a4a;
+        padding: 6px 10px;
+        border-radius: 7px;
+        white-space: nowrap;
+      }
+      .solo:hover {
+        background: #12211f;
+        border-color: #3c6a63;
+      }
       @media (max-width: 800px) {
         .clients {
           grid-template-columns: 1fr;
@@ -60,7 +78,14 @@
   <body>
     <header>
       <h1>ROAD RIVALS · TWO CLIENTS</h1>
-      <p>Join each game from its centered spectator panel</p>
+      <div class="right">
+        <p>Join each game from its centered spectator panel</p>
+        <!-- Pop one client out full-window — play here, join again from a phone
+             or another tab for a real multi-device race. -->
+        <a class="solo" href="./client.html?client=1" target="_blank" rel="noopener">
+          Open a client in its own window ↗
+        </a>
+      </div>
     </header>
     <main class="clients">
       <iframe src="./client.html?client=1" title="Road Rivals client one"></iframe>
