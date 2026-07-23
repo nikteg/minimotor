@@ -16,7 +16,11 @@ interface Relic {
 }
 
 // The viewport is LIVE (mutated on resize); the engine clears to `background`.
-const vp = Stage.init("game", { background: "#111827", plugins: [Perf.plugin()] });
+const vp = Stage.init("game", {
+  background: "#111827",
+  plugins: [Perf.plugin()],
+  preventNavigation: true,
+});
 let progress = 0;
 let ready = false;
 let level: Level;

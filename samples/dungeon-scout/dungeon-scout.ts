@@ -2,7 +2,11 @@
 // a distance-from-hero heatmap (distanceField), plus line-of-sight fog.
 import { Draw, Gizmos, Goodies, Input, Keys, Loop, Perf, Pointer, Stage, UI } from "minimotor";
 
-const view = Stage.init("game", { background: "#0d1118", plugins: [Perf.plugin()] });
+const view = Stage.init("game", {
+  background: "#0d1118",
+  plugins: [Perf.plugin()],
+  preventNavigation: true,
+});
 const input = Input.map({
   up: ["ArrowUp", "KeyW"],
   down: ["ArrowDown", "KeyS"],

@@ -118,6 +118,7 @@ const vp = Stage.init("game", {
   resolution: { w: LOGICAL_W, h: LOGICAL_H },
   background: "#0b3d2e",
   barColor: "#062",
+  preventNavigation: true,
   plugins: [Perf.plugin()],
 });
 Stage.onResize(() => {
@@ -727,6 +728,15 @@ function drawPiles(ctx: CanvasRenderingContext2D) {
       },
     });
     if (src.hovered) Stage.setCursor("grab");
+    // Double-click the waste's top card to send it home (classic Klondike gesture).
+    // A double-click's press also arms the drag above — cancel it so the card
+    // doesn't get "picked up" the instant it's sent home.
+    if (
+      Pointer.frameDoublePressed &&
+      pointInLogicalRect(Pointer.x, Pointer.y, layout.waste) &&
+      tryAutoMoveToFoundation(waste, waste.length - 1)
+    )
+      UI.cancelDrag();
   } else {
     drawEmptySlot(ctx, wasteRect);
   }
@@ -801,6 +811,19 @@ function drawPiles(ctx: CanvasRenderingContext2D) {
       if (card.faceUp && !hiddenByAi) {
         const isBottom = idx === pile.length - 1;
         const canDrag = isBottom || pile.slice(idx + 1).every((c) => c.faceUp);
+        // Double-click a pile's exposed top card to send it home if a foundation
+        // accepts it. On success the card leaves this pile, so cancel any drag the
+        // same press armed and skip this card's drag/drop widgets — otherwise they
+        // capture a now-empty payload (`pile.slice(idx)` is empty post-move).
+        if (
+          isBottom &&
+          Pointer.frameDoublePressed &&
+          Collision.pointInRect(Pointer.x, Pointer.y, cardRect) &&
+          tryAutoMoveToFoundation(pile, idx)
+        ) {
+          UI.cancelDrag();
+          return;
+        }
         if (canDrag) {
           const src = UI.dragSource<DragPayload>({
             id: `tableau:${col}:${idx}`,

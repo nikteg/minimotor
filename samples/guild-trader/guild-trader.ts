@@ -17,7 +17,11 @@ interface DragPayload {
 }
 
 // Live viewport; the engine owns the background clear.
-const vp = Stage.init("game", { background: "#101722", plugins: [Perf.plugin()] });
+const vp = Stage.init("game", {
+  background: "#101722",
+  plugins: [Perf.plugin()],
+  preventNavigation: true,
+});
 
 const items: Record<string, Item> = {
   potion: { name: "POTION", color: "#ff6b6b", max: 5 },

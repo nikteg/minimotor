@@ -45,6 +45,7 @@ Stage.init("game", {
   resolution: { w: GW, h: GH },
   background: "#151515",
   barColor: "#0a0a0a",
+  preventNavigation: true,
   plugins: [Perf.plugin({ world: ecs })],
 });
 

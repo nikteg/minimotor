@@ -18,7 +18,11 @@ interface Bullet {
 }
 
 // Live viewport; the engine owns the background clear.
-const vp = Stage.init("game", { background: "#080d18", plugins: [Perf.plugin()] });
+const vp = Stage.init("game", {
+  background: "#080d18",
+  plugins: [Perf.plugin()],
+  preventNavigation: true,
+});
 // Per-step constants (the fixed step is the time unit — 60 steps/s).
 const BULLET_SPEED = 5; // px/step (was 300 px/s)
 const TURRET_TURN = 5 / 60; // rad/step (was 5 rad/s)

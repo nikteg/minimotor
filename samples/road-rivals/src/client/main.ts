@@ -240,6 +240,7 @@ interface NetMsg {
   carAlive?: boolean;
   carId?: string;
   carType?: string;
+  text?: string;
 }
 interface RosterRow {
   label: string;
@@ -253,6 +254,9 @@ const meter = Perf.createNetMeter();
 const vp = Stage.init("game", {
   background: "#101719",
   plugins: [Perf.plugin({ net: meter })],
+  // Block trackpad swipe-back / overscroll so a stray gesture can't navigate
+  // away mid-match.
+  preventNavigation: true,
 });
 
 // On-screen touch gamepad: left stick steers, GAS/BRAKE buttons. Autohide keeps
@@ -341,6 +345,13 @@ let tireMarkTimer = 0;
 const remotes = new Map<string, Remote>();
 let score = 0;
 let life = 0;
+// In-match chat: messages broadcast over the existing net channel (see the
+// "chat" branch in transport.onMessage and the send() below). `chatDraft` is
+// the controlled value for the UI.textInput each frame.
+const chatLog: { name: string; text: string; color: string }[] = [];
+let chatDraft = "";
+const CHAT_MAX = 40;
+const chatName = (peerId: string) => `P${peerId.split("-")[0] || "?"}`;
 let spawnProtectedUntil = 0;
 const ownedWeapons = new Set<string>(["pistol"]);
 let activeWeapon = 0;
@@ -541,6 +552,17 @@ transport.onMessage = (bytes) => {
         color: "#ef5f57",
       });
       enemyDeathSound(bot.x, bot.y);
+    }
+    return;
+  }
+  if (msg.type === "chat") {
+    if (msg.text) {
+      chatLog.push({
+        name: chatName(msg.id ?? ""),
+        text: msg.text.slice(0, 80),
+        color: msg.color ?? "#fff",
+      });
+      if (chatLog.length > CHAT_MAX) chatLog.shift();
     }
     return;
   }
@@ -1554,6 +1576,61 @@ Loop.run({
       });
     }
     drawMinimap(ctx);
+
+    // In-match chat (bottom-left). Messages broadcast to peers via send(); the
+    // text input only captures keyboard while it holds focus, so driving with
+    // WASD/Space is unaffected unless the player has clicked into the field.
+    const chatW = 300;
+    const chatX = 10;
+    const shownChat = chatLog.slice(-5);
+    const chatLineH = 15;
+    const chatHeaderH = 24;
+    const chatInputH = 26;
+    const chatBodyH = Math.max(chatLineH, shownChat.length * chatLineH);
+    const chatH = chatHeaderH + chatBodyH + 8 + chatInputH + 8;
+    const chatY = vp.h - chatH - 10;
+    UI.panel({ x: chatX, y: chatY, w: chatW, h: chatH, title: "CHAT" });
+    if (shownChat.length === 0) {
+      UI.text("No messages yet.", {
+        x: chatX + 10,
+        y: chatY + chatHeaderH,
+        w: chatW - 20,
+        h: chatLineH,
+        size: 10,
+        color: "dim",
+      });
+    }
+    for (let i = 0; i < shownChat.length; i++) {
+      const entry = shownChat[i];
+      UI.text(`${entry.name}: ${entry.text}`, {
+        x: chatX + 10,
+        y: chatY + chatHeaderH + i * chatLineH,
+        w: chatW - 20,
+        h: chatLineH,
+        size: 10,
+        color: entry.color,
+      });
+    }
+    const chatResult = UI.textInput({
+      id: "road-rivals:chat",
+      value: chatDraft,
+      x: chatX + 8,
+      y: chatY + chatHeaderH + chatBodyH + 8,
+      w: chatW - 16,
+      h: chatInputH,
+      placeholder: "Message…",
+      maxLength: 80,
+      blurOnSubmit: false,
+    });
+    chatDraft = chatResult.value;
+    if (chatResult.submitted && chatDraft.trim()) {
+      const text = chatDraft.trim();
+      chatLog.push({ name: "YOU", text, color });
+      if (chatLog.length > CHAT_MAX) chatLog.shift();
+      send({ type: "chat", text });
+      chatDraft = "";
+    }
+
     if (gameState === "alive") drawPlayerHealth();
     if (gameState === "alive" && player.inCar) drawCarHealth();
     if (gameState === "alive") drawInventory();

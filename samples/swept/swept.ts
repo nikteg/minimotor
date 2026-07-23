@@ -10,7 +10,11 @@ import { Audio, Collision, Draw, Keys, Loop, Perf, Stage, UI } from "minimotor";
 
 // The viewport is LIVE (mutated on resize) — wall/reset derive from it; the
 // engine owns clearing via `background`.
-const view = Stage.init("game", { background: "#101418", plugins: [Perf.plugin()] });
+const view = Stage.init("game", {
+  background: "#101418",
+  preventNavigation: true,
+  plugins: [Perf.plugin()],
+});
 
 const midY = () => view.h / 2;
 

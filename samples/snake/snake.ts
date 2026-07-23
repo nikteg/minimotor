@@ -16,7 +16,7 @@ import {
 import { drawGameOver } from "../shared/overlays.ts";
 
 // The viewport is LIVE (mutated on resize) — grid sizing reacts in onResize.
-const view = Stage.init("game", { plugins: [Perf.plugin()] });
+const view = Stage.init("game", { preventNavigation: true, plugins: [Perf.plugin()] });
 
 const CELL = 20;
 let COLS = Math.max(2, Math.floor(view.w / CELL));

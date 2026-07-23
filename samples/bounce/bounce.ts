@@ -18,7 +18,7 @@ import {
 } from "minimotor";
 
 // The viewport is LIVE (mutated on resize) — wall bounds read it directly.
-const view = Stage.init("game", { plugins: [Perf.plugin()] });
+const view = Stage.init("game", { preventNavigation: true, plugins: [Perf.plugin()] });
 
 Audio.Mixer.compressor(); // keep stacked bounce notes clean
 Audio.Mixer.reverb("hall", { seconds: 0.9, decay: 2.2, wet: 0.4 });

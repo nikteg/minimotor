@@ -35,7 +35,11 @@ const GAME_W = 480;
 const GAME_H = 270;
 const TILE = 48; // collision cell (world px)
 const FW = 32; // player frame size in its source strips
-Stage.init("game", { resolution: { w: GAME_W, h: GAME_H }, plugins: [Perf.plugin()] });
+Stage.init("game", {
+  resolution: { w: GAME_W, h: GAME_H },
+  preventNavigation: true,
+  plugins: [Perf.plugin()],
+});
 
 // On-screen touch gamepad — renders in the true window corners (outside the
 // letterbox bars), auto-hidden on desktop and shown on touch devices.

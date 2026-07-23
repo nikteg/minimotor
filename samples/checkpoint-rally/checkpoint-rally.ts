@@ -22,7 +22,11 @@ import {
 } from "minimotor";
 import { Physics2D } from "minimotor/physics2d";
 
-const view = Stage.init("game", { background: "#12161f", plugins: [Perf.plugin()] });
+const view = Stage.init("game", {
+  background: "#12161f",
+  preventNavigation: true,
+  plugins: [Perf.plugin()],
+});
 const input = Input.map({
   left: ["ArrowLeft", "KeyA"],
   right: ["ArrowRight", "KeyD"],

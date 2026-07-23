@@ -29,7 +29,11 @@ interface Layout extends Rect {
 }
 
 // The viewport is LIVE (mutated on resize) — layout() reads it fresh each frame.
-const vp = Stage.init("game", { background: "#0b0e14", plugins: [Perf.plugin()] });
+const vp = Stage.init("game", {
+  background: "#0b0e14",
+  plugins: [Perf.plugin()],
+  preventNavigation: true,
+});
 
 // ---- mock data -------------------------------------------------------------
 
