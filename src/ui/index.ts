@@ -38,6 +38,7 @@ export {
   idScope,
   select,
   setCursor,
+  setNavPad,
   setTheme,
   stack,
   text,

@@ -133,6 +133,19 @@ export let focusOverlayActive = false;
 
 export let focusBeforeOverlay: string | null = null;
 
+// The gamepad that drives UI focus navigation (dpad moves focus, A activates,
+// dpad left/right feed the focused slider). Defaults to hardware pad 0; a game
+// with an on-screen gamepad calls `UI.setNavPad(pad)` so its virtual dpad drives
+// menus too (a fused pad covers hardware + touch at once).
+export let navPad: ReturnType<typeof gamepad> | null = null;
+
+/** Route UI focus navigation (gamepad dpad/A) through `pad` — e.g. an on-screen
+ *  gamepad, so its virtual dpad walks the focusable widgets and A activates.
+ *  Pass `null` to fall back to hardware pad 0. */
+export function setNavPad(pad: ReturnType<typeof gamepad> | null): void {
+  navPad = pad;
+}
+
 export let keyboardActivation: string | null = null;
 
 export let keyboardCommand: { id: string; key: string } | null = null;
@@ -1223,7 +1236,7 @@ export let wired = false;
 function padNav(): void {
   let pad: ReturnType<typeof gamepad>;
   try {
-    pad = gamepad();
+    pad = navPad ?? gamepad();
   } catch {
     return;
   }
@@ -1393,6 +1406,7 @@ export function _reset(): void {
   focusBeforeOverlay = null;
   keyboardActivation = null;
   keyboardCommand = null;
+  navPad = null;
   idScopes.length = 0;
   setBegunCtx(null);
   wired = false;
