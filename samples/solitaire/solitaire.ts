@@ -907,14 +907,15 @@ function drawHud(ctx: CanvasRenderingContext2D) {
   // row fits inside the logical viewport (they used to overflow the edge).
   const btnW = Math.floor((LOGICAL_W - MARGIN * 2 - 4 * 6) / 5); // 5 buttons, 4×6 gaps
   const toolbarY = LOGICAL_H - 42;
-  const toolbar = UI.flow({ x: MARGIN, y: toolbarY, gap: 6 });
   const btn = { w: btnW, h: 32 };
-  if (UI.button({ at: toolbar, ...btn, label: "NEW (N)", variant: "primary" }))
-    scenes.go("play", { transition: Transitions.fade(300) });
-  if (UI.button({ at: toolbar, ...btn, label: "UNDO (U)" })) tryUndo();
-  if (UI.button({ at: toolbar, ...btn, label: "HINT (H)" })) hintFlash.charge();
-  if (UI.button({ at: toolbar, ...btn, label: aiPlaying ? "PAUSE AI" : "AI PLAY" })) toggleAi();
-  if (UI.button({ at: toolbar, ...btn, label: "FULL (F)" })) toggleFullscreen();
+  UI.row({ x: MARGIN, y: toolbarY, gap: 6 }, () => {
+    if (UI.button({ ...btn, label: "NEW (N)", variant: "primary" }))
+      scenes.go("play", { transition: Transitions.fade(300) });
+    if (UI.button({ ...btn, label: "UNDO (U)" })) tryUndo();
+    if (UI.button({ ...btn, label: "HINT (H)" })) hintFlash.charge();
+    if (UI.button({ ...btn, label: aiPlaying ? "PAUSE AI" : "AI PLAY" })) toggleAi();
+    if (UI.button({ ...btn, label: "FULL (F)" })) toggleFullscreen();
+  });
 }
 
 function formatTime(ms: number) {
