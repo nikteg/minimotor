@@ -200,7 +200,8 @@ export interface GameOptions {
   barColor?: string;
   /** Lifecycle plugins (e.g. `Perf.plugin()`). */
   plugins?: EnginePlugin[];
-  /** Auto-pause while a coarse-pointer device is held in portrait. */
+  /** Auto-pause while a coarse-pointer device is held in portrait. Default
+   *  false. */
   pauseOnPortrait?: boolean;
 }
 
@@ -241,6 +242,16 @@ export function createGame(options: GameOptions): Game {
   return buildGame(options);
 }
 
+// Canvas → game registry. UI code handed only a rendering context (via
+// `UI.begin`) uses this to reach the right game's pointer/viewport/cursor —
+// the piece that lets two independent games each drive their own UI.
+const gamesByCanvas = new WeakMap<HTMLCanvasElement, Game>();
+
+/** The game bound to `canvas`, or `null` — isolated instances included. */
+export function gameForCanvas(canvas: HTMLCanvasElement): Game | null {
+  return gamesByCanvas.get(canvas) ?? null;
+}
+
 function resolveCanvas(canvas: string | HTMLCanvasElement): HTMLCanvasElement {
   if (typeof canvas !== "string") return canvas;
   const el = document.getElementById(canvas);
@@ -265,23 +276,40 @@ function buildGame(options: GameOptions): Game {
   /** Re-apply the base (letterbox) transform — logical coords → device px.
    *  Used at frame start and by screen-space UI escaping a camera block. */
   const resetTransform = () => {
+    // The letterbox offset is generally fractional; round the DEVICE-space
+    // translation so the frame origin sits on a whole device pixel (logical
+    // coordinates are untouched — only the origin snaps).
     ctx.setTransform(
       viewport.dpr * viewport.scale,
       0,
       0,
       viewport.dpr * viewport.scale,
-      viewport.dpr * viewport.offsetX,
-      viewport.dpr * viewport.offsetY,
+      Math.round(viewport.dpr * viewport.offsetX),
+      Math.round(viewport.dpr * viewport.offsetY),
     );
   };
 
   const clearFrame = () => {
     if (letterboxed) {
-      // Paint the bars (the whole device canvas), then the play area.
       ctx.save();
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.fillStyle = barColor;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      if (background) {
+        // The play area gets its own `background` fill below — paint only the
+        // actual bar strips (device px) instead of the whole canvas.
+        const ox = Math.round(viewport.dpr * viewport.offsetX);
+        const oy = Math.round(viewport.dpr * viewport.offsetY);
+        const right = ox + viewport.w * viewport.scale * viewport.dpr;
+        const bottom = oy + viewport.h * viewport.scale * viewport.dpr;
+        if (ox > 0) ctx.fillRect(0, 0, ox, canvas.height);
+        if (right < canvas.width) ctx.fillRect(right, 0, canvas.width - right, canvas.height);
+        if (oy > 0) ctx.fillRect(0, 0, canvas.width, oy);
+        if (bottom < canvas.height) ctx.fillRect(0, bottom, canvas.width, canvas.height - bottom);
+      } else {
+        // No background → the engine doesn't clear the play area; the full-
+        // canvas bar fill doubles as the frame clear. Keep it.
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
       ctx.restore();
     }
     if (background) {
@@ -522,11 +550,27 @@ function buildGame(options: GameOptions): Game {
     ptr.frameDoublePressed = false;
     ptr.wheel = 0;
   };
-  const handleResize = () => {
+  // Raw resize events fire continuously during a window drag, and readViewport
+  // touches the canvas backing store — coalesce to at most one readViewport
+  // per animation frame (the running loop applies the flag at frame start; a
+  // stopped/paused-loop stage schedules a one-off rAF so it still adapts).
+  let resizeDirty = false;
+  let resizeRaf = 0;
+  const applyResize = () => {
+    if (!resizeDirty) return;
+    resizeDirty = false;
     Object.assign(viewport, readViewport(canvas, options.resolution)); // live: mutate in place
     canvasRect = null;
     for (const p of plugins) p.onResize?.(game);
     for (const h of resizeHandlers) h(viewport);
+  };
+  const handleResize = () => {
+    resizeDirty = true;
+    if (running || resizeRaf) return;
+    resizeRaf = requestAnimationFrame(() => {
+      resizeRaf = 0;
+      applyResize();
+    });
   };
   window.addEventListener("resize", handleResize);
   // iOS doesn't fire resize on 180° rotation between landscape orientations.
@@ -548,8 +592,13 @@ function buildGame(options: GameOptions): Game {
     portraitApply();
   }
 
+  let rafHandle = 0;
   function loop(time: number) {
     if (!running) return;
+    // Schedule the next frame FIRST: an exception in the user's update()/draw()
+    // then surfaces without silently killing the loop.
+    rafHandle = requestAnimationFrame(loop);
+    applyResize(); // coalesced viewport re-read (at most once per frame)
     if (!lastTime) lastTime = time;
 
     if (paused) {
@@ -564,7 +613,6 @@ function buildGame(options: GameOptions): Game {
       drawClipped();
       for (const p of plugins) p.afterDraw?.(game);
       endFrame(); // pause menus hit-test and scroll in draw too
-      requestAnimationFrame(loop);
       return;
     }
 
@@ -604,7 +652,6 @@ function buildGame(options: GameOptions): Game {
     timings.drawMs = performance.now() - drawStart;
     for (const p of plugins) p.afterDraw?.(game);
     endFrame();
-    requestAnimationFrame(loop);
   }
 
   const game: Game = {
@@ -661,7 +708,7 @@ function buildGame(options: GameOptions): Game {
         // (up to the 250 ms cap) and fire a burst of catch-up steps.
         lastTime = 0;
         accumulator = 0;
-        requestAnimationFrame(loop);
+        rafHandle = requestAnimationFrame(loop);
       }
       return game;
     },
@@ -673,11 +720,19 @@ function buildGame(options: GameOptions): Game {
     },
     stop() {
       running = false;
+      // Cancel the pending frame: a stop() → run() within the same frame must
+      // not end up with two scheduled loops.
+      globalThis.cancelAnimationFrame?.(rafHandle);
+      rafHandle = 0;
     },
     destroy() {
       if (destroyed) return;
       destroyed = true;
       running = false;
+      globalThis.cancelAnimationFrame?.(rafHandle);
+      rafHandle = 0;
+      globalThis.cancelAnimationFrame?.(resizeRaf);
+      resizeRaf = 0;
       canvas.style.cursor = "";
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
@@ -694,10 +749,12 @@ function buildGame(options: GameOptions): Game {
       stepHandlers.clear();
       stepStartHandlers.clear();
       resizeHandlers.clear();
+      if (gamesByCanvas.get(canvas) === game) gamesByCanvas.delete(canvas);
       clearDefaultGame(game);
     },
   };
 
+  gamesByCanvas.set(canvas, game);
   for (const p of plugins) p.onInit?.(game);
   return game;
 }
@@ -706,8 +763,12 @@ function readViewport(canvas: HTMLCanvasElement, resolution?: { w: number; h: nu
   const winW = window.innerWidth;
   const winH = window.innerHeight;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  canvas.width = Math.round(winW * dpr);
-  canvas.height = Math.round(winH * dpr);
+  // Reassigning canvas.width/height reallocates (and clears) the backing
+  // store even when the value is unchanged — skip it when nothing moved.
+  const deviceW = Math.round(winW * dpr);
+  const deviceH = Math.round(winH * dpr);
+  if (canvas.width !== deviceW) canvas.width = deviceW;
+  if (canvas.height !== deviceH) canvas.height = deviceH;
   canvas.style.width = winW + "px";
   canvas.style.height = winH + "px";
   const ctx = canvas.getContext("2d")!;
@@ -757,7 +818,16 @@ function readViewport(canvas: HTMLCanvasElement, resolution?: { w: number; h: nu
     offsetY = availY + (availH - h * scale) / 2;
   }
   // Base transform maps logical coords → device pixels (dpr × letterbox).
-  ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * offsetX, dpr * offsetY);
+  // The offset is rounded to a whole device pixel so drawing doesn't land on
+  // subpixels (the fractional letterbox offset would otherwise blur everything).
+  ctx.setTransform(
+    dpr * scale,
+    0,
+    0,
+    dpr * scale,
+    Math.round(dpr * offsetX),
+    Math.round(dpr * offsetY),
+  );
 
   return {
     canvas,

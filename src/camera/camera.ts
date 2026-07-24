@@ -351,7 +351,12 @@ function facadeRender(
 }
 
 /** The always-existing default camera. Identity (0, 0, zoom 1) until
- *  configured — games that never touch it render pure screen space. */
+ *  configured — games that never touch it render pure screen space.
+ *
+ *    Camera.follow(player);                  // once, at setup
+ *    Camera.render(() => drawWorld());       // per frame: world space inside
+ *    Draw.text("HUD", { x: 8, y: 8 });       // outside: screen space
+ */
 export const Camera = {
   /** Configure the default camera to follow `target` (see `CameraLens`). */
   follow(

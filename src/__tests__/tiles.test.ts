@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { grid, set, type Skin, type Level } from "../tiles.js";
 import { slide, moveAndSlide, type Solid } from "../collision.js";
 import { createClockHandle } from "../clock.js";
@@ -196,6 +196,22 @@ describe("Tiles.set selectors", () => {
     expect(sel(at)).not.toBe(before);
   });
 
+  it("pick spreads variants roughly evenly across a 100x100 grid", () => {
+    const variants = [tiles.a, tiles.b, tiles.cell(2, 0), tiles.cell(3, 0)];
+    const sel = tiles.pick(variants);
+    const counts = [0, 0, 0, 0];
+    for (let cy = 0; cy < 100; cy++) {
+      for (let cx = 0; cx < 100; cx++) {
+        counts[variants.indexOf(sel({ cx, cy, char: "#", neighbor: () => false }) as never)]++;
+      }
+    }
+    // The integer hash should land each variant near 25% (allow 15-35%).
+    for (const n of counts) {
+      expect(n).toBeGreaterThanOrEqual(1500);
+      expect(n).toBeLessThanOrEqual(3500);
+    }
+  });
+
   it("auto16 picks the cell by neighbor bitmask", () => {
     const sel = tiles.auto16(tiles.base);
     // up(1) + right(2) = mask 3 → base col+3, row+0
@@ -206,6 +222,121 @@ describe("Tiles.set selectors", () => {
       neighbor: (dx, dy) => (dx === 0 && dy === -1) || (dx === 1 && dy === 0),
     });
     expect(cellRef).toMatchObject({ sx: (4 + 3) * 8, sy: 4 * 8 });
+  });
+});
+
+describe("Tiles static-layer baking (render with { bake: true })", () => {
+  const origGetContext = HTMLCanvasElement.prototype.getContext;
+  afterEach(() => {
+    HTMLCanvasElement.prototype.getContext = origGetContext;
+    vi.restoreAllMocks();
+  });
+
+  // A recording 2d context: per-tile fills vs whole-level blits, plus an
+  // optional getTransform so the bake path can read a camera scale.
+  function recordingCtx(transformScale?: number) {
+    const fills: unknown[][] = [];
+    const blits: unknown[][] = [];
+    const ctx: Record<string, unknown> = {
+      fillStyle: "",
+      imageSmoothingEnabled: true,
+      fillRect: (...a: unknown[]) => fills.push(a),
+      drawImage: (...a: unknown[]) => blits.push(a),
+      scale: vi.fn(),
+      canvas: { width: 100, height: 100 },
+      fills,
+      blits,
+    };
+    if (transformScale !== undefined) {
+      ctx.getTransform = () => ({
+        a: transformScale,
+        b: 0,
+        c: 0,
+        d: transformScale,
+        e: 0,
+        f: 0,
+      });
+    }
+    return ctx as unknown as CanvasRenderingContext2D & {
+      fills: unknown[][];
+      blits: unknown[][];
+    };
+  }
+
+  /** Route offscreen (bake) canvas contexts to recording ctxs; returns them. */
+  function installOffscreen() {
+    const offscreens: Array<ReturnType<typeof recordingCtx>> = [];
+    HTMLCanvasElement.prototype.getContext = function () {
+      const c = recordingCtx();
+      offscreens.push(c);
+      return c as unknown as CanvasRenderingContext2D;
+    } as typeof HTMLCanvasElement.prototype.getContext;
+    return offscreens;
+  }
+
+  const SKIN = { "#": "#333", "=": "#555" };
+
+  it("bakes once, then blits ONE whole-level canvas instead of per-tile fills", () => {
+    const offscreens = installOffscreen();
+    const level = makeLevel();
+    const ctx = recordingCtx();
+    level.render(ctx, SKIN, { bake: true });
+    level.render(ctx, SKIN, { bake: true });
+    expect(offscreens).toHaveLength(1); // baked exactly once
+    expect(offscreens[0].fills).toHaveLength(8); // ALL cells painted into the bake
+    expect(ctx.fills).toHaveLength(0); // no per-tile fills on the main ctx
+    expect(ctx.blits).toHaveLength(2); // one whole-level blit per frame
+    expect(ctx.blits[0].slice(1)).toEqual([0, 0, 50, 40]); // world-sized dest rect
+  });
+
+  it("invalidate() and set() drop the bake so the next render re-bakes", () => {
+    const offscreens = installOffscreen();
+    const level = makeLevel();
+    const ctx = recordingCtx();
+    level.render(ctx, SKIN, { bake: true });
+    level.invalidate();
+    level.render(ctx, SKIN, { bake: true });
+    expect(offscreens).toHaveLength(2);
+    level.set(0, 3, null); // cell mutation invalidates too
+    level.render(ctx, SKIN, { bake: true });
+    expect(offscreens).toHaveLength(3);
+    expect(offscreens[2].fills).toHaveLength(7); // the cleared cell is gone
+  });
+
+  it("re-bakes when the camera scale leaves the ±25% window", () => {
+    const offscreens = installOffscreen();
+    const level = makeLevel();
+    level.render(recordingCtx(1), SKIN, { bake: true });
+    level.render(recordingCtx(1.2), SKIN, { bake: true }); // within ±25% → reuse
+    expect(offscreens).toHaveLength(1);
+    level.render(recordingCtx(2), SKIN, { bake: true }); // beyond → re-bake
+    expect(offscreens).toHaveLength(2);
+  });
+
+  it("oversized levels warn once and fall back to per-tile permanently", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    installOffscreen();
+    // 500 cols × 10px = 5000 device px > the 4096 bake cap.
+    const level = grid("#".repeat(500), { size: 10, legend: { "#": { solid: true } } });
+    const ctx = recordingCtx();
+    level.render(ctx, { "#": "#333" }, { bake: true });
+    level.render(ctx, { "#": "#333" }, { bake: true });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).toMatch(/too large to bake/);
+    expect(ctx.blits).toHaveLength(0);
+    expect(ctx.fills).toHaveLength(1000); // live per-tile path, both frames
+  });
+
+  it("falls back silently when 2d contexts are unavailable (headless/jsdom)", () => {
+    HTMLCanvasElement.prototype.getContext = (() =>
+      null) as unknown as typeof HTMLCanvasElement.prototype.getContext;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const level = makeLevel();
+    const ctx = recordingCtx();
+    level.render(ctx, SKIN, { bake: true });
+    expect(ctx.fills).toHaveLength(8); // live path
+    expect(ctx.blits).toHaveLength(0);
+    expect(warn).not.toHaveBeenCalled();
   });
 });
 

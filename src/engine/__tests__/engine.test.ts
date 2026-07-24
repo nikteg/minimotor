@@ -420,6 +420,7 @@ describe("live viewport & background", () => {
     const vp = game.viewport;
     Object.defineProperty(window, "innerWidth", { value: 999, configurable: true });
     window.dispatchEvent(new Event("resize"));
+    tick(0); // resize is coalesced — applied at most once per animation frame
     expect(game.viewport).toBe(vp); // same object — holders never go stale
     expect(vp.w).toBe(999);
   });

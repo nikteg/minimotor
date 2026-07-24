@@ -2,6 +2,7 @@
 // Pre-render expensive drawing operations (shadowBlur, gradients) to an
 // offscreen canvas once, then blit with drawImage each frame.
 
+import { lruCache } from "./cache.js";
 import { component, type Component, type Ecs } from "./ecs/index.js";
 import type { DrawSprite } from "./engine/index.js";
 
@@ -12,10 +13,26 @@ export interface SpriteCanvas extends HTMLCanvasElement {
 }
 
 const cache = new Map<string, SpriteCanvas>();
-const layerCache = new Map<string, HTMLCanvasElement>();
+const layerCache = lruCache<HTMLCanvasElement>(16); // layers are big; keep only the recent few
+
+// Last DPR any bake was requested at. A change (window dragged between 1×
+// and 2× monitors) strands every entry baked for the old DPR — sweep them so
+// the caches don't hold both worlds forever. The "@<dpr>" key suffix makes
+// stale entries checkable.
+let lastDpr: number | undefined;
+
+function sweepOtherDpr(dpr: number): void {
+  if (dpr === lastDpr) return;
+  lastDpr = dpr;
+  const keep = "@" + dpr;
+  for (const key of cache.keys()) if (!key.endsWith(keep)) cache.delete(key);
+  for (const [key] of layerCache.entries()) if (!key.endsWith(keep)) layerCache.delete(key);
+}
 
 /** Get or create a pre-rendered sprite canvas keyed by `cacheKey`.
- *  `size` is the logical size in CSS pixels.
+ *  `size` is the logical size in CSS pixels. It is folded into the real cache
+ *  key, so two call sites sharing a key at different sizes each get their own
+ *  bake instead of the first one's canvas.
  *  `dpr` is the device pixel ratio for sharp rendering. It is part of the real
  *  cache key, so dragging the window between 1× and 2× monitors re-bakes
  *  sharp sprites automatically instead of serving stale ones.
@@ -27,7 +44,8 @@ export function getSprite(
   dpr: number,
   draw: (ctx: CanvasRenderingContext2D) => void,
 ): SpriteCanvas {
-  cacheKey += "@" + dpr;
+  sweepOtherDpr(dpr);
+  cacheKey += "@" + size + "@" + dpr;
   let sprite = cache.get(cacheKey);
   if (!sprite) {
     sprite = document.createElement("canvas") as SpriteCanvas;
@@ -51,7 +69,10 @@ export function getSprite(
  *
  *  Cache by everything the baked pixels depend on (e.g. `theme + ":" + w`) so a
  *  resize or theme change re-bakes instead of returning a stale layer. `dpr`
- *  is folded into the key automatically. */
+ *  is folded into the key automatically.
+ *
+ *  The layer cache is a small LRU (16 entries) — layers are full-size canvases,
+ *  so churning many distinct keys evicts the least recently used bake. */
 export function getLayer(
   cacheKey: string,
   w: number,
@@ -59,8 +80,9 @@ export function getLayer(
   dpr: number,
   draw: (ctx: CanvasRenderingContext2D) => void,
 ): HTMLCanvasElement {
+  sweepOtherDpr(dpr);
   cacheKey += "@" + dpr;
-  let layer = layerCache.get(cacheKey);
+  let layer = layerCache.get(cacheKey); // an LRU get refreshes recency
   if (!layer) {
     layer = document.createElement("canvas");
     layer.width = Math.max(1, Math.ceil(w * dpr));
@@ -68,7 +90,7 @@ export function getLayer(
     const ctx = layer.getContext("2d")!;
     ctx.scale(dpr, dpr);
     draw(ctx);
-    layerCache.set(cacheKey, layer);
+    layerCache.set(cacheKey, layer); // evicts the oldest bake beyond the cap
   }
   return layer;
 }
@@ -135,8 +157,8 @@ export interface AtlasOptions {
   cols?: number;
   /** Where each cell's draw origin sits. `"top-left"` (default) puts (0,0) at
    *  the cell's top-left corner, matching how you draw everything else on a
-   *  canvas — and how tiles are laid out (hand the result to `Tiles.grid`'s
-   *  `atlas` option). `"center"` puts (0,0) at the cell centre — the cell spans
+   *  canvas — and how tileset cells are laid out (slice the result with
+   *  `Tiles.set`). `"center"` puts (0,0) at the cell centre — the cell spans
    *  `[-fw/2, fw/2] × [-fh/2, fh/2]` — so rotating or scaling a procedural
    *  animation frame in place stays symmetric. */
   origin?: "top-left" | "center";
@@ -144,20 +166,20 @@ export interface AtlasOptions {
 
 /** Bake `count` cells into one grid atlas canvas — a texture atlas / sprite
  *  sheet — so you never hand-roll `document.createElement` + `getContext`.
- *  Hand the result to `Tiles.grid`'s `atlas` option, or to
- *  `Anim.sheet(canvas, { fw, fh, cols })` for animation. `draw(ctx, i)` renders
+ *  Slice the result with `Tiles.set` (named skin cells for `Draw.tiles`) or
+ *  `Anim.sheet` (named animation states). `draw(ctx, i)` renders
  *  cell `i` with the context saved/restored and translated to that cell
  *  (top-left origin by default — see `AtlasOptions.origin`). Cells fill
  *  left-to-right, top-to-bottom. The canvas is 1:1 (no DPR scaling):
- *  `Tiles.grid`/`Anim.sheet` blit `fw × fh` per cell and handle their own
+ *  `Tiles.set`/`Anim.sheet` blit `fw × fh` per cell and handle their own
  *  crisp compositing.
  *
- *    // A tile atlas (default top-left origin):
- *    const sheet = Sprites.atlas(24, 24, 3, (g, i) => {
+ *    // A tileset (default top-left origin):
+ *    const img = Sprites.atlas(24, 24, 3, (g, i) => {
  *      g.fillStyle = ["#69db7c", "#7a5230", "#b0575a"][i];
  *      g.fillRect(0, 0, 24, 24);
  *    });
- *    const map = Tiles.grid(level, { tw: 24, atlas: sheet });
+ *    const tiles = Tiles.set(img, { size: 24, names: { grass: [0, 0], dirt: [1, 0], brick: [2, 0] } });
  *
  *    // Rotatable animation frames (centre origin):
  *    const spin = Sprites.atlas(40, 40, 16, (ctx, i) => {
@@ -165,7 +187,10 @@ export interface AtlasOptions {
  *      ctx.fillStyle = "#5fd8ff";
  *      ctx.fillRect(-8, -8, 16, 16);
  *    }, { origin: "center" });
- *    const anim = Anim.sheet(spin, { fw: 40, fh: 40, cols: 16, fps: 14 }); */
+ *    const sheet = Anim.sheet(spin, {
+ *      frame: { w: 40, h: 40 },
+ *      states: { spin: { row: 0, frames: 16, fps: 14 } },
+ *    }); */
 export function atlas(
   fw: number,
   fh: number,
@@ -194,8 +219,11 @@ export function atlas(
  *  PNGs → one sheet" case. Frame size defaults to the first image's
  *  dimensions; pass `cols` for a grid (default: one row).
  *
- *    const sheet = Sprites.packAtlas([idle0, idle1, idle2, idle3]);
- *    const idle = Anim.sheet(sheet, { fw: 32, fh: 32, cols: 4, fps: 6 }); */
+ *    const img = Sprites.packAtlas([idle0, idle1, idle2, idle3]);
+ *    const sheet = Anim.sheet(img, {
+ *      frame: { w: 32, h: 32 },
+ *      states: { idle: { row: 0, frames: 4, fps: 6 } },
+ *    }); */
 export function packAtlas(
   images: Array<CanvasImageSource & { width: number; height: number }>,
   opts: { cols?: number; fw?: number; fh?: number } = {},

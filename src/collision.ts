@@ -59,12 +59,20 @@ export interface Sweep {
  *  the resting-overlap case. For relative motion, pass `a`'s velocity minus
  *  `b`'s. */
 export function sweptAABB(a: Rect, dx: number, dy: number, b: Rect): Sweep | null {
+  const out: Sweep = { t: 0, nx: 0, ny: 0 };
+  return sweptAABBInto(a, dx, dy, b, out) ? out : null;
+}
+
+/** Allocation-free core of `sweptAABB`: writes the result into `out` and
+ *  returns whether the sweep hit — the hot slide loop reuses scratch Sweeps
+ *  through this instead of allocating one per candidate solid. */
+function sweptAABBInto(a: Rect, dx: number, dy: number, b: Rect, out: Sweep): boolean {
   // Entry/exit distances to `b`'s near/far faces along each axis.
   let xEntry: number, xExit: number, yEntry: number, yExit: number;
 
   if (dx === 0) {
     // No horizontal motion: only collide if already overlapping in x.
-    if (a.x + a.w <= b.x || a.x >= b.x + b.w) return null;
+    if (a.x + a.w <= b.x || a.x >= b.x + b.w) return false;
     xEntry = -Infinity;
     xExit = Infinity;
   } else {
@@ -75,7 +83,7 @@ export function sweptAABB(a: Rect, dx: number, dy: number, b: Rect): Sweep | nul
   }
 
   if (dy === 0) {
-    if (a.y + a.h <= b.y || a.y >= b.y + b.h) return null;
+    if (a.y + a.h <= b.y || a.y >= b.y + b.h) return false;
     yEntry = -Infinity;
     yExit = Infinity;
   } else {
@@ -90,12 +98,18 @@ export function sweptAABB(a: Rect, dx: number, dy: number, b: Rect): Sweep | nul
 
   // Miss if the axes never overlap together, the hit is in the past, or beyond
   // this step's motion.
-  if (entry > exit || entry > 1 || (xEntry < 0 && yEntry < 0)) return null;
-  if (entry < 0) return null;
+  if (entry > exit || entry > 1 || entry < 0) return false;
 
   // The later-entering axis is the one we actually hit.
-  if (xEntry > yEntry) return { t: entry, nx: dx < 0 ? 1 : -1, ny: 0 };
-  return { t: entry, nx: 0, ny: dy < 0 ? 1 : -1 };
+  out.t = entry;
+  if (xEntry > yEntry) {
+    out.nx = dx < 0 ? 1 : -1;
+    out.ny = 0;
+  } else {
+    out.nx = 0;
+    out.ny = dy < 0 ? 1 : -1;
+  }
+  return true;
 }
 
 /** A contact: unit normal (pointing OUT of the obstacle, toward the mover) and
@@ -109,11 +123,24 @@ export interface Contact {
   depth: number;
 }
 
+// Reused scratch contacts (one per function so neither clobbers the other) —
+// valid until the next call: read, don't hold.
+const circleRectContact: Contact = { nx: 0, ny: 0, depth: 0 };
+const separateContact: Contact = { nx: 0, ny: 0, depth: 0 };
+
+function fillContact(c: Contact, nx: number, ny: number, depth: number): Contact {
+  c.nx = nx;
+  c.ny = ny;
+  c.depth = depth;
+  return c;
+}
+
 /** Circle-vs-rectangle overlap. Returns the contact normal + penetration depth,
  *  or `null` when clear. The normal points from the rect toward the circle, so
  *  it doubles as the bounce direction — no more `Math.abs(dx) > Math.abs(dy)`
  *  guessing which way to reflect a ball off a brick/paddle/wall. When the centre
- *  is inside the rect it pushes out the nearest edge. */
+ *  is inside the rect it pushes out the nearest edge. The result is a reused
+ *  scratch object, valid until the next call: read, don't hold. */
 export function circleRect(cx: number, cy: number, r: number, rect: Rect): Contact | null {
   const nearX = cx < rect.x ? rect.x : cx > rect.x + rect.w ? rect.x + rect.w : cx;
   const nearY = cy < rect.y ? rect.y : cy > rect.y + rect.h ? rect.y + rect.h : cy;
@@ -121,6 +148,7 @@ export function circleRect(cx: number, cy: number, r: number, rect: Rect): Conta
   const dy = cy - nearY;
   const d2 = dx * dx + dy * dy;
   if (d2 > r * r) return null;
+  const c = circleRectContact;
   if (d2 === 0) {
     // Centre inside the rect: escape via the nearest edge.
     const left = cx - rect.x;
@@ -128,18 +156,20 @@ export function circleRect(cx: number, cy: number, r: number, rect: Rect): Conta
     const top = cy - rect.y;
     const bottom = rect.y + rect.h - cy;
     const m = Math.min(left, right, top, bottom);
-    if (m === left) return { nx: -1, ny: 0, depth: r + left };
-    if (m === right) return { nx: 1, ny: 0, depth: r + right };
-    if (m === top) return { nx: 0, ny: -1, depth: r + top };
-    return { nx: 0, ny: 1, depth: r + bottom };
+    if (m === left) return fillContact(c, -1, 0, r + left);
+    if (m === right) return fillContact(c, 1, 0, r + right);
+    if (m === top) return fillContact(c, 0, -1, r + top);
+    return fillContact(c, 0, 1, r + bottom);
   }
   const d = Math.sqrt(d2);
-  return { nx: dx / d, ny: dy / d, depth: r - d };
+  return fillContact(c, dx / d, dy / d, r - d);
 }
 
 /** Minimum-translation contact between two overlapping circles (normal points
  *  from `b` toward `a`), or `null` if apart. Coincident centres push along +x.
- *  For separating jostling bodies — enemies, physics balls, crowd agents. */
+ *  For separating jostling bodies — enemies, physics balls, crowd agents. The
+ *  result is a reused scratch object, valid until the next call: read, don't
+ *  hold. */
 export function separateCircles(
   ax: number,
   ay: number,
@@ -153,9 +183,9 @@ export function separateCircles(
   const d2 = dx * dx + dy * dy;
   const r = ar + br;
   if (d2 >= r * r) return null;
-  if (d2 === 0) return { nx: 1, ny: 0, depth: r };
+  if (d2 === 0) return fillContact(separateContact, 1, 0, r);
   const d = Math.sqrt(d2);
-  return { nx: dx / d, ny: dy / d, depth: r - d };
+  return fillContact(separateContact, dx / d, dy / d, r - d);
 }
 
 /** Which walls a body bounced off this step. */
@@ -172,17 +202,30 @@ export interface BounceFaces {
   bottom: boolean;
 }
 
+// Reused scratch result for bounceInBounds — valid until the next call: read,
+// don't hold (same contract as moveAndSlide's contacts).
+const bounceFaces: BounceFaces = {
+  hit: false,
+  left: false,
+  right: false,
+  top: false,
+  bottom: false,
+};
+
 /** Keep a moving box inside `bounds`, reflecting its velocity off each wall it
  *  crosses — Pong/Breakout/screensaver bouncing. Mutates `rect.x/y` (clamped
  *  back inside) and `vel.x/y` (negated per hit face), and reports the faces.
  *  Only flips a velocity component that points INTO the wall, so a body pinned
- *  against an edge won't jitter or stick — the classic double-bounce bug. */
+ *  against an edge won't jitter or stick — the classic double-bounce bug.
+ *  The returned faces are a reused scratch object, valid until the next call:
+ *  read, don't hold. */
 export function bounceInBounds(
   rect: Rect,
   vel: { x: number; y: number },
   bounds: Rect,
 ): BounceFaces {
-  const faces: BounceFaces = { hit: false, left: false, right: false, top: false, bottom: false };
+  const faces = bounceFaces;
+  faces.hit = faces.left = faces.right = faces.top = faces.bottom = false;
   if (rect.x < bounds.x) {
     rect.x = bounds.x;
     if (vel.x < 0) vel.x = -vel.x;
@@ -257,22 +300,35 @@ const SKIN = 0.0001; // nudge off surfaces so floats don't re-collide
 const slideContacts: Contacts = { up: false, down: false, left: false, right: false, impact: 0 };
 const slideArea: Rect = { x: 0, y: 0, w: 0, h: 0 };
 const slideCandidates: Solid[] = [];
+// Scratch Sweeps for the slide loop: one per-candidate probe, one best-so-far.
+const slideSweep: Sweep = { t: 0, nx: 0, ny: 0 };
+const slideBest: Sweep = { t: 0, nx: 0, ny: 0 };
 
 function isSource(s: Solid | SolidSource): s is SolidSource {
   return typeof (s as SolidSource).solidsNear === "function";
 }
 
 function gather(solids: Solids, area: Rect): Solid[] {
-  slideCandidates.length = 0;
   if (Array.isArray(solids)) {
+    // Fast path: a plain Solid[] with no sources is read-only to the slide
+    // loop, so use it as-is — no per-call element copy.
+    let plain = true;
+    for (const s of solids) {
+      if (isSource(s)) {
+        plain = false;
+        break;
+      }
+    }
+    if (plain) return solids as Solid[];
+    slideCandidates.length = 0;
     for (const s of solids) {
       if (isSource(s)) s.solidsNear(area, slideCandidates);
       else slideCandidates.push(s);
     }
-  } else {
-    solids.solidsNear(area, slideCandidates);
+    return slideCandidates;
   }
-  return slideCandidates;
+  slideCandidates.length = 0;
+  return solids.solidsNear(area, slideCandidates);
 }
 
 /** Swept move-and-slide: advance `rect` by `vel`, sliding along `solids` —
@@ -296,18 +352,23 @@ export function slide(rect: Rect, vel: { x: number; y: number }, solids: Solids)
   // Up to 3 passes: each finds the earliest contact, advances to it, kills
   // the blocked component and continues with the tangential remainder.
   for (let iter = 0; iter < 3 && (dx !== 0 || dy !== 0); iter++) {
-    let best: Sweep | null = null;
+    const best = slideBest;
+    let hasBest = false;
     for (const s of sols) {
       if (s.oneWay) {
         if (dy <= 0) continue; // pass through unless falling…
         if (rect.y + rect.h > s.y + SKIN) continue; // …from fully above the top
       }
-      const hit = sweptAABB(rect, dx, dy, s);
-      if (!hit) continue;
-      if (s.oneWay && hit.ny !== -1) continue; // only the top face is solid
-      if (!best || hit.t < best.t) best = hit;
+      if (!sweptAABBInto(rect, dx, dy, s, slideSweep)) continue;
+      if (s.oneWay && slideSweep.ny !== -1) continue; // only the top face is solid
+      if (!hasBest || slideSweep.t < best.t) {
+        best.t = slideSweep.t;
+        best.nx = slideSweep.nx;
+        best.ny = slideSweep.ny;
+        hasBest = true;
+      }
     }
-    if (!best) {
+    if (!hasBest) {
       rect.x += dx;
       rect.y += dy;
       break;

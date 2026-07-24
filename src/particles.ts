@@ -16,6 +16,7 @@
 //
 // Units: speeds in px/step, gravity px/step², lifetimes in ms.
 
+import { lruCache } from "./cache.js";
 import { Clock, type ClockHandle } from "./clock.js";
 
 interface Particle {
@@ -28,6 +29,12 @@ interface Particle {
   size: number;
   color: string;
   gravity: number;
+  dot: HTMLCanvasElement | null; // pre-baked circle, resolved once at spawn
+}
+
+/** One full-shape literal so every particle shares a single hidden class. */
+function makeParticle(): Particle {
+  return { x: 0, y: 0, vx: 0, vy: 0, age: 0, life: 0, size: 0, color: "", gravity: 0, dot: null };
 }
 
 /** A `number` (fixed) or an inclusive `[min, max]` range to sample from —
@@ -53,7 +60,10 @@ export interface BurstOptions {
   life?: Range;
   /** Downward acceleration, px/step² (default 0). */
   gravity?: number;
-  /** Fill color(s); one is picked per particle (default `"#fff"`). */
+  /** Fill color(s); one is picked per particle (default `"#fff"`). Dots are
+   *  baked and cached per color STRING in a small LRU — per-frame-computed
+   *  colors (e.g. `hsl(${t}…)`) churn the cache into constant re-bakes, so
+   *  use a fixed set. */
   color?: string | string[];
 }
 
@@ -85,7 +95,7 @@ export interface ParticleSystem {
 
 /** Config for a particle system — the clock it lives in and (test) RNG source. */
 export interface ParticleOptions {
-  /** The time this system lives in. Default `Clock.game` (freezes on hold). */
+  /** The time this system lives in. Default `Clock.world` (freezes on hold). */
   clock?: ClockHandle;
   /** Random source — injectable for tests. */
   rng?: () => number;
@@ -97,9 +107,10 @@ function sample(r: Range, rng: () => number): number {
 
 // Pre-baked circle per color: a drawImage blit is much cheaper than a
 // beginPath/arc/fill per particle, and it carries its color (no fillStyle
-// churn).
+// churn). LRU-bounded so dynamic color strings can't grow it forever — but
+// per-frame-computed colors still churn re-bakes, so prefer a fixed set.
 const DOT_R = 16;
-const dotCache = new Map<string, HTMLCanvasElement | null>();
+const dotCache = lruCache<HTMLCanvasElement | null>(64);
 
 function dotFor(color: string): HTMLCanvasElement | null {
   let dot = dotCache.get(color);
@@ -127,12 +138,19 @@ function dotFor(color: string): HTMLCanvasElement | null {
 const STEP_MS = 1000 / 60;
 const MAX_FOLD_STEPS = 240;
 
+// Literal option defaults, hoisted so a burst doesn't re-create the tuples
+// (and re-resolve every `??`) once per particle.
+const DEFAULT_SPEED: Range = [0.7, 2];
+const DEFAULT_SIZE: Range = [2, 4];
+const DEFAULT_LIFE: Range = 600;
+const DEFAULT_COLOR = "#fff";
+
 /** Create a particle system. Its simulation is pull-derived from `options.clock`
- *  (default `Clock.game`, so a held clock freezes it); pass `options.rng` to make
+ *  (default `Clock.world`, so a held clock freezes it); pass `options.rng` to make
  *  emission deterministic in tests. Make as many as the draw order needs. */
 function create(options: ParticleOptions = {}): ParticleSystem {
   const rng = options.rng ?? Math.random;
-  const clock = options.clock ?? Clock.game;
+  const clock = options.clock ?? Clock.world;
   const live: Particle[] = [];
   const pool: Particle[] = []; // dead particles, reused by the next burst
   let lastMs = clock.now;
@@ -161,49 +179,53 @@ function create(options: ParticleOptions = {}): ParticleSystem {
     }
   }
 
-  function spawnOne(opts: BurstOptions): void {
+  /** Resolve the option defaults ONCE, then spawn `count` particles. */
+  function spawn(opts: BurstOptions, count: number): void {
+    const x = opts.at.x;
+    const y = opts.at.y;
     const angle = opts.angle ?? 0;
     const spread = opts.spread ?? Math.PI * 2;
-    const speed = opts.speed ?? [0.7, 2];
-    const size = opts.size ?? [2, 4];
-    const life = opts.life ?? 600;
+    const speed = opts.speed ?? DEFAULT_SPEED;
+    const size = opts.size ?? DEFAULT_SIZE;
+    const life = opts.life ?? DEFAULT_LIFE;
     const gravity = opts.gravity ?? 0;
-    const color = opts.color ?? "#fff";
+    const color = opts.color ?? DEFAULT_COLOR;
 
-    const dir = angle + (rng() - 0.5) * spread;
-    const spd = sample(speed, rng);
-    const p = pool.pop() ?? ({} as Particle);
-    p.x = opts.at.x;
-    p.y = opts.at.y;
-    p.vx = Math.cos(dir) * spd;
-    p.vy = Math.sin(dir) * spd;
-    p.age = 0;
-    p.life = sample(life, rng);
-    p.size = sample(size, rng);
-    p.color = typeof color === "string" ? color : color[(rng() * color.length) | 0];
-    p.gravity = gravity;
-    live.push(p);
+    for (let i = 0; i < count; i++) {
+      const dir = angle + (rng() - 0.5) * spread;
+      const spd = sample(speed, rng);
+      const p = pool.pop() ?? makeParticle();
+      p.x = x;
+      p.y = y;
+      p.vx = Math.cos(dir) * spd;
+      p.vy = Math.sin(dir) * spd;
+      p.age = 0;
+      p.life = sample(life, rng);
+      p.size = sample(size, rng);
+      p.color = typeof color === "string" ? color : color[(rng() * color.length) | 0];
+      p.gravity = gravity;
+      p.dot = dotFor(p.color);
+      live.push(p);
+    }
   }
 
   return {
     burst(opts) {
       fold(); // fresh particles must not inherit backlog aging
-      const count = opts.count ?? 12;
-      for (let i = 0; i < count; i++) spawnOne(opts);
+      spawn(opts, opts.count ?? 12);
     },
 
     emit(opts) {
       fold();
-      if (rng() < (opts.chance ?? 1)) spawnOne(opts);
+      if (rng() < (opts.chance ?? 1)) spawn(opts, 1);
     },
 
     render(ctx) {
       fold();
       for (const p of live) {
         ctx.globalAlpha = Math.max(0, 1 - p.age / p.life);
-        const dot = dotFor(p.color);
-        if (dot) {
-          ctx.drawImage(dot, p.x - p.size, p.y - p.size, p.size * 2, p.size * 2);
+        if (p.dot) {
+          ctx.drawImage(p.dot, p.x - p.size, p.y - p.size, p.size * 2, p.size * 2);
         } else {
           ctx.fillStyle = p.color;
           ctx.beginPath();
@@ -215,6 +237,8 @@ function create(options: ParticleOptions = {}): ParticleSystem {
     },
 
     clear() {
+      // Recycle, don't drop — cleared particles feed the next burst.
+      for (const p of live) pool.push(p);
       live.length = 0;
     },
 

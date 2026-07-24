@@ -5,6 +5,20 @@
 export type TextHAlign = "left" | "center" | "right";
 export type TextVAlign = "top" | "middle" | "bottom";
 
+// Font strings are memoized per size so the hot text paths don't rebuild
+// (and re-parse) `"${size}px monospace"` on every call.
+const monoFonts = new Map<number, string>();
+
+/** The `"${size}px monospace"` CSS font string for a pixel size, memoized. */
+export function monoFont(size: number): string {
+  let font = monoFonts.get(size);
+  if (font === undefined) {
+    font = `${size}px monospace`;
+    monoFonts.set(size, font);
+  }
+  return font;
+}
+
 export interface TextStyle {
   /** CSS font string. Default "16px monospace" */
   font?: string;
@@ -32,7 +46,7 @@ export function drawText(
   style: TextStyle = {},
 ): void {
   ctx.save();
-  ctx.font = style.font ?? "16px monospace";
+  ctx.font = style.font ?? monoFont(16);
   ctx.fillStyle = style.color ?? "#fff";
   ctx.textAlign = style.align ?? "left";
   ctx.textBaseline = style.baseline ?? "top";

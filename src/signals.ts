@@ -27,6 +27,9 @@ export interface SignalBus {
 
 export function createSignals(): SignalBus {
   const map = new Map<string, Set<Handler>>();
+  // Cached emit-order snapshot per event, dropped on any listener change —
+  // emit iterates it instead of copying the Set every dispatch.
+  const snapshots = new Map<string, Handler[]>();
 
   function on(event: string, handler: Handler): () => void {
     let set = map.get(event);
@@ -35,8 +38,10 @@ export function createSignals(): SignalBus {
       map.set(event, set);
     }
     set.add(handler);
+    snapshots.delete(event);
     return () => {
       set!.delete(handler);
+      snapshots.delete(event);
       if (set!.size === 0) map.delete(event);
     };
   }
@@ -55,8 +60,14 @@ export function createSignals(): SignalBus {
     emit(event, payload) {
       const set = map.get(event);
       if (!set) return;
-      // Copy so handlers may unsubscribe (or emit) during dispatch.
-      for (const h of Array.from(set)) {
+      // Dispatch over a snapshot so handlers may unsubscribe (or emit) during
+      // dispatch — rebuilt only when the listener list changed.
+      let snap = snapshots.get(event);
+      if (!snap) {
+        snap = Array.from(set);
+        snapshots.set(event, snap);
+      }
+      for (const h of snap) {
         try {
           h(payload);
         } catch (err) {
@@ -69,8 +80,10 @@ export function createSignals(): SignalBus {
     off(event, handler) {
       if (!event) {
         map.clear();
+        snapshots.clear();
         return;
       }
+      snapshots.delete(event);
       if (!handler) {
         map.delete(event);
         return;
@@ -87,5 +100,11 @@ export function createSignals(): SignalBus {
   return bus;
 }
 
-/** The default global bus (`Minimotor.Signals`). */
+/** The default global bus (`Minimotor.Signals`) — fire-and-forget events that
+ *  decouple systems (gameplay emits, HUD/audio listen). `on` returns its own
+ *  unsubscribe function.
+ *
+ *    const off = Signals.on("score", (n) => (hud.score += n));
+ *    Signals.emit("score", 10);
+ */
 export const Signals = createSignals();

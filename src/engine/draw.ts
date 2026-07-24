@@ -1,6 +1,6 @@
 import { requireDefault } from "./default-game.js";
 import type { Rect } from "./game.js";
-import { drawText, type TextHAlign, type TextVAlign } from "../text.js";
+import { drawText, monoFont, type TextHAlign, type TextVAlign } from "../text.js";
 
 type Point = { x: number; y: number };
 
@@ -64,10 +64,18 @@ function circle(
   maybeColor?: Fill,
 ): void {
   const ctx = requireDefault().ctx;
-  const [x, y, r, color] =
-    typeof xOrCenter === "number"
-      ? [xOrCenter, yOrRadius, radiusOrColor as number, maybeColor!]
-      : [xOrCenter.x, xOrCenter.y, yOrRadius, radiusOrColor as Fill];
+  let x: number, y: number, r: number, color: Fill;
+  if (typeof xOrCenter === "number") {
+    x = xOrCenter;
+    y = yOrRadius;
+    r = radiusOrColor as number;
+    color = maybeColor!;
+  } else {
+    x = xOrCenter.x;
+    y = xOrCenter.y;
+    r = yOrRadius;
+    color = radiusOrColor as Fill;
+  }
   ctx.fillStyle = color;
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
@@ -113,7 +121,9 @@ function line(
 }
 
 /** A linear-gradient fill from (x0,y0) to (x1,y1). Pass the result as any
- *  `Draw`/`UI` color: `Draw.rect(r, Draw.linear(0, 0, 0, h, [[0,"#0af"],[1,"#014"]]))`. */
+ *  `Draw`/`UI` color: `Draw.rect(r, Draw.linear(0, 0, 0, h, [[0,"#0af"],[1,"#014"]]))`.
+ *  Gradients are immutable and reusable — for static geometry, create the
+ *  gradient once and reuse it rather than calling this per frame. */
 function linear(
   x0: number,
   y0: number,
@@ -128,7 +138,9 @@ function linear(
 }
 
 /** A radial-gradient fill from the inner circle (x0,y0,r0) to the outer
- *  (x1,y1,r1). A 3-arg center form covers the common concentric case. */
+ *  (x1,y1,r1). A 3-arg center form covers the common concentric case.
+ *  Gradients are immutable and reusable — for static geometry, create the
+ *  gradient once and reuse it rather than calling this per frame. */
 function radial(cx: number, cy: number, r: number, stops: GradientStops): CanvasGradient;
 function radial(
   x0: number,
@@ -205,6 +217,24 @@ export interface DrawSpriteOptions {
 function sprite(spr: SpriteLike, at: Rect, opts: DrawSpriteOptions = {}): void {
   const ctx = requireDefault().ctx;
   const r = spr.rect;
+  // Fast path: no flip/squash/rotation/alpha means the transform below is
+  // identity apart from position (translate to the bottom-center anchor, then
+  // blit back up-left by the same amounts) — one direct drawImage, no
+  // save/translate/scale/restore.
+  if (
+    !opts.flipX &&
+    !opts.flipY &&
+    (opts.scaleX ?? 1) === 1 &&
+    (opts.scaleY ?? 1) === 1 &&
+    !opts.rot &&
+    opts.alpha === undefined
+  ) {
+    const prev = ctx.imageSmoothingEnabled;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(spr.sheet.image, r.sx, r.sy, r.sw, r.sh, at.x, at.y, at.w, at.h);
+    ctx.imageSmoothingEnabled = prev;
+    return;
+  }
   ctx.save();
   // Nearest-neighbour: interpolated sampling bleeds edge pixels from the
   // ADJACENT sheet cells into the frame (ghost lines above heads); pixel
@@ -311,6 +341,11 @@ function sprites(list: Iterable<DrawSprite>, opts: DrawSpritesOptions = {}): voi
   }
   if (!ordered) spriteScratch.sort((a, b) => (a.z ?? 0) - (b.z ?? 0));
 
+  // Nearest-neighbour for the whole batch, toggled ONCE — `Draw.sprite` forces
+  // smoothing off per blit and the two paths must render pixel art identically.
+  const prevSmoothing = ctx.imageSmoothingEnabled;
+  ctx.imageSmoothingEnabled = false;
+
   let ctxAlpha = 1;
   for (const s of spriteScratch) {
     if (s.visible === false) continue;
@@ -374,6 +409,21 @@ function sprites(list: Iterable<DrawSprite>, opts: DrawSpritesOptions = {}): voi
     }
   }
   if (ctxAlpha !== 1) ctx.globalAlpha = 1;
+  ctx.imageSmoothingEnabled = prevSmoothing;
+}
+
+/** Options for `Draw.tiles` — the opt-in static-layer `bake`. */
+export interface DrawTilesOptions {
+  /** Bake the whole level into one offscreen canvas and blit that per frame
+   *  instead of repainting every visible tile — the big fill-rate win, for
+   *  STATIC layers only: `anim` selector cells freeze at bake time. Mutating
+   *  cells (`level.set`) re-bakes automatically; call `level.invalidate()`
+   *  after changing the skin's underlying image pixels. Heavy-zoom cameras
+   *  re-bake on large (beyond ±25%) zoom changes, so keep it off for layers
+   *  under a constantly-tweening zoom. The skin object must be kept
+   *  referentially stable — a fresh skin object per frame re-bakes per frame.
+   *  Default false. */
+  bake?: boolean;
 }
 
 /** Anything Draw.tiles can render — levels expose a `render` channel; the
@@ -382,14 +432,16 @@ function sprites(list: Iterable<DrawSprite>, opts: DrawSpritesOptions = {}): voi
 export interface TilesLike<S> {
   /** Paint the level into `ctx` using `skin`. Called by `Draw.tiles` — the
    *  game never invokes it directly. */
-  render(ctx: CanvasRenderingContext2D, skin: S): void;
+  render(ctx: CanvasRenderingContext2D, skin: S, opts?: DrawTilesOptions): void;
 }
 
 /** Paint a tile level (from `Tiles.grid`) with a `skin` mapping each legend key
  *  to a fill. In the ambient space — put it inside `Camera.render` to scroll
- *  with the world. The `skin` type-checks against the level's legend. */
-function tiles<S>(level: TilesLike<S>, skin: S): void {
-  level.render(requireDefault().ctx, skin);
+ *  with the world. The `skin` type-checks against the level's legend. Pass
+ *  `{ bake: true }` to blit a static layer from one baked canvas (see
+ *  `DrawTilesOptions`). */
+function tiles<S>(level: TilesLike<S>, skin: S, opts?: DrawTilesOptions): void {
+  level.render(requireDefault().ctx, skin, opts);
 }
 
 /** Anything Draw.particles can render — particle systems expose a `render`
@@ -412,7 +464,7 @@ function particles(sys: ParticleLike): void {
 function text(str: string, opts: DrawTextOptions): void {
   const ctx = requireDefault().ctx;
   drawText(ctx, str, opts.x, opts.y, {
-    font: opts.font ?? (opts.size !== undefined ? `${opts.size}px monospace` : undefined),
+    font: opts.font ?? (opts.size !== undefined ? monoFont(opts.size) : undefined),
     color: opts.color,
     align: opts.align,
     baseline: opts.baseline,
@@ -420,7 +472,12 @@ function text(str: string, opts: DrawTextOptions): void {
 }
 
 /** Rendering: ambient-space primitives (screen at top level, world inside
- *  `Camera.render`) plus the raw `ctx` escape hatch. */
+ *  `Camera.render`) plus the raw `ctx` escape hatch.
+ *
+ *    Draw.rect(player.x, player.y, 32, 32, "#4ecdc4");
+ *    Draw.circle(orb, 6, "#ffd166");
+ *    Draw.text("score 12", { x: 8, y: 8, color: "#fff" });
+ */
 export const Draw = {
   /** The raw 2D canvas context — the escape hatch for effects the `Draw.*`
    *  primitives don't cover (gradients, paths, compositing). Under the current

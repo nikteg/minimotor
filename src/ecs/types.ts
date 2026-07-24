@@ -6,7 +6,7 @@
 //   const Position = Minimotor.ECS.component<{ x: number; y: number }>("Position");
 //   const Velocity = Minimotor.ECS.component<{ x: number; y: number }>("Velocity");
 //
-//   const world = Minimotor.ECS.world();            // or Minimotor.Ecs (default)
+//   const world = Minimotor.ECS.create();
 //   const e = world.spawn(Position.with({ x: 0, y: 0 }), Velocity.with({ x: 1, y: 0 }));
 //
 //   for (const [id, pos, vel] of world.query(Position, Velocity)) {
@@ -23,7 +23,8 @@
 export interface Component<T> {
   /** Dense numeric id, assigned on registration — the query bitset index. */
   readonly id: number;
-  /** Label passed to `ECS.define` — for debugging and `Perf` overlays. */
+  /** Label passed to `ECS.component` (auto-generated when omitted) — for
+   *  debugging and `Perf` overlays. */
   readonly name: string;
   /** Pair this component with data for `world.spawn(...)`. */
   with(data: T): ComponentInit<T>;
@@ -123,8 +124,9 @@ export interface Ecs {
 
   /** Iterate every entity carrying all the given components, yielding
    *  `[entity, ...data]` tuples (data in argument order). Walks the smallest
-   *  matching store; structural changes during iteration are deferred (see the
-   *  module header). Prefer `each` in hot loops — it allocates no tuple. */
+   *  matching store; `spawn`/`despawn` during iteration are deferred and
+   *  applied when the outermost iteration ends. Prefer `each` in hot loops —
+   *  it allocates no tuple. */
   query<A>(a: Component<A>): Iterable<[Entity, A]>;
   query<A, B>(a: Component<A>, b: Component<B>): Iterable<[Entity, A, B]>;
   query<A, B, C>(a: Component<A>, b: Component<B>, c: Component<C>): Iterable<[Entity, A, B, C]>;

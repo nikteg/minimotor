@@ -37,14 +37,14 @@ export interface AnimateOptions {
   loop?: boolean;
   /** Reverse each repeat (ping-pong); implies `loop`. Default false. */
   yoyo?: boolean;
-  /** The time this motion lives in. Default `Clock.game` (world content);
+  /** The time this motion lives in. Default `Clock.world` (world content);
    *  interface effects use `UI.animate` / `Clock.ui.animate`. */
   clock?: ClockHandle;
 }
 
 /** A one-shot (or looping) tween from `from` to `to` over `ms`. */
 export function animate(opts: AnimateOptions): Motion {
-  const clock = opts.clock ?? Clock.game;
+  const clock = opts.clock ?? Clock.world;
   const from = opts.from ?? 0;
   const to = opts.to ?? 1;
   const dur = Math.max(1, opts.ms);
@@ -88,7 +88,7 @@ export function sequence(
   steps: SequenceStep[],
   opts: { clock?: ClockHandle; loop?: boolean } = {},
 ): Motion {
-  const clock = opts.clock ?? Clock.game;
+  const clock = opts.clock ?? Clock.world;
   const segs = steps.map((s) => ({
     from: s.from ?? 0,
     to: s.to ?? 1,
@@ -139,14 +139,16 @@ export function parallel(
   specs: Omit<AnimateOptions, "clock">[],
   opts: { clock?: ClockHandle } = {},
 ): Parallel {
-  const clock = opts.clock ?? Clock.game;
+  const clock = opts.clock ?? Clock.world;
   const tracks = specs.map((s) => animate({ ...s, clock }));
   return {
     get value() {
       return tracks.length > 0 ? tracks[0].value : 0;
     },
     get done() {
-      return tracks.every((t) => t.done);
+      // Plain loop — no per-read `.every()` closure.
+      for (let i = 0; i < tracks.length; i++) if (!tracks[i].done) return false;
+      return true;
     },
     reset() {
       for (const t of tracks) t.reset();

@@ -96,7 +96,10 @@ export const Stage = {
   },
 };
 
-/** The fixed-timestep game loop, driving the default instance. */
+/** The fixed-timestep game loop, driving the default instance: `Loop.run`
+ *  starts it, `Loop.pause`/`Loop.resume` freeze the simulation (drawing
+ *  continues, so pause overlays render), and `Loop.step` is the fixed update
+ *  timestep in ms — write speeds in px/step and gravity in px/step². */
 export const Loop = {
   /** Start the loop with your `update` (fixed step) and `draw` (per frame)
    *  callbacks — the heart of every game. Pass a `Scenes` stack here too (it

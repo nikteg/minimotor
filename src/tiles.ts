@@ -1,5 +1,5 @@
 // ---------- Tiles ----------
-// Three clean layers (API_PLAN #39/#40/#41):
+// Three clean layers:
 //
 //   LEVEL = DATA.  `Tiles.grid(ascii, { size, legend })` — the ASCII grid IS
 //   the source file. Legend chars are tiles with SEMANTICS ONLY (solid,
@@ -21,7 +21,7 @@
 // The level is a `SolidSource`: `Collision.moveAndSlide(player, level)` gets
 // grid broadphase for free.
 
-import type { Rect } from "./engine/index.js";
+import type { DrawTilesOptions, Rect } from "./engine/index.js";
 import type { Solid } from "./collision.js";
 import type { Vec2 } from "./vec2.js";
 import { Clock, type ClockHandle } from "./clock.js";
@@ -30,7 +30,7 @@ import { Clock, type ClockHandle } from "./clock.js";
 export interface TileSpec {
   /** Blocks movement (a `Solid` for slide/moveAndSlide). */
   solid?: boolean;
-  /** Land on top, pass through from below/sides (#13's flag). */
+  /** Land on top, pass through from below/sides. */
   oneWay?: boolean;
 }
 
@@ -67,8 +67,13 @@ export interface Level<C extends string = string> {
   /** SolidSource: appends the solid tiles near `area` into `out`. The rects
    *  are pooled — valid until the next call. */
   solidsNear(area: Rect, out: Solid[]): Solid[];
-  /** Renderer channel — call `Draw.tiles(level, skin)` instead. */
-  render(ctx: CanvasRenderingContext2D, skin: Skin<Level<C>>): void;
+  /** Renderer channel — call `Draw.tiles(level, skin)` instead. `opts.bake`
+   *  blits a whole-level baked canvas for static layers (see
+   *  `DrawTilesOptions`). */
+  render(ctx: CanvasRenderingContext2D, skin: Skin<Level<C>>, opts?: DrawTilesOptions): void;
+  /** Drop the baked layer (see `Draw.tiles`' `bake`) — call after changing
+   *  the skin's underlying image or mutating cells. `set()` does it for you. */
+  invalidate(): void;
   /** The legend (read-only semantics lookup). */
   readonly legend: Record<string, TileSpec>;
 }
@@ -142,13 +147,28 @@ function isEmptyChar(ch: string): boolean {
   return ch === EMPTY || ch === " " || ch === "";
 }
 
-/** Deterministic hash of cell coords → [0, 1). */
+/** Deterministic hash of cell coords → [0, 1) — integer multiply-xor
+ *  avalanche, far cheaper than the old Math.sin trick and just as stable. */
 function cellHash(cx: number, cy: number): number {
-  const s = Math.sin(cx * 127.1 + cy * 311.7) * 43758.5453;
-  return s - Math.floor(s);
+  let h = (cx * 374761393 + cy * 668265263) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
-/** Parse an ASCII grid into a level. */
+/** Parse an ASCII grid into a level — the string IS the level file. Legend
+ *  chars carry semantics only (`solid`, `oneWay` — plain JSON facts); `"."`
+ *  and space are empty; any OTHER char is a spawn marker you query with
+ *  `spawns`/`spawnOne`. The result is pure data: paint it with
+ *  `Draw.tiles(level, skin)`, collide against it with
+ *  `Collision.moveAndSlide(player, level)` (it's a `SolidSource`).
+ *
+ *      const level = Tiles.grid(`
+ *        P.....
+ *        ..--..
+ *        ######
+ *      `, { size: 16, legend: { "#": { solid: true }, "-": { oneWay: true } } });
+ *      const start = level.spawnOne("P"); // tile-center Vec2 of the P marker
+ */
 export function grid<L extends Record<string, TileSpec>>(
   ascii: string,
   options: GridOptions<L>,
@@ -176,7 +196,9 @@ export function grid<L extends Record<string, TileSpec>>(
   function pooledSolid(x: number, y: number, oneWay: boolean): Solid {
     let r = pool[poolUsed];
     if (!r) {
-      r = { x: 0, y: 0, w: 0, h: 0 };
+      // Full shape up front — assigning oneWay (never deleting it) keeps one
+      // hidden class across the whole pool.
+      r = { x: 0, y: 0, w: 0, h: 0, oneWay: false };
       pool[poolUsed] = r;
     }
     poolUsed++;
@@ -184,14 +206,97 @@ export function grid<L extends Record<string, TileSpec>>(
     r.y = y;
     r.w = size;
     r.h = size;
-    if (oneWay) r.oneWay = true;
-    else delete r.oneWay;
+    r.oneWay = oneWay;
     return r;
   }
 
   function specAt(cx: number, cy: number): TileSpec | undefined {
     if (cx < 0 || cy < 0 || cx >= cols || cy >= rows) return undefined;
     return legend[cells[cy][cx]];
+  }
+
+  // One reused selector-view per level; render rebinds cx/cy/char per cell.
+  const selectorCell: SelectorCell = {
+    cx: 0,
+    cy: 0,
+    char: EMPTY,
+    neighbor(dx, dy) {
+      return level.at(this.cx + dx, this.cy + dy) === this.char;
+    },
+  };
+
+  /** Paint cells [x0..x1]×[y0..y1] with `s` into `ctx` — shared by the live
+   *  per-tile path and the offscreen bake. */
+  function paintCells(
+    ctx: CanvasRenderingContext2D,
+    s: Record<string, SkinValue>,
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+  ): void {
+    for (let cy = y0; cy <= y1; cy++) {
+      for (let cx = x0; cx <= x1; cx++) {
+        const ch = cells[cy][cx];
+        if (isEmptyChar(ch)) continue;
+        let value = s[ch];
+        if (value === null || value === undefined) continue;
+        if (typeof value === "function") {
+          selectorCell.cx = cx;
+          selectorCell.cy = cy;
+          selectorCell.char = ch;
+          value = value(selectorCell);
+          if (value === null) continue;
+        }
+        const x = cx * size;
+        const y = cy * size;
+        if (typeof value === "string") {
+          ctx.fillStyle = value;
+          // A hair of overlap so fractional transforms can't antialias
+          // hairline gaps between neighbouring fills.
+          ctx.fillRect(x, y, size + 0.5, size + 0.5);
+        } else {
+          ctx.drawImage(value.image, value.sx, value.sy, value.sw, value.sh, x, y, size, size);
+        }
+      }
+    }
+  }
+
+  // ---------- Static-layer bake (opt-in via Draw.tiles' `bake`) ----------
+  // One offscreen canvas covering the whole level, valid while the SAME skin
+  // object is handed in and the camera scale stays within ±25% of the baked
+  // one. `set()` and `invalidate()` drop it.
+  const BAKE_MAX_PX = 4096; // device-px cap per axis for the offscreen canvas
+  const BAKE_MAX_SCALE = 2; // bake resolution cap (device px per world px)
+  let baked: { canvas: HTMLCanvasElement; scale: number; skinRef: unknown } | null = null;
+  let bakeDisabled = false; // level too large — warned once, live path forever
+
+  /** Bake ALL cells (no culling) into an offscreen canvas at device scale
+   *  min(camera scale, 2). Null when the level is too large (warned once) or
+   *  no real canvas exists here (headless/jsdom — live path, silently). */
+  function bakeLayer(skin: Skin<Level<C>>, scale: number): typeof baked {
+    const deviceScale = Math.min(scale, BAKE_MAX_SCALE);
+    const w = Math.max(1, Math.ceil(cols * size * deviceScale));
+    const h = Math.max(1, Math.ceil(rows * size * deviceScale));
+    if (w > BAKE_MAX_PX || h > BAKE_MAX_PX) {
+      bakeDisabled = true;
+      console.warn(`Tiles: level too large to bake (${w}x${h} device px); drawing per-tile`);
+      return null;
+    }
+    let canvas: HTMLCanvasElement;
+    let bctx: CanvasRenderingContext2D | null;
+    try {
+      canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      bctx = canvas.getContext("2d");
+    } catch {
+      return null;
+    }
+    if (!bctx) return null;
+    bctx.scale(deviceScale, deviceScale);
+    paintCells(bctx, skin as Record<string, SkinValue>, 0, 0, cols - 1, rows - 1);
+    return { canvas, scale, skinRef: skin };
   }
 
   const level: Level<C> = {
@@ -207,6 +312,10 @@ export function grid<L extends Record<string, TileSpec>>(
     set(cx, cy, char) {
       if (cx < 0 || cy < 0 || cx >= cols || cy >= rows) return;
       cells[cy][cx] = char === null || char === "" ? EMPTY : char;
+      baked = null; // a mutated cell invalidates any baked layer
+    },
+    invalidate() {
+      baked = null;
     },
     spawns(char) {
       const out: Vec2[] = [];
@@ -243,67 +352,71 @@ export function grid<L extends Record<string, TileSpec>>(
       }
       return out;
     },
-    render(ctx, skin) {
+    render(ctx, skin, opts) {
       // Cull to the visible world rect, derived from the ctx's CURRENT
-      // transform (whatever camera block we're inside) — zero API.
+      // transform (whatever camera block we're inside) — zero API. The same
+      // getTransform() yields the camera scale the bake path keys on.
       let x0 = 0;
       let y0 = 0;
       let x1 = cols - 1;
       let y1 = rows - 1;
+      let scale = 1;
       if (typeof ctx.getTransform === "function") {
         try {
-          const m = ctx.getTransform().inverse();
+          // Invert the affine transform by hand — one getTransform(), no
+          // DOMMatrix.inverse()/DOMPoint allocations per frame.
+          const m = ctx.getTransform();
+          scale = Math.hypot(m.a, m.b) || 1;
           const c = ctx.canvas as { width: number; height: number };
-          const tl = m.transformPoint(new DOMPoint(0, 0));
-          const br = m.transformPoint(new DOMPoint(c.width, c.height));
-          x0 = Math.max(0, Math.floor(Math.min(tl.x, br.x) / size));
-          y0 = Math.max(0, Math.floor(Math.min(tl.y, br.y) / size));
-          x1 = Math.min(cols - 1, Math.floor(Math.max(tl.x, br.x) / size));
-          y1 = Math.min(rows - 1, Math.floor(Math.max(tl.y, br.y) / size));
+          const det = m.a * m.d - m.b * m.c;
+          if (Number.isFinite(det) && det !== 0) {
+            // Inverse-map (sx,sy): x = (d*(sx-e) - c*(sy-f))/det,
+            //                      y = (a*(sy-f) - b*(sx-e))/det.
+            const tlx = (m.c * m.f - m.d * m.e) / det;
+            const tly = (m.b * m.e - m.a * m.f) / det;
+            const brx = (m.d * (c.width - m.e) - m.c * (c.height - m.f)) / det;
+            const bry = (m.a * (c.height - m.f) - m.b * (c.width - m.e)) / det;
+            x0 = Math.max(0, Math.floor(Math.min(tlx, brx) / size));
+            y0 = Math.max(0, Math.floor(Math.min(tly, bry) / size));
+            x1 = Math.min(cols - 1, Math.floor(Math.max(tlx, brx) / size));
+            y1 = Math.min(rows - 1, Math.floor(Math.max(tly, bry) / size));
+          }
         } catch {
           // DOMMatrix unavailable (tests/jsdom): draw everything.
         }
       }
-      const selectorCell: SelectorCell = {
-        cx: 0,
-        cy: 0,
-        char: EMPTY,
-        neighbor(dx, dy) {
-          return level.at(this.cx + dx, this.cy + dy) === this.char;
-        },
-      };
-      const s = skin as Record<string, SkinValue>;
-      for (let cy = y0; cy <= y1; cy++) {
-        for (let cx = x0; cx <= x1; cx++) {
-          const ch = cells[cy][cx];
-          if (isEmptyChar(ch)) continue;
-          let value = s[ch];
-          if (value === null || value === undefined) continue;
-          if (typeof value === "function") {
-            selectorCell.cx = cx;
-            selectorCell.cy = cy;
-            selectorCell.char = ch;
-            value = value(selectorCell);
-            if (value === null) continue;
-          }
-          const x = cx * size;
-          const y = cy * size;
-          if (typeof value === "string") {
-            ctx.fillStyle = value;
-            // A hair of overlap so fractional transforms can't antialias
-            // hairline gaps between neighbouring fills.
-            ctx.fillRect(x, y, size + 0.5, size + 0.5);
-          } else {
-            ctx.drawImage(value.image, value.sx, value.sy, value.sw, value.sh, x, y, size, size);
-          }
+      if (opts?.bake === true && !bakeDisabled) {
+        const stale =
+          !baked ||
+          baked.skinRef !== skin ||
+          scale < baked.scale / 1.25 ||
+          scale > baked.scale * 1.25;
+        if (stale) baked = bakeLayer(skin, scale);
+        if (baked) {
+          // One whole-level blit; the ambient transform positions it.
+          // Nearest-neighbour so pixel art stays crisp when the blit rescales.
+          const prev = ctx.imageSmoothingEnabled;
+          ctx.imageSmoothingEnabled = false;
+          ctx.drawImage(baked.canvas, 0, 0, cols * size, rows * size);
+          ctx.imageSmoothingEnabled = prev;
+          return;
         }
       }
+      paintCells(ctx, skin as Record<string, SkinValue>, x0, y0, x1, y1);
     },
   };
   return level;
 }
 
-/** Slice a tileset image into named cells + selector factories. */
+/** Slice a tileset image into named cells + selector factories — the
+ *  space-indexed cousin of `Anim.sheet`. Named cells are fixed `Cell`s; the
+ *  `pick`/`anim`/`auto16` factories build `Selector`s that choose a cell per
+ *  grid cell. Both drop straight into a skin for `Draw.tiles`:
+ *
+ *      const ts = Tiles.set(img, { size: 16, names: { ground: [0, 0], plank: [4, 0] } });
+ *      const skin = { "#": ts.auto16(ts.ground), "-": ts.plank };
+ *      Draw.tiles(level, skin);
+ */
 export function set<N extends string>(
   image: CanvasImageSource,
   options: TileSetOptions<N>,
@@ -331,7 +444,7 @@ export function set<N extends string>(
     anim(cells: Cell[], opts: { fps?: number; clock?: ClockHandle } = {}): Selector {
       const fps = opts.fps ?? 4;
       return (at) => {
-        const clock = opts.clock ?? Clock.game;
+        const clock = opts.clock ?? Clock.world;
         const phase = Math.floor(cellHash(at.cx, at.cy) * cells.length);
         const idx = (Math.floor((clock.now * fps) / 1000) + phase) % cells.length;
         return cells[idx];
@@ -340,13 +453,18 @@ export function set<N extends string>(
     auto16(base: Cell): Selector {
       const baseCol = base.sx / s;
       const baseRow = base.sy / s;
+      // Only 16 masks exist — bake all 16 cells once, index per grid cell.
+      const byMask: Cell[] = [];
+      for (let mask = 0; mask < 16; mask++) {
+        byMask.push(cell(baseCol + (mask % 4), baseRow + Math.floor(mask / 4)));
+      }
       return (at) => {
         const mask =
           (at.neighbor(0, -1) ? 1 : 0) |
           (at.neighbor(1, 0) ? 2 : 0) |
           (at.neighbor(0, 1) ? 4 : 0) |
           (at.neighbor(-1, 0) ? 8 : 0);
-        return cell(baseCol + (mask % 4), baseRow + Math.floor(mask / 4));
+        return byMask[mask];
       };
     },
   };

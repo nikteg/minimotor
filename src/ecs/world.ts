@@ -69,11 +69,6 @@ export function create(): Ecs {
   const updateSystems: { name: string; fn: System }[] = [];
   const renderSystems: { name: string; fn: RenderSystem }[] = [];
 
-  function defer(fn: () => void): void {
-    if (iterating > 0) commands.push(fn);
-    else fn();
-  }
-
   function flush(): void {
     // A command may itself queue more (rare); drain until settled.
     while (commands.length) {
@@ -140,7 +135,10 @@ export function create(): Ecs {
     despawn(e) {
       if (!self.alive(e)) return;
       const index = indexOf(e);
-      defer(() => despawnAt(index));
+      // Run immediately when safe — the deferral closure is only allocated
+      // mid-iteration.
+      if (iterating === 0) despawnAt(index);
+      else commands.push(() => despawnAt(index));
     },
 
     alive(e) {
@@ -169,8 +167,14 @@ export function create(): Ecs {
       if (!self.alive(e)) return;
       const index = indexOf(e);
       const st = stores.get(c.id);
-      if (st) {
-        defer(() => {
+      if (!st) return;
+      // Run immediately when safe — the deferral closure is only allocated
+      // mid-iteration.
+      if (iterating === 0) {
+        removeAt(st, index);
+        owned[index]?.delete(c.id);
+      } else {
+        commands.push(() => {
           removeAt(st, index);
           owned[index]?.delete(c.id);
         });
@@ -268,28 +272,29 @@ export function create(): Ecs {
           if (!driver || st.dense.length < driver.dense.length) driver = st;
         }
         const cols = cs.map((c) => stores.get(c.id)!);
+        const slots: number[] = []; // per-row scratch, reused across rows
 
         iterating++;
         try {
           const len = driver!.dense.length; // snapshot: new spawns aren't visited
-          for (let i = 0; i < len; i++) {
+          outer: for (let i = 0; i < len; i++) {
             const index = driver!.owners[i];
-            const row: unknown[] = [makeId(index, generations[index])];
-            let ok = true;
+            // Check every non-driver column's membership BEFORE allocating
+            // the row — rows that fail pay nothing.
+            slots.length = 0;
             for (const col of cols) {
               // The driver's data is already at hand — no membership re-check.
               if (col === driver) {
-                row.push(col.dense[i]);
+                slots.push(i);
                 continue;
               }
               const slot = col.slotOf[index];
-              if (slot === undefined) {
-                ok = false;
-                break;
-              }
-              row.push(col.dense[slot]);
+              if (slot === undefined) continue outer;
+              slots.push(slot);
             }
-            if (ok) yield row as [Entity, ...unknown[]];
+            const row: unknown[] = [makeId(index, generations[index])];
+            for (let k = 0; k < cols.length; k++) row.push(cols[k].dense[slots[k]]);
+            yield row as [Entity, ...unknown[]];
           }
         } finally {
           if (--iterating === 0) flush();
