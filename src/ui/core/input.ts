@@ -60,15 +60,20 @@ export function claimWheel(over: boolean, wheel: number, atMin: boolean, atMax: 
 /** The pointer, raw — overlays themselves read this (their close logic must
  *  see clicks even while they block everyone else). */
 export function rawPointer() {
-  return {
-    x: Pointer.x,
-    y: Pointer.y,
-    down: Pointer.down,
-    released: Pointer.frameReleased,
-    pressed: Pointer.framePressed,
-    doublePressed: Pointer.frameDoublePressed,
-    wheel: Pointer.wheel,
-  };
+  try {
+    return {
+      x: Pointer.x,
+      y: Pointer.y,
+      down: Pointer.down,
+      released: Pointer.frameReleased,
+      pressed: Pointer.framePressed,
+      doublePressed: Pointer.frameDoublePressed,
+      wheel: Pointer.wheel,
+    };
+  } catch {
+    // No default game yet (headless/tests) — stay inert like `uiPointer`.
+    return DEAD_POINTER;
+  }
 }
 
 // ---------- UI transform (scale / reference-size fit) -----------------------

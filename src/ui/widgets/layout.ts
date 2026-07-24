@@ -111,21 +111,16 @@ function scrollable<R>(
   const sbId = `${key ?? `scroll@${rect.x}:${rect.y}`}:sb`;
   let offset = clamp(scrollOffsets.get(sbId) ?? 0, 0, max);
 
-  // Swipe / body-drag + wheel: both run BEFORE the children draw, so on nested
-  // scroll regions this OUTER one claims first — a page swipe/wheel scrolls the
-  // page, and the wheel only chains inward once this region is at its edge.
+  // Swipe / body-drag runs BEFORE the children (so the offset applies to this
+  // frame's draw and the press-claim beats child widgets). On the press frame
+  // the innermost region overwrites the claim, so a swipe inside a nested region
+  // scrolls that region. (Wheel is handled AFTER the children — see below — so a
+  // nested region claims it first: inner-first chaining.)
   offset = dragScroll(
     sbId,
     { x: bodyRect.x, y: bodyRect.y, w: innerW, h: innerH },
     horiz ? "x" : "y",
     offset,
-    max,
-  );
-  const wp = uiPointer();
-  offset = clamp(
-    offset +
-      claimWheel(pointInRect(wp.x, wp.y, bodyRect), wp.wheel, offset <= 0.5, offset >= max - 0.5),
-    0,
     max,
   );
 
@@ -159,6 +154,18 @@ function scrollable<R>(
       children,
     );
   });
+
+  // Wheel AFTER the children: a nested scroll region draws (and claims) first,
+  // so the wheel scrolls the INNERMOST region under the pointer until its edge,
+  // then chains outward. One-frame render lag on the wheel is invisible.
+  const wp = uiPointer();
+  offset = clamp(
+    offset +
+      claimWheel(pointInRect(wp.x, wp.y, bodyRect), wp.wheel, offset <= 0.5, offset >= max - 0.5),
+    0,
+    max,
+  );
+
   if (barThick) {
     offset = scrollbar({
       x: horiz ? bodyRect.x : rect.x + rect.w - barThick,

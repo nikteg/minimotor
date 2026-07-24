@@ -13,6 +13,7 @@ import {
   focusedId,
   hoverCursor,
   onFrameEnd,
+  rawPointer,
   registerFocusable,
   suppressPointerEdges,
   theme,
@@ -66,9 +67,9 @@ export interface ListOptions extends Fillable {
 // id. A press starts a candidate; once it travels past DRAG_THRESHOLD it becomes
 // a scroll that owns the pointer (and swallows the ending click so it doesn't
 // select whatever is underneath). Below the threshold it stays a tap and the
-// widget under it clicks normally. The FIRST region to claim a press wins, so
-// when regions nest, the outer (drawn first) takes the gesture — a page swipe
-// scrolls the page, not a widget inside it.
+// widget under it clicks normally. When regions nest, the INNERMOST under the
+// press wins (children draw after parents and overwrite the claim), so a swipe
+// inside a nested region scrolls that region, not the page.
 let bodyScroll: { id: string; start: number; startOffset: number; active: boolean } | null = null;
 const DRAG_THRESHOLD = 6;
 
@@ -105,7 +106,11 @@ export function dragScroll(
   ensureListHooks();
   const p = uiPointer();
   const pos = axis === "y" ? p.y : p.x;
-  if (p.pressed && !bodyScroll && pointInRect(p.x, p.y, rect)) {
+  // On the press frame the INNERMOST region under the pointer wins: parents run
+  // first (drawn before their children) and set the claim, then the child
+  // overwrites it — so a swipe inside a nested region scrolls THAT region, not
+  // the page. `p.pressed` is one-shot, so this can't re-claim mid-drag.
+  if (p.pressed && pointInRect(p.x, p.y, rect)) {
     bodyScroll = { id: key, start: pos, startOffset: offset, active: false };
   }
   if (bodyScroll?.id === key) {
@@ -145,21 +150,9 @@ export function list(
   let offset = clamp(opts.offset, 0, max);
 
   // Swipe to scroll: drag anywhere in the content area (the scrollbar gutter is
-  // excluded — that's the thumb's job) to pan the list. Wheel is claimed
-  // outer-first so it chains through nested regions.
+  // excluded — that's the thumb's job) to pan the list. (Wheel is handled after
+  // the rows below, so a nested region inside a row claims it first.)
   offset = dragScroll(opts.id ?? `list:${x}:${y}`, { x, y, w: listW, h }, "y", offset, max);
-  const wp = uiPointer();
-  offset = clamp(
-    offset +
-      claimWheel(
-        pointInRect(wp.x, wp.y, { x, y, w, h }),
-        wp.wheel,
-        offset <= 0.5,
-        offset >= max - 0.5,
-      ),
-    0,
-    max,
-  );
 
   // Keyboard navigation: register ALL rows as focusables (so Tab reaches every
   // row, not just the visible window), then scroll so the focused one is in
@@ -189,6 +182,22 @@ export function list(
       row(i, { x, y: y + i * step - offset, w: listW, h: opts.rowH });
     }
   });
+
+  // Wheel AFTER the rows: a nested scroll region inside a row runs first and
+  // claims the wheel, so it scrolls the INNER region until its edge, then chains
+  // outward (inner-first). One-frame render lag on the wheel is invisible.
+  const wp = uiPointer();
+  offset = clamp(
+    offset +
+      claimWheel(
+        pointInRect(wp.x, wp.y, { x, y, w, h }),
+        wp.wheel,
+        offset <= 0.5,
+        offset >= max - 0.5,
+      ),
+    0,
+    max,
+  );
 
   if (scrollW) {
     offset = scrollbar({
@@ -376,7 +385,11 @@ export function scrollbar(
   const overTrack = pointInRect(p.x, p.y, trackRect);
   hoverCursor(overTrack || scrollDrag?.id === id);
 
-  if (!p.down) scrollDrag = null;
+  // Release the drag on the REAL pointer-up, not the clip-gated one: a scrollbar
+  // that sits inside another scroll region's clip sees a DEAD pointer when the
+  // pointer is over the OUTER region's gutter (its own thumb), and must not
+  // cancel that outer drag. `rawPointer` ignores clip/overlay gating.
+  if (!rawPointer().down) scrollDrag = null;
   if (p.pressed && overThumb && !scrollDrag) {
     scrollDrag = { id, grab: pAlong - along };
     cancelBodyDrag(); // grabbing the thumb must not also swipe a surrounding region
