@@ -227,7 +227,10 @@ export interface LayoutOptions {
   anchor?: "start" | "end";
   /** Lay children in reverse ORDER (last-drawn first) — position is unchanged
    *  (see `anchor`). Default false. `anchor:"end"` + `reverse:true` together give
-   *  the old right-to-left `align:"end"` behavior. */
+   *  the old right-to-left `align:"end"` behavior. NOTE: only the VISUAL order
+   *  reverses; keyboard focus/Tab still follows draw (call) order, so with
+   *  `reverse` the two diverge (like CSS `flex-direction: row-reverse`). Prefer
+   *  `anchor:"end"` when Tab order should match what's on screen. */
   reverse?: boolean;
   /** Overflow behavior along the main axis, like CSS. `"visible"` (default)
    *  auto-grows the box to its content. `"auto"`/`"scroll"` cap the box (at `h`,
