@@ -88,10 +88,17 @@ WebSocket or WebRTC; `Net.sync` declaratively replicates state, with snapshot
 interpolation and roster tracking. Pair with `minimotor/server` for the Node
 side.
 
-**Grab bag** — `Goodies` (pure recipes: steering, flood fill, line of sight,
-weighted random), `Gizmos` (stateful gadgets: combos, patrols, trails, arcade
-car handling), `Game` (score tracking, letterboxing, clock formatting),
-`Storage` (crash-safe localStorage), `Perf` (FPS HUD and net meter).
+**Ready-made legos** — the small pieces of game knowledge that otherwise get
+rewritten (usually slightly wrong) in every project, for any kind of game.
+`Goodies` holds the **pure recipes** — call one, get a value: steering and target
+leading, flood fill, line of sight, distance fields, weighted random and dice,
+inventory stacking, world wrapping. `Gizmos` holds the **stateful gadgets** —
+create one, then tick it: combos, patrols, trails, ability charges, checkpoint
+routes, seeded RNG and shuffle bags, undo stacks, arcade car handling and
+skidmarks. Both surfaces are flat: `Goodies.floodFill`, `Gizmos.combo`.
+
+**Odds and ends** — `Game` (score tracking, clock formatting), `Storage`
+(crash-safe localStorage), `Perf` (FPS HUD and net meter).
 
 ## Samples
 

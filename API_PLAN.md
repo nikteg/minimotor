@@ -229,8 +229,14 @@ fps }, run: {...}, jump: {...} })` returns a shared kit; `kit.play(initial)`
 - **Server-authoritative sample** (road-rivals as corpus) → judge #53's
   unification in anger.
 - **Signals**: justify-or-retire (scenes/ECS dissolve most uses).
-- **Gizmos/Goodies** taxonomy + `game.ts` grab-bag rehoming
-  (scoreTracker→Storage sugar, letterbox→camera, formatClock→Mathf).
+- **Gizmos/Goodies taxonomy — DECIDED.** Pure recipes → `Goodies`; stateful
+  gadgets → `Gizmos`. Both surfaces stay flat, both are a first-class growing
+  catalog rather than a grab bag, and neither is gated on the Pixel Adventure
+  extraction rules. Admission rules and the growth backlog live in
+  ROADMAP § "`Goodies` & `Gizmos` — the lego catalog".
+- **`game.ts` rehoming** (still open): `letterbox`/`drawLetterbox`/`letterboxView`
+  retire outright once `pocket` is on `App.init({ resolution })` (see above);
+  `createScoreTracker` and `formatClock` stay for now.
 - Spatial-nav implementation details; `Perf.netMeter` learns rooms.
 
 ## Breaking changes register

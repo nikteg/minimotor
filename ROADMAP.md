@@ -22,7 +22,7 @@ you don't need**. You can always drop to a raw `ctx` and a plain
 ```
 ┌─ L4  Content     Assets · Anim · Tiles · Particles · Transitions · UI
 ├─ L3  Structure   ECS(World) · Scenes · Clock · Tween · Signals          ← the engine core we're adding
-├─ L2  Primitives  Mathf · Goodies · Collision · Camera · Sprites · Text · Physics
+├─ L2  Primitives  Mathf · Goodies · Gizmos · Collision · Camera · Sprites · Vec2
 └─ L1  Platform    Stage · Loop · Draw · Keys · Pointer · Audio · Storage · Net · Perf · Fullscreen · Input
 ```
 
@@ -55,72 +55,137 @@ Pure, data-agnostic helpers. No engine state.
 
 - ✅ `Mathf` — lerp, clamp, remap, pulse, wave, easing set, `randRange`,
   `randInt`, `randItem`, `distance`, `angleBetween`
-- ✅ `Goodies` — the intentional game-recipe grab bag. It collects essential,
-  tested patterns shared by arcade, grid, platformer, shooter, roguelike and
-  other genres. Shipped: `wrap`, `wrappedDelta` and `wrappedDistance`.
-- ✅ `Collision` — rectsOverlap, circleHit, crossedDown, `sweptAABB` (tunneling)
-  (add: circleRect), `pointInRect` (shipped — powers `UI.button` hit-testing)
-- ✅ `Camera` — `createCamera` (lerp follow + clamp), `scrollColumns` parallax,
-  `shake` (decaying screen-shake, aged on the fixed step)
-- ✅ `Sprites` — `getSprite` (square) + `getLayer` (arbitrary offscreen cache);
-  sheet baking: `bakeSheet` (procedural frames → grid sheet for `Anim.sheet`),
-  `composeSheet` (pack frame images), `contentBounds` (opaque box / trim padding)
-- ✅ `Text`, `Physics` (kinematic helpers/constants)
+- ✅ `Vec2` — structural `{x, y}` with an `out?` parameter on every operation
+  (add/sub/scale/norm/rotate/lerp/clamp/limit) so hot paths stay allocation-free
+- ✅ `Goodies` / `Gizmos` — **the lego catalog** (see below). Pure recipes and
+  stateful gadgets for any kind of game or playful app.
+- ✅ `Collision` — `rectsOverlap`, `circleHit`, `circleRect`, `crossedDown`,
+  `pointInRect`, `sweptAABB` (tunneling), `separateCircles`, `bounceInBounds`,
+  and the `slide` (mechanism) / `moveAndSlide` (policy) pair
+- ✅ `Camera` — `Camera.create` lens (lerp follow, deadzone, world clamp, zoom,
+  `fit`), `layer` parallax, `shake` (decaying, pull-derived from the step counter)
+- ✅ `Sprites` — `getSprite` (square) + `getLayer` (arbitrary offscreen cache),
+  `tint`; sheet baking: `atlas` (procedural frames → grid sheet for `Anim.sheet`),
+  `packAtlas` (pack frame images), `contentBounds` (opaque box / trim padding)
 
-### `Goodies` recipe catalog
+### `Goodies` & `Gizmos` — the lego catalog
 
-`Goodies` is deliberately broad. It is where a developer should look for the
-small pieces of genre knowledge that otherwise get rewritten in every game.
-Recipes may combine lower-level Minimotor primitives, but remain plain functions
-or tiny state objects—never a mandatory gameplay framework.
+**This is a headline feature of the engine, not a grab bag.** `Goodies` and
+`Gizmos` are ready-made legos: the small, tested pieces of game knowledge that
+otherwise get rewritten — usually slightly wrong — in every project. They are for
+**any** kind of game or playful app. A recipe does not have to justify itself
+against a particular sample, a particular genre, or the Pixel Adventure
+extraction plan below (which governs engine _infrastructure_, not this catalog).
 
-**Shipped recipe shelf** (split into family modules under `src/goodies/`; the
-public surface stays flat — every recipe is `Minimotor.Goodies.<name>`):
+**The split** (the one rule that decides where something lands):
+
+- **`Goodies` — pure recipes.** Call one, get a value. No stored state, no
+  lifecycle, referentially transparent given an injected `rng` where randomness
+  is involved. `Goodies.leadTarget(...)`, `Goodies.floodFill(...)`.
+- **`Gizmos` — stateful gadgets.** Create once, then tick or mutate. They own a
+  little state and hand you a live object. `Gizmos.combo(...)`,
+  `Gizmos.patrol(...)`, `Gizmos.car(body)`.
+
+Both surfaces stay **flat and discoverable**: every entry is
+`Minimotor.Goodies.<name>` / `Minimotor.Gizmos.<name>` regardless of which family
+module under `src/goodies/` or `src/gizmos/` it lives in. Introduce nested
+namespaces only if name collisions or catalog size ever make them useful.
+
+**Shipped — `Goodies` (pure recipes):**
 
 - **Wrapping worlds** (`wrapping`): `wrap`, `wrappedDelta`, `wrappedDistance`.
-- **Randomness / loot / dice** (`random`): `seedRng` (deterministic PRNG for
-  replayable/seeded runs), `chance`, `weightedPick`, `shuffleBag`, `rollDice`,
-  `damageRoll`.
-- **Grid/puzzle/roguelike/tactics** (`grid`): `gridNeighbors`, `floodFill`,
+- **Randomness / loot / dice** (`random`): `chance`, `weightedPick`, `shuffle`,
+  `rollDice`, `damageRoll`.
+- **Grid / puzzle / roguelike / tactics** (`grid`): `gridNeighbors`, `floodFill`,
   `gridLine`, `lineOfSight`, `distanceField` (multi-source BFS field for chase
-  AI / creep routing).
-- **Shooter/racing steering** (`steering`): `approachAngle`, `leadTarget`,
-  `ringFormation`, `gridFormation`.
-- **Inventory/crafting** (`inventory`): `transferStack` (move/merge/swap).
-- **Scoring** (`scoring`): `timingGrade`, `scoreRank`, `combo` (decaying
-  hit-streak multiplier).
-- **Pacing** (`pacing`): `checkpointRoute`, `waveScale`, `dayCycle`, `charges`
-  (a refilling ability/dash/ammo meter).
-- **Hit flash** (`flash`): `flash`, a "took damage" white-blink timing latch
-  (pairs with `Sprites.tint` for sprite silhouettes).
+  AI / creep routing), `randFreeCell`.
+- **Steering / formations** (`steering`): `approachAngle`, `leadTarget`,
+  `nearest`, `ringFormation`, `gridFormation`.
+- **Inventory / crafting** (`inventory`): `transferStack` (move/merge/swap),
+  `addToInventory`.
+- **Scoring** (`scoring`): `timingGrade`, `scoreRank`, `beatClock`.
+- **Pacing** (`pacing`): `waveScale`, `dayCycle`.
 
-**Candidate recipe families:**
+**Shipped — `Gizmos` (stateful gadgets):**
 
-- **Grid / roguelike:** cardinal and diagonal neighbors, grid keys, flood fill,
-  grid line traversal, random empty-cell selection and shuffle bags.
-- **Arcade / shooter:** target leading, angle approach with wraparound, fire-rate
-  gates, object recycling across arena edges and score/combo chains.
-- **Platformer:** jump intent recipes that compose `Timers.jumpGate`, drop-through
-  intent and reusable patrol/turn-at-edge logic. Collision resolution remains in
-  `Tiles`; gravity and jump tuning remain game policy.
-- **Loot / RPG:** weighted selection, without-replacement bags, bounded stat
-  modifiers and cooldown/charge recipes.
-- **Strategy / simulation:** fixed-rate accumulators, spatial bucket iteration
-  and deterministic seeded selection once a seeded RNG primitive exists.
-- **Camera / presentation:** trauma-style shake accumulation, hit-stop gates and
-  reusable world-to-HUD indicators, composed from `Camera`, `Timers` and `UI`.
+- **Deterministic randomness** (`random`): `seedRng` (replayable/seeded runs),
+  `shuffleBag` (without-replacement draws).
+- **Motion** (`motion`): `patrol`, `trail`.
+- **Scoring** (`scoring`): `combo` (decaying hit-streak multiplier).
+- **Pacing** (`pacing`): `checkpointRoute`, `charges` (refilling ability / dash /
+  ammo meter).
+- **Feedback** (`flash`): `flash`, a "took damage" white-blink latch (pairs with
+  `Sprites.tint` for silhouettes).
+- **History** (`history`): `undoStack`.
+- **Vehicles** (`vehicle`, `skidmarks`): `car` (arcade handling over an injected
+  `DrivableBody` — works with a kinematic body or a `Physics2D` one),
+  `carPresets`, `skidmarks`.
 
-**Admission rules:** a recipe should be recognizable to game developers, useful
-across more than one game, significantly easier to get subtly wrong than its API
-suggests, and small enough to explain with one example. It does not need to fit a
-single genre or wait for repeated local implementations before being added.
-Low-level scalar math stays in `Mathf`; geometric tests stay in `Collision`;
-rendering stays in `Sprites`; scheduling stays in `Timers`/`Clock`. `Goodies`
-composes those pieces into common game behavior.
+**Admission rules.** A lego should be:
 
-Every shipped recipe needs deterministic unit tests and at least one sample that
-uses it. Recipe families should remain flat and discoverable initially; introduce
-nested namespaces only when name collisions or catalog size make them useful.
+1. **Recognizable** — a game developer reads the name and knows what it does.
+2. **Reusable beyond one game** — but it does **not** need two existing samples,
+   a demonstrated local reimplementation, or a genre-neutral framing. Being the
+   canonical solution to a real, recurring game problem is enough.
+3. **Easier to get subtly wrong than its signature suggests** — this is the main
+   reason a lego earns its place. Wrapped-angle deltas, without-replacement bags,
+   coyote-time latches, autotile masks: all trivial-looking, all commonly wrong.
+4. **Explainable with one example** — if the doc comment needs a tutorial, it is
+   a system, not a lego.
+5. **Free of policy and presentation** — a lego computes or tracks; it never
+   decides art direction, tuning values, or draws itself.
+
+Layering stays fixed: scalar math in `Mathf`, geometric tests in `Collision`,
+rendering in `Draw`/`Sprites`, scheduling in `Timers`/`Clock`. The catalog
+_composes_ those into common game behavior.
+
+Every shipped lego needs deterministic unit tests (inject `rng` and clocks; never
+call `Math.random()` or `performance.now()` directly in a recipe) and at least
+one sample that uses it.
+
+**Candidate legos — the growth backlog.** Not a commitment to all of them; a
+menu to pull from. Roughly ordered by how often they come up.
+
+- **Arcade / shooter:** `fireGate` (rate-limited firing with buffered intent),
+  `spawnWave` (timed/escalating wave scheduler), `bulletPattern` (radial / spiral
+  / fan emitters as pure angle generators), `screenWrapBody` (wrap + ghost-draw
+  offsets for toroidal arenas), `homing` (steering toward a target with a turn
+  cap), `orbit`.
+- **Grid / roguelike / puzzle:** `astar` (the obvious gap next to `distanceField`),
+  `fieldOfView` (shadowcasting, beyond point-to-point `lineOfSight`),
+  `matchThree` (find + collapse groups), `mazeGen` (recursive backtracker),
+  `roomsAndCorridors` (dungeon layout), `gridKey`/`gridFromKey` (`Map` keying
+  without string churn), `rotateGrid` / `mirrorGrid` (piece transforms).
+- **Cards / board / tabletop:** `deck` (shuffle, draw, discard, reshuffle — a
+  Gizmo), `dealHand`, `turnOrder` (round-robin with skips/reversals),
+  `stackRules` (solitaire-style legality predicates).
+- **Platformer / character:** `dropThrough` intent, `turnAtEdge` (patrol that
+  reads a `SolidSource`), `ledgeGrab` probe, `conveyor` / `movingPlatform`
+  carry-velocity helper. Collision resolution stays in `Collision`; gravity and
+  jump tuning stay game policy.
+- **RPG / progression:** `xpCurve` (level from total XP and back),
+  `statModifiers` (additive/multiplicative stacking with caps), `lootTable`
+  (nested weighted tables with rarity tiers), `craftRecipe` (can-afford / consume
+  against an inventory), `statusEffects` (a Gizmo: durations, stacking, ticks).
+- **Strategy / simulation:** `resourceMeter` (rate accumulation with caps and
+  overflow), `productionQueue`, `spatialHash` (bucketed neighbor queries — also
+  wanted by `Collision`, see REVIEW_PLAN P1.5), `influenceMap`, `flowField`.
+- **Rhythm / timing:** `beatGrid` (quantize input to a tempo), `judgeWindow`
+  (perfect/great/good windows around a beat), `metronome`.
+- **Camera / juice:** `trauma` (squared-trauma shake accumulation, the standard
+  improvement on linear `shake`), `hitStop` (a Gizmo wrapping `Clock.hold`),
+  `screenFlash`, `offscreenIndicator` (clamp a world point to a screen-edge arrow
+  with rotation).
+- **Presentation-adjacent:** `typewriter` (progressive text reveal — a Gizmo),
+  `countUp` (score odometer), `queueToasts`.
+- **General:** `debounce` / `throttle` in step time, `ringBuffer`,
+  `weightedShuffle`, `pickWithout` (exclude the last N picks — the "don't repeat
+  the same taunt" fix).
+
+Where a candidate is naturally stateful it belongs in `Gizmos`; the pure
+computation half, where separable, belongs in `Goodies`. `deck` is the model
+case: `Goodies.shuffle` is the pure recipe, `Gizmos.deck` is the gadget built on
+it.
 
 ## L3 — Structure (the engine core) ✅
 
@@ -393,9 +458,17 @@ a sample migration; no phase is accepted merely because an API exists.
 
 ### Extraction rules
 
-1. **Generalize only demonstrated pain.** A helper must solve the same class of
-   problem in Pixel Adventure and at least one other sample (normally `tiles`,
-   `platformer` or `assetquest`).
+**Scope:** these rules govern **engine infrastructure** — collision solvers,
+viewport/camera transforms, asset and audio loading, render caches. They are
+deliberately conservative because infrastructure is load-bearing and hard to
+retract. They do **not** apply to the `Goodies`/`Gizmos` lego catalog, which has
+its own, broader admission rules (see L2 above): a lego is judged on whether it
+is a recognizable, reusable, easy-to-get-wrong piece of game knowledge — not on
+whether two samples already implement it.
+
+1. **Generalize only demonstrated pain.** An infrastructure helper must solve the
+   same class of problem in Pixel Adventure and at least one other sample
+   (normally `tiles`, `platformer` or `assetquest`).
 2. **Keep policy explicit.** Full-solid collision is the default. One-way
    platforms, slopes and special tiles are opt-in policies, never inferred from
    level shape.
