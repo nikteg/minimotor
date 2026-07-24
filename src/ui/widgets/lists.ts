@@ -3,7 +3,9 @@ import { clamp } from "../../mathf.js";
 import {
   Fillable,
   buttonState,
+  claimWheel,
   clearPointerEdges,
+  clearWheelClaim,
   consumeKeyboardActivation,
   drawFocusRing,
   fillRect,
@@ -76,6 +78,14 @@ function ensureListHooks(): void {
   if (listHooksWired) return;
   listHooksWired = true;
   onFrameEnd(clearPointerEdges);
+  onFrameEnd(clearWheelClaim);
+}
+
+/** Cancel any in-progress body-drag — a scrollbar calls this when it grabs its
+ *  thumb, so click-dragging a scrollbar that sits inside a larger scroll region
+ *  doesn't ALSO swipe that region. */
+function cancelBodyDrag(): void {
+  bodyScroll = null;
 }
 
 /** Swipe / body-drag scrolling for any scroll region — the shared engine behind
@@ -135,8 +145,21 @@ export function list(
   let offset = clamp(opts.offset, 0, max);
 
   // Swipe to scroll: drag anywhere in the content area (the scrollbar gutter is
-  // excluded — that's the thumb's job) to pan the list.
+  // excluded — that's the thumb's job) to pan the list. Wheel is claimed
+  // outer-first so it chains through nested regions.
   offset = dragScroll(opts.id ?? `list:${x}:${y}`, { x, y, w: listW, h }, "y", offset, max);
+  const wp = uiPointer();
+  offset = clamp(
+    offset +
+      claimWheel(
+        pointInRect(wp.x, wp.y, { x, y, w, h }),
+        wp.wheel,
+        offset <= 0.5,
+        offset >= max - 0.5,
+      ),
+    0,
+    max,
+  );
 
   // Keyboard navigation: register ALL rows as focusables (so Tab reaches every
   // row, not just the visible window), then scroll so the focused one is in
@@ -176,7 +199,6 @@ export function list(
       view: h,
       content,
       offset,
-      wheelArea: { x, y, w, h },
       id: opts.id ? `${opts.id}:sb` : undefined,
     });
   }
@@ -321,6 +343,7 @@ export function scrollbar(
   maybeOpts?: ScrollbarOptions,
 ): number {
   const [ctx, opts] = withCtx(ctxOrOpts, maybeOpts);
+  ensureListHooks(); // a standalone scrollbar still needs the per-frame wheel-claim reset
   const max = Math.max(0, opts.content - opts.view);
   let offset = clamp(opts.offset, 0, max);
   if (max <= 0) return 0; // everything fits — draw nothing
@@ -356,6 +379,7 @@ export function scrollbar(
   if (!p.down) scrollDrag = null;
   if (p.pressed && overThumb && !scrollDrag) {
     scrollDrag = { id, grab: pAlong - along };
+    cancelBodyDrag(); // grabbing the thumb must not also swipe a surrounding region
   } else if (p.released && overTrack && !overThumb && scrollDrag?.id !== id) {
     // Track click: page toward the click.
     offset += pAlong < along ? -opts.view : opts.view;
@@ -363,8 +387,13 @@ export function scrollbar(
   if (scrollDrag?.id === id && range > 0) {
     offset = ((pAlong - scrollDrag.grab - alongStart) / range) * max;
   }
-  if (opts.wheelArea && pointInRect(p.x, p.y, opts.wheelArea)) {
-    offset += p.wheel;
+  if (opts.wheelArea) {
+    offset += claimWheel(
+      pointInRect(p.x, p.y, opts.wheelArea),
+      p.wheel,
+      offset <= 0.5,
+      offset >= max - 0.5,
+    );
   }
 
   offset = clamp(offset, 0, max);

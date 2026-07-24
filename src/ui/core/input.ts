@@ -31,6 +31,32 @@ export function clearPointerEdges(): void {
   edgesSuppressed = false;
 }
 
+// Wheel claiming for nested scroll regions. Scroll regions process the wheel
+// OUTER-first (a container claims before its children draw), and the first one
+// under the pointer that can still move in the wheel's direction takes the whole
+// delta; nested regions then see 0. A region pinned against the wheel's
+// direction doesn't claim, so the wheel CHAINS inward once the outer hits its
+// edge. Reset every frame-end (see `lists`). Kept separate from the drag gesture
+// so swipe-scroll is unaffected.
+let wheelTaken = false;
+
+/** Clear the per-frame wheel claim — called from a frame-end hook. */
+export function clearWheelClaim(): void {
+  wheelTaken = false;
+}
+
+/** Claim this frame's wheel for a scroll region. `over` = the pointer is inside
+ *  it; `atMin`/`atMax` = already pinned at the scroll extremes. Returns the delta
+ *  to apply — 0 when another (outer) region already took it, the pointer is
+ *  elsewhere, or this region can't move in the wheel's direction (so the wheel
+ *  chains onward to a nested region). */
+export function claimWheel(over: boolean, wheel: number, atMin: boolean, atMax: boolean): number {
+  if (wheelTaken || !over || wheel === 0) return 0;
+  if ((wheel < 0 && atMin) || (wheel > 0 && atMax)) return 0;
+  wheelTaken = true;
+  return wheel;
+}
+
 /** The pointer, raw — overlays themselves read this (their close logic must
  *  see clicks even while they block everyone else). */
 export function rawPointer() {

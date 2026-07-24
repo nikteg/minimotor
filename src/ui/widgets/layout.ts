@@ -5,6 +5,7 @@ import {
   LayoutOptions,
   autoContainer,
   cachedContentSize,
+  claimWheel,
   containerKey,
   containerRect,
   currentLayout,
@@ -110,14 +111,21 @@ function scrollable<R>(
   const sbId = `${key ?? `scroll@${rect.x}:${rect.y}`}:sb`;
   let offset = clamp(scrollOffsets.get(sbId) ?? 0, 0, max);
 
-  // Swipe / body-drag: drag the body to scroll it (touch-native), alongside the
-  // wheel + thumb. This runs BEFORE the children draw, so on nested scroll
-  // regions the outer one claims the gesture — a page swipe scrolls the page.
+  // Swipe / body-drag + wheel: both run BEFORE the children draw, so on nested
+  // scroll regions this OUTER one claims first — a page swipe/wheel scrolls the
+  // page, and the wheel only chains inward once this region is at its edge.
   offset = dragScroll(
     sbId,
     { x: bodyRect.x, y: bodyRect.y, w: innerW, h: innerH },
     horiz ? "x" : "y",
     offset,
+    max,
+  );
+  const wp = uiPointer();
+  offset = clamp(
+    offset +
+      claimWheel(pointInRect(wp.x, wp.y, bodyRect), wp.wheel, offset <= 0.5, offset >= max - 0.5),
+    0,
     max,
   );
 
@@ -161,7 +169,6 @@ function scrollable<R>(
       view: viewMain,
       content: contentVal,
       offset,
-      wheelArea: bodyRect,
       id: sbId,
       opacity: alpha,
     });
