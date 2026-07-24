@@ -1,9 +1,11 @@
 import { pointInRect } from "../../collision.js";
 import { clamp } from "../../mathf.js";
 import {
+  Fillable,
   buttonState,
   consumeKeyboardActivation,
   drawFocusRing,
+  fillRect,
   focusFromPointer,
   focusedId,
   hoverCursor,
@@ -22,15 +24,19 @@ import { clip } from "./layout.js";
  *  the boilerplate every leaderboard / inventory / chat log re-derives (and the
  *  off-by-one in `first`/`last` is a classic bug). The callback draws one row
  *  into its rect; pass your scroll `offset` in and store the returned value. */
-export interface ListOptions {
-  /** Left edge in px. */
-  x: number;
-  /** Top edge in px. */
-  y: number;
-  /** Width in px (includes the scrollbar gutter when one is shown). */
-  w: number;
-  /** Visible height in px; rows outside it are windowed out. */
-  h: number;
+export interface ListOptions extends Fillable {
+  /** Left edge in px. Omit (with `y`) to AUTO-FLOW: the list fills the current
+   *  `row`/`col`/`panel` (or `at` flow), leaving `reserve` px for later
+   *  siblings. Given explicitly, `w` includes the scrollbar gutter. */
+  x?: number;
+  /** Top edge in px (see `x`). */
+  y?: number;
+  /** Width in px (includes the scrollbar gutter when one is shown). Ignored
+   *  when auto-flowing (the container's cross axis sets it). */
+  w?: number;
+  /** Visible height in px; rows outside it are windowed out. Ignored when
+   *  auto-flowing. */
+  h?: number;
   /** Row height in px. */
   rowH: number;
   /** Total number of rows. */
@@ -58,13 +64,16 @@ export function list(
   opts: ListOptions,
   row: (index: number, rect: { x: number; y: number; w: number; h: number }) => void,
 ): number {
+  // Explicit x/y place it by hand; otherwise auto-flow — fill the ambient (or
+  // `at`) layout, leaving `reserve` px for siblings drawn after the list.
+  const { x, y, w, h } = fillRect(opts);
   const gap = opts.gap ?? 0;
   const step = opts.rowH + gap;
   const content = opts.count * step - (opts.count > 0 ? gap : 0);
-  const needsBar = content > opts.h;
+  const needsBar = content > h;
   const scrollW = needsBar ? (opts.scrollW ?? 10) : 0;
-  const listW = opts.w - (scrollW ? scrollW + 4 : 0);
-  const max = Math.max(0, content - opts.h);
+  const listW = w - (scrollW ? scrollW + 4 : 0);
+  const max = Math.max(0, content - h);
   let offset = clamp(opts.offset, 0, max);
 
   // Keyboard navigation: register ALL rows as focusables (so Tab reaches every
@@ -83,29 +92,29 @@ export function list(
     if (focusedIndex >= 0) {
       const top = focusedIndex * step;
       if (top < offset) offset = top;
-      else if (top + opts.rowH > offset + opts.h) offset = top + opts.rowH - opts.h;
+      else if (top + opts.rowH > offset + h) offset = top + opts.rowH - h;
       offset = clamp(offset, 0, max);
     }
   }
 
-  clip({ x: opts.x, y: opts.y, w: listW, h: opts.h }, () => {
+  clip({ x, y, w: listW, h }, () => {
     const first = Math.max(0, Math.floor(offset / step));
-    const last = Math.min(opts.count, Math.ceil((offset + opts.h) / step));
+    const last = Math.min(opts.count, Math.ceil((offset + h) / step));
     for (let i = first; i < last; i++) {
-      row(i, { x: opts.x, y: opts.y + i * step - offset, w: listW, h: opts.rowH });
+      row(i, { x, y: y + i * step - offset, w: listW, h: opts.rowH });
     }
   });
 
   if (scrollW) {
     offset = scrollbar({
-      x: opts.x + opts.w - scrollW,
-      y: opts.y,
+      x: x + w - scrollW,
+      y,
       w: scrollW,
-      h: opts.h,
-      view: opts.h,
+      h,
+      view: h,
       content,
       offset,
-      wheelArea: { x: opts.x, y: opts.y, w: opts.w, h: opts.h },
+      wheelArea: { x, y, w, h },
       id: opts.id ? `${opts.id}:sb` : undefined,
     });
   }

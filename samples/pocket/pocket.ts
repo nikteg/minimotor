@@ -325,7 +325,15 @@ Loop.run({
       color: "#fff",
     });
     UI.text("HYPER", { x: W - 65, y: H - 17, size: 8, color: "dim" });
-    UI.bar(W - 37, H - 14, 30, 6, hyper.fraction, { fill: "#b197fc", bg: "#1b2740" });
+    UI.bar({
+      x: W - 37,
+      y: H - 14,
+      w: 30,
+      h: 6,
+      value: hyper.fraction,
+      fill: "#b197fc",
+      bg: "#1b2740",
+    });
     if (state === "title" || state === "gameover") {
       Draw.rect(0, 0, W, H, "rgba(3,5,12,.75)");
       UI.text(state === "title" ? "POCKET ASTEROIDS" : "SHIP LOST", {

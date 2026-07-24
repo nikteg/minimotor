@@ -109,7 +109,12 @@ export function createRoadHud(getState: () => HudState) {
         bold: true,
         color: player.health > 30 ? "#8ff4dd" : "#ff796f",
       });
-      UI.bar(x + 72, y + 7, w - 82, 11, player.health / 100, {
+      UI.bar({
+        x: x + 72,
+        y: y + 7,
+        w: w - 82,
+        h: 11,
+        value: player.health / 100,
         bg: "#182326",
         fill: player.health > 55 ? "#62dea3" : player.health > 25 ? "#ffc85c" : "#ff665f",
       });
@@ -131,7 +136,12 @@ export function createRoadHud(getState: () => HudState) {
         bold: true,
         color: car.health > 30 ? "#8ff4dd" : "#ff796f",
       });
-      UI.bar(x + 102, y + 7, w - 112, 11, car.health / 100, {
+      UI.bar({
+        x: x + 102,
+        y: y + 7,
+        w: w - 112,
+        h: 11,
+        value: car.health / 100,
         bg: "#182326",
         fill: car.health > 55 ? "#52d7b8" : car.health > 25 ? "#ffc85c" : "#ff665f",
       });

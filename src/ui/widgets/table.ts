@@ -1,5 +1,5 @@
 import { listItem } from "./lists.js";
-import { Flow, currentLayout, text, uiCtx } from "../core/index.js";
+import { Fillable, fillRect, text, uiCtx } from "../core/index.js";
 import { list } from "./lists.js";
 
 // ---------- Table ----------
@@ -35,9 +35,10 @@ export interface TableSort {
 
 /** Inputs to `table`: geometry, `columns`, `rows`, and the controlled
  *  sort/scroll/selection state. */
-export interface TableOptions<Row> {
+export interface TableOptions<Row> extends Fillable {
   /** Left edge in px. Omit (with `y`) to AUTO-FLOW: the table fills the current
-   *  `row`/`col`/`group` (or `at` flow) instead of being placed by hand. */
+   *  `row`/`col`/`panel` (or `at` flow), leaving `reserve` px for later siblings
+   *  (a footer). Given explicitly, `w` includes the scrollbar gutter. */
   x?: number;
   /** Top edge in px (see `x`). */
   y?: number;
@@ -46,12 +47,6 @@ export interface TableOptions<Row> {
   w?: number;
   /** Total height in px, header strip included. Ignored when auto-flowing. */
   h?: number;
-  /** Place in this layout flow instead of the ambient one (auto-flow). */
-  at?: Flow;
-  /** When auto-flowing, px to leave for siblings drawn AFTER the table (e.g. a
-   *  footer row) — the table fills the remaining main axis minus this. Default 0
-   *  (fill all remaining). */
-  reserve?: number;
   /** Column definitions, left to right. */
   columns: TableColumn<Row>[];
   /** The data rows; left untouched — the table sorts a copy. */
@@ -106,12 +101,9 @@ export interface TableResult<Row> {
  *    }); */
 export function table<Row>(opts: TableOptions<Row>): TableResult<Row> {
   const ctx = uiCtx();
-  // Resolve the rect: explicit x/y wins; otherwise auto-flow — fill the ambient
-  // (or `at`) layout, leaving `reserve` px for siblings drawn after the table.
-  const layout = opts.at ?? (opts.x === undefined ? currentLayout() : null);
-  const rect = layout
-    ? layout.fill(opts.reserve ?? 0)
-    : { x: opts.x ?? 0, y: opts.y ?? 0, w: opts.w ?? 0, h: opts.h ?? 0 };
+  // Explicit x/y place it by hand; otherwise auto-flow — fill the ambient (or
+  // `at`) layout, leaving `reserve` px for siblings drawn after the table.
+  const rect = fillRect(opts);
   const headerH = opts.headerH ?? 24;
   const gap = opts.gap ?? 0;
   const rowH = opts.rowH;

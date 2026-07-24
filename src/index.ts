@@ -346,7 +346,7 @@ export {
 };
 export { UI };
 export type {
-  BarStyle,
+  BarOptions,
   ButtonOptions,
   ButtonStyle,
   ButtonVariant,
@@ -358,8 +358,10 @@ export type {
   DropResult,
   DropTargetOptions,
   DropTargetState,
+  Fillable,
   FloatTextManager,
   FloatTextOptions,
+  Flowable,
   GridOptions,
   IdPart,
   LayoutChildren,

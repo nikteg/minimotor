@@ -583,7 +583,12 @@ Loop.run({
           });
         },
       );
-      UI.bar(GAME_W / 2 - 78, GAME_H / 2 + 8, 156, 8, loadFrac, {
+      UI.bar({
+        x: GAME_W / 2 - 78,
+        y: GAME_H / 2 + 8,
+        w: 156,
+        h: 8,
+        value: loadFrac,
         fill: "#ffe066",
         bg: "#263653",
       });

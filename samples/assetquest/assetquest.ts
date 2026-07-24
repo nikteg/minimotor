@@ -210,7 +210,12 @@ Loop.run({
           border: "#38557e",
         },
         () => {
-          UI.bar(vp.w / 2 - 150, vp.h / 2 + 15, 300, 12, progress, {
+          UI.bar({
+            x: vp.w / 2 - 150,
+            y: vp.h / 2 + 15,
+            w: 300,
+            h: 12,
+            value: progress,
             fill: "#4ecdc4",
             bg: "#263653",
           });

@@ -217,7 +217,7 @@ Loop.run({
             UI.setTheme(altTheme ? AMBER : {});
           }
           // Busy arc while the mock request is in flight, left of the buttons.
-          if (refreshing) UI.spinner(bar.extent.x - 18, controls.y + 15);
+          if (refreshing) UI.spinner({ x: bar.extent.x - 18, y: controls.y + 15 });
         });
 
         // ---- the server table: sortable headers over a windowed, selectable row

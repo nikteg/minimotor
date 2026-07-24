@@ -176,7 +176,7 @@ Loop.run({
         color: "#fff",
       });
       UI.text("GARDEN", { x: 14, y: 31, size: 16, bold: true, color: "#ff6b6b" });
-      UI.bar(88, 41, 95, 8, hud.health / 5, { fill: "#ff6b6b", bg: "#3b2034" });
+      UI.bar({ x: 88, y: 41, w: 95, h: 8, value: hud.health / 5, fill: "#ff6b6b", bg: "#3b2034" });
     });
     UI.drawFloatText();
     UI.text("CLICK THE GLOWING BUDS · SPACE / click after game over to replay", {

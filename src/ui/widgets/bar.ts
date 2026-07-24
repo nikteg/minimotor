@@ -1,57 +1,40 @@
 // ---------- bar ----------
-import { drawBox, roundRectPath, theme, uiCtx } from "../core/index.js";
+import { Flowable, drawBox, place, roundRectPath, theme, uiCtx } from "../core/index.js";
 import { clamp } from "../../mathf.js";
 
-/** Style knobs for `bar()`. */
-export interface BarStyle {
-  /** Track color behind the fill. */
+/** A horizontal meter (health, progress, charge): a track with `value` (0..1,
+ *  clamped) of it filled from the left. Give an explicit rect, or omit `x`/`y`
+ *  to AUTO-FLOW into the current `row`/`col`/`panel` — it fills the cross axis
+ *  (a col's width) at a default 12px thickness. */
+export interface BarOptions extends Flowable {
+  /** Fill fraction, 0..1 (clamped). */
+  value: number;
+  /** Track color behind the fill. Default a faint white tint. */
   bg?: string;
-  /** Fill color. */
+  /** Fill color. Default `theme.accent`. */
   fill?: string;
 }
 
-/** A horizontal meter (health, progress, charge): a track with `frac` (0..1,
- *  clamped) of it filled from the left. */
-export function bar(
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  frac: number,
-  style?: BarStyle,
-): void;
-export function bar(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  frac: number,
-  style?: BarStyle,
-): void;
-export function bar(
-  ctxOrX: CanvasRenderingContext2D | number,
-  xOrY: number,
-  yOrW: number,
-  wOrH: number,
-  hOrFrac: number,
-  fracOrStyle?: number | BarStyle,
-  maybeStyle?: BarStyle,
-): void {
-  const [ctx, x, y, w, h, frac, style] =
-    typeof ctxOrX === "number"
-      ? [uiCtx(), ctxOrX, xOrY, yOrW, wOrH, hOrFrac, (fracOrStyle as BarStyle) ?? {}]
-      : [ctxOrX, xOrY, yOrW, wOrH, hOrFrac, fracOrStyle as number, maybeStyle ?? {}];
-  const f = clamp(frac, 0, 1);
+/** Default bar thickness (px) when the height isn't given. */
+const BAR_H = 12;
+
+/** Draw a horizontal meter per `BarOptions`:
+ *
+ *    UI.bar({ x, y, w: 120, h: 8, value: hp / maxHp, fill: "#ff6b6b" });
+ *    UI.bar({ value: loadFrac });   // auto-flows into the current col */
+export function bar(opts: BarOptions): void {
+  const ctx = uiCtx();
+  const { x, y, w, h } = place({ ...opts, h: opts.h ?? BAR_H }, 120, BAR_H);
+  const f = clamp(opts.value, 0, 1);
   const r = Math.min(theme.radius, h / 2);
   ctx.save();
-  drawBox(ctx, x, y, w, h, { fill: style.bg ?? "rgba(255,255,255,0.15)", radius: r });
+  drawBox(ctx, x, y, w, h, { fill: opts.bg ?? "rgba(255,255,255,0.15)", radius: r });
   if (f > 0) {
     // Clip the fill to the rounded track so the corners stay round even at a
     // partial fill.
     roundRectPath(ctx, x, y, w, h, r);
     ctx.clip();
-    ctx.fillStyle = style.fill ?? theme.accent;
+    ctx.fillStyle = opts.fill ?? theme.accent;
     ctx.fillRect(x, y, w * f, h);
   }
   ctx.restore();

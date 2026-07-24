@@ -178,11 +178,50 @@ export function currentLayout(): Flow | null {
   return layoutStack.length > 0 ? layoutStack[layoutStack.length - 1] : null;
 }
 
+/** Geometry for a widget that AUTO-FLOWS. It either takes an explicit rect
+ *  (`x`/`y`, `w`/`h`) OR — with `x`/`y` omitted — places itself into the current
+ *  `row`/`col`/`panel` (or an explicit `at` flow). Widgets with an intrinsic
+ *  size (button, bar, spinner) reserve a fixed main-axis slot and fill the cross
+ *  axis via `place`; region widgets that consume the REMAINING space (table,
+ *  list) extend `Fillable` instead. */
+export interface Flowable {
+  /** Left edge in px. Omit (with `y`) to flow into the current layout. */
+  x?: number;
+  /** Top edge in px (see `x`). */
+  y?: number;
+  /** Width in px. While flowing it pins the size the slot would otherwise give
+   *  (a row's slot width, a col's fill width). */
+  w?: number;
+  /** Height in px (see `w`). */
+  h?: number;
+  /** Flow into THIS cursor instead of the ambient layout. */
+  at?: Flow;
+}
+
+/** A `Flowable` region that fills the REMAINING main-axis space of its layout
+ *  — a scrollable table/list — rather than reserving a fixed slot. `w`/`h` are
+ *  ignored while flowing (the container sets them). */
+export interface Fillable extends Flowable {
+  /** While flowing, px to leave for siblings drawn AFTER this widget (e.g. a
+   *  footer row): the widget fills the remaining main axis minus this. Default
+   *  0 (fill all remaining). */
+  reserve?: number;
+}
+
+/** Resolve a `Fillable`'s rect: an explicit `x`/`y` wins; otherwise fill the
+ *  ambient (or `at`) layout, leaving `reserve` px for later siblings. */
+export function fillRect(opts: Fillable): { x: number; y: number; w: number; h: number } {
+  const layout = opts.at ?? (opts.x === undefined ? currentLayout() : null);
+  return layout
+    ? layout.fill(opts.reserve ?? 0)
+    : { x: opts.x ?? 0, y: opts.y ?? 0, w: opts.w ?? 0, h: opts.h ?? 0 };
+}
+
 /** Resolve a widget's rect: an explicit `at` flow, else the ambient layout
  *  (unless the caller pinned x/y), else absolute coordinates. `autoW` is the
  *  widget's natural main-axis size (e.g. a button's label width). */
 export function place(
-  opts: { x?: number; y?: number; w?: number; h?: number; at?: Flow },
+  opts: Flowable,
   autoW: number,
   defaultH: number,
 ): { x: number; y: number; w: number; h: number } {

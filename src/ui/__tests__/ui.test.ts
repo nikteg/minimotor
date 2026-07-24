@@ -109,16 +109,19 @@ describe("UI buttonState", () => {
 describe("UI bar", () => {
   it("draws the track (box) plus a clamped fill", () => {
     const { ctx, calls } = mockCtx();
-    bar(ctx, 10, 20, 100, 8, 0.5);
+    begin(ctx);
+    bar({ x: 10, y: 20, w: 100, h: 8, value: 0.5 });
     expect(calls.boxes).toEqual([[10, 20, 100, 8]]); // track, via drawBox
     expect(calls.fillRect).toEqual([[10, 20, 50, 8]]); // half fill
 
     const over = mockCtx();
-    bar(over.ctx, 0, 0, 100, 8, 1.7); // clamped to full
+    begin(over.ctx);
+    bar({ x: 0, y: 0, w: 100, h: 8, value: 1.7 }); // clamped to full
     expect(over.calls.fillRect[0]).toEqual([0, 0, 100, 8]);
 
     const empty = mockCtx();
-    bar(empty.ctx, 0, 0, 100, 8, -2); // clamped to none — track only, no fill
+    begin(empty.ctx);
+    bar({ x: 0, y: 0, w: 100, h: 8, value: -2 }); // clamped to none — track only, no fill
     expect(empty.calls.boxes).toEqual([[0, 0, 100, 8]]);
     expect(empty.calls.fillRect).toEqual([]);
   });
@@ -167,7 +170,7 @@ describe("UI implicit context", () => {
     begin(ctx);
 
     expect(textWidth("abcd")).toBe(40);
-    bar(0, 0, 100, 8, 0.5); // ctx-less form draws to the begun ctx
+    bar({ x: 0, y: 0, w: 100, h: 8, value: 0.5 }); // draws to the begun ctx
     expect(calls.boxes.length).toBe(1); // track box
     expect(calls.fillRect.length).toBe(1); // fill
     _reset();

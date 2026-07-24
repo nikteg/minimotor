@@ -377,12 +377,12 @@ Loop.run({
               // bar() is a raw draw call — reserve a slot from the layout for geometry.
               UI.row({ h: 16 }, (st) => {
                 const r = st.next(220, 12);
-                UI.bar(r.x, r.y, 220, 12, progress);
+                UI.bar({ x: r.x, y: r.y, w: 220, h: 12, value: progress });
               });
               busy = UI.toggle({ id: uiId("tg-busy"), label: "Working…", on: busy });
               UI.row({ h: 24 }, (st) => {
                 const r = st.next(20, 20);
-                if (busy) UI.spinner(r.x + 10, r.y + 10);
+                if (busy) UI.spinner({ x: r.x + 10, y: r.y + 10 });
               });
             });
 

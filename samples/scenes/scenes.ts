@@ -115,7 +115,7 @@ const scenes = Scenes.create({
       // HUD — the bar drains with the clock.
       UI.text(`Score: ${scores.score}`, { x: 12, y: 8, size: 16, color: "#fff" });
       UI.text(`Time: ${Math.ceil(timeLeft / 60)}s`, { x: 12, y: 30, size: 16, color: "#fff" });
-      UI.bar(12, 54, 140, 8, timeLeft / (15 * 60), { fill: "#ffd43b" });
+      UI.bar({ x: 12, y: 54, w: 140, h: 8, value: timeLeft / (15 * 60), fill: "#ffd43b" });
       UI.text("P to pause", { x: 12, y: view.h - 28, size: 16, color: "#fff" });
 
       UI.drawFloatText(); // score pops, on top of everything

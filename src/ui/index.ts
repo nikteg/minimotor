@@ -38,6 +38,8 @@ export {
   _reset,
 } from "./core/index.js";
 export type {
+  Fillable,
+  Flowable,
   IdPart,
   LayoutChildren,
   LayoutOptions,
