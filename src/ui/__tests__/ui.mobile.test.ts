@@ -3,7 +3,7 @@
 // closing overlays, mid-gesture chaining to an enclosing region, and the
 // native press listener that opens the mobile keyboard synchronously.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createGame, type Game } from "../../engine/index.js";
+import { createApp, type App } from "../../engine/index.js";
 import {
   _reset,
   begin,
@@ -61,7 +61,7 @@ function makeCtx(canvas: HTMLCanvasElement): CanvasRenderingContext2D & { _calls
   } as unknown as CanvasRenderingContext2D & { _calls: CtxCalls };
 }
 
-const games: Game[] = [];
+const games: App[] = [];
 
 beforeEach(() => {
   HTMLCanvasElement.prototype.getContext = function (type: string) {
@@ -89,11 +89,11 @@ afterEach(() => {
   HTMLCanvasElement.prototype.getContext = origGc;
 });
 
-function build(draw: (game: Game) => void): { game: Game; canvas: HTMLCanvasElement } {
+function build(draw: (game: App) => void): { game: App; canvas: HTMLCanvasElement } {
   const canvas = document.createElement("canvas");
   canvas.id = "game";
   document.body.appendChild(canvas);
-  const game = createGame({ canvas });
+  const game = createApp({ canvas });
   // jsdom reports a zero-sized rect, which maps every pointer event to (0,0) —
   // pretend the canvas fills the window so client coords pass through 1:1.
   vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({

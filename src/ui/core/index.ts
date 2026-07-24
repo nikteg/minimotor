@@ -5,8 +5,8 @@
 // widget tree, no layout engine. Floating texts and spinners age on the
 // fixed step (via Loop.onStep), so they pause with the loop like Clock/Tween.
 //
-// The canvas context is implicit: widgets draw to the default game's ctx —
-// no plumbing. Point them at another context (isolated games/offscreen work)
+// The canvas context is implicit: widgets draw to the default app's ctx —
+// no plumbing. Point them at another context (isolated apps/offscreen work)
 // with `UI.begin(ctx)` once per frame:
 //
 //   Minimotor.UI.floatText("+100", x, y, { color: "#ffd43b" }); // spawn (update)

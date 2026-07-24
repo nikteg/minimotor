@@ -6,7 +6,7 @@
 // frame. A SweptCache stamps each entry with the frame it was last touched and
 // drops entries that go unseen for STALE_FRAMES (the kernel bumps the tick and
 // sweeps from its per-runtime frame-end housekeeping — see lifecycle.ts).
-// Storage is per UI runtime, so two games' widgets can't collide on ids.
+// Storage is per UI runtime, so two apps' widgets can't collide on ids.
 
 import { runtimeSlot } from "./runtime.js";
 

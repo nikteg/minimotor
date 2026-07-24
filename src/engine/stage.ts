@@ -1,21 +1,21 @@
-import { getDefaultGame, requireDefault, setDefaultGame } from "./default-game.js";
+import { getDefaultApp, requireDefault, setDefaultApp } from "./default-app.js";
 import {
-  createGame,
+  createApp,
   type EnginePlugin,
-  type Game,
-  type GameCallbacks,
-  type GameOptions,
+  type App,
+  type AppCallbacks,
+  type AppOptions,
   STEP_MS,
   type Viewport,
-} from "./game.js";
+} from "./app.js";
 import { applyFullscreen, preventNavigation } from "../fullscreen.js";
 
-/** Everything `GameOptions` offers except the canvas (Stage.init's first
+/** Everything `AppOptions` offers except the canvas (Stage.init's first
  *  argument), plus document-level concerns that only make sense for the
- *  default game. */
-export type StageOptions = Omit<GameOptions, "canvas"> & {
+ *  default app. */
+export type StageOptions = Omit<AppOptions, "canvas"> & {
   /** Inject the fullscreen stylesheet (fill the window, no scrollbars,
-   *  safe-area handling) before building the game. */
+   *  safe-area handling) before building the app. */
   fullscreen?: boolean;
   /** Block accidental browser navigation (trackpad swipe-back, touch
    *  overscroll) so a stray gesture can't drop the game — see
@@ -37,21 +37,21 @@ export const Stage = {
    *
    *    const view = Stage.init("game", { background: "#111" }); */
   init(canvas: string | HTMLCanvasElement, opts: StageOptions = {}): Viewport {
-    // Re-init replaces the default game — tear the old one down first so its
+    // Re-init replaces the default app — tear the old one down first so its
     // rAF loop and window listeners don't leak.
-    getDefaultGame()?.destroy();
+    getDefaultApp()?.destroy();
     if (opts.fullscreen) applyFullscreen();
     if (opts.preventNavigation) preventNavigation(true);
-    const game = createGame({ canvas, ...opts });
-    setDefaultGame(game);
-    return game.viewport;
+    const app = createApp({ canvas, ...opts });
+    setDefaultApp(app);
+    return app.viewport;
   },
   /** Build an ISOLATED instance (its own loop, input and canvas) instead of the
    *  shared default that `init` sets up — for tests, or running several
    *  independent instances on one page. Read its state off the returned handle
    *  rather than the `Stage`/`Loop`/`Draw` facades. */
-  create(opts: GameOptions): Game {
-    return createGame(opts);
+  create(opts: AppOptions): App {
+    return createApp(opts);
   },
   /** The LIVE viewport — the same object `init` returned, mutated in place on
    *  resize. Read `viewport.w`/`viewport.h` (logical size), `dpr`, safe-area
@@ -73,13 +73,13 @@ export const Stage = {
   preventNavigation(prevent = true): void {
     preventNavigation(prevent);
   },
-  /** Re-apply the base (letterbox) transform — see `Game.resetTransform`.
+  /** Re-apply the base (letterbox) transform — see `App.resetTransform`.
    *  Screen-space widgets use this to escape a camera block. */
   resetTransform(): void {
     requireDefault().resetTransform();
   },
   /** Request a CSS cursor for THIS frame (`"pointer"`, `"grab"`, `"text"`,
-   *  `"none"`, …) — see `Game.setCursor`. Reset every frame, so hover cursors
+   *  `"none"`, …) — see `App.setCursor`. Reset every frame, so hover cursors
    *  clear themselves; call it each frame the state holds. Higher `priority`
    *  (default 0) wins when several are requested. The cursor is a canvas
    *  presentation concern, so it lives on `Stage` (which owns the canvas) — not
@@ -103,10 +103,10 @@ export const Stage = {
 export const Loop = {
   /** Start the loop with your `update` (fixed step) and `draw` (per frame)
    *  callbacks — the heart of every game. Pass a `Scenes` stack here too (it
-   *  IS a `GameCallbacks`). Idempotent: calling again swaps the callbacks.
+   *  IS an `AppCallbacks`). Idempotent: calling again swaps the callbacks.
    *
    *    Loop.run({ update() { … }, draw() { … } }); */
-  run(callbacks: GameCallbacks): void {
+  run(callbacks: AppCallbacks): void {
     requireDefault().run(callbacks);
   },
   /** Freeze `update` (simulation stops); `draw` keeps running so pause overlays
@@ -145,7 +145,7 @@ export const Loop = {
   get step(): number {
     return STEP_MS;
   },
-  /** Render interpolation factor 0..1 — see `Game.alpha`. */
+  /** Render interpolation factor 0..1 — see `App.alpha`. */
   get alpha(): number {
     return requireDefault().alpha;
   },

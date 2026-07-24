@@ -158,7 +158,7 @@ export function map<A extends string>(
     try {
       return gamepad();
     } catch {
-      return null; // no default game yet — keyboard-only until one exists
+      return null; // no default app yet — keyboard-only until one exists
     }
   };
 

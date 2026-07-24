@@ -2,7 +2,7 @@
 // The focusable-widget registry + tab order, :focus-visible tracking, the
 // keyboard (Tab / Enter / Arrows / Escape) and gamepad (d-pad / left-stick / A)
 // navigation that drive the SAME focus machine, and the focus ring. All state
-// is per UI runtime (two games on one page each get their own focus machine);
+// is per UI runtime (two apps on one page each get their own focus machine);
 // the single window-level keyboard listener routes each event to the runtime
 // whose canvas (or focused widget) it belongs to.
 import { gamepad, Buttons } from "../../input/gamepad.js";

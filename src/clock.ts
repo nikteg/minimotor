@@ -70,7 +70,7 @@ function ensureDriver(): void {
     Loop.onStep(fireAll);
     driverWired = true;
   } catch {
-    // No default game yet: steps aren't advancing, so nothing can come due.
+    // No default app yet: steps aren't advancing, so nothing can come due.
     // Wiring retries on the next timer registration.
   }
 }

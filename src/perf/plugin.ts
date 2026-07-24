@@ -29,7 +29,7 @@ function usedHeapMB(): number | undefined {
   return typeof used === "number" ? used / (1024 * 1024) : undefined;
 }
 
-/** Create a Perf HUD game plugin. Each call owns its own tracker state. Draws in
+/** Create a Perf HUD engine plugin. Each call owns its own tracker state. Draws in
  *  the top-right corner by default; pass a `NetMeter` to also show throughput.
  *  Click the HUD to dim it out of the way (and click again to restore):
  *
@@ -47,7 +47,7 @@ export function plugin(opts: PerfOptions = {}): EnginePlugin {
   let box: { x: number; y: number; w: number; h: number } | null = null;
   return {
     name: "perf",
-    afterDraw(game) {
+    afterDraw(app) {
       const now = performance.now();
       const stats = tick(now);
       const net = opts.net ? opts.net.sample(now) : undefined;
@@ -57,10 +57,10 @@ export function plugin(opts: PerfOptions = {}): EnginePlugin {
         downSpark?.push(net.downBps);
       }
       // Click the HUD (its rect from the previous frame) to toggle it dim.
-      const p = game.pointer;
+      const p = app.pointer;
       if (box && p.frameReleased && pointInRect(p.x, p.y, box)) dimmed = !dimmed;
-      const vp = game.viewport;
-      const ctx = game.ctx;
+      const vp = app.viewport;
+      const ctx = app.ctx;
       ctx.save();
       // Draw in WINDOW space (device px ÷ dpr), not the letterbox's logical
       // space — the perf overlay is a debug HUD, so it sits in the true window
@@ -68,10 +68,10 @@ export function plugin(opts: PerfOptions = {}): EnginePlugin {
       ctx.setTransform(vp.dpr, 0, 0, vp.dpr, 0, 0);
       if (dimmed) ctx.globalAlpha = 0.12;
       const winBox = drawPerfHud(ctx, stats, {
-        viewW: game.canvas.width / vp.dpr, // window CSS width
+        viewW: app.canvas.width / vp.dpr, // window CSS width
         anchor: opts.anchor ?? "top-right",
         net,
-        timings: game.timings,
+        timings: app.timings,
         entities: opts.world?.size,
         heapMB: usedHeapMB(),
         graphs,

@@ -1,14 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
-  createGame,
+  createApp,
   Stage,
   Loop,
   Keys,
   Pointer,
   Mouse,
   Draw,
-  type Game,
-  type GameCallbacks,
+  type App,
+  type AppCallbacks,
 } from "../index.js";
 
 // jsdom canvas support + a controllable requestAnimationFrame.
@@ -39,11 +39,11 @@ beforeEach(() => {
   );
 });
 
-function build(canvasId = "game"): { game: Game; canvas: HTMLCanvasElement } {
+function build(canvasId = "game"): { game: App; canvas: HTMLCanvasElement } {
   const canvas = document.createElement("canvas");
   canvas.id = canvasId;
   document.body.appendChild(canvas);
-  const game = createGame({ canvas: canvasId });
+  const game = createApp({ canvas: canvasId });
   return { game, canvas };
 }
 
@@ -54,7 +54,7 @@ function tick(time: number): void {
   cb?.(time);
 }
 
-describe("createGame", () => {
+describe("createApp", () => {
   it("resolves canvas by id and exposes a viewport", () => {
     const { game, canvas } = build();
     expect(game.canvas).toBe(canvas);
@@ -64,19 +64,19 @@ describe("createGame", () => {
 
   it("accepts a canvas element directly", () => {
     const canvas = document.createElement("canvas");
-    const game = createGame({ canvas });
+    const game = createApp({ canvas });
     expect(game.canvas).toBe(canvas);
   });
 
   it("throws for a missing canvas id", () => {
-    expect(() => createGame({ canvas: "nope" })).toThrow(/not found/);
+    expect(() => createApp({ canvas: "nope" })).toThrow(/not found/);
   });
 
   it("accepts plugins via options and registers late ones via game.use()", () => {
     const canvas = document.createElement("canvas");
     const early = vi.fn();
     const late = vi.fn();
-    const game = createGame({ canvas, plugins: [{ name: "early", onInit: early }] });
+    const game = createApp({ canvas, plugins: [{ name: "early", onInit: early }] });
     expect(early).toHaveBeenCalledTimes(1);
     game.use({ name: "late", onInit: late });
     expect(late).toHaveBeenCalledTimes(1);
@@ -84,8 +84,8 @@ describe("createGame", () => {
 });
 
 describe("run / loop", () => {
-  function withCallbacks(cb: Partial<GameCallbacks> = {}): {
-    game: Game;
+  function withCallbacks(cb: Partial<AppCallbacks> = {}): {
+    game: App;
     update: ReturnType<typeof vi.fn>;
     draw: ReturnType<typeof vi.fn>;
   } {
@@ -403,7 +403,7 @@ describe("input", () => {
 
   it("honors a custom preventKeys set", () => {
     const canvas = document.createElement("canvas");
-    const game = createGame({ canvas, preventKeys: ["KeyZ"] });
+    const game = createApp({ canvas, preventKeys: ["KeyZ"] });
     const ez = new KeyboardEvent("keydown", { code: "KeyZ", cancelable: true });
     window.dispatchEvent(ez);
     expect(ez.defaultPrevented).toBe(true);
@@ -427,7 +427,7 @@ describe("live viewport & background", () => {
 
   it("fills the configured background at the start of every frame", () => {
     const canvas = document.createElement("canvas");
-    const game = createGame({ canvas, background: "#123456" });
+    const game = createApp({ canvas, background: "#123456" });
     const ctx = game.ctx as unknown as { fillRect: ReturnType<typeof vi.fn>; fillStyle?: string };
     game.run({ update: vi.fn(), draw: vi.fn() });
     tick(16);
@@ -439,7 +439,7 @@ describe("live viewport & background", () => {
     Object.defineProperty(window, "innerWidth", { value: 800, configurable: true });
     Object.defineProperty(window, "innerHeight", { value: 600, configurable: true });
     const canvas = document.createElement("canvas");
-    const game = createGame({ canvas, resolution: { w: 200, h: 200 } });
+    const game = createApp({ canvas, resolution: { w: 200, h: 200 } });
     const vp = game.viewport;
     expect(vp.w).toBe(200); // logical size, not the window
     expect(vp.h).toBe(200);
@@ -453,7 +453,7 @@ describe("live viewport & background", () => {
     Object.defineProperty(window, "innerHeight", { value: 600, configurable: true });
     const canvas = document.createElement("canvas");
     canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 800, height: 600 }) as DOMRect;
-    const game = createGame({ canvas, resolution: { w: 200, h: 200 } });
+    const game = createApp({ canvas, resolution: { w: 200, h: 200 } });
     // Window center (400,300) → logical center (100,100).
     window.dispatchEvent(new PointerEvent("pointermove", { clientX: 400, clientY: 300 }));
     expect(game.pointer.x).toBeCloseTo(100);
@@ -489,7 +489,7 @@ describe("live viewport & background", () => {
       } as unknown as CanvasRenderingContext2D;
     };
     const canvas = document.createElement("canvas");
-    const game = createGame({ canvas, resolution: { w: 200, h: 200 } });
+    const game = createApp({ canvas, resolution: { w: 200, h: 200 } });
     game.run({ update: vi.fn(), draw: () => log.push("draw") });
     tick(16);
     // The draw runs inside clip(rect 0,0,200,200), then the clip is restored.
@@ -508,7 +508,7 @@ describe("plugins", () => {
     const canvas = document.createElement("canvas");
     const calls: string[] = [];
     const hook = (name: string) => () => calls.push(name);
-    const game = createGame({
+    const game = createApp({
       canvas,
       plugins: [
         {
@@ -539,7 +539,7 @@ describe("pauseOnPortrait", () => {
       vi.fn(() => ({ matches: true, addEventListener: vi.fn() })),
     );
     const canvas = document.createElement("canvas");
-    const game = createGame({ canvas, pauseOnPortrait: true });
+    const game = createApp({ canvas, pauseOnPortrait: true });
     expect(game.paused).toBe(true);
   });
 
@@ -549,7 +549,7 @@ describe("pauseOnPortrait", () => {
       vi.fn(() => ({ matches: false, addEventListener: vi.fn() })),
     );
     const canvas = document.createElement("canvas");
-    const game = createGame({ canvas, pauseOnPortrait: true });
+    const game = createApp({ canvas, pauseOnPortrait: true });
     expect(game.paused).toBe(false);
   });
 });
@@ -564,7 +564,7 @@ describe("global facade (Stage / Loop / Keys / Pointer / Draw)", () => {
     expect(() => Draw.ctx).toThrow(/Stage\.init/);
   });
 
-  it("Stage.init builds the default game and the namespaces delegate to it", () => {
+  it("Stage.init builds the default app and the namespaces delegate to it", () => {
     const canvas = document.createElement("canvas");
     canvas.id = "facade";
     document.body.appendChild(canvas);
@@ -587,7 +587,7 @@ describe("global facade (Stage / Loop / Keys / Pointer / Draw)", () => {
     expect(Mouse.inside).toBe(false);
   });
 
-  it("passes plugins from Stage.init options through to the default game", () => {
+  it("passes plugins from Stage.init options through to the default app", () => {
     const canvas = document.createElement("canvas");
     const onInit = vi.fn();
     Stage.init(canvas, { plugins: [{ name: "spy", onInit }] });

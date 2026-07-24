@@ -105,7 +105,7 @@ function ensurePadsWired(): void {
     });
     padsWired = true;
   } catch {
-    // No default game yet — polling retries wiring on the next gamepad() call.
+    // No default app yet — polling retries wiring on the next gamepad() call.
   }
 }
 

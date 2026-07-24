@@ -21,7 +21,7 @@ import {
   runtimeSlot,
   suppressPointerEdges,
   sweptCache,
-  uiGame,
+  uiApp,
   theme,
   uiCtx,
   uiPointer,
@@ -205,7 +205,7 @@ export function dragScroll(
   const pos = axis === "y" ? p.y : p.x;
   // Real frames elapsed (in 60 Hz steps) — scales the fling advance/decay so
   // momentum feels the same at any refresh rate.
-  const frames = uiGame()?.frameScale ?? 1;
+  const frames = uiApp()?.frameScale ?? 1;
 
   // A widget drag (slider knob, scrollbar thumb, drag-and-drop, text
   // selection) owns the pointer: body scroll neither starts nor continues.

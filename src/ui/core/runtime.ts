@@ -1,8 +1,8 @@
 // ---------- UI runtime ----------
 // All mutable UI state — focus, layout stacks, scroll offsets, open editors,
 // gesture tracking — lives on a UiRuntime rather than at module scope, so two
-// independent games on one page (`Stage.init` + `Stage.create`) each get a
-// fully isolated UI. The default runtime backs the default game; `UI.begin(ctx)`
+// independent apps on one page (`Stage.init` + `Stage.create`) each get a
+// fully isolated UI. The default runtime backs the default app; `UI.begin(ctx)`
 // switches to (creating on first use) the runtime for that context. Widget
 // modules never see the runtime directly: they hold their state in a
 // `runtimeSlot`, which reads/creates the module's state on whichever runtime
@@ -12,12 +12,12 @@
 // ui-scale settings, and the lifecycle hook registries (those are module
 // wiring — the functions themselves operate on the current runtime's slots).
 
-import { type Game, gameForCanvas, getDefaultGame } from "../../engine/index.js";
+import { type App, appForCanvas, getDefaultApp } from "../../engine/index.js";
 
 /** One isolated UI instance: the host context it draws to (null = the default
- *  game's) and the per-module state slots (see `runtimeSlot`). */
+ *  app's) and the per-module state slots (see `runtimeSlot`). */
 export interface UiRuntime {
-  /** The context this runtime draws to; null means "the default game's". */
+  /** The context this runtime draws to; null means "the default app's". */
   host: CanvasRenderingContext2D | null;
   /** Per-module state, indexed by each `runtimeSlot`'s id. */
   slots: unknown[];
@@ -38,18 +38,18 @@ export function currentRuntime(): UiRuntime {
   return current;
 }
 
-/** The default game's runtime. */
+/** The default app's runtime. */
 export function defaultUiRuntime(): UiRuntime {
   return defaultRuntime;
 }
 
-/** The runtime for `ctx`, created on first use. The default game's own
+/** The runtime for `ctx`, created on first use. The default app's own
  *  context maps to the default runtime, so `begin(Draw.ctx)` is a no-op. */
 export function runtimeFor(ctx: CanvasRenderingContext2D | null): UiRuntime {
   if (!ctx) return defaultRuntime;
   const existing = byCtx.get(ctx);
   if (existing) return existing;
-  if (getDefaultGame()?.ctx === ctx) return defaultRuntime;
+  if (getDefaultApp()?.ctx === ctx) return defaultRuntime;
   const rt: UiRuntime = { host: ctx, slots: [], wired: false };
   byCtx.set(ctx, rt);
   allRuntimes.push(rt);
@@ -96,16 +96,16 @@ export function runtimeSlot<T>(init: () => T): () => T {
   };
 }
 
-/** The game hosting the current runtime: the host context's game when it has
- *  one, else the default game (also the fallback for offscreen contexts that
- *  belong to no game). Null before any game exists (headless/tests). */
-export function uiGame(): Game | null {
+/** The app hosting the current runtime: the host context's app when it has
+ *  one, else the default app (also the fallback for offscreen contexts that
+ *  belong to no app). Null before any app exists (headless/tests). */
+export function uiApp(): App | null {
   const host = current.host;
   if (host) {
-    const g = gameForCanvas(host.canvas);
+    const g = appForCanvas(host.canvas);
     if (g) return g;
   }
-  return getDefaultGame();
+  return getDefaultApp();
 }
 
 /** Drop every runtime's state and return to the default runtime — for tests

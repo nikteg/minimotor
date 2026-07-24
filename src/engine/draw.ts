@@ -1,5 +1,5 @@
-import { requireDefault } from "./default-game.js";
-import type { Rect } from "./game.js";
+import { requireDefault } from "./default-app.js";
+import type { Rect } from "./app.js";
 import { drawText, monoFont, type TextHAlign, type TextVAlign } from "../text.js";
 
 type Point = { x: number; y: number };
@@ -485,11 +485,11 @@ export const Draw = {
   get ctx(): CanvasRenderingContext2D {
     return requireDefault().ctx;
   },
-  /** Real time since the previous frame, in fixed steps (see `Game.frameScale`). */
+  /** Real time since the previous frame, in fixed steps (see `App.frameScale`). */
   get frameScale(): number {
     return requireDefault().frameScale;
   },
-  /** Render interpolation factor 0..1 — see `Game.alpha`. */
+  /** Render interpolation factor 0..1 — see `App.alpha`. */
   get alpha(): number {
     return requireDefault().alpha;
   },

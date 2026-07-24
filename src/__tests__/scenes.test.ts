@@ -16,7 +16,7 @@ describe("Scenes.create (typed stack)", () => {
     expect(enter).toHaveBeenCalledTimes(1);
   });
 
-  it("is structurally GameCallbacks: update ticks the top scene only", () => {
+  it("is structurally AppCallbacks: update ticks the top scene only", () => {
     const titleUpdate = vi.fn();
     const playUpdate = vi.fn();
     const scenes = Scenes.create(

@@ -1,7 +1,7 @@
 import { uiCtx } from "./context.js";
 import { Flow, currentLayout, place } from "./flow.js";
 import { centeredText, theme, uiFont } from "./theme.js";
-import { uiGame } from "./runtime.js";
+import { uiApp } from "./runtime.js";
 
 // ---------- Text ----------
 
@@ -47,7 +47,7 @@ export function anchorViewport(ctx: CanvasRenderingContext2D): {
   safeLeft: number;
   safeTop: number;
 } {
-  const vp = uiGame()?.viewport;
+  const vp = uiApp()?.viewport;
   if (vp) return vp;
   return { w: ctx.canvas.width, h: ctx.canvas.height, safeLeft: 0, safeTop: 0 };
 }
@@ -162,10 +162,10 @@ export function text(str: string, rawOpts?: TextOptions): void {
   ctx.save();
   // UI is ALWAYS screen (letterbox-logical) space, regardless of ambient
   // camera blocks — reset to the base transform, not raw device space. Only
-  // when the host game actually owns THIS ctx (an offscreen ctx keeps its
+  // when the host app actually owns THIS ctx (an offscreen ctx keeps its
   // transform).
   if (typeof ctx.setTransform === "function") {
-    const g = uiGame();
+    const g = uiApp();
     if (g && g.ctx === ctx) g.resetTransform();
   }
   ctx.font = opts.font ?? uiFont(opts.size ?? theme.fontSize, opts.bold ?? false);

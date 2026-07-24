@@ -11,7 +11,7 @@
 //     playing: { enter: resetLevel, update: updateWorld, draw: drawWorld },
 //     paused:  { update() { if (input.pause.pressed) scenes.pop(); }, draw() {...} },
 //   });
-//   Loop.run(scenes);   // the stack IS GameCallbacks, structurally
+//   Loop.run(scenes);   // the stack IS AppCallbacks, structurally
 //
 // Stack semantics: only the TOP scene updates (input routes itself — polling
 // + update-gating). Draw runs bottom-to-top starting from the highest
@@ -49,7 +49,7 @@ export interface GoOptions {
   transition?: Transition;
 }
 
-/** The typed scene stack — structurally `GameCallbacks`, so `Loop.run(scenes)`
+/** The typed scene stack — structurally `AppCallbacks`, so `Loop.run(scenes)`
  *  is the entire handoff. */
 export interface SceneStack<K extends string> {
   /** Replace the whole stack with `name` (exits every current scene). */
@@ -64,9 +64,9 @@ export interface SceneStack<K extends string> {
   readonly active: K;
   /** Scene names, bottom-to-top. */
   readonly stack: readonly K[];
-  /** GameCallbacks: tick the top scene (wired by `Loop.run(scenes)`). */
+  /** AppCallbacks: tick the top scene (wired by `Loop.run(scenes)`). */
   update(): void;
-  /** GameCallbacks: draw the visible stack bottom-to-top. */
+  /** AppCallbacks: draw the visible stack bottom-to-top. */
   draw(ctx: CanvasRenderingContext2D): void;
 }
 
@@ -79,7 +79,7 @@ export interface SceneStackOptions {
 
 /** Build a typed scene stack from a `map` of named `SceneSpec`s. The first key
  *  is the opening scene (entered immediately). The result is structurally
- *  `GameCallbacks`, so `Loop.run(scenes)` is the whole handoff. Throws if `map`
+ *  `AppCallbacks`, so `Loop.run(scenes)` is the whole handoff. Throws if `map`
  *  is empty. */
 function create<K extends string>(
   map: Record<K, SceneSpec>,

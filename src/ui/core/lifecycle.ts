@@ -9,7 +9,7 @@ import {
   resetRuntimes,
   runtimeSlot,
   switchRuntime,
-  uiGame,
+  uiApp,
   withRuntime,
 } from "./runtime.js";
 import { setTheme } from "./theme.js";
@@ -21,8 +21,8 @@ import { setTheme } from "./theme.js";
 // loop WITHOUT the kernel importing them (a core→widget cycle). Widgets register;
 // this file owns the ordering. Nothing widget-specific lives here.
 //
-// Wiring is PER RUNTIME: each runtime hooks the loop of its own host game (the
-// default game, or the isolated game behind a begun context), so two games on
+// Wiring is PER RUNTIME: each runtime hooks the loop of its own host app (the
+// default app, or the isolated app behind a begun context), so two apps on
 // one page each run their own overlay pass, focus close and cleanup — against
 // their own state.
 
@@ -116,7 +116,7 @@ function runtimeFrameEnd(rt: UiRuntime): void {
     sweepCaches();
   });
   // The frame is over — a begun runtime stops being ambient so state can't
-  // leak into the next frame (games re-`begin()` each frame).
+  // leak into the next frame (apps re-`begin()` each frame).
   if (currentRuntime() === rt) switchRuntime(defaultUiRuntime());
 }
 
@@ -124,19 +124,19 @@ export function ensureWired(): void {
   wireFocusKeyboard();
   const rt = currentRuntime();
   if (rt.wired) return;
-  // Wiring needs the runtime's host game; without one (headless/tests) stay
+  // Wiring needs the runtime's host app; without one (headless/tests) stay
   // unwired and retry next call.
-  const game = uiGame();
-  if (!game) return;
+  const app = uiApp();
+  if (!app) return;
   rt.wired = true;
-  game.onStep(() => {
+  app.onStep(() => {
     withRuntime(rt, () => {
       padNav();
       for (const hook of stepHooks) hook();
     });
   });
   // Frame-end housekeeping for the immediate-mode state machines.
-  game.onFrame(() => runtimeFrameEnd(rt));
+  app.onFrame(() => runtimeFrameEnd(rt));
 }
 
 /** Reset the theme, global UI-scale settings, every runtime's widget state

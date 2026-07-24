@@ -20,7 +20,8 @@ Samples import named exports: `import { Stage, Loop, Draw, ... } from "minimotor
   become per-step (`SPEED = 3` px/step); anything that multiplied by `stepMs`
   folds the constant in. `Loop.step` still exists for real ms.
 - `createGame(opts).use(p).pauseOnPortrait().build()` →
-  `createGame({ ...opts, plugins: [p], pauseOnPortrait: true })`.
+  `createApp({ ...opts, plugins: [p], pauseOnPortrait: true })` (the instance
+  type family is now `App`/`AppOptions`/`AppCallbacks`).
 - `Fullscreen.applyFullscreen()` / `fullscreenCSS` →
   `Stage.init(c, { fullscreen: true })` or `Stage.fullscreen()`.
 

@@ -333,7 +333,7 @@ function attachListeners(st: PadInternal): void {
   try {
     canvas = Stage.canvas;
   } catch {
-    return; // no default game yet — retry on the next poll/draw
+    return; // no default app yet — retry on the next poll/draw
   }
   st.listening = true;
   // Stop the browser eating touches: `touch-action:none` kills scroll/zoom/
@@ -421,7 +421,7 @@ function ensureWired(st: PadInternal): void {
     Loop.onFrame(() => paint(st));
     st.wired = true;
   } catch {
-    // No default game yet — retry on the next call.
+    // No default app yet — retry on the next call.
   }
 }
 

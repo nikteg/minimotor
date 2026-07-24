@@ -1,5 +1,5 @@
 import { ensureWired, isInOverlayPass, isOverlayActive, onFrameEnd } from "./lifecycle.js";
-import { runtimeSlot, uiGame } from "./runtime.js";
+import { runtimeSlot, uiApp } from "./runtime.js";
 import { pointInRect } from "../../collision.js";
 
 export const DEAD_POINTER = {
@@ -15,7 +15,7 @@ export const DEAD_POINTER = {
 // ---------- Per-runtime input state ---------------------------------------
 // Everything the pointer pipeline tracks across a frame: edge suppression, the
 // wheel claim, the UI transform stack, pointer clips and the memoized pointer.
-// One instance per UI runtime, so two games' UIs can't leak gestures into each
+// One instance per UI runtime, so two apps' UIs can't leak gestures into each
 // other.
 interface UiTransform {
   scale: number;
@@ -122,12 +122,12 @@ export function claimWheel(over: boolean, wheel: number, atMin: boolean, atMax: 
   return wheel;
 }
 
-/** The pointer, raw, from the current runtime's host game — overlays
+/** The pointer, raw, from the current runtime's host app — overlays
  *  themselves read this (their close logic must see clicks even while they
  *  block everyone else). */
 export function rawPointer() {
   try {
-    const p = uiGame()?.pointer;
+    const p = uiApp()?.pointer;
     if (!p) return DEAD_POINTER;
     return {
       x: p.x,
@@ -139,7 +139,7 @@ export function rawPointer() {
       wheel: p.wheel,
     };
   } catch {
-    // No game yet (headless/tests) — stay inert like `uiPointer`.
+    // No app yet (headless/tests) — stay inert like `uiPointer`.
     return DEAD_POINTER;
   }
 }
@@ -190,15 +190,15 @@ export function uiToScreen(x: number, y: number): { x: number; y: number } {
 }
 
 function hostViewport(): { w: number; h: number } {
-  const vp = uiGame()?.viewport;
+  const vp = uiApp()?.viewport;
   if (!vp) {
-    throw new Error("Minimotor.UI: no game — call Stage.init (or UI.begin a game's ctx) first");
+    throw new Error("Minimotor.UI: no app — call Stage.init (or UI.begin an app's ctx) first");
   }
   return vp;
 }
 
 /** The width UI code lays out against — the reference size inside a `UI.scaled`
- *  region, else the host game's viewport. */
+ *  region, else the host app's viewport. */
 export function uiWidth(): number {
   return st().transform?.w ?? hostViewport().w;
 }
@@ -286,7 +286,7 @@ export function clearPointerCache(): void {
 
 /** The pointer as widgets see it: frame-scoped edges, dead while an overlay has
  *  the screen (unless we're in the overlay's own pass), and dead when outside
- *  the active clip region. Falls back to a dead pointer when there's no game
+ *  the active clip region. Falls back to a dead pointer when there's no app
  *  yet (headless/tests), so widgets still render, they just don't interact.
  *
  *  Called several times per widget; the raw pointer can't change mid-frame
@@ -339,11 +339,11 @@ function computeUiPointer(
 }
 
 /** Request a CSS cursor for this frame from UI/widget code — forwards to the
- *  host game's `setCursor` (the engine primitive; cursor is a canvas concern).
+ *  host app's `setCursor` (the engine primitive; cursor is a canvas concern).
  *  Reset every frame, so call it each frame the state holds; higher `priority`
  *  (default 0) wins when several are requested. Re-exported as `UI.setCursor`. */
 export function setCursor(cursor: string, priority?: number): void {
-  uiGame()?.setCursor(cursor, priority);
+  uiApp()?.setCursor(cursor, priority);
 }
 
 /** Hovering an interactive widget asks for the hand cursor; the engine

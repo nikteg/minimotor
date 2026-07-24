@@ -1,4 +1,4 @@
-import { requireDefault } from "./default-game.js";
+import { requireDefault } from "./default-app.js";
 import type { KeyCode } from "./keycodes.js";
 
 /** Polled keyboard state. `down` is level-triggered (held); `pressed` and

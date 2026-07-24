@@ -1,10 +1,10 @@
 import type { Keys, Pointer } from "./input.js";
-import { clearDefaultGame } from "./default-game.js";
+import { clearDefaultApp } from "./default-app.js";
 import type { KeyCode } from "./keycodes.js";
 
 // ---------- Minimal game framework ----------
 // The engine is reached through PascalCase `Minimotor.*` namespaces, all backed
-// by ONE default game that `Stage.init()` builds. Game code never imports an
+// by ONE default app that `Stage.init()` builds. Game code never imports an
 // instance and never threads a per-frame context — it reads the namespaces:
 //
 //     const vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
@@ -14,8 +14,8 @@ import type { KeyCode } from "./keycodes.js";
 //       draw()   { Minimotor.Draw.ctx.clearRect(0, 0, vp.w, vp.h); },
 //     });
 //
-// `createGame()` below returns an isolated `Game` and stays exported for tests
-// (and anyone who genuinely needs multiple independent games). The namespaces
+// `createApp()` below returns an isolated `App` and stays exported for tests
+// (and anyone who genuinely needs multiple independent apps). The namespaces
 // are thin facades over the default instance it produces.
 //
 // Convention: read input (`Keys`/`Pointer`) in `update`, draw (`Draw.ctx`) in
@@ -66,29 +66,29 @@ export interface Viewport {
   offsetY: number;
 }
 
-/** Plugins hook into the game lifecycle; each hook receives the `Game`.
+/** Plugins hook into the app lifecycle; each hook receives the `App`.
  *  Register with the builder's `use()` or `Loop.use()`. */
 export interface EnginePlugin {
   /** Plugin name, for identification/debugging. */
   name: string;
   /** Called once after the canvas is ready, before the first frame. */
-  onInit?: (game: Game) => void;
+  onInit?: (app: App) => void;
   /** Called once per frame, before the user's update step(s). */
-  beforeUpdate?: (game: Game) => void;
+  beforeUpdate?: (app: App) => void;
   /** Called once per frame, after the user's update step(s). */
-  afterUpdate?: (game: Game) => void;
+  afterUpdate?: (app: App) => void;
   /** Called before the user's draw. */
-  beforeDraw?: (game: Game) => void;
+  beforeDraw?: (app: App) => void;
   /** Called after the user's draw. */
-  afterDraw?: (game: Game) => void;
+  afterDraw?: (app: App) => void;
   /** Called after a viewport resize. */
-  onResize?: (game: Game) => void;
+  onResize?: (app: App) => void;
 }
 
 /** The per-frame callbacks. Input is read from the polled namespaces
- *  (`Minimotor.Keys` / `Minimotor.Pointer`) or, for an isolated game, its
+ *  (`Minimotor.Keys` / `Minimotor.Pointer`) or, for an isolated app, its
  *  props. */
-export interface GameCallbacks {
+export interface AppCallbacks {
   /** Fixed-timestep simulation. May run 0..N times per rendered frame; every
    *  call represents exactly one fixed step (1000/60 ms), so THE STEP IS THE
    *  TIME UNIT — write constants in px/step and px/step². Read `Loop.step`
@@ -111,18 +111,18 @@ export interface FrameTimings {
   steps: number;
 }
 
-/** An isolated built game. Its state (`keys`, `ctx`, …) is read directly; the
+/** An isolated built app. Its state (`keys`, `ctx`, …) is read directly; the
  *  `Minimotor.*` namespaces expose the same surface on the default instance. */
-export interface Game {
+export interface App {
   /** The backing canvas element. */
   readonly canvas: HTMLCanvasElement;
   /** The 2D drawing context (`draw` gets the same one as its argument). */
   readonly ctx: CanvasRenderingContext2D;
   /** The live viewport (same object forever; fields mutate in place on resize). */
   readonly viewport: Viewport;
-  /** Polled keyboard state — read in `update` (`Minimotor.Keys` on the default game). */
+  /** Polled keyboard state — read in `update` (`Minimotor.Keys` on the default app). */
   readonly keys: Keys;
-  /** Polled pointer state — read in `update` (`Minimotor.Pointer` on the default game). */
+  /** Polled pointer state — read in `update` (`Minimotor.Pointer` on the default app). */
   readonly pointer: Pointer;
   /** Real time since the previous frame, in fixed steps. */
   readonly frameScale: number;
@@ -163,26 +163,26 @@ export interface Game {
   /** Register a plugin after build (calls its `onInit` immediately). */
   use(plugin: EnginePlugin): void;
   /** Register callbacks and start the loop (idempotent restart of callbacks). */
-  run(callbacks: GameCallbacks): Game;
+  run(callbacks: AppCallbacks): App;
   /** Freeze updates; `draw` keeps running so overlays can render. */
   pause(): void;
   /** Resume from a `pause()`. */
   resume(): void;
   /** Stop the loop entirely. A later `run()` restarts it with a fresh clock. */
   stop(): void;
-  /** Tear the game down: stop the loop and remove every window/canvas listener
+  /** Tear the app down: stop the loop and remove every window/canvas listener
    *  it registered. The instance is unusable afterwards. Needed for tests,
    *  hot-reload, and re-running `Stage.init`. */
   destroy(): void;
 }
 
-/** Config for building a game instance — canvas, resolution, plugins, and
+/** Config for building an app instance — canvas, resolution, plugins, and
  *  input/clear behavior. */
-export interface GameOptions {
+export interface AppOptions {
   /** Canvas element id (without `#`) or the element itself. */
   canvas: string | HTMLCanvasElement;
   /** Key codes whose default browser action (scrolling, etc.) is suppressed
-   *  while the game runs. Default: Space + arrow keys. Pass `[]` to suppress
+   *  while the app runs. Default: Space + arrow keys. Pass `[]` to suppress
    *  nothing. */
   preventKeys?: KeyCode[];
   /** Backdrop color. When set, the ENGINE owns clearing: the canvas is
@@ -213,7 +213,7 @@ export const STEP_MS = 1000 / 60;
 const DOUBLE_PRESS_MS = 300;
 const DOUBLE_CLICK_SLOP = 24;
 
-// Global fixed-step counter: the engine's heartbeat, shared by every game
+// Global fixed-step counter: the engine's heartbeat, shared by every app
 // instance (in practice one runs at a time). Pull-based content (cameras,
 // motions, cursors) folds forward by "steps elapsed since my last read"
 // instead of registering step handlers — see API_PLAN law 4.
@@ -236,20 +236,20 @@ const MAX_CATCHUP_STEPS = 5;
 
 const DEFAULT_PREVENT_KEYS = ["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"];
 
-/** Create an isolated game. Prefer `Minimotor.Stage.init()` for app code;
- *  this stays exported for tests and multi-game scenarios. */
-export function createGame(options: GameOptions): Game {
-  return buildGame(options);
+/** Create an isolated app. Prefer `Minimotor.Stage.init()` for app code;
+ *  this stays exported for tests and multi-app scenarios. */
+export function createApp(options: AppOptions): App {
+  return buildApp(options);
 }
 
-// Canvas → game registry. UI code handed only a rendering context (via
-// `UI.begin`) uses this to reach the right game's pointer/viewport/cursor —
-// the piece that lets two independent games each drive their own UI.
-const gamesByCanvas = new WeakMap<HTMLCanvasElement, Game>();
+// Canvas → app registry. UI code handed only a rendering context (via
+// `UI.begin`) uses this to reach the right app's pointer/viewport/cursor —
+// the piece that lets two independent apps each drive their own UI.
+const appsByCanvas = new WeakMap<HTMLCanvasElement, App>();
 
-/** The game bound to `canvas`, or `null` — isolated instances included. */
-export function gameForCanvas(canvas: HTMLCanvasElement): Game | null {
-  return gamesByCanvas.get(canvas) ?? null;
+/** The app bound to `canvas`, or `null` — isolated instances included. */
+export function appForCanvas(canvas: HTMLCanvasElement): App | null {
+  return appsByCanvas.get(canvas) ?? null;
 }
 
 function resolveCanvas(canvas: string | HTMLCanvasElement): HTMLCanvasElement {
@@ -259,7 +259,7 @@ function resolveCanvas(canvas: string | HTMLCanvasElement): HTMLCanvasElement {
   return el as HTMLCanvasElement;
 }
 
-function buildGame(options: GameOptions): Game {
+function buildApp(options: AppOptions): App {
   const plugins = [...(options.plugins ?? [])];
   const pauseOnPortrait = options.pauseOnPortrait ?? false;
   const canvas = resolveCanvas(options.canvas);
@@ -318,7 +318,7 @@ function buildGame(options: GameOptions): Game {
     }
   };
 
-  // Run the game's draw callback, clipped to the logical viewport when the
+  // Run the app's draw callback, clipped to the logical viewport when the
   // stage is letterboxed — otherwise a following camera or a world larger than
   // the stage spills past the WxH box into the bars.
   const drawClipped = () => {
@@ -410,7 +410,7 @@ function buildGame(options: GameOptions): Game {
   let frameScale = 1;
   const timings: FrameTimings = { updateMs: 0, drawMs: 0, steps: 0 };
   let paused = false;
-  let callbacks: GameCallbacks | null = null;
+  let callbacks: AppCallbacks | null = null;
   let running = false;
   let destroyed = false;
   let lastTime = 0;
@@ -561,7 +561,7 @@ function buildGame(options: GameOptions): Game {
     resizeDirty = false;
     Object.assign(viewport, readViewport(canvas, options.resolution)); // live: mutate in place
     canvasRect = null;
-    for (const p of plugins) p.onResize?.(game);
+    for (const p of plugins) p.onResize?.(app);
     for (const h of resizeHandlers) h(viewport);
   };
   const handleResize = () => {
@@ -609,9 +609,9 @@ function buildGame(options: GameOptions): Game {
       // mid-pause doesn't fire pressed() on the first step after resume().
       consumeEdges();
       clearFrame();
-      for (const p of plugins) p.beforeDraw?.(game);
+      for (const p of plugins) p.beforeDraw?.(app);
       drawClipped();
-      for (const p of plugins) p.afterDraw?.(game);
+      for (const p of plugins) p.afterDraw?.(app);
       endFrame(); // pause menus hit-test and scroll in draw too
       return;
     }
@@ -622,7 +622,7 @@ function buildGame(options: GameOptions): Game {
     frameScale = elapsed / STEP_MS;
     accumulator += elapsed;
 
-    for (const p of plugins) p.beforeUpdate?.(game);
+    for (const p of plugins) p.beforeUpdate?.(app);
     let steps = 0;
     const updStart = performance.now();
     while (accumulator >= STEP_MS) {
@@ -643,18 +643,18 @@ function buildGame(options: GameOptions): Game {
     }
     timings.updateMs = performance.now() - updStart;
     timings.steps = Math.min(steps, MAX_CATCHUP_STEPS);
-    for (const p of plugins) p.afterUpdate?.(game);
+    for (const p of plugins) p.afterUpdate?.(app);
 
     clearFrame();
-    for (const p of plugins) p.beforeDraw?.(game);
+    for (const p of plugins) p.beforeDraw?.(app);
     const drawStart = performance.now();
     drawClipped();
     timings.drawMs = performance.now() - drawStart;
-    for (const p of plugins) p.afterDraw?.(game);
+    for (const p of plugins) p.afterDraw?.(app);
     endFrame();
   }
 
-  const game: Game = {
+  const app: App = {
     canvas,
     ctx,
     get viewport() {
@@ -697,10 +697,10 @@ function buildGame(options: GameOptions): Game {
     resetTransform,
     use(plugin) {
       plugins.push(plugin);
-      plugin.onInit?.(game);
+      plugin.onInit?.(app);
     },
     run(cb) {
-      if (destroyed) throw new Error("Minimotor: this game was destroyed — build a new one");
+      if (destroyed) throw new Error("Minimotor: this app was destroyed — build a new one");
       callbacks = cb;
       if (!running) {
         running = true;
@@ -710,7 +710,7 @@ function buildGame(options: GameOptions): Game {
         accumulator = 0;
         rafHandle = requestAnimationFrame(loop);
       }
-      return game;
+      return app;
     },
     pause() {
       paused = true;
@@ -749,14 +749,14 @@ function buildGame(options: GameOptions): Game {
       stepHandlers.clear();
       stepStartHandlers.clear();
       resizeHandlers.clear();
-      if (gamesByCanvas.get(canvas) === game) gamesByCanvas.delete(canvas);
-      clearDefaultGame(game);
+      if (appsByCanvas.get(canvas) === app) appsByCanvas.delete(canvas);
+      clearDefaultApp(app);
     },
   };
 
-  gamesByCanvas.set(canvas, game);
-  for (const p of plugins) p.onInit?.(game);
-  return game;
+  appsByCanvas.set(canvas, app);
+  for (const p of plugins) p.onInit?.(app);
+  return app;
 }
 
 function readViewport(canvas: HTMLCanvasElement, resolution?: { w: number; h: number }): Viewport {
