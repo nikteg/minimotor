@@ -8,6 +8,8 @@ import {
   containerKey,
   containerRect,
   currentLayout,
+  getBaseSize,
+  getUiScaleSetting,
   layoutArgs,
   popPointerClip,
   popUiTransform,
@@ -18,7 +20,9 @@ import {
   storeContentSize,
   theme,
   uiCtx,
+  uiHeight,
   uiPointer,
+  uiWidth,
 } from "../core/index.js";
 import { scrollbar } from "./lists.js";
 import { pointInRect } from "../../collision.js";
@@ -290,15 +294,26 @@ export function clip<R>(
   }
 }
 
-/** Uniformly scale everything drawn in `children` by `factor`, around the
- *  top-left origin — both the draw and the pointer, so hit-testing stays
- *  correct. Nests. Returns the callback's value. The building block `design`
- *  is built on. */
-export function scaled<R>(factor: number, children: () => R): R {
+/** Options for the fit form of `scaled`: a reference size the UI is laid out in,
+ *  uniformly scaled and positioned to fit the current UI space. */
+export interface ScaledOptions {
+  /** Reference width — position/size widgets as if the space were this wide. */
+  w: number;
+  /** Reference height (see `w`). */
+  h: number;
+  /** Extra multiplier on the fit scale — a UI-scale knob (accessibility /
+   *  preference). Default 1. */
+  scale?: number;
+  /** Where the scaled box sits. Default "center"; "top-left" pins it to origin. */
+  align?: "center" | "top-left";
+}
+
+// Scale by a raw factor around the top-left origin.
+function scaledByFactor<R>(factor: number, children: () => R): R {
   const ctx = uiCtx();
   ctx.save();
   ctx.scale(factor, factor);
-  pushUiTransform(factor, 0, 0);
+  pushUiTransform(factor, 0, 0, uiWidth() / factor, uiHeight() / factor);
   try {
     return children();
   } finally {
@@ -307,45 +322,59 @@ export function scaled<R>(factor: number, children: () => R): R {
   }
 }
 
-/** Options for `design`: a reference resolution the UI is laid out in, uniformly
- *  scaled and positioned to fit the viewport. */
-export interface DesignOptions {
-  /** Reference width — position/size widgets as if the screen were this wide. */
-  w: number;
-  /** Reference height (see `w`). */
-  h: number;
-  /** Extra multiplier on the fit scale — a user-facing UI scale (accessibility /
-   *  preference). Default 1. */
-  scale?: number;
-  /** Where the scaled box sits in the viewport. Default "center"; "top-left"
-   *  pins it to the origin. */
-  align?: "center" | "top-left";
-}
-
-/** Lay the UI out at a fixed reference resolution (`opts.w`×`opts.h`), uniformly
- *  scaled to fit the viewport (forcing the aspect ratio) and centered — so the
- *  UI keeps a consistent size across screens, independent of the game world /
- *  camera. `opts.scale` multiplies the fit for a configurable UI scale. Inside,
- *  lay out with `row`/`col`/etc. in reference-resolution coords; the pointer is
- *  mapped in so clicks land. Returns the callback's value.
- *
- *    UI.design({ w: 1280, h: 720 }, () => {
- *      if (UI.button({ x: 40, y: 40, label: "PLAY" })) start();
- *    }); */
-export function design<R>(opts: DesignOptions, children: () => R): R {
-  const vp = Stage.viewport;
-  const fit = Math.min(vp.w / opts.w, vp.h / opts.h) * (opts.scale ?? 1);
-  const ox = opts.align === "top-left" ? 0 : (vp.w - opts.w * fit) / 2;
-  const oy = opts.align === "top-left" ? 0 : (vp.h - opts.h * fit) / 2;
+// Fit a w×h reference box (uniform scale + align) into the current UI space.
+function scaledToFit<R>(
+  w: number,
+  h: number,
+  scaleMult: number,
+  align: "center" | "top-left",
+  children: () => R,
+): R {
+  const availW = uiWidth();
+  const availH = uiHeight();
+  const fit = Math.min(availW / w, availH / h) * scaleMult;
+  const ox = align === "top-left" ? 0 : (availW - w * fit) / 2;
+  const oy = align === "top-left" ? 0 : (availH - h * fit) / 2;
   const ctx = uiCtx();
   ctx.save();
   ctx.translate(ox, oy);
   ctx.scale(fit, fit);
-  pushUiTransform(fit, ox, oy);
+  pushUiTransform(fit, ox, oy, w, h);
   try {
     return children();
   } finally {
     popUiTransform();
     ctx.restore();
   }
+}
+
+/** Scale a UI region — the draw AND the pointer, so hit-testing stays correct;
+ *  nests; returns the callback's value. Three forms:
+ *  - `UI.scaled(() => …)` — fit the global reference size (`UI.setBaseSize`) into
+ *    the viewport, times `UI.setScale`. A no-op until a base size is set.
+ *  - `UI.scaled({ w, h, scale?, align? }, () => …)` — fit an explicit w×h
+ *    reference box (forces the aspect ratio, keeps sizing consistent).
+ *  - `UI.scaled(factor, () => …)` — a raw uniform multiplier.
+ *  Inside, lay out with `row`/`col`/absolute coords in reference units; read the
+ *  space with `UI.width`/`UI.height`.
+ *
+ *    UI.setBaseSize({ w: 1280, h: 720 });     // once
+ *    UI.scaled(() => { if (UI.button({ x: 40, y: 40, label: "PLAY" })) start(); }); */
+export function scaled<R>(children: () => R): R;
+export function scaled<R>(factor: number, children: () => R): R;
+export function scaled<R>(opts: ScaledOptions, children: () => R): R;
+export function scaled<R>(
+  factorOrOptsOrBody: number | ScaledOptions | (() => R),
+  maybeChildren?: () => R,
+): R {
+  if (typeof factorOrOptsOrBody === "function") {
+    // No-arg form: fit the global reference size (if any) times the global scale.
+    const base = getBaseSize();
+    if (!base) return factorOrOptsOrBody();
+    return scaledToFit(base.w, base.h, getUiScaleSetting(), "center", factorOrOptsOrBody);
+  }
+  const children = maybeChildren as () => R;
+  if (typeof factorOrOptsOrBody === "number") return scaledByFactor(factorOrOptsOrBody, children);
+  const opts = factorOrOptsOrBody;
+  return scaledToFit(opts.w, opts.h, opts.scale ?? 1, opts.align ?? "center", children);
 }

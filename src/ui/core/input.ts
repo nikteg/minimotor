@@ -26,41 +26,91 @@ export function rawPointer() {
   };
 }
 
-// ---------- UI transform (scale / design-space letterbox) -------------------
+// ---------- UI transform (scale / reference-size fit) -----------------------
 // A uniform scale + translate applied to a UI region: `outer = offset + scale *
 // inner`, where `outer` is screen-logical coords (what the pointer arrives in)
-// and `inner` is the design coords a widget lays out with. `UI.scaled`/`UI.design`
-// push a transform onto the canvas AND here; `uiPointer` maps the pointer back
-// into inner coords so hit-testing stays correct. Transforms compose (nest).
+// and `inner` is the reference coords a widget lays out with. `UI.scaled` pushes
+// a transform onto the canvas AND here; `uiPointer` maps the pointer back into
+// reference coords so hit-testing stays correct. `w`/`h` are the region's
+// logical size (what `UI.width`/`UI.height` report). Transforms compose (nest);
+// `null` is the root (no transform — the device viewport).
 interface UiTransform {
   scale: number;
   ox: number;
   oy: number;
+  w: number;
+  h: number;
 }
-let uiTransform: UiTransform = { scale: 1, ox: 0, oy: 0 };
-const uiTransformStack: UiTransform[] = [];
+let uiTransform: UiTransform | null = null;
+const uiTransformStack: (UiTransform | null)[] = [];
 
 /** Enter a UI transform: everything drawn until `popUiTransform` lays out in
- *  coords that map `outer = offset + scale * inner`. Composes with any enclosing
- *  transform. Draw-side (the canvas transform) is the caller's job. */
-export function pushUiTransform(scale: number, ox: number, oy: number): void {
+ *  coords that map `outer = offset + scale * inner`, with `w`×`h` the region's
+ *  logical size. Composes with any enclosing transform. The canvas-side
+ *  transform is the caller's job. */
+export function pushUiTransform(scale: number, ox: number, oy: number, w: number, h: number): void {
   uiTransformStack.push(uiTransform);
-  uiTransform = {
-    scale: uiTransform.scale * scale,
-    ox: uiTransform.ox + uiTransform.scale * ox,
-    oy: uiTransform.oy + uiTransform.scale * oy,
-  };
+  const pScale = uiTransform?.scale ?? 1;
+  const pOx = uiTransform?.ox ?? 0;
+  const pOy = uiTransform?.oy ?? 0;
+  uiTransform = { scale: pScale * scale, ox: pOx + pScale * ox, oy: pOy + pScale * oy, w, h };
 }
 
 /** Undo the most recent `pushUiTransform`. */
 export function popUiTransform(): void {
-  uiTransform = uiTransformStack.pop() ?? { scale: 1, ox: 0, oy: 0 };
+  uiTransform = uiTransformStack.pop() ?? null;
 }
 
-/** The active UI scale (product of enclosing `scaled`/`design` factors, 1 at the
- *  root) — for stroke widths or thresholds that shouldn't scale with the UI. */
+/** The active UI scale (product of enclosing `scaled` factors, 1 at the root) —
+ *  for stroke widths or thresholds that shouldn't scale with the UI. */
 export function currentUiScale(): number {
-  return uiTransform.scale;
+  return uiTransform?.scale ?? 1;
+}
+
+/** The width UI code lays out against — the reference size inside a `UI.scaled`
+ *  region, else the device viewport. */
+export function uiWidth(): number {
+  return uiTransform?.w ?? Stage.viewport.w;
+}
+
+/** The height UI code lays out against (see `uiWidth`). */
+export function uiHeight(): number {
+  return uiTransform?.h ?? Stage.viewport.h;
+}
+
+// Global UI-scale defaults that the no-arg `UI.scaled(body)` reads: a reference
+// size the UI is laid out against, and a multiplier on top. Set once (or never).
+let baseSize: { w: number; h: number } | null = null;
+let uiScaleSetting = 1;
+
+/** Set the global reference size the UI is designed against — used by the no-arg
+ *  `UI.scaled(body)`. Pass `null` to clear. */
+export function setBaseSize(size: { w: number; h: number } | null): void {
+  baseSize = size;
+}
+
+/** Set the global UI-scale multiplier (accessibility / preference), applied on
+ *  top of the fit by the no-arg `UI.scaled(body)`. */
+export function setScale(scale: number): void {
+  uiScaleSetting = scale;
+}
+
+/** The global reference size set via `setBaseSize`, or `null`. */
+export function getBaseSize(): { w: number; h: number } | null {
+  return baseSize;
+}
+
+/** The global UI-scale multiplier set via `setScale` (default 1). */
+export function getUiScaleSetting(): number {
+  return uiScaleSetting;
+}
+
+/** Reset UI-scale state — for tests (see lifecycle `_reset`). */
+export function resetUiScale(): void {
+  uiTransform = null;
+  uiTransformStack.length = 0;
+  baseSize = null;
+  uiScaleSetting = 1;
 }
 
 // Active clip rects (innermost last), stored in SCREEN-logical coords so gating
@@ -74,7 +124,9 @@ const pointerClips: { x: number; y: number; w: number; h: number }[] = [];
  *  so clipped-away widgets can't be clicked. `rect` is in the current UI
  *  transform's coords; it's converted to screen-logical coords on the way in. */
 export function pushPointerClip(rect: { x: number; y: number; w: number; h: number }): void {
-  const { scale, ox, oy } = uiTransform;
+  const scale = uiTransform?.scale ?? 1;
+  const ox = uiTransform?.ox ?? 0;
+  const oy = uiTransform?.oy ?? 0;
   pointerClips.push({
     x: ox + scale * rect.x,
     y: oy + scale * rect.y,
@@ -101,12 +153,10 @@ export function uiPointer() {
     // Clips are stored in screen coords, so gate before mapping into design coords.
     const clip = pointerClips[pointerClips.length - 1];
     if (clip && !pointInRect(p.x, p.y, clip)) return DEAD_POINTER;
-    // Map into the active UI transform's design coords so a widget's rect (in
-    // design coords) hit-tests against the pointer correctly.
-    const { scale, ox, oy } = uiTransform;
-    if (scale !== 1 || ox !== 0 || oy !== 0) {
-      return { ...p, x: (p.x - ox) / scale, y: (p.y - oy) / scale };
-    }
+    // Map into the active UI transform's reference coords so a widget's rect (in
+    // reference coords) hit-tests against the pointer correctly.
+    const t = uiTransform;
+    if (t) return { ...p, x: (p.x - t.ox) / t.scale, y: (p.y - t.oy) / t.scale };
     return p;
   } catch {
     return DEAD_POINTER;

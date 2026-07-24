@@ -1,6 +1,7 @@
 import { focusEndFrame, markFocusTrap, padNav, resetFocus, wireFocusKeyboard } from "./focus.js";
 import { setBegunCtx } from "./context.js";
 import { idScopes } from "./identity.js";
+import { resetUiScale } from "./input.js";
 import { setTheme } from "./theme.js";
 import { Loop } from "../../engine/index.js";
 
@@ -104,6 +105,7 @@ export function _reset(): void {
   inOverlayPass = false;
   for (const hook of resetHooks) hook();
   resetFocus();
+  resetUiScale();
   idScopes.length = 0;
   setBegunCtx(null);
   wired = false;

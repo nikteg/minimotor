@@ -25,12 +25,16 @@ export {
   getTheme,
   ids,
   idScope,
+  setBaseSize,
   setCursor,
   setNavPad,
+  setScale,
   setTheme,
   stack,
   text,
   textWidth,
+  uiHeight as height,
+  uiWidth as width,
   _reset,
 } from "./core/index.js";
 export type {
