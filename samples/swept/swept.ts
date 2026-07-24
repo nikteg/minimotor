@@ -6,11 +6,11 @@
 // crossing and reports where + on which face it hit.
 //
 // Controls:  Space = toggle method (swept ⇄ per-frame)   ↑/↓ = speed
-import { Audio, Collision, Draw, Keys, Loop, Mathf, Perf, Stage, UI } from "minimotor";
+import { Audio, Collision, Draw, Keys, Loop, Mathf, Perf, App, UI } from "minimotor";
 
 // The viewport is LIVE (mutated on resize) — wall/reset derive from it; the
 // engine owns clearing via `background`.
-const view = Stage.init("game", {
+const view = App.init("game", {
   background: "#101418",
   preventNavigation: true,
   plugins: [Perf.plugin()],

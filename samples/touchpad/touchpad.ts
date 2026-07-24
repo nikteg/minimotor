@@ -1,6 +1,6 @@
-import { Stage, Loop, Draw, Input, OnscreenInput, Goodies, Gizmos, Perf, UI } from "minimotor";
+import { App, Loop, Draw, Input, OnscreenInput, Goodies, Gizmos, Perf, UI } from "minimotor";
 
-const view = Stage.init("game", { background: "#0f141a", plugins: [Perf.plugin()] });
+const view = App.init("game", { background: "#0f141a", plugins: [Perf.plugin()] });
 
 // An on-screen gamepad: a left analog stick + two face buttons. `autohide:false`
 // keeps it on screen on desktop too — a mouse drives it while it's visible, and

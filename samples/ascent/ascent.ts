@@ -32,15 +32,15 @@ import {
   Particles,
   Perf,
   Sprites,
-  Stage,
+  App,
   Storage,
   Timers,
   UI,
 } from "minimotor";
 import type { SheetCursor, SpriteLike } from "minimotor";
 
-let vp = Stage.init("game", { preventNavigation: true, plugins: [Perf.plugin()] });
-Stage.onResize((next) => (vp = next));
+let vp = App.init("game", { preventNavigation: true, plugins: [Perf.plugin()] });
+App.onResize((next) => (vp = next));
 
 // On-screen touch gamepad (hidden on desktop, shown on touch by default).
 const pad = OnscreenInput.gamepad({

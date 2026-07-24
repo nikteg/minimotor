@@ -34,7 +34,7 @@ function usedHeapMB(): number | undefined {
  *  Click the HUD to dim it out of the way (and click again to restore):
  *
  *    const net = Minimotor.Perf.createNetMeter();
- *    Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin({ net })] });
+ *    Minimotor.App.init("game", { plugins: [Minimotor.Perf.plugin({ net })] });
  *    Minimotor.Loop.run({ update, draw }); */
 export function plugin(opts: PerfOptions = {}): EnginePlugin {
   const tick = createPerfTracker();

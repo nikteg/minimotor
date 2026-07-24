@@ -8,7 +8,7 @@
 // other's applySignal — so the handshake, the ICE and the data channel are all
 // genuine, no server required. Move your mouse on the LEFT pane; the dot on the
 // RIGHT is drawn only from bytes that traveled peer→peer over the channel.
-import { Draw, Keys, Loop, Net, Perf, Pointer, Stage, UI } from "minimotor";
+import { Draw, Keys, Loop, Net, Perf, Pointer, App, UI } from "minimotor";
 
 interface Vec {
   x: number;
@@ -19,7 +19,7 @@ interface Vec {
 // rates for the cursor stream going out and the acks coming back.
 const meter = Perf.createNetMeter();
 // The viewport is LIVE (mutated on resize) — both panes lay out from it.
-const vp = Stage.init("game", {
+const vp = App.init("game", {
   background: "#0e1116",
   plugins: [Perf.plugin({ net: meter })],
 });

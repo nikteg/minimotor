@@ -77,7 +77,7 @@ function startScheduler() {
   musicTimer = setInterval(schedulerTick, SCHED_INTERVAL_MS);
 }
 
-// Pause scheduling when the tab is hidden: the game is stopped anyway
+// Pause scheduling when the tab is hidden: the app is stopped anyway
 // (rAF is paused) and background tabs throttle timers so the melody
 // would break up.
 document.addEventListener("visibilitychange", () => {
@@ -110,7 +110,7 @@ export const Music = {
         /* private browsing etc. - default on */
       }
     }
-    // Sound must NEVER block the game - swallow all errors.
+    // Sound must NEVER block the app - swallow all errors.
     try {
       ensureAudio();
       // The music channel is just the mixer's "music" bus — volume/mute live on

@@ -1,5 +1,5 @@
 // ---------- The symmetric Room (API_PLAN #48) + Net.sync (#49) ----------
-// One vocabulary, no host/guest branches in game code:
+// One vocabulary, no host/guest branches in app code:
 //
 //   const room = await Net.join("/ws-signal", { room: "api-lab" }).catch(() => null);
 //   room.send({ hello: true });                  // to everyone
@@ -8,7 +8,7 @@
 // Who hosts, the star fan-out, and host-drop healing are INTERNAL: the relay
 // names a host; that member relays guest traffic to everyone else, and any
 // member is ready to be promoted when the host drops. Offline is a normal
-// outcome — the returned promise rejects and the game degrades gracefully.
+// outcome — the returned promise rejects and the app degrades gracefully.
 //
 // Rooms are RESOURCES (the stated exception to the pull law, #50): real IO,
 // explicit close(). The asymmetric hostSession/joinSession pair remains one

@@ -19,7 +19,7 @@ import {
   Mathf,
   Perf,
   Scenes,
-  Stage,
+  App,
   UI,
   Vec2,
 } from "minimotor";
@@ -42,7 +42,7 @@ const ecs = ECS.create();
 
 // Fixed-resolution stage: the engine fits GW×GH into the window (play area
 // "#151515", letterbox bars "#0a0a0a"). The perf HUD shows live entity count.
-Stage.init("game", {
+App.init("game", {
   resolution: { w: GW, h: GH },
   background: "#151515",
   barColor: "#0a0a0a",

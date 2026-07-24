@@ -1,8 +1,8 @@
-import { Stage, Loop, Keys, Draw, Mathf } from "minimotor";
+import { App, Loop, Keys, Draw, Mathf } from "minimotor";
 
 // `init` returns the LIVE viewport — a stable object mutated on resize, so
 // `view.w` / `view.h` are always current without a resize handler.
-const view = Stage.init("game", { background: "#12141c" });
+const view = App.init("game", { background: "#12141c" });
 const player = { x: 150, y: 90, size: 28, speed: 3 };
 
 Loop.run({

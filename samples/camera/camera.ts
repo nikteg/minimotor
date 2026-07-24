@@ -12,13 +12,13 @@ import {
   Particles,
   Perf,
   Pointer,
-  Stage,
+  App,
   UI,
 } from "minimotor";
 import * as Sfx from "../shared/sfx.ts";
 
 // The viewport is LIVE (mutated on resize); the engine owns clearing.
-const view = Stage.init("game", { background: "#080b18", plugins: [Perf.plugin()] });
+const view = App.init("game", { background: "#080b18", plugins: [Perf.plugin()] });
 const input = Input.map({
   left: ["ArrowLeft", "KeyA"],
   right: ["ArrowRight", "KeyD"],

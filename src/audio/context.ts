@@ -1,6 +1,6 @@
 // ---------- Audio support ----------
 // WebAudio helpers: crash-safe sound effects and a scheduled music
-// player. The game provides melodies/song structure; the engine
+// player. The app provides melodies/song structure; the engine
 // manages AudioContext, timing, volume and pause on hidden tab.
 
 /** Builds one sound effect. Route nodes into `out` (the master SFX bus, so

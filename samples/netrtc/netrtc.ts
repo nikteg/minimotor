@@ -11,7 +11,7 @@
 // host relays: guests send their cursor to the host, the host merges them with
 // its own and broadcasts the whole set back. Close the host tab and the server
 // promotes the oldest guest; the survivors re-negotiate to it automatically.
-import { Draw, Loop, Net, Pointer, Stage, UI } from "minimotor";
+import { Draw, Loop, Net, Pointer, App, UI } from "minimotor";
 import type { GuestSession, HostSession } from "minimotor";
 
 interface Vec {
@@ -21,7 +21,7 @@ interface Vec {
 type CursorState = Record<string, Vec>;
 
 // The viewport is LIVE (mutated on resize) — layout reads it fresh each frame.
-const vp = Stage.init("game", { background: "#0e1116" });
+const vp = App.init("game", { background: "#0e1116" });
 
 // Same-origin signaling relay hosted by the dev/preview server (vite.config.ts
 // mounts `signaling()` here). Swap for your own deployment in production.

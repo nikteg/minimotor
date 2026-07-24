@@ -2,13 +2,13 @@
 // component + renderer.
 // Demonstrates: Sprites.Sprite (position + texture + alpha), Draw.sprites(ecs.dense(Sprite)) —
 // no hand-written blit loop — plus an update system that fades sprites out.
-import { Draw, ECS, Loop, Perf, Pointer, Sprites, Stage, UI } from "minimotor";
+import { Draw, ECS, Loop, Perf, Pointer, Sprites, App, UI } from "minimotor";
 
 const ecs = ECS.create();
 
 // The perf HUD shows this world's live entity count (`ents`).
 // The viewport is LIVE (mutated on resize); the engine owns clearing.
-const view = Stage.init("game", { background: "#000", plugins: [Perf.plugin({ world: ecs })] });
+const view = App.init("game", { background: "#000", plugins: [Perf.plugin({ world: ecs })] });
 
 const NUM = 200;
 const SIZE = 8;

@@ -1,6 +1,6 @@
-import { Stage, Loop, Keys, Tiles, Collision, Draw } from "minimotor";
+import { App, Loop, Keys, Tiles, Collision, Draw } from "minimotor";
 
-Stage.init("game", { background: "#12141c" });
+App.init("game", { background: "#12141c" });
 
 // The level IS the data: an ASCII grid + a semantics-only legend.
 const level = Tiles.grid(

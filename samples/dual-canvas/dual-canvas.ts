@@ -1,10 +1,10 @@
-// Two independent minimotor games on ONE page: the default game (Stage.init)
-// on the top canvas and an isolated game (Stage.create) on the bottom one.
+// Two independent minimotor games on ONE page: the default game (App.init)
+// on the top canvas and an isolated game (App.create) on the bottom one.
 // Each frame the isolated game points the UI at its own context with
 // `UI.begin(ctx)` — every widget after that hit-tests against THAT game's
 // pointer and keeps its own per-canvas state (counters, toggles, tooltips,
 // floating text), so the two UIs can't leak into each other.
-import { Draw, Loop, Stage, UI } from "minimotor";
+import { Draw, Loop, App, UI } from "minimotor";
 
 // Exposed for the e2e test: each button click bumps its own counter.
 const counters = { main: 0, iso: 0 };
@@ -16,13 +16,13 @@ declare global {
 window.__dual = counters;
 
 // ---------- Game 1: the default game ----------
-Stage.init("game", { background: "#1a1a2e" });
+App.init("game", { background: "#1a1a2e" });
 
 let mainToggle = false;
 Loop.run({
   update() {},
   draw() {
-    UI.text("Default game (Stage.init)", { x: 20, y: 14, size: 18, bold: true });
+    UI.text("Default game (App.init)", { x: 20, y: 14, size: 18, bold: true });
     UI.text("Widgets here only react to THIS canvas", { x: 20, y: 40, color: "dim" });
     if (
       UI.button({ id: "main-btn", x: 20, y: 70, w: 200, h: 40, label: `Clicked ${counters.main}` })
@@ -38,14 +38,14 @@ Loop.run({
 });
 
 // ---------- Game 2: an isolated game on its own canvas ----------
-const g2 = Stage.create({ canvas: "game2", background: "#16321f" });
+const g2 = App.create({ canvas: "game2", background: "#16321f" });
 
 let isoToggle = true;
 g2.run({
   update() {},
   draw() {
     UI.begin(g2.ctx); // point every UI.* call below at this game's canvas + pointer
-    UI.text("Isolated game (Stage.create)", { x: 20, y: 14, size: 18, bold: true });
+    UI.text("Isolated game (App.create)", { x: 20, y: 14, size: 18, bold: true });
     UI.text("…and widgets here only react to this one", { x: 20, y: 40, color: "dim" });
     if (
       UI.button({ id: "iso-btn", x: 20, y: 70, w: 200, h: 40, label: `Clicked ${counters.iso}` })

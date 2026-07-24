@@ -1,7 +1,7 @@
 {
   "name": "minimotor",
   "version": "0.2.0",
-  "description": "Minimal game loop + collision helpers + audio for small 2D canvas games",
+  "description": "Minimal 2D canvas framework — fixed-step loop, drawing, input, collision, audio — for small games and playful apps",
   "license": "MIT",
   "type": "module",
   "exports": {

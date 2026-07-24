@@ -5,7 +5,7 @@
 // drag + track paging via Pointer.wheel/framePressed) / button (incl.
 // disabled) / float, plus Clock.ui.after driving a fake refresh and join.
 // The server list is mock data — swap fetchServers() for a real request.
-import { Clock, Keys, Loop, Mathf, Perf, Stage, UI } from "minimotor";
+import { Clock, Keys, Loop, Mathf, Perf, App, UI } from "minimotor";
 import type { TableSort, Theme } from "minimotor";
 
 interface Server {
@@ -25,7 +25,7 @@ interface Rect {
 
 // The stage viewport is LIVE (mutated on resize); the UI.panel self-centers in it
 // via anchor:"center", so no viewport handle is needed here.
-Stage.init("game", {
+App.init("game", {
   background: "#0b0e14",
   plugins: [Perf.plugin()],
   preventNavigation: true,

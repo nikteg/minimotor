@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { wireButton, preventTouchFocus, vibrate, map, createGamepadTracker } from "../index.js";
-import { Stage } from "../../engine/index.js";
+import { App } from "../../engine/index.js";
 
 beforeEach(() => {
   document.body.innerHTML = "";

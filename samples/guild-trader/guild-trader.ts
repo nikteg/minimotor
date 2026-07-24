@@ -1,5 +1,5 @@
 // GUILD TRADER: RPG inventory drag/drop, stack merging, dialogue and loot recipes.
-import { Draw, Gizmos, Goodies, Loop, Perf, Pointer, Stage, UI } from "minimotor";
+import { Draw, Gizmos, Goodies, Loop, Perf, Pointer, App, UI } from "minimotor";
 import type { Flow } from "minimotor";
 
 interface Item {
@@ -17,7 +17,7 @@ interface DragPayload {
 }
 
 // Live viewport; the engine owns the background clear.
-const vp = Stage.init("game", {
+const vp = App.init("game", {
   background: "#101722",
   plugins: [Perf.plugin()],
   preventNavigation: true,

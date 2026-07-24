@@ -13,11 +13,11 @@ import {
   Particles,
   Perf,
   Pointer,
-  Stage,
+  App,
   UI,
 } from "minimotor";
 
-const view = Stage.init("game", { background: "#14141c", plugins: [Perf.plugin()] });
+const view = App.init("game", { background: "#14141c", plugins: [Perf.plugin()] });
 
 const COLORS = ["#ff6b6b", "#4ecdc4", "#ffe066", "#a06bff", "#6bff9e", "#ff9f43"];
 

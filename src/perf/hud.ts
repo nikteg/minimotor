@@ -65,7 +65,7 @@ export function drawPerfHud(
 
   // The HUD changes font/baseline/align/fillStyle; restore so no state leaks
   // into the next frame's user draw (a leaked textBaseline shifts every
-  // fillText in the whole game).
+  // fillText in the whole app).
   ctx.save();
   ctx.fillStyle = "rgba(0,0,0,0.55)";
   ctx.fillRect(bgX, bgY, boxW, boxH);

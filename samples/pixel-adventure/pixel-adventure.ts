@@ -22,7 +22,7 @@ import {
   Particles,
   Perf,
   Sprites,
-  Stage,
+  App,
   Tiles,
   Timers,
   UI,
@@ -35,7 +35,7 @@ const GAME_W = 480;
 const GAME_H = 270;
 const TILE = 48; // collision cell (world px)
 const FW = 32; // player frame size in its source strips
-Stage.init("game", {
+App.init("game", {
   resolution: { w: GAME_W, h: GAME_H },
   // Inject the engine's fullscreen handling: viewport-fit=cover + no user zoom
   // (kills the iOS long-press/double-tap zoom), safe-area insets, and the

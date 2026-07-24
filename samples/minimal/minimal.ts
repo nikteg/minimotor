@@ -1,9 +1,9 @@
 // Absolute minimal game: colored square that moves with arrow keys
-import { Draw, Keys, Loop, Mathf, Perf, Stage, UI } from "minimotor";
+import { Draw, Keys, Loop, Mathf, Perf, App, UI } from "minimotor";
 
 // The viewport is LIVE (mutated on resize) — no rebinding needed; the engine
 // owns clearing via `background`.
-const view = Stage.init("game", { background: "#222", plugins: [Perf.plugin()] });
+const view = App.init("game", { background: "#222", plugins: [Perf.plugin()] });
 
 let x = view.w / 2 - 25;
 let y = view.h / 2 - 25;

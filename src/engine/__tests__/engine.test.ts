@@ -1,15 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import {
-  createApp,
-  Stage,
-  Loop,
-  Keys,
-  Pointer,
-  Mouse,
-  Draw,
-  type App,
-  type AppCallbacks,
-} from "../index.js";
+import { createApp, App, Loop, Keys, Pointer, Mouse, Draw, type AppCallbacks } from "../index.js";
 
 // jsdom canvas support + a controllable requestAnimationFrame.
 let rafCallback: ((t: number) => void) | null = null;
@@ -555,24 +545,24 @@ describe("pauseOnPortrait", () => {
 });
 
 // NOTE: this block must stay LAST — it initialises the module-global default
-// game via Stage.init(); no earlier test touches it, so the "before init" case
+// game via App.init(); no earlier test touches it, so the "before init" case
 // still observes the null default.
-describe("global facade (Stage / Loop / Keys / Pointer / Draw)", () => {
-  it("throws when a namespace is used before Stage.init", () => {
-    expect(() => Keys.down("Space")).toThrow(/Stage\.init/);
-    expect(() => Loop.run({ update: vi.fn(), draw: vi.fn() })).toThrow(/Stage\.init/);
-    expect(() => Draw.ctx).toThrow(/Stage\.init/);
+describe("global facade (App / Loop / Keys / Pointer / Draw)", () => {
+  it("throws when a namespace is used before App.init", () => {
+    expect(() => Keys.down("Space")).toThrow(/App\.init/);
+    expect(() => Loop.run({ update: vi.fn(), draw: vi.fn() })).toThrow(/App\.init/);
+    expect(() => Draw.ctx).toThrow(/App\.init/);
   });
 
-  it("Stage.init builds the default app and the namespaces delegate to it", () => {
+  it("App.init builds the default app and the namespaces delegate to it", () => {
     const canvas = document.createElement("canvas");
     canvas.id = "facade";
     document.body.appendChild(canvas);
 
-    const vp = Stage.init("facade");
+    const vp = App.init("facade");
     expect(vp.canvas).toBe(canvas);
-    expect(Stage.viewport).toBe(vp);
-    expect(Stage.canvas).toBe(canvas);
+    expect(App.viewport).toBe(vp);
+    expect(App.canvas).toBe(canvas);
     expect(Draw.ctx).toBeDefined();
 
     const drawn = vi.fn();
@@ -587,10 +577,10 @@ describe("global facade (Stage / Loop / Keys / Pointer / Draw)", () => {
     expect(Mouse.inside).toBe(false);
   });
 
-  it("passes plugins from Stage.init options through to the default app", () => {
+  it("passes plugins from App.init options through to the default app", () => {
     const canvas = document.createElement("canvas");
     const onInit = vi.fn();
-    Stage.init(canvas, { plugins: [{ name: "spy", onInit }] });
+    App.init(canvas, { plugins: [{ name: "spy", onInit }] });
     expect(onInit).toHaveBeenCalledTimes(1);
   });
 });

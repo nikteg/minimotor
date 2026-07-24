@@ -1,5 +1,5 @@
 // SOLITAIRE: classic Klondike built with a broad sweep of Minimotor primitives.
-// Demonstrates: Stage / Loop / Pointer / Draw, Scenes.create + Transitions,
+// Demonstrates: App / Loop / Pointer / Draw, Scenes.create + Transitions,
 // UI immediate-mode widgets + drag/drop, Input.map, Audio.Sfx, Storage,
 // Timers, Clock.world timers, Anim motions (the AI's card glide + win cascade),
 // Signals, Fsm, Particles.create, Collision, Mathf, a fixed-`resolution`
@@ -23,7 +23,7 @@ import {
   Scenes,
   Signals,
   Sprites,
-  Stage,
+  App,
   Storage,
   Timers,
   Transitions,
@@ -114,7 +114,7 @@ function isRed(suit: string) {
 // The stage runs at a FIXED logical resolution, letterboxed into the window by
 // the engine: `vp.w`/`vp.h` ARE `LOGICAL_W`/`LOGICAL_H`, the pointer arrives in
 // logical coordinates, and all drawing is scaled — no manual letterbox math.
-const vp = Stage.init("game", {
+const vp = App.init("game", {
   fullscreen: true,
   resolution: { w: LOGICAL_W, h: LOGICAL_H },
   background: "#0b3d2e",
@@ -122,7 +122,7 @@ const vp = Stage.init("game", {
   preventNavigation: true,
   plugins: [Perf.plugin()],
 });
-Stage.onResize(() => {
+App.onResize(() => {
   Sprites.clearSpriteCache();
   buildCardBackSprite();
 });
@@ -670,12 +670,12 @@ function drawPiles(ctx: CanvasRenderingContext2D) {
       payload: { type: "stock" },
       disabled: true,
     });
-    if (stockSource.hovered) Stage.setCursor("pointer");
+    if (stockSource.hovered) App.setCursor("pointer");
   } else {
     drawEmptySlot(ctx, stockRect, "↺");
   }
   if (Collision.pointInRect(Pointer.x, Pointer.y, layout.stock)) {
-    Stage.setCursor("pointer");
+    App.setCursor("pointer");
     if (Pointer.frameReleased) drawFromStock();
   }
 
@@ -695,7 +695,7 @@ function drawPiles(ctx: CanvasRenderingContext2D) {
         from: { type: "waste", index: waste.length - 1 },
       },
     });
-    if (src.hovered) Stage.setCursor("grab");
+    if (src.hovered) App.setCursor("grab");
     // Double-click the waste's top card to send it home (classic Klondike gesture).
     // A double-click's press also arms the drag above — cancel it so the card
     // doesn't get "picked up" the instant it's sent home.
@@ -727,7 +727,7 @@ function drawPiles(ctx: CanvasRenderingContext2D) {
           from: { type: "foundation", col: i, index: pile.length - 1 },
         },
       });
-      if (src.hovered) Stage.setCursor("grab");
+      if (src.hovered) App.setCursor("grab");
     } else {
       drawEmptySlot(ctx, rect, FOUNDATION_SUITS[i]);
     }
@@ -805,7 +805,7 @@ function drawPiles(ctx: CanvasRenderingContext2D) {
               from: { type: "tableau", col, index: idx },
             },
           });
-          if (src.hovered) Stage.setCursor("grab");
+          if (src.hovered) App.setCursor("grab");
         }
       }
 

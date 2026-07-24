@@ -1,15 +1,15 @@
 # minimotor
 
-Minimal game engine for small 2D canvas games: a fixed-step game loop, drawing,
-input, collision, audio, and multiplayer building blocks — all reached through
-plain `PascalCase.*` namespaces, with no framework, no build magic, and (in the
-core bundle) no dependencies.
+A minimal 2D canvas framework for small games and playful apps: a fixed-step
+loop, drawing, input, collision, audio, and multiplayer building blocks — all
+reached through plain `PascalCase.*` namespaces, with no framework, no build
+magic, and (in the core bundle) no dependencies.
 
 ```ts
 // Colored square that moves with arrow keys — a complete game.
-import { Draw, Keys, Loop, Mathf, Stage } from "minimotor";
+import { App, Draw, Keys, Loop, Mathf } from "minimotor";
 
-const view = Stage.init("game", { background: "#222" });
+const view = App.init("game", { background: "#222" });
 
 let x = view.w / 2 - 25;
 let y = view.h / 2 - 25;
@@ -29,7 +29,7 @@ Loop.run({
 });
 ```
 
-`Stage.init` binds a `<canvas>` (by id or element), owns resizing and clearing,
+`App.init` binds a `<canvas>` (by id or element), owns resizing and clearing,
 and returns a **live** viewport — `view.w`/`view.h` update on resize, no
 rebinding needed. `Loop.run` drives fixed-step `update()` and per-frame
 `draw()`. Everything else is opt-in.
@@ -56,7 +56,7 @@ rebinding needed. `Loop.run` drives fixed-step `update()` and per-frame
 
 ## What's in the box
 
-**Engine runtime** — `Stage` (canvas + viewport + letterboxing/fullscreen),
+**Engine runtime** — `App` (canvas + viewport + letterboxing/fullscreen),
 `Loop` (fixed-step update, interpolated draw, plugins), `Draw` (rects, text,
 sprites, tiles, gradients), `Keys` / `Pointer` / `Mouse` (polled input),
 `Camera` (follow, shake, lenses).

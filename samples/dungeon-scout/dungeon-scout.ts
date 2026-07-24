@@ -1,20 +1,8 @@
 // DUNGEON SCOUT: grid recipes in a tiny roguelike — a SEEDED layout (seedRng),
 // a distance-from-hero heatmap (distanceField), plus line-of-sight fog.
-import {
-  Draw,
-  Gizmos,
-  Goodies,
-  Input,
-  Keys,
-  Loop,
-  Mathf,
-  Perf,
-  Pointer,
-  Stage,
-  UI,
-} from "minimotor";
+import { Draw, Gizmos, Goodies, Input, Keys, Loop, Mathf, Perf, Pointer, App, UI } from "minimotor";
 
-const view = Stage.init("game", {
+const view = App.init("game", {
   background: "#0d1118",
   plugins: [Perf.plugin()],
   preventNavigation: true,

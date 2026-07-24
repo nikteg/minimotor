@@ -1,5 +1,5 @@
 // ---------- Asset preloading ----------
-// Load images and JSON up front, then use them synchronously during the game.
+// Load images and JSON up front, then use them synchronously at runtime.
 // `load()` RETURNS the composed resources keyed by your manifest keys, so you
 // hold real references and never look anything up by string:
 //

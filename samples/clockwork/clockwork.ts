@@ -12,12 +12,12 @@ import {
   Perf,
   Pointer,
   Signals,
-  Stage,
+  App,
   UI,
 } from "minimotor";
 import * as Sfx from "../shared/sfx.ts";
 
-const vp = Stage.init("game", { background: "#0b1020", plugins: [Perf.plugin()] }); // live viewport
+const vp = App.init("game", { background: "#0b1020", plugins: [Perf.plugin()] }); // live viewport
 
 interface Bud {
   x: number;

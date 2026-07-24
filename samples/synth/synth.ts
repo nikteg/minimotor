@@ -8,11 +8,11 @@
 // O P the black keys. Z/X shift octaves, 1-4 pick the waveform (all mirrored by
 // the SYNTH panel's tab strip + Octave slider). Click the on-screen piano too;
 // pick and start a backing groove from the on-screen Music controls.
-import { Audio, Draw, Keys, Loop, Mathf, Perf, Pointer, Stage, UI } from "minimotor";
+import { Audio, Draw, Keys, Loop, Mathf, Perf, Pointer, App, UI } from "minimotor";
 import type { KeyCode } from "minimotor";
 
 // The viewport is LIVE (mutated on resize) — piano + bars lay out from it.
-const vp = Stage.init("game", { background: "#12141c", plugins: [Perf.plugin()] });
+const vp = App.init("game", { background: "#12141c", plugins: [Perf.plugin()] });
 
 const midiFreq = (m: number) => 440 * 2 ** ((m - 69) / 12);
 

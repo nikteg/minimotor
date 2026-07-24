@@ -11,7 +11,7 @@
 //   network's packet rate — we deliberately send at only 20 Hz to prove it),
 //   and pruned when they go quiet, all in one helper,
 // - Perf.createNetMeter in the HUD for live traffic rates.
-import { Audio, Draw, Keys, Loop, Mathf, Net, Perf, Stage, UI } from "minimotor";
+import { Audio, Draw, Keys, Loop, Mathf, Net, Perf, App, UI } from "minimotor";
 
 const dec = new TextDecoder();
 
@@ -30,7 +30,7 @@ interface NetMsg {
 
 const meter = Perf.createNetMeter();
 // The viewport is LIVE (mutated on resize) — movement clamps read it fresh.
-const vp = Stage.init("game", {
+const vp = App.init("game", {
   background: "#14141c",
   plugins: [Perf.plugin({ net: meter })],
 });

@@ -107,7 +107,7 @@ describe("drawPerfHud", () => {
     return { ctx, rects };
   }
 
-  it("saves and restores ctx state so nothing leaks into the game's draw", () => {
+  it("saves and restores ctx state so nothing leaks into the app's draw", () => {
     const { ctx } = recorder();
     drawPerfHud(ctx, stats, { viewW: 800 });
     expect(ctx.save).toHaveBeenCalledTimes(1);

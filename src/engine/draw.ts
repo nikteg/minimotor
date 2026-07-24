@@ -427,11 +427,11 @@ export interface DrawTilesOptions {
 }
 
 /** Anything Draw.tiles can render — levels expose a `render` channel; the
- *  game calls this instead (data never draws itself). Generic so the skin
+ *  app calls this instead (data never draws itself). Generic so the skin
  *  type-checks against the level's legend. */
 export interface TilesLike<S> {
   /** Paint the level into `ctx` using `skin`. Called by `Draw.tiles` — the
-   *  game never invokes it directly. */
+   *  app never invokes it directly. */
   render(ctx: CanvasRenderingContext2D, skin: S, opts?: DrawTilesOptions): void;
 }
 
@@ -445,10 +445,10 @@ function tiles<S>(level: TilesLike<S>, skin: S, opts?: DrawTilesOptions): void {
 }
 
 /** Anything Draw.particles can render — particle systems expose a `render`
- *  channel; the game calls this instead (data never draws itself). */
+ *  channel; the app calls this instead (data never draws itself). */
 export interface ParticleLike {
   /** Blit the system's live particles to `ctx`. Called by `Draw.particles` —
-   *  the game never invokes it directly. */
+   *  the app never invokes it directly. */
   render(ctx: CanvasRenderingContext2D): void;
 }
 

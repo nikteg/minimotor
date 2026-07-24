@@ -2,18 +2,22 @@
 
 The engine surface changed (see `../API_PLAN.md`; rationale in
 `api-lab/API-REVIEW.md`). The reference port is `api-lab/src/main.ts`.
-Samples import named exports: `import { Stage, Loop, Draw, ... } from "minimotor"`
+Samples import named exports: `import { App, Loop, Draw, ... } from "minimotor"`
 (the `Minimotor` default object still exists, but prefer named imports).
 
 ## Breaking changes cheat sheet (old → new)
 
 ### Engine core
 
+- The `Stage` namespace → `App` (members keep their names: `Stage.init` →
+  `App.init`, `Stage.viewport` → `App.viewport`, …); `StageOptions` →
+  `AppInitOptions`.
 - `let vp = Stage.init(...)` + `Stage.onResize((n) => (vp = n))` →
-  `const view = Stage.init(...)` — the viewport is LIVE (mutated in place).
-  Delete resize-rebinding handlers; `Stage.onResize(fn)` still exists for
+  `const view = App.init(...)` — the viewport is LIVE (mutated in place).
+  Delete resize-rebinding handlers; `App.onResize(fn)` still exists for
   reactions (re-layout).
-- `Stage.init(c, { plugins, pauseOnPortrait, preventKeys })` unchanged; NEW
+- `Stage.init(c, { plugins, pauseOnPortrait, preventKeys })` →
+  `App.init(...)`, options unchanged; NEW
   `background: "#222"` — the engine clears every frame. Delete
   `ctx.clearRect(...)` from draw and any `background:` on body/canvas CSS.
 - `update(stepMs)` → `update()` — the fixed step IS the time unit. Constants
@@ -23,7 +27,7 @@ Samples import named exports: `import { Stage, Loop, Draw, ... } from "minimotor
   `createApp({ ...opts, plugins: [p], pauseOnPortrait: true })` (the instance
   type family is now `App`/`AppOptions`/`AppCallbacks`).
 - `Fullscreen.applyFullscreen()` / `fullscreenCSS` →
-  `Stage.init(c, { fullscreen: true })` or `Stage.fullscreen()`.
+  `App.init(c, { fullscreen: true })` or `App.fullscreen()`.
 
 ### Drawing (screen space is the DEFAULT; world lives in camera blocks)
 

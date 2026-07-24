@@ -16,12 +16,12 @@ import {
   Mathf,
   Perf,
   Sprites,
-  Stage,
+  App,
   Tiles,
   UI,
 } from "minimotor";
 
-Stage.init("game", { background: "#1b2432", plugins: [Perf.plugin()] });
+App.init("game", { background: "#1b2432", plugins: [Perf.plugin()] });
 
 const TW = 24;
 const COLS = 120;

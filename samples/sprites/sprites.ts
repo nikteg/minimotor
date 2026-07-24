@@ -4,23 +4,11 @@
 // (sx/sy/sw/sh), Draw.sprites(ecs.dense(Sprites.Sprite)), and Goodies.wrap. The sheet is generated
 // procedurally so the sample needs no asset files — an 8-frame
 // pulsing/rotating star.
-import {
-  Anim,
-  Draw,
-  ECS,
-  Goodies,
-  Loop,
-  Mathf,
-  Perf,
-  Pointer,
-  Sprites,
-  Stage,
-  UI,
-} from "minimotor";
+import { Anim, Draw, ECS, Goodies, Loop, Mathf, Perf, Pointer, Sprites, App, UI } from "minimotor";
 
 const ecs = ECS.create();
 
-const view = Stage.init("game", { background: "#12141c", plugins: [Perf.plugin({ world: ecs })] });
+const view = App.init("game", { background: "#12141c", plugins: [Perf.plugin({ world: ecs })] });
 
 const FRAMES = 8;
 const CELL = 64;

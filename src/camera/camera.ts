@@ -11,7 +11,7 @@
 // cameras cost nothing and GC away; the default camera is a platform facade
 // and lives forever.
 
-import { Draw, Stage, stepNow, type Rect } from "../engine/index.js";
+import { Draw, App, stepNow, type Rect } from "../engine/index.js";
 import type { Vec2 } from "../vec2.js";
 import { clamp } from "../mathf.js";
 
@@ -36,7 +36,7 @@ export interface CameraOptions {
   /** Static lens: always frame this whole rect (minimap). Overrides
    *  follow/damping/zoom. `{w, h}` means origin 0,0. */
   fit?: Rect | { w: number; h: number };
-  /** View size the lens maps onto. Defaults to the live `Stage.viewport`
+  /** View size the lens maps onto. Defaults to the live `App.viewport`
    *  (pass explicitly for camera math without a running engine). */
   view?: { w: number; h: number };
   /** Fixed-step source — injectable for tests. Defaults to the engine's
@@ -117,7 +117,7 @@ export function createCamera(options: CameraOptions = {}): CameraLens {
   const scratchVec: Vec2 = { x: 0, y: 0 };
 
   function view(): { w: number; h: number } {
-    return options.view ?? Stage.viewport;
+    return options.view ?? App.viewport;
   }
 
   function targetPoint(): { x: number; y: number } {
@@ -351,7 +351,7 @@ function facadeRender(
 }
 
 /** The always-existing default camera. Identity (0, 0, zoom 1) until
- *  configured — games that never touch it render pure screen space.
+ *  configured — apps that never touch it render pure screen space.
  *
  *    Camera.follow(player);                  // once, at setup
  *    Camera.render(() => drawWorld());       // per frame: world space inside

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Draw, Stage } from "../index.js";
+import { Draw, App } from "../index.js";
 import { create } from "../../ecs/index.js";
 import { Sprite } from "../../sprites.js";
 import type { DrawSprite } from "../index.js";
@@ -47,7 +47,7 @@ beforeEach(() => {
     ctx.canvas = this;
     return ctx as unknown as CanvasRenderingContext2D;
   };
-  Stage.init(document.createElement("canvas"));
+  App.init(document.createElement("canvas"));
 });
 
 afterEach(() => {

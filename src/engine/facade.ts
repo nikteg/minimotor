@@ -2,7 +2,7 @@ import { getDefaultApp, requireDefault, setDefaultApp } from "./default-app.js";
 import {
   createApp,
   type EnginePlugin,
-  type App,
+  type App as AppInstance,
   type AppCallbacks,
   type AppOptions,
   STEP_MS,
@@ -10,24 +10,30 @@ import {
 } from "./app.js";
 import { applyFullscreen, preventNavigation } from "../fullscreen.js";
 
-/** Everything `AppOptions` offers except the canvas (Stage.init's first
+/** Everything `AppOptions` offers except the canvas (App.init's first
  *  argument), plus document-level concerns that only make sense for the
  *  default app. */
-export type StageOptions = Omit<AppOptions, "canvas"> & {
+export type AppInitOptions = Omit<AppOptions, "canvas"> & {
   /** Inject the fullscreen stylesheet (fill the window, no scrollbars,
    *  safe-area handling) before building the app. */
   fullscreen?: boolean;
   /** Block accidental browser navigation (trackpad swipe-back, touch
-   *  overscroll) so a stray gesture can't drop the game — see
-   *  `Stage.preventNavigation`. */
+   *  overscroll) so a stray gesture can't drop the app — see
+   *  `App.preventNavigation`. */
   preventNavigation?: boolean;
 };
+
+/** An app instance — see the `App` interface in app.ts. Re-declared here as a
+ *  type alias so the `App` NAME carries both meanings (the instance type and
+ *  the facade const below) from one module; `export *` would otherwise drop
+ *  the name as ambiguous between app.ts and this file. */
+export type App = AppInstance;
 
 /** Canvas / viewport / screen. `init` builds the default engine and returns
  *  its viewport — a LIVE object (same identity forever, mutated on resize),
  *  so `view.w` / `view.h` / `view.dpr` never go stale. */
-export const Stage = {
-  /** Build the default instance and start driving `Stage`/`Loop`/`Draw` — call
+export const App = {
+  /** Build the default instance and start driving `App`/`Loop`/`Draw` — call
    *  this once, first. `canvas` is a `<canvas>` element or its id. Returns the
    *  LIVE `Viewport` (a stable object mutated on resize, so `view.w`/`view.h`
    *  never go stale). Options include `background` (engine clears each frame),
@@ -35,8 +41,8 @@ export const Stage = {
    *  `plugins`. Calling it again tears down the previous default and replaces
    *  it.
    *
-   *    const view = Stage.init("game", { background: "#111" }); */
-  init(canvas: string | HTMLCanvasElement, opts: StageOptions = {}): Viewport {
+   *    const view = App.init("game", { background: "#111" }); */
+  init(canvas: string | HTMLCanvasElement, opts: AppInitOptions = {}): Viewport {
     // Re-init replaces the default app — tear the old one down first so its
     // rAF loop and window listeners don't leak.
     getDefaultApp()?.destroy();
@@ -49,8 +55,8 @@ export const Stage = {
   /** Build an ISOLATED instance (its own loop, input and canvas) instead of the
    *  shared default that `init` sets up — for tests, or running several
    *  independent instances on one page. Read its state off the returned handle
-   *  rather than the `Stage`/`Loop`/`Draw` facades. */
-  create(opts: AppOptions): App {
+   *  rather than the `App`/`Loop`/`Draw` facades. */
+  create(opts: AppOptions): AppInstance {
     return createApp(opts);
   },
   /** The LIVE viewport — the same object `init` returned, mutated in place on
@@ -69,7 +75,7 @@ export const Stage = {
   },
   /** Block accidental browser navigation while playing — the back/forward the
    *  browser fires on a two-finger trackpad swipe or a touch overscroll — so a
-   *  stray gesture can't unload the game. Pass `false` to release. Idempotent. */
+   *  stray gesture can't unload the app. Pass `false` to release. Idempotent. */
   preventNavigation(prevent = true): void {
     preventNavigation(prevent);
   },
@@ -82,21 +88,21 @@ export const Stage = {
    *  `"none"`, …) — see `App.setCursor`. Reset every frame, so hover cursors
    *  clear themselves; call it each frame the state holds. Higher `priority`
    *  (default 0) wins when several are requested. The cursor is a canvas
-   *  presentation concern, so it lives on `Stage` (which owns the canvas) — not
+   *  presentation concern, so it lives on `App` (which owns the canvas) — not
    *  `Loop`. `UI.setCursor` forwards here for widget code. */
   setCursor(cursor: string, priority?: number): void {
     requireDefault().setCursor(cursor, priority);
   },
   /** Run `handler` whenever the viewport changes (window resize, orientation,
    *  DPR change) — for re-laying-out UI or re-baking sized sprites. Returns an
-   *  unsubscribe function. The viewport itself is live, so simple games rarely
+   *  unsubscribe function. The viewport itself is live, so simple apps rarely
    *  need this. */
   onResize(handler: (vp: Viewport) => void): () => void {
     return requireDefault().onResize(handler);
   },
 };
 
-/** The fixed-timestep game loop, driving the default instance: `Loop.run`
+/** The fixed-timestep loop, driving the default instance: `Loop.run`
  *  starts it, `Loop.pause`/`Loop.resume` freeze the simulation (drawing
  *  continues, so pause overlays render), and `Loop.step` is the fixed update
  *  timestep in ms — write speeds in px/step and gravity in px/step². */

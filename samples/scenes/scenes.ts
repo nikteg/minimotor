@@ -14,13 +14,13 @@ import {
   Mathf,
   Perf,
   Scenes,
-  Stage,
+  App,
   Transitions,
   UI,
 } from "minimotor";
 import type { DrawTextOptions } from "minimotor";
 
-const view = Stage.init("game", { background: "#12141c", plugins: [Perf.plugin()] }); // live viewport — every scene lays out from it
+const view = App.init("game", { background: "#12141c", plugins: [Perf.plugin()] }); // live viewport — every scene lays out from it
 
 const center = (text: string, y: number, opts: Partial<DrawTextOptions> = {}) =>
   Draw.text(text, { x: view.w / 2, y, align: "center", ...opts });

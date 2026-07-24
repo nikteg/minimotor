@@ -18,7 +18,7 @@ import {
   OnscreenInput,
   Particles,
   Scenes,
-  Stage,
+  App,
   Storage,
   Tiles,
   Timers,
@@ -27,7 +27,7 @@ import {
 } from "minimotor";
 
 // [#1]/[#3] Live viewport, engine-owned background.
-Stage.init("game", { background: "#222" });
+App.init("game", { background: "#222" });
 
 // On-screen touch gamepad; autohides on desktop, shows on touch.
 const pad = OnscreenInput.gamepad({

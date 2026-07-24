@@ -1,5 +1,5 @@
 // POCKET ASTEROIDS: a complete vector arcade loop in a fixed 16:9 viewport.
-// Focus: Stage fullscreen, Game.letterbox, Goodies torus helpers, Input.map with pad bindings.
+// Focus: App fullscreen, Game.letterbox, Goodies torus helpers, Input.map with pad bindings.
 // Controls: left/right rotate, up thrusts, Space fires, H hyperspace.
 import {
   Draw,
@@ -11,7 +11,7 @@ import {
   Mathf,
   Particles,
   Perf,
-  Stage,
+  App,
   UI,
 } from "minimotor";
 import * as Sfx from "../shared/sfx.ts";
@@ -23,7 +23,7 @@ const W = 480,
 // (uniform scale + bars) at any window size, so the vector art never distorts.
 // All drawing is in logical W×H space — no manual save/translate/scale. The
 // engine owns clearing: `background` is the field, `barColor` the bars.
-Stage.init("game", {
+App.init("game", {
   fullscreen: true,
   resolution: { w: W, h: H },
   background: "#080d1b",

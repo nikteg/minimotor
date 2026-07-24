@@ -20,7 +20,7 @@
 //   const input = Input.map({ jump: ["Space", "pad:a"], left: ["KeyA", "pad:lstick-left"] }, { pad });
 //   // draw(): OnscreenInput.drawControls(pad);
 
-import { Draw, Stage } from "./engine/index.js";
+import { Draw, App } from "./engine/index.js";
 import { Loop } from "./engine/index.js";
 import { Buttons, createGamepadTracker, type GamepadState, type PadButton } from "./input/index.js";
 import { getTheme } from "./ui/core/theme.js";
@@ -256,14 +256,14 @@ let rectCache: DOMRect | null = null;
 
 /** Window size in CSS px (the full canvas, ignoring any letterbox). */
 function windowSize(): { w: number; h: number } {
-  const canvas = Stage.canvas;
-  const dpr = Stage.viewport.dpr;
+  const canvas = App.canvas;
+  const dpr = App.viewport.dpr;
   return { w: canvas.width / dpr, h: canvas.height / dpr };
 }
 
 /** Map a pointer's client coords to WINDOW CSS px (no letterbox offset/scale). */
 function toWindow(clientX: number, clientY: number): { x: number; y: number } {
-  const canvas = Stage.canvas;
+  const canvas = App.canvas;
   const { w, h } = windowSize();
   rectCache ??= canvas.getBoundingClientRect();
   const rect = rectCache;
@@ -331,7 +331,7 @@ function attachListeners(st: PadInternal): void {
   if (st.listening) return;
   let canvas: HTMLCanvasElement;
   try {
-    canvas = Stage.canvas;
+    canvas = App.canvas;
   } catch {
     return; // no default app yet — retry on the next poll/draw
   }
@@ -520,7 +520,7 @@ function paint(st: PadInternal): void {
 
   const ctx = Draw.ctx;
   const th = getTheme();
-  const dpr = Stage.viewport.dpr;
+  const dpr = App.viewport.dpr;
   ctx.save();
   // Reset to WINDOW space: 1 unit = 1 CSS px, origin at the true window corner
   // (drop the letterbox scale/offset the base transform carries).

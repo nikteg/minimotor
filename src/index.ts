@@ -1,11 +1,11 @@
-// Minimotor - minimal game engine for small 2D canvas games.
+// Minimotor — a minimal 2D canvas framework for small games and playful apps.
 // The whole engine is reached through PascalCase `Minimotor.*` namespaces.
-// Engine runtime: Stage / Loop / Draw / Keys / Pointer / Mouse (backed by one default
-// app built via Stage.init). Services & helpers: Audio, Sprites, Storage, etc.
+// Engine runtime: App / Loop / Draw / Keys / Pointer / Mouse (backed by one default
+// app built via App.init). Services & helpers: Audio, Sprites, Storage, etc.
 // Isolated app instances (tests / multiple apps) are created with
-// `Stage.create`; extra camera lenses with `Camera.create`.
+// `App.create`; extra camera lenses with `Camera.create`.
 
-import { Stage, Loop, Draw, Keys, Pointer, Mouse } from "./engine/index.js";
+import { App, Loop, Draw, Keys, Pointer, Mouse } from "./engine/index.js";
 import { Vec2 } from "./vec2.js";
 import {
   rectsOverlap,
@@ -151,7 +151,7 @@ import * as Transitions from "./transitions.js";
 import * as OnscreenInput from "./onscreen.js";
 
 export {
-  Stage,
+  App,
   Loop,
   Draw,
   Keys,
@@ -195,10 +195,9 @@ export type {
   KeyCode,
   EnginePlugin,
   FrameTimings,
-  App,
   AppCallbacks,
   AppOptions,
-  StageOptions,
+  AppInitOptions,
   DrawTextOptions,
   DrawSpriteOptions,
   DrawSprite,
@@ -442,7 +441,7 @@ export type {
 export { Vec2 } from "./vec2.js";
 
 export const Minimotor = {
-  Stage,
+  App,
   Vec2,
   Loop,
   Draw,

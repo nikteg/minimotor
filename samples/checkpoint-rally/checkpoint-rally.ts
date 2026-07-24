@@ -17,13 +17,13 @@ import {
   Loop,
   Mathf,
   Perf,
-  Stage,
+  App,
   Storage,
   UI,
 } from "minimotor";
 import { Physics2D } from "minimotor/physics2d";
 
-const view = Stage.init("game", {
+const view = App.init("game", {
   background: "#12161f",
   preventNavigation: true,
   plugins: [Perf.plugin()],

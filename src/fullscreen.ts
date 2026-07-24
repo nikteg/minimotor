@@ -38,7 +38,7 @@ export const fullscreenCSS = `
 
 /** Ensure a mobile-friendly viewport meta: `viewport-fit=cover` (so the
  *  `env(safe-area-inset-*)` values are non-zero on notched iOS) and no user
- *  zoom (a game shouldn't pinch/double-tap-zoom). Patches an existing tag or
+ *  zoom (a fullscreen canvas app shouldn't pinch/double-tap-zoom). Patches an existing tag or
  *  creates one. */
 function ensureViewportMeta(): void {
   const content =
@@ -65,7 +65,7 @@ function isFormField(target: EventTarget | null): boolean {
   );
 }
 
-/** Block the ways iOS zooms/selects a game view that CSS/meta can't. iOS ignores
+/** Block the ways iOS zooms/selects a canvas view that CSS/meta can't. iOS ignores
  *  `maximum-scale`/`user-scalable=no` and still runs its own gestures under
  *  `touch-action:none`, so:
  *  - pinch-zoom → swallow `gesturestart`/`change`/`end`.
@@ -132,7 +132,7 @@ export function applyFullscreen(): void {
 let navWheel: ((e: WheelEvent) => void) | null = null;
 
 /** Stop stray browser navigation — the back/forward the OS fires on a two-finger
- *  trackpad swipe or a touch overscroll — so a game doesn't lose its state to an
+ *  trackpad swipe or a touch overscroll — so the app doesn't lose its state to an
  *  accidental gesture. Sets `overscroll-behavior: none` on the document and
  *  swallows horizontal-dominant wheel events (the trackpad swipe-back signal);
  *  vertical scrolling and the engine's own wheel input are untouched. Pass

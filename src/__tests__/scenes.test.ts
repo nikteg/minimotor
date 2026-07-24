@@ -77,7 +77,7 @@ describe("Scenes.create (typed stack)", () => {
     expect(drew).toEqual(["cover", "toast"]); // world is covered
   });
 
-  it("push holds the game clock; pop releases it (the time boundary)", () => {
+  it("push holds the world clock; pop releases it (the time boundary)", () => {
     const clock = makeClock();
     const scenes = Scenes.create({ playing: {}, paused: {} }, { clock });
     expect(clock.held).toBe(false);

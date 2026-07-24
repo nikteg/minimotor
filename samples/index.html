@@ -467,7 +467,7 @@
         <div class="examples">
           <figure class="snippet">
             <figcaption>
-              <span><b>Move a square</b> — Stage, Loop, Keys, Draw</span>
+              <span><b>Move a square</b> — App, Loop, Keys, Draw</span>
               <button class="copy" type="button">Copy</button>
             </figcaption>
             <pre><code data-example="square"></code></pre>
@@ -543,7 +543,7 @@
           "minimal",
           "Minimal",
           "",
-          ["Stage", "Keys", "Loop"],
+          ["App", "Keys", "Loop"],
           "Absolute minimum: a colored square that moves with the arrow keys.",
         ],
         [
@@ -641,8 +641,8 @@
           "dual-canvas",
           "Dual Canvas",
           "",
-          ["Stage.create", "UI.begin", "multi-game"],
-          "Two independent games on one page — the default game plus an isolated Stage.create instance, each driving its own immediate-mode UI via UI.begin(ctx).",
+          ["App.create", "UI.begin", "multi-game"],
+          "Two independent games on one page — the default game plus an isolated App.create instance, each driving its own immediate-mode UI via UI.begin(ctx).",
         ],
         [
           "swept",
@@ -788,7 +788,7 @@
           "(?<com>//[^\\n]*)",
           "(?<str>\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])*'|`(?:\\\\.|[^`\\\\])*`)",
           "(?<key>\\b(?:import|from|const|let|return|if|else|for|of|function|new|true|false)\\b)",
-          "(?<ns>\\b(?:Stage|Loop|Keys|Pointer|Draw|Camera|ECS|Sprites|Anim|Tiles|Collision|Input|Audio|Particles|Scenes|Timers|Mathf|Vec2|Net|Storage|UI|Physics2D)\\b)",
+          "(?<ns>\\b(?:App|Loop|Keys|Pointer|Draw|Camera|ECS|Sprites|Anim|Tiles|Collision|Input|Audio|Particles|Scenes|Timers|Mathf|Vec2|Net|Storage|UI|Physics2D)\\b)",
           "(?<num>\\b\\d+(?:\\.\\d+)?\\b)",
         ].join("|"),
         "g",

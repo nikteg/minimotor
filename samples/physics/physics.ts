@@ -17,7 +17,7 @@ import {
   Perf,
   Pointer,
   Sprites,
-  Stage,
+  App,
   UI,
 } from "minimotor";
 import { Physics2D } from "minimotor/physics2d";
@@ -25,7 +25,7 @@ import { Physics2D } from "minimotor/physics2d";
 const ecs = ECS.create();
 const { Phys } = Physics2D; // the standard body-holding component
 
-let vp = Stage.init("game", {
+let vp = App.init("game", {
   background: "#12141c",
   plugins: [Perf.plugin({ world: ecs })],
 });
@@ -66,7 +66,7 @@ const plank = phys.box(vp.w / 2, vp.h * 0.55, paddle.w, paddle.h, {
 const hinge = phys.pin(anchor, plank, vp.w / 2, vp.h * 0.55);
 hinge.motor(1.5, 80000); // slow constant spin — flings whatever lands on it
 
-Stage.onResize((next) => {
+App.onResize((next) => {
   vp = next;
   // Re-target the frame: the kinematic walls glide to the new rect, sweeping
   // bodies ahead of them — everything pushes on everything else, no teleports.

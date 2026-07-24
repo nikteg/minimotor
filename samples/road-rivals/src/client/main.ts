@@ -16,7 +16,7 @@ import {
   Net,
   OnscreenInput,
   Perf,
-  Stage,
+  App,
   Transitions,
   UI,
 } from "minimotor";
@@ -253,7 +253,7 @@ interface RosterRow {
 
 const meter = Perf.createNetMeter();
 // The viewport is LIVE (mutated on resize); the engine clears to `background`.
-const vp = Stage.init("game", {
+const vp = App.init("game", {
   background: "#101719",
   plugins: [Perf.plugin({ net: meter })],
   // Fixed 16:9 logical stage, letterboxed INSIDE the safe area — so on a notched
@@ -1717,7 +1717,7 @@ Loop.run({
       ctx.moveTo(Mouse.x, Mouse.y + 5);
       ctx.lineTo(Mouse.x, Mouse.y + 13);
       ctx.stroke();
-      Stage.setCursor("none");
+      App.setCursor("none");
     }
     OnscreenInput.drawControls(pad);
   },

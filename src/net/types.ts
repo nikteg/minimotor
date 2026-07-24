@@ -47,7 +47,7 @@ export interface RtcConfig {
 }
 
 /** A signaling message exchanged out-of-band between WebRTC peers.
- *  The game is responsible for delivering these (e.g. via a WebSocket relay). */
+ *  The app is responsible for delivering these (e.g. via a WebSocket relay). */
 export interface Signal {
   /** Signal kind: `"offer"`/`"answer"` carry `sdp`; `"candidate"` carries `candidate`. */
   type: "offer" | "answer" | "candidate";
@@ -66,7 +66,7 @@ export interface Transport {
   send(data: Uint8Array): void;
 
   /** Like `send`, but returns false instead of throwing when the transport
-   *  isn't connected — safe to call every frame from a game loop. */
+   *  isn't connected — safe to call every frame from the update loop. */
   trySend(data: Uint8Array): boolean;
 
   /** Send a JSON-serializable object (convenience wrapper around send). */

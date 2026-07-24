@@ -1,5 +1,5 @@
 // LEAD DEFENDER: predictive aiming, angle steering, wave scaling and radial spawns.
-import { Collision, Draw, Goodies, Keys, Loop, Particles, Perf, Stage, UI } from "minimotor";
+import { Collision, Draw, Goodies, Keys, Loop, Particles, Perf, App, UI } from "minimotor";
 
 interface Enemy {
   x: number;
@@ -18,7 +18,7 @@ interface Bullet {
 }
 
 // Live viewport; the engine owns the background clear.
-const vp = Stage.init("game", {
+const vp = App.init("game", {
   background: "#080d18",
   plugins: [Perf.plugin()],
   preventNavigation: true,

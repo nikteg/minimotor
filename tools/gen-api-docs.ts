@@ -313,7 +313,7 @@ const linkTarget = new Map<string, string>();
 
 // Turn any identifier that names a documented export into a link to its anchor.
 // Runs on a token's TEXT (Shiki bundles names with surrounding punctuation like
-// `StageOptions) ` into one token, so whole-token matching misses them).
+// `AppInitOptions) ` into one token, so whole-token matching misses them).
 function linkifyText(text: string): string {
   let out = "";
   let last = 0;

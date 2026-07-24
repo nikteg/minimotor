@@ -2,12 +2,12 @@ import type { Keys, Pointer } from "./input.js";
 import { clearDefaultApp } from "./default-app.js";
 import type { KeyCode } from "./keycodes.js";
 
-// ---------- Minimal game framework ----------
+// ---------- Minimal 2D canvas framework ----------
 // The engine is reached through PascalCase `Minimotor.*` namespaces, all backed
-// by ONE default app that `Stage.init()` builds. Game code never imports an
-// instance and never threads a per-frame context — it reads the namespaces:
+// by ONE default app that `App.init()` builds. Application code never imports
+// an instance and never threads a per-frame context — it reads the namespaces:
 //
-//     const vp = Minimotor.Stage.init("game", { plugins: [Minimotor.Perf.plugin()] });
+//     const vp = Minimotor.App.init("game", { plugins: [Minimotor.Perf.plugin()] });
 //
 //     Minimotor.Loop.run({
 //       update() { if (Minimotor.Keys.pressed("Space")) jump(); },
@@ -172,7 +172,7 @@ export interface App {
   stop(): void;
   /** Tear the app down: stop the loop and remove every window/canvas listener
    *  it registered. The instance is unusable afterwards. Needed for tests,
-   *  hot-reload, and re-running `Stage.init`. */
+   *  hot-reload, and re-running `App.init`. */
   destroy(): void;
 }
 
@@ -188,7 +188,7 @@ export interface AppOptions {
   /** Backdrop color. When set, the ENGINE owns clearing: the canvas is
    *  filled with this color at the start of every frame (no `clearRect`
    *  boilerplate) and it is the single source of truth for the background —
-   *  don't also set one in CSS. Omit to keep clearing in game hands. */
+   *  don't also set one in CSS. Omit to keep clearing in the app's hands. */
   background?: string;
   /** Fixed logical resolution. When set, the engine LETTERBOXES: it fits a
    *  `w×h` logical space into the window (uniform scale, centered, bars on
@@ -236,7 +236,7 @@ const MAX_CATCHUP_STEPS = 5;
 
 const DEFAULT_PREVENT_KEYS = ["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"];
 
-/** Create an isolated app. Prefer `Minimotor.Stage.init()` for app code;
+/** Create an isolated app. Prefer `Minimotor.App.init()` for app code;
  *  this stays exported for tests and multi-app scenarios. */
 export function createApp(options: AppOptions): App {
   return buildApp(options);
@@ -430,7 +430,7 @@ function buildApp(options: AppOptions): App {
 
   const onKeyDown = (e: KeyboardEvent) => {
     // Native controls backing UI.textInput/UI.select own their keystrokes.
-    // Do not prevent Space/arrows or leak typing into game actions.
+    // Do not prevent Space/arrows or leak typing into app actions.
     if (editingText(e.target)) return;
     if (preventKeys.has(e.code)) e.preventDefault();
     if (!heldKeys.has(e.code)) {
@@ -444,7 +444,7 @@ function buildApp(options: AppOptions): App {
     heldKeys.add(e.code);
   };
   const onKeyUp = (e: KeyboardEvent) => {
-    heldKeys.delete(e.code); // also clear a game key if focus changed mid-hold
+    heldKeys.delete(e.code); // also clear a held key if focus changed mid-hold
     if (editingText(e.target)) return;
     releasedKeys.add(e.code);
   };
@@ -628,7 +628,7 @@ function buildApp(options: AppOptions): App {
     while (accumulator >= STEP_MS) {
       if (++steps > MAX_CATCHUP_STEPS) {
         // Already this far behind, more catch-up only digs the hole deeper —
-        // drop the backlog and let the game run slow-motion for one frame.
+        // drop the backlog and let the app run slow-motion for one frame.
         accumulator = 0;
         break;
       }
@@ -803,7 +803,7 @@ function readViewport(canvas: HTMLCanvasElement, resolution?: { w: number; h: nu
   const availH = Math.max(1, winH - safeTop - safeBottom);
 
   // Letterbox: a fixed logical resolution fitted (uniform, centered) into the
-  // SAFE rectangle; otherwise the logical size IS the full window (games inset
+  // SAFE rectangle; otherwise the logical size IS the full window (apps inset
   // their own HUD using the reported safe insets).
   let w = winW;
   let h = winH;

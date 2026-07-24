@@ -8,13 +8,13 @@ import { Mixer } from "./mixer.js";
 
 /** Run a `SfxBuilder`, wiring its nodes into the `"sfx"` bus. Crash-safe: a
  *  missing or browser-blocked `AudioContext` is swallowed (silence beats a
- *  frozen game — a throw here would bubble through `update()` and kill the loop). */
+ *  frozen app — a throw here would bubble through `update()` and kill the loop). */
 export function playSfx(build: SfxBuilder): void {
   try {
     const ctx = ensureAudio();
     build(ctx, ctx.currentTime, Mixer.bus("sfx").input);
   } catch {
-    /* silent - rather no sound than a frozen game */
+    /* silent - rather no sound than a frozen app */
   }
 }
 
@@ -126,7 +126,7 @@ export function tone(opts: ToneOptions): void {
       }
     }
   } catch {
-    /* silent - rather no sound than a frozen game */
+    /* silent - rather no sound than a frozen app */
   }
 }
 

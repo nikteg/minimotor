@@ -1,6 +1,6 @@
-import { Stage, Loop, Keys, Anim, Assets, Draw } from "minimotor";
+import { App, Loop, Keys, Anim, Assets, Draw } from "minimotor";
 
-Stage.init("game", { background: "#12141c" });
+App.init("game", { background: "#12141c" });
 
 // One image PER state (idle.png, run.png, …) — the multi-image companion to
 // Anim.sheet. `art.idle` etc. are typed from the manifest keys.

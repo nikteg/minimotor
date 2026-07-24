@@ -22,7 +22,7 @@
 
 import { Clock, type ClockHandle } from "./clock.js";
 import { run as runTransition, type Transition, type TransitionRun } from "./transitions.js";
-import { Stage } from "./engine/index.js";
+import { App } from "./engine/index.js";
 
 /** One scene. Every hook is optional; hooks capture game state via closure. */
 export interface SceneSpec {
@@ -101,7 +101,7 @@ function create<K extends string>(
   }
 
   /** Modal time rule: any pushed scene (above the bottom) that doesn't opt
-   *  out holds the game clock. Recomputed after every stack change. */
+   *  out holds the world clock. Recomputed after every stack change. */
   function applyHold(): void {
     const shouldHold = stack.some((name, i) => i > 0 && resolve(name).holdsTime !== false);
     if (shouldHold && !held) {
@@ -169,7 +169,7 @@ function create<K extends string>(
         transitionLast = now;
         let view: { w: number; h: number };
         try {
-          view = Stage.viewport;
+          view = App.viewport;
         } catch {
           view = { w: ctx.canvas.width, h: ctx.canvas.height };
         }

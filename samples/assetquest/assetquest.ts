@@ -1,6 +1,6 @@
 // ASSET QUEST: a tiny playable archive loaded from a manifest at runtime.
 // Focus: Assets.load/progress/json and Anim.sheet, with plain JSON level data.
-import { Anim, Assets, Collision, Draw, Keys, Loop, Particles, Perf, Stage, UI } from "minimotor";
+import { Anim, Assets, Collision, Draw, Keys, Loop, Particles, Perf, App, UI } from "minimotor";
 import type { SheetCursor } from "minimotor";
 import * as Sfx from "../shared/sfx.ts";
 
@@ -16,7 +16,7 @@ interface Relic {
 }
 
 // The viewport is LIVE (mutated on resize); the engine clears to `background`.
-const vp = Stage.init("game", {
+const vp = App.init("game", {
   background: "#111827",
   plugins: [Perf.plugin()],
   preventNavigation: true,

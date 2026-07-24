@@ -1,8 +1,8 @@
 // ---------- Signals ----------
-// A tiny synchronous pub/sub bus for decoupling game modules: emit a named
+// A tiny synchronous pub/sub bus for decoupling app modules: emit a named
 // event with a payload; any number of listeners react. No engine/DOM
 // dependency. Handler exceptions are isolated so one bad listener can't stop
-// the rest (or crash the game loop).
+// the rest (or crash the loop).
 //
 //   Minimotor.Signals.on("score", n => hud.score += n);
 //   Minimotor.Signals.emit("score", 10);
@@ -71,7 +71,7 @@ export function createSignals(): SignalBus {
         try {
           h(payload);
         } catch (err) {
-          // A listener must never break the emitter or the game loop.
+          // A listener must never break the emitter or the loop.
           console.error(`Minimotor.Signals: handler for "${event}" threw`, err);
         }
       }

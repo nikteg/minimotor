@@ -153,7 +153,7 @@ export function createPeer(config: RtcConfig = {}): {
 
       const channel = pc.createDataChannel("game", {
         ordered: false, // allow out-of-order delivery for lower latency
-        maxRetransmits: 0, // unreliable mode (like UDP) — game should handle lost packets
+        maxRetransmits: 0, // unreliable mode (like UDP) — the app should handle lost packets
       });
       setupDataChannel(channel);
       setupPeer(pc);

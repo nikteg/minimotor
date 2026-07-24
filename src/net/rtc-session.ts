@@ -1,7 +1,7 @@
 // ---------- WebRTC sessions (host / join) ----------
 // Pure peer-to-peer multiplayer with a star topology: one client is the HOST,
 // every other client is a GUEST that opens a data channel straight to the host.
-// A WebSocket only carries signaling (SDP/ICE) — once the channels are up, game
+// A WebSocket only carries signaling (SDP/ICE) — once the channels are up, app
 // traffic never touches the server. Pair with `signaling()` from the
 // `minimotor/server` entry (or any relay that speaks the same protocol).
 //
@@ -42,7 +42,7 @@ type Notice =
 
 const decode = (bytes: Uint8Array): unknown => JSON.parse(new TextDecoder().decode(bytes));
 
-// Game payloads travel as JSON text frames on the data channel (createPeer
+// App payloads travel as JSON text frames on the data channel (createPeer
 // delivers both binary and text frames back as bytes).
 const encode = (obj: unknown): Uint8Array => new TextEncoder().encode(JSON.stringify(obj));
 
