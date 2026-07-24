@@ -23,7 +23,7 @@ interface Rect {
   h: number;
 }
 
-// The viewport is LIVE (mutated on resize) — frameRect() reads it fresh each frame.
+// The viewport is LIVE (mutated on resize); the UI.group self-centers in it.
 const vp = Stage.init("game", {
   background: "#0b0e14",
   plugins: [Perf.plugin()],
@@ -132,16 +132,6 @@ const ROW_H = 30;
 
 const FOOTER_H = 40;
 
-// The frame rect, recomputed every frame from the live viewport (resize is free).
-// Cap to the viewport (minus a margin) so it never overflows a narrow phone;
-// clamp the preferred size on larger screens. No hard MIN — a min wider than the
-// viewport is exactly what pushed content off both edges.
-function frameRect(): Rect {
-  const w = Math.min(760, vp.w - 24);
-  const h = Math.min(560, vp.h - 24);
-  return { x: Math.round((vp.w - w) / 2), y: Math.round((vp.h - h) / 2), w, h };
-}
-
 const pingColor = (ping: number) => (ping < 60 ? "#6bff9e" : ping < 130 ? "#ffd43b" : "#ff6b6b");
 
 Loop.run({
@@ -154,7 +144,6 @@ Loop.run({
   },
 
   draw() {
-    const { x, y, w, h } = frameRect();
     const nFilters =
       (hideFull ? 1 : 0) +
       (hideEmpty ? 1 : 0) +
@@ -163,20 +152,26 @@ Loop.run({
       (region !== "ALL" ? 1 : 0);
     let filterBtn: Rect = { x: 0, y: 0, w: 0, h: 0 };
 
-    // The whole frame is a titled UI.group: it draws the panel + title AND lays
-    // its body out. The body cursor carves the control bar, the windowed table
-    // region (fill), and the footer (in the column's bottom padding). No
-    // separate layout pass, no hand-threaded rects.
+    // The whole frame is a titled UI.group, self-centered in the viewport (no
+    // hand-rolled rect): 760×560 preferred, clamped to the viewport minus a 12px
+    // margin. Its body cursor carves the control bar; the table AUTO-FLOWS to
+    // fill the rest (reserving the footer), and the footer takes the last slot.
     UI.group(
-      { id: uiId("frame"), x, y, w, h, title: "SERVER BROWSER", pad: 12, gap: 8 },
+      {
+        id: uiId("frame"),
+        anchor: "center",
+        w: 760,
+        h: 560,
+        margin: 12,
+        title: "SERVER BROWSER",
+        pad: 12,
+        gap: 8,
+      },
       (body) => {
         const controls = body.next(undefined, 30);
-        const tableRect = body.fill(FOOTER_H + 8);
-        const footSlot = body.next(undefined, FOOTER_H);
-        const footer = { ...footSlot, y: footSlot.y + 8 };
 
         // Two closure rows over the same control slot: the left one flows from
-        // the left, the right one (anchor:"end", reverse:true) grows from the right.
+        // the left, the right one (justify:"end", reverse:true) grows from the right.
         UI.row({ ...controls, gap: 10 }, (bar) => {
           tab = UI.tabs({
             id: uiId("mode-tabs"),
@@ -197,7 +192,7 @@ Loop.run({
           filterBtn = bar.last ?? filterBtn; // the popover anchors under this
         });
 
-        UI.row({ ...controls, gap: 10, anchor: "end", reverse: true }, (bar) => {
+        UI.row({ ...controls, gap: 10, justify: "end", reverse: true }, (bar) => {
           if (
             UI.button({
               id: uiId("refresh-button"),
@@ -228,8 +223,10 @@ Loop.run({
         // list, all in one call. UI.table sorts the filtered rows by the active
         // column, owns the scroll + selection, and reports the state back.
         const list = visibleServers();
+        // Auto-flows: fills the group body below the controls, leaving the footer
+        // slot (FOOTER_H + 8) for the row after it. No rect passed in.
         const res = UI.table<Server>({
-          ...tableRect,
+          reserve: FOOTER_H + 8,
           rowH: ROW_H,
           headerH: 20,
           id: uiId("servers"),
@@ -283,20 +280,22 @@ Loop.run({
         selected = res.selected;
         if (list.length === 0) {
           UI.text("no servers match the filters", {
-            x: tableRect.x,
-            y: tableRect.y + 44,
-            w: tableRect.w,
+            x: res.rect.x,
+            y: res.rect.y + 44,
+            w: res.rect.w,
             align: "center",
             color: "dim",
           });
         }
 
-        // ---- footer: count, status, JOIN ----
+        // ---- footer: count, status, JOIN — the last body slot ----
+        const footSlot = body.next(undefined, FOOTER_H);
+        const footer = { ...footSlot, y: footSlot.y + 8 };
         // The join status takes the counter's spot while it's showing.
         const footerTextH = 18;
         const footText = {
           x: footer.x,
-          y: y + h - 8 - footerTextH,
+          y: footer.y + (footer.h - footerTextH) / 2,
           w: footer.w - 130,
           h: footerTextH,
           size: 12,

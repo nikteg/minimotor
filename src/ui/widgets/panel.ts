@@ -88,7 +88,7 @@ function panelContainer<R>(opts: PanelContainerOptions, children: () => R): R {
     { x, y: y + top, w, h: h - top },
     opts.gap ?? 10,
     pad,
-    "start", // anchor
+    "start", // justify
     false, // reverse
     (st) => {
       const r = children();

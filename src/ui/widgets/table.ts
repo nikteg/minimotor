@@ -1,5 +1,5 @@
 import { listItem } from "./lists.js";
-import { text, uiCtx } from "../core/index.js";
+import { Flow, currentLayout, text, uiCtx } from "../core/index.js";
 import { list } from "./lists.js";
 
 // ---------- Table ----------
@@ -36,14 +36,22 @@ export interface TableSort {
 /** Inputs to `table`: geometry, `columns`, `rows`, and the controlled
  *  sort/scroll/selection state. */
 export interface TableOptions<Row> {
-  /** Left edge in px. */
-  x: number;
-  /** Top edge in px. */
-  y: number;
-  /** Width in px (header strip + rows), including the scrollbar gutter. */
-  w: number;
-  /** Total height in px, header strip included. */
-  h: number;
+  /** Left edge in px. Omit (with `y`) to AUTO-FLOW: the table fills the current
+   *  `row`/`col`/`group` (or `at` flow) instead of being placed by hand. */
+  x?: number;
+  /** Top edge in px (see `x`). */
+  y?: number;
+  /** Width in px (header strip + rows), including the scrollbar gutter. Ignored
+   *  when auto-flowing (the container's cross axis sets it). */
+  w?: number;
+  /** Total height in px, header strip included. Ignored when auto-flowing. */
+  h?: number;
+  /** Place in this layout flow instead of the ambient one (auto-flow). */
+  at?: Flow;
+  /** When auto-flowing, px to leave for siblings drawn AFTER the table (e.g. a
+   *  footer row) — the table fills the remaining main axis minus this. Default 0
+   *  (fill all remaining). */
+  reserve?: number;
   /** Column definitions, left to right. */
   columns: TableColumn<Row>[];
   /** The data rows; left untouched — the table sorts a copy. */
@@ -76,6 +84,9 @@ export interface TableResult<Row> {
   offset: number;
   /** Updated selection — a row click may have changed it; null if none. */
   selected: Row | null;
+  /** The rect the table occupied — handy for overlaying an empty-state message
+   *  when auto-flowing (no rect was passed in). */
+  rect: { x: number; y: number; w: number; h: number };
 }
 
 /** A sortable, scrollable data table: clickable column headers (with sort
@@ -95,6 +106,12 @@ export interface TableResult<Row> {
  *    }); */
 export function table<Row>(opts: TableOptions<Row>): TableResult<Row> {
   const ctx = uiCtx();
+  // Resolve the rect: explicit x/y wins; otherwise auto-flow — fill the ambient
+  // (or `at`) layout, leaving `reserve` px for siblings drawn after the table.
+  const layout = opts.at ?? (opts.x === undefined ? currentLayout() : null);
+  const rect = layout
+    ? layout.fill(opts.reserve ?? 0)
+    : { x: opts.x ?? 0, y: opts.y ?? 0, w: opts.w ?? 0, h: opts.h ?? 0 };
   const headerH = opts.headerH ?? 24;
   const gap = opts.gap ?? 0;
   const rowH = opts.rowH;
@@ -102,17 +119,17 @@ export function table<Row>(opts: TableOptions<Row>): TableResult<Row> {
 
   // Does the list overflow → is a scrollbar gutter reserved? Match `list`'s own
   // formula so the header columns line up with the row cells (both drop it).
-  const listH = opts.h - headerH;
+  const listH = rect.h - headerH;
   const content = opts.rows.length * (rowH + gap) - (opts.rows.length > 0 ? gap : 0);
   const barW = content > listH ? scrollW + 4 : 0;
-  const contentW = opts.w - barW;
+  const contentW = rect.w - barW;
 
   // Column x-layout: fixed widths first, the remainder split among flex columns.
   const fixed = opts.columns.reduce((sum, c) => sum + (c.width ?? 0), 0);
   const flexCount = opts.columns.filter((c) => c.width === undefined).length;
   const flexW = flexCount > 0 ? Math.max(0, (contentW - fixed) / flexCount) : 0;
   const rects: { x: number; w: number }[] = [];
-  let cx = opts.x;
+  let cx = rect.x;
   for (const c of opts.columns) {
     const w = c.width ?? flexW;
     rects.push({ x: cx, w });
@@ -150,7 +167,7 @@ export function table<Row>(opts: TableOptions<Row>): TableResult<Row> {
         // tab stops ahead of the primary controls above the table.
         tabIndex: -1,
         x: r.x,
-        y: opts.y,
+        y: rect.y,
         w: r.w,
         h: headerH,
       });
@@ -161,7 +178,7 @@ export function table<Row>(opts: TableOptions<Row>): TableResult<Row> {
     const arrow = activeCol ? (sort.dir === 1 ? " ▲" : " ▼") : "";
     text(ctx, c.label + arrow, {
       x: r.x,
-      y: opts.y,
+      y: rect.y,
       w: r.w,
       h: headerH,
       size: 12,
@@ -175,9 +192,9 @@ export function table<Row>(opts: TableOptions<Row>): TableResult<Row> {
   let selected: Row | null = opts.selected ?? null;
   const offset = list(
     {
-      x: opts.x,
-      y: opts.y + headerH,
-      w: opts.w,
+      x: rect.x,
+      y: rect.y + headerH,
+      w: rect.w,
       h: listH,
       rowH,
       gap,
@@ -213,5 +230,5 @@ export function table<Row>(opts: TableOptions<Row>): TableResult<Row> {
     },
   );
 
-  return { sort, offset, selected };
+  return { sort, offset, selected, rect };
 }

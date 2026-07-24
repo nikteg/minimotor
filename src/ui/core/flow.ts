@@ -5,6 +5,8 @@
 
 import { widgetId } from "./identity.js";
 import type { IdPart } from "./identity.js";
+import { ANCHOR_H, ANCHOR_V, type TextAnchor } from "./text.js";
+import { Stage } from "../../engine/index.js";
 
 /** Options for `flow()` — a one-axis layout cursor. */
 export interface FlowOptions {
@@ -221,16 +223,18 @@ export interface LayoutOptions {
    *  `group` defaults to `theme.pad`. */
   pad?: number;
   /** Where the content block sits on the main axis when the container is wider
-   *  (a row) / taller (a col) than its children — POSITION, not order. `"end"`
-   *  pins it to the far edge (a right-aligned toolbar), children keeping their
-   *  natural order. Default `"start"`. Orthogonal to `reverse`. */
-  anchor?: "start" | "end";
+   *  (a row) / taller (a col) than its children — POSITION, not order (this is
+   *  flexbox's `justify-content`). `"end"` pins it to the far edge (a
+   *  right-aligned toolbar), children keeping their natural order. Default
+   *  `"start"`. Orthogonal to `reverse`. (Not to be confused with `anchor` on
+   *  `panel`/`text`, which is VIEWPORT placement.) */
+  justify?: "start" | "end";
   /** Lay children in reverse ORDER (last-drawn first) — position is unchanged
-   *  (see `anchor`). Default false. `anchor:"end"` + `reverse:true` together give
-   *  the old right-to-left `align:"end"` behavior. NOTE: only the VISUAL order
-   *  reverses; keyboard focus/Tab still follows draw (call) order, so with
+   *  (see `justify`). Default false. `justify:"end"` + `reverse:true` together
+   *  give the old right-to-left `align:"end"` behavior. NOTE: only the VISUAL
+   *  order reverses; keyboard focus/Tab still follows draw (call) order, so with
    *  `reverse` the two diverge (like CSS `flex-direction: row-reverse`). Prefer
-   *  `anchor:"end"` when Tab order should match what's on screen. */
+   *  `justify:"end"` when Tab order should match what's on screen. */
   reverse?: boolean;
   /** Overflow behavior along the main axis, like CSS. `"visible"` (default)
    *  auto-grows the box to its content. `"auto"`/`"scroll"` cap the box (at `h`,
@@ -243,6 +247,14 @@ export interface LayoutOptions {
    *  line's tallest/widest child. Needs a bounded main axis (`w` for a row, `h`
    *  for a col) to know where to break. Default false. */
   wrap?: boolean;
+  /** Place this (root) container in the VIEWPORT — `"center"` for a dialog,
+   *  `"bottomRight"` for a HUD cluster, etc. — instead of pinning `x`/`y`. `w`/`h`
+   *  become the PREFERRED size, clamped to the viewport minus `margin`; `x`/`y`
+   *  become offsets from the anchor point. (Distinct from `justify`, which is
+   *  main-axis child placement.) */
+  anchor?: TextAnchor;
+  /** Gap kept from the viewport edges when `anchor` is set (px). Default 0. */
+  margin?: number;
 }
 
 // Run `children` with a fresh layout cursor over `rect`'s interior. The
@@ -253,7 +265,7 @@ export function runContainer<R>(
   rect: { x: number; y: number; w: number; h: number },
   gap: number,
   pad: number,
-  anchor: "start" | "end",
+  justify: "start" | "end",
   reverse: boolean,
   children: (layout: Flow) => R,
   fitCross = false,
@@ -263,13 +275,13 @@ export function runContainer<R>(
   const inner = { x: rect.x + pad, y: rect.y + pad, w: rect.w - pad * 2, h: rect.h - pad * 2 };
   const innerNear = dir === "row" ? inner.x : inner.y;
   const innerMain = dir === "row" ? inner.w : inner.h;
-  // ANCHOR positions the content block on the main axis: "end" pushes it to the
+  // JUSTIFY positions the content block on the main axis: "end" pushes it to the
   // far edge by the slack (extra room beyond the children's measured length,
   // from last frame's cache — 0 on the first frame, corrected next). REVERSE
   // decides growth direction: forward from the block's near edge, or backward
   // from its far edge (so the first child lands at the far end).
   const slack =
-    anchor === "end" && contentMain !== undefined ? Math.max(0, innerMain - contentMain) : 0;
+    justify === "end" && contentMain !== undefined ? Math.max(0, innerMain - contentMain) : 0;
   const blockNear = innerNear + slack;
   const blockFar = contentMain !== undefined ? blockNear + contentMain : innerNear + innerMain;
   const mainStart = reverse ? blockFar : blockNear;
@@ -306,7 +318,7 @@ export function runContainer<R>(
 /** Measured content box of a container. `w`/`h` are the OUTER box needed to hold
  *  the content from the container's top-left (span, incl. a title band + pads —
  *  used for auto-sizing an omitted axis). `ew`/`eh` are the content's own
- *  bounding-box run (position-independent — used by `anchor` to align a block
+ *  bounding-box run (position-independent — used by `justify` to align a block
  *  inside a wider box without oscillating as the block moves). */
 export interface ContentSize {
   w: number;
@@ -363,6 +375,19 @@ export function containerRect(
 ): { x: number; y: number; w: number; h: number } {
   const w = opts.w ?? auto?.w;
   const h = opts.h ?? auto?.h;
+  if (opts.anchor) {
+    // Root placed in the VIEWPORT: `w`/`h` are the preferred size clamped to the
+    // viewport minus `margin`; the anchor + any `x`/`y` offset position it.
+    const vp = Stage.viewport;
+    const m = opts.margin ?? 0;
+    const cw = Math.min(w ?? 120, vp.w - m * 2);
+    const ch = Math.min(h ?? (dir === "row" ? 34 : 40), vp.h - m * 2);
+    const hx = ANCHOR_H[opts.anchor];
+    const vy = ANCHOR_V[opts.anchor];
+    const bx = hx === 0 ? m : hx === 0.5 ? (vp.w - cw) / 2 : vp.w - cw - m;
+    const by = vy === 0 ? m : vy === 0.5 ? (vp.h - ch) / 2 : vp.h - ch - m;
+    return { x: Math.round(bx + (opts.x ?? 0)), y: Math.round(by + (opts.y ?? 0)), w: cw, h: ch };
+  }
   if (opts.x !== undefined && opts.y !== undefined) {
     // Root: pinned position; each omitted axis auto-measured (small first-frame
     // fallback, corrected next frame).
@@ -415,7 +440,7 @@ export function runAutoSized<R>(
   dir: "row" | "col",
   gap: number,
   pad: number,
-  anchor: "start" | "end",
+  justify: "start" | "end",
   reverse: boolean,
   fitCross: boolean,
   children: LayoutChildren<R>,
@@ -427,7 +452,7 @@ export function runAutoSized<R>(
     body,
     gap,
     pad,
-    anchor,
+    justify,
     reverse,
     (st) => {
       const r = children(st);
@@ -446,8 +471,8 @@ export interface AutoContainerConfig {
   pad: number;
   /** Gap between children in px. */
   gap: number;
-  /** Where the content block sits on the main axis (see `LayoutOptions.anchor`). */
-  anchor: "start" | "end";
+  /** Where the content block sits on the main axis (see `LayoutOptions.justify`). */
+  justify: "start" | "end";
   /** Lay children in reverse order (see `LayoutOptions.reverse`). */
   reverse: boolean;
   /** Shrink-wrap the cross axis (a root container along its free axis). */
@@ -482,7 +507,7 @@ export function autoContainer<R>(
   const top = cfg.top ?? 0;
   const bottom = cfg.bottom ?? 0;
   const body = { x: rect.x, y: rect.y + top, w: rect.w, h: rect.h - top - bottom };
-  // Content's main-axis run (last frame) — anchor:"end" uses it to right/bottom-
+  // Content's main-axis run (last frame) — justify:"end" uses it to right/bottom-
   // align the block, and reverse uses it to find the block's far edge. This is
   // the content's own bounding-box length (`ew`/`eh`), NOT the span from the box
   // edge, so it stays stable as the block moves (a span would oscillate).
@@ -495,7 +520,7 @@ export function autoContainer<R>(
     dir,
     cfg.gap,
     cfg.pad,
-    cfg.anchor,
+    cfg.justify,
     cfg.reverse,
     cfg.fitCross,
     children,

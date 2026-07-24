@@ -132,7 +132,7 @@ function scrollable<R>(
       dir,
       cfg.gap,
       cfg.pad,
-      cfg.anchor,
+      cfg.justify,
       cfg.reverse,
       // Horizontal: children take natural HEIGHT (intrinsic cross) so the box
       // height is stable. Vertical: they fill the WIDTH as usual.
@@ -189,7 +189,7 @@ export function row<R>(
   const cfg = {
     pad: opts.pad ?? 0,
     gap: opts.gap ?? 8,
-    anchor: opts.anchor ?? "start",
+    justify: opts.justify ?? "start",
     reverse: opts.reverse ?? false,
     fitCross,
     wrap,
@@ -213,7 +213,7 @@ export function col<R>(
   const cfg = {
     pad: opts.pad ?? 0,
     gap: opts.gap ?? 8,
-    anchor: opts.anchor ?? "start",
+    justify: opts.justify ?? "start",
     reverse: opts.reverse ?? false,
     fitCross,
     wrap,
@@ -249,7 +249,7 @@ export function group<R>(opts: GroupOptions, children: LayoutChildren<R>): R {
   const cfg: AutoContainerConfig = {
     pad: opts.pad ?? theme.pad,
     gap: opts.gap ?? 8,
-    anchor: opts.anchor ?? "start",
+    justify: opts.justify ?? "start",
     reverse: opts.reverse ?? false,
     fitCross,
     top: opts.title ? 32 : 0,
