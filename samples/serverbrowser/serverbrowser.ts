@@ -22,13 +22,8 @@ interface Rect {
   w: number;
   h: number;
 }
-interface Layout extends Rect {
-  controls: Rect;
-  table: Rect;
-  footer: Rect;
-}
 
-// The viewport is LIVE (mutated on resize) — layout() reads it fresh each frame.
+// The viewport is LIVE (mutated on resize) — frameRect() reads it fresh each frame.
 const vp = Stage.init("game", {
   background: "#0b0e14",
   plugins: [Perf.plugin()],
@@ -135,35 +130,16 @@ function join(server: Server) {
 
 const ROW_H = 30;
 
-// Recomputed every frame from the live viewport, so resize comes free. The
-// structure is expressed with the callback layout API: a column below the
-// panel's 30px title strip hands out controls / headers / list / footer, the
-// list `fill`s the leftover height, and the header is a nested row whose NAME
-// column fills while the rest are fixed. No arithmetic, no flex spec.
 const FOOTER_H = 40;
 
-function layout(): Layout {
-  // Cap to the viewport (minus a margin) so the panel never overflows a narrow
-  // phone; clamp the preferred size on larger screens. No hard MIN — a min
-  // wider than the viewport is exactly what pushed content off both edges.
+// The frame rect, recomputed every frame from the live viewport (resize is free).
+// Cap to the viewport (minus a margin) so it never overflows a narrow phone;
+// clamp the preferred size on larger screens. No hard MIN — a min wider than the
+// viewport is exactly what pushed content off both edges.
+function frameRect(): Rect {
   const w = Math.min(760, vp.w - 24);
   const h = Math.min(560, vp.h - 24);
-  const x = Math.round((vp.w - w) / 2);
-  const y = Math.round((vp.h - h) / 2);
-  const L = { x, y, w, h } as Layout;
-
-  UI.col({ x, y: y + 30, w, h: h - 30, pad: 12, gap: 8 }, (body) => {
-    L.controls = body.next(undefined, 30);
-    // One block for UI.table: its 20px header strip + the row list, filling the
-    // space above the footer (which occupies the column's bottom padding).
-    L.table = body.fill(FOOTER_H + 8);
-    const footer = body.next(undefined, FOOTER_H);
-    // Let the footer occupy the column's bottom padding so the action row
-    // visually anchors to the panel edge instead of floating above it.
-    L.footer = { ...footer, y: footer.y + 8 };
-  });
-
-  return L;
+  return { x: Math.round((vp.w - w) / 2), y: Math.round((vp.h - h) / 2), w, h };
 }
 
 const pingColor = (ping: number) => (ping < 60 ? "#6bff9e" : ping < 130 ? "#ffd43b" : "#ff6b6b");
@@ -178,12 +154,7 @@ Loop.run({
   },
 
   draw() {
-    const L = layout();
-    UI.panel({ x: L.x, y: L.y, w: L.w, h: L.h, title: "SERVER BROWSER" });
-
-    // ---- control bar: two closure rows over the same slot — the left one
-    // flows from the left, the right one (anchor:"end", reverse:true) grows from
-    // the right. Widgets inside auto-flow and auto-size; no rects threaded by hand.
+    const { x, y, w, h } = frameRect();
     const nFilters =
       (hideFull ? 1 : 0) +
       (hideEmpty ? 1 : 0) +
@@ -191,208 +162,230 @@ Loop.run({
       (search ? 1 : 0) +
       (region !== "ALL" ? 1 : 0);
     let filterBtn: Rect = { x: 0, y: 0, w: 0, h: 0 };
-    UI.row({ ...L.controls, gap: 10 }, (bar) => {
-      tab = UI.tabs({ id: uiId("mode-tabs"), tabIndex: 10, items: ["All", ...MODES], active: tab });
-      if (
-        UI.button({
-          id: uiId("filters-button"),
-          tabIndex: 20,
-          label: `FILTERS${nFilters ? ` (${nFilters})` : ""}`,
-          tooltip: "Hide full/empty servers, cap the ping",
-        })
-      ) {
-        filtersOpen = !filtersOpen;
-      }
-      filterBtn = bar.last ?? filterBtn; // the popover anchors under this
-    });
 
-    UI.row({ ...L.controls, gap: 10, anchor: "end", reverse: true }, (bar) => {
-      if (
-        UI.button({
-          id: uiId("refresh-button"),
-          tabIndex: 40,
-          label: refreshing ? "…" : "REFRESH",
-          disabled: refreshing,
-          tooltip: "Re-query the master server (R)",
-        })
-      ) {
-        refresh();
-      }
-      if (
-        UI.button({
-          id: uiId("theme-button"),
-          tabIndex: 30,
-          label: "THEME",
-          tooltip: "Swap the whole UI kit's theme",
-        })
-      ) {
-        altTheme = !altTheme;
-        UI.setTheme(altTheme ? AMBER : {});
-      }
-      // Busy arc while the mock request is in flight, left of the buttons.
-      if (refreshing) UI.spinner(bar.extent.x - 18, L.controls.y + 15);
-    });
+    // The whole frame is a titled UI.group: it draws the panel + title AND lays
+    // its body out. The body cursor carves the control bar, the windowed table
+    // region (fill), and the footer (in the column's bottom padding). No
+    // separate layout pass, no hand-threaded rects.
+    UI.group(
+      { id: uiId("frame"), x, y, w, h, title: "SERVER BROWSER", pad: 12, gap: 8 },
+      (body) => {
+        const controls = body.next(undefined, 30);
+        const tableRect = body.fill(FOOTER_H + 8);
+        const footSlot = body.next(undefined, FOOTER_H);
+        const footer = { ...footSlot, y: footSlot.y + 8 };
 
-    // ---- the server table: sortable headers over a windowed, selectable row
-    // list, all in one call. UI.table sorts the filtered rows by the active
-    // column, owns the scroll + selection, and reports the state back.
-    const list = visibleServers();
-    const res = UI.table<Server>({
-      ...L.table,
-      rowH: ROW_H,
-      headerH: 20,
-      id: uiId("servers"),
-      rows: list,
-      sort,
-      offset: scroll,
-      selected, // an open popover blocks row clicks automatically
-      columns: [
-        {
-          key: "name",
-          label: "NAME",
-          value: (s) => s.name,
-          cell: (s, r) => UI.text(s.name, { x: r.x + 4, y: r.y, w: r.w - 14, h: r.h }),
-        },
-        {
-          key: "mode",
-          label: "MODE",
-          width: 70,
-          value: (s) => s.mode,
-          cell: (s, r) => UI.text(s.mode, { ...r, color: "dim" }),
-        },
-        {
-          key: "region",
-          label: "REG",
-          width: 56,
-          value: (s) => s.region,
-          cell: (s, r) => UI.text(s.region, { ...r, color: "dim" }),
-        },
-        {
-          key: "players",
-          label: "PLAYERS",
-          width: 80,
-          value: (s) => s.players,
-          cell: (s, r) =>
-            UI.text(`${s.players}/${s.max}`, {
-              ...r,
-              color: s.players >= s.max ? "#ff6b6b" : "dim",
-            }),
-        },
-        {
-          key: "ping",
-          label: "PING",
-          width: 74,
-          value: (s) => s.ping,
-          cell: (s, r) => UI.text(`${s.ping}`, { ...r, color: pingColor(s.ping) }),
-        },
-      ],
-    });
-    sort = res.sort;
-    scroll = res.offset;
-    selected = res.selected;
-    if (list.length === 0) {
-      UI.text("no servers match the filters", {
-        x: L.table.x,
-        y: L.table.y + 44,
-        w: L.table.w,
-        align: "center",
-        color: "dim",
-      });
-    }
-
-    // ---- footer: count, status, JOIN ----
-    // The join status takes the counter's spot while it's showing.
-    const footerTextH = 18;
-    const footText = {
-      x: L.footer.x,
-      y: L.y + L.h - 8 - footerTextH,
-      w: L.footer.w - 130,
-      h: footerTextH,
-      size: 12,
-    };
-    if (status) {
-      UI.text(status, {
-        ...footText,
-        color: status.startsWith("Connected") ? "#6bff9e" : "#ffd43b",
-      });
-    } else {
-      UI.text(`${list.length}/${servers.length} servers · R to refresh`, {
-        ...footText,
-        color: "dim",
-      });
-    }
-    const footBtns = UI.flow({
-      x: L.footer.x + L.footer.w,
-      y: L.footer.y + (L.footer.h - 34) / 2,
-      h: 34,
-      align: "end",
-    });
-    if (
-      UI.button({
-        at: footBtns,
-        // tabIndex 0 (not a positive value): positive tab stops sort BEFORE the
-        // tabIndex-0 rows, which would put JOIN ahead of the list. At 0 it joins
-        // the document-order group and — drawn after the list — lands right
-        // AFTER the rows, so forward-Tab down the list reaches it.
-        id: uiId("join-button"),
-        label: "JOIN",
-        variant: "primary", // the call to action
-        disabled: !selected || refreshing,
-        tooltip: selected ? `Join ${selected.name}` : "Select a server first",
-      })
-    ) {
-      confirming = selected;
-    }
-
-    // ---- the filters popover, floating over the list ----
-    const pop = { x: filterBtn.x, y: filterBtn.y + 36, w: 300, h: 250, title: "FILTERS" };
-    filtersOpen = UI.popover({ ...pop, open: filtersOpen });
-    if (filtersOpen) {
-      UI.idScope("server-browser:filters", () => {
-        UI.col({ x: pop.x + 14, y: pop.y + 38, w: pop.w - 28, h: pop.h - 50, gap: 8 }, () => {
-          search = UI.textInput({
+        // Two closure rows over the same control slot: the left one flows from
+        // the left, the right one (anchor:"end", reverse:true) grows from the right.
+        UI.row({ ...controls, gap: 10 }, (bar) => {
+          tab = UI.tabs({
+            id: uiId("mode-tabs"),
             tabIndex: 10,
-            value: search,
-            h: 30,
-            placeholder: "Search server names…",
-            ariaLabel: "Search servers",
-          }).value;
-          region = UI.select({
-            tabIndex: 20,
-            value: region,
-            h: 30,
-            maxVisible: 4,
-            options: ["ALL", ...REGIONS].map((value) => ({
-              label: value === "ALL" ? "All regions" : value,
-              value,
-            })),
-            ariaLabel: "Server region",
-          }).value;
-          UI.row({ h: 30, gap: 24 }, () => {
-            hideFull = UI.toggle({
-              tabIndex: 30,
-              label: "Hide full",
-              on: hideFull,
-            });
-            hideEmpty = UI.toggle({
-              tabIndex: 40,
-              label: "Hide empty",
-              on: hideEmpty,
-            });
+            items: ["All", ...MODES],
+            active: tab,
           });
-          maxPing = UI.slider({
-            tabIndex: 50,
-            w: 180,
-            min: 20,
-            max: 250,
-            step: 10,
-            value: maxPing,
-            label: "ping",
-            format: (v) => (v >= 250 ? "any" : `≤${v}`),
-          });
+          if (
+            UI.button({
+              id: uiId("filters-button"),
+              tabIndex: 20,
+              label: `FILTERS${nFilters ? ` (${nFilters})` : ""}`,
+              tooltip: "Hide full/empty servers, cap the ping",
+            })
+          ) {
+            filtersOpen = !filtersOpen;
+          }
+          filterBtn = bar.last ?? filterBtn; // the popover anchors under this
         });
-      });
-    }
+
+        UI.row({ ...controls, gap: 10, anchor: "end", reverse: true }, (bar) => {
+          if (
+            UI.button({
+              id: uiId("refresh-button"),
+              tabIndex: 40,
+              label: refreshing ? "…" : "REFRESH",
+              disabled: refreshing,
+              tooltip: "Re-query the master server (R)",
+            })
+          ) {
+            refresh();
+          }
+          if (
+            UI.button({
+              id: uiId("theme-button"),
+              tabIndex: 30,
+              label: "THEME",
+              tooltip: "Swap the whole UI kit's theme",
+            })
+          ) {
+            altTheme = !altTheme;
+            UI.setTheme(altTheme ? AMBER : {});
+          }
+          // Busy arc while the mock request is in flight, left of the buttons.
+          if (refreshing) UI.spinner(bar.extent.x - 18, controls.y + 15);
+        });
+
+        // ---- the server table: sortable headers over a windowed, selectable row
+        // list, all in one call. UI.table sorts the filtered rows by the active
+        // column, owns the scroll + selection, and reports the state back.
+        const list = visibleServers();
+        const res = UI.table<Server>({
+          ...tableRect,
+          rowH: ROW_H,
+          headerH: 20,
+          id: uiId("servers"),
+          rows: list,
+          sort,
+          offset: scroll,
+          selected, // an open popover blocks row clicks automatically
+          columns: [
+            {
+              key: "name",
+              label: "NAME",
+              value: (s) => s.name,
+              cell: (s, r) => UI.text(s.name, { x: r.x + 4, y: r.y, w: r.w - 14, h: r.h }),
+            },
+            {
+              key: "mode",
+              label: "MODE",
+              width: 70,
+              value: (s) => s.mode,
+              cell: (s, r) => UI.text(s.mode, { ...r, color: "dim" }),
+            },
+            {
+              key: "region",
+              label: "REG",
+              width: 56,
+              value: (s) => s.region,
+              cell: (s, r) => UI.text(s.region, { ...r, color: "dim" }),
+            },
+            {
+              key: "players",
+              label: "PLAYERS",
+              width: 80,
+              value: (s) => s.players,
+              cell: (s, r) =>
+                UI.text(`${s.players}/${s.max}`, {
+                  ...r,
+                  color: s.players >= s.max ? "#ff6b6b" : "dim",
+                }),
+            },
+            {
+              key: "ping",
+              label: "PING",
+              width: 74,
+              value: (s) => s.ping,
+              cell: (s, r) => UI.text(`${s.ping}`, { ...r, color: pingColor(s.ping) }),
+            },
+          ],
+        });
+        sort = res.sort;
+        scroll = res.offset;
+        selected = res.selected;
+        if (list.length === 0) {
+          UI.text("no servers match the filters", {
+            x: tableRect.x,
+            y: tableRect.y + 44,
+            w: tableRect.w,
+            align: "center",
+            color: "dim",
+          });
+        }
+
+        // ---- footer: count, status, JOIN ----
+        // The join status takes the counter's spot while it's showing.
+        const footerTextH = 18;
+        const footText = {
+          x: footer.x,
+          y: y + h - 8 - footerTextH,
+          w: footer.w - 130,
+          h: footerTextH,
+          size: 12,
+        };
+        if (status) {
+          UI.text(status, {
+            ...footText,
+            color: status.startsWith("Connected") ? "#6bff9e" : "#ffd43b",
+          });
+        } else {
+          UI.text(`${list.length}/${servers.length} servers · R to refresh`, {
+            ...footText,
+            color: "dim",
+          });
+        }
+        const footBtns = UI.flow({
+          x: footer.x + footer.w,
+          y: footer.y + (footer.h - 34) / 2,
+          h: 34,
+          align: "end",
+        });
+        if (
+          UI.button({
+            at: footBtns,
+            // tabIndex 0 (not a positive value): positive tab stops sort BEFORE the
+            // tabIndex-0 rows, which would put JOIN ahead of the list. At 0 it joins
+            // the document-order group and — drawn after the list — lands right
+            // AFTER the rows, so forward-Tab down the list reaches it.
+            id: uiId("join-button"),
+            label: "JOIN",
+            variant: "primary", // the call to action
+            disabled: !selected || refreshing,
+            tooltip: selected ? `Join ${selected.name}` : "Select a server first",
+          })
+        ) {
+          confirming = selected;
+        }
+
+        // ---- the filters popover, floating over the list ----
+        const pop = { x: filterBtn.x, y: filterBtn.y + 36, w: 300, h: 250, title: "FILTERS" };
+        filtersOpen = UI.popover({ ...pop, open: filtersOpen });
+        if (filtersOpen) {
+          UI.idScope("server-browser:filters", () => {
+            UI.col({ x: pop.x + 14, y: pop.y + 38, w: pop.w - 28, h: pop.h - 50, gap: 8 }, () => {
+              search = UI.textInput({
+                tabIndex: 10,
+                value: search,
+                h: 30,
+                placeholder: "Search server names…",
+                ariaLabel: "Search servers",
+              }).value;
+              region = UI.select({
+                tabIndex: 20,
+                value: region,
+                h: 30,
+                maxVisible: 4,
+                options: ["ALL", ...REGIONS].map((value) => ({
+                  label: value === "ALL" ? "All regions" : value,
+                  value,
+                })),
+                ariaLabel: "Server region",
+              }).value;
+              UI.row({ h: 30, gap: 24 }, () => {
+                hideFull = UI.toggle({
+                  tabIndex: 30,
+                  label: "Hide full",
+                  on: hideFull,
+                });
+                hideEmpty = UI.toggle({
+                  tabIndex: 40,
+                  label: "Hide empty",
+                  on: hideEmpty,
+                });
+              });
+              maxPing = UI.slider({
+                tabIndex: 50,
+                w: 180,
+                min: 20,
+                max: 250,
+                step: 10,
+                value: maxPing,
+                label: "ping",
+                format: (v) => (v >= 250 ? "any" : `≤${v}`),
+              });
+            });
+          });
+        }
+      },
+    );
 
     // ---- join confirmation: one declarative call — sized to its content,
     // blocks everything behind it, returns the clicked button.
