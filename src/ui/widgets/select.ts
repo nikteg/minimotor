@@ -30,6 +30,7 @@ import {
   withCtx,
 } from "../core/index.js";
 import { button } from "./button.js";
+import { list } from "./lists.js";
 import { paintFrame } from "./panel.js";
 import { pointInRect } from "../../collision.js";
 import { clamp } from "../../mathf.js";
@@ -42,6 +43,10 @@ export interface SelectEditor {
   changed: boolean;
   open: boolean;
   justOpened: boolean;
+  /** Drop-menu scroll offset (px) — the menu is a `list` scroll region. */
+  scroll: number;
+  /** `index` as of last frame, to detect keyboard moves and scroll to them. */
+  lastIndex: number;
 }
 
 export let selectEditor: SelectEditor | null = null;
@@ -161,6 +166,8 @@ export function openSelectEditor<T>(
     changed: false,
     open: menuOpen,
     justOpened: menuOpen,
+    scroll: 0,
+    lastIndex: index,
   };
   select.addEventListener("change", () => {
     editor.index = Number(select.value);
@@ -335,11 +342,14 @@ export function drawSelectOverlay(): void {
   const editor = selectEditor;
   const p = rawPointer();
   const value = editor.index >= 0 ? opts.options[editor.index]?.value : opts.value;
+  const count = opts.options.length;
   // Clamp the upper bound to ≥ 1 so an empty option list still yields 1 row of
   // space (a plain clamp then works — the lower bound wins on an empty list).
-  const visible = clamp(opts.maxVisible ?? 8, 1, Math.max(1, opts.options.length));
+  const visible = clamp(opts.maxVisible ?? 8, 1, Math.max(1, count));
   const itemH = 30;
-  const menuH = visible * itemH + 4;
+  const pad = 2;
+  const listH = visible * itemH; // the visible window; the list scrolls the rest
+  const menuH = listH + pad * 2;
   const vp = Stage.viewport;
   const menuY = rect.y + rect.h + menuH <= vp.h - 4 ? rect.y + rect.h + 2 : rect.y - menuH - 2;
   const menu = { x: rect.x, y: menuY, w: rect.w, h: menuH };
@@ -349,30 +359,61 @@ export function drawSelectOverlay(): void {
   ctx.fillRect(menu.x, menu.y, menu.w, menu.h);
   ctx.restore();
   paintFrame(ctx, { ...menu, bg: theme.bgActive });
-  const start = Math.max(
-    0,
-    Math.min(opts.options.length - visible, editor.index - Math.floor(visible / 2)),
-  );
-  for (let i = start; i < Math.min(opts.options.length, start + visible); i++) {
-    const option = opts.options[i];
-    if (
-      button(ctx, {
-        x: menu.x + 2,
-        y: menu.y + 2 + (i - start) * itemH,
-        w: menu.w - 4,
-        h: itemH,
-        label: option.label,
-        disabled: option.disabled,
-        variant: Object.is(option.value, value) ? "primary" : "ghost",
-      })
-    ) {
-      editor.index = i;
-      editor.select.value = String(i);
-      editor.open = false;
-      selectCommit = { id: opts.id, index: i }; // observed by select() next draw
-      return;
-    }
+
+  // Keep the highlighted option in view: center it when the menu just opened,
+  // and snap to it when the keyboard (native <select>) moved the selection.
+  // Otherwise leave the offset alone so wheel/drag scrolling isn't fought.
+  const max = Math.max(0, count * itemH - listH);
+  if (editor.justOpened) {
+    editor.scroll = clamp(editor.index * itemH - (listH - itemH) / 2, 0, max);
+  } else if (editor.index !== editor.lastIndex && editor.index >= 0) {
+    const top = editor.index * itemH;
+    if (top < editor.scroll) editor.scroll = top;
+    else if (top + itemH > editor.scroll + listH) editor.scroll = top + itemH - listH;
+    editor.scroll = clamp(editor.scroll, 0, max);
   }
+  editor.lastIndex = editor.index;
+
+  // The menu is a windowed `list` scroll region: scrollbar + wheel + swipe, only
+  // the visible options drawn. The row callback paints one option button.
+  let picked = -1;
+  editor.scroll = list(
+    {
+      x: menu.x + pad,
+      y: menu.y + pad,
+      w: menu.w - pad * 2,
+      h: listH,
+      rowH: itemH,
+      count,
+      offset: editor.scroll,
+      id: `${opts.id}:menu`,
+    },
+    (i, r) => {
+      const option = opts.options[i];
+      if (
+        button(ctx, {
+          x: r.x,
+          y: r.y,
+          w: r.w,
+          h: r.h,
+          label: option.label,
+          disabled: option.disabled,
+          variant: Object.is(option.value, value) ? "primary" : "ghost",
+        })
+      ) {
+        picked = i;
+      }
+    },
+  );
+
+  if (picked >= 0) {
+    editor.index = picked;
+    editor.select.value = String(picked);
+    editor.open = false;
+    selectCommit = { id: opts.id, index: picked }; // observed by select() next draw
+    return;
+  }
+
   if (
     !editor.justOpened &&
     p.released &&
