@@ -547,7 +547,7 @@ entire handoff.
     Loop.run(scenes);            // the manager IS GameCallbacks, structurally
     ```
     - Scene shape: `{ enter?, exit?, update, draw, opaque?, holdsTime? }`.
-      `holdsTime: false` on a pushed scene keeps `Clock.game` flowing while
+      `holdsTime: false` on a pushed scene keeps `Clock.world` flowing while
       updates stay gated — the "live world under the pause menu" look:
       nothing moves (logic frozen) but idle cycles/particles keep breathing.
       Default `true` (hard freeze). Companion trick: the pushed scene's
@@ -558,7 +558,7 @@ entire handoff.
       capture/bubble system). Draw runs bottom→top starting from the
       highest `opaque: true` scene. Drawing below a modal is a RE-DRAW of
       frozen state, not a screenshot — resize-proof, translucency-trivial.
-    - **The stack is a time boundary**: `push` holds `Clock.game` (#34),
+    - **The stack is a time boundary**: `push` holds `Clock.world` (#34),
       `pop` releases it. Pause is a consequence, not code: gameplay logic
       freezes (update gated) AND every clock-derived value freezes (motions,
       cursor frames, particles) with zero pause-awareness anywhere.
@@ -612,15 +612,15 @@ entire handoff.
     (anchors respect insets; absolute x/y can't).
     - Verdict: **change** (agreed)
 
-34. **Two ambient clocks: `Clock.game` and `Clock.ui` — and clocks own the
+34. **Two ambient clocks: `Clock.world` and `Clock.ui` — and clocks own the
     time constructors.** Clock-derived content (#32) needs to know which
-    time it lives in. `Clock.game` is gameplay time — held by modal pushes
+    time it lives in. `Clock.world` is gameplay time — held by modal pushes
     (#31). `Clock.ui` never stops. Binding mechanism (chosen over a
     forgettable `clock:` option param, creation-scope blocks, and
     scene-bound magic): **the clock is the factory** —
     ```ts
-    Clock.game.animate({...})   // fundamental form
-    Anim.animate({...})         // sugar for Clock.game (the 99% path)
+    Clock.world.animate({...})   // fundamental form
+    Anim.animate({...})         // sugar for Clock.world (the 99% path)
     UI.animate({...})           // sugar for Clock.ui — interface time
     const boss = Clock.create(); boss.animate({...}); boss.hold();
     ```
@@ -628,8 +628,8 @@ entire handoff.
     fights) gets the full time toolkit (`animate`, `after`, …) for free.
     The layer taxonomy extends cleanly: world things live in world time
     (`Draw`/`Anim`), interface things in interface time (`UI`). Free wins:
-    slow-mo (`Clock.game.scale = 0.5` — world slows, HUD doesn't), hit-stop
-    (`Clock.game.hold()` + a `Clock.ui` timer to release).
+    slow-mo (`Clock.world.scale = 0.5` — world slows, HUD doesn't), hit-stop
+    (`Clock.world.hold()` + a `Clock.ui` timer to release).
     - Verdict: **change** (agreed)
 
 ---
@@ -689,9 +689,9 @@ whoosh`. Each returns a plain SfxSpec — inspect it, tweak it, learn
       (ducking = fade down on `paused.enter`, fade up on `exit` — no duck
       concept needed, no pause-awareness in the audio layer).
     - **Deliberately outside the #34 clock system**: audio runs in real
-      time on the hardware clock — a held `Clock.game` must not stop the
+      time on the hardware clock — a held `Clock.world` must not stop the
       pause-menu music, and fades are wall-time by nature. (Optional future
-      juice, noted not specced: pitch-bending sfx by `Clock.game.scale`
+      juice, noted not specced: pitch-bending sfx by `Clock.world.scale`
       during slow-mo.)
     - `Audio.*` master (volume/mute, persisted via `Storage`) is the
       platform facade; sfx maps and music instances are content (#28
@@ -1085,7 +1085,7 @@ Quick dispositions; each "flag" is a candidate for a round-2 review.
   - Tile behaviors are cell SELECTORS, not systems:
     `tiles.pick(cells, weights)` — per-cell variants, seeded by cell
     coords (deterministic, stateless, #32 applied to aesthetics);
-    `tiles.anim(cells, { fps })` — Clock.game-derived (pauses with the
+    `tiles.anim(cells, { fps })` — Clock.world-derived (pauses with the
     world), coord-offset phase; `tiles.auto16(base)` — autotiling via the
     standard 16-cell bitmask layout (neighbors sharing the legend char),
     escape hatch: `tile: (neighbors) => cell`.

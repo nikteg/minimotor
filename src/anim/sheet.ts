@@ -87,7 +87,7 @@ export interface Sheet<K extends string = string> {
   readonly image: SheetImage;
   /** Source frame size in the image, in px. */
   readonly frame: { w: number; h: number };
-  /** Start a playback cursor. `clock` defaults to `Clock.game`. */
+  /** Start a playback cursor. `clock` defaults to `Clock.world`. */
   play(initial: K, opts?: { clock?: ClockHandle }): SheetCursor<K>;
   /** Source rect for an arbitrary state/frame (manual draws, HUD icons).
    *  Reused scratch — read, don't hold. */
@@ -118,7 +118,7 @@ export function sheet<K extends string>(image: SheetImage, opts: SheetOptions<K>
     rect: rectFor,
     play(initial, playOpts = {}) {
       if (!states[initial]) throw new Error(`Anim.sheet: unknown state "${initial}"`);
-      const clock = playOpts.clock ?? Clock.game;
+      const clock = playOpts.clock ?? Clock.world;
       let state = initial;
       let start = clock.now;
 

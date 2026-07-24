@@ -218,7 +218,7 @@ function resetLevel(): void {
 function updateWorld(): void {
   const run = input.axis("left", "right"); // [#8]
   // The window/cooldown timers are clock-derived (no tick) — they read
-  // Clock.game, so nothing to advance here.
+  // Clock.world, so nothing to advance here.
   const dashing = dashActive.active;
   if (dashing) {
     // A dash owns the velocity: fixed speed, gravity suspended, trail.
@@ -363,7 +363,7 @@ const scenes = Scenes.create({
     draw: drawWorld,
   },
   paused: {
-    // [#31] push held Clock.game — the world below is frozen mid-air.
+    // [#31] push held Clock.world — the world below is frozen mid-air.
     enter() {
       confirmRestart = false;
     },

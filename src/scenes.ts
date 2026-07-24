@@ -3,7 +3,7 @@
 // `switch (mode)` in update/draw is a first-class way to build a game, and a
 // plain `paused` boolean is legitimate for tiny games. What the stack buys:
 // named modes with enter/exit as the home for reset logic, standardized
-// draw-through modality, and the TIME BOUNDARY — `push` holds `Clock.game`,
+// draw-through modality, and the TIME BOUNDARY — `push` holds `Clock.world`,
 // so pause is a consequence, not code.
 //
 //   const scenes = Scenes.create({
@@ -16,7 +16,7 @@
 // Stack semantics: only the TOP scene updates (input routes itself — polling
 // + update-gating). Draw runs bottom-to-top starting from the highest
 // `opaque` scene; drawing below a modal is a RE-DRAW of frozen state, not a
-// screenshot. Pushing holds `Clock.game` (opt out per scene with
+// screenshot. Pushing holds `Clock.world` (opt out per scene with
 // `holdsTime: false` — the "live world under the pause menu" look); `go`
 // replaces the stack and holds nothing.
 
@@ -36,7 +36,7 @@ export interface SceneSpec {
   draw?(): void;
   /** This scene paints the full viewport: nothing beneath it draws. */
   opaque?: boolean;
-  /** When pushed as a modal: hold `Clock.game` while on the stack (default
+  /** When pushed as a modal: hold `Clock.world` while on the stack (default
    *  true — hard freeze). `false` keeps world time flowing while updates
    *  stay gated: idle cycles and particles keep breathing under the menu. */
   holdsTime?: boolean;
@@ -55,7 +55,7 @@ export interface SceneStack<K extends string> {
   /** Replace the whole stack with `name` (exits every current scene). */
   go(name: K, opts?: GoOptions): void;
   /** Push `name` on top as a modal; scenes beneath keep drawing, and
-   *  `Clock.game` holds unless the scene says `holdsTime: false`. */
+   *  `Clock.world` holds unless the scene says `holdsTime: false`. */
   push(name: K): void;
   /** Exit the top scene and resume beneath (releases the clock hold when no
    *  holding modal remains). */
@@ -70,9 +70,10 @@ export interface SceneStack<K extends string> {
   draw(ctx: CanvasRenderingContext2D): void;
 }
 
-/** Config for `Scenes.create` — the clock modal pushes hold. */
+/** Config for `Scenes.create`. */
 export interface SceneStackOptions {
-  /** The clock modal pushes hold. Default `Clock.game`. */
+  /** The clock that modal `push`es hold while they sit on the stack. Default
+   *  `Clock.world`. */
   clock?: ClockHandle;
 }
 
@@ -91,7 +92,7 @@ function create<K extends string>(
   let transitionLast = 0;
   let held = false;
 
-  const clock = (): ClockHandle => options.clock ?? Clock.game;
+  const clock = (): ClockHandle => options.clock ?? Clock.world;
 
   function resolve(name: K): SceneSpec {
     const scene = map[name];

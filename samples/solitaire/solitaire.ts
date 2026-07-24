@@ -1,7 +1,7 @@
 // SOLITAIRE: classic Klondike built with a broad sweep of Minimotor primitives.
 // Demonstrates: Stage / Loop / Pointer / Draw, Scenes.create + Transitions,
 // UI immediate-mode widgets + drag/drop, Input.map, Audio.Sfx, Storage,
-// Timers, Clock.game timers, Anim motions (the AI's card glide + win cascade),
+// Timers, Clock.world timers, Anim motions (the AI's card glide + win cascade),
 // Signals, Fsm, Particles.create, Collision, Mathf, a fixed-`resolution`
 // letterboxed stage, Goodies.shuffle & gridFormation, Perf.plugin,
 // Sprites.getSprite, and Anim.sheet for a win sparkle.
@@ -470,7 +470,7 @@ function aiStep() {
 function toggleAi() {
   aiPlaying = !aiPlaying;
   cancelAi?.();
-  cancelAi = aiPlaying ? Clock.game.every(520, aiStep) : null;
+  cancelAi = aiPlaying ? Clock.world.every(520, aiStep) : null;
   UI.floatText(aiPlaying ? "AI playing" : "AI paused", Pointer.x, Pointer.y, { color: "#ffd43b" });
 }
 
@@ -951,7 +951,7 @@ const scenes = Scenes.create({
       aiMotion = null;
       aiLastMove = null;
       aiVisited = new Set();
-      Clock.game.after(400, () => {
+      Clock.world.after(400, () => {
         UI.floatText("Good luck!", LOGICAL_W / 2, LOGICAL_H / 2, { color: "#4ecdc4" });
       });
     },
@@ -973,7 +973,7 @@ const scenes = Scenes.create({
 
   won: {
     // Pushed as an overlay over `play`; the win cascade, sparkle and confetti
-    // all live on Clock.game, so keep world time flowing under the modal.
+    // all live on Clock.world, so keep world time flowing under the modal.
     holdsTime: false,
     enter: () => {
       fsm.go("won");

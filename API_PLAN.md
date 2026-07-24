@@ -83,7 +83,7 @@ deadzone, damping })`; `Camera.x/y/zoom/rect`; `Camera.shake(mag, ms)`
 
 ## Phase 3 — Time
 
-- `Clock.game` (holdable, scalable) + `Clock.ui` (never stops); clocks own
+- `Clock.world` (holdable, scalable) + `Clock.ui` (never stops); clocks own
   time constructors (`clock.animate`, `clock.after`); `Anim.*` sugar =
   game time, `UI.animate` = ui time; `Clock.create()` for custom clocks.
   (#34)
@@ -140,7 +140,7 @@ size, color })`; immediate-mode `emit({ at, chance, ... })` — the
 
 - `Scenes.create({...})` typed map; `Loop.run(scenes)` structural handoff;
   stack = draw order (bottom→top from highest `opaque`) AND time boundary
-  (push holds `Clock.game`; `holdsTime: false` for live-world pause);
+  (push holds `Clock.world`; `holdsTime: false` for live-world pause);
   `switch(mode)` documented as first-class. (#31)
 - Transitions become `scenes.go/push(name, { transition: fade(300) })`.
   (sweep)

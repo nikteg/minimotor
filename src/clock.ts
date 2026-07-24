@@ -1,15 +1,16 @@
 // ---------- Clocks ----------
-// Time as a first-class value. `Clock.game` is gameplay time — held by modal
-// scene pushes, scalable for slow-motion. `Clock.ui` is interface time and
-// never stops by convention (pause-menu pulses). `Clock.create()` makes
-// custom timelines (cutscenes, a boss with its own holdable clock).
+// Time as a first-class value. `Clock.world` is world time — the app's
+// content clock, held by modal scene pushes, scalable for slow-motion. `Clock.ui` is
+// interface time and never stops by convention (pause-menu pulses).
+// `Clock.create()` makes custom timelines (cutscenes, a boss with its own
+// holdable clock).
 //
 // A clock DERIVES its `now` from the engine's fixed-step counter — pull,
 // don't push — so holding or scaling it bends every value derived from it
 // (motions, sheet cursors, animated tiles) with zero cooperation from them:
 //
-//   Clock.game.hold();        // hit-stop: the world freezes mid-air
-//   Clock.game.scale = 0.5;   // slow-mo: the world, not the HUD
+//   Clock.world.hold();        // hit-stop: the world freezes mid-air
+//   Clock.world.scale = 0.5;   // slow-mo: the world, not the HUD
 //
 // Timers (`after`/`every`) are the stated scheduling exception to the pull
 // law: they must FIRE code, so clocks with pending timers are driven from the
@@ -158,15 +159,24 @@ export function createClockHandle(steps: () => number = stepNow): ClockHandle {
   return handle;
 }
 
-let gameClock = createClockHandle();
+let worldClock = createClockHandle();
 let uiClock = createClockHandle();
 
-/** The two ambient clocks + custom timelines. */
+/** The two ambient clocks + custom timelines. `Clock.world` drives the world
+ *  (pausable, scalable), `Clock.ui` keeps menus and HUD ticking while the
+ *  world is held; `Clock.create` makes an independent timeline. Slow-mo and
+ *  hit-stop are one-liners:
+ *
+ *    Clock.world.scale = 0.25;   // slow motion
+ *    Clock.world.hold();         // hit-stop: the world freezes, UI keeps ticking
+ *    Clock.world.resume();
+ */
 export const Clock = {
-  /** Gameplay time: held by modal scene pushes, scalable for slow-mo. The
-   *  default clock for all game content (motions, cursors, animated tiles). */
-  get game(): ClockHandle {
-    return gameClock;
+  /** World time: the content clock — held by modal scene pushes, scalable for
+   *  slow-mo. The default clock for all world content (motions, cursors,
+   *  animated tiles). */
+  get world(): ClockHandle {
+    return worldClock;
   },
   /** Interface time: never held by convention — pause menus stay alive. */
   get ui(): ClockHandle {
@@ -178,7 +188,7 @@ export const Clock = {
   },
   /** Reset the ambient clocks and timer wiring — for tests. */
   _reset(): void {
-    gameClock = createClockHandle();
+    worldClock = createClockHandle();
     uiClock = createClockHandle();
     driven.clear();
     driverWired = false;

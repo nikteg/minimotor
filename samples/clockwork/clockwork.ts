@@ -99,11 +99,11 @@ Signals.on("miss", () => {
 });
 
 resetRun();
-Clock.game.every(1050, spawnBud); // deterministic fixed-step rhythm
-Clock.game.every(3000, () => {
+Clock.world.every(1050, spawnBud); // deterministic fixed-step rhythm
+Clock.world.every(3000, () => {
   if (combo.count > 0) hud.message = `COMBO x${combo.count} — KEEP THE RHYTHM`;
 });
-Clock.game.every(8000, () => {
+Clock.world.every(8000, () => {
   // A repeating signal demonstrates that listeners can be swapped independently.
   Signals.emit("beat");
 });
@@ -136,7 +136,7 @@ Loop.run({
   },
   draw(ctx) {
     // Wobble rides the deterministic game clock, not wall-clock time.
-    const t = Clock.game.now / 1000;
+    const t = Clock.world.now / 1000;
     ctx.strokeStyle = "rgba(98,160,190,.12)";
     for (let x = 0; x < vp.w; x += 32) {
       ctx.beginPath();

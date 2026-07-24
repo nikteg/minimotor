@@ -69,14 +69,14 @@ align, baseline })` (plain/world text) or `UI.text(s, {...})` (themed HUD).
 
 ### Time
 
-- `Clock.after/every(ms, fn)` → `Clock.game.after/every(ms, fn)` (or
+- `Clock.after/every(ms, fn)` → `Clock.world.after/every(ms, fn)` (or
   `Clock.ui.*` for interface timers).
 - `Tween.to(obj, { x: 10 }, ms, ease)` → a Motion:
   `const m = Anim.animate({ from, to, ms, ease })` and read `m.value`
   (motions are clock-derived; nothing ticks). For multi-field object tweens
   either several motions or fold into game state.
 - `anim.tick(dt)` / `motion.tick(dt)` — GONE; values derive from the clock.
-- Slow-mo/pause: `Clock.game.scale` / `.hold()`.
+- Slow-mo/pause: `Clock.world.scale` / `.hold()`.
 
 ### Collision & physics
 
@@ -176,7 +176,7 @@ states: {...} } }`.
   scenes.go("second", { transition: Transitions.fade(300) });
   scenes.push("paused"); scenes.pop();
   ```
-- push HOLDS Clock.game (pause freeze for free); `holdsTime: false` on the
+- push HOLDS Clock.world (pause freeze for free); `holdsTime: false` on the
   pushed scene for live-world menus; `opaque: true` unchanged.
 - Scene `world:` auto-drive is GONE — call `ecs.update()` / draw explicitly.
 

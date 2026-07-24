@@ -1,7 +1,7 @@
 // ---------- Combo: a decaying hit streak ----------
 // The stateful member of the scoring family. (The pure raters — timingGrade,
 // scoreRank, beatClock — stay in Goodies.scoring.) Clock-derived: the streak
-// decays as `Clock.game` advances — no tick(), just `hit()` and read.
+// decays as `Clock.world` advances — no tick(), just `hit()` and read.
 
 import { Clock, type ClockHandle } from "../clock.js";
 
@@ -25,7 +25,7 @@ export interface Combo {
 /** A decaying hit-streak multiplier — the arcade staple where landing hits in
  *  quick succession builds a bonus that fades if you stall. `hit()` on each
  *  success; read `count`/`multiplier`. Decays on its clock (default
- *  `Clock.game`, so it freezes on pause).
+ *  `Clock.world`, so it freezes on pause).
  *
  *    const combo = Minimotor.Gizmos.combo({ windowMs: 2000 });
  *    // on hit: combo.hit(); score += points * combo.multiplier; */
@@ -35,7 +35,7 @@ export function combo(
   const windowMs = Math.max(1, options.windowMs ?? 2000);
   const step = options.step ?? 1;
   const cap = options.max ?? Infinity;
-  const clock = options.clock ?? Clock.game;
+  const clock = options.clock ?? Clock.world;
   let count = 0;
   let lastHit = -Infinity;
 

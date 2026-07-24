@@ -2,7 +2,7 @@
 // Demonstrates: Scenes.create typed map + Loop.run(scenes), go/push/pop,
 // enter/exit lifecycle, stacked draw, transitions — fade into play, wipe down
 // into game over — and the UI helpers: immediate-mode buttons (menu / game
-// over), floating score text, a time bar. A push holds Clock.game, so the
+// over), floating score text, a time bar. A push holds Clock.world, so the
 // world beneath the pause overlay freezes for free.
 import {
   Audio,

@@ -81,7 +81,7 @@ export function charges(options: {
 }): Charges {
   const max = Math.max(0, Math.floor(options.max));
   const refillMs = Math.max(1, options.refillMs);
-  const clock = options.clock ?? Clock.game;
+  const clock = options.clock ?? Clock.world;
   let count = clamp(Math.floor(options.start ?? max), 0, max);
   let accrueSince = clock.now; // when the current partial charge began
 

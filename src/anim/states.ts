@@ -64,7 +64,7 @@ export interface StateCursor<K extends string = string> {
 /** A shared, immutable multi-image state kit (one image per state); `play`
  *  starts a cheap per-entity `StateCursor`. */
 export interface StateKit<K extends string = string> {
-  /** Start a playback cursor. `clock` defaults to `Clock.game`. */
+  /** Start a playback cursor. `clock` defaults to `Clock.world`. */
   play(initial: K, opts?: { clock?: ClockHandle }): StateCursor<K>;
   /** Source rect for an arbitrary state/frame (manual draws, HUD icons).
    *  Reused scratch — read, don't hold. */
@@ -100,7 +100,7 @@ export function states<K extends string>(clips: Record<K, StateClip>): StateKit<
     },
     play(initial, playOpts = {}) {
       if (!clips[initial]) throw new Error(`Anim.states: unknown state "${initial}"`);
-      const clock = playOpts.clock ?? Clock.game;
+      const clock = playOpts.clock ?? Clock.world;
       let state = initial;
       let start = clock.now;
 
