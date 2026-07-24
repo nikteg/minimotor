@@ -4,10 +4,12 @@ import {
   centeredText,
   claimPointerGesture,
   consumeKeyboardCommand,
+  dragPointer,
   drawFocusRing,
   focusFromPointer,
   hoverCursor,
   place,
+  rawPointer,
   registerFocusable,
   runtimeSlot,
   theme,
@@ -77,7 +79,7 @@ export function slider(
   const ctx = uiCtx();
   const min = opts.min ?? 0;
   const max = opts.max ?? 1;
-  const slot = place(opts, opts.w ?? 140, opts.h ?? 30);
+  const slot = place(opts, opts.w ?? 140, opts.h ?? 30, "slider");
   const fmt = (v: number) => (opts.format ? opts.format(v) : `${Math.round(v)}`);
   // Reserve room INSIDE the slot for both the left label and the right value
   // readout, so the track sits between them and neither spills past the
@@ -107,7 +109,12 @@ export function slider(
   const sd = sliderDragSlot();
   hoverCursor(hover || sd.id === id);
 
-  if (!p.down) sd.id = null;
+  // Release the drag on the REAL pointer-up, not the clip/overlay-gated one:
+  // the drag slot is SHARED by every slider, and a slider sitting inside a
+  // clipped scroll region sees a DEAD pointer (down=false) whenever the finger
+  // is outside ITS clip — it must not cancel another slider's live drag (nor
+  // its own when the finger wanders out of the clip mid-drag).
+  if (!rawPointer().down) sd.id = null;
   if (p.pressed && hover && !sd.id) {
     sd.id = id;
     focusFromPointer(ctx, id);
@@ -123,7 +130,10 @@ export function slider(
   if (command === "ArrowLeft" || command === "ArrowDown") value -= keyboardStep;
   value = clamp(value, min, max);
   if (sd.id === id) {
-    value = min + ((p.x - sx) / sw) * (max - min);
+    // Track through `dragPointer`: mapped into the same space as the track but
+    // never clip-gated, so the knob keeps following a finger that strays
+    // outside the widget's clip region mid-drag.
+    value = min + ((dragPointer().x - sx) / sw) * (max - min);
     if (opts.step) value = Math.round(value / opts.step) * opts.step;
     value = clamp(value, min, max);
   }

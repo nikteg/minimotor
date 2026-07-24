@@ -1,6 +1,7 @@
 import { uiCtx } from "./context.js";
 import { Flow, currentLayout, place } from "./flow.js";
 import { centeredText, theme, uiFont } from "./theme.js";
+import { currentUiTransform } from "./input.js";
 import { uiApp } from "./runtime.js";
 
 // ---------- Text ----------
@@ -163,15 +164,25 @@ export function text(str: string, rawOpts?: TextOptions): void {
   // UI is ALWAYS screen (letterbox-logical) space, regardless of ambient
   // camera blocks — reset to the base transform, not raw device space. Only
   // when the host app actually owns THIS ctx (an offscreen ctx keeps its
-  // transform).
+  // transform). The reset also wipes the canvas-side scale a `UI.scaled` block
+  // pushed — but the rect below is laid out in that block's REFERENCE coords —
+  // so re-apply the active UI transform: the glyphs must land (and size) where
+  // the sibling widget boxes drew.
   if (typeof ctx.setTransform === "function") {
     const g = uiApp();
-    if (g && g.ctx === ctx) g.resetTransform();
+    if (g && g.ctx === ctx) {
+      g.resetTransform();
+      const t = currentUiTransform();
+      if (t) {
+        ctx.translate(t.ox, t.oy);
+        ctx.scale(t.scale, t.scale);
+      }
+    }
   }
   ctx.font = opts.font ?? uiFont(opts.size ?? theme.fontSize, opts.bold ?? false);
   const natural = Math.ceil(ctx.measureText(str).width);
   const lineH = (opts.size ?? theme.fontSize) + 6;
-  const rect = place(opts, natural, opts.h ?? lineH);
+  const rect = place(opts, natural, opts.h ?? lineH, "text");
 
   // Inset within the slot (pad shorthand + per-axis overrides). Falls back to
   // the theme's textPad (default 0 → flush) so a global inset is one setTheme.

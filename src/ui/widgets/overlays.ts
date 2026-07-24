@@ -16,6 +16,7 @@ import {
   theme,
   uiCtx,
   uiFont,
+  uiToScreen,
 } from "../core/index.js";
 import { anchorViewport } from "../core/index.js";
 import { pointInRect } from "../../collision.js";
@@ -98,13 +99,18 @@ export function popover(opts: PopoverOptions, children?: () => void): boolean {
   let open = opts.open;
   // Raw pointer: while open we're the overlay — uiPointer would be dead.
   // A release that merely ends a scroll gesture or a widget drag (started
-  // inside, lifted outside) is not a click-outside close.
+  // inside, lifted outside) is not a click-outside close. The raw pointer is
+  // in SCREEN coords, but `rect` is in the CURRENT space (reference coords
+  // inside a `UI.scaled` block) — map it out before the outside test.
   const p = rawPointer();
+  const tl = uiToScreen(rect.x, rect.y);
+  const br = uiToScreen(rect.x + rect.w, rect.y + rect.h);
+  const screenRect = { x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y };
   if (
     open &&
     was &&
     p.released &&
-    !pointInRect(p.x, p.y, rect) &&
+    !pointInRect(p.x, p.y, screenRect) &&
     !scrollGestureActive() &&
     !pointerGestureOwned()
   ) {

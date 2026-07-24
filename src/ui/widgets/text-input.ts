@@ -10,6 +10,7 @@ import {
   centeredText,
   claimPointerGesture,
   currentRuntime,
+  dragPointer,
   drawBox,
   drawFocusRing,
   ensureWired,
@@ -408,7 +409,7 @@ export function textInput(opts: TextInputOptions): TextInputResult {
   // multiline field would collapse to the column's default row height and never
   // show its rows.
   const boxH = opts.h ?? (multiline ? rows * (theme.fontSize + 6) + 12 : 32);
-  const rect = place({ ...opts, h: boxH }, opts.w ?? 180, boxH);
+  const rect = place({ ...opts, h: boxH }, opts.w ?? 180, boxH, "textInput");
   // Register this field with the native press listener (mobile keyboards need
   // a synchronous in-gesture focus — see `pressTargets`). Rect + clip stored in
   // SCREEN space so the raw pointer can hit-test them next frame.
@@ -515,7 +516,11 @@ export function textInput(opts: TextInputOptions): TextInputResult {
       );
       setNativeSelection(active.input, idx, idx, "none");
       active.dragAnchor = idx;
-    } else if (active.dragAnchor !== null && p.down) {
+    } else if (active.dragAnchor !== null && rawPointer().down) {
+      // Extend through `dragPointer` (mapped, never clip-gated) and hold the
+      // drag on the RAW pointer — a selection drag that strays outside the
+      // field's clip region must keep extending, not freeze mid-gesture.
+      const dp = dragPointer();
       const idx = caretIndexAt(
         ctx,
         shown,
@@ -525,14 +530,14 @@ export function textInput(opts: TextInputOptions): TextInputResult {
         innerX,
         innerW,
         lineH,
-        p.x,
-        p.y,
+        dp.x,
+        dp.y,
       );
       const a = Math.min(active.dragAnchor, idx);
       const b = Math.max(active.dragAnchor, idx);
       setNativeSelection(active.input, a, b, idx < active.dragAnchor ? "backward" : "forward");
     }
-    if (p.released) active.dragAnchor = null;
+    if (!rawPointer().down) active.dragAnchor = null;
   }
 
   ctx.save();

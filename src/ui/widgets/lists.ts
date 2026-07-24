@@ -7,6 +7,7 @@ import {
   clearPointerEdges,
   clearWheelClaim,
   consumeKeyboardActivation,
+  dragPointer,
   drawFocusRing,
   fillRect,
   focusFromPointer,
@@ -321,7 +322,7 @@ export function list(
 ): number {
   // Explicit x/y place it by hand; otherwise auto-flow — fill the ambient (or
   // `at`) layout, leaving `reserve` px for siblings drawn after the list.
-  const { x, y, w, h } = fillRect(opts);
+  const { x, y, w, h } = fillRect(opts, "list");
   const gap = opts.gap ?? 0;
   const step = opts.rowH + gap;
   const content = opts.count * step - (opts.count > 0 ? gap : 0);
@@ -441,7 +442,7 @@ export function grid(
     rowIndex: number,
   ) => void,
 ): number {
-  const rect = fillRect(opts);
+  const rect = fillRect(opts, "grid");
   const { cols, count } = opts;
   const gap = opts.gap ?? 0;
   const rows = cols > 0 ? Math.ceil(count / cols) : 0;
@@ -585,7 +586,11 @@ export function scrollbar(opts: ScrollbarOptions): number {
     offset += pAlong < along ? -opts.view : opts.view;
   }
   if (sd.drag?.id === id && range > 0) {
-    offset = ((pAlong - sd.drag.grab - alongStart) / range) * max;
+    // Track the live drag through `dragPointer` (mapped, never clip-gated) —
+    // the thumb keeps following a finger that leaves the clip region mid-drag
+    // instead of slamming to an end when `uiPointer` goes dead.
+    const dp = dragPointer();
+    offset = (((horiz ? dp.x : dp.y) - sd.drag.grab - alongStart) / range) * max;
   }
   if (opts.wheelArea) {
     offset += claimWheel(

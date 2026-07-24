@@ -109,7 +109,7 @@ export interface TableResult<Row> {
 export function table<Row>(opts: TableOptions<Row>): TableResult<Row> {
   // Explicit x/y place it by hand; otherwise auto-flow — fill the ambient (or
   // `at`) layout, leaving `reserve` px for siblings drawn after the table.
-  const rect = fillRect(opts);
+  const rect = fillRect(opts, "table");
   const headerH = opts.headerH ?? 24;
   const gap = opts.gap ?? 0;
   const rowH = opts.rowH;

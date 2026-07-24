@@ -24,7 +24,7 @@ const BAR_H = 12;
  *    UI.bar({ value: loadFrac });   // auto-flows into the current col */
 export function bar(opts: BarOptions): void {
   const ctx = uiCtx();
-  const { x, y, w, h } = place({ ...opts, h: opts.h ?? BAR_H }, 120, BAR_H);
+  const { x, y, w, h } = place({ ...opts, h: opts.h ?? BAR_H }, 120, BAR_H, "bar");
   const f = clamp(opts.value, 0, 1);
   const r = Math.min(theme.radius, h / 2);
   ctx.save();

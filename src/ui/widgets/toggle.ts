@@ -67,7 +67,7 @@ export function toggle(
   const w = size + 8 + Math.ceil(labelW);
   // Hit region spans box + label, so the text is clickable too. Placed via a
   // layout, the box is vertically centered on the taller slot.
-  const slot = place({ x: opts.x, y: opts.y, w, h: opts.h, at: opts.at }, w, size);
+  const slot = place({ x: opts.x, y: opts.y, w, h: opts.h, at: opts.at }, w, size, "toggle");
   const rect = { x: slot.x, y: slot.y + Math.max(0, (slot.h - size) / 2), w, h: size };
   const id = widgetId(opts.id, "toggle");
   const keyboardFocused = registerFocusable(ctx, {

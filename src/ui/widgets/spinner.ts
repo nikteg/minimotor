@@ -42,7 +42,7 @@ export function spinner(opts: SpinnerOptions = {}): void {
     cx = opts.x ?? 0;
     cy = opts.y ?? 0;
   } else {
-    const box = place(opts, r * 2, r * 2);
+    const box = place(opts, r * 2, r * 2, "spinner");
     cx = box.x + box.w / 2;
     cy = box.y + box.h / 2;
   }

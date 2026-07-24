@@ -178,6 +178,13 @@ export function currentUiScale(): number {
   return st().transform?.scale ?? 1;
 }
 
+/** The active UI transform's raw mapping (`outer = offset + scale * inner`),
+ *  or `null` at the root — for code that must RE-APPLY the transform to a
+ *  canvas after escaping to the base transform (see `text`). Read-only. */
+export function currentUiTransform(): { scale: number; ox: number; oy: number } | null {
+  return st().transform;
+}
+
 /** Map a point from the active reference space out to SCREEN coords — the
  *  inverse of the pointer mapping. Identity at the root (no transform). Use it
  *  to carry a coordinate measured inside `UI.scaled` (a layout cursor's rect,
@@ -189,10 +196,24 @@ export function uiToScreen(x: number, y: number): { x: number; y: number } {
   return t ? { x: t.ox + t.scale * x, y: t.oy + t.scale * y } : { x, y };
 }
 
+/** The pointer for a widget HOLDING A LIVE DRAG (slider knob, scrollbar thumb,
+ *  a text-selection drag): the raw pointer mapped into the active UI transform's
+ *  reference coords, but NOT gated by clips, overlays or edge suppression.
+ *  `uiPointer` goes dead the moment the finger leaves the clip region the widget
+ *  sits in — correct for hover/press, but a drag already in progress must keep
+ *  tracking (and must release on the REAL pointer-up, not a clip-dead one).
+ *  Start drags from `uiPointer` (a press must land inside the clip to count);
+ *  track and release them through this. */
+export function dragPointer() {
+  const t = st().transform;
+  const p = rawPointer();
+  return t ? { ...p, x: (p.x - t.ox) / t.scale, y: (p.y - t.oy) / t.scale } : p;
+}
+
 function hostViewport(): { w: number; h: number } {
   const vp = uiApp()?.viewport;
   if (!vp) {
-    throw new Error("Minimotor.UI: no app — call Stage.init (or UI.begin an app's ctx) first");
+    throw new Error("Minimotor.UI: no app — call App.init (or UI.begin an app's ctx) first");
   }
   return vp;
 }

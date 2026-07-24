@@ -6,6 +6,7 @@
 import { sweptCache } from "./frame-cache.js";
 import { widgetId } from "./identity.js";
 import type { IdPart } from "./identity.js";
+import { layoutCaptureActive, recordLayout } from "./layout-capture.js";
 import { ANCHOR_H, ANCHOR_V, anchorViewport, type TextAnchor } from "./text.js";
 import { uiCtx } from "./context.js";
 import { runtimeSlot } from "./runtime.js";
@@ -228,23 +229,30 @@ export function lastWidgetRect(): { x: number; y: number; w: number; h: number }
 }
 
 /** Resolve a `Fillable`'s rect: an explicit `x`/`y` wins; otherwise fill the
- *  ambient (or `at`) layout, leaving `reserve` px for later siblings. */
-export function fillRect(opts: Fillable): { x: number; y: number; w: number; h: number } {
+ *  ambient (or `at`) layout, leaving `reserve` px for later siblings. `kind`
+ *  labels the rect in a layout capture (see `layoutCapture`). */
+export function fillRect(
+  opts: Fillable,
+  kind = "fill",
+): { x: number; y: number; w: number; h: number } {
   const layout = opts.at ?? (opts.x === undefined ? currentLayout() : null);
   const rect = layout
     ? layout.fill(opts.reserve ?? 0)
     : { x: opts.x ?? 0, y: opts.y ?? 0, w: opts.w ?? 0, h: opts.h ?? 0 };
   lastRectSlot().rect = rect;
+  if (layoutCaptureActive) recordLayout(kind, (opts as { id?: string }).id, rect);
   return rect;
 }
 
 /** Resolve a widget's rect: an explicit `at` flow, else the ambient layout
  *  (unless the caller pinned x/y), else absolute coordinates. `autoW` is the
- *  widget's natural main-axis size (e.g. a button's label width). */
+ *  widget's natural main-axis size (e.g. a button's label width); `kind`
+ *  labels the rect in a layout capture (see `layoutCapture`). */
 export function place(
   opts: Flowable,
   autoW: number,
   defaultH: number,
+  kind = "widget",
 ): { x: number; y: number; w: number; h: number } {
   const pinned = opts.x !== undefined || opts.y !== undefined;
   const st = pinned ? undefined : (opts.at ?? currentLayout());
@@ -262,6 +270,7 @@ export function place(
     rect = { x: opts.x ?? 0, y: opts.y ?? 0, w: opts.w ?? autoW, h: opts.h ?? defaultH };
   }
   lastRectSlot().rect = rect;
+  if (layoutCaptureActive) recordLayout(kind, (opts as { id?: string }).id, rect);
   return rect;
 }
 
@@ -570,6 +579,7 @@ export function autoContainer<R>(
   const key = containerKey(opts, kind);
   const cached = cachedContentSize(key);
   const rect = containerRect(dir, opts, cached);
+  if (layoutCaptureActive) recordLayout(kind, opts.id, rect);
   cfg.box?.(rect);
   const top = cfg.top ?? 0;
   const bottom = cfg.bottom ?? 0;

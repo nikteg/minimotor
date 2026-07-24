@@ -31,6 +31,7 @@ import {
   uiCtx,
   uiFont,
   uiPointer,
+  uiToScreen,
 } from "../core/index.js";
 import { button } from "./button.js";
 import { list, scrollGestureActive } from "./lists.js";
@@ -54,6 +55,8 @@ export interface SelectEditor {
 export interface SelectOverlayRequest<T = unknown> {
   ctx: CanvasRenderingContext2D;
   opts: SelectOptions<T> & { id: string };
+  /** The control's rect in SCREEN-logical coords (mapped via `uiToScreen` at
+   *  capture time — the deferred menu draws after any `UI.scaled` popped). */
   rect: { x: number; y: number; w: number; h: number };
 }
 
@@ -258,7 +261,7 @@ export function select<T>(opts: SelectOptions<T>): SelectResult<T> {
   const resolvedOpts = { ...opts, id };
   const s = st();
   s.seen.add(id);
-  const rect = place(opts, opts.w ?? 180, opts.h ?? 32);
+  const rect = place(opts, opts.w ?? 180, opts.h ?? 32, "select");
   const currentIndex = opts.options.findIndex((option) => Object.is(option.value, opts.value));
   const keyboardFocused = registerFocusable(ctx, {
     id,
@@ -342,8 +345,15 @@ export function select<T>(opts: SelectOptions<T>): SelectResult<T> {
     markFocusableOverlay(id);
     // Defer the menu until frame-end so siblings drawn later in the callback
     // layout cannot paint over it. Input is still captured immediately.
+    // The overlay pass runs AFTER any enclosing `UI.scaled` block has popped
+    // (native screen space), so capture the control's rect in SCREEN coords
+    // now, while the transform is still active — the menu then anchors under
+    // the control at any zoom.
     enterOverlay();
-    s.request = { ctx, opts: resolvedOpts, rect } as SelectOverlayRequest;
+    const tl = uiToScreen(rect.x, rect.y);
+    const br = uiToScreen(rect.x + rect.w, rect.y + rect.h);
+    const screenRect = { x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y };
+    s.request = { ctx, opts: resolvedOpts, rect: screenRect } as SelectOverlayRequest;
     editor.changed = false;
   }
   return { value, changed, open: !!editor?.open };

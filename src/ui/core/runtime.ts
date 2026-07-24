@@ -1,7 +1,7 @@
 // ---------- UI runtime ----------
 // All mutable UI state — focus, layout stacks, scroll offsets, open editors,
 // gesture tracking — lives on a UiRuntime rather than at module scope, so two
-// independent apps on one page (`Stage.init` + `Stage.create`) each get a
+// independent apps on one page (`App.init` + `App.create`) each get a
 // fully isolated UI. The default runtime backs the default app; `UI.begin(ctx)`
 // switches to (creating on first use) the runtime for that context. Widget
 // modules never see the runtime directly: they hold their state in a

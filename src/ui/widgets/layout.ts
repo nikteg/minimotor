@@ -12,6 +12,8 @@ import {
   getBaseSize,
   getUiScaleSetting,
   layoutArgs,
+  layoutCaptureActive,
+  recordLayout,
   popPointerClip,
   popUiTransform,
   pushPointerClip,
@@ -99,6 +101,7 @@ function scrollable<R>(
     horiz ? { ...opts, w: mainForRect, h: boxCross } : { ...opts, w: boxCross, h: mainForRect },
     cachedBox,
   );
+  if (layoutCaptureActive) recordLayout(kind, opts.id, rect);
   cfg.box?.(rect);
   storeContentSize(key, { w: rect.w, h: rect.h, ew: rect.w, eh: rect.h });
 

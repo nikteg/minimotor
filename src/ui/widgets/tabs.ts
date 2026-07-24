@@ -48,7 +48,7 @@ export function tabs(opts: TabsOptions): number {
     opts.w ??
     (Math.ceil(Math.max(...opts.items.map((t) => ctx.measureText(t).width))) + 26) *
       opts.items.length;
-  const rect = place(opts, w, opts.h ?? 30);
+  const rect = place(opts, w, opts.h ?? 30, "tabs");
   const id = widgetId(opts.id, "tabs");
   const keyboardFocused = registerFocusable(ctx, { id, tabIndex: opts.tabIndex });
   const cellW = rect.w / opts.items.length;

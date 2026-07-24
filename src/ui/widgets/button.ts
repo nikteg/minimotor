@@ -129,7 +129,7 @@ export function button(
   ctx.font = opts.font ?? uiFont(theme.fontSize + 2, true);
   // Auto width: the label plus comfortable padding.
   const w = opts.w ?? Math.ceil(ctx.measureText(opts.label).width) + theme.buttonPadX;
-  const rect = place(opts, w, opts.h ?? 30);
+  const rect = place(opts, w, opts.h ?? 30, "button");
   const id = widgetId(opts.id, "button");
   const keyboardFocused = registerFocusable(ctx, {
     id,

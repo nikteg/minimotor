@@ -10,7 +10,7 @@
 // draw(). Interactive state lives in module-level `let`s: each widget takes the
 // current value in and returns the (possibly changed) value, which we store
 // straight back — the immediate-mode round-trip.
-import { Draw, Loop, Pointer, Stage, UI } from "minimotor";
+import { App, Draw, Loop, Pointer, UI } from "minimotor";
 import type { TableSort, Theme } from "minimotor";
 
 // No letterbox `resolution`: rendering at native scale keeps text crisp on
@@ -19,7 +19,7 @@ import type { TableSort, Theme } from "minimotor";
 // so the column layout can REFLOW to the window width instead of scaling. The
 // board's OWN zoom is opt-in: the header's "UI Scale" slider drives `UI.scaled`
 // (below), which scales the board's draw + pointer while it still reflows.
-const view = Stage.init("game", { background: "#12141c" });
+const view = App.init("game", { background: "#12141c" });
 
 // ---- interactive state (the round-trip target for each widget) ----
 let tab = 0; // UI.tabs active index
@@ -154,6 +154,29 @@ const themePresets: { label: string; value: string; preset: Partial<Theme> }[] =
 let currentTheme = "teal"; // drives the Theme select; re-applied on change
 
 const uiId = UI.ids("ui-gallery");
+
+// ---- e2e hook ----
+// The Playwright spec (e2e/ui-scale.spec.ts) drives the UI-scale knob and
+// verifies the board's geometry through the layout-capture harness, instead
+// of scraping canvas pixels. Harmless in normal use (capture stays off).
+declare global {
+  interface Window {
+    __uiGallery?: {
+      setScale(s: number): void;
+      getState(): { uiScale: number; volume: number };
+      layoutCapture(on: boolean): void;
+      layoutTree(): ReturnType<typeof UI.layoutTree>;
+    };
+  }
+}
+window.__uiGallery = {
+  setScale: (s) => {
+    uiScale = s;
+  },
+  getState: () => ({ uiScale, volume }),
+  layoutCapture: UI.layoutCapture,
+  layoutTree: UI.layoutTree,
+};
 
 // ---- static demo data ----
 const listItems = ["Fireball", "Ice Shard", "Lightning", "Heal", "Shield", "Teleport", "Meteor"];
