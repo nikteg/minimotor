@@ -1,6 +1,6 @@
 // ---------- button ----------
 import {
-  Stack,
+  Flow,
   buttonState,
   centeredText,
   consumeKeyboardActivation,
@@ -44,7 +44,7 @@ export interface ButtonStyle {
 
 /** A button's geometry + label. Position it yourself (`x`/`y` required,
  *  `w` optional — auto-sized to the label when omitted), or hand it a
- *  layout `Stack` via `at` and skip the geometry entirely. */
+ *  layout `Flow` via `at` and skip the geometry entirely. */
 export interface ButtonOptions extends ButtonStyle {
   /** Stable identity enables Tab focus and keyboard activation. */
   id?: string;
@@ -61,7 +61,7 @@ export interface ButtonOptions extends ButtonStyle {
   /** Text drawn centered on the button. */
   label: string;
   /** Place in this layout stack — supplies x/y (and h); auto width. */
-  at?: Stack;
+  at?: Flow;
   /** Grayed out and unclickable. */
   disabled?: boolean;
   /** Shown near the pointer after hovering a moment (see `drawTips`). Works

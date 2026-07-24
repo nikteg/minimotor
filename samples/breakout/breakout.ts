@@ -16,6 +16,7 @@ import {
   Game,
   Keys,
   Loop,
+  Mathf,
   Perf,
   Scenes,
   Stage,
@@ -111,8 +112,8 @@ const scenes = Scenes.create({
     update() {
       // Paddle
       const speed = 6;
-      if (Keys.down("ArrowLeft")) paddle.x = Math.max(0, paddle.x - speed);
-      if (Keys.down("ArrowRight")) paddle.x = Math.min(GW - PADDLE_W, paddle.x + speed);
+      if (Keys.down("ArrowLeft")) paddle.x = Mathf.clamp(paddle.x - speed, 0, GW - PADDLE_W);
+      if (Keys.down("ArrowRight")) paddle.x = Mathf.clamp(paddle.x + speed, 0, GW - PADDLE_W);
 
       if (waiting) {
         ball.x = paddle.x + paddle.w / 2;

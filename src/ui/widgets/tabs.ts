@@ -1,6 +1,6 @@
 // ---------- tabs ----------
 import {
-  Stack,
+  Flow,
   buttonState,
   centeredText,
   consumeKeyboardCommand,
@@ -37,7 +37,7 @@ export interface TabsOptions {
   /** Current tab index — pass your state in, assign the return value back. */
   active: number;
   /** Place in this layout stack — supplies x/y (and h); auto width. */
-  at?: Stack;
+  at?: Flow;
   /** Label font. Default a bold `theme.fontSize` UI font. */
   font?: string;
 }

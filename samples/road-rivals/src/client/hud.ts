@@ -1,13 +1,15 @@
 import { Mathf, UI } from "minimotor";
 import type { Component, Ecs } from "minimotor";
-import { CAR_TYPES, WEAPONS, WORLD, roadsX, roadsY, type PickupData } from "./config.ts";
+import {
+  CAR_TYPES,
+  WEAPONS,
+  WORLD,
+  type PickupData,
+  type RectShape,
+  roadsX,
+  roadsY,
+} from "./config.ts";
 
-interface RectShape {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
 interface CarLike {
   x: number;
   y: number;

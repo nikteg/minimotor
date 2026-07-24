@@ -194,7 +194,7 @@ Loop.run({
   },
 
   draw() {
-    Draw.text("OPTIONS", { x: 24, y: 18, size: 22, color: "#e7ecf0", font: "bold 22px monospace" });
+    Draw.text("OPTIONS", { x: 24, y: 18, color: "#e7ecf0", font: "bold 22px monospace" });
     Draw.text("LB/RB or Q/E: tab · LT/RT or Z/X: sub-tab · stick/D-pad: move · A/Enter: select", {
       x: 24,
       y: 46,

@@ -321,7 +321,7 @@ Loop.run({
         color: "dim",
       });
     }
-    const footBtns = UI.stack({
+    const footBtns = UI.flow({
       x: L.footer.x + L.footer.w,
       y: L.footer.y + (L.footer.h - 34) / 2,
       h: 34,

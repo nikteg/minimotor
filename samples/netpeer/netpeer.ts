@@ -73,7 +73,7 @@ Loop.run({
 
     // Track the pointer while it's over the left pane.
     if (Pointer.x >= 0 && Pointer.x < vp.w / 2) {
-      localN = { x: (Pointer.x / (vp.w / 2)) * 1, y: Pointer.y / vp.h };
+      localN = { x: Pointer.x / (vp.w / 2), y: Pointer.y / vp.h };
     }
     // Stream your cursor to the peer over the data channel (once open) —
     // but only when it actually moved. An idle cursor costs zero bytes.

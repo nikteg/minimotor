@@ -1,4 +1,4 @@
-import { Stage, Loop, Keys, Camera, ECS, Draw } from "minimotor";
+import { Stage, Loop, Keys, Camera, ECS, Draw, Goodies } from "minimotor";
 
 Stage.init("game", { background: "#12141c" });
 
@@ -21,8 +21,8 @@ Loop.run({
     hero.x += (Keys.down("ArrowRight") ? 3 : 0) - (Keys.down("ArrowLeft") ? 3 : 0);
     hero.y += (Keys.down("ArrowDown") ? 3 : 0) - (Keys.down("ArrowUp") ? 3 : 0);
     for (const b of ecs.dense(Body)) {
-      b.x = (b.x + b.vx + WORLD.w) % WORLD.w;
-      b.y = (b.y + b.vy + WORLD.h) % WORLD.h;
+      b.x = Goodies.wrap(b.x + b.vx, WORLD.w);
+      b.y = Goodies.wrap(b.y + b.vy, WORLD.h);
     }
   },
   draw() {

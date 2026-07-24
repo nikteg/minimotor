@@ -7,6 +7,7 @@ import {
   Draw,
   ECS,
   Gizmos,
+  Goodies,
   Input,
   Keys,
   Loop,
@@ -347,8 +348,6 @@ const camera = {
   },
   sx: (wx: number) => wx - Camera.x,
   sy: (wy: number) => wy - Camera.y,
-  wx: (sx: number) => sx + Camera.x,
-  wy: (sy: number) => sy + Camera.y,
   snapTo: (x: number, y: number) => {
     cameraFocus.x = x;
     cameraFocus.y = y;
@@ -472,18 +471,15 @@ const transport = Net.connect({
   idleTimeoutMs: 15000,
 });
 
-function angleDelta(a: number, b: number) {
-  return Math.atan2(Math.sin(b - a), Math.cos(b - a));
-}
 function blendState(a: RemoteState, b: RemoteState, t: number): RemoteState {
   return {
     ...b,
     px: Mathf.lerp(a.px, b.px, t),
     py: Mathf.lerp(a.py, b.py, t),
-    pa: a.pa + angleDelta(a.pa, b.pa) * t,
+    pa: Mathf.lerpAngle(a.pa, b.pa, t),
     cx: Mathf.lerp(a.cx, b.cx, t),
     cy: Mathf.lerp(a.cy, b.cy, t),
-    ca: a.ca + angleDelta(a.ca, b.ca) * t,
+    ca: Mathf.lerpAngle(a.ca, b.ca, t),
     health: Mathf.lerp(a.health, b.health, t),
   };
 }
@@ -784,17 +780,13 @@ function updateCar(dt: number) {
 }
 
 function nearestEnterableCar(): FleetCar | null {
-  let nearest: FleetCar | null = null;
-  let nearestDistance = ENTER_CAR_RANGE;
-  for (const candidate of cars) {
-    if (candidate.health <= 0) continue;
-    const distance = Math.hypot(player.x - candidate.x, player.y - candidate.y);
-    if (distance <= nearestDistance) {
-      nearest = candidate;
-      nearestDistance = distance;
-    }
-  }
-  return nearest;
+  return Goodies.nearest(
+    player.x,
+    player.y,
+    cars.filter((candidate) => candidate.health > 0),
+    (candidate) => candidate,
+    ENTER_CAR_RANGE,
+  );
 }
 
 function tryToggleCar() {

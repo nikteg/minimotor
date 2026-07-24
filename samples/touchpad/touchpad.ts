@@ -1,6 +1,6 @@
-import { Stage, Loop, Draw, Input, OnscreenInput } from "minimotor";
+import { Stage, Loop, Draw, Input, OnscreenInput, Goodies, Gizmos, Perf, UI } from "minimotor";
 
-const view = Stage.init("game", { background: "#0f141a" });
+const view = Stage.init("game", { background: "#0f141a", plugins: [Perf.plugin()] });
 
 // An on-screen gamepad: a left analog stick + two face buttons. `autohide:false`
 // keeps it on screen on desktop too — a mouse drives it while it's visible, and
@@ -30,28 +30,31 @@ const input = Input.map(
 );
 
 const rover = { x: view.w / 2, y: view.h / 2 };
-const trail: { x: number; y: number }[] = [];
+const trail = Gizmos.trail(42);
 
 Loop.run({
   update() {
     const move = input.vector("left", "right", "up", "down"); // analog, no diagonal boost
     const speed = (input.brake.down ? 0.5 : 1) * (input.boost.down ? 6 : 3.4);
-    rover.x = (rover.x + move.x * speed + view.w) % view.w;
-    rover.y = (rover.y + move.y * speed + view.h) % view.h;
-    trail.push({ x: rover.x, y: rover.y });
-    if (trail.length > 42) trail.shift();
+    rover.x = Goodies.wrap(rover.x + move.x * speed, view.w);
+    rover.y = Goodies.wrap(rover.y + move.y * speed, view.h);
+    trail.push(rover.x, rover.y);
   },
   draw() {
-    for (let i = 0; i < trail.length; i++) {
-      const p = trail[i];
-      Draw.opacity((i / trail.length) * 0.5, () => Draw.circle(p.x, p.y, 4, "#2a6f78"));
+    // points are newest-first; fade toward the oldest tail end.
+    const pts = trail.points;
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      Draw.opacity(((pts.length - 1 - i) / pts.length) * 0.5, () =>
+        Draw.circle(p.x, p.y, 4, "#2a6f78"),
+      );
     }
     Draw.circle(rover.x, rover.y, 12, input.boost.down ? "#ffd166" : "#4ecdc4");
-    Draw.text("Drive with the stick + GO — or WASD / arrows + Space", {
+    UI.text("Drive with the stick + GO — or WASD / arrows + Space", {
       x: 12,
       y: 10,
       size: 13,
-      color: "#7d8894",
+      color: "dim",
     });
     OnscreenInput.drawControls(pad); // screen space — call in draw
   },

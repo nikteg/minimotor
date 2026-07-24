@@ -1,4 +1,4 @@
-import { Stage, Loop, Keys, Draw } from "minimotor";
+import { Stage, Loop, Keys, Draw, Mathf } from "minimotor";
 
 // `init` returns the LIVE viewport — a stable object mutated on resize, so
 // `view.w` / `view.h` are always current without a resize handler.
@@ -12,8 +12,8 @@ Loop.run({
     if (Keys.down("ArrowUp") || Keys.down("KeyW")) player.y -= player.speed;
     if (Keys.down("ArrowDown") || Keys.down("KeyS")) player.y += player.speed;
     // Keep it on screen (clamp to the live viewport).
-    player.x = Math.max(0, Math.min(view.w - player.size, player.x));
-    player.y = Math.max(0, Math.min(view.h - player.size, player.y));
+    player.x = Mathf.clamp(player.x, 0, view.w - player.size);
+    player.y = Mathf.clamp(player.y, 0, view.h - player.size);
   },
   draw() {
     Draw.rect(player.x, player.y, player.size, player.size, "#4ecdc4");

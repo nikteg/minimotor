@@ -1,5 +1,17 @@
 export type CarTypeId = "compact" | "muscle" | "drift";
 
+export interface Point {
+  x: number;
+  y: number;
+}
+
+export interface RectShape {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface CarConfig {
   label: string;
   w: number;

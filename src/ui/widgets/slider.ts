@@ -1,6 +1,6 @@
 // ---------- slider ----------
 import {
-  Stack,
+  Flow,
   centeredText,
   consumeKeyboardCommand,
   drawFocusRing,
@@ -28,7 +28,7 @@ export interface SliderOptions {
   /** Slot height in px. Default `30`. */
   h?: number;
   /** Place in this layout stack — supplies x/y (and h). */
-  at?: Stack;
+  at?: Flow;
   /** Range minimum. Default `0`. */
   min?: number;
   /** Range maximum. Default `1`. */

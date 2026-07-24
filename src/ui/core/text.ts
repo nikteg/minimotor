@@ -1,5 +1,5 @@
 import { uiCtx } from "./context.js";
-import { Stack, currentLayout, place } from "./stack.js";
+import { Flow, currentLayout, place } from "./stack.js";
 import { centeredText, theme, uiFont } from "./theme.js";
 import { Stage } from "../../engine/index.js";
 
@@ -71,7 +71,7 @@ export interface TextOptions {
   /** Slot height override in px (see `w`). */
   h?: number;
   /** Place in this layout stack — flows the label like any widget. */
-  at?: Stack;
+  at?: Flow;
   /** Font size in px. Default `theme.fontSize`. */
   size?: number;
   /** Bold. Default false. */

@@ -13,6 +13,7 @@ import {
   Input,
   Keys,
   Loop,
+  Mathf,
   Perf,
   Sprites,
   Stage,
@@ -97,7 +98,7 @@ Loop.run({
       (Keys.down("ArrowLeft") || Keys.down("KeyA") ? -1 : 0) +
       (Keys.down("ArrowRight") || Keys.down("KeyD") ? 1 : 0) +
       stick;
-    player.vel.x = Math.max(-1, Math.min(1, move)) * 3.4;
+    player.vel.x = Mathf.clamp(move, -1, 1) * 3.4;
 
     const jump = Keys.pressed("Space") || Keys.pressed("KeyW") || pad.pressed(Input.Buttons.A);
     if (jump && player.grounded) {

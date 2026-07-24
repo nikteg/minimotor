@@ -19,8 +19,8 @@
 // every widget at once; per-widget style options still override.
 //
 // This is the kernel barrel: widgets and index.ts import from "./core/index.js".
-// Split: context / theme (+ draw helpers) / stack (layout primitives) /
-// identity / input (pointer + buttonState) / text / focus (the focusable
+// Split: context / theme (+ draw helpers) / stack.ts (the `flow` cursor +
+// layout primitives) / identity / input (pointer + buttonState) / text / focus (the focusable
 // registry + keyboard/pad nav) / lifecycle (the per-frame runtime — overlay-pass
 // flags, tooltip + float machinery, the ensureWired housekeeping, and the
 // frame-end/reset hooks widgets register into). Widgets live in ../widgets and

@@ -2,7 +2,9 @@
 //
 // A component storyboard: buttons (all variants), toggles, sliders, a select,
 // a text input, tabs, a progress bar + spinner, a windowed list, a sortable
-// table, drag & drop, and the overlays (popover / modal / dialog / confirm).
+// table, drag & drop, an inventory grid, a stack-cursor toolbar, a clipped
+// region with an explicit scrollbar, and the overlays (popover / modal /
+// dialog / confirm).
 //
 // The engine calls UI.begin() for us each frame; every widget is drawn inside
 // draw(). Interactive state lives in module-level `let`s: each widget takes the
@@ -20,7 +22,7 @@ const view = Stage.init("game", { background: "#12141c" });
 // ---- interactive state (the round-trip target for each widget) ----
 let tab = 0; // UI.tabs active index
 let sound = true; // UI.toggle
-let showFps = false; // UI.toggle
+let reducedMotion = false; // UI.toggle (cosmetic preference — pure state round-trip)
 let disabledToggle = false; // UI.toggle (disabled demo)
 let volume = 65; // UI.slider (0..100)
 let zoom = 1.5; // UI.slider (0.5..3, stepped)
@@ -48,6 +50,11 @@ let tableSel: Player | null = null;
 // drag & drop — two bins of items; a drop moves an item across
 let binLoadout: string[] = ["Sword", "Shield"];
 let binStash: string[] = ["Potion", "Torch", "Rope", "Key"];
+
+// UI.grid — an inventory grid; clicking a cell selects it
+let invSel = 0;
+// UI.clip + UI.scrollbar — offset into a clipped, explicitly-scrolled region
+let clipOffset = 0;
 
 // ---- theme picker ----
 // Each preset is a `Partial<Theme>` merged over the DEFAULT theme by
@@ -147,6 +154,23 @@ const uiId = UI.ids("ui-gallery");
 // ---- static demo data ----
 const listItems = ["Fireball", "Ice Shard", "Lightning", "Heal", "Shield", "Teleport", "Meteor"];
 const tabPages = ["Overview", "Stats", "Log"];
+// 4×2 inventory for UI.grid.
+const invItems = ["⚔️", "🛡️", "🧪", "🔥", "❄️", "⚡", "💎", "🗝️"];
+// Tall content for the clipped, explicitly-scrolled region (UI.clip + scrollbar).
+const creditLines = [
+  "— CREDITS —",
+  "Engine .......... minimotor",
+  "Design .......... you",
+  "Code ............ you",
+  "Art ............. also you",
+  "Audio ........... Web Audio",
+  "Playtesting ..... the cat",
+  "Coffee .......... a lot",
+  "Bugs ............ a few",
+  "Fixes ........... eventually",
+  "Special thanks .. immediate mode",
+  "— fin —",
+];
 
 interface Player {
   name: string;
@@ -175,7 +199,7 @@ Loop.run({
     // No simulation — the gallery is drawn entirely from widget state.
   },
 
-  draw(ctx) {
+  draw() {
     // Header (Draw.* draws in ambient/screen space, above the panels).
     Draw.text("UI GALLERY", {
       x: 24,
@@ -256,7 +280,11 @@ Loop.run({
 
             UI.group({ title: "Toggles & Sliders", gap: 10 }, () => {
               sound = UI.toggle({ id: uiId("tg-sound"), label: "Sound enabled", on: sound });
-              showFps = UI.toggle({ id: uiId("tg-fps"), label: "Show FPS", on: showFps });
+              reducedMotion = UI.toggle({
+                id: uiId("tg-motion"),
+                label: "Reduced motion",
+                on: reducedMotion,
+              });
               disabledToggle = UI.toggle({
                 id: uiId("tg-disabled"),
                 label: "Locked option",
@@ -526,6 +554,98 @@ Loop.run({
                 if (bin.id === "loadout") binLoadout = [...binLoadout, item];
                 else binStash = [...binStash, item];
               }
+            });
+          });
+
+          // ================= COLUMN 5 : Layout & regions =================
+          // Grid, an explicit stack cursor, spacer alignment, and a clipped
+          // region driven by an explicit scrollbar — all raw-rect widgets, so
+          // reserve fixed slots from the flowing column and hand each its rect.
+          UI.col({ w: colW, gap: 16, id: uiId("col5") }, (st) => {
+            // UI.grid — even 2-D cells; here a 4×2 emoji inventory. listItem
+            // paints each cell's hover/selected state; a click selects it.
+            const gridBox = st.next(colW, 150);
+            UI.panel({ ...gridBox, title: "Grid (inventory)" });
+            UI.grid(
+              {
+                x: gridBox.x + 12,
+                y: gridBox.y + 42,
+                w: gridBox.w - 24,
+                h: gridBox.h - 54,
+                cols: 4,
+                rows: 2,
+                gap: 6,
+              },
+              (cell, i) => {
+                if (UI.listItem({ id: uiId(`slot-${i}`), ...cell, selected: i === invSel }))
+                  invSel = i;
+                UI.text(invItems[i] ?? "", { ...cell, align: "center", size: 22 });
+              },
+            );
+
+            // UI.flow — the low-level layout cursor (what row/col use inside).
+            // Here an `align: "end"` cursor lays two auto-width buttons out
+            // right-to-left for a right-anchored toolbar.
+            const barBox = st.next(colW, 72);
+            UI.panel({ ...barBox, title: "Flow cursor (toolbar)" });
+            UI.text("History", { x: barBox.x + 12, y: barBox.y + 40, h: 30, color: "dim" });
+            const bar = UI.flow({
+              x: barBox.x + barBox.w - 12,
+              y: barBox.y + 40,
+              dir: "row",
+              align: "end",
+              gap: 8,
+            });
+            if (UI.button({ at: bar, id: uiId("st-redo"), label: "Redo" }))
+              UI.floatText("redo", barBox.x + barBox.w - 40, barBox.y + 40);
+            if (UI.button({ at: bar, id: uiId("st-undo"), label: "Undo" }))
+              UI.floatText("undo", barBox.x + barBox.w - 100, barBox.y + 40);
+
+            // UI.spacer — a fixed gap inserted before the next child; sized from
+            // the row cursor's `remaining` space, it pushes the button flush to
+            // the right edge (a manual alternative to a flex spacer).
+            const spBox = st.next(colW, 72);
+            UI.panel({ ...spBox, title: "Spacer (align right)" });
+            UI.row({ x: spBox.x + 12, y: spBox.y + 40, w: spBox.w - 24, h: 30 }, (rst) => {
+              UI.text("v1.4.2", { color: "dim", h: 30 });
+              UI.spacer(Math.max(0, rst.remaining - 76));
+              if (UI.button({ id: uiId("sp-save"), label: "Save", w: 76, variant: "primary" }))
+                UI.floatText("saved", spBox.x + spBox.w - 40, spBox.y + 40);
+            });
+
+            // UI.clip + UI.scrollbar — a clipped viewport masks tall content
+            // (drawn at a scrolled offset), and an EXPLICIT scrollbar bound to
+            // the content/view extents drives that offset (thumb, track and
+            // wheel). Distinct from the implicit overflow:"auto" columns above.
+            const clipBox = st.next(colW, 168);
+            UI.panel({ ...clipBox, title: "Clip + scrollbar" });
+            const vpRect: Rect = {
+              x: clipBox.x + 12,
+              y: clipBox.y + 40,
+              w: clipBox.w - 34,
+              h: clipBox.h - 52,
+            };
+            const lineH = 22;
+            const content = creditLines.length * lineH;
+            UI.clip(vpRect, () => {
+              for (let i = 0; i < creditLines.length; i++)
+                UI.text(creditLines[i], {
+                  x: vpRect.x + 4,
+                  y: vpRect.y - clipOffset + i * lineH,
+                  h: lineH,
+                  size: 13,
+                  color: i === 0 ? "accent" : undefined,
+                });
+            });
+            clipOffset = UI.scrollbar({
+              x: vpRect.x + vpRect.w + 6,
+              y: vpRect.y,
+              h: vpRect.h,
+              view: vpRect.h,
+              content,
+              offset: clipOffset,
+              wheelArea: vpRect,
+              id: uiId("clip-sb"),
             });
           });
         },

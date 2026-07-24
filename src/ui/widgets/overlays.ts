@@ -7,7 +7,7 @@ import {
   ensureWired,
   rawPointer,
   runAutoSized,
-  stack,
+  flow,
   text,
   theme,
   uiCtx,
@@ -231,7 +231,7 @@ export function confirm(
   // variants, the last (rightmost, primary-action) button goes accent.
   const variantFor = (i: number): ButtonVariant =>
     opts.variants?.[i] ?? (i === buttons.length - 1 ? "primary" : "default");
-  const btnBar = stack({ x: r.x + r.w - 12, y: r.y + r.h - 46, gap: 8, h: 34, align: "end" });
+  const btnBar = flow({ x: r.x + r.w - 12, y: r.y + r.h - 46, gap: 8, h: 34, align: "end" });
   let hit: string | null = null;
   for (let i = buttons.length - 1; i >= 0; i--) {
     if (
@@ -329,7 +329,7 @@ export function dialog(
 
   let hit: string | null = null;
   if (choices.length) {
-    const bar = stack({ x: x + w - 12, y: y + h - 44, h: 32, gap: 8, align: "end" });
+    const bar = flow({ x: x + w - 12, y: y + h - 44, h: 32, gap: 8, align: "end" });
     for (let i = choices.length - 1; i >= 0; i--) {
       if (
         button(ctx, {

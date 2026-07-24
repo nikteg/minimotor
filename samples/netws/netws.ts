@@ -1,7 +1,7 @@
 // WebSocket console: connect to any server and echo messages back and forth.
 // Demonstrates: Net.connect — transport.sendJson, transport.onMessage
-// (string frames now arrive decoded), transport.onClose and polling
-// transport.state. No game loop; the engine's networking works standalone.
+// (string frames now arrive decoded), transport.onClose and transport.onState.
+// No game loop; the engine's networking works standalone.
 import { Net, type Transport } from "minimotor";
 
 const dec = new TextDecoder();
@@ -19,7 +19,6 @@ const dotEl = $<HTMLSpanElement>("dot");
 const stateEl = $<HTMLSpanElement>("state");
 
 let transport: Transport | null = null;
-let poll: ReturnType<typeof setInterval> | null = null;
 
 function log(text: string, cls = "meta") {
   const line = document.createElement("span");
@@ -39,8 +38,6 @@ function setState(state: string) {
 }
 
 function disconnect() {
-  if (poll) clearInterval(poll);
-  poll = null;
   if (transport) transport.close();
   transport = null;
   setState("closed");
@@ -63,16 +60,11 @@ function connect() {
     disconnect();
   };
 
-  // state is a property, not an event — poll it to reflect open/closed in the UI.
-  let last = "connecting";
-  poll = setInterval(() => {
-    if (!transport) return;
-    if (transport.state !== last) {
-      last = transport.state;
-      setState(last);
-      if (last === "connected") log("connected");
-    }
-  }, 150);
+  // onState fires on every transition — no polling needed to reflect it in the UI.
+  transport.onState = (state) => {
+    setState(state);
+    if (state === "connected") log("connected");
+  };
 }
 
 toggleEl.addEventListener("click", () => {

@@ -3,7 +3,6 @@
 // screen↔world mapping via Camera.toWorld) and Camera.layer for stable
 // procedural parallax scenery.
 import {
-  Audio,
   Camera,
   Draw,
   Input,
@@ -109,14 +108,12 @@ Loop.run({
   update() {
     courier.invuln = Math.max(0, courier.invuln - STEP_S);
     // Named actions keep the controls readable and support arrows + WASD.
-    const dx = input.axis("left", "right");
-    const dy = input.axis("up", "down");
-    const len = Math.hypot(dx, dy) || 1;
+    const v = input.vector("left", "right", "up", "down");
     if (state === "play") {
       elapsed += STEP_S;
-      if (dx || dy) courier.angle = Math.atan2(dy, dx);
-      courier.x = Mathf.clamp(courier.x + (dx / len) * courier.speed, 24, worldW - 24);
-      courier.y = Mathf.clamp(courier.y + (dy / len) * courier.speed, 24, worldH - 24);
+      if (v.x || v.y) courier.angle = Math.atan2(v.y, v.x);
+      courier.x = Mathf.clamp(courier.x + v.x * courier.speed, 24, worldW - 24);
+      courier.y = Mathf.clamp(courier.y + v.y * courier.speed, 24, worldH - 24);
       for (const d of drones) {
         const a = Math.atan2(courier.y - d.y, courier.x - d.x) + Math.sin(elapsed + d.phase) * 0.8;
         const sp = (18 + d.phase * 2) / 60; // px/step

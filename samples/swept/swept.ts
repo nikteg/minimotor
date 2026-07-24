@@ -6,7 +6,7 @@
 // crossing and reports where + on which face it hit.
 //
 // Controls:  Space = toggle method (swept ⇄ per-frame)   ↑/↓ = speed
-import { Audio, Collision, Draw, Keys, Loop, Perf, Stage, UI } from "minimotor";
+import { Audio, Collision, Draw, Keys, Loop, Mathf, Perf, Stage, UI } from "minimotor";
 
 // The viewport is LIVE (mutated on resize) — wall/reset derive from it; the
 // engine owns clearing via `background`.
@@ -25,7 +25,7 @@ const wall = () => ({ x: view.w / 2 - 3, y: midY() - 90, w: 6, h: 180 });
 const proj = { x: 0, y: 0, w: 18, h: 18 };
 let speed = 60; // px per step; well above the wall's 6px width
 let swept = true;
-let stats = { hits: 0, tunneled: 0 };
+const stats = { hits: 0, tunneled: 0 };
 let flash: { x: number; y: number; tunneled: boolean } | null = null; // last outcome marker, fades out
 let flashAge = 0;
 
@@ -42,8 +42,8 @@ function box(x: number) {
 Loop.run({
   update() {
     if (Keys.pressed("Space")) swept = !swept;
-    if (Keys.pressed("ArrowUp")) speed = Math.min(200, speed + 10);
-    if (Keys.pressed("ArrowDown")) speed = Math.max(10, speed - 10);
+    if (Keys.pressed("ArrowUp")) speed = Mathf.clamp(speed + 10, 10, 200);
+    if (Keys.pressed("ArrowDown")) speed = Mathf.clamp(speed - 10, 10, 200);
 
     const prevX = proj.x;
     proj.x += speed;

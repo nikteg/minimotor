@@ -1,16 +1,6 @@
 import type { Body2D } from "minimotor/physics2d";
-import { roadsX, roadsY } from "./config.ts";
+import { type Point, type RectShape, roadsX, roadsY } from "./config.ts";
 
-export interface Point {
-  x: number;
-  y: number;
-}
-export interface RectShape {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
 export interface Prop {
   x: number;
   y: number;

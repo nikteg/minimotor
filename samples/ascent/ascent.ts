@@ -56,7 +56,6 @@ const pad = OnscreenInput.gamepad({
 // World grid — 16px cells (the 8px tiles are drawn at 2×).
 // ---------------------------------------------------------------------------
 const CELL = 16;
-const TILE = 8; // native art tile size
 const COLS = 40;
 const ROWS = 23;
 const WORLD_W = COLS * CELL;
@@ -191,7 +190,7 @@ interface BuiltLevel {
 }
 
 function buildLevel(def: LevelDef): BuiltLevel {
-  const grid = Array.from({ length: ROWS }, () => new Array<string>(COLS).fill(" "));
+  const grid = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => " "));
   const set = (c: number, r: number, ch: string) => {
     if (c >= 0 && c < COLS && r >= 0 && r < ROWS) grid[r][c] = ch;
   };
@@ -277,7 +276,6 @@ const DASH_SPEED = 8.4;
 const DASH_END_SPEED = 3.6;
 const DASH_FRAMES = 11;
 const DASH_FREEZE = 3;
-const INV_SQRT2 = 0.7071;
 
 // Particle system (immediate-mode bursts, rendered via Draw.particles).
 const fx = Particles.create();
@@ -500,15 +498,18 @@ function buildAnimations(): void {
       states: { s: { row: 0, frames, fps } },
     }).play("s");
 
+  // dash and the death launch pose bake the identical single jump0 frame, so
+  // they share ONE cursor (they're never active at the same time).
+  const jump0Strip = oneState(Sprites.packAtlas([img("jump0")]), 1, 1);
   clips = {
     idle: oneState(idleSheet, 4, 5),
     run: oneState(runSheet, 4, 13),
     jump: oneState(jumpSheet, 3, 10),
     fall: oneState(Sprites.packAtlas([img("jump2")]), 1, 1),
     wall: oneState(climbSheet, 4, 8),
-    dash: oneState(Sprites.packAtlas([img("jump0")]), 1, 1),
+    dash: jump0Strip,
     // Death: hold the arms-up launch pose while the body tumbles off-screen.
-    dead: oneState(Sprites.packAtlas([img("jump0")]), 1, 1),
+    dead: jump0Strip,
   };
 
   // Cache decoded tile/prop images (drawn directly, scaled in draw calls).
@@ -641,10 +642,10 @@ function loadLevel(i: number): void {
       Orb.with({ cd: 0, baseX: x, baseY: y }),
     );
   }
-  respawn(true);
+  respawn();
 }
 
-function respawn(_hard: boolean): void {
+function respawn(): void {
   player.x = level.spawn.x;
   player.y = level.spawn.y;
   player.vx = player.vy = 0;
@@ -820,7 +821,7 @@ Loop.run({
       if (Keys.pressed("KeyR")) restartGame();
       return;
     }
-    if (Keys.pressed("KeyR")) respawn(true);
+    if (Keys.pressed("KeyR")) respawn();
     if (fade > 0) fade = Math.max(0, fade - 0.05);
 
     if (player.dead) {
@@ -830,7 +831,7 @@ Loop.run({
       player.y += player.vy;
       player.x += player.vx;
       player.deathSpin += 0.32;
-      if (player.y > WORLD_H + 80) respawn(false);
+      if (player.y > WORLD_H + 80) respawn();
       return;
     }
     if (player.freeze > 0) {
@@ -914,8 +915,8 @@ Loop.run({
       const dy = key.down() ? 1 : key.up() ? -1 : 0;
       if (dx === 0 && dy === 0) dx = player.facing;
       if (dx !== 0 && dy !== 0) {
-        player.dashDx = dx * INV_SQRT2;
-        player.dashDy = dy * INV_SQRT2;
+        player.dashDx = dx * Math.SQRT1_2;
+        player.dashDy = dy * Math.SQRT1_2;
       } else {
         player.dashDx = dx;
         player.dashDy = dy;
@@ -1009,11 +1010,14 @@ Loop.run({
     ctx.fillStyle = "#08060f";
     ctx.fillRect(0, 0, vp.w, vp.h);
     if (!ready) {
-      ctx.fillStyle = "#cbd";
-      ctx.font = "16px system-ui, sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText("Loading…", vp.w / 2, vp.h / 2);
-      ctx.textAlign = "left";
+      Draw.text("Loading…", {
+        x: vp.w / 2,
+        y: vp.h / 2,
+        font: "16px system-ui, sans-serif",
+        color: "#cbd",
+        align: "center",
+        baseline: "bottom",
+      });
       return;
     }
 
@@ -1261,27 +1265,41 @@ function drawDashPip(ctx: CanvasRenderingContext2D): void {
   }
   ctx.restore();
   ctx.shadowBlur = 0;
-  ctx.fillStyle = ready ? "#cbeefb" : "#7f95a6";
-  ctx.font = "11px system-ui, sans-serif";
-  ctx.fillText("DASH", cx + 12, cy + 4);
+  Draw.text("DASH", {
+    x: cx + 12,
+    y: cy + 4,
+    font: "11px system-ui, sans-serif",
+    color: ready ? "#cbeefb" : "#7f95a6",
+    align: "left",
+    baseline: "bottom",
+  });
 }
 
 function drawWin(ctx: CanvasRenderingContext2D): void {
   ctx.fillStyle = "rgba(8,6,15,0.82)";
   ctx.fillRect(0, 0, vp.w, vp.h);
-  ctx.textAlign = "center";
-  ctx.fillStyle = "#ffd2e2";
-  ctx.font = "bold 40px system-ui, sans-serif";
-  ctx.fillText("SUMMIT REACHED", vp.w / 2, vp.h / 2 - 24);
-  ctx.fillStyle = "#fff";
-  ctx.font = "18px system-ui, sans-serif";
-  ctx.fillText(
-    `${deaths} deaths   ·   best ${bestDeaths === null ? "—" : bestDeaths}`,
-    vp.w / 2,
-    vp.h / 2 + 10,
-  );
-  ctx.fillStyle = "#9ad";
-  ctx.font = "14px system-ui, sans-serif";
-  ctx.fillText("Press R to climb again", vp.w / 2, vp.h / 2 + 42);
-  ctx.textAlign = "left";
+  Draw.text("SUMMIT REACHED", {
+    x: vp.w / 2,
+    y: vp.h / 2 - 24,
+    font: "bold 40px system-ui, sans-serif",
+    color: "#ffd2e2",
+    align: "center",
+    baseline: "bottom",
+  });
+  Draw.text(`${deaths} deaths   ·   best ${bestDeaths === null ? "—" : bestDeaths}`, {
+    x: vp.w / 2,
+    y: vp.h / 2 + 10,
+    font: "18px system-ui, sans-serif",
+    color: "#fff",
+    align: "center",
+    baseline: "bottom",
+  });
+  Draw.text("Press R to climb again", {
+    x: vp.w / 2,
+    y: vp.h / 2 + 42,
+    font: "14px system-ui, sans-serif",
+    color: "#9ad",
+    align: "center",
+    baseline: "bottom",
+  });
 }

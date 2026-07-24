@@ -6,7 +6,7 @@
 // lifecycle hooks (onOverlayPass / onFrameEnd / onReset), so core never imports
 // it back.
 import {
-  Stack,
+  Flow,
   centeredText,
   consumeKeyboardActivation,
   consumeKeyboardCommand,
@@ -91,7 +91,7 @@ export interface SelectOptions<T> {
   /** Control height in px. Default `32`. */
   h?: number;
   /** Place in this layout stack — supplies x/y (and h). */
-  at?: Stack;
+  at?: Flow;
   /** Grayed out; won't open. */
   disabled?: boolean;
   /** Shown when no option matches `value`. Default `"Select…"`. */

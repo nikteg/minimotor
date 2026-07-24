@@ -310,24 +310,24 @@ Loop.run({
       ctx.restore();
     }
     Draw.particles(fx);
-    UI.panel(ctx, { x: 4, y: 3, w: 300, h: 23, bg: "rgba(3,5,12,.72)", border: "#30496e" });
-    UI.text(ctx, `SCORE ${sessionScore}  BEST ${best.best}  WAVE ${level}`, {
+    UI.panel({ x: 4, y: 3, w: 300, h: 23, bg: "rgba(3,5,12,.72)", border: "#30496e" });
+    UI.text(`SCORE ${sessionScore}  BEST ${best.best}  WAVE ${level}`, {
       x: 9,
       y: 4,
       size: 8,
       color: "#fff",
     });
-    UI.text(ctx, `LIVES ${"◆".repeat(Math.max(0, lives))}`, {
+    UI.text(`LIVES ${"◆".repeat(Math.max(0, lives))}`, {
       x: 9,
       y: H - 17,
       size: 8,
       color: "#fff",
     });
-    UI.text(ctx, "HYPER", { x: W - 65, y: H - 17, size: 8, color: "dim" });
-    UI.bar(ctx, W - 37, H - 14, 30, 6, hyper.fraction, { fill: "#b197fc", bg: "#1b2740" });
+    UI.text("HYPER", { x: W - 65, y: H - 17, size: 8, color: "dim" });
+    UI.bar(W - 37, H - 14, 30, 6, hyper.fraction, { fill: "#b197fc", bg: "#1b2740" });
     if (state === "title" || state === "gameover") {
       Draw.rect(0, 0, W, H, "rgba(3,5,12,.75)");
-      UI.text(ctx, state === "title" ? "POCKET ASTEROIDS" : "SHIP LOST", {
+      UI.text(state === "title" ? "POCKET ASTEROIDS" : "SHIP LOST", {
         x: W / 2,
         y: 40,
         size: 25,
@@ -336,13 +336,12 @@ Loop.run({
         align: "center",
       });
       UI.text(
-        ctx,
         state === "title"
           ? "SPACE / A BUTTON TO LAUNCH"
           : `SCORE ${sessionScore} · SPACE TO RESTART`,
         { x: W / 2, y: 75, size: 9, color: "#fff", align: "center" },
       );
-      UI.text(ctx, "ROTATE · THRUST · FIRE · HYPERSPACE", {
+      UI.text("ROTATE · THRUST · FIRE · HYPERSPACE", {
         x: W / 2,
         y: 93,
         size: 9,

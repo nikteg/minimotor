@@ -18,6 +18,7 @@ import {
   Mathf,
   Perf,
   Stage,
+  Storage,
   UI,
 } from "minimotor";
 import { Physics2D } from "minimotor/physics2d";
@@ -118,9 +119,11 @@ const skids = Gizmos.skidmarks({
 const SKID_SLIP = 120; // car.tireSlip above this = tyres scrubbing → lay rubber
 let lapTime = 0,
   lastLap = 0,
-  bestLap = 0,
   prevLap = 0,
   gateLock = -1;
+// Best lap lives OUTSIDE reset() so it survives R restarts, and is persisted
+// across page loads via the crash-safe Storage wrapper.
+let bestLap = Storage.load("checkpoint-rally.best", 0);
 let state = "countdown",
   cdTime = 0,
   redLit = 0,
@@ -136,7 +139,6 @@ function reset() {
   body.wake();
   lapTime = 0;
   lastLap = 0;
-  bestLap = 0;
   prevLap = 0;
   route.reset();
   skids.clear();
@@ -204,7 +206,10 @@ Loop.run({
     gateLock = touching;
     if (route.lap > prevLap) {
       lastLap = lapTime;
-      if (!bestLap || lastLap < bestLap) bestLap = lastLap;
+      if (!bestLap || lastLap < bestLap) {
+        bestLap = lastLap;
+        Storage.save("checkpoint-rally.best", bestLap);
+      }
       lapTime = 0;
       prevLap = route.lap;
       Audio.Sfx.blip(660, 0.09);

@@ -1,10 +1,11 @@
-// ---------- Stack (layout) ----------
+// ---------- Flow — one-axis layout cursor + the container primitives ----------
+// (file kept as stack.ts; the public export is `flow`/`Flow`)
 
 import { widgetId } from "./identity.js";
 import type { IdPart } from "./identity.js";
 
-/** Options for `stack()` — a one-axis layout cursor. */
-export interface StackOptions {
+/** Options for `flow()` — a one-axis layout cursor. */
+export interface FlowOptions {
   /** Starting corner. With `align: "end"` this is the FAR edge (right edge
    *  for rows, bottom for columns) and slots grow backwards from it. */
   x: number;
@@ -25,7 +26,7 @@ export interface StackOptions {
    *  column). Enables `fill`/`remaining`. The closure containers set it. */
   length?: number;
   /** Shrink-wrap the CROSS axis: children take their natural size across the
-   *  stack (a col's width, a row's height) instead of filling it. Set by an
+   *  flow (a col's width, a row's height) instead of filling it. Set by an
    *  auto-sized container so it can measure its content. Default false. */
   fitCross?: boolean;
   /** Flex-wrap: when a slot would overflow `length` on the main axis, start a
@@ -34,8 +35,8 @@ export interface StackOptions {
   wrap?: boolean;
 }
 
-/** A layout cursor from `stack()`: hands out rects along one axis. */
-export interface Stack {
+/** A layout cursor from `flow()`: hands out rects along one axis. */
+export interface Flow {
   /** Main axis. */
   readonly dir: "row" | "col";
   /** True when the container shrink-wraps its cross axis — widgets should
@@ -46,12 +47,12 @@ export interface Stack {
    *  so line breaks measure correctly. */
   readonly wrap: boolean;
   /** Reserve the next slot and advance. For rows pass the width (height
-   *  defaults from the stack); for columns pass the height as the second
-   *  argument (width defaults from the stack). */
+   *  defaults from the flow); for columns pass the height as the second
+   *  argument (width defaults from the flow). */
   next(w?: number, h?: number): { x: number; y: number; w: number; h: number };
   /** Reserve a slot that fills the remaining main-axis space, minus `reserve`
    *  (leave room for later fixed slots — e.g. a footer's height + gap). Needs
-   *  `length` set on the stack; the closure containers set it for you. */
+   *  `length` set on the flow; the closure containers set it for you. */
   fill(reserve?: number): { x: number; y: number; w: number; h: number };
   /** Extra spacing before the next slot. */
   gap(px: number): void;
@@ -67,12 +68,12 @@ export interface Stack {
  *  letting them auto-size to their labels (`at` option on button/toggle/
  *  tabs), and read back `extent` to size backdrops:
  *
- *    const bar = UI.stack({ x: 12, y: 12, gap: 10 });          // a row
+ *    const bar = UI.flow({ x: 12, y: 12, gap: 10 });          // a row
  *    if (UI.button(ctx, { at: bar, label: "SAVE" })) save();   // auto width
  *    on = UI.toggle(ctx, { at: bar, label: "Autosave", on });
  *
- *    const right = UI.stack({ x: vp.w - 12, y: 12, align: "end" }); // ← grows left */
-export function stack(opts: StackOptions): Stack {
+ *    const right = UI.flow({ x: vp.w - 12, y: 12, align: "end" }); // ← grows left */
+export function flow(opts: FlowOptions): Flow {
   const dir = opts.dir ?? "row";
   const gapPx = opts.gap ?? 8;
   const back = opts.align === "end";
@@ -160,24 +161,24 @@ export function stack(opts: StackOptions): Stack {
 
 // ---------- Layout containers (closure children) ----------
 
-// The ambient layout stack. A container pushes a `stack` cursor over its
+// The ambient layout flow. A container pushes a `flow` cursor over its
 // interior for the duration of its children callback; widgets with no
 // explicit x/y and no `at` place themselves into the innermost one. This is
 // the egui-style "children as a closure" layer over the explicit `flex`/
-// `stack` tools — the nesting is the layout tree, and widgets still return
+// `flow` tools — the nesting is the layout tree, and widgets still return
 // their click inline (the callback's return value bubbles out unchanged).
-export const layoutStack: Stack[] = [];
+export const layoutStack: Flow[] = [];
 
 /** The innermost active layout cursor, or null outside any container. */
-export function currentLayout(): Stack | null {
+export function currentLayout(): Flow | null {
   return layoutStack.length > 0 ? layoutStack[layoutStack.length - 1] : null;
 }
 
-/** Resolve a widget's rect: an explicit `at` stack, else the ambient layout
+/** Resolve a widget's rect: an explicit `at` flow, else the ambient layout
  *  (unless the caller pinned x/y), else absolute coordinates. `autoW` is the
  *  widget's natural main-axis size (e.g. a button's label width). */
 export function place(
-  opts: { x?: number; y?: number; w?: number; h?: number; at?: Stack },
+  opts: { x?: number; y?: number; w?: number; h?: number; at?: Flow },
   autoW: number,
   defaultH: number,
 ): { x: number; y: number; w: number; h: number } {
@@ -241,7 +242,7 @@ export function runContainer<R>(
   gap: number,
   pad: number,
   align: "start" | "end",
-  children: (layout: Stack) => R,
+  children: (layout: Flow) => R,
   fitCross = false,
   wrap = false,
 ): R {
@@ -254,7 +255,7 @@ export function runContainer<R>(
           y: dir === "col" ? inner.y + inner.h : inner.y,
         }
       : { x: inner.x, y: inner.y };
-  const st = stack({
+  const st = flow({
     x: start.x,
     y: start.y,
     dir,
@@ -316,7 +317,7 @@ export function storeContentSize(key: string | undefined, size: ContentSize): vo
 /** Full container size implied by the children placed into `st`, measured from
  *  the container's outer top-left and closed with one `pad` on each far edge. */
 export function measuredContainerSize(
-  st: Stack,
+  st: Flow,
   outerLeft: number,
   outerTop: number,
   pad: number,
@@ -359,7 +360,7 @@ export function containerRect(
 
 /** A container's children callback — receives the layout cursor for
  *  anchoring (`.last`) or measuring (`.extent`). */
-export type LayoutChildren<R> = (layout: Stack) => R;
+export type LayoutChildren<R> = (layout: Flow) => R;
 
 /** Untangle `(opts?, children)` vs `(children)`. */
 export function layoutArgs<R>(

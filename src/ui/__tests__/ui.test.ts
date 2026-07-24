@@ -14,7 +14,7 @@ import {
   ids,
   row,
   setTheme,
-  stack,
+  flow,
   text,
   textWidth,
 } from "../index.js";
@@ -235,9 +235,9 @@ describe("UI text", () => {
   });
 });
 
-describe("UI stack", () => {
+describe("UI flow", () => {
   it("hands out row slots with gaps and tracks last/extent", () => {
-    const s = stack({ x: 10, y: 20, gap: 5, h: 30 });
+    const s = flow({ x: 10, y: 20, gap: 5, h: 30 });
     expect(s.next(100)).toEqual({ x: 10, y: 20, w: 100, h: 30 });
     expect(s.next(50, 20)).toEqual({ x: 115, y: 20, w: 50, h: 20 });
     expect(s.last).toEqual({ x: 115, y: 20, w: 50, h: 20 });
@@ -247,13 +247,13 @@ describe("UI stack", () => {
   });
 
   it("align end grows backwards from the far edge", () => {
-    const s = stack({ x: 300, y: 0, gap: 5, align: "end" });
+    const s = flow({ x: 300, y: 0, gap: 5, align: "end" });
     expect(s.next(100)).toEqual({ x: 200, y: 0, w: 100, h: 30 });
     expect(s.next(50)).toEqual({ x: 145, y: 0, w: 50, h: 30 });
   });
 
   it("columns advance vertically with the cross width", () => {
-    const s = stack({ x: 0, y: 0, dir: "col", gap: 4, w: 80 });
+    const s = flow({ x: 0, y: 0, dir: "col", gap: 4, w: 80 });
     expect(s.next(undefined, 30)).toEqual({ x: 0, y: 0, w: 80, h: 30 });
     expect(s.next(undefined, 20).y).toBe(34);
     expect(s.extent).toEqual({ x: 0, y: 0, w: 80, h: 54 });

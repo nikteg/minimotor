@@ -159,7 +159,7 @@ Loop.run({
       // Food: soft glow + a pulsing berry.
       const fcx = food.x * CELL + CELL / 2,
         fcy = food.y * CELL + CELL / 2;
-      const pulse = 1 + Math.sin(Date.now() / 200) * 0.16;
+      const pulse = 1 + Math.sin(performance.now() / 200) * 0.16;
       const glow = ctx.createRadialGradient(fcx, fcy, 2, fcx, fcy, CELL * 0.9);
       glow.addColorStop(0, "rgba(255,120,120,0.5)");
       glow.addColorStop(1, "rgba(255,107,107,0)");

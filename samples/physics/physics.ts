@@ -26,6 +26,7 @@ const ecs = ECS.create();
 const { Phys } = Physics2D; // the standard body-holding component
 
 let vp = Stage.init("game", {
+  background: "#12141c",
   plugins: [Perf.plugin({ world: ecs })],
 });
 
@@ -150,9 +151,6 @@ Loop.run({
   },
 
   draw(ctx) {
-    ctx.fillStyle = "#12141c";
-    ctx.fillRect(0, 0, vp.w, vp.h);
-
     // The default camera is identity — this block just applies the shake.
     Camera.render(() => {
       // Paddle — the one hand-drawn shape (no texture, just a rotated rect).

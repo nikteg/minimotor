@@ -1,5 +1,5 @@
 // Absolute minimal game: colored square that moves with arrow keys
-import { Draw, Keys, Loop, Perf, Stage, UI } from "minimotor";
+import { Draw, Keys, Loop, Mathf, Perf, Stage, UI } from "minimotor";
 
 // The viewport is LIVE (mutated on resize) — no rebinding needed; the engine
 // owns clearing via `background`.
@@ -14,8 +14,8 @@ Loop.run({
     if (Keys.down("ArrowRight")) x += 3;
     if (Keys.down("ArrowUp")) y -= 3;
     if (Keys.down("ArrowDown")) y += 3;
-    x = Math.max(0, Math.min(view.w - 50, x));
-    y = Math.max(0, Math.min(view.h - 50, y));
+    x = Mathf.clamp(x, 0, view.w - 50);
+    y = Mathf.clamp(y, 0, view.h - 50);
   },
   draw() {
     Draw.rect(x, y, 50, 50, "#4ecdc4");

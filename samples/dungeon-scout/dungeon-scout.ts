@@ -1,6 +1,18 @@
 // DUNGEON SCOUT: grid recipes in a tiny roguelike — a SEEDED layout (seedRng),
 // a distance-from-hero heatmap (distanceField), plus line-of-sight fog.
-import { Draw, Gizmos, Goodies, Input, Keys, Loop, Perf, Pointer, Stage, UI } from "minimotor";
+import {
+  Draw,
+  Gizmos,
+  Goodies,
+  Input,
+  Keys,
+  Loop,
+  Mathf,
+  Perf,
+  Pointer,
+  Stage,
+  UI,
+} from "minimotor";
 
 const view = Stage.init("game", {
   background: "#0d1118",
@@ -63,7 +75,7 @@ function recalc() {
     }
 }
 // Cell color by hero distance: bright teal near, deep blue far.
-const mix = (a: number, b: number, t: number) => Math.round(a + (b - a) * t);
+const mix = (a: number, b: number, t: number) => Math.round(Mathf.lerp(a, b, t));
 const heat = (d: number) => {
   const t = Math.min(1, d / maxDist);
   return `rgb(${mix(78, 20, t)},${mix(205, 34, t)},${mix(196, 58, t)})`;

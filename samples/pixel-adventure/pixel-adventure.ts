@@ -595,7 +595,8 @@ Loop.run({
     Draw.ctx.drawImage(skyLayer, 0, 0);
     drawParallaxSky();
     Camera.render(() => {
-      Draw.ctx.imageSmoothingEnabled = false;
+      // imageSmoothingEnabled is already false (set once at the top of draw())
+      // and survives Camera.render's save/restore, so no need to reset it here.
       Draw.ctx.drawImage(terrainLayer, 0, 0);
 
       const unlocked = coins.every((c) => c.got);

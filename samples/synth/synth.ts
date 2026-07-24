@@ -1,12 +1,13 @@
 // Synth: a playable instrument + a scheduled backing band.
-// Demonstrates: Audio.playSfx (custom voices on the SFX bus), Audio.Music
+// Demonstrates: Audio.tone (custom voices on the SFX bus), Audio.Music
 // (look-ahead scheduler: note/kick/noiseHit), and the Audio.Mixer — both buses
 // send into a shared reverb, a master low-pass sweeps the whole mix, and a
 // master limiter glues it. All driven by on-screen UI widgets.
 //
 // Play it: A S D F G H J K L ; are the white keys (C major from C4), W E T Y U
-// O P the black keys. Z/X shift octaves, 1-4 pick the waveform. Click the
-// on-screen piano too. B toggles a backing groove, N picks the next one.
+// O P the black keys. Z/X shift octaves, 1-4 pick the waveform (all mirrored by
+// the SYNTH panel's tab strip + Octave slider). Click the on-screen piano too;
+// pick and start a backing groove from the on-screen Music controls.
 import { Audio, Draw, Keys, Loop, Mathf, Perf, Pointer, Stage, UI } from "minimotor";
 import type { KeyCode } from "minimotor";
 
@@ -44,29 +45,29 @@ function playNote(midi: number) {
 
 // Keyboard layout: semitone offsets from the anchor C. `pos` is the white-key
 // index a black key sits to the right of.
-const WHITE_KEYS: { code: KeyCode; semi: number; label: string }[] = [
-  { code: "KeyA", semi: 0, label: "A" },
-  { code: "KeyS", semi: 2, label: "S" },
-  { code: "KeyD", semi: 4, label: "D" },
-  { code: "KeyF", semi: 5, label: "F" },
-  { code: "KeyG", semi: 7, label: "G" },
-  { code: "KeyH", semi: 9, label: "H" },
-  { code: "KeyJ", semi: 11, label: "J" },
-  { code: "KeyK", semi: 12, label: "K" },
-  { code: "KeyL", semi: 14, label: "L" },
-  { code: "Semicolon", semi: 16, label: ";" },
+const WHITE_KEYS: { code: KeyCode; semi: number }[] = [
+  { code: "KeyA", semi: 0 },
+  { code: "KeyS", semi: 2 },
+  { code: "KeyD", semi: 4 },
+  { code: "KeyF", semi: 5 },
+  { code: "KeyG", semi: 7 },
+  { code: "KeyH", semi: 9 },
+  { code: "KeyJ", semi: 11 },
+  { code: "KeyK", semi: 12 },
+  { code: "KeyL", semi: 14 },
+  { code: "Semicolon", semi: 16 },
 ];
-const BLACK_KEYS: { code: KeyCode; semi: number; pos: number; label: string }[] = [
-  { code: "KeyW", semi: 1, pos: 0, label: "W" },
-  { code: "KeyE", semi: 3, pos: 1, label: "E" },
-  { code: "KeyT", semi: 6, pos: 3, label: "T" },
-  { code: "KeyY", semi: 8, pos: 4, label: "Y" },
-  { code: "KeyU", semi: 10, pos: 5, label: "U" },
-  { code: "KeyO", semi: 13, pos: 7, label: "O" },
-  { code: "KeyP", semi: 15, pos: 8, label: "P" },
+const BLACK_KEYS: { code: KeyCode; semi: number; pos: number }[] = [
+  { code: "KeyW", semi: 1, pos: 0 },
+  { code: "KeyE", semi: 3, pos: 1 },
+  { code: "KeyT", semi: 6, pos: 3 },
+  { code: "KeyY", semi: 8, pos: 4 },
+  { code: "KeyU", semi: 10, pos: 5 },
+  { code: "KeyO", semi: 13, pos: 7 },
+  { code: "KeyP", semi: 15, pos: 8 },
 ];
 
-const WHITE_NOTES = ["C", "D", "E", "F", "G", "A", "B"]; // key labels (no keyboard now)
+const WHITE_NOTES = ["C", "D", "E", "F", "G", "A", "B"]; // note-name captions for the piano
 const anchorMidi = () => 12 * (octave + 1); // C of the current octave
 const litUntil = new Map<number, number>(); // midi → until-timestamp, for key highlights
 
@@ -139,11 +140,14 @@ let musicStarted = false;
 // that filters the whole mix. Declaring these creates no AudioContext (the
 // graph materializes on the first note), so it is safe at load.
 Audio.Mixer.reverb("hall", { seconds: 2.4, decay: 2.2, wet: 0.9 });
+// A tempo-ish feedback echo that both buses can send into, beside the reverb.
+Audio.Mixer.delay("echo", { time: 0.3, feedback: 0.36, wet: 0.9 });
 const toneFilter = Audio.Mixer.masterFilter("lowpass", 20000);
 // A limiter on the master glues the mix and keeps peaks from clipping when you
 // roll the keys and notes stack up.
 Audio.Mixer.compressor();
 let reverbOn = false;
+let delayOn = false;
 let filterOn = false;
 let lastPointerMidi: number | null = null; // for hold-and-roll on the piano
 // Continuous mix/filter amounts, driven by the on-screen sliders.
@@ -158,6 +162,13 @@ function applyReverb() {
   const level = reverbOn ? reverbWet : 0;
   Audio.Mixer.bus("sfx").send("hall", level, 200);
   Audio.Mixer.bus("music").send("hall", level, 200);
+}
+// The echo mirrors the reverb pattern: both buses aux-send into the "echo"
+// delay at a fixed level when the toggle is on, zero when off.
+function applyDelay() {
+  const level = delayOn ? 0.32 : 0;
+  Audio.Mixer.bus("sfx").send("echo", level, 200);
+  Audio.Mixer.bus("music").send("echo", level, 200);
 }
 function applyFilter() {
   toneFilter.frequency(filterOn ? cutoff : 20000, 240);
@@ -214,7 +225,9 @@ function glow(midi: number) {
 
 function handleInput() {
   // Keyboard plays the instrument (the on-screen keys mirror it): note keys,
-  // Z/X octave, 1-4 waveform. The mixer/backing controls are UI-only now.
+  // Z/X octave, 1-4 waveform. Those keys still work AND stay in sync with the
+  // SYNTH panel's tab strip + Octave slider; the mixer/backing controls are
+  // UI-only.
   for (const k of [...WHITE_KEYS, ...BLACK_KEYS]) {
     if (Keys.pressed(k.code)) playNote(anchorMidi() + k.semi);
   }
@@ -287,12 +300,12 @@ Loop.run({
       ctx.fillRect(i * barW + 2, p.y - 16 - h, barW - 4, h);
     }
 
-    // Fully on-screen: every control is a UI widget — wave/octave/groove that
-    // used to be keyboard shortcuts are now a tab strip, sliders and a select;
-    // toggles are checkboxes, filter/level amounts are sliders, and the backing
-    // has a play/pause button. The group title is the synth's name, and it is
-    // the only thing drawn in the top-left corner.
-    UI.group({ x: 12, y: 12, w: 340, h: 360, title: "SYNTH" }, () => {
+    // Every control is also a UI widget — the wave tab strip and Octave slider
+    // MIRROR the live 1-4 / Z-X keyboard shortcuts (change either and both stay
+    // in sync); groove is a select, filter/level amounts are sliders, toggles
+    // are checkboxes, and the backing has a play/pause button. The group auto-
+    // sizes to its content and is the only thing drawn in the top-left corner.
+    UI.group({ x: 12, y: 12, w: 340, title: "SYNTH" }, () => {
       wave = UI.tabs({ id: "mx-wave", items: WAVES, active: wave });
       octave = UI.slider({
         id: "mx-oct",
@@ -305,8 +318,10 @@ Loop.run({
         format: (v) => `C${v}`,
       });
       // The backing groove lives in its own group: pick the groove, and the
-      // play/pause button starts/stops it (no separate on/off toggle).
-      UI.group({ h: 82, title: "Music" }, () => {
+      // play/pause button starts/stops it. The Mute checkbox is bound to
+      // `Audio.Music.on` (persisted via `storageKey`), so a mute saved from a
+      // previous visit can be lifted here instead of silently killing Play.
+      UI.group({ title: "Music" }, () => {
         UI.row({ h: 30, gap: 12 }, () => {
           const groove = UI.select({
             id: "mx-groove",
@@ -320,12 +335,19 @@ Loop.run({
             backing = !backing;
           }
         });
+        const muteNow = UI.toggle({ id: "mx-mute", label: "Muted", on: !Audio.Music.on });
+        if (muteNow === Audio.Music.on) Audio.Music.setOn(!muteNow);
       });
-      UI.row({ h: 26, gap: 22 }, () => {
+      UI.row({ h: 26, gap: 18 }, () => {
         const rv = UI.toggle({ id: "mx-reverb", label: "Reverb", on: reverbOn });
         if (rv !== reverbOn) {
           reverbOn = rv;
           applyReverb();
+        }
+        const dl = UI.toggle({ id: "mx-delay", label: "Delay", on: delayOn });
+        if (dl !== delayOn) {
+          delayOn = dl;
+          applyDelay();
         }
         const ff = UI.toggle({ id: "mx-filter", label: "Filter", on: filterOn });
         if (ff !== filterOn) {

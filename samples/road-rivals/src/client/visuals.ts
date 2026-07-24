@@ -1,17 +1,7 @@
-import { CAR_TYPES, WORLD, roadsX, roadsY } from "./config.ts";
+import { CAR_TYPES, WORLD, type Point, type RectShape, roadsX, roadsY } from "./config.ts";
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
-interface RectShape {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
-interface Point {
-  x: number;
-  y: number;
-}
 interface SmokePuff {
   angle: number;
   distance: number;

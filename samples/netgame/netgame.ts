@@ -6,21 +6,18 @@
 // - Net.connect with reconnectMs + heartbeatMs + idleTimeoutMs (dead links are
 //   detected and the socket auto-reconnects),
 // - transport.trySend from the fixed step (never throws mid-game),
-// - Net.createInterpolator — remote players are rendered ~100 ms in the past,
-//   blended between snapshots, so they glide instead of teleporting at the
-//   network's packet rate (we deliberately send at only 20 Hz to prove it),
+// - Net.createRoster — remote players are tracked, interpolated ~100 ms in the
+//   past (blended between snapshots so they glide instead of teleporting at the
+//   network's packet rate — we deliberately send at only 20 Hz to prove it),
+//   and pruned when they go quiet, all in one helper,
 // - Perf.createNetMeter in the HUD for live traffic rates.
 import { Audio, Draw, Keys, Loop, Mathf, Net, Perf, Stage, UI } from "minimotor";
-import type { Interpolator } from "minimotor";
+
+const dec = new TextDecoder();
 
 interface Vec {
   x: number;
   y: number;
-}
-interface RemotePlayer {
-  interp: Interpolator<Vec>;
-  color?: string;
-  lastSeen: number;
 }
 interface NetMsg {
   game: string;
@@ -52,31 +49,27 @@ const transport = Net.connect({
   idleTimeoutMs: 15000, // …and declare truly silent ones dead → auto-reconnect
 });
 
-// Remote players: id → { interp, color, lastSeen }. Each one gets a snapshot
-// interpolator; draw() samples it at (now − 100 ms).
-const others = new Map<string, RemotePlayer>();
+// Remote players: the roster owns each peer's snapshot interpolator, last-seen
+// stamp, join detection and idle prune; draw() samples it at (now − 100 ms).
+// Colors are view-only, so we keep them in a small side map keyed by id.
+const others = Net.createRoster<Vec>({ delayMs: 100 });
+const colors = new Map<string, string>();
 
 transport.onMessage = (bytes) => {
   if (bytes.length === 0) return; // someone's heartbeat frame — not gameplay
   meter.recv(bytes.length);
-  const msg = JSON.parse(new TextDecoder().decode(bytes)) as NetMsg;
+  const msg = JSON.parse(dec.decode(bytes)) as NetMsg;
   if (msg.game !== "netgame") return; // /ws-relay hosts several samples
   if (msg.bye) {
-    others.delete(msg.id);
+    others.remove(msg.id);
+    colors.delete(msg.id);
     return;
   }
-  let p = others.get(msg.id);
-  if (!p) {
-    p = {
-      interp: Net.createInterpolator<Vec>({ delayMs: 100 }),
-      color: msg.color,
-      lastSeen: performance.now(),
-    };
-    others.set(msg.id, p);
+  const { isNew } = others.update(msg.id, { x: msg.x, y: msg.y });
+  if (isNew) {
+    if (msg.color) colors.set(msg.id, msg.color);
     sfx.join.play(); // someone joined
   }
-  p.lastSeen = performance.now();
-  p.interp.push({ x: msg.x, y: msg.y });
 };
 
 // Tell the others we're leaving (best effort — the 5s prune catches crashes).
@@ -103,19 +96,15 @@ Loop.run({
       if (transport.trySend(new TextEncoder().encode(payload))) meter.sent(payload.length);
     }
 
-    // Prune players we haven't heard from (closed tabs, dead links).
-    const now = performance.now();
-    for (const [pid, p] of others) {
-      if (now - p.lastSeen > 5000) others.delete(pid);
-    }
+    // Prune players we haven't heard from (closed tabs, dead links); forget
+    // their colors too so the side map doesn't leak.
+    for (const pid of others.prune()) colors.delete(pid);
   },
 
   draw() {
     // Remote players — sampled from their snapshot buffers, 100 ms in the past.
-    for (const p of others.values()) {
-      const s = p.interp.sample();
-      if (!s) continue;
-      Draw.circle(s, 16, p.color ?? "#8aa");
+    for (const [pid, s] of others.sample()) {
+      Draw.circle(s, 16, colors.get(pid) ?? "#8aa");
     }
 
     // You.

@@ -12,6 +12,7 @@ import {
   Collision,
   Draw,
   Fsm,
+  Gizmos,
   Goodies,
   Input,
   Loop,
@@ -126,18 +127,11 @@ Stage.onResize(() => {
   buildCardBackSprite();
 });
 
-// Logical == screen now (the engine owns the letterbox transform), so these
-// stay identity: no scale/offset conversion is needed anywhere.
-const scale = 1;
-const offsetX = 0;
-const offsetY = 0;
-
-let deck: Card[] = [];
 let stock: Card[] = [];
 let waste: Card[] = [];
 let foundations: Card[][] = [[], [], [], []];
 let tableau: Card[][] = [[], [], [], [], [], [], []];
-let history: Snapshot[] = [];
+const undo = Gizmos.undoStack<Snapshot>({ limit: 30 });
 let gameTime = 0;
 let moves = 0;
 let score = 0;
@@ -145,7 +139,6 @@ let aiPlaying = false;
 let cancelAi: (() => void) | null = null;
 let aiMotion: AiMotion | null = null;
 let aiLastMove: { source: Card[]; target: Card[] } | null = null;
-let aiStockPasses = 0;
 let aiVisited = new Set<string>();
 let gameStartedAt = 0;
 let stats: Stats = { wins: 0, games: 0, bestTime: 0 };
@@ -190,26 +183,6 @@ function layoutBoard() {
     w: CARD_W,
     h: CARD_H,
   }));
-}
-
-// Logical == screen (the engine applies the letterbox transform), so these are
-// identity — kept as named helpers for readability at the call sites.
-function toScreen(rect: Slot): Slot {
-  return {
-    x: rect.x * scale + offsetX,
-    y: rect.y * scale + offsetY,
-    w: rect.w * scale,
-    h: rect.h * scale,
-  };
-}
-
-function screenPoint(x: number, y: number) {
-  return { x: x * scale + offsetX, y: y * scale + offsetY };
-}
-
-function pointInLogicalRect(px: number, py: number, rect: Slot) {
-  const sr = toScreen(rect);
-  return Collision.pointInRect(px, py, sr);
 }
 
 // ---- Sprite assets (card back + sparkle animation) ----
@@ -290,9 +263,10 @@ function restore(snap: Snapshot) {
   moves = snap.moves;
 }
 
+// Record a checkpoint of the CURRENT state. Called BEFORE a move mutates the
+// board, so an undo restores the pre-move state (see `Gizmos.undoStack`).
 function pushHistory() {
-  if (history.length > 30) history.shift();
-  history.push(snapshot());
+  undo.push(snapshot());
 }
 
 function canMoveToFoundation(card: Card, pileIndex: number) {
@@ -321,12 +295,12 @@ function flipTopFaceDown() {
 }
 
 function deal() {
-  deck = freshDeck();
+  const deck = freshDeck();
   stock = deck;
   waste = [];
   foundations = [[], [], [], []];
   tableau = [[], [], [], [], [], [], []];
-  history = [];
+  undo.clear();
   score = 0;
   moves = 0;
   gameTime = 0;
@@ -340,19 +314,18 @@ function deal() {
     }
   }
   flipTopFaceDown();
-  pushHistory();
   Signals.emit("deal");
 }
 
 function recycleWaste() {
   if (stock.length) return;
+  pushHistory();
   while (waste.length) {
     const card = waste.pop()!;
     card.faceUp = false;
     stock.push(card);
   }
   Audio.Sfx.blip(300, 0.05);
-  pushHistory();
 }
 
 function drawFromStock() {
@@ -360,6 +333,7 @@ function drawFromStock() {
     recycleWaste();
     return;
   }
+  pushHistory();
   const count = Math.min(3, stock.length);
   for (let i = 0; i < count; i++) {
     const card = stock.pop()!;
@@ -367,7 +341,6 @@ function drawFromStock() {
     waste.push(card);
   }
   Audio.Sfx.blip(660, 0.05);
-  pushHistory();
 }
 
 function tryAutoMoveAny() {
@@ -392,7 +365,6 @@ function aiQueueMove(
 ) {
   if (aiMotion) return;
   aiLastMove = { source, target };
-  aiStockPasses = 0;
   const cards = source.slice(index);
   const sourceCol = tableau.indexOf(source);
   const sourceRect =
@@ -491,11 +463,7 @@ function aiStep() {
       }
     }
   }
-  // Explore the stock before conceding. Allow one complete recycle pass.
-  if (!stock.length) {
-    aiStockPasses++;
-    if (aiStockPasses > 1000) aiStockPasses = 0;
-  }
+  // Explore the stock before conceding.
   drawFromStock();
 }
 
@@ -511,13 +479,13 @@ function tryAutoMoveToFoundation(sourcePile: Card[], sourceIndex: number) {
   if (!card || sourceIndex !== sourcePile.length - 1) return false;
   for (let i = 0; i < 4; i++) {
     if (canMoveToFoundation(card, i)) {
+      pushHistory();
       foundations[i].push(sourcePile.pop()!);
       flipTopFaceDown();
       moves++;
       score += 10;
       Audio.Sfx.coin();
       Signals.emit("move", { to: "foundation" });
-      pushHistory();
       checkWin();
       return true;
     }
@@ -526,13 +494,13 @@ function tryAutoMoveToFoundation(sourcePile: Card[], sourceIndex: number) {
 }
 
 function moveCards(sourcePile: Card[], sourceIndex: number, targetPile: Card[]) {
+  pushHistory();
   const cards = sourcePile.slice(sourceIndex);
   targetPile.push(...sourcePile.splice(sourceIndex));
   flipTopFaceDown();
   moves++;
   Audio.Sfx.blip(760, 0.04);
   Signals.emit("move", { count: cards.length });
-  pushHistory();
 }
 
 function checkWin() {
@@ -552,11 +520,11 @@ function checkWin() {
 }
 
 function tryUndo() {
-  if (history.length <= 1) return;
+  if (!undo.canUndo) return;
   if (!undoCd.ready()) return;
   undoCd.use();
-  history.pop();
-  restore(history[history.length - 1]);
+  const s = undo.undo();
+  if (s) restore(s);
   Audio.Sfx.blip(440, 0.05);
   UI.floatText("Undo", Pointer.x, Pointer.y, { color: "#fff" });
 }
@@ -693,7 +661,7 @@ function drawEmptySlot(ctx: CanvasRenderingContext2D, rect: Slot, label = "") {
 
 function drawPiles(ctx: CanvasRenderingContext2D) {
   // Stock
-  const stockRect = toScreen(layout.stock);
+  const stockRect = layout.stock;
   if (stock.length) {
     drawCard(ctx, { faceUp: false }, stockRect.x, stockRect.y, stockRect.w, stockRect.h);
     const stockSource = UI.dragSource<DragPayload>({
@@ -706,13 +674,13 @@ function drawPiles(ctx: CanvasRenderingContext2D) {
   } else {
     drawEmptySlot(ctx, stockRect, "↺");
   }
-  if (pointInLogicalRect(Pointer.x, Pointer.y, layout.stock)) {
+  if (Collision.pointInRect(Pointer.x, Pointer.y, layout.stock)) {
     Stage.setCursor("pointer");
     if (Pointer.frameReleased) drawFromStock();
   }
 
   // Waste
-  const wasteRect = toScreen(layout.waste);
+  const wasteRect = layout.waste;
   if (waste.length) {
     const card = waste[waste.length - 1];
     if (!(aiMotion?.source === waste))
@@ -733,7 +701,7 @@ function drawPiles(ctx: CanvasRenderingContext2D) {
     // doesn't get "picked up" the instant it's sent home.
     if (
       Pointer.frameDoublePressed &&
-      pointInLogicalRect(Pointer.x, Pointer.y, layout.waste) &&
+      Collision.pointInRect(Pointer.x, Pointer.y, layout.waste) &&
       tryAutoMoveToFoundation(waste, waste.length - 1)
     )
       UI.cancelDrag();
@@ -743,7 +711,7 @@ function drawPiles(ctx: CanvasRenderingContext2D) {
 
   // Foundations
   layout.foundations.forEach((logical, i) => {
-    const rect = toScreen(logical);
+    const rect = logical;
     const pile = foundations[i];
     if (pile.length) {
       const card = pile[pile.length - 1];
@@ -771,7 +739,7 @@ function drawPiles(ctx: CanvasRenderingContext2D) {
     });
     if (tgt.canDrop) {
       ctx.strokeStyle = "#ffd43b";
-      ctx.lineWidth = 3 * scale;
+      ctx.lineWidth = 3;
       ctx.strokeRect(rect.x + 2, rect.y + 2, rect.w - 4, rect.h - 4);
     }
     if (tgt.dropped) {
@@ -783,7 +751,7 @@ function drawPiles(ctx: CanvasRenderingContext2D) {
 
   // Tableau
   layout.tableau.forEach((logical, col) => {
-    const rect = toScreen(logical);
+    const rect = logical;
     const pile = tableau[col];
     if (!pile.length) drawEmptySlot(ctx, rect);
 
@@ -794,7 +762,7 @@ function drawPiles(ctx: CanvasRenderingContext2D) {
     });
     if (emptyTarget.canDrop) {
       ctx.strokeStyle = "#4ecdc4";
-      ctx.lineWidth = 3 * scale;
+      ctx.lineWidth = 3;
       ctx.strokeRect(rect.x + 2, rect.y + 2, rect.w - 4, rect.h - 4);
     }
     if (emptyTarget.dropped) {
@@ -804,7 +772,7 @@ function drawPiles(ctx: CanvasRenderingContext2D) {
 
     pile.forEach((card, idx) => {
       const cy = logical.y + idx * CARD_GAP_V;
-      const cardRect = toScreen({ x: logical.x, y: cy, w: CARD_W, h: CARD_H });
+      const cardRect = { x: logical.x, y: cy, w: CARD_W, h: CARD_H };
       const hiddenByAi = aiMotion !== null && aiMotion.source === pile && idx >= aiMotion.index;
       if (!hiddenByAi) drawCard(ctx, card, cardRect.x, cardRect.y, cardRect.w, cardRect.h);
 
@@ -849,7 +817,7 @@ function drawPiles(ctx: CanvasRenderingContext2D) {
         });
         if (tgt.canDrop) {
           ctx.strokeStyle = "#4ecdc4";
-          ctx.lineWidth = 3 * scale;
+          ctx.lineWidth = 3;
           ctx.strokeRect(cardRect.x + 2, cardRect.y + 2, cardRect.w - 4, cardRect.h - 4);
         }
         if (tgt.dropped) {
@@ -864,8 +832,8 @@ function drawPiles(ctx: CanvasRenderingContext2D) {
   if (aiMotion) {
     const at = aiMotionPos();
     aiMotion.cards.forEach((card, i) => {
-      const pos = screenPoint(at.x, at.y + i * CARD_GAP_V);
-      drawCard(ctx, card, pos.x, pos.y, CARD_W * scale, CARD_H * scale, true);
+      const pos = { x: at.x, y: at.y + i * CARD_GAP_V };
+      drawCard(ctx, card, pos.x, pos.y, CARD_W, CARD_H, true);
     });
   }
 
@@ -874,15 +842,7 @@ function drawPiles(ctx: CanvasRenderingContext2D) {
   if (drag) {
     const payload = drag.payload;
     payload.cards!.forEach((card, i) => {
-      drawCard(
-        ctx,
-        card,
-        drag.x,
-        drag.y + i * CARD_GAP_V * scale,
-        CARD_W * scale,
-        CARD_H * scale,
-        false,
-      );
+      drawCard(ctx, card, drag.x, drag.y + i * CARD_GAP_V, CARD_W, CARD_H, false);
     });
   }
 }
@@ -929,16 +889,15 @@ function drawHud(ctx: CanvasRenderingContext2D) {
   if (hintFlash.active) {
     const hint = findHint();
     if (hint) {
-      const rect = toScreen(
+      const rect =
         hint.to === "foundation"
           ? layout.foundations[hint.index]
           : hint.from === "waste"
             ? layout.waste
-            : layout.tableau[hint.index],
-      );
+            : layout.tableau[hint.index];
       ctx.save();
       ctx.strokeStyle = "#ffd43b";
-      ctx.lineWidth = 3 * scale;
+      ctx.lineWidth = 3;
       ctx.strokeRect(rect.x - 2, rect.y - 2, rect.w + 4, rect.h + 4);
       ctx.restore();
     }
@@ -947,9 +906,9 @@ function drawHud(ctx: CanvasRenderingContext2D) {
   // Five buttons across the board width: explicit widths + a tight gap so the
   // row fits inside the logical viewport (they used to overflow the edge).
   const btnW = Math.floor((LOGICAL_W - MARGIN * 2 - 4 * 6) / 5); // 5 buttons, 4×6 gaps
-  const toolbarY = (LOGICAL_H - 42) * scale + offsetY;
-  const toolbar = UI.stack({ x: MARGIN * scale + offsetX, y: toolbarY, gap: 6 * scale });
-  const btn = { w: btnW * scale, h: 32 * scale };
+  const toolbarY = LOGICAL_H - 42;
+  const toolbar = UI.flow({ x: MARGIN, y: toolbarY, gap: 6 });
+  const btn = { w: btnW, h: 32 };
   if (UI.button({ at: toolbar, ...btn, label: "NEW (N)", variant: "primary" }))
     scenes.go("play", { transition: Transitions.fade(300) });
   if (UI.button({ at: toolbar, ...btn, label: "UNDO (U)" })) tryUndo();
@@ -990,11 +949,9 @@ const scenes = Scenes.create({
       cancelAi = null;
       aiMotion = null;
       aiLastMove = null;
-      aiStockPasses = 0;
       aiVisited = new Set();
       Clock.game.after(400, () => {
-        const pos = screenPoint(LOGICAL_W / 2, LOGICAL_H / 2);
-        UI.floatText("Good luck!", pos.x, pos.y, { color: "#4ecdc4" });
+        UI.floatText("Good luck!", LOGICAL_W / 2, LOGICAL_H / 2, { color: "#4ecdc4" });
       });
     },
     update: () => {
@@ -1022,9 +979,8 @@ const scenes = Scenes.create({
       Audio.Sfx.coin();
       const cx = LOGICAL_W / 2;
       const cy = LOGICAL_H / 2;
-      const centerScreen = screenPoint(cx, cy);
       fx.burst({
-        at: centerScreen,
+        at: { x: cx, y: cy },
         count: 80,
         speed: [60 / 60, 260 / 60], // old px/s ÷ 60 → px/step
         color: ["#ffd43b", "#4ecdc4", "#ff6b6b", "#fff"],
@@ -1057,18 +1013,18 @@ const scenes = Scenes.create({
         pile.forEach((card) => {
           if (card.fly) {
             const t = card.fly.t.value;
-            const pos = screenPoint(
-              Mathf.lerp(card.fly.from.x, card.fly.to.x, t),
-              Mathf.lerp(card.fly.from.y, card.fly.to.y, t),
-            );
-            drawCard(ctx, card, pos.x, pos.y, CARD_W * scale, CARD_H * scale);
+            const pos = {
+              x: Mathf.lerp(card.fly.from.x, card.fly.to.x, t),
+              y: Mathf.lerp(card.fly.from.y, card.fly.to.y, t),
+            };
+            drawCard(ctx, card, pos.x, pos.y, CARD_W, CARD_H);
           }
         });
       });
 
       Draw.particles(fx);
-      const sparkleSize = 64 * scale;
-      const sparklePos = screenPoint(LOGICAL_W / 2, LOGICAL_H / 2 - 60);
+      const sparkleSize = 64;
+      const sparklePos = { x: LOGICAL_W / 2, y: LOGICAL_H / 2 - 60 };
       Draw.sprite(sparkleAnim, {
         x: sparklePos.x - sparkleSize / 2,
         y: sparklePos.y - sparkleSize / 2,
@@ -1076,8 +1032,8 @@ const scenes = Scenes.create({
         h: sparkleSize,
       });
 
-      const titlePos = screenPoint(LOGICAL_W / 2, LOGICAL_H / 2 - 60);
-      const subPos = screenPoint(LOGICAL_W / 2, LOGICAL_H / 2 - 12);
+      const titlePos = { x: LOGICAL_W / 2, y: LOGICAL_H / 2 - 60 };
+      const subPos = { x: LOGICAL_W / 2, y: LOGICAL_H / 2 - 12 };
       Draw.text("YOU WON!", {
         x: titlePos.x,
         y: titlePos.y,
@@ -1095,7 +1051,7 @@ const scenes = Scenes.create({
         baseline: "middle",
       });
 
-      const btnY = (LOGICAL_H / 2 + 30) * scale + offsetY;
+      const btnY = LOGICAL_H / 2 + 30;
       if (UI.button({ x: vp.w / 2 - 170, y: btnY, w: 160, h: 42, label: "PLAY AGAIN" }))
         scenes.go("play", { transition: Transitions.fade(300) });
     },
@@ -1103,10 +1059,11 @@ const scenes = Scenes.create({
 });
 
 // ---- Signal wiring ----
-Signals.on("move", () => {});
 Signals.on<{ time: number }>("win", ({ time }) => {
-  const pos = screenPoint(LOGICAL_W / 2, LOGICAL_H / 2 - 100);
-  UI.floatText(`Win in ${time}s!`, pos.x, pos.y, { color: "#ffd43b", font: "bold 18px monospace" });
+  UI.floatText(`Win in ${time}s!`, LOGICAL_W / 2, LOGICAL_H / 2 - 100, {
+    color: "#ffd43b",
+    font: "bold 18px monospace",
+  });
 });
 
 // ---- Bootstrap ----

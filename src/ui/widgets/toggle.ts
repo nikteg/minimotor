@@ -1,6 +1,6 @@
 // ---------- toggle ----------
 import {
-  Stack,
+  Flow,
   buttonState,
   centeredText,
   consumeKeyboardActivation,
@@ -37,7 +37,7 @@ export interface ToggleOptions {
   /** Current value — pass your state in, assign the return value back. */
   on: boolean;
   /** Place in this layout stack — supplies x/y; width is the box + label. */
-  at?: Stack;
+  at?: Flow;
   /** Box side length in px. Default `16`. */
   size?: number;
   /** Label font. Default `uiFont()`. */

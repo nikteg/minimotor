@@ -1,6 +1,6 @@
 // GUILD TRADER: RPG inventory drag/drop, stack merging, dialogue and loot recipes.
 import { Draw, Gizmos, Goodies, Loop, Perf, Pointer, Stage, UI } from "minimotor";
-import type { Stack } from "minimotor";
+import type { Flow } from "minimotor";
 
 interface Item {
   name: string;
@@ -54,10 +54,17 @@ function addItem(item: Item) {
   message = leftover > 0 ? "Inventory full." : `Received ${item.name}.`;
 }
 
+// Roll a weighted loot drop into the inventory — shared by the button and the
+// merchant dialogue so the pick + collect stays in one place.
+function rollLoot() {
+  const item = Goodies.weightedPick(loot);
+  if (item) addItem(item);
+}
+
 // A 2×4 slot grid. UI.grid hands each cell its rect, so the slot code drops
 // the nested row/column loops and the slot-width arithmetic. `region` is a
 // full-width block reserved in the group's column (two 48px rows + an 8px gap).
-function drawInventory(ctx: CanvasRenderingContext2D, layout: Stack) {
+function drawInventory(ctx: CanvasRenderingContext2D, layout: Flow) {
   const region = layout.next(undefined, 104);
   UI.grid({ ...region, cols: 4, rows: 2, gap: 8 }, (rect, i) => {
     Draw.rect(rect, "#182536");
@@ -78,7 +85,7 @@ function drawInventory(ctx: CanvasRenderingContext2D, layout: Stack) {
     if (stack && UI.draggedItem<DragPayload>()?.sourceId !== `slot:${i}`) {
       const icon = Math.min(22, rect.h - 20);
       Draw.rect(rect.x + (rect.w - icon) / 2, rect.y + 5, icon, icon, stack.item.color);
-      UI.text(ctx, stack.item.name, {
+      UI.text(stack.item.name, {
         x: rect.x + 3,
         y: rect.y + rect.h - 18,
         w: rect.w - 6,
@@ -86,7 +93,7 @@ function drawInventory(ctx: CanvasRenderingContext2D, layout: Stack) {
         size: 9,
         align: "center",
       });
-      UI.text(ctx, `×${stack.count}`, {
+      UI.text(`×${stack.count}`, {
         x: rect.x + rect.w - 22,
         y: rect.y + 3,
         w: 18,
@@ -108,11 +115,12 @@ Loop.run({
     // ambient row/column cursor and still return clicks inline.
     UI.col({ ...frame, gap: 12 }, () => {
       UI.group({ h: 66, title: "GUILD TRADER", pad: 4 }, () => {
-        UI.text(
-          ctx,
-          "RPG recipes: typed drag/drop · stack transfer · weighted loot · shuffle bags",
-          { h: 18, size: 11, padX: 8, color: "dim" },
-        );
+        UI.text("RPG recipes: typed drag/drop · stack transfer · weighted loot · shuffle bags", {
+          h: 18,
+          size: 11,
+          padX: 8,
+          color: "dim",
+        });
       });
 
       UI.row({ h: 166, gap: 12 }, () => {
@@ -121,22 +129,19 @@ Loop.run({
         });
         UI.group({ w: half, h: 166, title: "MARA'S COUNTER", gap: 7 }, () => {
           UI.row({ h: 32, gap: 10 }, (actions) => {
-            if (UI.button(ctx, { at: actions, w: (half - 26) / 2, label: "ROLL LOOT" })) {
-              const item = Goodies.weightedPick(loot);
-              if (item) addItem(item);
-            }
-            if (UI.button(ctx, { at: actions, w: (half - 26) / 2, label: "NEXT ENCOUNTER" }))
+            if (UI.button({ at: actions, w: (half - 26) / 2, label: "ROLL LOOT" })) rollLoot();
+            if (UI.button({ at: actions, w: (half - 26) / 2, label: "NEXT ENCOUNTER" }))
               encounter = encounterBag.next() ?? "—";
           });
-          UI.text(ctx, `Next: ${encounter}`, { h: 20, align: "center", color: "accent" });
+          UI.text(`Next: ${encounter}`, { h: 20, align: "center", color: "accent" });
           // Wrap instead of squeezing: the message is wider than the counter panel.
-          UI.text(ctx, message, { h: 44, align: "center", color: "dim", wrap: true, padX: 6 });
+          UI.text(message, { h: 44, align: "center", color: "dim", wrap: true, padX: 6 });
         });
       });
 
       UI.row({ h: 36 }, () => {
         UI.spacer((frame.w - 150) / 2);
-        if (UI.button(ctx, { w: 150, h: 36, label: "TALK TO MARA", variant: "primary" }))
+        if (UI.button({ w: 150, h: 36, label: "TALK TO MARA", variant: "primary" }))
           dialogue = true;
       });
     });
@@ -154,14 +159,13 @@ Loop.run({
     }
 
     if (dialogue) {
-      const answer = UI.dialog(ctx, {
+      const answer = UI.dialog({
         speaker: "MARA THE MERCHANT",
         lines: ["Welcome to the guild. Need supplies for your next run?"],
         choices: ["GIVE ME LOOT", "GOODBYE"],
       });
       if (answer === "GIVE ME LOOT") {
-        const item = Goodies.weightedPick(loot);
-        if (item) addItem(item);
+        rollLoot();
         dialogue = false;
       }
       if (answer === "GOODBYE") dialogue = false;

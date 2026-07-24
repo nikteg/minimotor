@@ -28,7 +28,7 @@ const clear = (bg: string) => Draw.rect(0, 0, view.w, view.h, bg);
 
 // ---- shared play state (reset by play.enter) ----
 const player = { x: 0, y: 0, size: 34 };
-let target = { x: 0, y: 0, r: 16 };
+const target = { x: 0, y: 0, r: 16 };
 const scores = Game.createScoreTracker("scenes_best");
 let timeLeft = 0; // in update steps (60/s)
 

@@ -5,7 +5,7 @@
 // native editor and clears its per-frame seen-set via the lifecycle hooks
 // (onFrameEnd / onReset), so core never imports it back.
 import {
-  Stack,
+  Flow,
   centeredText,
   drawBox,
   drawFocusRing,
@@ -75,7 +75,7 @@ export interface TextInputOptions {
   /** Field height in px. Default `32`. */
   h?: number;
   /** Place in this layout stack — supplies x/y (and h). */
-  at?: Stack;
+  at?: Flow;
   /** Muted text shown while empty and unfocused. */
   placeholder?: string;
   /** Grayed out; ignores input. */

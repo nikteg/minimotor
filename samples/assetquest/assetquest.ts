@@ -23,15 +23,17 @@ const vp = Stage.init("game", {
 });
 let progress = 0;
 let ready = false;
+let failed = ""; // non-empty once the manifest load rejects → show a failed screen
 let level: Level;
 let hero: SheetCursor<"walk">;
 let relics: Relic[] = [];
 let score = 0;
 let state: "play" | "won" = "play";
 let elapsed = 0;
+const TILE = 48; // world tile size in px — the grid coordinate unit
 const BODY_R = 15; // the hero's collision radius, shared by wall probing and pickups
 const player = { x: 96, y: 128, speed: 2.4 }; // px/step
-const gate = { x: 12 * 48 + 24, y: 48 + 24 };
+const gate = { x: 12 * TILE + TILE / 2, y: TILE + TILE / 2 };
 const fx = Particles.create();
 
 // Build a deliberately clean 8-frame astronaut sheet procedurally (slicing
@@ -90,7 +92,7 @@ Assets.load({ level: new URL("./level.json", import.meta.url).href }, (done, tot
     relics = level.tiles.flatMap((row, y) =>
       row
         .map((tile, x): Relic | null =>
-          tile === 2 ? { x: x * 48 + 24, y: y * 48 + 24, got: false } : null,
+          tile === 2 ? { x: x * TILE + TILE / 2, y: y * TILE + TILE / 2, got: false } : null,
         )
         .filter((r): r is Relic => r !== null),
     );
@@ -98,12 +100,14 @@ Assets.load({ level: new URL("./level.json", import.meta.url).href }, (done, tot
     ready = true;
   })
   .catch((err) => {
-    level = { tiles: [], message: String(err) };
+    // Flip a failed flag so draw() leaves the LOADING screen and reports the
+    // error, instead of spinning on the progress bar forever.
+    failed = String(err);
   });
 
 function solid(x: number, y: number): boolean {
-  const tx = Math.floor(x / 48),
-    ty = Math.floor(y / 48);
+  const tx = Math.floor(x / TILE),
+    ty = Math.floor(y / TILE);
   const tile = level?.tiles?.[ty]?.[tx];
   return tile == null || tile === 1;
 }
@@ -179,13 +183,23 @@ Loop.run({
   },
   draw() {
     if (!ready) {
-      Draw.text("LOADING MOONLIT ARCHIVE", {
+      Draw.text(failed ? "ARCHIVE FAILED TO LOAD" : "LOADING MOONLIT ARCHIVE", {
         x: vp.w / 2,
         y: vp.h / 2 - 24,
         font: "bold 24px monospace",
-        color: "#ffe066",
+        color: failed ? "#ff6b6b" : "#ffe066",
         align: "center",
       });
+      if (failed) {
+        Draw.text(failed, {
+          x: vp.w / 2,
+          y: vp.h / 2 + 12,
+          size: 13,
+          color: "#9fb3d9",
+          align: "center",
+        });
+        return;
+      }
       UI.panel({
         x: vp.w / 2 - 170,
         y: vp.h / 2 + 4,
@@ -197,13 +211,13 @@ Loop.run({
       UI.bar(vp.w / 2 - 150, vp.h / 2 + 15, 300, 12, progress, { fill: "#4ecdc4", bg: "#263653" });
       return;
     }
-    const ox = Math.max(12, (vp.w - 14 * 48) / 2),
-      oy = Math.max(60, (vp.h - 7 * 48) / 2);
+    const ox = Math.max(12, (vp.w - 14 * TILE) / 2),
+      oy = Math.max(60, (vp.h - 7 * TILE) / 2);
     for (let y = 0; y < level.tiles.length; y++)
       for (let x = 0; x < level.tiles[y].length; x++) {
         const tile = level.tiles[y][x];
-        Draw.rect(ox + x * 48, oy + y * 48, 47, 47, tile === 1 ? "#263653" : "#16233b");
-        if (tile === 1) Draw.rect(ox + x * 48 + 5, oy + y * 48 + 5, 37, 5, "#354b72");
+        Draw.rect(ox + x * TILE, oy + y * TILE, 47, 47, tile === 1 ? "#263653" : "#16233b");
+        if (tile === 1) Draw.rect(ox + x * TILE + 5, oy + y * TILE + 5, 37, 5, "#354b72");
       }
     // World is intentionally translated so the JSON map is centered responsively
     // (a static layout offset, not a camera) — the raw-ctx escape hatch.
@@ -235,13 +249,13 @@ Loop.run({
     Draw.text("WASD / ARROWS: MOVE · R: RESTART", {
       x: 14,
       y: 36,
-      font: "12px monospace",
+      size: 12,
       color: "#9fb3d9",
     });
     Draw.text(gateOpen ? "All keys found — reach the glowing archive gate" : level.message, {
       x: 14,
       y: vp.h - 26,
-      font: "13px monospace",
+      size: 13,
       color: gateOpen ? "#64f0c8" : "#9fb3d9",
     });
     if (state === "won") {
@@ -256,14 +270,14 @@ Loop.run({
       Draw.text(`Run time ${elapsed.toFixed(1)}s`, {
         x: vp.w / 2,
         y: vp.h / 2 + 10,
-        font: "16px monospace",
+        size: 16,
         color: "#fff",
         align: "center",
       });
       Draw.text("Press R to explore again", {
         x: vp.w / 2,
         y: vp.h / 2 + 42,
-        font: "13px monospace",
+        size: 13,
         color: "#9fb3d9",
         align: "center",
       });

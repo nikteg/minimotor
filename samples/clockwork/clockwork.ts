@@ -41,8 +41,7 @@ const hud = {
 // a hit-flash for the "garden went quiet" damage blink.
 const combo = Gizmos.combo({ windowMs: 3200 });
 const damage = Gizmos.flash(320);
-let spawnCount = 0,
-  state = "play";
+let state = "play";
 function resetRun() {
   buds.length = 0;
   hud.score = 0;
@@ -66,7 +65,6 @@ function spawnBud() {
     life: 8,
   };
   buds.push(b);
-  spawnCount++;
 }
 
 // Game systems never touch the HUD directly: they announce facts instead.
@@ -107,7 +105,7 @@ Clock.game.every(3000, () => {
 });
 Clock.game.every(8000, () => {
   // A repeating signal demonstrates that listeners can be swapped independently.
-  Signals.emit("beat", { count: spawnCount });
+  Signals.emit("beat");
 });
 Signals.on("beat", () => {
   hud.pulse = 0.6;
@@ -120,8 +118,8 @@ Loop.run({
       return;
     }
     hud.elapsed += 1 / 60;
-    hud.messageAlpha = Math.max(0, hud.messageAlpha - 0.018);
-    hud.pulse = Math.max(0, hud.pulse - 0.05);
+    hud.messageAlpha = Mathf.approach(hud.messageAlpha, 0, 0.018);
+    hud.pulse = Mathf.approach(hud.pulse, 0, 0.05);
     for (let i = buds.length - 1; i >= 0; i--) {
       const b = buds[i];
       b.life -= 1 / 60;
@@ -137,7 +135,8 @@ Loop.run({
     }
   },
   draw(ctx) {
-    const t = performance.now() / 1000;
+    // Wobble rides the deterministic game clock, not wall-clock time.
+    const t = Clock.game.now / 1000;
     ctx.strokeStyle = "rgba(98,160,190,.12)";
     for (let x = 0; x < vp.w; x += 32) {
       ctx.beginPath();
@@ -152,7 +151,7 @@ Loop.run({
       ctx.stroke();
     }
     for (const b of buds) {
-      const wobble = 1 + Math.sin(t * 4 + b.x) * 0.08;
+      const wobble = 1 + Mathf.wave(t * 4 + b.x, 0.08);
       const r = 19 * b.grow.value * wobble;
       ctx.save();
       ctx.globalAlpha = b.grow.value;
