@@ -528,6 +528,8 @@ const datalist = allItems
 const body = allItems.map(renderItem).join("\n");
 
 const html = `<!doctype html>
+<!-- GENERATED FILE — do not edit by hand. Produced by tools/gen-api-docs.mjs
+     (npm run docs:api) from the package's exported types. Re-run after API changes. -->
 <html lang="en"><head>
 <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Minimotor · API reference</title>

@@ -1,5 +1,7 @@
 // ---------- Flow — one-axis layout cursor + the container primitives ----------
-// (file kept as stack.ts; the public export is `flow`/`Flow`)
+// `flow` is the low-level manual cursor: it hands out rects along a row/col that
+// widgets drop into via the `at` option. `row`/`col`/`group` (in ../widgets) are
+// the ergonomic closures built on it (via runContainer/autoContainer below).
 
 import { widgetId } from "./identity.js";
 import type { IdPart } from "./identity.js";
