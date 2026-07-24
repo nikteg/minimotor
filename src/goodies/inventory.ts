@@ -14,8 +14,11 @@ export interface ItemStack<T> {
   max: number;
 }
 
-/** Move/merge/swap inventory stacks. Returns false only when a requested
- * partial move cannot be swapped into an incompatible occupied slot. */
+/** Move/merge/swap inventory stacks: fill an empty `to` slot, merge same-item
+ *  stacks up to `max`, or swap two different stacks. Returns false when nothing
+ *  moved: the source slot is missing or empty, `to` is not a slot of `slots`,
+ *  a same-item merge finds the target stack already full, or a partial
+ *  `amount` faces a different item (part of a stack can't swap). */
 export function transferStack<T>(
   slots: Array<ItemStack<T> | null>,
   from: number,

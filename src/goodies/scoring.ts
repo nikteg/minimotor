@@ -1,7 +1,7 @@
 // ---------- Scoring: grades and ranks ----------
 // The pure raters of the player's performance: `timingGrade` grades a rhythm
 // hit, `scoreRank` labels a final score, `beatClock` turns a clock into beat
-// timing. The stateful streak gadget — `combo` — lives in Gizmos.scoring.
+// timing. The stateful streak gadget lives in Gizmos as `Gizmos.combo`.
 
 /** A rhythm-hit accuracy grade returned by `timingGrade()`, strictest to loosest. */
 export type TimingGrade = "perfect" | "great" | "good" | "miss";

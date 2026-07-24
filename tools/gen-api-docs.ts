@@ -105,7 +105,10 @@ function leadingBlockDoc(sym: ts.Symbol): string {
       const body = raw
         .slice(3, -2)
         .split("\n")
-        .map((l) => l.replace(/^\s*\* */, "").trimEnd())
+        // Strip the gutter as `*` + AT MOST one space — deeper indentation is
+        // meaningful (indented lines render as code blocks), matching how the
+        // compiler's own getDocumentationComment treats it.
+        .map((l) => l.replace(/^\s*\* ?/, "").trimEnd())
         .join("\n")
         .trim();
       if (body) return body;
@@ -528,10 +531,14 @@ const expanded: PageItem[] = flat.flatMap((it) => {
   return [
     { ...it, members: leaves },
     ...subs.map(
+      // A facade property with an inlined type (`Phys: Component<...>` in the
+      // d.ts) carries no doc of its own — borrow it from the same-named
+      // top-level export of the same module (e.g. `Phys` documents
+      // `Physics2D.Phys`).
       (s): PageItem => ({
         name: `${it.name}.${s.name}`,
         kind: "namespace",
-        doc: s.doc,
+        doc: s.doc || (flat.find((x) => x.module === it.module && x.name === s.name)?.doc ?? ""),
         members: s.members ?? [],
         module: it.module,
         label: `${it.name}.${s.name}`,
@@ -705,13 +712,14 @@ const html = `<!doctype html>
   @media(max-width:760px){
     header{padding:0 12px;gap:10px}
     .hbtn{display:inline-flex;align-items:center;justify-content:center}
-    #searchBtn{margin-left:auto}
+    #searchBtn{margin-left:auto;order:2}
     .rlabel{display:none}
-    /* Filter collapses behind the search button; it drops down over the header
-       when opened — stopping short of the button (now ✕) so search can always
-       be dismissed. */
+    /* Filter collapses behind the search button. Opened, it joins the header's
+       flex row in place of the brand (order puts it left of the ✕ button), so
+       it aligns with the buttons exactly — no absolute-position offsets. */
     header input{display:none}
-    header.search-open input{display:block;position:absolute;left:12px;right:58px;top:9px;width:auto;margin:0}
+    header.search-open .brand{display:none}
+    header.search-open input{display:block;flex:1;min-width:0;width:auto;margin:0;order:1}
     .layout{grid-template-columns:1fr}
     /* Sidebar becomes an off-canvas drawer toggled by the menu button.
        align-self:auto — the desktop align-self:start would make the fixed

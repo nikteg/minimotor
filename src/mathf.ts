@@ -58,14 +58,17 @@ export function pulse(angle: number): number {
   return 0.5 + 0.5 * Math.sin(angle);
 }
 
-/** Sine wave `amp·sin(angle)`, for bob/sway/wobble. */
+/** Sine wave `amp·sin(angle)`, for bob/sway/wobble — pass a time-derived angle
+ *  and add the result to a base position. `amp` defaults to 1. */
 export function wave(angle: number, amp = 1): number {
   return Math.sin(angle) * amp;
 }
 
 /** Triangle bounce between `min` and `max` as `t` increases — like a ball
  *  reflecting off both ends (patrol paths, back-and-forth hazards, ping-pong
- *  cursors). Continuous and never overshoots the bounds. */
+ *  cursors). `t` is a free-running counter (e.g. elapsed time or distance
+ *  travelled), not a 0..1 phase; it's offset by `min`, so `t = min` lands on
+ *  `min`. Continuous and never overshoots the bounds. */
 export function pingPong(t: number, min: number, max: number): number {
   const range = max - min;
   if (range <= 0) return min;
@@ -87,7 +90,8 @@ export function randInt(min: number, max: number): number {
   return min + Math.floor(Math.random() * (max - min + 1));
 }
 
-/** Pick a uniformly-random element of `arr` (undefined only if empty). */
+/** Pick a uniformly-random element of `arr`. Typed `T` for ergonomics: an
+ *  empty array returns `undefined` at runtime without the type saying so. */
 export function randItem<T>(arr: readonly T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
@@ -105,7 +109,7 @@ export function angleBetween(ax: number, ay: number, bx: number, by: number): nu
 }
 
 // ---------- Easing (0..1 → 0..1) ----------
-// Suitable as the `ease` argument to Tween.to.
+// Suitable as the `ease` option of `Anim.animate`.
 
 /** No easing — constant rate. */
 export function linear(t: number): number {

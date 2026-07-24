@@ -436,7 +436,9 @@ export const Mixer = {
     }
     return bus;
   },
-  /** Get or create a generated-impulse reverb effect. */
+  /** Get or create a generated-impulse reverb effect. `seconds` is the impulse
+   *  tail length (default 2), `decay` its falloff exponent (default 2), `wet`
+   *  the output level 0..1 (default 0.3). */
   reverb(name: string, opts: { seconds?: number; decay?: number; wet?: number } = {}): Effect {
     let effect = effects.get(name);
     if (!effect) {
@@ -445,7 +447,9 @@ export const Mixer = {
     }
     return effect;
   },
-  /** Get or create a feedback delay/echo effect. */
+  /** Get or create a feedback delay/echo effect. `time` is the echo spacing in
+   *  seconds (default 0.25), `feedback` the repeat gain 0..1 (default 0.35),
+   *  `wet` the output level 0..1 (default 0.35). */
   delay(name: string, opts: { time?: number; feedback?: number; wet?: number } = {}): DelayEffect {
     let effect = effects.get(name) as DelayEffect | undefined;
     if (!effect) {
@@ -455,9 +459,11 @@ export const Mixer = {
     return effect;
   },
   /** Insert a compressor/limiter on the master bus (before the destination) —
-   *  glue the mix and stop peaks clipping when many sounds stack. Defaults act
-   *  as a gentle limiter; raise `ratio` / lower `threshold` for a hard brick
-   *  wall. Call once (idempotent); re-calling re-tunes it. */
+   *  glue the mix and stop peaks clipping when many sounds stack. `threshold`
+   *  in dB (default -18), `ratio` (default 12), `attack`/`release` in seconds
+   *  (defaults 0.003 / 0.25), `knee` in dB (default 6). Defaults act as a
+   *  gentle limiter; raise `ratio` / lower `threshold` for a hard brick wall.
+   *  Call once (idempotent); re-calling re-tunes it. */
   compressor(
     opts: {
       threshold?: number;

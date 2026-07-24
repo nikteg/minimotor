@@ -1,10 +1,10 @@
 // ---------- Scene transitions ----------
 // Cover → swap → reveal: an overlay ramps to full coverage, the scene switches
-// behind it at the midpoint, then the overlay ramps back out. Pass one to
-// `Scenes.go`:
+// behind it at the midpoint, then the overlay ramps back out. Pass one to the
+// scene stack's `go`:
 //
-//   Minimotor.Scenes.go("play", Minimotor.Transitions.fade(400));
-//   Minimotor.Scenes.go("over", Minimotor.Transitions.wipe(500, "down"));
+//   scenes.go("play", { transition: Minimotor.Transitions.fade(400) });
+//   scenes.go("over", { transition: Minimotor.Transitions.wipe(500, "down") });
 //
 // A `Transition` is plain data (duration + how to draw coverage `t`), so custom
 // ones are one object literal. The runner (`run`) is pure and fixed-step —
@@ -29,7 +29,8 @@ export interface Transition {
   render: TransitionRender;
 }
 
-/** Classic fade through a solid color. */
+/** Classic fade through a solid color. `durationMs` defaults to 400 ms,
+ *  `color` to "#000". */
 export function fade(durationMs = 400, color = "#000"): Transition {
   return {
     durationMs,
@@ -44,7 +45,8 @@ export function fade(durationMs = 400, color = "#000"): Transition {
 }
 
 /** A solid curtain sweeping across the screen. `dir` is the direction the
- *  leading edge travels while covering. */
+ *  leading edge travels while covering (default "left"). `durationMs` defaults
+ *  to 400 ms, `color` to "#000". */
 export function wipe(
   durationMs = 400,
   dir: "left" | "right" | "up" | "down" = "left",

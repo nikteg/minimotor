@@ -76,7 +76,11 @@ export interface ButtonSpec {
   disabled?: () => boolean;
 }
 
-/** Shape of an on-screen gamepad — see the module header for the flow. */
+/** Shape of an on-screen gamepad passed to `gamepad()`: an optional left/right
+ *  `stick` plus a `buttons` cluster, drawn as translucent touch controls on the
+ *  canvas. Touches drive a synthetic standard-mapping pad, fused with a real
+ *  controller by default (`merge`), so `pad:` bindings in `Input.map` work
+ *  identically from either source. */
 export interface OnscreenGamepadConfig {
   /** Fuse with a hardware pad: `true` = pad `0` (unplugged contributes
    *  nothing), a number = that index, `false` = touch-only. Default true. */
@@ -423,8 +427,17 @@ function ensureWired(st: PadInternal): void {
 
 // ---------- Public API ----------
 
-/** Build an on-screen gamepad. The returned value is a `GamepadState` — feed it
- *  to `Input.map({ pad })` and render it with `OnscreenInput.drawControls`. */
+/** Build an on-screen gamepad. The returned value is a `GamepadState` — pass it
+ *  to `Input.map` as `pad` and render it each frame with
+ *  `OnscreenInput.drawControls`. Touch and a hardware pad share one code path,
+ *  so `pressed`/`released` stay edge-correct whichever source acted.
+ *
+ *      const pad = OnscreenInput.gamepad({
+ *        stick: { anchor: { side: "left", x: 90, y: 90 }, radius: 60 },
+ *        buttons: [{ anchor: { side: "right", x: 70, y: 70 }, r: 34, button: "a", label: "A" }],
+ *      });
+ *      const input = Input.map({ jump: ["Space", "pad:a"] }, { pad });
+ *      // draw(): OnscreenInput.drawControls(pad); */
 export function gamepad(config: OnscreenGamepadConfig = {}): OnscreenPad {
   const cfg: ResolvedConfig = {
     mergeIndex: config.merge === false ? null : typeof config.merge === "number" ? config.merge : 0,

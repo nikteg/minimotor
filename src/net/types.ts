@@ -79,8 +79,9 @@ export interface Transport {
   onClose: (() => void) | null;
 
   /** Called on every connection-state transition (connecting → connected →
-   *  closed, and back to connecting on reconnect). Saves polling `state` from a
-   *  timer just to reflect it in the UI. */
+   *  closed; the WebSocket transport (`connect`) also re-enters connecting on
+   *  reconnect — `createPeer` never does). Saves polling `state` from a timer
+   *  just to reflect it in the UI. */
   onState: ((state: "connecting" | "connected" | "closed") => void) | null;
 
   /** Current connection state. */

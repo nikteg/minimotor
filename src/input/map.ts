@@ -133,8 +133,19 @@ export interface InputMapOptions {
   steps?: () => number;
 }
 
-/** Build a typed action map. Action names become properties; see the module
- *  header for the shape. Strictly optional — raw `Keys` remains the floor. */
+/** Build a typed action map from a plain object: each key is an action name,
+ *  each value a flat list of bindings — keyboard `KeyCode`s and `pad:`-prefixed
+ *  `PadCode`s side by side. Action names become `ActionState` properties on the
+ *  returned `InputMap`, alongside `axis`/`vector` synthesis, `rebind`, and the
+ *  JSON-ready `bindings`. Strictly optional — raw `Keys` remains the floor.
+ *
+ *      const input = Input.map({
+ *        left:  ["ArrowLeft", "KeyA", "pad:lstick-left"],
+ *        right: ["ArrowRight", "KeyD", "pad:lstick-right"],
+ *        jump:  ["Space", "pad:a"],
+ *      });
+ *      if (input.jump.pressed) jump();
+ *      player.vel.x = input.axis("left", "right") * SPEED; */
 export function map<A extends string>(
   bindings: Record<A, readonly Binding[]>,
   options: InputMapOptions = {},

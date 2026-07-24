@@ -31,7 +31,7 @@ export const Buttons = {
 export interface GamepadState {
   /** True while a pad is plugged in and reporting. */
   readonly connected: boolean;
-  /** Axis value in -1..1 with a deadzone applied (0 when unplugged).
+  /** Axis value in -1..1 with a 0.15 deadzone applied (0 when unplugged).
    *  Standard mapping: 0/1 = left stick X/Y, 2/3 = right stick X/Y. */
   axis(index: number): number;
   /** True while the button is held. */

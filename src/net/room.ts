@@ -239,7 +239,8 @@ export interface SyncOptions<T> {
   hz?: number;
   /** Sample OUR state to share — called on each send tick. */
   state: () => T;
-  /** Interpolation delay (ms) — how far behind live the ghosts render. */
+  /** Interpolation delay (ms) — how far behind live the ghosts render.
+   *  Default 100 ms. */
   delayMs?: number;
   /** Forget a peer after this long without a snapshot (ms). Default 5000. */
   timeoutMs?: number;

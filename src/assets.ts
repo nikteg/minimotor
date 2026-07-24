@@ -4,11 +4,14 @@
 // hold real references and never look anything up by string:
 //
 //   const { hero, terrain, level } = await Minimotor.Assets.load({
-//     hero:    { src: "hero.png", sheet: { fw: 32, fh: 32, fps: 8 } }, // → Animation
-//     terrain: "terrain.png",                                          // → HTMLImageElement
-//     level:   "level1.json",                                          // → parsed JSON
+//     hero: {
+//       src: "hero.png",                                    // → Anim.sheet Sheet
+//       sheet: { frame: { w: 32, h: 32 }, states: { idle: { row: 0, frames: 4, fps: 8 } } },
+//     },
+//     terrain: "terrain.png",                               // → HTMLImageElement
+//     level:   "level1.json",                               // → parsed JSON
 //   });
-//   hero.update(dt);  ctx.drawImage(terrain, x, y);
+//   const anim = hero.play("idle");  ctx.drawImage(terrain, x, y);
 //
 // The raw image/JSON is also cached by name, so the string-lookup style still
 // works (`Assets.image("terrain")`) — handy for loading in stages. Draw a
@@ -228,5 +231,14 @@ export function createAssets(): AssetStore {
   return store;
 }
 
-/** The default shared asset store (`Minimotor.Assets`). */
+/** The default shared asset store (`Minimotor.Assets`). `load` takes a
+ *  manifest and returns the composed resources keyed by your names; loaded
+ *  assets stay retrievable by name (`Assets.image("hero")`), and the live
+ *  `Assets.progress` drives a loading bar with no callback wiring.
+ *
+ *    const { hero, level } = await Assets.load({
+ *      hero: "img/hero.png",
+ *      level: "maps/1.json",
+ *    });
+ */
 export const Assets = createAssets();

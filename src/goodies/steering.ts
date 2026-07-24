@@ -117,4 +117,4 @@ export function nearest<T>(
 }
 
 // The stateful movement gadgets that used to sit here — `patrol` and `trail` —
-// now live in Gizmos.motion.
+// now live in Gizmos (`Gizmos.patrol`, `Gizmos.trail`).

@@ -1,7 +1,7 @@
 // ---------- Pacing: progression and cycles ----------
 // The pure clocks a game runs on: endless wave scaling and a looping day/night
-// cycle. The stateful pacers — `checkpointRoute` (laps) and `charges` (a
-// refilling ability meter) — live in Gizmos.pacing.
+// cycle. The stateful pacers — `Gizmos.checkpointRoute` (laps) and
+// `Gizmos.charges` (a refilling ability meter) — live in Gizmos.
 
 import { wrap } from "./wrapping.js";
 
@@ -38,7 +38,10 @@ export function waveScale(
 /** One of the four parts of the day cycle returned by `dayCycle()`. */
 export type DayPhase = "dawn" | "day" | "dusk" | "night";
 
-/** Normalized looping time and a conventional four-part day phase. */
+/** Normalized looping time and a conventional four-part day phase. `time` and
+ *  `dayLength` share one arbitrary unit (seconds, steps — your pick); `t` is
+ *  the 0..1 position within the current day. Phases: dawn while `t < 0.1`,
+ *  day while `t < 0.55`, dusk while `t < 0.7`, night otherwise. */
 export function dayCycle(time: number, dayLength: number): { t: number; phase: DayPhase } {
   const t = wrap(time, dayLength) / dayLength;
   const phase: DayPhase = t < 0.1 ? "dawn" : t < 0.55 ? "day" : t < 0.7 ? "dusk" : "night";

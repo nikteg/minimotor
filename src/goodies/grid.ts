@@ -59,7 +59,8 @@ export function gridNeighbors(
 }
 
 /** Breadth-first connected-region fill. `passable` must reject cells outside
- * the level; `limit` guards malformed infinite maps. */
+ * the level; `limit` caps the number of filled cells (default 10 000) to
+ * guard malformed infinite maps. */
 export function floodFill(
   start: GridPoint,
   passable: (x: number, y: number) => boolean,
@@ -96,7 +97,8 @@ export interface DistanceField {
  *  `start` to every reachable cell. Drives "walk toward the player/exit" chase
  *  AI and tower-defense creep routing without a full pathfinder — an agent
  *  just steps to the neighbour with the lowest `at()`. `passable` must reject
- *  out-of-bounds cells; `limit` guards malformed infinite maps.
+ *  out-of-bounds cells; `limit` caps the number of mapped cells
+ *  (default 10 000) to guard malformed infinite maps.
  *
  *    const field = Minimotor.Goodies.distanceField(exit, (x, y) => open(x, y));
  *    const step = Minimotor.Goodies.gridNeighbors(e.x, e.y)

@@ -36,7 +36,7 @@ export interface CarConfig {
   grip?: number;
   /** Grip while the handbrake is held (lower = looser tail). Default 0.6. */
   handbrakeGrip?: number;
-  /** Max steer scale (limited further at speed). Default 0.78. */
+  /** Max steer angle in radians, ~45° (limited further at speed). Default 0.78. */
   steer?: number;
   /** Base rolling-drag coefficient. Default 0.72. */
   drag?: number;
@@ -54,7 +54,9 @@ export interface DriveInput {
 
 /** An arcade-car controller returned by `car()`: read-only telemetry plus `drive()`. */
 export interface Car {
-  /** Smoothed steer angle (radians-ish), for rendering the wheels. */
+  /** Smoothed steer angle in radians, relative to the car's heading — rotate
+   *  wheel sprites by `body.rot + steerAngle`. Capped by `CarConfig.steer`
+   *  and reduced with speed. */
   readonly steerAngle: number;
   /** Forward speed along the heading, px/s (signed). */
   readonly speed: number;
@@ -138,3 +140,22 @@ export function car(body: DrivableBody, config: CarConfig = {}): Car {
     },
   };
 }
+
+/** Ready-made `CarConfig` tunings for common arcade archetypes — a decent
+ *  starting point so a game doesn't hand-tune from scratch. Spread one into
+ *  `car()` and override anything:
+ *
+ *    Gizmos.car(body, Gizmos.carPresets.drift);
+ *    Gizmos.car(body, { ...Gizmos.carPresets.muscle, grip: 5 });
+ *
+ *  - `compact` — nimble, high grip; the balanced default.
+ *  - `muscle` — heavier and faster, looser grip, lazier steering.
+ *  - `drift` — low grip and sharp steering, happy to slide. */
+export const carPresets = {
+  compact: { acceleration: 920, grip: 8.4, steer: 0.78 },
+  muscle: { acceleration: 1120, grip: 6.1, steer: 0.62 },
+  drift: { acceleration: 850, grip: 3.8, steer: 0.9 },
+} satisfies Record<string, CarConfig>;
+
+/** A key of `carPresets` (`"compact" | "muscle" | "drift"`). */
+export type CarPresetId = keyof typeof carPresets;

@@ -32,6 +32,13 @@ export interface Roster<T> {
   prune(atMs?: number): string[];
   /** Interpolated `[id, state]` for every peer that has a sample yet. */
   sample(atMs?: number): Array<[string, T]>;
+  /** Interpolated state for ONE peer (its own on-demand `sample`), or null if
+   *  it isn't tracked or has no sample yet. */
+  sampleOne(id: string, atMs?: number): T | null;
+  /** Clear a peer's interpolation buffer so its next update SNAPS instead of
+   *  sweeping — for a respawn or teleport. Keeps the peer tracked; no-op if the
+   *  id is unknown. */
+  reset(id: string): void;
   /** The tracked peer ids. */
   readonly ids: string[];
   /** How many peers are tracked. */
@@ -84,6 +91,13 @@ export function createRoster<T>(options: RosterOptions<T> = {}): Roster<T> {
         if (s !== null) out.push([id, s]);
       }
       return out;
+    },
+    sampleOne(id, atMs = clock()) {
+      const peer = peers.get(id);
+      return peer ? peer.interp.sample(atMs) : null;
+    },
+    reset(id) {
+      peers.get(id)?.interp.clear();
     },
     get ids() {
       return [...peers.keys()];

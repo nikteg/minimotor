@@ -134,7 +134,9 @@ export const master = {
   },
 };
 
-/** A custom content bus (cave reverb, radio filter). */
+/** A custom content bus (cave reverb, radio filter). `lowpass` inserts a
+ *  low-pass filter at the given cutoff in Hz; `reverb` adds a per-bus reverb
+ *  send at the given wet mix 0..1. Omit both for a plain bus. */
 export function bus(name: string, opts: { lowpass?: number; reverb?: number } = {}): BusHandle {
   const b = Mixer.bus(name);
   if (opts.lowpass !== undefined) b.addFilter("lowpass", opts.lowpass);
@@ -232,7 +234,17 @@ function playSpec(spec: SfxSpec, opts: PlayOptions, busName: string, delayS = 0)
   }
 }
 
-/** Build a typed sfx map: keys become handles (`sfx.jump.play()`). */
+/** Build a typed sfx map: each key becomes an `SfxHandle` (`sfx.jump.play()`).
+ *  Specs are plain `SfxSpec` data — write them by hand or start from
+ *  `Recipes`. All sounds route to `opts.bus`, defaulting to the sfx bus
+ *  (`Audio.buses.sfx`); `PlayOptions.bus` can reroute a single play.
+ *
+ *      const sfx = Audio.sfx({
+ *        jump: { shape: "square", freq: { from: 520, to: 880 }, ms: 90, volume: 0.4 },
+ *        coin: Audio.Recipes.coin(),
+ *      });
+ *      sfx.jump.play();
+ *      sfx.coin.play({ pitch: [0.95, 1.15] }); // tuple = per-play jitter */
 export function sfx<K extends string>(
   map: Record<K, SfxSpec>,
   opts: { bus?: BusHandle } = {},
@@ -336,8 +348,13 @@ export interface EngineOptions {
   drive?: number;
   /** Overall level 0..1. Default 0.5. */
   volume?: number;
-  /** Bus to route through. Default the sfx bus. */
-  bus?: BusHandle;
+  /** Add a speed-driven road-rumble layer (low-passed looping noise that grows
+   *  with speed) — road/tyre noise under the engine. 0 = off (default). ~0.4 is
+   *  a good starting point. */
+  rumble?: number;
+  /** Bus to route through — a bus handle or a bus name (like `Audio.tone`).
+   *  Default the sfx bus. */
+  bus?: BusHandle | string;
 }
 
 /** Per-frame engine telemetry. All optional; sensible zero defaults. */
@@ -415,7 +432,8 @@ export function engine(opts: EngineOptions = {}): EngineHandle {
   const gears = Math.max(1, opts.gears ?? 5);
   const drive = opts.drive ?? 1;
   const volume = opts.volume ?? 0.5;
-  const busName = (opts.bus ?? buses.sfx).name;
+  const rumbleLevel = opts.rumble ?? 0;
+  const busName = typeof opts.bus === "string" ? opts.bus : (opts.bus ?? buses.sfx).name;
 
   interface Nodes {
     ctx: AudioContext;
@@ -429,6 +447,9 @@ export function engine(opts: EngineOptions = {}): EngineHandle {
     skid: AudioBufferSourceNode;
     skidGain: GainNode;
     skidFilter: BiquadFilterNode;
+    rumbleSrc?: AudioBufferSourceNode; // optional speed-driven road rumble
+    rumbleGain?: GainNode;
+    rumbleFilter?: BiquadFilterNode;
   }
   let n: Nodes | null = null;
   let stopped = false;
@@ -519,6 +540,24 @@ export function engine(opts: EngineOptions = {}): EngineHandle {
       skid.connect(skidFilter).connect(skidGain).connect(out);
       skid.start();
 
+      // Optional road-rumble layer: a second tap off the same noise, low-passed
+      // and gained by speed — road/tyre roar under the engine (off unless set).
+      let rumbleSrc: AudioBufferSourceNode | undefined;
+      let rumbleGain: GainNode | undefined;
+      let rumbleFilter: BiquadFilterNode | undefined;
+      if (rumbleLevel > 0) {
+        rumbleSrc = ctx.createBufferSource();
+        rumbleSrc.buffer = nb;
+        rumbleSrc.loop = true;
+        rumbleFilter = ctx.createBiquadFilter();
+        rumbleFilter.type = "lowpass";
+        rumbleFilter.frequency.value = 220;
+        rumbleGain = ctx.createGain();
+        rumbleGain.gain.value = 0;
+        rumbleSrc.connect(rumbleFilter).connect(rumbleGain).connect(out);
+        rumbleSrc.start();
+      }
+
       return {
         ctx,
         firingBase,
@@ -531,6 +570,9 @@ export function engine(opts: EngineOptions = {}): EngineHandle {
         skid,
         skidGain,
         skidFilter,
+        rumbleSrc,
+        rumbleGain,
+        rumbleFilter,
       };
     } catch {
       return null; // no WebAudio — silent, non-fatal
@@ -565,6 +607,11 @@ export function engine(opts: EngineOptions = {}): EngineHandle {
       // Skid: only real slip, quadratic so light cornering stays quiet, and well
       // under the engine so it never dominates.
       ramp(n.skidGain.gain, Math.min(0.12, slip * slip * 0.14) * volume, 0.05);
+      // Road rumble: opens and swells with speed (norm), sitting under the body.
+      if (n.rumbleGain && n.rumbleFilter) {
+        ramp(n.rumbleFilter.frequency, 200 + norm * 700, 0.12);
+        ramp(n.rumbleGain.gain, rumbleLevel * (0.15 + 0.85 * norm) * volume, 0.12);
+      }
     },
     stop() {
       stopped = true;
@@ -574,6 +621,7 @@ export function engine(opts: EngineOptions = {}): EngineHandle {
         n.saw.stop();
         n.sub.stop();
         n.skid.stop();
+        n.rumbleSrc?.stop();
         n.gain.disconnect();
       } catch {
         /* already torn down */

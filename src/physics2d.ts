@@ -119,7 +119,8 @@ export interface Walls2D {
 /** A revolute joint from `pin()`. */
 export interface Pin2D {
   /** Drive the joint like a motor: target speed in rad/s, with the torque
-   *  budget to reach it. Pass speed 0 to brake, or call `destroy()` to let go. */
+   *  budget to reach it (`maxTorque` default 1000). Pass speed 0 to brake, or
+   *  call `destroy()` to let go. */
   motor(speedRadPerSec: number, maxTorque?: number): void;
   /** Remove the joint. */
   destroy(): void;
