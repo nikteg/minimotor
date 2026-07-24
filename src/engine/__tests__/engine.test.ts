@@ -62,6 +62,11 @@ describe("createApp", () => {
     expect(() => createApp({ canvas: "nope" })).toThrow(/not found/);
   });
 
+  // NOTE: createApp also marks the canvas as a gesture surface (touch-action:
+  // none etc. — see buildApp); jsdom's CSS engine drops those properties, so
+  // that behavior is pinned by e2e/select-menu.spec.ts against real computed
+  // style instead of here.
+
   it("accepts plugins via options and registers late ones via game.use()", () => {
     const canvas = document.createElement("canvas");
     const early = vi.fn();
@@ -274,6 +279,23 @@ describe("input", () => {
 
     tick(52); // next frame: the click is spent
     expect(inDraw.at(-1)).toBe(false);
+  });
+
+  it("pointercancel drops `down` without minting a release edge", () => {
+    // The browser stole the gesture (system pan, notification pull, iOS
+    // loupe): no pointerup ever comes. `down` must end so drags stop cleanly,
+    // but a canceled gesture is NOT a click — no release edge.
+    const { game, canvas } = build("pointer-cancel");
+    const releasedFrames: boolean[] = [];
+    game.run({ update: vi.fn(), draw: () => releasedFrames.push(game.pointer.frameReleased) });
+    tick(16);
+    canvas.dispatchEvent(new MouseEvent("pointerdown", { clientX: 5, clientY: 5 }));
+    tick(34);
+    expect(game.pointer.down).toBe(true);
+    window.dispatchEvent(new Event("pointercancel"));
+    expect(game.pointer.down).toBe(false);
+    tick(52);
+    expect(releasedFrames).not.toContain(true);
   });
 
   it("normalizes window mouse movement through a CSS-scaled canvas rect", () => {

@@ -158,6 +158,39 @@ describe("momentum scrolling", () => {
     expect(offset).toBe(settled); // decayed to a stop
   });
 
+  it("a pointercancel ends the drag and the next swipe still scrolls", () => {
+    // iOS fires pointercancel (never pointerup) when the system claims a
+    // gesture mid-drag. The drag must end — not stick "down" forever — and a
+    // fresh swipe afterwards must scroll normally.
+    let offset = 0;
+    const { canvas } = build(() => {
+      offset = dragScroll("pc", { x: 0, y: 0, w: 300, h: 400 }, "y", offset, 1000);
+    });
+    tick();
+    downAt(canvas, 150, 300);
+    tick();
+    moveTo(150, 290); // slow drag: past the 6px threshold, below fling speed
+    tick();
+    moveTo(150, 288);
+    tick();
+    expect(offset).toBeGreaterThan(0);
+    window.dispatchEvent(new Event("pointercancel"));
+    for (let i = 0; i < 10; i++) tick(); // any residual coast dies out
+    const settled = offset;
+    moveTo(150, 200); // moves after the cancel must NOT scroll (down ended)
+    tick();
+    moveTo(150, 100);
+    tick();
+    expect(offset).toBe(settled);
+    downAt(canvas, 150, 300); // a fresh swipe works
+    tick();
+    moveTo(150, 250);
+    tick();
+    expect(offset).toBeGreaterThan(settled);
+    upAt(150, 250);
+    tick();
+  });
+
   it("a press inside the region catches (stops) a running fling", () => {
     let offset = 0;
     const { canvas } = build(() => {

@@ -163,7 +163,7 @@ declare global {
   interface Window {
     __uiGallery?: {
       setScale(s: number): void;
-      getState(): { uiScale: number; volume: number };
+      getState(): { uiScale: number; volume: number; city: string };
       layoutCapture(on: boolean): void;
       layoutTree(): ReturnType<typeof UI.layoutTree>;
     };
@@ -173,7 +173,7 @@ window.__uiGallery = {
   setScale: (s) => {
     uiScale = s;
   },
-  getState: () => ({ uiScale, volume }),
+  getState: () => ({ uiScale, volume, city }),
   layoutCapture: UI.layoutCapture,
   layoutTree: UI.layoutTree,
 };

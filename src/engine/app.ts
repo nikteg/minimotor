@@ -273,6 +273,17 @@ function buildApp(options: AppOptions): App {
   const letterboxed = !!options.resolution;
   if (background) canvas.style.background = background;
 
+  // Touches on the app's canvas belong to the app (widgets run their own
+  // scroll/drag physics). Without `touch-action:none`, mobile browsers claim a
+  // touch drag for native panning/zoom — iOS Safari then fires `pointercancel`
+  // and stops sending moves, so every swipe gesture dies after a few px. The
+  // user-select/callout bits keep long presses from opening the iOS text
+  // loupe/callout on the canvas. (The fullscreen CSS sets the same, page-wide.)
+  canvas.style.touchAction = "none";
+  canvas.style.userSelect = "none";
+  canvas.style.setProperty("-webkit-user-select", "none");
+  canvas.style.setProperty("-webkit-touch-callout", "none");
+
   /** Re-apply the base (letterbox) transform — logical coords → device px.
    *  Used at frame start and by screen-space UI escaping a camera block. */
   const resetTransform = () => {
@@ -509,11 +520,20 @@ function buildApp(options: AppOptions): App {
     ptr.released = true;
     ptr.frameReleased = true; // survives the steps; cleared at frame end
   };
+  // The browser stole the gesture mid-drag (system pan/zoom, a notification
+  // pull, the iOS loupe): no pointerup ever comes, only this. Drop `down` so
+  // in-flight drags end cleanly instead of sticking until the next tap — but
+  // mint NO release edge (a canceled gesture must not read as a click). The
+  // event's coordinates are unreliable per spec, so the position stays put.
+  const onPointerCancel = () => {
+    ptr.down = false;
+  };
   canvas.addEventListener("pointerdown", onPointerDown);
   canvas.addEventListener("dblclick", onDblClick);
   window.addEventListener("pointermove", setPointer);
   canvas.addEventListener("wheel", onWheel, { passive: true });
   window.addEventListener("pointerup", onPointerUp);
+  window.addEventListener("pointercancel", onPointerCancel);
   window.addEventListener("scroll", invalidateRect, true);
 
   /** Drop edge-triggered input once the update step it belongs to has run, so a
@@ -737,6 +757,7 @@ function buildApp(options: AppOptions): App {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerCancel);
       window.removeEventListener("pointermove", setPointer);
       window.removeEventListener("scroll", invalidateRect, true);
       window.removeEventListener("resize", handleResize);
