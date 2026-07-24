@@ -572,7 +572,7 @@ Loop.run({
   draw() {
     Draw.ctx.imageSmoothingEnabled = false;
     if (!ready) {
-      UI.group(
+      UI.panel(
         { x: GAME_W / 2 - 100, y: GAME_H / 2 - 32, w: 200, h: 60, title: "PIXEL ADVENTURE" },
         () => {
           UI.text(failed || "Loading Pixel Frog atlases…", {
@@ -625,9 +625,9 @@ Loop.run({
       UI.drawFloatText(); // world-space pops
     });
 
-    // HUD — a title-less UI.group (a panel without the chunky 32px title band),
+    // HUD — a title-less UI.panel (no chunky 32px title band),
     // small in LOGICAL px; the letterbox scales it up to the window.
-    UI.group({ x: 8, y: 8, w: 158, h: 40, gap: 2, pad: 6 }, () => {
+    UI.panel({ x: 8, y: 8, w: 158, h: 40, gap: 2, pad: 6 }, () => {
       UI.text("SUNNY RUN", { h: 12, size: 8, color: "#4ecdc4" });
       UI.text(
         `FRUIT ${coins.filter((c) => c.got).length}/${coins.length}   LIVES ${"◆".repeat(lives)}`,
@@ -644,7 +644,7 @@ Loop.run({
     if (mode === "won" || mode === "gameover") {
       const won = mode === "won";
       Draw.rect(0, 0, GAME_W, GAME_H, "rgba(7,15,30,.78)");
-      UI.group(
+      UI.panel(
         {
           x: GAME_W / 2 - 110,
           y: GAME_H / 2 - 42,

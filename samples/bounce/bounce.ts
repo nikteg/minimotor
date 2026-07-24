@@ -155,7 +155,7 @@ Loop.run({
       Draw.particles(fx);
     });
 
-    UI.group({ x: 10, y: 10, w: 200, h: 60, title: "BOUNCE" }, (body) => {
+    UI.panel({ x: 10, y: 10, w: 200, h: 60, title: "BOUNCE" }, (body) => {
       UI.text(`Bounces ${bounces}`, { h: body.remaining, size: 13 });
     });
   },

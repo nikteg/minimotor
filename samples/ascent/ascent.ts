@@ -1220,14 +1220,14 @@ function drawPlayer(ctx: CanvasRenderingContext2D): void {
 function drawHud(ctx: CanvasRenderingContext2D): void {
   if (!ready) return;
   const best = bestDeaths === null ? "—" : bestDeaths;
-  UI.group({ x: 8, y: 8, w: Math.min(360, vp.w - 16), h: 58, title: level.name }, (body) => {
+  UI.panel({ x: 8, y: 8, w: Math.min(360, vp.w - 16), h: 58, title: level.name }, (body) => {
     UI.text(`Room ${levelIndex + 1}/${LEVELS.length}    Deaths ${deaths}    Best ${best}`, {
       h: body.remaining,
       size: 12,
     });
   });
   drawDashPip(ctx);
-  UI.group({ x: 8, y: vp.h - 40, w: Math.min(360, vp.w - 16), h: 32 }, (body) => {
+  UI.panel({ x: 8, y: vp.h - 40, w: Math.min(360, vp.w - 16), h: 32 }, (body) => {
     UI.text("←→ move · C/Space jump · X dash · R restart", {
       h: body.remaining,
       size: 11,

@@ -23,8 +23,9 @@ interface Rect {
   h: number;
 }
 
-// The viewport is LIVE (mutated on resize); the UI.group self-centers in it.
-const vp = Stage.init("game", {
+// The stage viewport is LIVE (mutated on resize); the UI.panel self-centers in it
+// via anchor:"center", so no viewport handle is needed here.
+Stage.init("game", {
   background: "#0b0e14",
   plugins: [Perf.plugin()],
   preventNavigation: true,
@@ -152,11 +153,11 @@ Loop.run({
       (region !== "ALL" ? 1 : 0);
     let filterBtn: Rect = { x: 0, y: 0, w: 0, h: 0 };
 
-    // The whole frame is a titled UI.group, self-centered in the viewport (no
+    // The whole frame is a titled UI.panel, self-centered in the viewport (no
     // hand-rolled rect): 760×560 preferred, clamped to the viewport minus a 12px
     // margin. Its body cursor carves the control bar; the table AUTO-FLOWS to
     // fill the rest (reserving the footer), and the footer takes the last slot.
-    UI.group(
+    UI.panel(
       {
         id: uiId("frame"),
         anchor: "center",
@@ -223,7 +224,7 @@ Loop.run({
         // list, all in one call. UI.table sorts the filtered rows by the active
         // column, owns the scroll + selection, and reports the state back.
         const list = visibleServers();
-        // Auto-flows: fills the group body below the controls, leaving the footer
+        // Auto-flows: fills the panel body below the controls, leaving the footer
         // slot (FOOTER_H + 8) for the row after it. No rect passed in.
         const res = UI.table<Server>({
           reserve: FOOTER_H + 8,

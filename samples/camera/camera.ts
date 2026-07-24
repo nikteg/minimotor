@@ -236,12 +236,13 @@ Loop.run({
       UI.drawFloatText(); // damage/docked pops live in world space
       Draw.particles(fx);
     });
-    UI.panel({ x: 8, y: 7, w: 520, h: 42, bg: "rgba(8,11,24,.86)", border: "#30496e" });
-    UI.text(
-      `BEACONS ${beaconIndex}/${beacons.length}  LIVES ${"◆".repeat(Math.max(0, lives))}  TIME ${elapsed.toFixed(1)}s`,
-      { x: 14, y: 8, size: 14, color: "#fff" },
-    );
-    UI.bar(14, 32, 90, 7, lives / 3, { fill: "#64f0c8", bg: "#20344a" });
+    UI.panel({ x: 8, y: 7, w: 520, h: 42, bg: "rgba(8,11,24,.86)", border: "#30496e" }, () => {
+      UI.text(
+        `BEACONS ${beaconIndex}/${beacons.length}  LIVES ${"◆".repeat(Math.max(0, lives))}  TIME ${elapsed.toFixed(1)}s`,
+        { x: 14, y: 8, size: 14, color: "#fff" },
+      );
+      UI.bar(14, 32, 90, 7, lives / 3, { fill: "#64f0c8", bg: "#20344a" });
+    });
     UI.text("WASD / arrows to fly · click an in-range beacon · +/- zoom · R restart", {
       x: 14,
       y: 51,

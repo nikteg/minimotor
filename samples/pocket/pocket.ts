@@ -310,12 +310,13 @@ Loop.run({
       ctx.restore();
     }
     Draw.particles(fx);
-    UI.panel({ x: 4, y: 3, w: 300, h: 23, bg: "rgba(3,5,12,.72)", border: "#30496e" });
-    UI.text(`SCORE ${sessionScore}  BEST ${best.best}  WAVE ${level}`, {
-      x: 9,
-      y: 4,
-      size: 8,
-      color: "#fff",
+    UI.panel({ x: 4, y: 3, w: 300, h: 23, bg: "rgba(3,5,12,.72)", border: "#30496e" }, () => {
+      UI.text(`SCORE ${sessionScore}  BEST ${best.best}  WAVE ${level}`, {
+        x: 9,
+        y: 4,
+        size: 8,
+        color: "#fff",
+      });
     });
     UI.text(`LIVES ${"◆".repeat(Math.max(0, lives))}`, {
       x: 9,

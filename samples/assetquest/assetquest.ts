@@ -200,15 +200,22 @@ Loop.run({
         });
         return;
       }
-      UI.panel({
-        x: vp.w / 2 - 170,
-        y: vp.h / 2 + 4,
-        w: 340,
-        h: 34,
-        bg: "#172640",
-        border: "#38557e",
-      });
-      UI.bar(vp.w / 2 - 150, vp.h / 2 + 15, 300, 12, progress, { fill: "#4ecdc4", bg: "#263653" });
+      UI.panel(
+        {
+          x: vp.w / 2 - 170,
+          y: vp.h / 2 + 4,
+          w: 340,
+          h: 34,
+          bg: "#172640",
+          border: "#38557e",
+        },
+        () => {
+          UI.bar(vp.w / 2 - 150, vp.h / 2 + 15, 300, 12, progress, {
+            fill: "#4ecdc4",
+            bg: "#263653",
+          });
+        },
+      );
       return;
     }
     const ox = Math.max(12, (vp.w - 14 * TILE) / 2),
@@ -239,18 +246,19 @@ Loop.run({
     UI.drawFloatText();
     Draw.particles(fx);
     ctx.restore();
-    UI.panel({ x: 8, y: 7, w: 350, h: 38, bg: "rgba(8,14,27,.85)", border: "#38557e" });
-    Draw.text(`MOON KEYS ${score}/${relics.length}   TIME ${elapsed.toFixed(1)}s`, {
-      x: 14,
-      y: 14,
-      font: "bold 16px monospace",
-      color: "#fff",
-    });
-    Draw.text("WASD / ARROWS: MOVE · R: RESTART", {
-      x: 14,
-      y: 36,
-      size: 12,
-      color: "#9fb3d9",
+    UI.panel({ x: 8, y: 7, w: 350, h: 38, bg: "rgba(8,14,27,.85)", border: "#38557e" }, () => {
+      Draw.text(`MOON KEYS ${score}/${relics.length}   TIME ${elapsed.toFixed(1)}s`, {
+        x: 14,
+        y: 14,
+        font: "bold 16px monospace",
+        color: "#fff",
+      });
+      Draw.text("WASD / ARROWS: MOVE · R: RESTART", {
+        x: 14,
+        y: 36,
+        size: 12,
+        color: "#9fb3d9",
+      });
     });
     Draw.text(gateOpen ? "All keys found — reach the glowing archive gate" : level.message, {
       x: 14,

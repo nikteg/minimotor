@@ -1,4 +1,4 @@
-import { panel } from "./panel.js";
+import { paintFrame } from "./panel.js";
 import {
   AutoContainerConfig,
   LayoutChildren,
@@ -223,23 +223,30 @@ export function col<R>(
   return autoContainer("col", "col", opts, cfg, children);
 }
 
-/** A `group` is a bordered/optionally-titled box that also lays its children
- *  out (a column by default). Combines `panel` + `col` in one call. */
-export interface GroupOptions extends LayoutOptions {
-  /** Optional title, drawn in the panel's title strip. */
+/** A bordered/optionally-titled box that also LAYS OUT its children (a column by
+ *  default, a row via `dir`) — the framed container. */
+export interface PanelOptions extends LayoutOptions {
+  /** Optional title, drawn in the frame's title strip. */
   title?: string;
   /** Body layout axis. Default `"col"`. */
   dir?: "row" | "col";
-  /** Panel fill color — passes through to `panel`. */
+  /** Frame fill color. Default `theme.panelBg`. */
   bg?: string;
-  /** Panel border color — passes through to `panel`. */
+  /** Frame border color. Default `theme.border`. */
   border?: string;
 }
 
-/** Draw a `panel` and lay its children out inside the body — a `col` by
- *  default, or a `row` via `dir`. `title`/`bg`/`border` pass through to the
- *  panel; the body is inset below the title strip and padded by `theme.pad`. */
-export function group<R>(opts: GroupOptions, children: LayoutChildren<R>): R {
+/** A framed, optionally-titled box that lays its children out — the workhorse
+ *  container for menus, dialogs and HUD clusters (`panel` + `col`/`row` in one).
+ *  The body is inset below the title strip and padded by `theme.pad`; a bare
+ *  frame is just `UI.panel(opts, () => {})` positioning content absolutely
+ *  inside. `title`/`bg`/`border` style the frame; the rest is `LayoutOptions`
+ *  (`justify`/`anchor`/`overflow`/`dir`/nesting):
+ *
+ *    UI.panel({ anchor: "center", w: 260, title: "PAUSED" }, () => {
+ *      if (UI.button({ label: "Resume" })) resume();
+ *    }); */
+export function panel<R>(opts: PanelOptions, children: LayoutChildren<R>): R {
   const dir = opts.dir ?? "col";
   const fitCross =
     isRootContainer(opts) && (dir === "col" ? opts.w === undefined : opts.h === undefined);
@@ -255,7 +262,7 @@ export function group<R>(opts: GroupOptions, children: LayoutChildren<R>): R {
     top: opts.title ? 32 : 0,
     bottom: opts.title ? 2 : 0,
     box: (rect) =>
-      panel({
+      paintFrame(uiCtx(), {
         x: rect.x,
         y: rect.y,
         w: rect.w,
@@ -265,10 +272,10 @@ export function group<R>(opts: GroupOptions, children: LayoutChildren<R>): R {
         border: opts.border,
       }),
   };
-  // With overflow the panel + title stay fixed and only the body scrolls.
+  // With overflow the frame + title stay fixed and only the body scrolls.
   if (opts.overflow && opts.overflow !== "visible")
-    return scrollable("group", dir, opts, cfg, children);
-  return autoContainer("group", dir, opts, cfg, children);
+    return scrollable("panel", dir, opts, cfg, children);
+  return autoContainer("panel", dir, opts, cfg, children);
 }
 
 /** Insert extra spacing before the next child in the current layout. */

@@ -305,7 +305,7 @@ Loop.run({
     // in sync); groove is a select, filter/level amounts are sliders, toggles
     // are checkboxes, and the backing has a play/pause button. The group auto-
     // sizes to its content and is the only thing drawn in the top-left corner.
-    UI.group({ x: 12, y: 12, w: 340, title: "SYNTH" }, () => {
+    UI.panel({ x: 12, y: 12, w: 340, title: "SYNTH" }, () => {
       wave = UI.tabs({ id: "mx-wave", items: WAVES, active: wave });
       octave = UI.slider({
         id: "mx-oct",
@@ -321,7 +321,7 @@ Loop.run({
       // play/pause button starts/stops it. The Mute checkbox is bound to
       // `Audio.Music.on` (persisted via `storageKey`), so a mute saved from a
       // previous visit can be lifted here instead of silently killing Play.
-      UI.group({ title: "Music" }, () => {
+      UI.panel({ title: "Music" }, () => {
         UI.row({ h: 30, gap: 12 }, () => {
           const groove = UI.select({
             id: "mx-groove",

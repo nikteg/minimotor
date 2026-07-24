@@ -361,7 +361,6 @@ export type {
   FloatTextManager,
   FloatTextOptions,
   GridOptions,
-  GroupOptions,
   IdPart,
   LayoutChildren,
   LayoutOptions,

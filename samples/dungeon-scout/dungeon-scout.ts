@@ -107,7 +107,7 @@ Loop.run({
     // A titled `group` owns the header: the title strip and the body text below
     // are laid out with the theme's padding — no hand-tuned y under the strip.
     // `h: body.remaining` fills the padded body so the line centers in it.
-    UI.group({ x: ox - 12, y: 12, w: COLS * CELL + 24, h: 60, title: "DUNGEON SCOUT" }, (body) => {
+    UI.panel({ x: ox - 12, y: 12, w: COLS * CELL + 24, h: 60, title: "DUNGEON SCOUT" }, (body) => {
       UI.text(`Reachable ${reachable.size} · seed ${seed} · WASD move · R new seed`, {
         h: body.remaining,
         size: 11,

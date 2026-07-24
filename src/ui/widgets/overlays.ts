@@ -1,5 +1,5 @@
 import { ButtonVariant, button } from "./button.js";
-import { PanelOptions, panel } from "./panel.js";
+import { PanelFrame, paintFrame } from "./panel.js";
 import {
   cachedContentSize,
   centeredText,
@@ -20,7 +20,7 @@ import { Stage } from "../../engine/index.js";
 // ---------- Popover ----------
 
 /** An anchored floating panel (dropdown, filter flyout). */
-export interface PopoverOptions extends Omit<PanelOptions, "h"> {
+export interface PopoverOptions extends Omit<PanelFrame, "h"> {
   /** Open state — pass yours in, assign the return value back. */
   open: boolean;
   /** Identity across frames. Defaults to the position. */
@@ -92,7 +92,15 @@ export function popover(
   if (!open) return false;
 
   enterOverlay();
-  panel(ctx, { ...opts, h: rect.h });
+  paintFrame(ctx, {
+    x: opts.x,
+    y: opts.y,
+    w: opts.w,
+    h: rect.h,
+    title: opts.title,
+    bg: opts.bg,
+    border: opts.border,
+  });
   if (children) {
     const body = { x: rect.x, y: rect.y + top, w: rect.w, h: rect.h - top };
     runAutoSized(key, rect, body, "col", opts.gap ?? 8, pad, "start", false, false, children);
@@ -142,7 +150,7 @@ export function modal(
   ctx.restore();
   const x = Math.round((vp.w - opts.w) / 2);
   const y = Math.round((vp.h - opts.h) / 2);
-  panel(ctx, { x, y, w: opts.w, h: opts.h, title: opts.title });
+  paintFrame(ctx, { x, y, w: opts.w, h: opts.h, title: opts.title });
   return { x, y, w: opts.w, h: opts.h };
 }
 
@@ -304,7 +312,7 @@ export function dialog(
   const w = opts.w ?? Math.min(680, vp.w - 24);
   const x = opts.x ?? Math.round((vp.w - w) / 2);
   const y = opts.y ?? vp.h - h - 12;
-  panel(ctx, { x, y, w, h, title: opts.speaker });
+  paintFrame(ctx, { x, y, w, h, title: opts.speaker });
 
   let textX = x + 14;
   if (opts.portrait) {

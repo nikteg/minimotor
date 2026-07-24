@@ -294,7 +294,7 @@ Loop.run({
     });
 
     const fmt = (ms: number) => (ms ? `${(ms / 1000).toFixed(2)}s` : "—");
-    UI.group({ x: 10, y: 10, w: 360, h: 60, title: "CHECKPOINT RALLY" }, (b) =>
+    UI.panel({ x: 10, y: 10, w: 360, h: 60, title: "CHECKPOINT RALLY" }, (b) =>
       UI.text(
         `Lap ${route.lap}   This ${fmt(lapTime)}   Last ${fmt(lastLap)}   Best ${fmt(bestLap)}`,
         { h: b.remaining, size: 11 },

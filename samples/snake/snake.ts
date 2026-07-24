@@ -206,7 +206,7 @@ Loop.run({
     });
 
     // HUD.
-    UI.group({ x: 8, y: 8, w: 280, h: 60, title: "SNAKE" }, (body) => {
+    UI.panel({ x: 8, y: 8, w: 280, h: 60, title: "SNAKE" }, (body) => {
       UI.text(`Score ${scores.score}   Best ${scores.best}   Len ${snake.length}`, {
         h: body.remaining,
         size: 13,

@@ -848,7 +848,7 @@ function drawPiles(ctx: CanvasRenderingContext2D) {
 }
 
 function drawHud(ctx: CanvasRenderingContext2D) {
-  UI.group(
+  UI.panel(
     {
       x: Math.max(12, (vp.w - 306) / 2),
       y: 4,

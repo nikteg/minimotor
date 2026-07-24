@@ -65,7 +65,7 @@ Loop.run({
   },
   draw() {
     Draw.sprites(ecs.dense(Sprite)); // renderer: centers + blits every Sprite by z
-    UI.group({ x: 10, y: 10, w: 230, h: 58, title: "PARTICLES" }, (body) =>
+    UI.panel({ x: 10, y: 10, w: 230, h: 58, title: "PARTICLES" }, (body) =>
       UI.text(`Sparks ${ecs.count(Sprite)}  ·  click to spawn`, { h: body.remaining, size: 13 }),
     );
   },

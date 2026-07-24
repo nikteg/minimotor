@@ -8,9 +8,9 @@
 // Clean widget files re-export wholesale; select/text-input are re-exported
 // selectively so their internal editor/overlay helpers stay private (matching
 // the kernel's selective surface).
-//   button / panel / toggle / tabs / slider / spinner / bar — the basic controls
+//   button / toggle / tabs / slider / spinner / bar — the basic controls
 //              (one file each)
-//   layout     — row / col / group / spacer / clip
+//   layout     — row / col / panel (framed container) / spacer / clip
 //   lists      — list / grid / scrollbar / listItem
 //   table      — sortable data table
 //   overlays   — popover / modal / confirm / dialog
@@ -19,8 +19,9 @@
 //   tooltip    — hover tooltip
 //   select     — native-backed dropdown
 //   text-input — native-backed text field
+// (panel.ts holds the internal frame painter used by panel/overlays/select — not
+//  a public widget, so it is NOT re-exported here.)
 export * from "./button.js";
-export * from "./panel.js";
 export * from "./toggle.js";
 export * from "./tabs.js";
 export * from "./slider.js";

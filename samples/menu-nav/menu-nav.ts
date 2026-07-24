@@ -220,7 +220,7 @@ Loop.run({
           active: sub,
           w: 440,
         });
-        UI.group({ title: `${TABS[tab].name} · ${TABS[tab].subs[sub]}`, gap: 10 }, renderOptions);
+        UI.panel({ title: `${TABS[tab].name} · ${TABS[tab].subs[sub]}`, gap: 10 }, renderOptions);
       });
     });
 

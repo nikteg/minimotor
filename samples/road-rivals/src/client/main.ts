@@ -1582,40 +1582,41 @@ Loop.run({
     const rosterW = 320;
     const rosterH = 58 + rosterRows.length * rowH;
     const listRect = { x: 18, y: 58, w: rosterW - 16, h: rosterRows.length * rowH };
-    UI.panel({ x: 10, y: 10, w: rosterW, h: rosterH, title: "PLAYERS + BOTS" });
-    UI.text(`${transport.state.toUpperCase()} · ${score} PTS`, {
-      x: 22,
-      y: 39,
-      h: 17,
-      size: 10,
-      color: transport.state === "connected" ? "#6bff9e" : "#ffb454",
+    UI.panel({ x: 10, y: 10, w: rosterW, h: rosterH, title: "PLAYERS + BOTS" }, () => {
+      UI.text(`${transport.state.toUpperCase()} · ${score} PTS`, {
+        x: 22,
+        y: 39,
+        h: 17,
+        size: 10,
+        color: transport.state === "connected" ? "#6bff9e" : "#ffb454",
+      });
+      for (let i = 0; i < rosterRows.length; i++) {
+        const entry = rosterRows[i];
+        const row = {
+          x: listRect.x,
+          y: listRect.y + i * rowH,
+          w: listRect.w,
+          h: rowH,
+        };
+        UI.listItem({ ...row, selected: entry.local });
+        UI.text(entry.label, {
+          ...row,
+          x: row.x + 6,
+          w: 92,
+          size: 9,
+          bold: true,
+          color: entry.color,
+        });
+        UI.text(entry.status, {
+          ...row,
+          x: row.x + 100,
+          w: row.w - 106,
+          align: "right",
+          size: 9,
+          color: "dim",
+        });
+      }
     });
-    for (let i = 0; i < rosterRows.length; i++) {
-      const entry = rosterRows[i];
-      const row = {
-        x: listRect.x,
-        y: listRect.y + i * rowH,
-        w: listRect.w,
-        h: rowH,
-      };
-      UI.listItem({ ...row, selected: entry.local });
-      UI.text(entry.label, {
-        ...row,
-        x: row.x + 6,
-        w: 92,
-        size: 9,
-        bold: true,
-        color: entry.color,
-      });
-      UI.text(entry.status, {
-        ...row,
-        x: row.x + 100,
-        w: row.w - 106,
-        align: "right",
-        size: 9,
-        color: "dim",
-      });
-    }
     drawMinimap(ctx);
 
     // In-match chat (bottom-left). Messages broadcast to peers via send(); the
@@ -1630,47 +1631,48 @@ Loop.run({
     const chatBodyH = Math.max(chatLineH, shownChat.length * chatLineH);
     const chatH = chatHeaderH + chatBodyH + 8 + chatInputH + 8;
     const chatY = vp.h - chatH - 10;
-    UI.panel({ x: chatX, y: chatY, w: chatW, h: chatH, title: "CHAT" });
-    if (shownChat.length === 0) {
-      UI.text("No messages yet.", {
-        x: chatX + 10,
-        y: chatY + chatHeaderH,
-        w: chatW - 20,
-        h: chatLineH,
-        size: 10,
-        color: "dim",
+    UI.panel({ x: chatX, y: chatY, w: chatW, h: chatH, title: "CHAT" }, () => {
+      if (shownChat.length === 0) {
+        UI.text("No messages yet.", {
+          x: chatX + 10,
+          y: chatY + chatHeaderH,
+          w: chatW - 20,
+          h: chatLineH,
+          size: 10,
+          color: "dim",
+        });
+      }
+      for (let i = 0; i < shownChat.length; i++) {
+        const entry = shownChat[i];
+        UI.text(`${entry.name}: ${entry.text}`, {
+          x: chatX + 10,
+          y: chatY + chatHeaderH + i * chatLineH,
+          w: chatW - 20,
+          h: chatLineH,
+          size: 10,
+          color: entry.color,
+        });
+      }
+      const chatResult = UI.textInput({
+        id: "road-rivals:chat",
+        value: chatDraft,
+        x: chatX + 8,
+        y: chatY + chatHeaderH + chatBodyH + 8,
+        w: chatW - 16,
+        h: chatInputH,
+        placeholder: "Message…",
+        maxLength: 80,
+        blurOnSubmit: false,
       });
-    }
-    for (let i = 0; i < shownChat.length; i++) {
-      const entry = shownChat[i];
-      UI.text(`${entry.name}: ${entry.text}`, {
-        x: chatX + 10,
-        y: chatY + chatHeaderH + i * chatLineH,
-        w: chatW - 20,
-        h: chatLineH,
-        size: 10,
-        color: entry.color,
-      });
-    }
-    const chatResult = UI.textInput({
-      id: "road-rivals:chat",
-      value: chatDraft,
-      x: chatX + 8,
-      y: chatY + chatHeaderH + chatBodyH + 8,
-      w: chatW - 16,
-      h: chatInputH,
-      placeholder: "Message…",
-      maxLength: 80,
-      blurOnSubmit: false,
+      chatDraft = chatResult.value;
+      if (chatResult.submitted && chatDraft.trim()) {
+        const text = chatDraft.trim();
+        chatLog.push({ name: "YOU", text, color });
+        if (chatLog.length > CHAT_MAX) chatLog.shift();
+        send({ type: "chat", text });
+        chatDraft = "";
+      }
     });
-    chatDraft = chatResult.value;
-    if (chatResult.submitted && chatDraft.trim()) {
-      const text = chatDraft.trim();
-      chatLog.push({ name: "YOU", text, color });
-      if (chatLog.length > CHAT_MAX) chatLog.shift();
-      send({ type: "chat", text });
-      chatDraft = "";
-    }
 
     if (gameState === "alive") drawPlayerHealth();
     if (gameState === "alive" && player.inCar) drawCarHealth();
@@ -1686,41 +1688,42 @@ Loop.run({
       });
     } else if (gameState === "spectator") {
       const join = { x: vp.w / 2 - 180, y: vp.h / 2 - 92, w: 360, h: 184 };
-      UI.panel({ ...join, title: "ROAD RIVALS" });
-      UI.text("SPECTATING", {
-        x: join.x,
-        y: join.y + 42,
-        w: join.w,
-        h: 24,
-        align: "center",
-        size: 16,
-        bold: true,
-        color: "#8ff4dd",
+      UI.panel({ ...join, title: "ROAD RIVALS" }, () => {
+        UI.text("SPECTATING", {
+          x: join.x,
+          y: join.y + 42,
+          w: join.w,
+          h: 24,
+          align: "center",
+          size: 16,
+          bold: true,
+          color: "#8ff4dd",
+        });
+        UI.text("Watch the shared fight, then enter when ready.", {
+          x: join.x,
+          y: join.y + 72,
+          w: join.w,
+          h: 22,
+          align: "center",
+          size: 11,
+          color: "dim",
+        });
+        if (
+          UI.button({
+            id: "road-rivals:join",
+            x: join.x + 90,
+            y: join.y + 116,
+            w: 180,
+            h: 42,
+            label: "JOIN GAME",
+            variant: "primary",
+          })
+        ) {
+          unlockRoadAudio();
+          joinSound();
+          goToState("alive", joinTransition);
+        }
       });
-      UI.text("Watch the shared fight, then enter when ready.", {
-        x: join.x,
-        y: join.y + 72,
-        w: join.w,
-        h: 22,
-        align: "center",
-        size: 11,
-        color: "dim",
-      });
-      if (
-        UI.button({
-          id: "road-rivals:join",
-          x: join.x + 90,
-          y: join.y + 116,
-          w: 180,
-          h: 42,
-          label: "JOIN GAME",
-          variant: "primary",
-        })
-      ) {
-        unlockRoadAudio();
-        joinSound();
-        goToState("alive", joinTransition);
-      }
     } else if (gameState === "dead") {
       const box = UI.modal({ w: 350, h: 180, title: "YOU DIED" });
       UI.text(`SCORE  ${score}`, {

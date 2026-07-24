@@ -74,7 +74,7 @@ Loop.run({
       Draw.particles(fx);
     });
 
-    UI.group({ x: 12, y: 12, w: Math.min(360, view.w - 24), h: 60, title: "JUICE" }, (body) => {
+    UI.panel({ x: 12, y: 12, w: Math.min(360, view.w - 24), h: 60, title: "JUICE" }, (body) => {
       UI.text(`Particles ${fx.count}   ·   click for a big impact, hold to spray`, {
         h: body.remaining,
         size: 12,

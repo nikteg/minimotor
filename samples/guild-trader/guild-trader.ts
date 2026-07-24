@@ -63,7 +63,7 @@ function rollLoot() {
 
 // A 2×4 slot grid. UI.grid hands each cell its rect, so the slot code drops
 // the nested row/column loops and the slot-width arithmetic. `region` is a
-// full-width block reserved in the group's column (two 48px rows + an 8px gap).
+// full-width block reserved in the panel's column (two 48px rows + an 8px gap).
 function drawInventory(ctx: CanvasRenderingContext2D, layout: Flow) {
   const region = layout.next(undefined, 104);
   UI.grid({ ...region, cols: 4, rows: 2, gap: 8 }, (rect, i) => {
@@ -114,7 +114,7 @@ Loop.run({
     // Callback containers are the layout tree: widgets flow through the
     // ambient row/column cursor and still return clicks inline.
     UI.col({ ...frame, gap: 12 }, () => {
-      UI.group({ h: 66, title: "GUILD TRADER", pad: 4 }, () => {
+      UI.panel({ h: 66, title: "GUILD TRADER", pad: 4 }, () => {
         UI.text("RPG recipes: typed drag/drop · stack transfer · weighted loot · shuffle bags", {
           h: 18,
           size: 11,
@@ -124,10 +124,10 @@ Loop.run({
       });
 
       UI.row({ h: 166, gap: 12 }, () => {
-        UI.group({ w: half, h: 166, title: "ADVENTURER INVENTORY", gap: 8 }, (body) => {
+        UI.panel({ w: half, h: 166, title: "ADVENTURER INVENTORY", gap: 8 }, (body) => {
           drawInventory(ctx, body);
         });
-        UI.group({ w: half, h: 166, title: "MARA'S COUNTER", gap: 7 }, () => {
+        UI.panel({ w: half, h: 166, title: "MARA'S COUNTER", gap: 7 }, () => {
           UI.row({ h: 32, gap: 10 }, (actions) => {
             if (UI.button({ at: actions, w: (half - 26) / 2, label: "ROLL LOOT" })) rollLoot();
             if (UI.button({ at: actions, w: (half - 26) / 2, label: "NEXT ENCOUNTER" }))

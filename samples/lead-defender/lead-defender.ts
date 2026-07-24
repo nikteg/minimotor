@@ -163,7 +163,7 @@ Loop.run({
     ctx.fillRect(0, -3, 32, 6);
     ctx.restore();
     Draw.particles(fx);
-    UI.group({ x: 10, y: 10, w: 280, h: 60, title: "LEAD DEFENDER" }, (body) => {
+    UI.panel({ x: 10, y: 10, w: 280, h: 60, title: "LEAD DEFENDER" }, (body) => {
       UI.text(
         `Wave ${wave}   Core ${lives}   Score ${score}   Rank ${Goodies.scoreRank(score, [0, 100, 300, 700], ["C", "B", "A", "S"])}`,
         { h: body.remaining, size: 11 },

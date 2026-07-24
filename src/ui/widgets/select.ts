@@ -30,7 +30,7 @@ import {
   withCtx,
 } from "../core/index.js";
 import { button } from "./button.js";
-import { panel } from "./panel.js";
+import { paintFrame } from "./panel.js";
 import { pointInRect } from "../../collision.js";
 import { clamp } from "../../mathf.js";
 import { Stage } from "../../engine/index.js";
@@ -354,7 +354,7 @@ export function drawSelectOverlay(): void {
   ctx.fillStyle = theme.bgActive;
   ctx.fillRect(menu.x, menu.y, menu.w, menu.h);
   ctx.restore();
-  panel(ctx, { ...menu, bg: theme.bgActive });
+  paintFrame(ctx, { ...menu, bg: theme.bgActive });
   const start = Math.max(
     0,
     Math.min(opts.options.length - visible, editor.index - Math.floor(visible / 2)),
