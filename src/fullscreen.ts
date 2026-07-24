@@ -52,16 +52,65 @@ function ensureViewportMeta(): void {
   meta.content = content;
 }
 
-let gestureGuard: ((e: Event) => void) | null = null;
+let zoomGuardsWired = false;
+let lastTouchEnd = 0;
+let lastTouchStart = 0;
 
-/** Swallow iOS pinch-zoom gestures (`gesturestart`/`change`/`end`) so the game
- *  view can't be zoomed on a two-finger pinch. Idempotent. */
+// A native editing surface, where the OS text selection / callout is wanted.
+function isFormField(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  const tag = el?.tagName;
+  return (
+    tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable === true
+  );
+}
+
+/** Block the ways iOS zooms/selects a game view that CSS/meta can't. iOS ignores
+ *  `maximum-scale`/`user-scalable=no` and still runs its own gestures under
+ *  `touch-action:none`, so:
+ *  - pinch-zoom → swallow `gesturestart`/`change`/`end`.
+ *  - double-tap zoom → cancel the SECOND tap's `touchend`.
+ *  - the double-tap-and-HOLD "magnifying glass" loupe (a text-selection gesture
+ *    that appears during the hold, before touchend) → cancel the second tap's
+ *    `touchstart` and any `selectstart`.
+ *  All guards are scoped to NON form fields (so a native <input>/<textarea> keeps
+ *  its keyboard + selection) and only the SECOND tap of a double-tap is touched,
+ *  so single taps — including the tap that focuses a field — still work. None of
+ *  this cancels `pointerdown`, so the engine's input and its pointerdown-timing
+ *  double-tap detection are unaffected. Idempotent. */
 function preventZoomGestures(): void {
-  if (gestureGuard || typeof window === "undefined") return;
-  gestureGuard = (e) => e.preventDefault();
+  if (zoomGuardsWired || typeof window === "undefined") return;
+  zoomGuardsWired = true;
+  const stop = (e: Event) => e.preventDefault();
   for (const type of ["gesturestart", "gesturechange", "gestureend"]) {
-    window.addEventListener(type, gestureGuard, { passive: false });
+    window.addEventListener(type, stop, { passive: false });
   }
+  document.addEventListener(
+    "touchstart",
+    (e) => {
+      const now = performance.now();
+      const isDoubleTap = now - lastTouchStart <= 300;
+      lastTouchStart = now;
+      // Second tap of a double-tap (single finger, not a form field): stop iOS
+      // from starting its selection/magnifier gesture on the hold.
+      if (isDoubleTap && e.touches.length === 1 && !isFormField(e.target)) e.preventDefault();
+    },
+    { passive: false },
+  );
+  document.addEventListener(
+    "touchend",
+    (e) => {
+      const now = performance.now();
+      if (now - lastTouchEnd <= 300 && !isFormField(e.target)) e.preventDefault();
+      lastTouchEnd = now;
+    },
+    { passive: false },
+  );
+  // The loupe is the text-selection magnifier; stop a selection from starting
+  // anywhere but a real field, which suppresses the loupe without touching input.
+  document.addEventListener("selectstart", (e) => {
+    if (!isFormField(e.target)) e.preventDefault();
+  });
 }
 
 /** Inject fullscreen styles into the document <head>, fix the viewport meta and
