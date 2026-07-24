@@ -220,8 +220,15 @@ export interface LayoutOptions {
   /** Inner padding in px. `row`/`col` default to 0 (flush structural flow);
    *  `group` defaults to `theme.pad`. */
   pad?: number;
-  /** Main-axis alignment within the container's own slot when nested. */
-  align?: "start" | "end";
+  /** Where the content block sits on the main axis when the container is wider
+   *  (a row) / taller (a col) than its children — POSITION, not order. `"end"`
+   *  pins it to the far edge (a right-aligned toolbar), children keeping their
+   *  natural order. Default `"start"`. Orthogonal to `reverse`. */
+  anchor?: "start" | "end";
+  /** Lay children in reverse ORDER (last-drawn first) — position is unchanged
+   *  (see `anchor`). Default false. `anchor:"end"` + `reverse:true` together give
+   *  the old right-to-left `align:"end"` behavior. */
+  reverse?: boolean;
   /** Overflow behavior along the main axis, like CSS. `"visible"` (default)
    *  auto-grows the box to its content. `"auto"`/`"scroll"` cap the box (at `h`,
    *  or at the room down to the viewport bottom) and scroll the content inside
@@ -243,31 +250,38 @@ export function runContainer<R>(
   rect: { x: number; y: number; w: number; h: number },
   gap: number,
   pad: number,
-  align: "start" | "end",
+  anchor: "start" | "end",
+  reverse: boolean,
   children: (layout: Flow) => R,
   fitCross = false,
   wrap = false,
+  contentMain?: number,
 ): R {
   const inner = { x: rect.x + pad, y: rect.y + pad, w: rect.w - pad * 2, h: rect.h - pad * 2 };
-  // For align:"end" the cursor starts at the far edge and grows backward.
-  const start =
-    align === "end"
-      ? {
-          x: dir === "row" ? inner.x + inner.w : inner.x,
-          y: dir === "col" ? inner.y + inner.h : inner.y,
-        }
-      : { x: inner.x, y: inner.y };
+  const innerNear = dir === "row" ? inner.x : inner.y;
+  const innerMain = dir === "row" ? inner.w : inner.h;
+  // ANCHOR positions the content block on the main axis: "end" pushes it to the
+  // far edge by the slack (extra room beyond the children's measured length,
+  // from last frame's cache — 0 on the first frame, corrected next). REVERSE
+  // decides growth direction: forward from the block's near edge, or backward
+  // from its far edge (so the first child lands at the far end).
+  const slack =
+    anchor === "end" && contentMain !== undefined ? Math.max(0, innerMain - contentMain) : 0;
+  const blockNear = innerNear + slack;
+  const blockFar = contentMain !== undefined ? blockNear + contentMain : innerNear + innerMain;
+  const mainStart = reverse ? blockFar : blockNear;
+  const flowAlign = reverse ? "end" : "start";
   const st = flow({
-    x: start.x,
-    y: start.y,
+    x: dir === "row" ? mainStart : inner.x,
+    y: dir === "col" ? mainStart : inner.y,
     dir,
     gap,
-    align,
+    align: flowAlign,
     // Cross-axis size the children fill: row → height, col → width.
     h: dir === "row" ? inner.h : undefined,
     w: dir === "col" ? inner.w : undefined,
     // Main-axis length enables fill()/remaining inside the callback.
-    length: dir === "row" ? inner.w : inner.h,
+    length: innerMain,
     fitCross,
     wrap,
   });
@@ -286,10 +300,16 @@ export function runContainer<R>(
 // container with a stable key self-corrects after one frame; static UIs are
 // steady from frame two. Callers pass no `h` to opt in.
 
-/** Measured content box of a container (width and height). */
+/** Measured content box of a container. `w`/`h` are the OUTER box needed to hold
+ *  the content from the container's top-left (span, incl. a title band + pads —
+ *  used for auto-sizing an omitted axis). `ew`/`eh` are the content's own
+ *  bounding-box run (position-independent — used by `anchor` to align a block
+ *  inside a wider box without oscillating as the block moves). */
 export interface ContentSize {
   w: number;
   h: number;
+  ew: number;
+  eh: number;
 }
 
 const contentSizes = new Map<string, ContentSize>();
@@ -325,7 +345,7 @@ export function measuredContainerSize(
   pad: number,
 ): ContentSize {
   const e = st.extent;
-  return { w: e.x + e.w - outerLeft + pad, h: e.y + e.h - outerTop + pad };
+  return { w: e.x + e.w - outerLeft + pad, h: e.y + e.h - outerTop + pad, ew: e.w, eh: e.h };
 }
 
 // Resolve a container's own rect: explicit if given, else reserve a slot from
@@ -392,17 +412,20 @@ export function runAutoSized<R>(
   dir: "row" | "col",
   gap: number,
   pad: number,
-  align: "start" | "end",
+  anchor: "start" | "end",
+  reverse: boolean,
   fitCross: boolean,
   children: LayoutChildren<R>,
   wrap = false,
+  contentMain?: number,
 ): R {
   return runContainer(
     dir,
     body,
     gap,
     pad,
-    align,
+    anchor,
+    reverse,
     (st) => {
       const r = children(st);
       storeContentSize(key, measuredContainerSize(st, outer.x, outer.y, pad));
@@ -410,6 +433,7 @@ export function runAutoSized<R>(
     },
     fitCross,
     wrap,
+    contentMain,
   );
 }
 
@@ -419,8 +443,10 @@ export interface AutoContainerConfig {
   pad: number;
   /** Gap between children in px. */
   gap: number;
-  /** Main-axis alignment within the container's own slot. */
-  align: "start" | "end";
+  /** Where the content block sits on the main axis (see `LayoutOptions.anchor`). */
+  anchor: "start" | "end";
+  /** Lay children in reverse order (see `LayoutOptions.reverse`). */
+  reverse: boolean;
   /** Shrink-wrap the cross axis (a root container along its free axis). */
   fitCross: boolean;
   /** Flex-wrap children onto new lines when they overflow the main axis. */
@@ -447,11 +473,18 @@ export function autoContainer<R>(
   children: LayoutChildren<R>,
 ): R {
   const key = containerKey(opts, kind);
-  const rect = containerRect(dir, opts, cachedContentSize(key));
+  const cached = cachedContentSize(key);
+  const rect = containerRect(dir, opts, cached);
   cfg.box?.(rect);
   const top = cfg.top ?? 0;
   const bottom = cfg.bottom ?? 0;
   const body = { x: rect.x, y: rect.y + top, w: rect.w, h: rect.h - top - bottom };
+  // Content's main-axis run (last frame) — anchor:"end" uses it to right/bottom-
+  // align the block, and reverse uses it to find the block's far edge. This is
+  // the content's own bounding-box length (`ew`/`eh`), NOT the span from the box
+  // edge, so it stays stable as the block moves (a span would oscillate).
+  // Undefined on the first frame (positions settle next frame).
+  const contentMain = cached ? (dir === "row" ? cached.ew : cached.eh) : undefined;
   return runAutoSized(
     key,
     rect,
@@ -459,9 +492,11 @@ export function autoContainer<R>(
     dir,
     cfg.gap,
     cfg.pad,
-    cfg.align,
+    cfg.anchor,
+    cfg.reverse,
     cfg.fitCross,
     children,
     cfg.wrap ?? false,
+    contentMain,
   );
 }

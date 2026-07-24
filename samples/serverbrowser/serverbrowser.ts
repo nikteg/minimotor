@@ -182,8 +182,8 @@ Loop.run({
     UI.panel({ x: L.x, y: L.y, w: L.w, h: L.h, title: "SERVER BROWSER" });
 
     // ---- control bar: two closure rows over the same slot — the left one
-    // flows from the left, the right one (align:"end") grows from the right.
-    // Widgets inside auto-flow and auto-size; no rects threaded by hand.
+    // flows from the left, the right one (anchor:"end", reverse:true) grows from
+    // the right. Widgets inside auto-flow and auto-size; no rects threaded by hand.
     const nFilters =
       (hideFull ? 1 : 0) +
       (hideEmpty ? 1 : 0) +
@@ -206,7 +206,7 @@ Loop.run({
       filterBtn = bar.last ?? filterBtn; // the popover anchors under this
     });
 
-    UI.row({ ...L.controls, gap: 10, align: "end" }, (bar) => {
+    UI.row({ ...L.controls, gap: 10, anchor: "end", reverse: true }, (bar) => {
       if (
         UI.button({
           id: uiId("refresh-button"),

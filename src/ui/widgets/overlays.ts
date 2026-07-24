@@ -95,7 +95,7 @@ export function popover(
   panel(ctx, { ...opts, h: rect.h });
   if (children) {
     const body = { x: rect.x, y: rect.y + top, w: rect.w, h: rect.h - top };
-    runAutoSized(key, rect, body, "col", opts.gap ?? 8, pad, "start", false, children);
+    runAutoSized(key, rect, body, "col", opts.gap ?? 8, pad, "start", false, false, children);
   }
   return true;
 }

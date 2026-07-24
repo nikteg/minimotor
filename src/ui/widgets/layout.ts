@@ -96,7 +96,7 @@ function scrollable<R>(
     cachedBox,
   );
   cfg.box?.(rect);
-  storeContentSize(key, { w: rect.w, h: rect.h });
+  storeContentSize(key, { w: rect.w, h: rect.h, ew: rect.w, eh: rect.h });
 
   // The bar sits on the CROSS edge (right for vertical, bottom for horizontal)
   // and steals from the cross extent, never from the scroll axis. `viewMain` is
@@ -132,7 +132,8 @@ function scrollable<R>(
       dir,
       cfg.gap,
       cfg.pad,
-      cfg.align,
+      cfg.anchor,
+      cfg.reverse,
       // Horizontal: children take natural HEIGHT (intrinsic cross) so the box
       // height is stable. Vertical: they fill the WIDTH as usual.
       horiz,
@@ -188,7 +189,8 @@ export function row<R>(
   const cfg = {
     pad: opts.pad ?? 0,
     gap: opts.gap ?? 8,
-    align: opts.align ?? "start",
+    anchor: opts.anchor ?? "start",
+    reverse: opts.reverse ?? false,
     fitCross,
     wrap,
   };
@@ -211,7 +213,8 @@ export function col<R>(
   const cfg = {
     pad: opts.pad ?? 0,
     gap: opts.gap ?? 8,
-    align: opts.align ?? "start",
+    anchor: opts.anchor ?? "start",
+    reverse: opts.reverse ?? false,
     fitCross,
     wrap,
   };
@@ -246,7 +249,8 @@ export function group<R>(opts: GroupOptions, children: LayoutChildren<R>): R {
   const cfg: AutoContainerConfig = {
     pad: opts.pad ?? theme.pad,
     gap: opts.gap ?? 8,
-    align: opts.align ?? "start",
+    anchor: opts.anchor ?? "start",
+    reverse: opts.reverse ?? false,
     fitCross,
     top: opts.title ? 32 : 0,
     bottom: opts.title ? 2 : 0,
