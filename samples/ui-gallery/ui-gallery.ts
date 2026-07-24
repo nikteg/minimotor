@@ -582,7 +582,7 @@ Loop.run({
                   w: gridBox.w - 24,
                   h: gridBox.h - 54,
                   cols: 4,
-                  rows: 2,
+                  count: 8,
                   gap: 6,
                 },
                 (cell, i) => {

@@ -10,6 +10,7 @@ import {
   createFloatText,
   defaultTheme,
   getTheme,
+  grid,
   idScope,
   ids,
   row,
@@ -320,6 +321,24 @@ describe("UI closure containers", () => {
       expect(() => col({ x: 10, y: 10, gap: 4 }, () => button({ label: "Hello" }))).not.toThrow();
       _reset();
     }
+  });
+});
+
+describe("UI.grid overflow", () => {
+  it("windows fixed-height rows and lays cells out per row", () => {
+    const { ctx } = mockCtx();
+    begin(ctx);
+    const cells: { x: number; y: number; i: number; c: number; r: number }[] = [];
+    // 3 cols × 30 items = 10 rows of rowH 20 → 200px of content in a 60px box: it
+    // overflows, so only the visible window is drawn (built on `list`).
+    const off = grid({ x: 0, y: 0, w: 100, h: 60, cols: 3, count: 30, rowH: 20 }, (rect, i, c, r) =>
+      cells.push({ x: rect.x, y: rect.y, i, c, r }),
+    );
+    expect(cells.length).toBe(9); // rows 0..2 (60/20) × 3 cols, not all 30 cells
+    expect(cells[0]).toMatchObject({ x: 0, y: 0, i: 0, c: 0, r: 0 });
+    expect(cells[3]).toMatchObject({ y: 20, i: 3, c: 0, r: 1 }); // first cell of row 1
+    expect(off).toBe(0); // clamped; nothing scrolled yet
+    _reset();
   });
 });
 

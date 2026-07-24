@@ -168,28 +168,39 @@ export function list(
 }
 
 /** Even 2-D cell layout — inventories, hotbars, level-select, board games.
- *  Splits `w`×`h` into `cols`×`rows` cells (minus `gap`) and hands each cell's
- *  rect to the callback. Removes the column-width arithmetic that `row`/`col`
- *  still force for grids. */
-export interface GridOptions {
-  /** Left edge of the grid area, px. */
-  x: number;
-  /** Top edge of the grid area, px. */
-  y: number;
-  /** Total width of the grid area, px (split across `cols`). */
-  w: number;
-  /** Total height of the grid area, px (split across `rows`). */
-  h: number;
-  /** Number of columns. */
+ *  Lays `count` items out in a `cols`-wide grid and hands each cell's rect to
+ *  the callback, dropping the column-width arithmetic that `row`/`col` force.
+ *  Auto-flows (`Fillable`), and — with a fixed `rowH` — WINDOWS + scrolls when
+ *  the rows overflow. */
+export interface GridOptions extends Fillable {
+  /** Number of columns; each cell's width is derived from the area width. */
   cols: number;
-  /** Number of rows. */
-  rows: number;
-  /** Gap between cells in px. Default 0. */
+  /** Total number of cells: rows = `ceil(count / cols)`, and the last row may
+   *  be partial. */
+  count: number;
+  /** Fixed row height in px. OMIT to divide the area height evenly across the
+   *  rows — a static matrix that always fits (no scroll). GIVE it for
+   *  fixed-height rows that WINDOW + scroll (scrollbar / wheel / swipe) when they
+   *  overflow the area — a scrollable inventory. */
+  rowH?: number;
+  /** Gap between cells in px (both axes). Default 0. */
   gap?: number;
+  /** Scroll offset (px), for the overflow case — pass state in, assign the
+   *  return back. Ignored by the fill-to-fit matrix (which never scrolls). */
+  offset?: number;
+  /** Scrollbar width when the rows overflow. Default 10. */
+  scrollW?: number;
+  /** Stable prefix for the scrollbar widget id. */
+  id?: string;
 }
 
-/** Split `w`×`h` into an even `cols`×`rows` cell grid (minus `gap`) and call
- *  `cell(rect, index, col, row)` for each cell in row-major order. */
+/** Lay `count` items out in an even `cols`-wide grid and call
+ *  `cell(rect, index, col, row)` for each in row-major order. Two modes: omit
+ *  `rowH` and the area height splits evenly across the rows (a static matrix —
+ *  inventories, boards, always fits); give `rowH` and the rows are fixed-height
+ *  and WINDOW + scroll when they overflow (built on `list`, so the scrollbar,
+ *  wheel and swipe come free). Give an explicit rect or omit `x`/`y` to
+ *  AUTO-FLOW into the current layout. Returns the (clamped) scroll offset. */
 export function grid(
   opts: GridOptions,
   cell: (
@@ -198,20 +209,49 @@ export function grid(
     col: number,
     rowIndex: number,
   ) => void,
-): void {
+): number {
+  const rect = fillRect(opts);
+  const { cols, count } = opts;
   const gap = opts.gap ?? 0;
-  const cw = (opts.w - gap * (opts.cols - 1)) / opts.cols;
-  const ch = (opts.h - gap * (opts.rows - 1)) / opts.rows;
-  for (let r = 0; r < opts.rows; r++) {
-    for (let c = 0; c < opts.cols; c++) {
-      cell(
-        { x: opts.x + c * (cw + gap), y: opts.y + r * (ch + gap), w: cw, h: ch },
-        r * opts.cols + c,
-        c,
-        r,
-      );
+  const rows = cols > 0 ? Math.ceil(count / cols) : 0;
+
+  // Matrix mode: no `rowH` → divide the area, draw every cell, never scroll.
+  if (opts.rowH === undefined) {
+    const cw = cols > 0 ? (rect.w - gap * (cols - 1)) / cols : rect.w;
+    const ch = rows > 0 ? (rect.h - gap * (rows - 1)) / rows : rect.h;
+    for (let i = 0; i < count; i++) {
+      const c = i % cols;
+      const r = Math.floor(i / cols);
+      cell({ x: rect.x + c * (cw + gap), y: rect.y + r * (ch + gap), w: cw, h: ch }, i, c, r);
     }
+    return 0;
   }
+
+  // Overflow mode: fixed-height rows windowed through `list` — one list row
+  // draws a strip of `cols` cells — so scrollbar + wheel + swipe come for free.
+  const rowH = opts.rowH;
+  return list(
+    {
+      x: rect.x,
+      y: rect.y,
+      w: rect.w,
+      h: rect.h,
+      rowH,
+      gap,
+      count: rows,
+      offset: opts.offset ?? 0,
+      scrollW: opts.scrollW,
+      id: opts.id,
+    },
+    (rowIndex, rowRect) => {
+      const cw = cols > 0 ? (rowRect.w - gap * (cols - 1)) / cols : rowRect.w;
+      for (let c = 0; c < cols; c++) {
+        const i = rowIndex * cols + c;
+        if (i >= count) break;
+        cell({ x: rowRect.x + c * (cw + gap), y: rowRect.y, w: cw, h: rowH }, i, c, rowIndex);
+      }
+    },
+  );
 }
 
 // ---------- Scrollbar ----------

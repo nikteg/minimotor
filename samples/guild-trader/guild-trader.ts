@@ -66,7 +66,7 @@ function rollLoot() {
 // full-width block reserved in the panel's column (two 48px rows + an 8px gap).
 function drawInventory(ctx: CanvasRenderingContext2D, layout: Flow) {
   const region = layout.next(undefined, 104);
-  UI.grid({ ...region, cols: 4, rows: 2, gap: 8 }, (rect, i) => {
+  UI.grid({ ...region, cols: 4, count: 8, gap: 8 }, (rect, i) => {
     Draw.rect(rect, "#182536");
     ctx.strokeStyle = "#3a5568";
     ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1);

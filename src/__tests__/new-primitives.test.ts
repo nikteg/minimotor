@@ -208,7 +208,7 @@ describe("Gizmos.trail", () => {
 describe("UI.grid", () => {
   it("splits an area into even cells, minus the gap", () => {
     const cells: Array<{ x: number; y: number; w: number; h: number }> = [];
-    grid({ x: 0, y: 0, w: 100, h: 100, cols: 2, rows: 2, gap: 10 }, (r) => cells.push(r));
+    grid({ x: 0, y: 0, w: 100, h: 100, cols: 2, count: 4, gap: 10 }, (r) => cells.push(r));
     expect(cells.length).toBe(4);
     expect(cells[0]).toEqual({ x: 0, y: 0, w: 45, h: 45 }); // (100-10)/2
     expect(cells[3]).toEqual({ x: 55, y: 55, w: 45, h: 45 }); // bottom-right
