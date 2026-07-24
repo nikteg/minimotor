@@ -1,4 +1,5 @@
 // ---------- Widget identity ----------
+import { runtimeSlot } from "./runtime.js";
 
 /** One segment of a widget id — a `string` or `number` — as taken by `ids`. */
 export type IdPart = string | number;
@@ -20,26 +21,29 @@ export interface IdScopeState {
   next: number;
 }
 
-export const idScopes: IdScopeState[] = [];
+// Active idScope nesting — per UI runtime, like every other frame-scoped stack.
+const idScopes = runtimeSlot<IdScopeState[]>(() => []);
 
 /** Give otherwise-unidentified interactive widgets automatic, frame-stable
  * ids in callback order. Best for static forms/toolbars. Dynamic or
  * conditional collections should use explicit ids from `UI.ids()` instead.
  * Nested scopes compose their prefixes. */
 export function idScope<R>(prefix: IdPart, children: () => R): R {
-  const parent = idScopes[idScopes.length - 1];
+  const scopes = idScopes();
+  const parent = scopes[scopes.length - 1];
   const full = parent ? `${parent.prefix}:${prefix}` : String(prefix);
-  idScopes.push({ prefix: full, next: 0 });
+  scopes.push({ prefix: full, next: 0 });
   try {
     return children();
   } finally {
-    idScopes.pop();
+    scopes.pop();
   }
 }
 
 export function widgetId(explicit: string | undefined, kind: string): string | undefined {
   if (explicit) return explicit;
-  const scope = idScopes[idScopes.length - 1];
+  const scopes = idScopes();
+  const scope = scopes[scopes.length - 1];
   return scope ? `${scope.prefix}:${kind}:${scope.next++}` : undefined;
 }
 

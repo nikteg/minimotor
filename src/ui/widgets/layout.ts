@@ -19,6 +19,7 @@ import {
   roundRectPath,
   runAutoSized,
   storeContentSize,
+  sweptCache,
   theme,
   uiCtx,
   uiHeight,
@@ -26,14 +27,15 @@ import {
   uiWidth,
 } from "../core/index.js";
 import { dragScroll, scrollbar } from "./lists.js";
+import { anchorViewport } from "../core/index.js";
 import { pointInRect } from "../../collision.js";
-import { Stage } from "../../engine/index.js";
 import { clamp } from "../../mathf.js";
 
 // Persisted scroll offset + a scrollbar fade alpha per scrolling container,
-// keyed by its scrollbar id.
-const scrollOffsets = new Map<string, number>();
-const scrollAlphas = new Map<string, number>();
+// keyed by its scrollbar id. Swept, so position-keyed entries from containers
+// that move or stop being drawn age out instead of accumulating.
+const scrollOffsets = sweptCache<number>();
+const scrollAlphas = sweptCache<number>();
 
 /** The `overflow: auto/scroll/hidden` path for the containers: a box bounded on
  *  its scroll axis (a `col` scrolls vertically, a `row` horizontally) whose body
@@ -66,9 +68,10 @@ function scrollable<R>(
   const contentMain = horiz ? body?.w : body?.h;
   const contentCross = horiz ? body?.h : body?.w;
   const naturalMain = (horiz ? 0 : top + bottom) + (contentMain ?? 0);
+  const vp = anchorViewport(uiCtx());
   const avail = horiz
-    ? Math.max(60, Stage.viewport.w - (opts.x ?? 0) - 12)
-    : Math.max(60, Stage.viewport.h - (opts.y ?? 0) - 12);
+    ? Math.max(60, vp.w - (opts.x ?? 0) - 12)
+    : Math.max(60, vp.h - (opts.y ?? 0) - 12);
   // Main-axis (scroll) bound. Explicit `w` (row) / `h` (col) wins; otherwise a
   // NESTED region fills its parent slot (its real size is only known after
   // `containerRect`, so `estMain` — last frame's box — stands in for this

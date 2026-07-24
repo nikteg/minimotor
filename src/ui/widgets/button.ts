@@ -13,8 +13,8 @@ import {
   theme,
   uiFont,
   uiPointer,
+  uiCtx,
   widgetId,
-  withCtx,
 } from "../core/index.js";
 import { tooltip } from "./tooltip.js";
 import { pointInRect } from "../../collision.js";
@@ -66,9 +66,18 @@ export interface ButtonOptions extends ButtonStyle, Flowable {
 /** Resolve a variant into (idle, hover, active) fills, border and label
  *  colors — mixing in the theme and any per-button overrides. */
 // Nudge a color toward black/white without parsing it — CSS color-mix is
-// understood by canvas fillStyle in every browser we target.
-const shade = (c: string, dark: boolean) =>
-  `color-mix(in srgb, ${c} ${dark ? 82 : 88}%, ${dark ? "#000" : "#fff"})`;
+// understood by canvas fillStyle in every browser we target. Memoized: the
+// inputs are theme colors (a handful), and buttons call this every frame.
+const shadeCache = new Map<string, string>();
+function shade(c: string, dark: boolean): string {
+  const key = dark ? `d:${c}` : `l:${c}`;
+  let mixed = shadeCache.get(key);
+  if (!mixed) {
+    mixed = `color-mix(in srgb, ${c} ${dark ? 82 : 88}%, ${dark ? "#000" : "#fff"})`;
+    shadeCache.set(key, mixed);
+  }
+  return mixed;
+}
 
 function variantColors(opts: ButtonStyle): {
   bg: string;
@@ -101,21 +110,21 @@ function variantColors(opts: ButtonStyle): {
 /** Draw an immediate-mode button and report whether it was clicked this
  *  frame. Call it every frame from `draw` — there is no retained widget:
  *
- *    if (UI.button(ctx, { x, y, w: 160, h: 44, label: "PLAY" })) start();
+ *    if (UI.button({ x, y, w: 160, h: 44, label: "PLAY" })) start();
  *
  *  Hit-testing uses the polled `Pointer` in canvas coordinates — draw the
- *  button untransformed (outside camera/letterbox transforms). */
+ *  button outside game-world/camera transforms. To draw UI scaled, wrap it in
+ *  `UI.scaled`, which remaps the pointer to match. */
 export function button(label: string, opts?: Omit<ButtonOptions, "label">): boolean;
 export function button(opts: ButtonOptions): boolean;
-export function button(ctx: CanvasRenderingContext2D, opts: ButtonOptions): boolean;
 export function button(
-  ctxOrOptsOrLabel: CanvasRenderingContext2D | ButtonOptions | string,
-  optsOrRest?: ButtonOptions | Omit<ButtonOptions, "label">,
+  optsOrLabel: ButtonOptions | string,
+  rest?: Omit<ButtonOptions, "label">,
 ): boolean {
   // Label-first sugar: `if (UI.button("Resume")) ...` (API_PLAN #43).
-  if (typeof ctxOrOptsOrLabel === "string")
-    return button({ ...(optsOrRest as Omit<ButtonOptions, "label">), label: ctxOrOptsOrLabel });
-  const [ctx, opts] = withCtx(ctxOrOptsOrLabel, optsOrRest as ButtonOptions);
+  if (typeof optsOrLabel === "string") return button({ ...rest, label: optsOrLabel });
+  const opts = optsOrLabel;
+  const ctx = uiCtx();
   ctx.save();
   ctx.font = opts.font ?? uiFont(theme.fontSize + 2, true);
   // Auto width: the label plus comfortable padding.

@@ -1,9 +1,18 @@
-import { focusEndFrame, markFocusTrap, padNav, resetFocus, wireFocusKeyboard } from "./focus.js";
-import { setBegunCtx } from "./context.js";
-import { idScopes } from "./identity.js";
-import { resetUiScale } from "./input.js";
+import { focusEndFrame, markFocusTrap, padNav, wireFocusKeyboard } from "./focus.js";
+import { sweepCaches } from "./frame-cache.js";
+import { clearPointerCache, resetUiScale } from "./input.js";
+import {
+  type UiRuntime,
+  allRuntimes,
+  currentRuntime,
+  defaultUiRuntime,
+  resetRuntimes,
+  runtimeSlot,
+  switchRuntime,
+  uiGame,
+  withRuntime,
+} from "./runtime.js";
 import { setTheme } from "./theme.js";
-import { Loop } from "../../engine/index.js";
 
 // ---------- Per-frame runtime ----------
 // The immediate-mode kernel's frame loop: overlay-capture flags, the `ensureWired`
@@ -11,31 +20,52 @@ import { Loop } from "../../engine/index.js";
 // that let widgets built on top hang their own step/frame-end/reset work off the
 // loop WITHOUT the kernel importing them (a core→widget cycle). Widgets register;
 // this file owns the ordering. Nothing widget-specific lives here.
+//
+// Wiring is PER RUNTIME: each runtime hooks the loop of its own host game (the
+// default game, or the isolated game behind a begun context), so two games on
+// one page each run their own overlay pass, focus close and cleanup — against
+// their own state.
 
 // ---------- Overlay capture ----------
 // While an overlay (modal OR open popover) is up, widgets drawn outside its
 // pass must go dead — otherwise a click "through" it still lands on them.
-export let overlaySeen = false; // an overlay ran this frame
-
-export let overlayActive = false; // an overlay ran last frame → block the background
-
-export let inOverlayPass = false; // the rest of the frame belongs to the overlay
-
-/** Mark that an overlay ran this frame and open its live-input pass — called by
- *  the overlay widgets (popover/modal), which can't reassign the imported flags. */
-export function enterOverlay(): void {
-  overlaySeen = true;
-  markFocusTrap();
-  inOverlayPass = true;
+interface OverlayState {
+  seen: boolean; // an overlay ran this frame
+  active: boolean; // an overlay ran last frame → block the background
+  inPass: boolean; // the rest of the frame belongs to the overlay
 }
 
-export let wired = false;
+const overlay = runtimeSlot<OverlayState>(() => ({
+  seen: false,
+  active: false,
+  inPass: false,
+}));
+
+/** An overlay ran LAST frame — background widgets must ignore the pointer. */
+export function isOverlayActive(): boolean {
+  return overlay().active;
+}
+
+/** The rest of this frame belongs to an overlay opened this frame. */
+export function isInOverlayPass(): boolean {
+  return overlay().inPass;
+}
+
+/** Mark that an overlay ran this frame and open its live-input pass — called by
+ *  the overlay widgets (popover/modal), which own the capture semantics. */
+export function enterOverlay(): void {
+  const o = overlay();
+  o.seen = true;
+  markFocusTrap();
+  o.inPass = true;
+}
 
 // ---------- Frame-lifecycle hooks -------------------------------------------
 // The kernel owns the frame loop; widgets built on top hang their per-step aging,
 // deferred overlay draws, frame-end cleanup and test-reset off these registries
-// rather than the kernel importing them. Core stays dependency-free; this file
-// owns the ordering.
+// rather than the kernel importing them. The registries are GLOBAL (module
+// wiring); every registered function operates on the CURRENT runtime's state,
+// and the kernel invokes them once per runtime.
 type LifecycleHook = () => void;
 const stepHooks: LifecycleHook[] = [];
 const overlayPassHooks: LifecycleHook[] = [];
@@ -59,54 +89,66 @@ export function onFrameEnd(fn: LifecycleHook): void {
   if (!frameEndHooks.includes(fn)) frameEndHooks.push(fn);
 }
 
-/** Register test-reset cleanup, run by `_reset`. */
+/** Register test-reset cleanup, run by `_reset` (once per runtime — release
+ *  DOM nodes here; plain slot state is dropped wholesale). */
 export function onReset(fn: LifecycleHook): void {
   if (!resetHooks.includes(fn)) resetHooks.push(fn);
 }
 
+// One runtime's frame-end housekeeping, run from its host loop's onFrame.
+function runtimeFrameEnd(rt: UiRuntime): void {
+  withRuntime(rt, () => {
+    // Deferred overlays render above every ordinary widget in the user's
+    // draw callback (and still see frame-scoped pointer release edges).
+    for (const hook of overlayPassHooks) hook();
+    // Complete this frame's keyboard registry (after every widget, including
+    // deferred overlays, registered) and run the overlay focus trap.
+    focusEndFrame();
+    // Overlay capture: what was drawn this frame gates input next frame.
+    const o = overlay();
+    o.active = o.seen;
+    o.seen = false;
+    o.inPass = false;
+    // Widget frame-end cleanup (editor eviction, tooltip stability, drag cancel).
+    for (const hook of frameEndHooks) hook();
+    // The memoized pointer and the swept widget-state caches age per frame.
+    clearPointerCache();
+    sweepCaches();
+  });
+  // The frame is over — a begun runtime stops being ambient so state can't
+  // leak into the next frame (games re-`begin()` each frame).
+  if (currentRuntime() === rt) switchRuntime(defaultUiRuntime());
+}
+
 export function ensureWired(): void {
   wireFocusKeyboard();
-  if (wired) return;
-  // Registering the loop hooks needs the default game; without one
-  // (headless/tests) the calls throw — stay unwired and retry next call.
-  try {
-    Loop.onStep(() => {
+  const rt = currentRuntime();
+  if (rt.wired) return;
+  // Wiring needs the runtime's host game; without one (headless/tests) stay
+  // unwired and retry next call.
+  const game = uiGame();
+  if (!game) return;
+  rt.wired = true;
+  game.onStep(() => {
+    withRuntime(rt, () => {
       padNav();
       for (const hook of stepHooks) hook();
     });
-    // Frame-end housekeeping for the immediate-mode state machines.
-    Loop.onFrame(() => {
-      // Deferred overlays render above every ordinary widget in the user's
-      // draw callback (and still see frame-scoped pointer release edges).
-      for (const hook of overlayPassHooks) hook();
-      setBegunCtx(null); // re-begin() each frame when overriding the ctx
-      // Complete this frame's keyboard registry (after every widget, including
-      // deferred overlays, registered) and run the overlay focus trap.
-      focusEndFrame();
-      // Overlay capture: what was drawn this frame gates input next frame.
-      overlayActive = overlaySeen;
-      overlaySeen = false;
-      inOverlayPass = false;
-      // Widget frame-end cleanup (editor eviction, tooltip stability, drag cancel).
-      for (const hook of frameEndHooks) hook();
-    });
-    wired = true;
-  } catch {
-    // no default game yet
-  }
+  });
+  // Frame-end housekeeping for the immediate-mode state machines.
+  game.onFrame(() => runtimeFrameEnd(rt));
 }
 
-/** Reset theme, overlay state and Loop wiring, then every widget's registered
- *  reset — for tests. */
+/** Reset the theme, global UI-scale settings, every runtime's widget state
+ *  (running each runtime's registered resets first — they release DOM nodes)
+ *  and the runtime wiring — for tests. */
 export function _reset(): void {
   setTheme({});
-  overlaySeen = false;
-  overlayActive = false;
-  inOverlayPass = false;
-  for (const hook of resetHooks) hook();
-  resetFocus();
+  for (const rt of allRuntimes) {
+    withRuntime(rt, () => {
+      for (const hook of resetHooks) hook();
+    });
+  }
   resetUiScale();
-  idScopes.length = 0;
-  setBegunCtx(null);
-  wired = false;
+  resetRuntimes();
 }

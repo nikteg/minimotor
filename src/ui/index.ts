@@ -25,6 +25,7 @@ export {
   getTheme,
   ids,
   idScope,
+  lastWidgetRect as lastRect,
   setBaseSize,
   setCursor,
   setNavPad,
@@ -35,6 +36,7 @@ export {
   textWidth,
   uiHeight as height,
   uiWidth as width,
+  uiToScreen as toScreen,
   _reset,
 } from "./core/index.js";
 export type {

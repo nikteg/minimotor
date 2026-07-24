@@ -21,20 +21,22 @@ import {
   onOverlayPass,
   onReset,
   place,
+  pointerGestureOwned,
   rawPointer,
   registerFocusable,
   requiredWidgetId,
+  runtimeSlot,
+  anchorViewport,
   theme,
+  uiCtx,
   uiFont,
   uiPointer,
-  withCtx,
 } from "../core/index.js";
 import { button } from "./button.js";
-import { list } from "./lists.js";
+import { list, scrollGestureActive } from "./lists.js";
 import { paintFrame } from "./panel.js";
 import { pointInRect } from "../../collision.js";
 import { clamp } from "../../mathf.js";
-import { Stage } from "../../engine/index.js";
 
 export interface SelectEditor {
   id: string;
@@ -49,23 +51,30 @@ export interface SelectEditor {
   lastIndex: number;
 }
 
-export let selectEditor: SelectEditor | null = null;
-
-// Ids of every select drawn THIS frame. A Set, not a single id: with more than
-// one select on screen, a single "last seen" id let a later-drawn select's id
-// evict an earlier open select at frame-end (its menu vanished on the click
-// that opened it). Cleared each frame.
-export const selectSeen = new Set<string>();
-
 export interface SelectOverlayRequest<T = unknown> {
   ctx: CanvasRenderingContext2D;
   opts: SelectOptions<T> & { id: string };
   rect: { x: number; y: number; w: number; h: number };
 }
 
-export let selectOverlayRequest: SelectOverlayRequest | null = null;
+// All select state, per UI runtime (each game owns its editor/menu). `seen` is
+// the ids of every select drawn THIS frame — a Set, not a single id: with more
+// than one select on screen, a single "last seen" id let a later-drawn
+// select's id evict an earlier open select at frame-end (its menu vanished on
+// the click that opened it). Cleared each frame.
+interface SelectState {
+  editor: SelectEditor | null;
+  seen: Set<string>;
+  request: SelectOverlayRequest | null;
+  commit: { id: string; index: number } | null;
+}
 
-export let selectCommit: { id: string; index: number } | null = null;
+const st = runtimeSlot<SelectState>(() => ({
+  editor: null,
+  seen: new Set(),
+  request: null,
+  commit: null,
+}));
 
 /** One entry in a `select` dropdown: a `label` and the `value` it yields. */
 export interface SelectOption<T> {
@@ -128,8 +137,9 @@ function ensureSelectHooks(): void {
 }
 
 export function removeSelectEditor(): void {
-  selectEditor?.select.remove();
-  selectEditor = null;
+  const s = st();
+  s.editor?.select.remove();
+  s.editor = null;
 }
 
 export function openSelectEditor<T>(
@@ -184,7 +194,7 @@ export function openSelectEditor<T>(
     }
   });
   document.body.appendChild(select);
-  selectEditor = editor;
+  st().editor = editor;
   select.focus({ preventScroll: true });
 }
 
@@ -212,12 +222,13 @@ function handleSelectCommand<T>(
   if (!cmd) return;
   const dir: 1 | -1 = cmd === "ArrowDown" || cmd === "ArrowRight" ? 1 : -1;
   const vertical = cmd === "ArrowDown" || cmd === "ArrowUp";
-  if (selectEditor?.id !== opts.id) openSelectEditor(opts, currentIndex, vertical);
-  else if (vertical && !selectEditor.open) {
-    selectEditor.open = true;
-    selectEditor.justOpened = true;
+  const s = st();
+  if (s.editor?.id !== opts.id) openSelectEditor(opts, currentIndex, vertical);
+  else if (vertical && !s.editor.open) {
+    s.editor.open = true;
+    s.editor.justOpened = true;
   }
-  const editor = selectEditor;
+  const editor = st().editor;
   if (!editor) return;
   const from = editor.index >= 0 ? editor.index : currentIndex;
   const next = nextEnabled(opts.options, from, dir);
@@ -230,19 +241,23 @@ function handleSelectCommand<T>(
 
 /** Themed dropdown backed by a hidden native `<select>`. Clicking opens a
  * canvas option list; focused keyboard arrows (native) and gamepad d-pad/stick
- * (via the focus machine) update the same controlled value. */
-export function select<T>(opts: SelectOptions<T>): SelectResult<T>;
-export function select<T>(ctx: CanvasRenderingContext2D, opts: SelectOptions<T>): SelectResult<T>;
-export function select<T>(
-  ctxOrOpts: CanvasRenderingContext2D | SelectOptions<T>,
-  maybeOpts?: SelectOptions<T>,
-): SelectResult<T> {
-  const [ctx, opts] = withCtx(ctxOrOpts, maybeOpts);
+ * (via the focus machine) update the same controlled value. Controlled: pass
+ * `value` in, assign the result's `value` back:
+ *
+ *     mode = UI.select({
+ *       id: "mode",
+ *       value: mode,
+ *       options: [{ label: "Easy", value: "easy" }, { label: "Hard", value: "hard" }],
+ *     }).value;
+ */
+export function select<T>(opts: SelectOptions<T>): SelectResult<T> {
+  const ctx = uiCtx();
   ensureWired();
   ensureSelectHooks();
   const id = requiredWidgetId(opts.id, "select");
   const resolvedOpts = { ...opts, id };
-  selectSeen.add(id);
+  const s = st();
+  s.seen.add(id);
   const rect = place(opts, opts.w ?? 180, opts.h ?? 32);
   const currentIndex = opts.options.findIndex((option) => Object.is(option.value, opts.value));
   const keyboardFocused = registerFocusable(ctx, {
@@ -251,26 +266,26 @@ export function select<T>(
     tabIndex: opts.tabIndex,
     native: true,
     focus: () => {
-      if (selectEditor?.id === id) selectEditor.select.focus({ preventScroll: true });
+      if (s.editor?.id === id) s.editor.select.focus({ preventScroll: true });
       else openSelectEditor(resolvedOpts, currentIndex, false);
     },
     blur: () => {
-      if (selectEditor?.id === id) {
-        selectEditor.open = false;
-        selectEditor.select.blur();
+      if (s.editor?.id === id) {
+        s.editor.open = false;
+        s.editor.select.blur();
       }
     },
   });
-  const p = selectEditor?.id === id ? rawPointer() : uiPointer();
+  const p = s.editor?.id === id ? rawPointer() : uiPointer();
   const hovered = !opts.disabled && pointInRect(p.x, p.y, rect);
   if (hovered) hoverCursor(true);
 
   if (hovered && p.released && !opts.disabled) {
     focusFromPointer(ctx, id);
-    if (selectEditor?.id === id) {
-      selectEditor.open = !selectEditor.open;
-      selectEditor.justOpened = selectEditor.open;
-      selectEditor.select.focus({ preventScroll: true });
+    if (s.editor?.id === id) {
+      s.editor.open = !s.editor.open;
+      s.editor.justOpened = s.editor.open;
+      s.editor.select.focus({ preventScroll: true });
     } else openSelectEditor(resolvedOpts, currentIndex);
   }
 
@@ -278,17 +293,17 @@ export function select<T>(
   // A → activation and d-pad/stick → arrow commands to the focused widget.
   if (!opts.disabled) {
     if (consumeKeyboardActivation(id)) {
-      if (selectEditor?.id === id) {
-        selectEditor.open = !selectEditor.open;
-        selectEditor.justOpened = selectEditor.open;
+      if (s.editor?.id === id) {
+        s.editor.open = !s.editor.open;
+        s.editor.justOpened = s.editor.open;
       } else openSelectEditor(resolvedOpts, currentIndex, true);
     }
     handleSelectCommand(resolvedOpts, currentIndex);
   }
 
-  let editor = selectEditor?.id === id ? selectEditor : null;
-  const committed = selectCommit?.id === id ? selectCommit.index : -1;
-  if (committed >= 0) selectCommit = null;
+  let editor = s.editor?.id === id ? s.editor : null;
+  const committed = s.commit?.id === id ? s.commit.index : -1;
+  if (committed >= 0) s.commit = null;
   let value =
     committed >= 0
       ? (opts.options[committed]?.value ?? opts.value)
@@ -328,18 +343,28 @@ export function select<T>(
     // Defer the menu until frame-end so siblings drawn later in the callback
     // layout cannot paint over it. Input is still captured immediately.
     enterOverlay();
-    selectOverlayRequest = { ctx, opts: resolvedOpts, rect } as SelectOverlayRequest;
+    s.request = { ctx, opts: resolvedOpts, rect } as SelectOverlayRequest;
     editor.changed = false;
   }
   return { value, changed, open: !!editor?.open };
 }
 
 export function drawSelectOverlay(): void {
-  const request = selectOverlayRequest;
-  selectOverlayRequest = null;
-  if (!request || !selectEditor?.open || selectEditor.id !== request.opts.id) return;
-  const { ctx, opts, rect } = request;
-  const editor = selectEditor;
+  const s = st();
+  const request = s.request;
+  s.request = null;
+  if (!request || !s.editor?.open || s.editor.id !== request.opts.id) return;
+  // The overlay pass runs inside this runtime's frame end, so the ambient
+  // context already points at the canvas the select was drawn on.
+  drawSelectMenu(request.ctx, request.opts, request.rect);
+}
+
+function drawSelectMenu(
+  ctx: CanvasRenderingContext2D,
+  opts: SelectOptions<unknown> & { id: string },
+  rect: { x: number; y: number; w: number; h: number },
+): void {
+  const editor = st().editor!;
   const p = rawPointer();
   const value = editor.index >= 0 ? opts.options[editor.index]?.value : opts.value;
   const count = opts.options.length;
@@ -350,7 +375,7 @@ export function drawSelectOverlay(): void {
   const pad = 2;
   const listH = visible * itemH; // the visible window; the list scrolls the rest
   const menuH = listH + pad * 2;
-  const vp = Stage.viewport;
+  const vp = anchorViewport(ctx);
   const menuY = rect.y + rect.h + menuH <= vp.h - 4 ? rect.y + rect.h + 2 : rect.y - menuH - 2;
   const menu = { x: rect.x, y: menuY, w: rect.w, h: menuH };
 
@@ -391,7 +416,7 @@ export function drawSelectOverlay(): void {
     (i, r) => {
       const option = opts.options[i];
       if (
-        button(ctx, {
+        button({
           x: r.x,
           y: r.y,
           w: r.w,
@@ -410,15 +435,20 @@ export function drawSelectOverlay(): void {
     editor.index = picked;
     editor.select.value = String(picked);
     editor.open = false;
-    selectCommit = { id: opts.id, index: picked }; // observed by select() next draw
+    st().commit = { id: opts.id, index: picked }; // observed by select() next draw
     return;
   }
 
+  // Close on a click outside — but never on the release that merely ends a
+  // scroll gesture or a widget drag (e.g. a swipe that started inside the menu
+  // and lifted outside it must not dismiss the menu).
   if (
     !editor.justOpened &&
     p.released &&
     !pointInRect(p.x, p.y, rect) &&
-    !pointInRect(p.x, p.y, menu)
+    !pointInRect(p.x, p.y, menu) &&
+    !scrollGestureActive() &&
+    !pointerGestureOwned()
   ) {
     removeSelectEditor();
     return;
@@ -429,14 +459,16 @@ export function drawSelectOverlay(): void {
 // Frame-end: drop a native editor whose immediate-mode select stopped drawing,
 // then clear the per-frame seen set. Called by frame's onFrame housekeeping.
 export function selectEndFrame(): void {
-  if (selectEditor && !selectSeen.has(selectEditor.id)) removeSelectEditor();
-  selectSeen.clear();
+  const s = st();
+  if (s.editor && !s.seen.has(s.editor.id)) removeSelectEditor();
+  s.seen.clear();
 }
 
 /** Reset all select state — for tests (see frame `_reset`). */
 export function resetSelect(): void {
+  const s = st();
   removeSelectEditor();
-  selectSeen.clear();
-  selectOverlayRequest = null;
-  selectCommit = null;
+  s.seen.clear();
+  s.request = null;
+  s.commit = null;
 }

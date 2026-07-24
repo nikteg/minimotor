@@ -1,6 +1,11 @@
 import { listItem } from "./lists.js";
-import { Fillable, fillRect, text, uiCtx } from "../core/index.js";
+import { Fillable, fillRect, text } from "../core/index.js";
 import { list } from "./lists.js";
+
+// Last sorted copy per input array (weak — dropped with the data). Re-sorts
+// only when the caller passes a new array or the sort key/direction changes;
+// see the `rows` doc on TableOptions.
+const sortCache = new WeakMap<object, { key: string; dir: 1 | -1; sorted: unknown[] }>();
 
 // ---------- Table ----------
 
@@ -49,7 +54,9 @@ export interface TableOptions<Row> extends Fillable {
   h?: number;
   /** Column definitions, left to right. */
   columns: TableColumn<Row>[];
-  /** The data rows; left untouched — the table sorts a copy. */
+  /** The data rows; left untouched — the table sorts a copy. The sorted copy
+   *  is cached by ARRAY IDENTITY + sort, so pass a fresh array (not an
+   *  in-place mutation) when the data changes. */
   rows: Row[];
   /** Current sort — pass state in, assign the result's `sort` back. */
   sort: TableSort;
@@ -100,7 +107,6 @@ export interface TableResult<Row> {
  *      ],
  *    }); */
 export function table<Row>(opts: TableOptions<Row>): TableResult<Row> {
-  const ctx = uiCtx();
   // Explicit x/y place it by hand; otherwise auto-flow — fill the ambient (or
   // `at`) layout, leaving `reserve` px for siblings drawn after the table.
   const rect = fillRect(opts);
@@ -130,19 +136,27 @@ export function table<Row>(opts: TableOptions<Row>): TableResult<Row> {
 
   // Sort a copy by the active column's value (input array untouched). Strings
   // compare lexically, everything else numerically; `dir` flips the result.
+  // The copy is cached against the input array's identity + the sort, so an
+  // unchanged table doesn't pay O(n log n) every frame.
   const active = opts.columns.find((c) => c.key === opts.sort.key);
   let rows = opts.rows;
   if (active?.value) {
-    const value = active.value;
-    rows = [...opts.rows].sort((a, b) => {
-      const av = value(a);
-      const bv = value(b);
-      const d =
-        typeof av === "string" && typeof bv === "string"
-          ? av.localeCompare(bv)
-          : Number(av) - Number(bv);
-      return d * opts.sort.dir;
-    });
+    const cached = sortCache.get(opts.rows);
+    if (cached && cached.key === opts.sort.key && cached.dir === opts.sort.dir) {
+      rows = cached.sorted as Row[];
+    } else {
+      const value = active.value;
+      rows = [...opts.rows].sort((a, b) => {
+        const av = value(a);
+        const bv = value(b);
+        const d =
+          typeof av === "string" && typeof bv === "string"
+            ? av.localeCompare(bv)
+            : Number(av) - Number(bv);
+        return d * opts.sort.dir;
+      });
+      sortCache.set(opts.rows, { key: opts.sort.key, dir: opts.sort.dir, sorted: rows });
+    }
   }
 
   // Header: a clickable label + sort arrow per sortable column.
@@ -168,7 +182,7 @@ export function table<Row>(opts: TableOptions<Row>): TableResult<Row> {
       }
     }
     const arrow = activeCol ? (sort.dir === 1 ? " ▲" : " ▼") : "";
-    text(ctx, c.label + arrow, {
+    text(c.label + arrow, {
       x: r.x,
       y: rect.y,
       w: r.w,
@@ -216,8 +230,7 @@ export function table<Row>(opts: TableOptions<Row>): TableResult<Row> {
       opts.columns.forEach((c, ci) => {
         const cellRect = { x: rects[ci].x, y: rowRect.y, w: rects[ci].w, h: rowH };
         if (c.cell) c.cell(rowData, cellRect);
-        else if (c.value)
-          text(ctx, String(c.value(rowData)), { ...cellRect, align: c.align ?? "left" });
+        else if (c.value) text(String(c.value(rowData)), { ...cellRect, align: c.align ?? "left" });
       });
     },
   );

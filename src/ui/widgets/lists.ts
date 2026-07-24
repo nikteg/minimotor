@@ -12,15 +12,20 @@ import {
   focusFromPointer,
   focusedId,
   hoverCursor,
+  ensureWired,
   onFrameEnd,
+  claimPointerGesture,
+  pointerGestureOwned,
   rawPointer,
   registerFocusable,
+  runtimeSlot,
   suppressPointerEdges,
+  sweptCache,
+  uiGame,
   theme,
   uiCtx,
   uiPointer,
   widgetId,
-  withCtx,
 } from "../core/index.js";
 import { tooltip } from "./tooltip.js";
 import { clip } from "./layout.js";
@@ -56,9 +61,10 @@ export interface ListOptions extends Fillable {
   /** Stable prefix for the scrollbar's widget id. */
   id?: string;
   /** Make the rows keyboard-navigable: given a row index, return the focusable
-   *  id its widget uses. The list then registers EVERY row (not only the visible
-   *  window) so Tab can reach them all, and auto-scrolls to keep the focused row
-   *  on screen instead of the tab order jumping straight to the next widget.
+   *  id its widget uses. The list registers the visible window (plus a one-row
+   *  buffer, so Tab can step past the window's edge) and auto-scrolls to keep
+   *  the focused row on screen — Tab walks the whole list one row at a time as
+   *  the window follows, without paying O(count) registration per frame.
    *  The row widget should set `tabIndex: -1` so the list owns the tab entry. */
   rowId?: (index: number) => string;
 }
@@ -70,23 +76,112 @@ export interface ListOptions extends Fillable {
 // widget under it clicks normally. When regions nest, the INNERMOST under the
 // press wins (children draw after parents and overwrite the claim), so a swipe
 // inside a nested region scrolls that region, not the page.
-let bodyScroll: { id: string; start: number; startOffset: number; active: boolean } | null = null;
+interface BodyScroll {
+  id: string;
+  start: number;
+  startOffset: number;
+  active: boolean;
+  /** Smoothed finger speed along the axis, px per 60 Hz frame — becomes the
+   *  fling velocity when the drag releases. */
+  vel: number;
+  lastPos: number;
+  /** Countdown (in frames) of a live handoff offer: set when this drag is
+   *  pinned at a scroll extreme and still pulling past it. Regions run
+   *  parents-first each frame, so the offer must survive one frame boundary
+   *  for ancestors to see it — enclosing regions under the pointer adopt the
+   *  gesture (scroll chaining), the nearest ancestor (last adopter in draw
+   *  order) winning. `from` keeps the region that handed off from re-adopting
+   *  its own gesture. */
+  handoff: number;
+  from: string | null;
+}
+interface BodyScrollState {
+  drag: BodyScroll | null;
+  /** An ACTIVE drag released this frame — overlay close-on-click-outside logic
+   *  checks it so the release that ends a scroll never reads as a click. */
+  endedThisFrame: boolean;
+  /** Post-release fling velocity per region (px per 60 Hz frame), decayed each
+   *  frame until it dies out, hits an extreme, or a press catches it. */
+  momentum: Map<string, number>;
+}
+const bodyScrollSlot = runtimeSlot<BodyScrollState>(() => ({
+  drag: null,
+  endedThisFrame: false,
+  momentum: new Map(),
+}));
 const DRAG_THRESHOLD = 6;
+// Overpull (px past a pinned extreme, in one frame) before the gesture is
+// offered to an enclosing region.
+const HANDOFF_SLOP = 8;
+// Fling tuning: minimum release speed to coast at all, per-frame decay, and
+// the speed below which the coast stops (all in px per 60 Hz frame).
+const FLING_MIN = 3;
+const FLING_DECAY = 0.94;
+const FLING_STOP = 0.4;
 
-// Clear the click-suppression flag once per frame (set while a body-drag runs).
+// Frame-end: clear the click-suppression flag, the wheel claim, the one-frame
+// scroll-ended flag and any pending handoff offer.
 let listHooksWired = false;
 function ensureListHooks(): void {
   if (listHooksWired) return;
   listHooksWired = true;
   onFrameEnd(clearPointerEdges);
   onFrameEnd(clearWheelClaim);
+  onFrameEnd(() => {
+    const bs = bodyScrollSlot();
+    bs.endedThisFrame = false;
+    if (bs.drag && bs.drag.handoff > 0) {
+      bs.drag.handoff--;
+      if (bs.drag.handoff === 0) bs.drag.from = null;
+    }
+  });
+}
+
+/** True while a body drag-scroll is live (or just released this frame) —
+ *  overlays (popover, the select menu) check it so a scroll gesture that ends
+ *  outside them is never mistaken for a click-outside close. */
+export function scrollGestureActive(): boolean {
+  const bs = bodyScrollSlot();
+  return (bs.drag?.active ?? false) || bs.endedThisFrame;
 }
 
 /** Cancel any in-progress body-drag — a scrollbar calls this when it grabs its
  *  thumb, so click-dragging a scrollbar that sits inside a larger scroll region
  *  doesn't ALSO swipe that region. */
 function cancelBodyDrag(): void {
-  bodyScroll = null;
+  bodyScrollSlot().drag = null;
+}
+
+// Focused-row lookup cache. Resolving which row index the focused id maps to
+// is O(count) — `rowId` is an opaque function — so remember the answer per
+// list and re-scan only when the focused id, the row count, or the id→index
+// mapping (rows reordered under the focus) changes.
+const focusedRows = sweptCache<{ id: string; index: number; count: number }>();
+
+function focusedRowIndex(
+  key: string,
+  focused: string,
+  rowId: (index: number) => string,
+  count: number,
+): number {
+  const c = focusedRows.get(key);
+  if (
+    c &&
+    c.id === focused &&
+    c.count === count &&
+    (c.index < 0 || (c.index < count && rowId(c.index) === focused))
+  ) {
+    return c.index;
+  }
+  let index = -1;
+  for (let i = 0; i < count; i++) {
+    if (rowId(i) === focused) {
+      index = i;
+      break;
+    }
+  }
+  focusedRows.set(key, { id: focused, index, count });
+  return index;
 }
 
 /** Swipe / body-drag scrolling for any scroll region — the shared engine behind
@@ -103,27 +198,114 @@ export function dragScroll(
   max: number,
 ): number {
   if (max <= 0) return offset;
+  ensureWired(); // frame-end hooks (edge/claim/handoff clearing) must run
   ensureListHooks();
+  const bs = bodyScrollSlot();
   const p = uiPointer();
   const pos = axis === "y" ? p.y : p.x;
+  // Real frames elapsed (in 60 Hz steps) — scales the fling advance/decay so
+  // momentum feels the same at any refresh rate.
+  const frames = uiGame()?.frameScale ?? 1;
+
+  // A widget drag (slider knob, scrollbar thumb, drag-and-drop, text
+  // selection) owns the pointer: body scroll neither starts nor continues.
+  if (pointerGestureOwned()) {
+    if (bs.drag?.id === key) bs.drag = null;
+    bs.momentum.delete(key);
+    return offset;
+  }
+
+  // Post-release fling: coast with decay until it dies, hits an extreme, or a
+  // press inside the region catches it (the catch is not a click).
+  const fling = bs.momentum.get(key);
+  if (fling !== undefined && !bs.drag) {
+    if (p.pressed && pointInRect(p.x, p.y, rect)) {
+      bs.momentum.delete(key);
+      suppressPointerEdges();
+    } else {
+      const next = clamp(offset - fling * frames, 0, max);
+      offset = next;
+      const decayed = fling * Math.pow(FLING_DECAY, frames);
+      if (next <= 0 || next >= max || Math.abs(decayed) < FLING_STOP) bs.momentum.delete(key);
+      else bs.momentum.set(key, decayed);
+    }
+  }
+
   // On the press frame the INNERMOST region under the pointer wins: parents run
   // first (drawn before their children) and set the claim, then the child
   // overwrites it — so a swipe inside a nested region scrolls THAT region, not
   // the page. `p.pressed` is one-shot, so this can't re-claim mid-drag.
   if (p.pressed && pointInRect(p.x, p.y, rect)) {
-    bodyScroll = { id: key, start: pos, startOffset: offset, active: false };
+    bs.drag = {
+      id: key,
+      start: pos,
+      startOffset: offset,
+      active: false,
+      vel: 0,
+      lastPos: pos,
+      handoff: 0,
+      from: null,
+    };
+    bs.momentum.delete(key);
   }
-  if (bodyScroll?.id === key) {
+  let drag = bs.drag;
+  // Mid-gesture chaining: an inner region pinned at its extreme offered the
+  // gesture up (`handoff`). Every enclosing region under the pointer adopts it
+  // in draw order — parents first, so the LAST adopter (nearest ancestor of
+  // the handing-off region) wins the frame.
+  if (
+    drag &&
+    drag.handoff > 0 &&
+    drag.id !== key &&
+    drag.from !== key &&
+    p.down &&
+    pointInRect(p.x, p.y, rect)
+  ) {
+    drag = {
+      id: key,
+      start: pos,
+      startOffset: offset,
+      active: true,
+      vel: drag.vel,
+      lastPos: pos,
+      handoff: drag.handoff,
+      from: drag.from,
+    };
+    bs.drag = drag;
+  }
+  if (drag?.id === key) {
     if (p.down) {
-      const d = pos - bodyScroll.start;
-      if (!bodyScroll.active && Math.abs(d) > DRAG_THRESHOLD) bodyScroll.active = true;
-      if (bodyScroll.active) {
-        offset = clamp(bodyScroll.startOffset - d, 0, max);
+      const d = pos - drag.start;
+      if (!drag.active && Math.abs(d) > DRAG_THRESHOLD) drag.active = true;
+      if (drag.active) {
+        const target = drag.startOffset - d;
+        offset = clamp(target, 0, max);
+        // Track finger speed for the release fling (smoothed, px/60Hz-frame).
+        const delta = pos - drag.lastPos;
+        drag.vel = drag.vel * 0.7 + (delta / Math.max(frames, 0.001)) * 0.3;
+        drag.lastPos = pos;
         suppressPointerEdges(); // whatever's under the finger mustn't click mid-drag
+        // Pinned at an extreme and still pulling past it: re-anchor (so pulling
+        // back responds immediately, no overpull backlash to eat) and offer the
+        // rest of the gesture to an enclosing scroll region.
+        const overpull = target - offset;
+        if (overpull !== 0) {
+          drag.start = pos;
+          drag.startOffset = offset;
+          if (Math.abs(overpull) > HANDOFF_SLOP) {
+            drag.handoff = 2; // survives this frame's end; ancestors run next frame
+            drag.from = key;
+          }
+        }
       }
     } else {
-      if (bodyScroll.active) suppressPointerEdges(); // swallow the release that ends the drag
-      bodyScroll = null;
+      if (drag.active) {
+        suppressPointerEdges(); // swallow the release that ends the drag
+        bs.endedThisFrame = true;
+        // Launch a fling when the finger left with speed.
+        if (Math.abs(drag.vel) > FLING_MIN) bs.momentum.set(key, drag.vel);
+      }
+      bs.drag = null;
     }
   }
   return offset;
@@ -148,30 +330,32 @@ export function list(
   const listW = w - (scrollW ? scrollW + 4 : 0);
   const max = Math.max(0, content - h);
   let offset = clamp(opts.offset, 0, max);
+  const key = opts.id ?? `list:${x}:${y}`;
 
   // Swipe to scroll: drag anywhere in the content area (the scrollbar gutter is
   // excluded — that's the thumb's job) to pan the list. (Wheel is handled after
   // the rows below, so a nested region inside a row claims it first.)
-  offset = dragScroll(opts.id ?? `list:${x}:${y}`, { x, y, w: listW, h }, "y", offset, max);
+  offset = dragScroll(key, { x, y, w: listW, h }, "y", offset, max);
 
-  // Keyboard navigation: register ALL rows as focusables (so Tab reaches every
-  // row, not just the visible window), then scroll so the focused one is in
-  // view. Runs before the draw so a just-focused off-screen row scrolls in this
-  // same frame.
+  // Keyboard navigation: scroll so the focused row is in view, then register
+  // the visible window (plus a one-row buffer on each side) as focusables.
+  // Runs before the draw so a just-focused off-screen row scrolls in this same
+  // frame; the buffer row lets Tab step past the window's edge, and next
+  // frame's auto-scroll (and registration) follows it.
   if (opts.rowId) {
     const ctx = uiCtx();
     const focused = focusedId();
-    let focusedIndex = -1;
-    for (let i = 0; i < opts.count; i++) {
-      const rid = opts.rowId(i);
-      registerFocusable(ctx, { id: rid });
-      if (rid === focused) focusedIndex = i;
-    }
+    const focusedIndex = focused ? focusedRowIndex(key, focused, opts.rowId, opts.count) : -1;
     if (focusedIndex >= 0) {
       const top = focusedIndex * step;
       if (top < offset) offset = top;
       else if (top + opts.rowH > offset + h) offset = top + opts.rowH - h;
       offset = clamp(offset, 0, max);
+    }
+    const regFirst = Math.max(0, Math.floor(offset / step) - 1);
+    const regLast = Math.min(opts.count, Math.ceil((offset + h) / step) + 1);
+    for (let i = regFirst; i < regLast; i++) {
+      registerFocusable(ctx, { id: opts.rowId(i) });
     }
   }
 
@@ -339,19 +523,17 @@ export interface ScrollbarOptions {
 }
 
 // One drag at a time, tracked across frames by the scrollbar's id.
-let scrollDrag: { id: string; grab: number } | null = null;
+const scrollDragSlot = runtimeSlot<{ drag: { id: string; grab: number } | null }>(() => ({
+  drag: null,
+}));
 
 /** Compute the next offset for a scrollbar — thumb drag, track paging and
  *  wheel — and draw it. Returns the new offset (clamped to the content):
  *
- *    scroll = UI.scrollbar(ctx, { x, y, h, view, content, offset: scroll, wheelArea }); */
-export function scrollbar(opts: ScrollbarOptions): number;
-export function scrollbar(ctx: CanvasRenderingContext2D, opts: ScrollbarOptions): number;
-export function scrollbar(
-  ctxOrOpts: CanvasRenderingContext2D | ScrollbarOptions,
-  maybeOpts?: ScrollbarOptions,
-): number {
-  const [ctx, opts] = withCtx(ctxOrOpts, maybeOpts);
+ *    scroll = UI.scrollbar({ x, y, h, view, content, offset: scroll, wheelArea }); */
+export function scrollbar(opts: ScrollbarOptions): number {
+  const ctx = uiCtx();
+  ensureWired();
   ensureListHooks(); // a standalone scrollbar still needs the per-frame wheel-claim reset
   const max = Math.max(0, opts.content - opts.view);
   let offset = clamp(opts.offset, 0, max);
@@ -383,22 +565,27 @@ export function scrollbar(
 
   const overThumb = pointInRect(p.x, p.y, thumbRect());
   const overTrack = pointInRect(p.x, p.y, trackRect);
-  hoverCursor(overTrack || scrollDrag?.id === id);
+  const sd = scrollDragSlot();
+  hoverCursor(overTrack || sd.drag?.id === id);
 
   // Release the drag on the REAL pointer-up, not the clip-gated one: a scrollbar
   // that sits inside another scroll region's clip sees a DEAD pointer when the
   // pointer is over the OUTER region's gutter (its own thumb), and must not
   // cancel that outer drag. `rawPointer` ignores clip/overlay gating.
-  if (!rawPointer().down) scrollDrag = null;
-  if (p.pressed && overThumb && !scrollDrag) {
-    scrollDrag = { id, grab: pAlong - along };
+  if (!rawPointer().down) sd.drag = null;
+  if (p.pressed && overThumb && !sd.drag) {
+    sd.drag = { id, grab: pAlong - along };
     cancelBodyDrag(); // grabbing the thumb must not also swipe a surrounding region
-  } else if (p.released && overTrack && !overThumb && scrollDrag?.id !== id) {
+  }
+  // While the thumb is held, the scrollbar owns the pointer — no body drag may
+  // engage anywhere (the thumb often travels outside its own track rect).
+  if (sd.drag?.id === id) claimPointerGesture();
+  if (p.released && overTrack && !overThumb && sd.drag?.id !== id) {
     // Track click: page toward the click.
     offset += pAlong < along ? -opts.view : opts.view;
   }
-  if (scrollDrag?.id === id && range > 0) {
-    offset = ((pAlong - scrollDrag.grab - alongStart) / range) * max;
+  if (sd.drag?.id === id && range > 0) {
+    offset = ((pAlong - sd.drag.grab - alongStart) / range) * max;
   }
   if (opts.wheelArea) {
     offset += claimWheel(
@@ -418,8 +605,7 @@ export function scrollbar(
     ctx.globalAlpha *= opacity;
     ctx.fillStyle = opts.track ?? "rgba(255,255,255,0.07)";
     ctx.fillRect(trackRect.x, trackRect.y, trackRect.w, trackRect.h);
-    ctx.fillStyle =
-      scrollDrag?.id === id || overThumb ? theme.accent : (opts.thumb ?? theme.border);
+    ctx.fillStyle = sd.drag?.id === id || overThumb ? theme.accent : (opts.thumb ?? theme.border);
     const t = thumbRect();
     if (horiz) ctx.fillRect(t.x, t.y + 1, t.w, t.h - 2);
     else ctx.fillRect(t.x + 1, t.y, t.w - 2, t.h);
@@ -462,13 +648,8 @@ export interface ListItemOptions {
  *  report a click. Draw your own content (columns, icons) on top afterwards:
  *
  *    if (UI.listItem({ x, y, w, h, selected: i === sel })) sel = i; */
-export function listItem(opts: ListItemOptions): boolean;
-export function listItem(ctx: CanvasRenderingContext2D, opts: ListItemOptions): boolean;
-export function listItem(
-  ctxOrOpts: CanvasRenderingContext2D | ListItemOptions,
-  maybeOpts?: ListItemOptions,
-): boolean {
-  const [ctx, opts] = withCtx(ctxOrOpts, maybeOpts);
+export function listItem(opts: ListItemOptions): boolean {
+  const ctx = uiCtx();
   const id = widgetId(opts.id, "list-item");
   const keyboardFocused = registerFocusable(ctx, {
     id,

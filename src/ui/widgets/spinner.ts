@@ -1,15 +1,15 @@
 // ---------- spinner ----------
-import { Flowable, ensureWired, onStep, place, theme, uiCtx } from "../core/index.js";
+import { Flowable, ensureWired, onStep, place, runtimeSlot, theme, uiCtx } from "../core/index.js";
 
 // Rotation phase, advanced on the fixed step (via onStep) so it pauses with the
 // loop. ~7 rad/s at 60 steps.
-let spinAngle = 0;
+const spin = runtimeSlot<{ angle: number }>(() => ({ angle: 0 }));
 let hooksRegistered = false;
 function ensureSpinnerHooks(): void {
   if (hooksRegistered) return;
   hooksRegistered = true;
   onStep(() => {
-    spinAngle += 0.12;
+    spin().angle += 0.12;
   });
 }
 
@@ -50,7 +50,8 @@ export function spinner(opts: SpinnerOptions = {}): void {
   ctx.strokeStyle = opts.color ?? theme.accent;
   ctx.lineWidth = opts.lineWidth ?? 3;
   ctx.beginPath();
-  ctx.arc(cx, cy, r, spinAngle, spinAngle + Math.PI * 1.4);
+  const angle = spin().angle;
+  ctx.arc(cx, cy, r, angle, angle + Math.PI * 1.4);
   ctx.stroke();
   ctx.restore();
 }

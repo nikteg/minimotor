@@ -1,30 +1,40 @@
 import { ButtonVariant, button } from "./button.js";
 import { PanelFrame, paintFrame } from "./panel.js";
+import { scrollGestureActive } from "./lists.js";
 import {
   cachedContentSize,
   centeredText,
   enterOverlay,
   ensureWired,
+  lastWidgetRect,
+  pointerGestureOwned,
   rawPointer,
   runAutoSized,
   flow,
+  sweptCache,
   text,
   theme,
   uiCtx,
   uiFont,
-  withCtx,
 } from "../core/index.js";
+import { anchorViewport } from "../core/index.js";
 import { pointInRect } from "../../collision.js";
-import { Stage } from "../../engine/index.js";
 
 // ---------- Popover ----------
 
 /** An anchored floating panel (dropdown, filter flyout). */
-export interface PopoverOptions extends Omit<PanelFrame, "h"> {
+export interface PopoverOptions extends Omit<PanelFrame, "x" | "y" | "h"> {
   /** Open state — pass yours in, assign the return value back. */
   open: boolean;
   /** Identity across frames. Defaults to the position. */
   id?: string;
+  /** Left edge in px. OMIT (with `y`) to ANCHOR to the last placed widget —
+   *  the popover opens under it (flipping above when out of room, clamped to
+   *  the viewport), so a trigger button in a flowing layout needs no
+   *  coordinates at all. */
+  x?: number;
+  /** Top edge in px (see `x`). */
+  y?: number;
   /** Explicit height. OMIT when using the `children` form — the box then
    *  AUTO-SIZES to its content (measured last frame, à la `group`). */
   h?: number;
@@ -35,45 +45,38 @@ export interface PopoverOptions extends Omit<PanelFrame, "h"> {
 }
 
 // Whether each popover was open LAST frame — the click that opens one lands
-// outside its rect and must not immediately close it again.
-const popoverWasOpen = new Map<string, boolean>();
+// outside its rect and must not immediately close it again. Swept, so
+// position-keyed entries from moved popovers don't accumulate.
+const popoverWasOpen = sweptCache<boolean>();
 
-/** Draw a popover panel while open; a click anywhere outside closes it (and
- *  is swallowed — it can't also activate whatever sits underneath). While
- *  open, the popover is an overlay: every widget drawn BEFORE it in the
- *  frame goes input-dead; widgets drawn after (its contents) work normally.
- *  Returns the new open state:
+/** A floating panel that closes on a click anywhere outside (the click is
+ *  swallowed — it can't also activate whatever sits underneath). While open,
+ *  the popover is an overlay: every widget drawn BEFORE it in the frame goes
+ *  input-dead; widgets drawn after (its contents) work normally. The VALUE
+ *  form draws a fixed box (`h` required) you fill yourself; the CHILDREN form
+ *  (`popover(opts, () => {...})`) lays widgets out inside and AUTO-SIZES its
+ *  height to them (omit `h`). Returns the new open state — assign it back. A
+ *  close button inside the closure can't override that return, so set your own
+ *  flag: `if (closed) open = false;`.
  *
  *    if (UI.button(trigger)) filtersOpen = !filtersOpen;
  *    filtersOpen = UI.popover({ x, y, w: 240, h: 120, open: filtersOpen });
- *    if (filtersOpen) { ...toggles/sliders at x/y... } */
-/** A floating panel that closes on an outside click. The VALUE form draws a
- *  fixed box (`h` required) you fill yourself; the CHILDREN form
- *  (`popover(opts, () => {...})`) lays widgets out inside and AUTO-SIZES its
- *  height to them (omit `h`). Returns the open state — assign it back. A close
- *  button inside the closure can't override that return, so set your own flag:
- *  `if (closed) open = false;`. */
+ *    if (filtersOpen) { ...toggles/sliders at x/y... }
+ *
+ *  Or ANCHORED — omit `x`/`y` right after the trigger and it opens under it:
+ *
+ *    if (UI.button("Filters…")) filtersOpen = !filtersOpen;
+ *    filtersOpen = UI.popover({ w: 240, open: filtersOpen }, () => { ... }); */
 export function popover(opts: PopoverOptions): boolean;
-export function popover(ctx: CanvasRenderingContext2D, opts: PopoverOptions): boolean;
 export function popover(opts: PopoverOptions, children: () => void): boolean;
-export function popover(
-  ctx: CanvasRenderingContext2D,
-  opts: PopoverOptions,
-  children: () => void,
-): boolean;
-export function popover(
-  ctxOrOpts: CanvasRenderingContext2D | PopoverOptions,
-  optsOrChildren?: PopoverOptions | (() => void),
-  maybeChildren?: () => void,
-): boolean {
-  const firstIsCtx = typeof (ctxOrOpts as CanvasRenderingContext2D)?.fillRect === "function";
-  const ctx = firstIsCtx ? (ctxOrOpts as CanvasRenderingContext2D) : uiCtx();
-  const opts = (firstIsCtx ? optsOrChildren : ctxOrOpts) as PopoverOptions;
-  const children = (firstIsCtx ? maybeChildren : (optsOrChildren as (() => void) | undefined)) as
-    | (() => void)
-    | undefined;
+export function popover(opts: PopoverOptions, children?: () => void): boolean {
+  const ctx = uiCtx();
   ensureWired();
-  const id = opts.id ?? `${opts.x}:${opts.y}`;
+  // Anchored form: no x/y → attach under the last placed widget (the trigger
+  // drawn just before this call), flipping above it when the viewport bottom
+  // would clip, and clamped inside the viewport horizontally.
+  const anchor = opts.x === undefined && opts.y === undefined ? lastWidgetRect() : null;
+  const id = opts.id ?? (anchor ? `@${anchor.x}:${anchor.y}` : `${opts.x}:${opts.y}`);
   // Share the one auto-size cache (`containerKey`-style key) — no popover-only
   // height map. The children form auto-sizes height from last frame's measured
   // content; the value form keeps the explicit `h`.
@@ -81,21 +84,40 @@ export function popover(
   const pad = opts.pad ?? 12;
   const top = opts.title ? 32 : 0;
   const h = opts.h ?? (children ? (cachedContentSize(key)?.h ?? 72) : 0);
-  const rect = { x: opts.x, y: opts.y, w: opts.w, h };
+  let x = opts.x ?? 0;
+  let y = opts.y ?? 0;
+  if (anchor) {
+    const vp = anchorViewport(ctx);
+    x = Math.max(4, Math.min(anchor.x, vp.w - opts.w - 4));
+    y = anchor.y + anchor.h + 4;
+    if (y + h > vp.h - 4) y = Math.max(4, anchor.y - h - 4);
+  }
+  const rect = { x, y, w: opts.w, h };
 
   const was = popoverWasOpen.get(id) ?? false;
   let open = opts.open;
   // Raw pointer: while open we're the overlay — uiPointer would be dead.
+  // A release that merely ends a scroll gesture or a widget drag (started
+  // inside, lifted outside) is not a click-outside close.
   const p = rawPointer();
-  if (open && was && p.released && !pointInRect(p.x, p.y, rect)) open = false;
+  if (
+    open &&
+    was &&
+    p.released &&
+    !pointInRect(p.x, p.y, rect) &&
+    !scrollGestureActive() &&
+    !pointerGestureOwned()
+  ) {
+    open = false;
+  }
   popoverWasOpen.set(id, open);
   if (!open) return false;
 
   enterOverlay();
   paintFrame(ctx, {
-    x: opts.x,
-    y: opts.y,
-    w: opts.w,
+    x: rect.x,
+    y: rect.y,
+    w: rect.w,
     h: rect.h,
     title: opts.title,
     bg: opts.bg,
@@ -131,19 +153,11 @@ export interface ModalOptions {
  *      const r = UI.modal({ w: 340, h: 150, title: "CONFIRM" });
  *      if (UI.button({ x: r.x + 12, ... label: "OK" })) { ... }
  *    } */
-export function modal(opts: ModalOptions): { x: number; y: number; w: number; h: number };
-export function modal(
-  ctx: CanvasRenderingContext2D,
-  opts: ModalOptions,
-): { x: number; y: number; w: number; h: number };
-export function modal(
-  ctxOrOpts: CanvasRenderingContext2D | ModalOptions,
-  maybeOpts?: ModalOptions,
-): { x: number; y: number; w: number; h: number } {
-  const [ctx, opts] = withCtx(ctxOrOpts, maybeOpts);
+export function modal(opts: ModalOptions): { x: number; y: number; w: number; h: number } {
+  const ctx = uiCtx();
   ensureWired();
   enterOverlay();
-  const vp = Stage.viewport;
+  const vp = anchorViewport(ctx);
   ctx.save();
   ctx.fillStyle = theme.dim;
   ctx.fillRect(0, 0, vp.w, vp.h);
@@ -190,19 +204,16 @@ export interface ConfirmOptions {
  *    } */
 export function confirm(text: string): "yes" | "no" | null;
 export function confirm(opts: ConfirmOptions): string | null;
-export function confirm(ctx: CanvasRenderingContext2D, opts: ConfirmOptions): string | null;
-export function confirm(
-  ctxOrOptsOrTitle: CanvasRenderingContext2D | ConfirmOptions | string,
-  maybeOpts?: ConfirmOptions,
-): string | null {
+export function confirm(optsOrTitle: ConfirmOptions | string): string | null {
   // Question sugar (API_PLAN #47): a yes/no dialog in one call. Draw it every
   // frame the question is open; the answer arrives as the return value.
-  if (typeof ctxOrOptsOrTitle === "string") {
-    const title = ctxOrOptsOrTitle;
+  if (typeof optsOrTitle === "string") {
+    const title = optsOrTitle;
     const hit = confirm({ id: `confirm:${title}`, title, buttons: ["No", "Yes"] });
     return hit === "Yes" ? "yes" : hit === "No" ? "no" : null;
   }
-  const [ctx, opts] = withCtx(ctxOrOptsOrTitle, maybeOpts);
+  const opts = optsOrTitle;
+  const ctx = uiCtx();
   const lines = opts.lines ?? [];
   const buttons = opts.buttons ?? ["OK"];
   const lineH = theme.fontSize + 8;
@@ -222,7 +233,7 @@ export function confirm(
   const w = Math.max(opts.minW ?? 300, lineW + 32, buttonsW + 24, titleW + 24);
   const h = (opts.title ? 30 : 0) + 16 + lines.length * lineH + 16 + 34 + 12;
 
-  const r = modal(ctx, { w, h, title: opts.title });
+  const r = modal({ w, h, title: opts.title });
 
   ctx.save();
   ctx.font = uiFont();
@@ -243,7 +254,7 @@ export function confirm(
   let hit: string | null = null;
   for (let i = buttons.length - 1; i >= 0; i--) {
     if (
-      button(ctx, {
+      button({
         id: `${opts.id ?? opts.title ?? "confirm"}:button:${i}`,
         tabIndex: i,
         at: btnBar,
@@ -296,14 +307,9 @@ export interface DialogOptions {
  *   choices: ["REPAIR IT", "LEAVE"],
  * });
  * ``` */
-export function dialog(opts: DialogOptions): string | null;
-export function dialog(ctx: CanvasRenderingContext2D, opts: DialogOptions): string | null;
-export function dialog(
-  ctxOrOpts: CanvasRenderingContext2D | DialogOptions,
-  maybeOpts?: DialogOptions,
-): string | null {
-  const [ctx, opts] = withCtx(ctxOrOpts, maybeOpts);
-  const vp = Stage.viewport;
+export function dialog(opts: DialogOptions): string | null {
+  const ctx = uiCtx();
+  const vp = anchorViewport(ctx);
   const choices = opts.choices ?? [];
   const portraitSize = opts.portrait ? (opts.portraitSize ?? 72) : 0;
   const lineH = theme.fontSize + 8;
@@ -325,7 +331,7 @@ export function dialog(
   }
   let ty = y + (opts.speaker ? 35 : 13);
   for (const line of opts.lines) {
-    text(ctx, line, {
+    text(line, {
       x: textX,
       y: ty,
       w: x + w - 14 - textX,
@@ -340,7 +346,7 @@ export function dialog(
     const bar = flow({ x: x + w - 12, y: y + h - 44, h: 32, gap: 8, align: "end" });
     for (let i = choices.length - 1; i >= 0; i--) {
       if (
-        button(ctx, {
+        button({
           id: `${opts.id ?? opts.speaker ?? "dialog"}:choice:${i}`,
           tabIndex: i,
           at: bar,
@@ -353,7 +359,7 @@ export function dialog(
       }
     }
   } else if (opts.hint) {
-    text(ctx, opts.hint, {
+    text(opts.hint, {
       x: x + 12,
       y: y + h - 28,
       w: w - 24,

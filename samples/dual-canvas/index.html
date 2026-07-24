@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dual Canvas - Minimotor</title>
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+      }
+      /* The engine sizes each canvas to the full window; the halves clip them
+         so both games are visible at once. Each game still maps its pointer
+         through its own canvas rect, so input lands correctly in both. */
+      .half {
+        height: 50vh;
+        overflow: hidden;
+        position: relative;
+      }
+      canvas {
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="half"><canvas id="game"></canvas></div>
+    <div class="half"><canvas id="game2"></canvas></div>
+    <script type="module" src="./dual-canvas.ts"></script>
+  </body>
+</html>

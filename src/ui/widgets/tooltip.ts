@@ -3,20 +3,24 @@
 // hit-area is hovered; `drawTips` paints it near the pointer once the hover has
 // held ~350 ms. Hover stability + reset run off the kernel's frame-end hooks.
 import {
+  anchorViewport,
   centeredText,
   drawBox,
   ensureWired,
   onFrameEnd,
   onReset,
+  rawPointer,
+  runtimeSlot,
   theme,
   uiCtx,
   uiFont,
 } from "../core/index.js";
-import { Pointer, Stage } from "../../engine/index.js";
 
-let tipRequest: string | null = null; // asked for this frame
-
-let tipShown: { text: string; since: number } | null = null; // hover-stable
+interface TipState {
+  request: string | null; // asked for this frame
+  shown: { text: string; since: number } | null; // hover-stable
+}
+const st = runtimeSlot<TipState>(() => ({ request: null, shown: null }));
 
 /** Request a tooltip for this frame (call while your hit-area is hovered —
  *  widgets with a `tooltip` option do this for you). Drawn by `drawTips`
@@ -24,24 +28,26 @@ let tipShown: { text: string; since: number } | null = null; // hover-stable
 export function tooltip(msg: string): void {
   ensureWired();
   ensureTooltipHooks();
-  tipRequest = msg;
+  st().request = msg;
 }
 
 /** Draw the pending tooltip near the pointer, clamped to the viewport. Call
  *  LAST in draw (after `drawFloatText`, after any modal) so it sits on top. */
-export function drawTips(maybeCtx?: CanvasRenderingContext2D): void {
-  const ctx = maybeCtx ?? uiCtx();
-  if (!tipShown || performance.now() - tipShown.since < 350) return;
-  const msg = tipShown.text;
-  const vp = Stage.viewport;
+export function drawTips(): void {
+  const ctx = uiCtx();
+  const shown = st().shown;
+  if (!shown || performance.now() - shown.since < 350) return;
+  const msg = shown.text;
+  const vp = anchorViewport(ctx);
+  const p = rawPointer();
   ctx.save();
   ctx.font = uiFont(theme.fontSize - 1);
   const w = ctx.measureText(msg).width + 16;
   const h = 24;
-  let x = Pointer.x + 14;
-  let y = Pointer.y + 20;
+  let x = p.x + 14;
+  let y = p.y + 20;
   if (x + w > vp.w - 4) x = vp.w - 4 - w;
-  if (y + h > vp.h - 4) y = Pointer.y - 8 - h;
+  if (y + h > vp.h - 4) y = p.y - 8 - h;
   drawBox(ctx, x, y, w, h, {
     fill: theme.panelBg,
     stroke: theme.border,
@@ -57,14 +63,15 @@ export function drawTips(maybeCtx?: CanvasRenderingContext2D): void {
 // Hover-stability: the same text keeps its timer; a change restarts it. Runs at
 // frame-end so it reflects every tooltip() call in the just-drawn frame.
 function tooltipEndFrame(): void {
-  if (tipRequest) {
-    if (tipShown?.text !== tipRequest) {
-      tipShown = { text: tipRequest, since: performance.now() };
+  const s = st();
+  if (s.request) {
+    if (s.shown?.text !== s.request) {
+      s.shown = { text: s.request, since: performance.now() };
     }
   } else {
-    tipShown = null;
+    s.shown = null;
   }
-  tipRequest = null;
+  s.request = null;
 }
 
 let hooksRegistered = false;
@@ -73,7 +80,8 @@ function ensureTooltipHooks(): void {
   hooksRegistered = true;
   onFrameEnd(tooltipEndFrame);
   onReset(() => {
-    tipRequest = null;
-    tipShown = null;
+    const s = st();
+    s.request = null;
+    s.shown = null;
   });
 }

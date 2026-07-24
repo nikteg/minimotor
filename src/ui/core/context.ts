@@ -1,33 +1,20 @@
 import { Draw } from "../../engine/index.js";
+import { currentRuntime, runtimeFor, switchRuntime } from "./runtime.js";
 
 // ---------- Implicit context ----------
+// The widgets draw to the current UI runtime's host context; without a
+// `begin()` that's the default game's `Draw.ctx`. Switching contexts switches
+// the WHOLE runtime (focus, scroll state, open editors), so independent games
+// on one page get fully isolated UIs — see runtime.ts.
 
-export let begunCtx: CanvasRenderingContext2D | null = null;
-
-/** Point the widgets at a specific context for this frame (isolated games,
- *  offscreen canvases). Without it, everything draws to the default game's
- *  `Draw.ctx`. Cleared at frame end. */
+/** Point the widgets at a specific context (isolated games, offscreen
+ *  canvases) — switches to that context's UI runtime, so focus/scroll/editor
+ *  state stays per-game. Call it at the top of that game's draw every frame;
+ *  frame-end housekeeping returns to the default runtime. */
 export function begin(ctx: CanvasRenderingContext2D): void {
-  begunCtx = ctx;
-}
-
-/** Clear the overridden context at frame end (called from `frame.ts`'s
- *  ensureWired, which can't reassign this imported binding). */
-export function setBegunCtx(ctx: CanvasRenderingContext2D | null): void {
-  begunCtx = ctx;
+  switchRuntime(runtimeFor(ctx));
 }
 
 export function uiCtx(): CanvasRenderingContext2D {
-  return begunCtx ?? Draw.ctx;
-}
-
-/** Untangle the two call forms: `widget(opts)` (implicit ctx) and
- *  `widget(ctx, opts)`. */
-export function withCtx<T>(
-  ctxOrValue: CanvasRenderingContext2D | T,
-  value?: T,
-): [CanvasRenderingContext2D, T] {
-  return value === undefined
-    ? [uiCtx(), ctxOrValue as T]
-    : [ctxOrValue as CanvasRenderingContext2D, value];
+  return currentRuntime().host ?? Draw.ctx;
 }

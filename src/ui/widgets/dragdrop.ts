@@ -1,18 +1,19 @@
 import {
+  claimPointerGesture,
   ensureWired,
   onFrameEnd,
   onReset,
   rawPointer,
+  runtimeSlot,
   setCursor,
   uiPointer,
 } from "../core/index.js";
 import { pointInRect } from "../../collision.js";
-import { Pointer } from "../../engine/index.js";
 
 // ---------- Drag and drop ----------
 
-// The in-flight drag, owned here. A widget sets it on grab; the kernel frame-end
-// hook cancels it on a release no drop target consumed.
+// The in-flight drag, owned per runtime. A widget sets it on grab; the kernel
+// frame-end hook cancels it on a release no drop target consumed.
 interface ActiveDrag {
   sourceId: string;
   payload: unknown;
@@ -20,11 +21,7 @@ interface ActiveDrag {
   offsetY: number;
 }
 
-let activeDrag: ActiveDrag | null = null;
-
-function setActiveDrag(d: ActiveDrag | null): void {
-  activeDrag = d;
-}
+const st = runtimeSlot<{ drag: ActiveDrag | null }>(() => ({ drag: null }));
 
 let hooksRegistered = false;
 function ensureDragHooks(): void {
@@ -33,14 +30,11 @@ function ensureDragHooks(): void {
   ensureWired(); // so the frame-end hook actually runs
   onFrameEnd(() => {
     // A release not consumed by any drop target cancels the drag.
-    try {
-      if (activeDrag && Pointer.frameReleased) activeDrag = null;
-    } catch {
-      activeDrag = null;
-    }
+    const s = st();
+    if (s.drag && rawPointer().released) s.drag = null;
   });
   onReset(() => {
-    activeDrag = null;
+    st().drag = null;
   });
 }
 
@@ -124,34 +118,49 @@ export interface DraggedItem<T> {
 }
 
 /** Mark a rectangle as draggable. Call every draw frame for each source. The
- * payload is retained only while dragging; render the source however you like. */
+ * payload is retained only while dragging; render the source however you like.
+ * Wire the full loop with `dropTarget` (where drops land) and `draggedItem`
+ * (the preview that follows the pointer):
+ *
+ *     UI.dragSource({ id: `slot:${i}`, ...slotRect, payload: item });
+ *     const t = UI.dropTarget<Item>({ id: "trash", ...trashRect });
+ *     if (t.dropped) discard(t.dropped.payload); // set on the release frame
+ *     const drag = UI.draggedItem<Item>();
+ *     if (drag) drawIcon(drag.payload, drag.x, drag.y);
+ */
 export function dragSource<T>(opts: DragSourceOptions<T>): DragSourceState {
   ensureDragHooks();
+  const s = st();
   const p = uiPointer();
   const hovered = !opts.disabled && pointInRect(p.x, p.y, opts);
-  if (hovered && p.pressed && !activeDrag) {
-    setActiveDrag({
+  if (hovered && p.pressed && !s.drag) {
+    s.drag = {
       sourceId: opts.id,
       payload: opts.payload,
       offsetX: p.x - opts.x,
       offsetY: p.y - opts.y,
-    });
+    };
   }
-  const dragging = activeDrag?.sourceId === opts.id;
+  const dragging = s.drag?.sourceId === opts.id;
+  // The payload owns the pointer while dragged — carrying it across a scroll
+  // region must not also swipe-scroll that region.
+  if (dragging) claimPointerGesture();
   // "grabbing" while this source drags (priority 1, so a target's "copy" at 2
   // wins over it regardless of draw order); "grab" only when nothing is being
   // dragged, so OTHER sources don't fight the drag cursor mid-drag.
   if (dragging) setCursor("grabbing", 1);
-  else if (hovered && !activeDrag) setCursor("grab", 0);
+  else if (hovered && !s.drag) setCursor("grab", 0);
   return { hovered, dragging };
 }
 
 /** Mark a rectangle as a drop target. On the release frame, `dropped` contains
- * the source id and typed payload. Targets decide compatibility with `accepts`. */
+ * the source id and typed payload. Targets decide compatibility with `accepts`.
+ * See `dragSource` for the end-to-end source → target → preview example. */
 export function dropTarget<T>(opts: DropTargetOptions<T>): DropTargetState<T> {
   ensureDragHooks();
+  const s = st();
   const p = uiPointer();
-  const drag = activeDrag;
+  const drag = s.drag;
   const accepted = drag ? (opts.accepts?.(drag.payload as T, drag.sourceId) ?? true) : false;
   const hovered = !!drag && pointInRect(p.x, p.y, opts);
   const canDrop = hovered && accepted;
@@ -162,24 +171,25 @@ export function dropTarget<T>(opts: DropTargetOptions<T>): DropTargetState<T> {
   let dropped: DropResult<T> | null = null;
   if (canDrop && p.released && drag) {
     dropped = { sourceId: drag.sourceId, targetId: opts.id, payload: drag.payload as T };
-    setActiveDrag(null);
+    s.drag = null;
   }
   return { hovered, canDrop, dropped };
 }
 
 /** Current drag data for drawing an icon/stack preview above the UI. */
 export function draggedItem<T>(): DraggedItem<T> | null {
-  if (!activeDrag) return null;
+  const drag = st().drag;
+  if (!drag) return null;
   const p = rawPointer();
   return {
-    sourceId: activeDrag.sourceId,
-    payload: activeDrag.payload as T,
-    x: p.x - activeDrag.offsetX,
-    y: p.y - activeDrag.offsetY,
+    sourceId: drag.sourceId,
+    payload: drag.payload as T,
+    x: p.x - drag.offsetX,
+    y: p.y - drag.offsetY,
   };
 }
 
 /** Cancel the active drag (scene change, inventory close, Escape). */
 export function cancelDrag(): void {
-  setActiveDrag(null);
+  st().drag = null;
 }

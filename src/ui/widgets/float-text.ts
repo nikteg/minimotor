@@ -2,7 +2,15 @@
 // Rising, fading score pops / damage numbers / pickup labels. The default pool
 // ages on the kernel's fixed step (registered via onStep), so it pauses with the
 // loop; make your own pool with createFloatText and drive advance(dt) yourself.
-import { ensureWired, onReset, onStep, uiCtx } from "../core/index.js";
+import {
+  ensureWired,
+  lastWidgetRect,
+  onReset,
+  onStep,
+  runtimeSlot,
+  uiCtx,
+  uiToScreen,
+} from "../core/index.js";
 import { Loop } from "../../engine/index.js";
 
 /** Options for a floating text. */
@@ -17,14 +25,24 @@ export interface FloatTextOptions {
   font?: string;
 }
 
+/** One live floating text in a pool — the record `spawn` creates and
+ *  `advance`/`draw` consume. */
 export interface FloatText {
+  /** The string drawn. */
   text: string;
+  /** Center x in px (the text is drawn centered on its position). */
   x: number;
+  /** Center y in px — drifts by `vy` as the text ages. */
   y: number;
+  /** Vertical drift in px/s (negative = up). */
   vy: number;
+  /** Total lifetime in ms; the text fades out over its last half. */
   life: number;
+  /** Time left in ms; the text is removed when it reaches 0. */
   remaining: number;
+  /** Fill color. */
   color: string;
+  /** Canvas font string. */
   font: string;
 }
 
@@ -98,34 +116,60 @@ export function createFloatText(): FloatTextManager {
   };
 }
 
-// The shared default pool, aged on the fixed step (via onStep) so it pauses with
-// the loop like Clock/Tween.
-export let floats = createFloatText();
+// The per-runtime default pool behind `floatText`/`drawFloatText`, aged on the
+// fixed step (via `onStep`) so it pauses with the loop like Clock/Tween.
+const floats = runtimeSlot<FloatTextManager>(createFloatText);
 
 let hooksRegistered = false;
 function ensureFloatTextHooks(): void {
   if (hooksRegistered) return;
   hooksRegistered = true;
-  onStep(() => floats.advance(Loop.step));
+  onStep(() => floats().advance(Loop.step));
   onReset(() => {
-    floats = createFloatText();
+    floats().clear();
   });
 }
 
 /** Spawn a rising, fading text at (x, y) — score pops, damage numbers,
- *  pickup labels. Aged on the fixed step; draw with `drawFloatText`. */
-export function floatText(str: string, x: number, y: number, opts?: FloatTextOptions): void {
+ *  pickup labels. Aged on the fixed step; draw with `drawFloatText`. Coords are
+ *  taken in the CURRENT space: spawn inside a `UI.scaled` block and the point is
+ *  mapped to screen for you, so it still lands right when `drawFloatText` paints
+ *  it later (after the transform is gone).
+ *
+ *  Omit `x`/`y` to ANCHOR: the text rises from the top-center of the last
+ *  placed widget, so a flowing button needs no coordinates:
+ *
+ *    if (UI.button("Collect")) UI.floatText("+10");   // pops above the button */
+export function floatText(str: string, opts?: FloatTextOptions): void;
+export function floatText(str: string, x: number, y: number, opts?: FloatTextOptions): void;
+export function floatText(
+  str: string,
+  xOrOpts?: number | FloatTextOptions,
+  y?: number,
+  opts?: FloatTextOptions,
+): void {
   ensureWired();
   ensureFloatTextHooks();
-  floats.spawn(str, x, y, opts);
+  let px: number, py: number;
+  if (typeof xOrOpts === "number") {
+    px = xOrOpts;
+    py = y ?? 0;
+  } else {
+    opts = xOrOpts;
+    const anchor = lastWidgetRect();
+    px = anchor ? anchor.x + anchor.w / 2 : 0;
+    py = anchor ? anchor.y - 4 : 0;
+  }
+  const p = uiToScreen(px, py);
+  floats().spawn(str, p.x, p.y, opts);
 }
 
 /** Draw all live floating texts. Call late in `draw` so they sit on top. */
-export function drawFloatText(ctx?: CanvasRenderingContext2D): void {
-  floats.draw(ctx ?? uiCtx());
+export function drawFloatText(): void {
+  floats().draw(uiCtx());
 }
 
 /** Remove all floating texts (e.g. on scene change). */
 export function clearFloatText(): void {
-  floats.clear();
+  floats().clear();
 }

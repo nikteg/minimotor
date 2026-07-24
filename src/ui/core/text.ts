@@ -1,7 +1,7 @@
 import { uiCtx } from "./context.js";
 import { Flow, currentLayout, place } from "./flow.js";
 import { centeredText, theme, uiFont } from "./theme.js";
-import { Stage } from "../../engine/index.js";
+import { uiGame } from "./runtime.js";
 
 // ---------- Text ----------
 
@@ -47,11 +47,9 @@ export function anchorViewport(ctx: CanvasRenderingContext2D): {
   safeLeft: number;
   safeTop: number;
 } {
-  try {
-    return Stage.viewport;
-  } catch {
-    return { w: ctx.canvas.width, h: ctx.canvas.height, safeLeft: 0, safeTop: 0 };
-  }
+  const vp = uiGame()?.viewport;
+  if (vp) return vp;
+  return { w: ctx.canvas.width, h: ctx.canvas.height, safeLeft: 0, safeTop: 0 };
 }
 
 /** A themed text label. */
@@ -106,9 +104,6 @@ export function resolveColor(c: string | undefined): string {
   return c ?? theme.text;
 }
 
-/** Greedy word-wrap `str` into lines no wider than `maxW` (font must be set
- *  on `ctx`). A single word wider than `maxW` gets its own line (drawn clamped
- *  by the caller). */
 /** Width of `text` in the given font (default: the theme's base font) —
  *  for sizing custom layouts around labels. */
 export function textWidth(text: string, font?: string): number {
@@ -120,6 +115,9 @@ export function textWidth(text: string, font?: string): number {
   return w;
 }
 
+/** Greedy word-wrap `str` into lines no wider than `maxW` (font must be set
+ *  on `ctx`). A single word wider than `maxW` gets its own line (drawn clamped
+ *  by the caller). */
 export function wrapLines(ctx: CanvasRenderingContext2D, str: string, maxW: number): string[] {
   const words = str.split(/\s+/).filter(Boolean);
   const lines: string[] = [];
@@ -143,18 +141,9 @@ export function wrapLines(ctx: CanvasRenderingContext2D, str: string, maxW: numb
  *
  *    UI.text("Score: 42", { x: 12, y: 12, bold: true });
  *    UI.text(name, { color: "dim", align: "right", w: col.w }); */
-export function text(str: string, opts?: TextOptions): void;
-export function text(ctx: CanvasRenderingContext2D, str: string, opts?: TextOptions): void;
-export function text(
-  ctxOrText: CanvasRenderingContext2D | string,
-  textOrOpts?: string | TextOptions,
-  maybeOpts?: TextOptions,
-): void {
-  const [ctx, str, rawOpts] =
-    typeof ctxOrText === "string"
-      ? [uiCtx(), ctxOrText, (textOrOpts as TextOptions) ?? {}]
-      : [ctxOrText, textOrOpts as string, maybeOpts ?? {}];
-  let opts = rawOpts;
+export function text(str: string, rawOpts?: TextOptions): void {
+  const ctx = uiCtx();
+  let opts = rawOpts ?? {};
   if (opts.anchor) {
     const view = anchorViewport(ctx);
     const hx = ANCHOR_H[opts.anchor];
@@ -172,13 +161,12 @@ export function text(
   }
   ctx.save();
   // UI is ALWAYS screen (letterbox-logical) space, regardless of ambient
-  // camera blocks — reset to the base transform, not raw device space.
+  // camera blocks — reset to the base transform, not raw device space. Only
+  // when the host game actually owns THIS ctx (an offscreen ctx keeps its
+  // transform).
   if (typeof ctx.setTransform === "function") {
-    try {
-      Stage.resetTransform();
-    } catch {
-      // No default game (isolated ctx): leave the transform alone.
-    }
+    const g = uiGame();
+    if (g && g.ctx === ctx) g.resetTransform();
   }
   ctx.font = opts.font ?? uiFont(opts.size ?? theme.fontSize, opts.bold ?? false);
   const natural = Math.ceil(ctx.measureText(str).width);

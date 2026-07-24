@@ -149,10 +149,6 @@ export function drawBox(
   }
 }
 
-/** Vertically centered text using real glyph metrics — the canvas "middle"
- *  baseline sits visibly high for most fonts. Honors the current textAlign.
- *  `maxW` clamps rendering (canvas squeezes the glyphs) so a label can never
- *  spill out of its widget. */
 /** Trim `text` with a trailing ellipsis until it fits `maxW` (binary search).
  *  Returns the string unchanged when it already fits. */
 export function ellipsize(ctx: CanvasRenderingContext2D, text: string, maxW: number): string {
@@ -168,6 +164,10 @@ export function ellipsize(ctx: CanvasRenderingContext2D, text: string, maxW: num
   return lo > 0 ? text.slice(0, lo) + ell : ell;
 }
 
+/** Vertically centered text using real glyph metrics — the canvas "middle"
+ *  baseline sits visibly high for most fonts. Honors the current textAlign.
+ *  `maxW` clips with an ellipsis (via `ellipsize`) so a label can never spill
+ *  out of its widget. */
 export function centeredText(
   ctx: CanvasRenderingContext2D,
   text: string,

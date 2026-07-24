@@ -6,21 +6,30 @@
 // (onFrameEnd / onReset), so core never imports it back.
 import {
   Flowable,
+  activeClip,
   centeredText,
+  claimPointerGesture,
+  currentRuntime,
   drawBox,
   drawFocusRing,
   ensureWired,
   focusFromPointer,
+  isInOverlayPass,
+  isOverlayActive,
   onFrameEnd,
   onReset,
   place,
+  rawPointer,
   registerFocusable,
   requiredWidgetId,
+  runtimeSlot,
   setCursor,
   theme,
+  uiCtx,
   uiFont,
   uiPointer,
-  withCtx,
+  uiToScreen,
+  withRuntime,
   wrapLines,
 } from "../core/index.js";
 import { pointInRect } from "../../collision.js";
@@ -50,13 +59,66 @@ export interface TextEditor {
   lastReturned: string;
 }
 
-export let textEditor: TextEditor | null = null;
+/** A drawn field's hit target for the native press listener: its screen-space
+ *  rect (plus the clip it was drawn under), the resolved opts to open an editor
+ *  with, and whether it was input-dead behind an overlay when it drew. */
+interface PressTarget {
+  rect: { x: number; y: number; w: number; h: number };
+  clip: { x: number; y: number; w: number; h: number } | undefined;
+  opts: TextInputOptions & { id: string };
+  dead: boolean;
+}
 
-// Ids of every text input drawn THIS frame. A Set, not a single id: with more
-// than one field on screen, a single "last seen" id let a later-drawn field's
-// id evict an earlier focused field's editor at frame-end (you couldn't focus
-// any field but the last one). Same shape as `selectSeen`. Cleared each frame.
-export const textInputSeen = new Set<string>();
+interface TextInputState {
+  editor: TextEditor | null;
+  /** Ids of every text input drawn THIS frame. A Set, not a single id: with
+   *  more than one field on screen, a single "last seen" id let a later-drawn
+   *  field's id evict an earlier focused field's editor at frame-end (you
+   *  couldn't focus any field but the last one). Cleared each frame. */
+  seen: Set<string>;
+  /** Hit targets accumulating THIS frame — swapped into `pressTargets` at
+   *  frame end. */
+  drawnTargets: Map<string, PressTarget>;
+  /** Last completed frame's hit targets — what the native pointerdown listener
+   *  tests. Mobile browsers only show the keyboard when `focus()` runs INSIDE
+   *  a user-gesture event handler; the immediate-mode press detection runs a
+   *  frame later (in rAF), which iOS ignores. So the canvas gets a real
+   *  pointerdown listener that hit-tests these rects and opens/focuses the
+   *  hidden editor synchronously. */
+  pressTargets: Map<string, PressTarget>;
+}
+const st = runtimeSlot<TextInputState>(() => ({
+  editor: null,
+  seen: new Set(),
+  drawnTargets: new Map(),
+  pressTargets: new Map(),
+}));
+
+// Canvases with the native press listener attached (one per canvas).
+const pressWired = new WeakSet<HTMLCanvasElement>();
+
+function ensureNativePress(ctx: CanvasRenderingContext2D): void {
+  const canvas = ctx.canvas;
+  if (pressWired.has(canvas)) return;
+  pressWired.add(canvas);
+  const rt = currentRuntime();
+  // The engine's own pointerdown listener registered first (at game build), so
+  // the pointer's screen-logical coords are already updated when this runs.
+  canvas.addEventListener("pointerdown", () => {
+    withRuntime(rt, () => {
+      const s = st();
+      const p = rawPointer();
+      for (const t of s.pressTargets.values()) {
+        if (t.dead || t.opts.disabled) continue;
+        if (!pointInRect(p.x, p.y, t.rect)) continue;
+        if (t.clip && !pointInRect(p.x, p.y, t.clip)) continue;
+        if (s.editor?.id === t.opts.id) s.editor.input.focus({ preventScroll: true });
+        else openTextEditor(t.opts);
+        return;
+      }
+    });
+  });
+}
 
 /** Inputs to `textInput`: the controlled `value`, geometry, and native
  *  `<input>` hints. */
@@ -114,8 +176,9 @@ export interface TextInputResult {
 }
 
 export function removeTextEditor(): void {
-  textEditor?.input.remove();
-  textEditor = null;
+  const s = st();
+  s.editor?.input.remove();
+  s.editor = null;
 }
 
 /** Read the live caret/selection from the native element. The selection APIs
@@ -308,7 +371,7 @@ export function openTextEditor(opts: TextInputOptions & { id: string }): void {
     }
   });
   document.body.appendChild(input);
-  textEditor = editor;
+  st().editor = editor;
   input.focus({ preventScroll: true });
   // Selection APIs throw for some valid input types (notably number/email).
   try {
@@ -321,18 +384,19 @@ export function openTextEditor(opts: TextInputOptions & { id: string }): void {
 /** Canvas-rendered text input backed by a hidden native `<input>` (or a
  * `<textarea>` when `multiline`) for keyboard, clipboard, IME and mobile-keyboard
  * behavior. The canvas mirrors the element's live caret and selection. Returns
- * the controlled value plus one-frame `changed`/`submitted` flags. */
-export function textInput(opts: TextInputOptions): TextInputResult;
-export function textInput(ctx: CanvasRenderingContext2D, opts: TextInputOptions): TextInputResult;
-export function textInput(
-  ctxOrOpts: CanvasRenderingContext2D | TextInputOptions,
-  maybeOpts?: TextInputOptions,
-): TextInputResult {
-  const [ctx, opts] = withCtx(ctxOrOpts, maybeOpts);
+ * the controlled value plus one-frame `changed`/`submitted` flags:
+ *
+ *     const r = UI.textInput({ id: "chat", value: draft, placeholder: "Say something" });
+ *     draft = r.value;
+ *     if (r.submitted) { send(draft); draft = ""; } // Enter pressed this frame
+ */
+export function textInput(opts: TextInputOptions): TextInputResult {
+  const ctx = uiCtx();
   ensureWired();
   ensureTextInputHooks();
   const id = requiredWidgetId(opts.id, "textInput");
-  textInputSeen.add(id);
+  const s = st();
+  s.seen.add(id);
   // `rows` sets the visible line count. rows > 1 (or an explicit `multiline`)
   // backs the field with a <textarea>; a single row stays a one-line <input>.
   // The box height derives from the row count unless `h` is given.
@@ -345,17 +409,31 @@ export function textInput(
   // show its rows.
   const boxH = opts.h ?? (multiline ? rows * (theme.fontSize + 6) + 12 : 32);
   const rect = place({ ...opts, h: boxH }, opts.w ?? 180, boxH);
+  // Register this field with the native press listener (mobile keyboards need
+  // a synchronous in-gesture focus — see `pressTargets`). Rect + clip stored in
+  // SCREEN space so the raw pointer can hit-test them next frame.
+  ensureNativePress(ctx);
+  {
+    const tl = uiToScreen(rect.x, rect.y);
+    const br = uiToScreen(rect.x + rect.w, rect.y + rect.h);
+    s.drawnTargets.set(id, {
+      rect: { x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y },
+      clip: activeClip(),
+      opts: resolvedOpts,
+      dead: isOverlayActive() && !isInOverlayPass(),
+    });
+  }
   const keyboardFocused = registerFocusable(ctx, {
     id,
     disabled: opts.disabled,
     tabIndex: opts.tabIndex,
     native: true,
     focus: () => {
-      if (textEditor?.id === id) textEditor.input.focus({ preventScroll: true });
+      if (s.editor?.id === id) s.editor.input.focus({ preventScroll: true });
       else openTextEditor(resolvedOpts);
     },
     blur: () => {
-      if (textEditor?.id === id) textEditor.input.blur();
+      if (s.editor?.id === id) s.editor.input.blur();
     },
   });
   const p = uiPointer();
@@ -367,11 +445,11 @@ export function textInput(
   // drag selects). A press outside a focused field commits + blurs it.
   if (hovered && p.pressed && !opts.disabled) {
     focusFromPointer(ctx, id);
-    if (textEditor?.id === id) textEditor.input.focus({ preventScroll: true });
+    if (s.editor?.id === id) s.editor.input.focus({ preventScroll: true });
     else openTextEditor(resolvedOpts);
-  } else if (p.pressed && !hovered && textEditor?.id === id) textEditor.input.blur();
+  } else if (p.pressed && !hovered && s.editor?.id === id) s.editor.input.blur();
 
-  const active = textEditor?.id === id ? textEditor : null;
+  const active = s.editor?.id === id ? s.editor : null;
   if (active) {
     active.input.disabled = opts.disabled ?? false;
     if (opts.maxLength !== undefined) active.input.maxLength = opts.maxLength;
@@ -402,6 +480,8 @@ export function textInput(
   // the clipboard (Cmd/Ctrl+C) in sync. Keyboard selection (Shift+arrows, Cmd+A)
   // already works — those keys pass straight through to the focused element.
   if (active && focused) {
+    // A live drag-selection owns the pointer (no body scroll while selecting).
+    if (active.dragAnchor !== null) claimPointerGesture();
     if (p.doublePressed && hovered) {
       // Native double-click → select the word under the pointer. Handled apart
       // from the press edge: `dblclick` fires on the second release, not down.
@@ -565,14 +645,24 @@ export function textInput(
 // Native editing bridges only live while their immediate-mode widget is still
 // submitted every frame; drop the editor when its field stops drawing.
 function textInputEndFrame(): void {
-  if (textEditor && !textInputSeen.has(textEditor.id)) removeTextEditor();
-  textInputSeen.clear();
+  const s = st();
+  if (s.editor && !s.seen.has(s.editor.id)) removeTextEditor();
+  s.seen.clear();
+  // Publish this frame's hit targets for the native press listener and start
+  // collecting the next frame's into the (reused) old map.
+  const drawn = s.drawnTargets;
+  s.drawnTargets = s.pressTargets;
+  s.drawnTargets.clear();
+  s.pressTargets = drawn;
 }
 
 /** Reset text-input state — for tests (run via the kernel's onReset). */
 function resetTextInput(): void {
+  const s = st();
   removeTextEditor();
-  textInputSeen.clear();
+  s.seen.clear();
+  s.drawnTargets.clear();
+  s.pressTargets.clear();
 }
 
 // Register the frame-end eviction + reset with the lifecycle the first time a

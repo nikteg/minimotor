@@ -12,9 +12,9 @@ import {
   registerFocusable,
   theme,
   uiFont,
+  uiCtx,
   uiPointer,
   widgetId,
-  withCtx,
 } from "../core/index.js";
 import { tooltip } from "./tooltip.js";
 
@@ -44,23 +44,22 @@ export interface ToggleOptions extends Flowable {
 
 /** Draw a checkbox + label; returns the (possibly flipped) new value:
  *
- *    hideFull = UI.toggle(ctx, { x, y, label: "Hide full", on: hideFull }); */
+ *    hideFull = UI.toggle({ x, y, label: "Hide full", on: hideFull }); */
 export function toggle(
   label: string,
   on: boolean,
   opts?: Omit<ToggleOptions, "label" | "on">,
 ): boolean;
 export function toggle(opts: ToggleOptions): boolean;
-export function toggle(ctx: CanvasRenderingContext2D, opts: ToggleOptions): boolean;
 export function toggle(
-  ctxOrOptsOrLabel: CanvasRenderingContext2D | ToggleOptions | string,
-  optsOrOn?: ToggleOptions | boolean,
+  optsOrLabel: ToggleOptions | string,
+  onArg?: boolean,
   rest?: Omit<ToggleOptions, "label" | "on">,
 ): boolean {
   // Label-first sugar: `muted = UI.toggle("Mute", muted)` (API_PLAN #43).
-  if (typeof ctxOrOptsOrLabel === "string")
-    return toggle({ ...rest, label: ctxOrOptsOrLabel, on: optsOrOn as boolean });
-  const [ctx, opts] = withCtx(ctxOrOptsOrLabel, optsOrOn as ToggleOptions);
+  if (typeof optsOrLabel === "string") return toggle({ ...rest, label: optsOrLabel, on: !!onArg });
+  const opts = optsOrLabel;
+  const ctx = uiCtx();
   const size = opts.size ?? 16;
   ctx.save();
   ctx.font = opts.font ?? uiFont();

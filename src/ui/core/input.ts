@@ -1,5 +1,5 @@
-import { ensureWired, inOverlayPass, overlayActive } from "./lifecycle.js";
-import { Pointer, Stage } from "../../engine/index.js";
+import { ensureWired, isInOverlayPass, isOverlayActive, onFrameEnd } from "./lifecycle.js";
+import { runtimeSlot, uiGame } from "./runtime.js";
 import { pointInRect } from "../../collision.js";
 
 export const DEAD_POINTER = {
@@ -12,37 +12,101 @@ export const DEAD_POINTER = {
   wheel: 0,
 };
 
-// A widget mid-drag (list swipe-scroll) sets this so the press/release edges
-// that drive the drag don't ALSO land as a click on whatever widget sits under
-// the pointer. `uiPointer` blanks the edges (position + wheel survive) while
-// it's set; `lists` clears it every frame-end. The dragging widget itself reads
-// `uiPointer` BEFORE it calls `suppressPointerEdges`, so it still sees the edges.
-let edgesSuppressed = false;
+// ---------- Per-runtime input state ---------------------------------------
+// Everything the pointer pipeline tracks across a frame: edge suppression, the
+// wheel claim, the UI transform stack, pointer clips and the memoized pointer.
+// One instance per UI runtime, so two games' UIs can't leak gestures into each
+// other.
+interface UiTransform {
+  scale: number;
+  ox: number;
+  oy: number;
+  w: number;
+  h: number;
+}
+
+interface PointerCache {
+  t: UiTransform | null;
+  clip: { x: number; y: number; w: number; h: number } | undefined;
+  suppressed: boolean;
+  overlayDead: boolean;
+  p: typeof DEAD_POINTER;
+}
+
+interface InputState {
+  /** A widget mid-drag (list swipe-scroll) sets this so the press/release
+   *  edges that drive the drag don't ALSO land as a click on whatever widget
+   *  sits under the pointer; cleared every frame-end. */
+  edgesSuppressed: boolean;
+  /** A widget (slider knob, scrollbar thumb, drag-and-drop) owns the pointer
+   *  until release — body drag-scroll must not engage. See
+   *  `claimPointerGesture`. */
+  gestureOwned: boolean;
+  /** Wheel claiming for nested scroll regions — see `claimWheel`. */
+  wheelTaken: boolean;
+  transform: UiTransform | null;
+  transformStack: (UiTransform | null)[];
+  /** Active clip rects (innermost last), in SCREEN-logical coords. */
+  clips: { x: number; y: number; w: number; h: number }[];
+  pointerCache: PointerCache | null;
+}
+
+const st = runtimeSlot<InputState>(() => ({
+  edgesSuppressed: false,
+  gestureOwned: false,
+  wheelTaken: false,
+  transform: null,
+  transformStack: [],
+  clips: [],
+  pointerCache: null,
+}));
 
 /** Blank the pointer's press/release/down edges for the rest of this frame — a
  *  drag gesture (e.g. list swipe-scroll) calls this so the ending release isn't
  *  read as a click. Cleared each frame-end (see `lists`). */
 export function suppressPointerEdges(): void {
-  edgesSuppressed = true;
+  st().edgesSuppressed = true;
 }
 
 /** Clear `suppressPointerEdges` — called from a frame-end hook. */
 export function clearPointerEdges(): void {
-  edgesSuppressed = false;
+  st().edgesSuppressed = false;
 }
-
-// Wheel claiming for nested scroll regions. Scroll regions process the wheel
-// OUTER-first (a container claims before its children draw), and the first one
-// under the pointer that can still move in the wheel's direction takes the whole
-// delta; nested regions then see 0. A region pinned against the wheel's
-// direction doesn't claim, so the wheel CHAINS inward once the outer hits its
-// edge. Reset every frame-end (see `lists`). Kept separate from the drag gesture
-// so swipe-scroll is unaffected.
-let wheelTaken = false;
 
 /** Clear the per-frame wheel claim — called from a frame-end hook. */
 export function clearWheelClaim(): void {
-  wheelTaken = false;
+  st().wheelTaken = false;
+}
+
+/** A widget that DRAGS with the pointer (slider knob, scrollbar thumb, a
+ *  drag-and-drop source, a text-selection drag) calls this every frame while
+ *  its drag is live. Until the pointer releases, body drag-scroll (the
+ *  swipe-to-scroll gesture on lists/overflow regions) will not engage — so
+ *  working a slider inside a scroll region never also scrolls the region.
+ *  Cleared automatically at the frame end after the pointer is released. */
+export function claimPointerGesture(): void {
+  ensureWired(); // the claim clears at frame end — that hook must actually run
+  if (!gestureHookWired) {
+    gestureHookWired = true;
+    onFrameEnd(clearGestureClaim);
+  }
+  st().gestureOwned = true;
+}
+let gestureHookWired = false;
+
+/** Whether a widget currently owns the pointer gesture (see
+ *  `claimPointerGesture`). Read by `dragScroll` to keep body scrolling out of
+ *  a live widget drag. */
+export function pointerGestureOwned(): boolean {
+  return st().gestureOwned;
+}
+
+/** Frame-end housekeeping: drop the gesture claim once the pointer is up.
+ *  Kept at frame-END (not on the release edge) so the release that ends a
+ *  widget drag can't be misread as a click by overlay close logic. */
+export function clearGestureClaim(): void {
+  const s = st();
+  if (s.gestureOwned && !rawPointer().down) s.gestureOwned = false;
 }
 
 /** Claim this frame's wheel for a scroll region. `over` = the pointer is inside
@@ -51,27 +115,31 @@ export function clearWheelClaim(): void {
  *  elsewhere, or this region can't move in the wheel's direction (so the wheel
  *  chains onward to a nested region). */
 export function claimWheel(over: boolean, wheel: number, atMin: boolean, atMax: boolean): number {
-  if (wheelTaken || !over || wheel === 0) return 0;
+  const s = st();
+  if (s.wheelTaken || !over || wheel === 0) return 0;
   if ((wheel < 0 && atMin) || (wheel > 0 && atMax)) return 0;
-  wheelTaken = true;
+  s.wheelTaken = true;
   return wheel;
 }
 
-/** The pointer, raw — overlays themselves read this (their close logic must
- *  see clicks even while they block everyone else). */
+/** The pointer, raw, from the current runtime's host game — overlays
+ *  themselves read this (their close logic must see clicks even while they
+ *  block everyone else). */
 export function rawPointer() {
   try {
+    const p = uiGame()?.pointer;
+    if (!p) return DEAD_POINTER;
     return {
-      x: Pointer.x,
-      y: Pointer.y,
-      down: Pointer.down,
-      released: Pointer.frameReleased,
-      pressed: Pointer.framePressed,
-      doublePressed: Pointer.frameDoublePressed,
-      wheel: Pointer.wheel,
+      x: p.x,
+      y: p.y,
+      down: p.down,
+      released: p.frameReleased,
+      pressed: p.framePressed,
+      doublePressed: p.frameDoublePressed,
+      wheel: p.wheel,
     };
   } catch {
-    // No default game yet (headless/tests) — stay inert like `uiPointer`.
+    // No game yet (headless/tests) — stay inert like `uiPointer`.
     return DEAD_POINTER;
   }
 }
@@ -84,52 +152,65 @@ export function rawPointer() {
 // reference coords so hit-testing stays correct. `w`/`h` are the region's
 // logical size (what `UI.width`/`UI.height` report). Transforms compose (nest);
 // `null` is the root (no transform — the device viewport).
-interface UiTransform {
-  scale: number;
-  ox: number;
-  oy: number;
-  w: number;
-  h: number;
-}
-let uiTransform: UiTransform | null = null;
-const uiTransformStack: (UiTransform | null)[] = [];
 
 /** Enter a UI transform: everything drawn until `popUiTransform` lays out in
  *  coords that map `outer = offset + scale * inner`, with `w`×`h` the region's
  *  logical size. Composes with any enclosing transform. The canvas-side
  *  transform is the caller's job. */
 export function pushUiTransform(scale: number, ox: number, oy: number, w: number, h: number): void {
-  uiTransformStack.push(uiTransform);
-  const pScale = uiTransform?.scale ?? 1;
-  const pOx = uiTransform?.ox ?? 0;
-  const pOy = uiTransform?.oy ?? 0;
-  uiTransform = { scale: pScale * scale, ox: pOx + pScale * ox, oy: pOy + pScale * oy, w, h };
+  const s = st();
+  s.transformStack.push(s.transform);
+  const pScale = s.transform?.scale ?? 1;
+  const pOx = s.transform?.ox ?? 0;
+  const pOy = s.transform?.oy ?? 0;
+  s.transform = { scale: pScale * scale, ox: pOx + pScale * ox, oy: pOy + pScale * oy, w, h };
 }
 
 /** Undo the most recent `pushUiTransform`. */
 export function popUiTransform(): void {
-  uiTransform = uiTransformStack.pop() ?? null;
+  const s = st();
+  s.transform = s.transformStack.pop() ?? null;
 }
 
 /** The active UI scale (product of enclosing `scaled` factors, 1 at the root) —
  *  for stroke widths or thresholds that shouldn't scale with the UI. */
 export function currentUiScale(): number {
-  return uiTransform?.scale ?? 1;
+  return st().transform?.scale ?? 1;
+}
+
+/** Map a point from the active reference space out to SCREEN coords — the
+ *  inverse of the pointer mapping. Identity at the root (no transform). Use it
+ *  to carry a coordinate measured inside `UI.scaled` (a layout cursor's rect,
+ *  an anchor) out to something drawn in screen space later — a frame-end overlay
+ *  or a deferred draw — instead of multiplying by the scale by hand (which would
+ *  also miss the transform's offset). */
+export function uiToScreen(x: number, y: number): { x: number; y: number } {
+  const t = st().transform;
+  return t ? { x: t.ox + t.scale * x, y: t.oy + t.scale * y } : { x, y };
+}
+
+function hostViewport(): { w: number; h: number } {
+  const vp = uiGame()?.viewport;
+  if (!vp) {
+    throw new Error("Minimotor.UI: no game — call Stage.init (or UI.begin a game's ctx) first");
+  }
+  return vp;
 }
 
 /** The width UI code lays out against — the reference size inside a `UI.scaled`
- *  region, else the device viewport. */
+ *  region, else the host game's viewport. */
 export function uiWidth(): number {
-  return uiTransform?.w ?? Stage.viewport.w;
+  return st().transform?.w ?? hostViewport().w;
 }
 
 /** The height UI code lays out against (see `uiWidth`). */
 export function uiHeight(): number {
-  return uiTransform?.h ?? Stage.viewport.h;
+  return st().transform?.h ?? hostViewport().h;
 }
 
 // Global UI-scale defaults that the no-arg `UI.scaled(body)` reads: a reference
 // size the UI is laid out against, and a multiplier on top. Set once (or never).
+// Deliberately shared by every runtime — it's app configuration, not UI state.
 let baseSize: { w: number; h: number } | null = null;
 let uiScaleSetting = 1;
 
@@ -140,7 +221,8 @@ export function setBaseSize(size: { w: number; h: number } | null): void {
 }
 
 /** Set the global UI-scale multiplier (accessibility / preference), applied on
- *  top of the fit by the no-arg `UI.scaled(body)`. */
+ *  top of the auto-fit by the no-arg `UI.scaled(body)`. Default 1 — no scaling
+ *  beyond the fit. */
 export function setScale(scale: number): void {
   uiScaleSetting = scale;
 }
@@ -155,10 +237,9 @@ export function getUiScaleSetting(): number {
   return uiScaleSetting;
 }
 
-/** Reset UI-scale state — for tests (see lifecycle `_reset`). */
+/** Reset the global UI-scale settings — for tests (see lifecycle `_reset`;
+ *  per-runtime transform state is dropped with the runtime slots). */
 export function resetUiScale(): void {
-  uiTransform = null;
-  uiTransformStack.length = 0;
   baseSize = null;
   uiScaleSetting = 1;
 }
@@ -168,16 +249,24 @@ export function resetUiScale(): void {
 // also be dead to the pointer — otherwise a control scrolled beyond a scroll
 // region's visible box (drawn into empty space past it) still catches clicks.
 // `clip` pushes/pops these; `uiPointer` deadens the pointer when it's outside.
-const pointerClips: { x: number; y: number; w: number; h: number }[] = [];
+
+/** The innermost active pointer clip in SCREEN-logical coords, or undefined
+ *  outside any clip — widgets stash it beside a stored hit-rect so out-of-band
+ *  hit tests (native event listeners) respect scrolled-away clipping. */
+export function activeClip(): { x: number; y: number; w: number; h: number } | undefined {
+  const s = st();
+  return s.clips[s.clips.length - 1];
+}
 
 /** Restrict pointer hits to `rect` until popped — used by `clip`/scroll regions
  *  so clipped-away widgets can't be clicked. `rect` is in the current UI
  *  transform's coords; it's converted to screen-logical coords on the way in. */
 export function pushPointerClip(rect: { x: number; y: number; w: number; h: number }): void {
-  const scale = uiTransform?.scale ?? 1;
-  const ox = uiTransform?.ox ?? 0;
-  const oy = uiTransform?.oy ?? 0;
-  pointerClips.push({
+  const s = st();
+  const scale = s.transform?.scale ?? 1;
+  const ox = s.transform?.ox ?? 0;
+  const oy = s.transform?.oy ?? 0;
+  s.clips.push({
     x: ox + scale * rect.x,
     y: oy + scale * rect.y,
     w: rect.w * scale,
@@ -187,28 +276,61 @@ export function pushPointerClip(rect: { x: number; y: number; w: number; h: numb
 
 /** Undo the most recent `pushPointerClip`. */
 export function popPointerClip(): void {
-  pointerClips.pop();
+  st().clips.pop();
+}
+
+/** Drop the memoized pointer — called from the kernel's frame-end hook. */
+export function clearPointerCache(): void {
+  st().pointerCache = null;
 }
 
 /** The pointer as widgets see it: frame-scoped edges, dead while an overlay has
  *  the screen (unless we're in the overlay's own pass), and dead when outside
- *  the active clip region. Falls back to a dead pointer when there's no default
- *  game yet (headless/tests), so widgets still render, they just don't interact. */
+ *  the active clip region. Falls back to a dead pointer when there's no game
+ *  yet (headless/tests), so widgets still render, they just don't interact.
+ *
+ *  Called several times per widget; the raw pointer can't change mid-frame
+ *  (events dispatch between rAF callbacks), so the mapped result is memoized
+ *  against everything that CAN change mid-frame: the active transform/clip
+ *  (reference identity — push/pop swaps the object), the edge-suppression flag
+ *  and the overlay gate. Cleared each frame-end. */
 export function uiPointer() {
   ensureWired(); // per-frame housekeeping keeps overlay/tooltip state honest
-  if (overlayActive && !inOverlayPass) return DEAD_POINTER;
+  const s = st();
+  const overlayDead = isOverlayActive() && !isInOverlayPass();
+  const clip = s.clips[s.clips.length - 1];
+  const c = s.pointerCache;
+  if (
+    c &&
+    c.t === s.transform &&
+    c.clip === clip &&
+    c.suppressed === s.edgesSuppressed &&
+    c.overlayDead === overlayDead
+  ) {
+    return c.p;
+  }
+  const p = computeUiPointer(s, overlayDead, clip);
+  s.pointerCache = { t: s.transform, clip, suppressed: s.edgesSuppressed, overlayDead, p };
+  return p;
+}
+
+function computeUiPointer(
+  s: InputState,
+  overlayDead: boolean,
+  clip: { x: number; y: number; w: number; h: number } | undefined,
+) {
+  if (overlayDead) return DEAD_POINTER;
   try {
     const p = rawPointer(); // screen-logical coords
     // Innermost clip is the smallest, so testing it alone is enough (clips nest).
     // Clips are stored in screen coords, so gate before mapping into design coords.
-    const clip = pointerClips[pointerClips.length - 1];
     if (clip && !pointInRect(p.x, p.y, clip)) return DEAD_POINTER;
     // Map into the active UI transform's reference coords so a widget's rect (in
     // reference coords) hit-tests against the pointer correctly.
-    const t = uiTransform;
+    const t = s.transform;
     const mapped = t ? { ...p, x: (p.x - t.ox) / t.scale, y: (p.y - t.oy) / t.scale } : p;
     // A drag gesture in progress swallows the click edges (position/wheel stay).
-    if (edgesSuppressed)
+    if (s.edgesSuppressed)
       return { ...mapped, pressed: false, released: false, down: false, doublePressed: false };
     return mapped;
   } catch {
@@ -216,12 +338,12 @@ export function uiPointer() {
   }
 }
 
-/** Request a CSS cursor for this frame from UI/widget code — forwards to
- *  `Stage.setCursor` (the engine primitive; cursor is a canvas concern). Reset
- *  every frame, so call it each frame the state holds; higher `priority`
+/** Request a CSS cursor for this frame from UI/widget code — forwards to the
+ *  host game's `setCursor` (the engine primitive; cursor is a canvas concern).
+ *  Reset every frame, so call it each frame the state holds; higher `priority`
  *  (default 0) wins when several are requested. Re-exported as `UI.setCursor`. */
 export function setCursor(cursor: string, priority?: number): void {
-  Stage.setCursor(cursor, priority);
+  uiGame()?.setCursor(cursor, priority);
 }
 
 /** Hovering an interactive widget asks for the hand cursor; the engine

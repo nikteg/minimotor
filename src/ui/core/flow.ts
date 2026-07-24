@@ -3,10 +3,12 @@
 // widgets drop into via the `at` option. `row`/`col`/`group` (in ../widgets) are
 // the ergonomic closures built on it (via runContainer/autoContainer below).
 
+import { sweptCache } from "./frame-cache.js";
 import { widgetId } from "./identity.js";
 import type { IdPart } from "./identity.js";
-import { ANCHOR_H, ANCHOR_V, type TextAnchor } from "./text.js";
-import { Stage } from "../../engine/index.js";
+import { ANCHOR_H, ANCHOR_V, anchorViewport, type TextAnchor } from "./text.js";
+import { uiCtx } from "./context.js";
+import { runtimeSlot } from "./runtime.js";
 
 /** Options for `flow()` — a one-axis layout cursor. */
 export interface FlowOptions {
@@ -73,8 +75,8 @@ export interface Flow {
  *  tabs), and read back `extent` to size backdrops:
  *
  *    const bar = UI.flow({ x: 12, y: 12, gap: 10 });          // a row
- *    if (UI.button(ctx, { at: bar, label: "SAVE" })) save();   // auto width
- *    on = UI.toggle(ctx, { at: bar, label: "Autosave", on });
+ *    if (UI.button({ at: bar, label: "SAVE" })) save();        // auto width
+ *    on = UI.toggle({ at: bar, label: "Autosave", on });
  *
  *    const right = UI.flow({ x: vp.w - 12, y: 12, align: "end" }); // ← grows left */
 export function flow(opts: FlowOptions): Flow {
@@ -208,13 +210,32 @@ export interface Fillable extends Flowable {
   reserve?: number;
 }
 
+// ---------- Last placed widget (anchor rect) ----------
+// Every widget's resolved rect passes through `place`/`fillRect`, so the kernel
+// can remember where the MOST RECENT widget landed — flowing or pinned alike.
+// Anchored floaters (popover, floatText) attach to it when the caller gives no
+// x/y, so `UI.button(...)` followed by `UI.popover({...})` just works inside an
+// auto-flowing layout. Per runtime; the rect is in the CURRENT UI space (the
+// same space the widget drew in).
+const lastRectSlot = runtimeSlot<{ rect: { x: number; y: number; w: number; h: number } | null }>(
+  () => ({ rect: null }),
+);
+
+/** The rect of the most recently placed widget — what `popover`/`floatText`
+ *  anchor to when called without `x`/`y`. Null before any widget has drawn. */
+export function lastWidgetRect(): { x: number; y: number; w: number; h: number } | null {
+  return lastRectSlot().rect;
+}
+
 /** Resolve a `Fillable`'s rect: an explicit `x`/`y` wins; otherwise fill the
  *  ambient (or `at`) layout, leaving `reserve` px for later siblings. */
 export function fillRect(opts: Fillable): { x: number; y: number; w: number; h: number } {
   const layout = opts.at ?? (opts.x === undefined ? currentLayout() : null);
-  return layout
+  const rect = layout
     ? layout.fill(opts.reserve ?? 0)
     : { x: opts.x ?? 0, y: opts.y ?? 0, w: opts.w ?? 0, h: opts.h ?? 0 };
+  lastRectSlot().rect = rect;
+  return rect;
 }
 
 /** Resolve a widget's rect: an explicit `at` flow, else the ambient layout
@@ -227,16 +248,21 @@ export function place(
 ): { x: number; y: number; w: number; h: number } {
   const pinned = opts.x !== undefined || opts.y !== undefined;
   const st = pinned ? undefined : (opts.at ?? currentLayout());
+  let rect: { x: number; y: number; w: number; h: number };
   if (st) {
     // Main axis: rows pass the widget's natural width, cols its natural height.
     // Cross axis: fill the container (pass undefined) UNLESS it shrink-wraps
     // (`fitCross`), where the widget's natural cross size is used instead.
     if (st.dir === "row") {
-      return st.next(opts.w ?? autoW, opts.h ?? (st.fitCross ? defaultH : undefined));
+      rect = st.next(opts.w ?? autoW, opts.h ?? (st.fitCross ? defaultH : undefined));
+    } else {
+      rect = st.next(opts.w ?? (st.fitCross ? autoW : undefined), opts.h);
     }
-    return st.next(opts.w ?? (st.fitCross ? autoW : undefined), opts.h);
+  } else {
+    rect = { x: opts.x ?? 0, y: opts.y ?? 0, w: opts.w ?? autoW, h: opts.h ?? defaultH };
   }
-  return { x: opts.x ?? 0, y: opts.y ?? 0, w: opts.w ?? autoW, h: opts.h ?? defaultH };
+  lastRectSlot().rect = rect;
+  return rect;
 }
 
 /** Options shared by the closure containers. */
@@ -366,7 +392,9 @@ export interface ContentSize {
   eh: number;
 }
 
-const contentSizes = new Map<string, ContentSize>();
+// Swept: entries for containers that stop being drawn (or whose position-
+// derived fallback key changes as they move) age out instead of accumulating.
+const contentSizes = sweptCache<ContentSize>();
 
 /** Cache key for a container's auto-size: explicit `id`, else the idScope
  *  call-order id, else a position key for pinned containers, else none. */
@@ -417,7 +445,7 @@ export function containerRect(
   if (opts.anchor) {
     // Root placed in the VIEWPORT: `w`/`h` are the preferred size clamped to the
     // viewport minus `margin`; the anchor + any `x`/`y` offset position it.
-    const vp = Stage.viewport;
+    const vp = anchorViewport(uiCtx());
     const m = opts.margin ?? 0;
     const cw = Math.min(w ?? 120, vp.w - m * 2);
     const ch = Math.min(h ?? (dir === "row" ? 34 : 40), vp.h - m * 2);

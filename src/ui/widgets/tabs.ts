@@ -12,9 +12,9 @@ import {
   roundRectPath,
   theme,
   uiFont,
+  uiCtx,
   uiPointer,
   widgetId,
-  withCtx,
 } from "../core/index.js";
 
 /** A horizontal tab strip. */
@@ -38,14 +38,9 @@ export interface TabsOptions extends Flowable {
 
 /** Draw a tab strip; returns the (possibly changed) active index:
  *
- *    tab = UI.tabs(ctx, { x, y, items: ["All", "Coop", "PvP"], active: tab }); */
-export function tabs(opts: TabsOptions): number;
-export function tabs(ctx: CanvasRenderingContext2D, opts: TabsOptions): number;
-export function tabs(
-  ctxOrOpts: CanvasRenderingContext2D | TabsOptions,
-  maybeOpts?: TabsOptions,
-): number {
-  const [ctx, opts] = withCtx(ctxOrOpts, maybeOpts);
+ *    tab = UI.tabs({ x, y, items: ["All", "Coop", "PvP"], active: tab }); */
+export function tabs(opts: TabsOptions): number {
+  const ctx = uiCtx();
   ctx.save();
   ctx.font = opts.font ?? uiFont(theme.fontSize, true);
   // Auto width: equal cells sized to the widest label.

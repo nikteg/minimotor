@@ -6,8 +6,8 @@
 // fixed step (via Loop.onStep), so they pause with the loop like Clock/Tween.
 //
 // The canvas context is implicit: widgets draw to the default game's ctx —
-// no plumbing. Pass one explicitly only for isolated games/offscreen work
-// (`UI.begin(ctx)` per frame, or the `(ctx, opts)` call form):
+// no plumbing. Point them at another context (isolated games/offscreen work)
+// with `UI.begin(ctx)` once per frame:
 //
 //   Minimotor.UI.floatText("+100", x, y, { color: "#ffd43b" }); // spawn (update)
 //   if (Minimotor.UI.button({ x, y, label: "PLAY" })) start();
@@ -27,6 +27,8 @@
 // depend on this kernel, never the other way around.
 
 export * from "./context.js";
+export * from "./frame-cache.js";
+export * from "./runtime.js";
 export * from "./theme.js";
 export * from "./flow.js";
 export * from "./identity.js";

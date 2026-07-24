@@ -2,17 +2,19 @@
 import {
   Flowable,
   centeredText,
+  claimPointerGesture,
   consumeKeyboardCommand,
   drawFocusRing,
   focusFromPointer,
   hoverCursor,
   place,
   registerFocusable,
+  runtimeSlot,
   theme,
   uiFont,
+  uiCtx,
   uiPointer,
   widgetId,
-  withCtx,
 } from "../core/index.js";
 import { clamp } from "../../mathf.js";
 import { pointInRect } from "../../collision.js";
@@ -29,7 +31,9 @@ export interface SliderOptions extends Flowable {
   max?: number;
   /** Current value — pass your state in, assign the return value back. */
   value: number;
-  /** Snap increment (e.g. 5). Default continuous. */
+  /** Snap increment (e.g. 5) — also the arrow-key step when the slider has
+   *  keyboard focus. Default continuous, with arrow keys stepping by
+   *  (max − min) / 100. */
   step?: number;
   /** Caption drawn left of the track. */
   label?: string;
@@ -47,30 +51,30 @@ export interface SliderOptions extends Flowable {
   color?: string;
 }
 
-// One slider drag at a time, tracked across frames by id.
-let sliderDrag: string | null = null;
+// One slider drag at a time (per UI runtime), tracked across frames by id.
+const sliderDragSlot = runtimeSlot<{ id: string | null }>(() => ({ id: null }));
 
 /** Draw a slider and return the (possibly changed) new value — drag the knob
  *  or click anywhere on the track:
  *
- *    volume = UI.slider(ctx, { x, y, w: 140, value: volume, label: "VOL" }); */
+ *    volume = UI.slider({ x, y, w: 140, value: volume, label: "VOL" }); */
 export function slider(
   label: string,
   value: number,
   opts?: Omit<SliderOptions, "label" | "value">,
 ): number;
 export function slider(opts: SliderOptions): number;
-export function slider(ctx: CanvasRenderingContext2D, opts: SliderOptions): number;
 export function slider(
-  ctxOrOptsOrLabel: CanvasRenderingContext2D | SliderOptions | string,
-  optsOrValue?: SliderOptions | number,
+  optsOrLabel: SliderOptions | string,
+  valueArg?: number,
   rest?: Omit<SliderOptions, "label" | "value">,
 ): number {
   // Label-first, value-in/value-out sugar (API_PLAN #43):
   //   Audio.buses.music.volume = UI.slider("Music", Audio.buses.music.volume);
-  if (typeof ctxOrOptsOrLabel === "string")
-    return slider({ ...rest, label: ctxOrOptsOrLabel, value: optsOrValue as number });
-  const [ctx, opts] = withCtx(ctxOrOptsOrLabel, optsOrValue as SliderOptions);
+  if (typeof optsOrLabel === "string")
+    return slider({ ...rest, label: optsOrLabel, value: valueArg as number });
+  const opts = optsOrLabel;
+  const ctx = uiCtx();
   const min = opts.min ?? 0;
   const max = opts.max ?? 1;
   const slot = place(opts, opts.w ?? 140, opts.h ?? 30);
@@ -100,13 +104,17 @@ export function slider(
     tabIndex: opts.tabIndex,
   });
   const hover = !opts.disabled && pointInRect(p.x, p.y, hit);
-  hoverCursor(hover || sliderDrag === id);
+  const sd = sliderDragSlot();
+  hoverCursor(hover || sd.id === id);
 
-  if (!p.down) sliderDrag = null;
-  if (p.pressed && hover && !sliderDrag) {
-    sliderDrag = id;
+  if (!p.down) sd.id = null;
+  if (p.pressed && hover && !sd.id) {
+    sd.id = id;
     focusFromPointer(ctx, id);
   }
+  // While dragging, the slider owns the pointer — a slider inside a scroll
+  // region must never also swipe-scroll it.
+  if (sd.id === id) claimPointerGesture();
 
   let value = clamp(opts.value, min, max);
   const command = consumeKeyboardCommand(id);
@@ -114,7 +122,7 @@ export function slider(
   if (command === "ArrowRight" || command === "ArrowUp") value += keyboardStep;
   if (command === "ArrowLeft" || command === "ArrowDown") value -= keyboardStep;
   value = clamp(value, min, max);
-  if (sliderDrag === id) {
+  if (sd.id === id) {
     value = min + ((p.x - sx) / sw) * (max - min);
     if (opts.step) value = Math.round(value / opts.step) * opts.step;
     value = clamp(value, min, max);
@@ -134,7 +142,7 @@ export function slider(
   ctx.fillRect(sx, sy - 2, knobX - sx, 4);
   ctx.beginPath();
   ctx.arc(knobX, sy, knobR, 0, Math.PI * 2);
-  ctx.fillStyle = sliderDrag === id || hover ? theme.accent : theme.accentSoft;
+  ctx.fillStyle = sd.id === id || hover ? theme.accent : theme.accentSoft;
   ctx.fill();
   ctx.fillStyle = opts.color ?? theme.text;
   ctx.textAlign = "right";
