@@ -60,11 +60,14 @@ export interface ListOptions extends Fillable {
   rowId?: (index: number) => string;
 }
 
-// Swipe / body-drag scrolling — one active gesture at a time, keyed by list id.
-// A press starts a candidate; once it travels past DRAG_THRESHOLD it becomes a
-// scroll that owns the pointer (and swallows the ending click so it doesn't
-// select a row). Below the threshold it stays a tap and the row clicks normally.
-let bodyScroll: { id: string; startY: number; startOffset: number; active: boolean } | null = null;
+// Swipe / body-drag scrolling — one active gesture at a time, keyed by region
+// id. A press starts a candidate; once it travels past DRAG_THRESHOLD it becomes
+// a scroll that owns the pointer (and swallows the ending click so it doesn't
+// select whatever is underneath). Below the threshold it stays a tap and the
+// widget under it clicks normally. The FIRST region to claim a press wins, so
+// when regions nest, the outer (drawn first) takes the gesture — a page swipe
+// scrolls the page, not a widget inside it.
+let bodyScroll: { id: string; start: number; startOffset: number; active: boolean } | null = null;
 const DRAG_THRESHOLD = 6;
 
 // Clear the click-suppression flag once per frame (set while a body-drag runs).
@@ -73,6 +76,42 @@ function ensureListHooks(): void {
   if (listHooksWired) return;
   listHooksWired = true;
   onFrameEnd(clearPointerEdges);
+}
+
+/** Swipe / body-drag scrolling for any scroll region — the shared engine behind
+ *  `list`'s rows and the `overflow` containers. Pass the region's clipped body
+ *  `rect`, its scroll `axis` (`"y"` vertical, `"x"` horizontal), the current
+ *  `offset` and the max scroll; returns the updated offset. A drag past the
+ *  threshold suppresses the click that ends it, so dragging to scroll never
+ *  activates the widget the finger lifts over. */
+export function dragScroll(
+  key: string,
+  rect: { x: number; y: number; w: number; h: number },
+  axis: "x" | "y",
+  offset: number,
+  max: number,
+): number {
+  if (max <= 0) return offset;
+  ensureListHooks();
+  const p = uiPointer();
+  const pos = axis === "y" ? p.y : p.x;
+  if (p.pressed && !bodyScroll && pointInRect(p.x, p.y, rect)) {
+    bodyScroll = { id: key, start: pos, startOffset: offset, active: false };
+  }
+  if (bodyScroll?.id === key) {
+    if (p.down) {
+      const d = pos - bodyScroll.start;
+      if (!bodyScroll.active && Math.abs(d) > DRAG_THRESHOLD) bodyScroll.active = true;
+      if (bodyScroll.active) {
+        offset = clamp(bodyScroll.startOffset - d, 0, max);
+        suppressPointerEdges(); // whatever's under the finger mustn't click mid-drag
+      }
+    } else {
+      if (bodyScroll.active) suppressPointerEdges(); // swallow the release that ends the drag
+      bodyScroll = null;
+    }
+  }
+  return offset;
 }
 
 /** Draw a windowed vertical list per `ListOptions`, calling `row(index, rect)`
@@ -96,31 +135,8 @@ export function list(
   let offset = clamp(opts.offset, 0, max);
 
   // Swipe to scroll: drag anywhere in the content area (the scrollbar gutter is
-  // excluded — that's the thumb's job) to pan the list. Read the pointer BEFORE
-  // suppressing edges, so this gesture still sees them while the rows below
-  // don't. Only when the content overflows.
-  if (needsBar) {
-    ensureListHooks();
-    const p = uiPointer();
-    const key = opts.id ?? `list:${x}:${y}`;
-    const body = { x, y, w: listW, h };
-    if (p.pressed && !bodyScroll && pointInRect(p.x, p.y, body)) {
-      bodyScroll = { id: key, startY: p.y, startOffset: offset, active: false };
-    }
-    if (bodyScroll?.id === key) {
-      if (p.down) {
-        const dy = p.y - bodyScroll.startY;
-        if (!bodyScroll.active && Math.abs(dy) > DRAG_THRESHOLD) bodyScroll.active = true;
-        if (bodyScroll.active) {
-          offset = clamp(bodyScroll.startOffset - dy, 0, max);
-          suppressPointerEdges(); // rows below mustn't hover-click mid-drag
-        }
-      } else {
-        if (bodyScroll.active) suppressPointerEdges(); // swallow the release that ends the drag
-        bodyScroll = null;
-      }
-    }
-  }
+  // excluded — that's the thumb's job) to pan the list.
+  offset = dragScroll(opts.id ?? `list:${x}:${y}`, { x, y, w: listW, h }, "y", offset, max);
 
   // Keyboard navigation: register ALL rows as focusables (so Tab reaches every
   // row, not just the visible window), then scroll so the focused one is in

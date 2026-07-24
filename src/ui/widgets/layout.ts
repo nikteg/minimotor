@@ -24,7 +24,7 @@ import {
   uiPointer,
   uiWidth,
 } from "../core/index.js";
-import { scrollbar } from "./lists.js";
+import { dragScroll, scrollbar } from "./lists.js";
 import { pointInRect } from "../../collision.js";
 import { Stage } from "../../engine/index.js";
 import { clamp } from "../../mathf.js";
@@ -109,6 +109,17 @@ function scrollable<R>(
   const innerH = horiz ? bodyRect.h - gutter : bodyRect.h;
   const sbId = `${key ?? `scroll@${rect.x}:${rect.y}`}:sb`;
   let offset = clamp(scrollOffsets.get(sbId) ?? 0, 0, max);
+
+  // Swipe / body-drag: drag the body to scroll it (touch-native), alongside the
+  // wheel + thumb. This runs BEFORE the children draw, so on nested scroll
+  // regions the outer one claims the gesture — a page swipe scrolls the page.
+  offset = dragScroll(
+    sbId,
+    { x: bodyRect.x, y: bodyRect.y, w: innerW, h: innerH },
+    horiz ? "x" : "y",
+    offset,
+    max,
+  );
 
   // Fade the scrollbar to full while the pointer is inside the region and back
   // to a faint resting level when it leaves (so there's always a hint that the
