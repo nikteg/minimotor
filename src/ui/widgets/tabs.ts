@@ -1,6 +1,6 @@
 // ---------- tabs ----------
 import {
-  Flow,
+  Flowable,
   buttonState,
   centeredText,
   consumeKeyboardCommand,
@@ -18,15 +18,11 @@ import {
 } from "../core/index.js";
 
 /** A horizontal tab strip. */
-export interface TabsOptions {
+export interface TabsOptions extends Flowable {
   /** Stable identity enables Tab focus and arrow-key selection. */
   id?: string;
   /** Position in the keyboard tab order. */
   tabIndex?: number;
-  /** Left edge in px. */
-  x?: number;
-  /** Top edge in px. */
-  y?: number;
   /** Total width, split equally between the tabs. Omit to auto-size every
    *  cell to the widest label. */
   w?: number;
@@ -36,8 +32,6 @@ export interface TabsOptions {
   items: string[];
   /** Current tab index — pass your state in, assign the return value back. */
   active: number;
-  /** Place in this layout stack — supplies x/y (and h); auto width. */
-  at?: Flow;
   /** Label font. Default a bold `theme.fontSize` UI font. */
   font?: string;
 }

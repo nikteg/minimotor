@@ -6,7 +6,7 @@
 // lifecycle hooks (onOverlayPass / onFrameEnd / onReset), so core never imports
 // it back.
 import {
-  Flow,
+  Flowable,
   centeredText,
   consumeKeyboardActivation,
   consumeKeyboardCommand,
@@ -74,7 +74,7 @@ export interface SelectOption<T> {
 
 /** Inputs to `select`: the controlled `value`, the `options` list, geometry,
  *  and native `<select>` hints. */
-export interface SelectOptions<T> {
+export interface SelectOptions<T> extends Flowable {
   /** Stable identity. May be omitted inside `UI.idScope()`. */
   id?: string;
   /** Current value — controlled; matched against `options` by `Object.is`.
@@ -82,16 +82,10 @@ export interface SelectOptions<T> {
   value: T;
   /** The selectable options (label + value). */
   options: readonly SelectOption<T>[];
-  /** Top-left x in logical px. */
-  x?: number;
-  /** Top-left y in logical px. */
-  y?: number;
   /** Control width in px. Default `180`; the drop menu matches it. */
   w?: number;
   /** Control height in px. Default `32`. */
   h?: number;
-  /** Place in this layout stack — supplies x/y (and h). */
-  at?: Flow;
   /** Grayed out; won't open. */
   disabled?: boolean;
   /** Shown when no option matches `value`. Default `"Select…"`. */

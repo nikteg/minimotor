@@ -5,7 +5,7 @@
 // native editor and clears its per-frame seen-set via the lifecycle hooks
 // (onFrameEnd / onReset), so core never imports it back.
 import {
-  Flow,
+  Flowable,
   centeredText,
   drawBox,
   drawFocusRing,
@@ -60,22 +60,16 @@ export const textInputSeen = new Set<string>();
 
 /** Inputs to `textInput`: the controlled `value`, geometry, and native
  *  `<input>` hints. */
-export interface TextInputOptions {
+export interface TextInputOptions extends Flowable {
   /** Stable identity. May be omitted inside `UI.idScope()`. */
   id?: string;
   /** Current text — controlled; pass your state in, assign the result's
    *  `value` back. */
   value: string;
-  /** Top-left x in logical px. */
-  x?: number;
-  /** Top-left y in logical px. */
-  y?: number;
   /** Field width in px. Default `180`. */
   w?: number;
   /** Field height in px. Default `32`. */
   h?: number;
-  /** Place in this layout stack — supplies x/y (and h). */
-  at?: Flow;
   /** Muted text shown while empty and unfocused. */
   placeholder?: string;
   /** Grayed out; ignores input. */

@@ -1,6 +1,6 @@
 // ---------- toggle ----------
 import {
-  Flow,
+  Flowable,
   buttonState,
   centeredText,
   consumeKeyboardActivation,
@@ -19,25 +19,19 @@ import {
 import { tooltip } from "./tooltip.js";
 
 /** A labeled checkbox. */
-export interface ToggleOptions {
+export interface ToggleOptions extends Flowable {
   /** Stable identity enables Tab focus and keyboard activation. */
   id?: string;
   /** Keyboard traversal order. Negative values exclude the toggle. */
   tabIndex?: number;
   /** Grayed out and unclickable. */
   disabled?: boolean;
-  /** Top-left x in logical px. */
-  x?: number;
-  /** Top-left y in logical px. */
-  y?: number;
   /** Slot height when placed in a layout (the box centers within it). */
   h?: number;
   /** Text drawn right of the box (also part of the click target). */
   label: string;
   /** Current value — pass your state in, assign the return value back. */
   on: boolean;
-  /** Place in this layout stack — supplies x/y; width is the box + label. */
-  at?: Flow;
   /** Box side length in px. Default `16`. */
   size?: number;
   /** Label font. Default `uiFont()`. */

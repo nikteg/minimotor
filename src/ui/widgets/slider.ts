@@ -1,6 +1,6 @@
 // ---------- slider ----------
 import {
-  Flow,
+  Flowable,
   centeredText,
   consumeKeyboardCommand,
   drawFocusRing,
@@ -18,17 +18,11 @@ import { clamp } from "../../mathf.js";
 import { pointInRect } from "../../collision.js";
 
 /** A horizontal value slider. */
-export interface SliderOptions {
-  /** Top-left x in logical px. */
-  x?: number;
-  /** Top-left y in logical px. */
-  y?: number;
+export interface SliderOptions extends Flowable {
   /** Widget width in px (label + track). Default `140`. */
   w?: number;
   /** Slot height in px. Default `30`. */
   h?: number;
-  /** Place in this layout stack — supplies x/y (and h). */
-  at?: Flow;
   /** Range minimum. Default `0`. */
   min?: number;
   /** Range maximum. Default `1`. */
