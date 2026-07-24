@@ -78,6 +78,48 @@ describe("createApp", () => {
   });
 });
 
+describe("canvas gesture guards", () => {
+  // iOS runs zoom/selection gestures even under touch-action:none; the app
+  // swallows them ON ITS CANVAS (fullscreen adds page-wide versions).
+  const touch = (type: string) =>
+    Object.assign(new Event(type, { cancelable: true }), { touches: [{}] });
+
+  it("swallows the SECOND quick tap (double-tap zoom / loupe), not the first", () => {
+    const { game } = build("guards-tap");
+    const c = game.canvas;
+    const s1 = touch("touchstart");
+    c.dispatchEvent(s1);
+    const e1 = touch("touchend");
+    c.dispatchEvent(e1);
+    expect(s1.defaultPrevented).toBe(false); // a single tap is untouched
+    expect(e1.defaultPrevented).toBe(false);
+    const s2 = touch("touchstart");
+    c.dispatchEvent(s2);
+    const e2 = touch("touchend");
+    c.dispatchEvent(e2);
+    expect(s2.defaultPrevented).toBe(true); // the hold after a double-tap = loupe
+    expect(e2.defaultPrevented).toBe(true); // the second tap's end = zoom
+  });
+
+  it("swallows pinch (gesturestart) and selectstart on the canvas", () => {
+    const { game } = build("guards-pinch");
+    const g = new Event("gesturestart", { cancelable: true });
+    game.canvas.dispatchEvent(g);
+    expect(g.defaultPrevented).toBe(true);
+    const sel = new Event("selectstart", { cancelable: true });
+    game.canvas.dispatchEvent(sel);
+    expect(sel.defaultPrevented).toBe(true);
+  });
+
+  it("destroy removes the guards", () => {
+    const { game } = build("guards-destroy");
+    game.destroy();
+    const g = new Event("gesturestart", { cancelable: true });
+    game.canvas.dispatchEvent(g);
+    expect(g.defaultPrevented).toBe(false);
+  });
+});
+
 describe("run / loop", () => {
   function withCallbacks(cb: Partial<AppCallbacks> = {}): {
     game: App;

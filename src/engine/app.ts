@@ -528,12 +528,40 @@ function buildApp(options: AppOptions): App {
   const onPointerCancel = () => {
     ptr.down = false;
   };
+  // iOS runs its own zoom/selection gestures even under `touch-action:none`:
+  // pinch (`gesturestart`/`change`/`end`), double-tap zoom (the second tap's
+  // `touchend`) and the double-tap-and-HOLD loupe (the second tap's
+  // `touchstart`, plus `selectstart`). Swallow them ON THE CANVAS ONLY —
+  // unlike the fullscreen guards (page-wide, see fullscreen.ts), a windowed
+  // canvas must leave the rest of the page's gestures alone. Pointer events
+  // fire BEFORE their touch counterparts, so the engine's input — including
+  // its pointerdown-timing double-press — is unaffected; and the UI's hidden
+  // native editors are separate elements, so their taps never land here.
+  let lastTouchStartAt = -Infinity;
+  let lastTouchEndAt = -Infinity;
+  const stopGesture = (e: Event) => e.preventDefault();
+  const onTouchStart = (e: TouchEvent) => {
+    const now = performance.now();
+    if (now - lastTouchStartAt <= 300 && e.touches.length === 1) e.preventDefault();
+    lastTouchStartAt = now;
+  };
+  const onTouchEnd = (e: TouchEvent) => {
+    const now = performance.now();
+    if (now - lastTouchEndAt <= 300) e.preventDefault();
+    lastTouchEndAt = now;
+  };
   canvas.addEventListener("pointerdown", onPointerDown);
   canvas.addEventListener("dblclick", onDblClick);
   window.addEventListener("pointermove", setPointer);
   canvas.addEventListener("wheel", onWheel, { passive: true });
   window.addEventListener("pointerup", onPointerUp);
   window.addEventListener("pointercancel", onPointerCancel);
+  for (const type of ["gesturestart", "gesturechange", "gestureend"]) {
+    canvas.addEventListener(type, stopGesture, { passive: false });
+  }
+  canvas.addEventListener("touchstart", onTouchStart, { passive: false });
+  canvas.addEventListener("touchend", onTouchEnd, { passive: false });
+  canvas.addEventListener("selectstart", stopGesture);
   window.addEventListener("scroll", invalidateRect, true);
 
   /** Drop edge-triggered input once the update step it belongs to has run, so a
@@ -766,6 +794,12 @@ function buildApp(options: AppOptions): App {
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("dblclick", onDblClick);
       canvas.removeEventListener("wheel", onWheel);
+      for (const type of ["gesturestart", "gesturechange", "gestureend"]) {
+        canvas.removeEventListener(type, stopGesture);
+      }
+      canvas.removeEventListener("touchstart", onTouchStart);
+      canvas.removeEventListener("touchend", onTouchEnd);
+      canvas.removeEventListener("selectstart", stopGesture);
       if (portraitMq && portraitApply) portraitMq.removeEventListener?.("change", portraitApply);
       stepHandlers.clear();
       stepStartHandlers.clear();
