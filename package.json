@@ -26,7 +26,7 @@
     "samples:build": "vite build",
     "samples:preview": "vite preview",
     "server:build": "tsc -p tsconfig.server.json",
-    "docs:api": "node tools/gen-api-docs.mjs",
+    "docs:api": "node tools/gen-api-docs.ts",
     "test:e2e": "playwright test",
     "test": "vitest run",
     "test:watch": "vitest",
