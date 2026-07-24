@@ -283,7 +283,11 @@ export function select<T>(opts: SelectOptions<T>): SelectResult<T> {
   const hovered = !opts.disabled && pointInRect(p.x, p.y, rect);
   if (hovered) hoverCursor(true);
 
-  if (hovered && p.released && !opts.disabled) {
+  // Toggle on release — but never on the release that merely ENDS a scroll
+  // drag or a widget drag (`p` is the raw pointer while our menu is open, so
+  // it ignores edge suppression): a swipe in the drop menu that lifts over the
+  // control must not close the menu it just scrolled.
+  if (hovered && p.released && !opts.disabled && !scrollGestureActive() && !pointerGestureOwned()) {
     focusFromPointer(ctx, id);
     if (s.editor?.id === id) {
       s.editor.open = !s.editor.open;

@@ -227,6 +227,13 @@ describe("select drop-menu scrolling", () => {
       const labels = visibleLabels(game);
       expect(labels).not.toContain("Auckland");
       expect(labels.length).toBeGreaterThan(0); // the menu is still open
+      // The wheel went to the MENU, not to an enclosing scroll region: the
+      // select control itself didn't move (its own label still draws at the
+      // control's y ≈ 36 — a background region stealing the wheel would have
+      // scrolled the whole column, control included, out from under the menu).
+      const calls = (game.ctx as unknown as { _calls: CtxCalls })._calls;
+      const control = calls.fillText.find(([t, , y]) => t === "Auckland" && y > 30 && y < 45);
+      expect(control).toBeDefined();
     });
 
     it(`swipe inside the open menu scrolls it${suffix}`, () => {

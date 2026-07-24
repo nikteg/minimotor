@@ -130,12 +130,19 @@ function scrollable<R>(
     max,
   );
 
+  // The pointer, captured at the REGION'S ENTRY: if this region is background
+  // to an open overlay, the pointer is dead HERE — and must stay dead for the
+  // wheel claim below, which runs after the children. (A child select/popover
+  // calling `enterOverlay` enlivens the pointer for the REST of the frame; the
+  // end-of-body claim re-reading it would steal the wheel from the overlay's
+  // own scroll region — the drop menu — through the dead background.)
+  const p = uiPointer();
+
   // Fade the scrollbar to full while the pointer is inside the region and back
   // to a faint resting level when it leaves (so there's always a hint that the
   // area scrolls). The offset math runs at any alpha, so a faded bar stays
   // usable. No overflow → fully hidden.
   const FAINT = 0.28;
-  const p = uiPointer();
   const prevAlpha = scrollAlphas.get(sbId) ?? 0;
   const target = max <= 0 ? 0 : pointInRect(p.x, p.y, bodyRect) ? 1 : FAINT;
   const alpha = prevAlpha + (target - prevAlpha) * 0.2;
@@ -164,10 +171,10 @@ function scrollable<R>(
   // Wheel AFTER the children: a nested scroll region draws (and claims) first,
   // so the wheel scrolls the INNERMOST region under the pointer until its edge,
   // then chains outward. One-frame render lag on the wheel is invisible.
-  const wp = uiPointer();
+  // Uses the ENTRY pointer `p` (see above), not a fresh read.
   offset = clamp(
     offset +
-      claimWheel(pointInRect(wp.x, wp.y, bodyRect), wp.wheel, offset <= 0.5, offset >= max - 0.5),
+      claimWheel(pointInRect(p.x, p.y, bodyRect), p.wheel, offset <= 0.5, offset >= max - 0.5),
     0,
     max,
   );

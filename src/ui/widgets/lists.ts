@@ -338,6 +338,13 @@ export function list(
   // the rows below, so a nested region inside a row claims it first.)
   offset = dragScroll(key, { x, y, w: listW, h }, "y", offset, max);
 
+  // The pointer at the LIST'S ENTRY: a list that is background to an open
+  // overlay sees a dead pointer here, and the wheel claim below (after the
+  // rows) must use THIS state — a row child calling `enterOverlay` enlivens
+  // later reads for the rest of the frame, which would let a dead background
+  // list steal the wheel from the overlay's own scroll region.
+  const wp = uiPointer();
+
   // Keyboard navigation: scroll so the focused row is in view, then register
   // the visible window (plus a one-row buffer on each side) as focusables.
   // Runs before the draw so a just-focused off-screen row scrolls in this same
@@ -371,7 +378,7 @@ export function list(
   // Wheel AFTER the rows: a nested scroll region inside a row runs first and
   // claims the wheel, so it scrolls the INNER region until its edge, then chains
   // outward (inner-first). One-frame render lag on the wheel is invisible.
-  const wp = uiPointer();
+  // Uses the ENTRY pointer `wp` (see above), not a fresh read.
   offset = clamp(
     offset +
       claimWheel(
