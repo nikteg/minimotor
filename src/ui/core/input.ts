@@ -12,6 +12,25 @@ export const DEAD_POINTER = {
   wheel: 0,
 };
 
+// A widget mid-drag (list swipe-scroll) sets this so the press/release edges
+// that drive the drag don't ALSO land as a click on whatever widget sits under
+// the pointer. `uiPointer` blanks the edges (position + wheel survive) while
+// it's set; `lists` clears it every frame-end. The dragging widget itself reads
+// `uiPointer` BEFORE it calls `suppressPointerEdges`, so it still sees the edges.
+let edgesSuppressed = false;
+
+/** Blank the pointer's press/release/down edges for the rest of this frame — a
+ *  drag gesture (e.g. list swipe-scroll) calls this so the ending release isn't
+ *  read as a click. Cleared each frame-end (see `lists`). */
+export function suppressPointerEdges(): void {
+  edgesSuppressed = true;
+}
+
+/** Clear `suppressPointerEdges` — called from a frame-end hook. */
+export function clearPointerEdges(): void {
+  edgesSuppressed = false;
+}
+
 /** The pointer, raw — overlays themselves read this (their close logic must
  *  see clicks even while they block everyone else). */
 export function rawPointer() {
@@ -156,8 +175,11 @@ export function uiPointer() {
     // Map into the active UI transform's reference coords so a widget's rect (in
     // reference coords) hit-tests against the pointer correctly.
     const t = uiTransform;
-    if (t) return { ...p, x: (p.x - t.ox) / t.scale, y: (p.y - t.oy) / t.scale };
-    return p;
+    const mapped = t ? { ...p, x: (p.x - t.ox) / t.scale, y: (p.y - t.oy) / t.scale } : p;
+    // A drag gesture in progress swallows the click edges (position/wheel stay).
+    if (edgesSuppressed)
+      return { ...mapped, pressed: false, released: false, down: false, doublePressed: false };
+    return mapped;
   } catch {
     return DEAD_POINTER;
   }

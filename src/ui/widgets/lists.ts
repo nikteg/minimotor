@@ -3,13 +3,16 @@ import { clamp } from "../../mathf.js";
 import {
   Fillable,
   buttonState,
+  clearPointerEdges,
   consumeKeyboardActivation,
   drawFocusRing,
   fillRect,
   focusFromPointer,
   focusedId,
   hoverCursor,
+  onFrameEnd,
   registerFocusable,
+  suppressPointerEdges,
   theme,
   uiCtx,
   uiPointer,
@@ -57,9 +60,25 @@ export interface ListOptions extends Fillable {
   rowId?: (index: number) => string;
 }
 
+// Swipe / body-drag scrolling — one active gesture at a time, keyed by list id.
+// A press starts a candidate; once it travels past DRAG_THRESHOLD it becomes a
+// scroll that owns the pointer (and swallows the ending click so it doesn't
+// select a row). Below the threshold it stays a tap and the row clicks normally.
+let bodyScroll: { id: string; startY: number; startOffset: number; active: boolean } | null = null;
+const DRAG_THRESHOLD = 6;
+
+// Clear the click-suppression flag once per frame (set while a body-drag runs).
+let listHooksWired = false;
+function ensureListHooks(): void {
+  if (listHooksWired) return;
+  listHooksWired = true;
+  onFrameEnd(clearPointerEdges);
+}
+
 /** Draw a windowed vertical list per `ListOptions`, calling `row(index, rect)`
- *  only for the currently visible rows. Handles clipping, the scrollbar and the
- *  mouse wheel; returns the new (clamped) scroll `offset` to store back. */
+ *  only for the currently visible rows. Handles clipping, the scrollbar, the
+ *  mouse wheel and swipe/body-drag scrolling; returns the new (clamped) scroll
+ *  `offset` to store back. */
 export function list(
   opts: ListOptions,
   row: (index: number, rect: { x: number; y: number; w: number; h: number }) => void,
@@ -75,6 +94,33 @@ export function list(
   const listW = w - (scrollW ? scrollW + 4 : 0);
   const max = Math.max(0, content - h);
   let offset = clamp(opts.offset, 0, max);
+
+  // Swipe to scroll: drag anywhere in the content area (the scrollbar gutter is
+  // excluded — that's the thumb's job) to pan the list. Read the pointer BEFORE
+  // suppressing edges, so this gesture still sees them while the rows below
+  // don't. Only when the content overflows.
+  if (needsBar) {
+    ensureListHooks();
+    const p = uiPointer();
+    const key = opts.id ?? `list:${x}:${y}`;
+    const body = { x, y, w: listW, h };
+    if (p.pressed && !bodyScroll && pointInRect(p.x, p.y, body)) {
+      bodyScroll = { id: key, startY: p.y, startOffset: offset, active: false };
+    }
+    if (bodyScroll?.id === key) {
+      if (p.down) {
+        const dy = p.y - bodyScroll.startY;
+        if (!bodyScroll.active && Math.abs(dy) > DRAG_THRESHOLD) bodyScroll.active = true;
+        if (bodyScroll.active) {
+          offset = clamp(bodyScroll.startOffset - dy, 0, max);
+          suppressPointerEdges(); // rows below mustn't hover-click mid-drag
+        }
+      } else {
+        if (bodyScroll.active) suppressPointerEdges(); // swallow the release that ends the drag
+        bodyScroll = null;
+      }
+    }
+  }
 
   // Keyboard navigation: register ALL rows as focusables (so Tab reaches every
   // row, not just the visible window), then scroll so the focused one is in
