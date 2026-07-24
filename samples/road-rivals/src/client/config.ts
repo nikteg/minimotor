@@ -1,3 +1,5 @@
+import { Gizmos } from "minimotor";
+
 export type CarTypeId = "compact" | "muscle" | "drift";
 
 export interface Point {
@@ -52,37 +54,26 @@ export const WORLD = { w: 4800, h: 3000 };
 export const roadsX = [480, 1440, 2400, 3360, 4320];
 export const roadsY = [375, 1125, 1875, 2625];
 
+// Driving physics (acceleration/grip/steer) come from the engine's arcade-car
+// presets; the sample adds only its own visual + mass fields on top.
 export const CAR_TYPES: Record<string, CarConfig> = {
   compact: {
+    ...Gizmos.carPresets.compact,
     label: "COMPACT",
     w: 54,
     h: 29,
-    acceleration: 920,
-    grip: 8.4,
-    steer: 0.78,
     mass: 1.35,
     color: "#52e0c4",
   },
   muscle: {
+    ...Gizmos.carPresets.muscle,
     label: "MUSCLE",
     w: 66,
     h: 34,
-    acceleration: 1120,
-    grip: 6.1,
-    steer: 0.62,
     mass: 2.15,
     color: "#ff9d4d",
   },
-  drift: {
-    label: "DRIFT",
-    w: 61,
-    h: 31,
-    acceleration: 850,
-    grip: 3.8,
-    steer: 0.9,
-    mass: 1.6,
-    color: "#a78cff",
-  },
+  drift: { ...Gizmos.carPresets.drift, label: "DRIFT", w: 61, h: 31, mass: 1.6, color: "#a78cff" },
 };
 
 export const WEAPONS: Weapon[] = [

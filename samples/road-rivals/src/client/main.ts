@@ -20,7 +20,15 @@ import {
   Transitions,
   UI,
 } from "minimotor";
-import type { Entity, Flash, Interpolator, Transition, TransitionRun } from "minimotor";
+import type {
+  Car,
+  Entity,
+  Flash,
+  Interpolator,
+  Skidmarks,
+  Transition,
+  TransitionRun,
+} from "minimotor";
 import { Physics2D } from "minimotor/physics2d";
 import type { Body2D } from "minimotor/physics2d";
 import {
@@ -72,6 +80,8 @@ interface FleetCar {
   type: CarTypeId;
   flash: Flash;
   body: Body2D;
+  // Shared arcade-driving model (Gizmos.car) bound to this car's body.
+  drive: Car;
   lastImpactAt?: number;
 }
 interface BotState {
@@ -114,17 +124,20 @@ interface RemoteState {
   carAlive?: boolean;
   carType?: string;
 }
+// Per-remote VIEW data. Interpolation, last-seen and prune/join bookkeeping live
+// in `remoteRoster` (Net.createRoster); `sample()` is a bound view onto this
+// peer's interpolated state, so call sites (and the HUD) never touch the roster.
 interface Remote {
   color: string;
   carFlash: Flash;
-  lastSeen: number;
   life: number;
-  interp: Interpolator<RemoteState>;
-  // Previous interpolated car pose, used to derive skid marks locally (no
+  sample: () => RemoteState | null;
+  // Previous interpolated car pose, used to derive skid slip/speed locally (no
   // extra netcode). Null when the remote isn't in a live car, so a respawn or
   // teleport can't sweep a streak across the map.
   prevCar: { x: number; y: number; a: number } | null;
-  tireMarkTimer: number;
+  // This remote's own skid trail, laid from its interpolated motion.
+  skids: Skidmarks;
 }
 interface Bullet {
   x: number;
@@ -179,18 +192,6 @@ interface EnemyDeath {
   age: number;
   duration: number;
   color: string;
-}
-interface Wheel {
-  x: number;
-  y: number;
-}
-interface TireMark {
-  x: number;
-  y: number;
-  x2: number;
-  y2: number;
-  life: number;
-  alpha: number;
 }
 interface BodyData {
   kind?: string;
@@ -327,6 +328,7 @@ const cars: FleetCar[] = fleetPoints(clientNo).map((point, index) => ({
   type: point.type,
   flash: Gizmos.flash(180),
   body: null as unknown as Body2D,
+  drive: null as unknown as Car,
 }));
 let car = cars[0];
 let carBody: Body2D = null as unknown as Body2D;
@@ -359,9 +361,24 @@ const bullets: Bullet[] = [];
 const sparks: Spark[] = [];
 const explosions: Explosion[] = [];
 const enemyDeaths: EnemyDeath[] = [];
-const tireMarks: TireMark[] = [];
-let previousRearWheels: [Wheel, Wheel] | null = null;
-let tireMarkTimer = 0;
+// Skid trails for local and remote cars. All four tyres lay rubber: the rear
+// pair sits at the gizmo's default position (along -21, across ±11) and the
+// front pair mirrors it at the front axle — drawCar paints the wheels
+// symmetrically fore/aft of the body centre (rear at -w/2+11, front at
+// w/2-11, i.e. ±16..22 across the car types, so ±21 splits the difference).
+const SKID_OPTIONS = {
+  wheels: [
+    { along: -21, across: -11 },
+    { along: -21, across: 11 },
+    { along: 21, across: -11 },
+    { along: 21, across: 11 },
+  ],
+};
+const localSkids = Gizmos.skidmarks(SKID_OPTIONS);
+// Net.createRoster owns each remote's interpolator, last-seen and join/prune
+// bookkeeping (with the wrap-safe `blendState` blend); `remotes` holds only the
+// matching view data.
+const remoteRoster = Net.createRoster<RemoteState>({ delayMs: 100, lerp: blendState });
 const remotes = new Map<string, Remote>();
 let score = 0;
 let life = 0;
@@ -379,7 +396,7 @@ let gameState = "spectator";
 let transition: TransitionRun | null = null;
 const actorCollisionCooldown = new Map<string, number>();
 
-const { buildings, cover, intersections: botSpawns, props, solids } = createRoadWorld();
+const { buildings, cover, props, solids } = createRoadWorld();
 const enemies: Bot[] = [];
 const botById = new Map<string, Bot>();
 const Pickup = ECS.component<PickupData>("RoadRivalsPickup");
@@ -411,6 +428,9 @@ for (const fleetCar of cars) {
     data: { kind: "car", car: fleetCar },
   });
   fleetCar.body.rot = fleetCar.angle;
+  // The engine's arcade-car model drives this body's tire-space velocity; the
+  // per-type tuning (acceleration/grip/steer) comes straight from CAR_TYPES.
+  fleetCar.drive = Gizmos.car(fleetCar.body, config);
 }
 carBody = car.body;
 for (const prop of props) {
@@ -583,7 +603,11 @@ transport.onMessage = (bytes) => {
     }
     return;
   }
-  if (msg.type === "bye") return void remotes.delete(msg.id ?? "");
+  if (msg.type === "bye") {
+    const peerId = msg.id ?? "";
+    remoteRoster.remove(peerId);
+    return void remotes.delete(peerId);
+  }
   if (msg.type === "car-explosion") {
     spawnCarExplosion(msg.x ?? 0, msg.y ?? 0, msg.color ?? "#ffcb5c");
     return;
@@ -626,26 +650,27 @@ transport.onMessage = (bytes) => {
     return;
   }
   if (msg.type !== "state") return;
-  let remote = remotes.get(msg.id ?? "");
-  if (!remote) {
+  const peerId = msg.id ?? "";
+  // The roster stamps last-seen, creates the interpolator on first sight and
+  // pushes the snapshot; `isNew` tells us to spin up the matching view entry.
+  const { isNew } = remoteRoster.update(peerId, msg as unknown as RemoteState);
+  let remote = remotes.get(peerId);
+  if (isNew || !remote) {
     remote = {
       color: msg.color ?? "#fff",
       carFlash: Gizmos.flash(180),
-      lastSeen: performance.now(),
       life: msg.life ?? 0,
-      interp: Net.createInterpolator<RemoteState>({ delayMs: 100, lerp: blendState }),
+      sample: (atMs?: number) => remoteRoster.sampleOne(peerId, atMs),
       prevCar: null,
-      tireMarkTimer: 0,
+      skids: Gizmos.skidmarks(SKID_OPTIONS),
     };
-    remotes.set(msg.id ?? "", remote);
+    remotes.set(peerId, remote);
   }
-  remote.lastSeen = performance.now();
   if (remote.life !== msg.life) {
     remote.life = msg.life ?? 0;
-    remote.interp.clear(); // respawns/teleports must snap, never sweep
+    remoteRoster.reset(peerId); // respawns/teleports must snap, never sweep
     remote.prevCar = null; // ...and must not draw a skid across the teleport
   }
-  remote.interp.push(msg as unknown as RemoteState);
 };
 
 addEventListener("pagehide", () => {
@@ -714,69 +739,38 @@ function carHits(x: number, y: number) {
   );
 }
 
-// A compact dynamic bicycle model: engine/brake forces act longitudinally,
-// tires dissipate lateral slip, steering produces wheelbase-based yaw, and
-// rolling + aerodynamic drag limit speed without an arbitrary hard clamp.
+// Drive the active car through the shared `Gizmos.car` arcade model: it owns the
+// longitudinal engine/brake forces, lateral tire grip, handbrake drift and
+// wheelbase yaw, writing tire-space velocity onto the body for the Physics2D
+// solver to resolve. Here we only gather input and mirror telemetry back for the
+// audio, skidmarks and renderer to read.
 function updateCar(dt: number) {
-  const config = CAR_TYPES[car.type];
   // Left stick Y drives the throttle (screen-down axis is positive, so up = fwd,
-  // down = reverse/brake); the old GAS button is folded into stick-forward.
-  const throttle = Math.max(
+  // down = reverse/brake); WASD/arrows fold into the same axis. Analog throttle
+  // now scales acceleration proportionally (the gizmo's model).
+  const throttle = Mathf.clamp(
+    (Keys.down("KeyW") || Keys.down("ArrowUp") ? 1 : 0) -
+      (Keys.down("KeyS") || Keys.down("ArrowDown") ? 1 : 0) -
+      pad.axis(1),
     -1,
-    Math.min(
-      1,
-      (Keys.down("KeyW") || Keys.down("ArrowUp") ? 1 : 0) -
-        (Keys.down("KeyS") || Keys.down("ArrowDown") ? 1 : 0) -
-        pad.axis(1),
-    ),
+    1,
   );
-  const steerInput = Math.max(
+  const steer = Mathf.clamp(
+    (Keys.down("KeyD") || Keys.down("ArrowRight") ? 1 : 0) -
+      (Keys.down("KeyA") || Keys.down("ArrowLeft") ? 1 : 0) +
+      pad.axis(0),
     -1,
-    Math.min(
-      1,
-      (Keys.down("KeyD") || Keys.down("ArrowRight") ? 1 : 0) -
-        (Keys.down("KeyA") || Keys.down("ArrowLeft") ? 1 : 0) +
-        pad.axis(0),
-    ),
+    1,
   );
+  const handbrake = Keys.down("Space") || pad.down(Input.Buttons.B);
+  car.drive.drive({ throttle, steer, handbrake }, dt);
+  // Mirror body pose + telemetry into the fields the rest of the sample reads.
   car.angle = carBody.rot;
   car.vx = carBody.vx;
   car.vy = carBody.vy;
-  const c = Math.cos(car.angle);
-  const s = Math.sin(car.angle);
-  let forward = car.vx * c + car.vy * s;
-  let lateral = -car.vx * s + car.vy * c;
-
-  if (throttle > 0) forward += config.acceleration * dt;
-  else if (throttle < 0) forward += (forward > 35 ? -1250 : -config.acceleration * 0.56) * dt;
-  const drag = 0.72 + Math.abs(forward) * 0.00155;
-  forward *= Math.exp(-drag * dt);
-  const handbrake = Keys.down("Space") || pad.down(Input.Buttons.B);
-  engineLoad = Math.abs(throttle);
-  // Handbrake: lock the rear wheels. They scrub off forward speed and lose grip
-  // so the tail slides; the `yawGain` boost below lets steering kick the car
-  // into a drift instead of just washing sideways.
-  if (handbrake) forward *= Math.exp(-1.8 * dt);
-  const grip = handbrake ? 0.6 : config.grip;
-  tireSlip = Math.abs(lateral) + (handbrake ? Math.abs(forward) * 0.5 + 24 : 0);
-  lateral *= Math.exp(-grip * dt);
-  // Power and steering can break rear traction, producing controllable fishtail
-  // rather than random noise.
-  if (throttle > 0 && Math.abs(forward) > 230)
-    lateral -= steerInput * Math.abs(forward) * 0.62 * dt;
-
-  const steerLimit = config.steer / (1 + Math.abs(forward) / 700);
-  const targetSteer = steerInput * steerLimit;
-  car.steer += (targetSteer - car.steer) * Math.min(1, dt * 12);
-
-  const nc = Math.cos(car.angle);
-  const ns = Math.sin(car.angle);
-  carBody.vx = nc * forward - ns * lateral;
-  carBody.vy = ns * forward + nc * lateral;
-  // With the handbrake, steering yanks the tail around ~2× harder — the car
-  // rotates faster than it travels, which (with the low grip above) is a drift.
-  const yawGain = handbrake && Math.abs(forward) > 40 ? 2.2 : 1;
-  carBody.spin = Math.abs(forward) > 4 ? (forward / 60) * Math.tan(car.steer) * yawGain : 0;
+  car.steer = car.drive.steerAngle;
+  engineLoad = car.drive.engineLoad;
+  tireSlip = car.drive.tireSlip;
 }
 
 function nearestEnterableCar(): FleetCar | null {
@@ -1008,92 +1002,48 @@ function repelCarFrom(x: number, y: number, radius: number) {
   return true;
 }
 
-// Rear-wheel world positions for a car centred at (x, y) facing `angle`.
-// Shared by the local car and remote cars so their skid marks are identical.
-function rearWheels(x: number, y: number, angle: number): [Wheel, Wheel] {
-  const c = Math.cos(angle);
-  const s = Math.sin(angle);
-  const rearX = x - c * 21;
-  const rearY = y - s * 21;
-  return [
-    { x: rearX - s * 11, y: rearY + c * 11 },
-    { x: rearX + s * 11, y: rearY - c * 11 },
-  ];
-}
-
 function updateTireMarks(dt: number) {
-  for (let i = tireMarks.length - 1; i >= 0; i--) {
-    tireMarks[i].life -= dt;
-    if (tireMarks[i].life <= 0) tireMarks.splice(i, 1);
-  }
+  // On foot / dead: keep aging existing marks but lift the pen (marking: false)
+  // so a later re-entry can't sweep a fresh streak across the map.
   if (!player.inCar || gameState !== "alive") {
-    previousRearWheels = null;
+    localSkids.trace(car.x, car.y, car.angle, { marking: false }, dt);
     return;
   }
-  tireMarkTimer -= dt;
   const speed = Math.hypot(car.vx, car.vy);
   const marking = tireSlip > 24 || Keys.down("Space") || speed > 300;
-  const wheels = rearWheels(car.x, car.y, car.angle);
-  if (marking && previousRearWheels && tireMarkTimer <= 0) {
-    const alpha = Mathf.clamp(0.18 + tireSlip / 420, 0.18, 0.58);
-    for (let i = 0; i < 2; i++) {
-      tireMarks.push({
-        ...previousRearWheels[i],
-        x2: wheels[i].x,
-        y2: wheels[i].y,
-        life: 9,
-        alpha,
-      });
-    }
-    if (tireMarks.length > 700) tireMarks.splice(0, tireMarks.length - 700);
-    tireMarkTimer = 0.025;
-  }
-  previousRearWheels = wheels;
+  const alpha = Mathf.clamp(0.18 + tireSlip / 420, 0.18, 0.58);
+  localSkids.trace(car.x, car.y, car.angle, { marking, alpha }, dt);
 }
 
 // Remote cars leave skid marks too, generated locally from their interpolated
-// motion (no protocol change). We derive speed and lateral (car-space) slip
-// from the per-frame change in the interpolated car pose, mirroring the local
-// car's `tireSlip`/threshold and alpha ramp, and feed the SAME `tireMarks`
-// array so remote marks age and render through the existing path.
+// motion (no protocol change): we derive speed and lateral (car-space) slip from
+// the per-frame change in the interpolated pose — the same quantity the local
+// car uses as `tireSlip` — and feed each remote's own `Gizmos.skidmarks`.
 function updateRemoteTireMarks(dt: number) {
   if (dt <= 0) return;
   for (const remote of remotes.values()) {
-    const state = remote.interp.sample();
-    // Only a live, in-car remote lays rubber. Anything else clears tracking so
-    // a later re-entry or teleport can't sweep a streak across the map.
+    const state = remote.sample();
+    // Only a live, in-car remote lays rubber. Anything else lifts the pen and
+    // drops tracking so a re-entry or teleport can't sweep a streak.
     if (!state || state.phase !== "alive" || state.mode === "foot" || state.carAlive === false) {
       remote.prevCar = null;
+      remote.skids.trace(state?.cx ?? 0, state?.cy ?? 0, state?.ca ?? 0, { marking: false }, dt);
       continue;
     }
     const prev = remote.prevCar;
-    remote.tireMarkTimer -= dt;
-    if (prev && remote.tireMarkTimer <= 0) {
+    let marking = false;
+    let alpha = 0.45;
+    if (prev) {
       const dx = state.cx - prev.x;
       const dy = state.cy - prev.y;
       const speed = Math.hypot(dx, dy) / dt;
       const c = Math.cos(state.ca);
       const s = Math.sin(state.ca);
-      // Lateral (sideways) speed in car space — the same quantity the local
-      // car uses as `tireSlip` (minus the unobservable handbrake bonus).
       const slip = Math.abs(-s * dx + c * dy) / dt;
-      if (slip > 24 || speed > 300) {
-        const alpha = Mathf.clamp(0.18 + slip / 420, 0.18, 0.58);
-        const prevWheels = rearWheels(prev.x, prev.y, prev.a);
-        const wheels = rearWheels(state.cx, state.cy, state.ca);
-        for (let i = 0; i < 2; i++) {
-          tireMarks.push({
-            ...prevWheels[i],
-            x2: wheels[i].x,
-            y2: wheels[i].y,
-            life: 9,
-            alpha,
-          });
-        }
-        if (tireMarks.length > 700) tireMarks.splice(0, tireMarks.length - 700);
-        remote.tireMarkTimer = 0.025;
-      }
+      marking = slip > 24 || speed > 300;
+      alpha = Mathf.clamp(0.18 + slip / 420, 0.18, 0.58);
     }
+    remote.skids.trace(state.cx, state.cy, state.ca, { marking, alpha }, dt);
     remote.prevCar = { x: state.cx, y: state.cy, a: state.ca };
   }
 }
@@ -1142,7 +1092,7 @@ function updateActors(dt: number) {
   }
 
   for (const [remoteId, remote] of remotes) {
-    const state = remote.interp.sample();
+    const state = remote.sample();
     if (!state || state.phase !== "alive") continue;
     if (state.carAlive !== false) {
       separateFootFrom(state.cx, state.cy, 28);
@@ -1287,7 +1237,7 @@ function updateProjectiles(dt: number) {
 
     if (b.local && !hit) {
       for (const [remoteId, remote] of remotes) {
-        const state = remote.interp.sample();
+        const state = remote.sample();
         if (!state || state.phase === "dead") continue;
         if (state.carAlive !== false && Collision.circleHit(b.x, b.y, 3, state.cx, state.cy, 28)) {
           remote.carFlash.hit();
@@ -1469,13 +1419,14 @@ Loop.run({
         carType: car.type,
       });
     }
-    const now = performance.now();
-    for (const [rid, remote] of remotes) if (now - remote.lastSeen > 5000) remotes.delete(rid);
+    // Prune peers that went quiet (the roster owns the 5 s timeout), dropping
+    // the matching view entry too.
+    for (const id of remoteRoster.prune()) remotes.delete(id);
   },
 
   draw() {
     const { ctx } = Draw;
-    const observed = remotes.values().next().value?.interp.sample();
+    const observed = remotes.values().next().value?.sample();
     const target =
       gameState === "spectator" && observed
         ? { x: observed.px, y: observed.py }
@@ -1498,24 +1449,15 @@ Loop.run({
     // The camera transform (and its shake) fold into `Camera.render`.
     Camera.render(() => {
       drawWorld(ctx, buildings, cover);
-      ctx.lineWidth = 3;
-      ctx.lineCap = "round";
-      for (const mark of tireMarks) {
-        ctx.globalAlpha = mark.alpha * Mathf.clamp(mark.life / 2, 0, 1);
-        ctx.strokeStyle = "#080c0d";
-        ctx.beginPath();
-        ctx.moveTo(mark.x, mark.y);
-        ctx.lineTo(mark.x2, mark.y2);
-        ctx.stroke();
-      }
-      ctx.globalAlpha = 1;
-      ctx.lineCap = "butt";
+      // Rubber under everything: the local car's trail, then each remote's.
+      localSkids.draw(ctx);
+      for (const remote of remotes.values()) remote.skids.draw(ctx);
       for (const prop of props) drawProp(ctx, prop);
       for (const pickup of pickupWorld.dense(Pickup)) drawPickup(ctx, pickup);
       for (const enemy of enemies) if (enemy.dead <= 0) drawEnemy(ctx, enemy, player);
       for (const death of enemyDeaths) drawEnemyDeath(ctx, death);
       for (const remote of remotes.values()) {
-        const state = remote.interp.sample();
+        const state = remote.sample();
         if (state) drawRemote(ctx, state, remote);
       }
       if (gameState === "alive") {
@@ -1565,7 +1507,7 @@ Loop.run({
         local: true,
       },
       ...[...remotes.values()].map((remote, index) => {
-        const state = remote.interp.sample();
+        const state = remote.sample();
         return {
           label: `PLAYER ${index + 2}`,
           status: `${state?.phase ?? "joining"} · ${Math.ceil(state?.health ?? 100)} HP`,

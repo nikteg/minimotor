@@ -7,17 +7,6 @@ interface AudioState {
   gameState: string;
 }
 
-interface EngineNodes {
-  ctx: AudioContext;
-  fundamental: OscillatorNode;
-  harmonic: OscillatorNode;
-  engineFilter: BiquadFilterNode;
-  engineGain: GainNode;
-  roadFilter: BiquadFilterNode;
-  roadGain: GainNode;
-  skidGain: GainNode;
-}
-
 type SfxBuild = (ctx: AudioContext, now: number, out: AudioNode) => void;
 
 function noiseBuffer(ctx: AudioContext, seconds: number): AudioBuffer {
@@ -322,95 +311,34 @@ export function createRoadAudio(getState: () => AudioState) {
     });
   }
 
-  let engineNodes: EngineNodes | null = null;
+  // The shared arcade engine model (click-train + tonal body + a speed-driven
+  // road-rumble layer), routed to the vehicle bus. Telemetry is fed each frame
+  // from the car's Gizmos.car controller (see updateEngineSound).
+  let engine: ReturnType<typeof Audio.engine> | null = null;
   function ensureEngineSound() {
-    if (engineNodes) return;
-    Audio.playSfx((ctx, now) => {
-      const out = vehicleBus.input;
-      const fundamental = ctx.createOscillator();
-      const harmonic = ctx.createOscillator();
-      const engineFilter = ctx.createBiquadFilter();
-      const engineGain = ctx.createGain();
-      fundamental.type = "triangle";
-      harmonic.type = "sine";
-      fundamental.frequency.value = 38;
-      harmonic.frequency.value = 76;
-      engineFilter.type = "lowpass";
-      engineFilter.Q.value = 0.7;
-      engineFilter.frequency.value = 360;
-      engineGain.gain.value = 0.0001;
-      fundamental.connect(engineFilter);
-      harmonic.connect(engineFilter);
-      engineFilter.connect(engineGain).connect(out);
-
-      const continuousNoise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
-      const noiseData = continuousNoise.getChannelData(0);
-      for (let i = 0; i < noiseData.length; i++) noiseData[i] = Math.random() * 2 - 1;
-      const noise = ctx.createBufferSource();
-      const roadFilter = ctx.createBiquadFilter();
-      const roadGain = ctx.createGain();
-      const skidFilter = ctx.createBiquadFilter();
-      const skidGain = ctx.createGain();
-      noise.buffer = continuousNoise;
-      noise.loop = true;
-      roadFilter.type = "lowpass";
-      roadFilter.frequency.value = 240;
-      skidFilter.type = "bandpass";
-      skidFilter.frequency.value = 1050;
-      skidFilter.Q.value = 0.8;
-      roadGain.gain.value = skidGain.gain.value = 0.0001;
-      noise.connect(roadFilter).connect(roadGain).connect(out);
-      noise.connect(skidFilter).connect(skidGain).connect(out);
-
-      fundamental.start(now);
-      harmonic.start(now);
-      noise.start(now);
-      engineNodes = {
-        ctx,
-        fundamental,
-        harmonic,
-        engineFilter,
-        engineGain,
-        roadFilter,
-        roadGain,
-        skidGain,
-      };
+    engine ??= Audio.engine({
+      bus: vehicleBus.name,
+      gears: 5,
+      idleHz: 38,
+      revHz: 120,
+      rumble: 0.5,
+      volume: 0.5,
     });
   }
   function updateEngineSound(engineLoad: number, tireSlip: number) {
-    if (!engineNodes) return;
+    if (!engine) return;
     const { player, car, gameState } = getState();
     const speed = Math.abs(car.vx * Math.cos(car.angle) + car.vy * Math.sin(car.angle));
-    const gears = [0, 105, 205, 320, 445, 580];
-    let gear = 0;
-    while (gear < gears.length - 2 && speed > gears[gear + 1]) gear++;
-    const inGear = Mathf.clamp((speed - gears[gear]) / (gears[gear + 1] - gears[gear]), 0, 1);
-    const engineHz = 38 + inGear * 62 + engineLoad * 12;
-    const driving = gameState === "alive" && player.inCar;
-    const now = engineNodes.ctx.currentTime;
-    engineNodes.fundamental.frequency.setTargetAtTime(engineHz, now, 0.055);
-    engineNodes.harmonic.frequency.setTargetAtTime(engineHz * 2.01, now, 0.05);
-    engineNodes.engineFilter.frequency.setTargetAtTime(
-      300 + engineHz * 4 + engineLoad * 180,
-      now,
-      0.08,
-    );
-    engineNodes.engineGain.gain.setTargetAtTime(
-      driving ? 0.018 + engineLoad * 0.018 : 0.0001,
-      now,
-      0.1,
-    );
-    engineNodes.roadFilter.frequency.setTargetAtTime(180 + speed * 1.2, now, 0.1);
-    engineNodes.roadGain.gain.setTargetAtTime(
-      driving ? Math.min(0.018, speed / 26000) : 0.0001,
-      now,
-      0.12,
-    );
-    engineNodes.skidGain.gain.setTargetAtTime(
-      driving ? Math.min(0.035, tireSlip / 7000) : 0.0001,
-      now,
-      0.06,
-    );
+    engine.update({
+      throttle: engineLoad,
+      load: engineLoad,
+      speed,
+      maxSpeed: 620,
+      slip: Mathf.clamp(tireSlip / 300, 0, 1),
+    });
+    // Audio.engine always idles; gate the whole vehicle bus so there's no engine
+    // hum while on foot or dead.
+    vehicleBus.setVolume(gameState === "alive" && player.inCar ? 0.62 : 0);
   }
   function crashSound(speed: number) {
     Audio.Mixer.duck("road-vehicle", Mathf.clamp(speed / 900, 0.12, 0.5), {

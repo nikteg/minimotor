@@ -29,7 +29,7 @@ interface RemoteMinimapState {
 }
 interface RemoteLike {
   color: string;
-  interp: { sample(): RemoteMinimapState | null };
+  sample(): RemoteMinimapState | null;
 }
 interface PlayerLike {
   x: number;
@@ -266,7 +266,7 @@ export function createRoadHud(getState: () => HudState) {
         ctx.fillRect(mx(fleetCar.x) - 1.5, my(fleetCar.y) - 1, 3, 2);
       }
       for (const remote of remotes.values()) {
-        const state = remote.interp.sample();
+        const state = remote.sample();
         if (!state || state.phase !== "alive") continue;
         ctx.fillStyle = remote.color;
         ctx.fillRect(mx(state.px) - 2, my(state.py) - 2, 4, 4);
