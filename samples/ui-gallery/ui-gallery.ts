@@ -31,6 +31,7 @@ let notes = ""; // UI.textInput (multiline)
 let chatDraft = ""; // UI.textInput (chat: clears on send, keeps focus)
 let chatLog: string[] = ["gg", "nice shot!"]; // chat history
 let quality = "high"; // UI.select value
+let city = "Tokyo"; // UI.select with a long option list — its drop menu scrolls
 let selectedItem = 1; // UI.list selection
 let listOffset = 0; // UI.list scroll offset
 let progress = 0.4; // UI.bar fill fraction (also driven by a slider)
@@ -331,6 +332,41 @@ Loop.run({
                     { label: "Ultra", value: "ultra" },
                   ],
                   ariaLabel: "Quality preset",
+                }).value;
+                // A long option list: the drop menu caps at `maxVisible` rows
+                // (default 8) and SCROLLS — windowed around the current value,
+                // with wheel + a scrollbar — instead of running off-screen.
+                UI.text("City (scrolling menu)", { color: "dim", size: 12 });
+                city = UI.select({
+                  id: uiId("select-city"),
+                  value: city,
+                  options: [
+                    "Auckland",
+                    "Bangkok",
+                    "Berlin",
+                    "Cairo",
+                    "Chicago",
+                    "Dubai",
+                    "Helsinki",
+                    "Istanbul",
+                    "London",
+                    "Los Angeles",
+                    "Madrid",
+                    "Mumbai",
+                    "Nairobi",
+                    "New York",
+                    "Oslo",
+                    "Paris",
+                    "São Paulo",
+                    "Seoul",
+                    "Singapore",
+                    "Stockholm",
+                    "Sydney",
+                    "Tokyo",
+                    "Toronto",
+                    "Vancouver",
+                  ].map((c) => ({ label: c, value: c })),
+                  ariaLabel: "City",
                 }).value;
                 UI.text("Player name", { color: "dim", size: 12 });
                 name = UI.textInput({
