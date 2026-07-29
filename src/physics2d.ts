@@ -28,10 +28,14 @@
 //   });
 
 import {
+  AABB,
   type Body as PlanckBody,
   Box,
   Circle,
   type Contact,
+  type Fixture,
+  type Joint,
+  MouseJoint,
   RevoluteJoint,
   Vec2,
   World,
@@ -183,6 +187,44 @@ export interface RaycastOptions {
   filter?: (body: Body2D) => boolean;
 }
 
+/** Options for the world queries (`queryAABB`, `pointPick`, `drag`). */
+export interface QueryOptions {
+  /** Include sensors in the result. Default false — a trigger volume is not
+   *  something the player can see, click or blow up. */
+  sensors?: boolean;
+  /** Return false to ignore a body, e.g. to skip the level geometry. */
+  filter?: (body: Body2D) => boolean;
+}
+
+/** Options for `drag()`. */
+export interface DragOptions extends QueryOptions {
+  /** Pull budget as a multiple of the grabbed body's mass — how hard the drag
+   *  is allowed to yank. Default 1000 (Box2D's own testbed figure): enough to
+   *  lift anything reasonable, low enough that a body wedged under a pile
+   *  stays wedged. */
+  strength?: number;
+  /** Response speed in Hz — lower is springier, and the body lags the pointer
+   *  further. Default 5. */
+  frequency?: number;
+  /** Springiness: 0 wobbles forever, 1 is critically damped. Default 0.7. */
+  damping?: number;
+}
+
+/** A live pointer grab from `drag()` — a soft spring between the pointer and
+ *  the point on the body that was grabbed, so the body still collides with
+ *  everything on the way instead of teleporting through it. */
+export interface Drag2D {
+  /** The body being dragged. */
+  readonly body: Body2D;
+  /** Pull toward a new pointer position, in px — call it every frame the
+   *  pointer is down. */
+  move(x: number, y: number): void;
+  /** Let go. Idempotent, and safe after the body has been destroyed. */
+  release(): void;
+  /** Escape hatch: the underlying planck joint. */
+  readonly raw: MouseJoint;
+}
+
 /** A physics world. Create bodies, call `step` once per fixed update, read
  *  positions in `draw`. */
 export interface Physics2DWorld {
@@ -213,6 +255,33 @@ export interface Physics2DWorld {
    *  fresh hits, so it's the one to hold on to — a piercing shot, a laser
    *  that dims per body it crosses. */
   raycastAll(x1: number, y1: number, x2: number, y2: number, opts?: RaycastOptions): RayHit[];
+  /** Every body overlapping the rect (top-left x/y plus size, like `walls`),
+   *  in no particular order. Area effects, "what's in the blast radius",
+   *  selection rectangles:
+   *
+   *      for (const b of phys.queryAABB(x - r, y - r, r * 2, r * 2)) {
+   *        b.applyImpulse((b.x - x) * 20, (b.y - y) * 20);
+   *      }
+   *
+   *  Bodies are matched by their bounding box, not their exact shape — a
+   *  circle counts as its square. Allocates the result array. */
+  queryAABB(x: number, y: number, w: number, h: number, opts?: QueryOptions): Body2D[];
+  /** The body under a point, or null. This one is exact (a click in a circle's
+   *  corner misses), which is what click-to-select wants. A dynamic body wins
+   *  over the static scenery it rests on; otherwise ties go to whichever the
+   *  broadphase reaches first. */
+  pointPick(x: number, y: number, opts?: QueryOptions): Body2D | null;
+  /** Grab the dynamic body under (x, y) with the pointer and return the live
+   *  grab, or null if nothing is there. The body is pulled by a spring rather
+   *  than teleported, so it keeps colliding with the world while it moves:
+   *
+   *      if (Pointer.pressed) grab = phys.drag(Pointer.x, Pointer.y);
+   *      grab?.move(Pointer.x, Pointer.y);
+   *      if (Pointer.released) { grab?.release(); grab = null; }
+   *
+   *  Static and kinematic bodies are never grabbed — a spring cannot move
+   *  them, so a grab on the floor would just look broken. */
+  drag(x: number, y: number, opts?: DragOptions): Drag2D | null;
   /** Called when two bodies begin touching. Returns an unsubscribe. */
   onContact(cb: (a: Body2D, b: Body2D) => void): () => void;
   /** Called when two bodies stop touching — the exit half of `onContact`.
@@ -280,12 +349,12 @@ export function world(opts: Physics2DOptions = {}): Physics2DWorld {
   // Box2D locks the world during a step; destroys requested from inside a
   // contact callback are buffered and applied when the step ends.
   const pendingDestroy: PlanckBody[] = [];
-  const pendingJoints: RevoluteJoint[] = [];
+  const pendingJoints: Joint[] = [];
   const destroyBody = (b: PlanckBody) => {
     if (pw.isLocked()) pendingDestroy.push(b);
     else pw.destroyBody(b);
   };
-  const destroyJoint = (j: RevoluteJoint) => {
+  const destroyJoint = (j: Joint) => {
     if (pw.isLocked()) pendingJoints.push(j);
     else pw.destroyJoint(j);
   };
@@ -436,6 +505,51 @@ export function world(opts: Physics2DOptions = {}): Physics2DWorld {
     });
   };
 
+  // ----- world queries -----
+  // The rect handed to the broadphase, the tight shape box re-tested against
+  // it, and the point `pointPick`/`drag` probe with: all reused, so a query
+  // per frame allocates only its result.
+  const queryBox = new AABB(new Vec2(0, 0), new Vec2(0, 0));
+  const tightBox = new AABB(new Vec2(0, 0), new Vec2(0, 0));
+  const probe = new Vec2(0, 0);
+
+  const setQueryBox = (x: number, y: number, w: number, h: number) => {
+    queryBox.lowerBound.x = x / ppm;
+    queryBox.lowerBound.y = y / ppm;
+    queryBox.upperBound.x = (x + w) / ppm;
+    queryBox.upperBound.y = (y + h) / ppm;
+  };
+
+  // The wrapped body behind a fixture, if the query wants it at all.
+  const candidate = (fixture: Fixture, o: QueryOptions): Body2D | null => {
+    if (!o.sensors && fixture.isSensor()) return null;
+    const body = fixture.getBody().getUserData() as Body2D | null;
+    if (!body) return null; // created straight on `phys.raw` — no wrapper
+    return o.filter && !o.filter(body) ? null : body;
+  };
+
+  const pickAt = (x: number, y: number, o: QueryOptions): Body2D | null => {
+    probe.x = x / ppm;
+    probe.y = y / ppm;
+    setQueryBox(x, y, 0, 0);
+    let found: Body2D | null = null;
+    pw.queryAABB(queryBox, (fixture) => {
+      const body = candidate(fixture, o);
+      if (!body || !fixture.testPoint(probe)) return true;
+      // A crate resting on the floor overlaps the floor's box at its feet; the
+      // crate is what the player meant, so a dynamic hit wins and ends it.
+      const dynamic = fixture.getBody().isDynamic();
+      if (!found || dynamic) found = body;
+      return !dynamic;
+    });
+    return found;
+  };
+
+  // A mouse joint pulls a body toward a point relative to some other body;
+  // that other body is this fixture-less static anchor, made on first drag.
+  let ground: PlanckBody | null = null;
+  const groundBody = (): PlanckBody => (ground ??= pw.createBody());
+
   type ContactCb = (a: Body2D, b: Body2D) => void;
   const beginCbs = new Set<ContactCb>();
   const endCbs = new Set<ContactCb>();
@@ -575,6 +689,71 @@ export function world(opts: Physics2DOptions = {}): Physics2DWorld {
       cast(x1, y1, x2, y2, o, (hit) => hits.push(copyHit(hit, blankHit())), true);
       hits.sort((a, b) => a.fraction - b.fraction);
       return hits;
+    },
+
+    queryAABB(x, y, w, h, o = {}) {
+      const found: Body2D[] = [];
+      setQueryBox(x, y, w, h);
+      pw.queryAABB(queryBox, (fixture) => {
+        const body = candidate(fixture, o);
+        if (body && !found.includes(body)) {
+          // The broadphase compares FAT proxy boxes (planck pads them so small
+          // movements don't rebuild the tree), so a body just outside the rect
+          // gets reported — re-test against the shape's own box.
+          fixture.getShape().computeAABB(tightBox, fixture.getBody().getTransform(), 0);
+          if (AABB.testOverlap(tightBox, queryBox)) found.push(body);
+        }
+        return true; // visit every proxy in the rect
+      });
+      return found;
+    },
+
+    pointPick(x, y, o = {}) {
+      return pickAt(x, y, o);
+    },
+
+    drag(x, y, o = {}) {
+      const body = pickAt(x, y, {
+        ...o,
+        filter: (b) => b.raw.isDynamic() && (!o.filter || o.filter(b)),
+      });
+      if (!body) return null;
+      // planck anchors the spring at the world point it was created with, so
+      // grabbing a crate by its corner keeps it hanging by that corner.
+      probe.x = x / ppm;
+      probe.y = y / ppm;
+      const joint = pw.createJoint(
+        new MouseJoint(
+          {
+            maxForce: (o.strength ?? 1000) * body.raw.getMass(),
+            frequencyHz: o.frequency ?? 5,
+            dampingRatio: o.damping ?? 0.7,
+          },
+          groundBody(),
+          body.raw,
+          probe,
+        ),
+      )!;
+      body.wake(); // a sleeping body ignores the spring until something rouses it
+      let dead = false;
+      return {
+        body,
+        move(nx, ny) {
+          if (dead) return;
+          joint.setTarget(at(nx / ppm, ny / ppm));
+          body.wake();
+        },
+        release() {
+          // Idempotent, and a no-op if the body was destroyed mid-drag: that
+          // already took the joint with it.
+          if (dead) return;
+          dead = true;
+          destroyJoint(joint);
+        },
+        get raw() {
+          return joint;
+        },
+      };
     },
 
     onContact(cb) {

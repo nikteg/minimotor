@@ -49,6 +49,14 @@ export interface ToneOptions {
   delay?: number;
   /** Mixer bus to play on. Default `"sfx"`. */
   bus?: string;
+  /** Stereo position for this one voice: -1 hard left, 0 centre (default), 1
+   *  hard right. This is the cheap way to place a sound in the world — pan by
+   *  where the thing is relative to the camera:
+   *
+   *      Audio.tone({ wave: "square", freq: 440, pan: (x - cam.x) / (vp.w / 2) });
+   *
+   *  Independent of `Mixer.bus(...).setPan`, which moves the whole channel. */
+  pan?: number;
 }
 
 function scheduleSweep(
@@ -94,7 +102,19 @@ export function tone(opts: ToneOptions): void {
     env.gain.linearRampToValueAtTime(peak, when + attack);
     if (hold > 0) env.gain.setValueAtTime(peak, holdEnd);
     env.gain.exponentialRampToValueAtTime(0.0001, end);
-    env.connect(Mixer.bus(opts.bus ?? "sfx").input);
+
+    // …into the bus, through a panner when this voice asked to be placed.
+    // Skipped at centre so an unpanned voice keeps the plain graph (a
+    // StereoPanner applies the equal-power law even at 0).
+    const busInput = Mixer.bus(opts.bus ?? "sfx").input;
+    if (opts.pan && typeof ctx.createStereoPanner === "function") {
+      const panner = ctx.createStereoPanner();
+      panner.pan.value = Math.max(-1, Math.min(1, opts.pan));
+      env.connect(panner);
+      panner.connect(busInput);
+    } else {
+      env.connect(busInput);
+    }
 
     // Sources feed the filter if present, else the envelope directly.
     let sink: AudioNode = env;

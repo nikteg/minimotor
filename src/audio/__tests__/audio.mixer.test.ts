@@ -96,6 +96,9 @@ class MockAudioContext {
   createBufferSource() {
     return mockNode("source", { buffer: null, loop: false, start() {}, stop() {} });
   }
+  createStereoPanner() {
+    return mockNode("panner", { pan: new MockParam() });
+  }
 }
 
 beforeEach(() => {
@@ -172,6 +175,31 @@ describe("Audio.Mixer", () => {
     f.frequency(800); // crash-safe sweep
   });
 
+  it("pans a bus, and only once someone asks for it", () => {
+    const bus = Mixer.bus("chanPan");
+    void bus.input; // materialize with no pan
+    expect(connections.some((c) => c.toKind === "panner")).toBe(false);
+
+    bus.setPan(-0.5);
+    expect(bus.pan).toBe(-0.5);
+    // The panner is spliced in at the end of the chain and carries the mix on.
+    const panner = connections.find((c) => c.toKind === "panner");
+    expect(panner).toBeDefined();
+    expect(connections.some((c) => c.from === panner!.to)).toBe(true);
+
+    bus.setPan(4); // clamped to the -1..1 the node accepts
+    expect(bus.pan).toBe(1);
+  });
+
+  it("applies a pan set before the bus graph existed", () => {
+    const bus = Mixer.bus("chanPanEarly");
+    bus.setPan(1); // pre-materialize: recorded only
+    expect(connections.some((c) => c.toKind === "panner")).toBe(false);
+    void bus.input; // materialize — the pan comes along
+    expect(connections.some((c) => c.toKind === "panner")).toBe(true);
+    expect(bus.pan).toBe(1);
+  });
+
   it("duck() is crash-safe and independent of channel volume", () => {
     const bus = Mixer.bus("chan5");
     bus.setVolume(0.7);
@@ -198,6 +226,16 @@ describe("Audio.tone", () => {
       filter: { type: "lowpass", freq: 1000 },
     });
     expect(connections.some((c) => c.toKind === "biquad")).toBe(true);
+  });
+
+  it("places a single voice with `pan`, leaving centred voices alone", () => {
+    connections.length = 0;
+    tone({ wave: "square", freq: 440, pan: -0.8 });
+    expect(connections.some((c) => c.toKind === "panner")).toBe(true);
+
+    connections.length = 0;
+    tone({ wave: "square", freq: 440 });
+    expect(connections.some((c) => c.toKind === "panner")).toBe(false);
   });
 
   it("supports a noise source without throwing", () => {

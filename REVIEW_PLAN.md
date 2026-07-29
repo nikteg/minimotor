@@ -412,10 +412,16 @@ Ranked by how fast a real game hits them:
    so carry no wrapper. (`API_PLAN.md:227` proposes `onContact` → a pollable
    `contacts` list, which would subsume this — the callback shape is what
    shipped.)
-5. **World queries** — `phys.queryAABB(rect)` and `phys.pointPick(x, y)`.
-   Click-to-select and area effects.
-6. **Mouse/drag joint** — dragging a body with the pointer is table stakes for a
-   physics sandbox and is fiddly to get right by hand.
+5. ✅ **World queries** — `phys.queryAABB(x, y, w, h, opts?)` (bounding boxes,
+   allocates its result array) and `phys.pointPick(x, y, opts?)` (exact, and a
+   dynamic body beats the static scenery it rests on). Both take the shared
+   `QueryOptions` (`sensors`, default false; `filter`). Note planck's broadphase
+   compares FAT proxy boxes, so `queryAABB` re-tests each candidate against the
+   shape's own box rather than trusting the callback.
+6. ✅ **Mouse/drag joint** — `phys.drag(x, y, opts?)` returns a `Drag2D`
+   (`body`, `move`, `release`, `raw`) or null. A spring, not a teleport, so the
+   dragged body still collides on the way; dynamic bodies only, `strength` /
+   `frequency` / `damping` tune the pull. The `physics` sample drags with it.
 7. **More shapes and joints** — polygon, edge/chain (terrain), plus distance /
    prismatic / weld joints. Lower priority; `box`/`circle`/`pin` covers a lot.
 
@@ -429,22 +435,33 @@ vectors passed to `setPosition`/`setLinearVelocity`/`applyForce`/
 `pw.isLocked()` queue as `destroyBody` (joints drained before bodies, since
 destroying a body takes its joints with it) and is idempotent.
 
-**Remaining: items 5–7** (world queries, mouse/drag joint, more shapes and
-joints).
+**Remaining: item 7** (more shapes and joints).
 
-### P4.2 ⬜ Audio — stereo pan
+### P4.2 ✅ Audio — stereo pan
 
-`Audio` has buses, filters, aux reverb/delay, a master compressor and side-chain
-ducking, but no positional or stereo panning. A `pan` option on
-`PlayOptions`/`BusHandle` (a `StereoPannerNode`) is the cheap missing piece for
-world-positioned sound.
+`Audio` had buses, filters, aux reverb/delay, a master compressor and side-chain
+ducking, but no positional or stereo panning. **Done** on both tiers: `pan` on
+`ToneOptions` places a single voice, and `Mixer.bus(name).setPan(v)` /
+`bus.pan` moves a whole channel. Both go through a `StereoPannerNode` that is
+spliced in ON DEMAND — a StereoPanner applies the equal-power law even at
+centre, so a bus nobody pans keeps exactly the graph it had. The bus panner sits
+last (after the fader and the duck), which leaves aux sends centred: a shared
+reverb stays where it was while its source moves.
 
-### P4.3 ⬜ Net — reconnect and backoff
+### P4.3 ✅ Net — reconnect and backoff
 
-`net/room.ts` has no reconnect path: a dropped relay socket ends the room
-permanently. Add reconnect with exponential backoff and a `room.onStatus`
-channel so games can show "reconnecting…". Binary encoding (currently JSON per
-snapshot at 15 Hz — `room.ts:29-30`) is a later, separate optimization.
+`net/room.ts` had no reconnect path: a dropped relay socket ended the room
+permanently. **Done**: the socket is reopened with exponential backoff
+(`retryMs` 500 doubling to `maxRetryMs` 8000, `maxRetries` 0 = forever,
+`reconnect: false` to opt out), and `room.status` / `room.onStatus` expose
+`connecting | connected | reconnecting | closed` so a game can show
+"reconnecting…". Two deliberate calls: retrying starts only AFTER a successful
+join (a relay that never answered still rejects the promise — offline is the
+app's decision, not something to retry behind its back), and the reconnect
+welcome is DIFFED against the old membership, so the app hears the churn as
+ordinary join/leave events. A reconnect does get a fresh member id from the
+relay; that is documented on `onStatus`. Binary encoding (currently JSON per
+snapshot at 15 Hz — `room.ts:29-30`) is still a later, separate optimization.
 
 ---
 
@@ -464,14 +481,16 @@ Actions:
 - ✅ Scope the Pixel Adventure "extraction rules" so rule 1 governs _engine
   infrastructure_ only, and can no longer be read as the admission bar for
   catalog recipes.
-- ⬜ Close the `API_PLAN.md:232` open item ("Gizmos/Goodies taxonomy") — the
-  taxonomy is decided: pure → `Goodies`, stateful → `Gizmos`.
+- ✅ Close the `API_PLAN.md:232` open item ("Gizmos/Goodies taxonomy") — the
+  taxonomy is decided: pure → `Goodies`, stateful → `Gizmos`. That entry now
+  reads **DECIDED** and points at the ROADMAP catalog section.
 - ⬜ Work the candidate backlog in the roadmap. Each new lego ships with
   deterministic unit tests and at least one sample using it.
 
-The one piece of the earlier suggestion worth keeping: `README.md:91-94` files
-both namespaces under "Grab bag", which undersells them. Promote them to their
-own section describing what they are and how to find one.
+The one piece of the earlier suggestion worth keeping: `README.md:91-94` filed
+both namespaces under "Grab bag", which undersold them. ✅ They now have their
+own **Ready-made legos** section stating the pure/stateful split and listing
+what is on the shelf.
 
 ---
 
@@ -479,26 +498,33 @@ own section describing what they are and how to find one.
 
 Each step is independently shippable and testable.
 
-| #   | Work                           | Items                  | Status               |
-| --- | ------------------------------ | ---------------------- | -------------------- |
-| 1   | Re-init lifecycle fix          | P0.1, P0.2             | ✅ done              |
-| 2   | `measureText` memo             | P1.1                   | ✅ done              |
-| 3   | Camera correctness             | P2.1, P2.2, P2.3       | ✅ done              |
-| 4   | Cheap allocation sweep         | P1.2, P1.3, P1.6, P2.4 | ✅ done (+ P1.4)     |
-| 5   | Cache bounds + doc fixes       | P2.5, P2.7             | ✅ done (+ P2.6)     |
-| 6   | Physics2D gaps                 | P4.1 items 1–4         | ✅ done (5–7 remain) |
-| 7   | Collision broadphase           | P1.5, P3.1             | ✅ done              |
-| 8   | Draw primitives + surface trim | P3.2, P3.3             | ✅ done              |
-| 9   | `Game.letterbox` retirement    | P3.4                   | ✅ done              |
-| 10  | Catalog growth                 | §7 backlog             | ⬜ ongoing           |
+| #   | Work                           | Items                  | Status              |
+| --- | ------------------------------ | ---------------------- | ------------------- |
+| 1   | Re-init lifecycle fix          | P0.1, P0.2             | ✅ done             |
+| 2   | `measureText` memo             | P1.1                   | ✅ done             |
+| 3   | Camera correctness             | P2.1, P2.2, P2.3       | ✅ done             |
+| 4   | Cheap allocation sweep         | P1.2, P1.3, P1.6, P2.4 | ✅ done (+ P1.4)    |
+| 5   | Cache bounds + doc fixes       | P2.5, P2.7             | ✅ done (+ P2.6)    |
+| 6   | Physics2D gaps                 | P4.1 items 1–4         | ✅ done (7 remains) |
+| 7   | Collision broadphase           | P1.5, P3.1             | ✅ done             |
+| 8   | Draw primitives + surface trim | P3.2, P3.3             | ✅ done             |
+| 9   | `Game.letterbox` retirement    | P3.4                   | ✅ done             |
+| 10  | Catalog growth                 | §7 backlog             | ⬜ ongoing          |
+| 11  | UI scale + layout invariants   | (not in the original)  | ✅ done             |
+| 12  | Queries, drag, pan, reconnect  | P4.1 5–6, P4.2, P4.3   | ✅ done             |
 
-Steps 1–9 are shipped: 583 unit tests across 44 files, 27 Playwright specs, and
-`pnpm verify` (tsc src + samples, oxlint, oxfmt) all green.
+Step 11 was found in use rather than in review: `UI.scaled` is now the only
+thing that applies scale (`UI.setScale` is just the default factor the no-arg
+form reads), deferred chrome replays the transform it was requested under, and
+`UI.layoutIssues()` reports children that escape the container that placed
+them — the "UI drawn on top of UI" signature — with unit coverage plus an e2e
+that asserts the invariant across six sample pages.
 
-Still open, in rough priority order: **P4.1 items 5–7** (world queries, a
-mouse/drag joint, more shapes and joints), **P4.2** (audio stereo pan),
-**P4.3** (net reconnect/backoff), and the **§7 catalog growth backlog** — the
-ongoing one.
+Steps 1–9, 11 and 12 are shipped: 619 unit tests across 46 files, 37 Playwright
+tests, and `pnpm verify` (tsc src + samples, oxlint, oxfmt) all green.
+
+Still open: **P4.1 item 7** (more shapes and joints — polygon, edge/chain,
+distance/prismatic/weld) and the **§7 catalog growth backlog**, the ongoing one.
 
 ## Verification gate
 

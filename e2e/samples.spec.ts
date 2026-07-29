@@ -10,6 +10,29 @@ test("minimal sample loads and renders square", async ({ page }) => {
   await expect(page.locator("canvas#game")).toBeVisible();
 });
 
+test("API Lab starts from the virtual JUMP button", async ({ browser }) => {
+  const context = await browser.newContext({
+    hasTouch: true,
+    isMobile: true,
+    viewport: { width: 800, height: 450 },
+  });
+  const page = await context.newPage();
+  await page.goto("/api-lab/");
+
+  const canvas = page.locator("canvas#game");
+  await expect(canvas).toBeVisible();
+  await page.waitForTimeout(300);
+  const title = await canvas.screenshot();
+
+  // The button is anchored 78px from the right and 82px from the bottom.
+  await page.touchscreen.tap(800 - 78, 450 - 82);
+  await page.waitForTimeout(300);
+  const playing = await canvas.screenshot();
+
+  expect(playing.equals(title)).toBe(false);
+  await context.close();
+});
+
 test("server browser supports canvas Tab focus and native editors", async ({ page }) => {
   await page.goto("/serverbrowser/");
   await expect(page.locator("canvas#game")).toBeVisible();
@@ -75,4 +98,36 @@ test("synth sample loads and starts audio", async ({ page }) => {
   await canvas.click({ position: { x: 400, y: 300 } });
   await page.waitForTimeout(2000);
   await expect(canvas).toBeVisible();
+});
+
+test("physics sample: a body follows a pointer drag", async ({ page }) => {
+  // Physics2D.drag through real pointer events: press on a settled crate, pull
+  // it across the canvas, and check the body came along.
+  await page.goto("/physics/");
+  await expect(page.locator("canvas#game")).toBeVisible();
+  await page.waitForFunction(() => (window.__phys?.bodies().length ?? 0) > 0);
+  await page.waitForTimeout(2500); // let the pile settle so nothing is in free fall
+
+  const start = await page.evaluate(() => {
+    // The lowest body has landed; grab that one.
+    const bodies = window.__phys!.bodies();
+    return bodies.sort((a, b) => b.y - a.y)[0];
+  });
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await expect.poll(() => page.evaluate(() => window.__phys!.grabbed())).toBe(true);
+
+  const target = { x: start.x, y: start.y - 200 };
+  for (let i = 1; i <= 10; i++) {
+    await page.mouse.move(start.x + ((target.x - start.x) * i) / 10, start.y - 20 * i);
+    await page.waitForTimeout(30);
+  }
+  await page.waitForTimeout(300);
+  const lifted = await page.evaluate(() => {
+    const bodies = window.__phys!.bodies();
+    return Math.min(...bodies.map((b) => b.y));
+  });
+  await page.mouse.up();
+  expect(lifted).toBeLessThan(start.y - 100); // it was dragged up the screen
+  await expect.poll(() => page.evaluate(() => window.__phys!.grabbed())).toBe(false);
 });

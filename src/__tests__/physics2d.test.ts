@@ -352,3 +352,101 @@ describe("Physics2D destroy safety", () => {
     expect(arm.y).toBeGreaterThan(300); // the arm let go and fell to the floor
   });
 });
+
+describe("Physics2D world queries", () => {
+  it("queryAABB returns the bodies overlapping the rect, and nothing else", () => {
+    const phys = world({ gravity: { x: 0, y: 0 } });
+    const inside = phys.box(100, 100, 20, 20, { data: "inside" });
+    const edge = phys.box(155, 100, 20, 20, { data: "edge" }); // spans x 145..165
+    const outside = phys.box(400, 400, 20, 20, { data: "outside" });
+    const trigger = phys.box(110, 110, 20, 20, { isSensor: true, data: "trigger" });
+
+    const found = phys.queryAABB(50, 50, 100, 100); // x 50..150, y 50..150
+    expect(found).toContain(inside);
+    expect(found).toContain(edge); // its box reaches into the rect
+    expect(found).not.toContain(outside);
+    expect(found).not.toContain(trigger); // sensors are out by default
+
+    expect(phys.queryAABB(50, 50, 100, 100, { sensors: true })).toContain(trigger);
+    expect(phys.queryAABB(50, 50, 100, 100, { filter: (b) => b.data !== "edge" })).not.toContain(
+      edge,
+    );
+    // A rect in empty space finds nothing — the broadphase pads its proxies, so
+    // this is the assertion that the tight re-test actually runs.
+    expect(phys.queryAABB(250, 250, 20, 20)).toEqual([]);
+  });
+
+  it("pointPick is exact, and prefers the crate over the floor it rests on", () => {
+    const phys = world();
+    const floor = phys.box(200, 380, 400, 40, { type: "static" });
+    const crate = phys.box(200, 100, 40, 40);
+    run(phys, 180); // the crate falls and settles on the floor
+
+    expect(phys.pointPick(200, crate.y)).toBe(crate);
+    // The crate's feet sit inside the floor's fat proxy; the dynamic body wins.
+    expect(phys.pointPick(200, crate.y + 19)).toBe(crate);
+    expect(phys.pointPick(50, 380)).toBe(floor);
+    expect(phys.pointPick(50, 50)).toBeNull();
+
+    // Exact, not bounding-box: a circle's corner is a miss.
+    const ball = phys.circle(600, 100, 20, { type: "static" });
+    expect(phys.pointPick(600, 100)).toBe(ball);
+    expect(phys.pointPick(617, 117)).toBeNull(); // inside the box, outside the disc
+  });
+});
+
+describe("Physics2D drag", () => {
+  it("pulls a body toward the pointer and lets go", () => {
+    const phys = world({ gravity: { x: 0, y: 0 } });
+    const crate = phys.box(100, 100, 40, 40);
+    const grab = phys.drag(100, 100);
+    expect(grab).not.toBeNull();
+    expect(grab!.body).toBe(crate);
+
+    grab!.move(300, 100);
+    run(phys, 120);
+    expect(crate.x).toBeGreaterThan(280);
+    expect(crate.x).toBeLessThan(320);
+
+    // Released, it coasts on instead of being held at the target.
+    grab!.release();
+    const x = crate.x;
+    run(phys, 60);
+    expect(crate.x).toBeGreaterThanOrEqual(x - 1);
+    grab!.release(); // idempotent, not a double free
+  });
+
+  it("grabs nothing on empty space or on static scenery", () => {
+    const phys = world({ gravity: { x: 0, y: 0 } });
+    phys.box(200, 380, 400, 40, { type: "static" });
+    expect(phys.drag(50, 50)).toBeNull(); // nothing there
+    expect(phys.drag(200, 380)).toBeNull(); // a spring can't move a static body
+  });
+
+  it("drags through the world rather than teleporting past it", () => {
+    // A wall between the crate and the pointer: a teleporting drag would put
+    // the crate on the far side, a spring leaves it stopped against the wall.
+    const phys = world({ gravity: { x: 0, y: 0 } });
+    const crate = phys.box(100, 100, 40, 40);
+    phys.box(200, 100, 20, 200, { type: "static" }); // wall at x 190..210
+    const grab = phys.drag(100, 100)!;
+    grab.move(400, 100);
+    run(phys, 180);
+    expect(crate.x).toBeLessThan(190); // stopped at the wall
+    grab.release();
+  });
+
+  it("survives the body being destroyed mid-drag", () => {
+    const phys = world({ gravity: { x: 0, y: 0 } });
+    const crate = phys.box(100, 100, 40, 40);
+    const grab = phys.drag(100, 100)!;
+    grab.move(200, 100);
+    run(phys, 10);
+    crate.destroy();
+    run(phys, 10);
+    expect(() => {
+      grab.move(300, 100);
+      grab.release();
+    }).not.toThrow();
+  });
+});

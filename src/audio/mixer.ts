@@ -124,6 +124,13 @@ export interface Bus {
   setOn(on: boolean, rampMs?: number): void;
   /** Whether the channel is unmuted. */
   readonly on: boolean;
+  /** Stereo position: -1 hard left, 0 centre, 1 hard right (click-free ramp,
+   *  default 20ms). Sits after the fader and the duck, so panning a bus never
+   *  disturbs its volume — and its aux sends stay centred, which is what you
+   *  want from a shared reverb. */
+  setPan(pan: number, rampMs?: number): void;
+  /** Current stereo position `-1..1`. */
+  readonly pan: number;
   /** Insert a dynamic biquad filter (input → filters… → gain); returns a handle
    *  to sweep it live. */
   addFilter(type: BiquadFilterType, frequency?: number, q?: number): Filter;
@@ -179,11 +186,31 @@ const effects = new Map<string, Effect>();
 function createBus(name: string): Bus {
   let volume = 1;
   let on = true;
+  let pan = 0;
   let inputNode: GainNode | null = null;
   let gainNode: GainNode | null = null;
   let duckGain: GainNode | null = null; // transient side-chain dip, post-volume
+  let panNode: StereoPannerNode | null = null; // last in the chain, made on demand
   const filters: FilterState[] = [];
   const sends = new Map<string, SendState>();
+
+  // The panner is spliced in on the first `setPan`, not at build time: a
+  // StereoPanner is not transparent to a mono source even at centre (it applies
+  // the equal-power law), so a bus nobody pans keeps exactly the graph it had.
+  const ensurePan = (): void => {
+    if (panNode || !duckGain || !audioCtx) return;
+    if (typeof audioCtx.createStereoPanner !== "function") return; // ancient browser
+    panNode = audioCtx.createStereoPanner();
+    panNode.pan.value = pan;
+    const master = ensureMaster(audioCtx);
+    try {
+      duckGain.disconnect(master); // only the master leg — the aux sends stay
+    } catch {
+      /* not yet connected */
+    }
+    duckGain.connect(panNode);
+    panNode.connect(master);
+  };
 
   const rewire = (): void => {
     if (!inputNode || !gainNode || !audioCtx) return;
@@ -233,6 +260,7 @@ function createBus(name: string): Bus {
     gainNode.connect(duckGain);
     duckGain.connect(ensureMaster(ctx));
     rewire();
+    if (pan !== 0) ensurePan(); // a pan set before the graph existed
     for (const [effectName, s] of sends) wireSend(effectName, s);
   };
 
@@ -255,6 +283,15 @@ function createBus(name: string): Bus {
     setOn(next, rampMs = 20) {
       on = next;
       if (gainNode) rampParam(gainNode.gain, next ? volume : 0, rampMs);
+    },
+    get pan() {
+      return pan;
+    },
+    setPan(next, rampMs = 20) {
+      pan = Math.max(-1, Math.min(1, next));
+      if (!gainNode) return; // pre-materialize: recorded, applied on first use
+      ensurePan();
+      if (panNode) rampParam(panNode.pan, pan, rampMs);
     },
     addFilter(type, frequency = 1000, q = 1) {
       const state: FilterState = { type, frequency, q, gain: 0, node: null };

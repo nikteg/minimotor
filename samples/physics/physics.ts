@@ -4,8 +4,9 @@
 // over each step, and Draw.sprites(ecs.dense(Sprites.Sprite)) renders everything. No custom draw
 // code for the bodies at all.
 // Demonstrates: Physics2D.world/box/circle/walls/pin, onContact, deferred
-// destroy, wake() on resize, the ECS body-in-a-component pattern, and the
-// separate "minimotor/physics2d" entry (core stays dep-free).
+// destroy, wake() on resize, drag() for grabbing a body with the pointer, the
+// ECS body-in-a-component pattern, and the separate "minimotor/physics2d"
+// entry (core stays dep-free).
 import {
   Audio,
   Camera,
@@ -21,6 +22,7 @@ import {
   UI,
 } from "minimotor";
 import { Physics2D } from "minimotor/physics2d";
+import type { Drag2D } from "minimotor/physics2d";
 
 const ecs = ECS.create();
 const { Phys } = Physics2D; // the standard body-holding component
@@ -135,11 +137,37 @@ ecs.system("dim-sleepers", (w) => {
 });
 
 let spawnTick = 0;
+let grab: Drag2D | null = null;
+
+// ---- e2e hook ----
+// The Playwright spec drags a real body across the canvas; it needs to know
+// where the bodies are and whether a grab took. Harmless in normal use.
+declare global {
+  interface Window {
+    __phys?: {
+      bodies(): { x: number; y: number }[];
+      grabbed(): boolean;
+    };
+  }
+}
+window.__phys = {
+  bodies: () => [...ecs.query(Phys)].map(([, p]) => ({ x: p.body.x, y: p.body.y })),
+  grabbed: () => grab !== null,
+};
 
 Loop.run({
   update() {
-    // Hold to pour crates; shift-click (or X) pours balls instead.
-    if (Pointer.down && spawnTick++ % 6 === 0) {
+    // Press on a body to GRAB it (a spring, so it shoves the pile on the way);
+    // press on empty space and hold to pour instead.
+    if (Pointer.pressed) grab = phys.drag(Pointer.x, Pointer.y);
+    if (grab) {
+      grab.move(Pointer.x, Pointer.y);
+      if (!Pointer.down) {
+        grab.release();
+        grab = null;
+      }
+    } else if (Pointer.down && spawnTick++ % 6 === 0) {
+      // Hold to pour crates; shift-click (or X) pours balls instead.
       if (Keys.down("ShiftLeft") || Keys.down("ShiftRight") || Keys.down("KeyX")) {
         spawnBall(Pointer.x, Pointer.y);
       } else {
@@ -166,10 +194,13 @@ Loop.run({
       ctx.fill();
 
       Draw.sprites(ecs.dense(Sprites.Sprite)); // every body, via the built-in renderer
+
+      // The drag spring, drawn so the grab reads as a rubber band.
+      if (grab) Draw.line(grab.body.x, grab.body.y, Pointer.x, Pointer.y, "#ffd43b", 2);
     });
 
     UI.text(`bodies: ${phys.count}`, { x: 10, y: 6, size: 14 });
-    UI.text("hold to pour crates · +Shift/X balls · R reset", {
+    UI.text("drag a body · hold empty space to pour · +Shift/X balls · R reset", {
       x: 10,
       y: vp.h - 24,
       size: 14,

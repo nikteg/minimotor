@@ -49,7 +49,25 @@ export interface RoomOptions extends RtcConfig {
   /** Reject the join if the relay hasn't welcomed us in this long (ms).
    *  Default 8000. */
   timeoutMs?: number;
+  /** Reopen the relay socket when it drops, so a flaky link or a relay restart
+   *  doesn't end the room. Default true. Only applies AFTER a successful join —
+   *  a relay that never answered rejects the promise as before, because
+   *  "offline" is a normal outcome to `.catch` rather than something to retry
+   *  behind the app's back. */
+  reconnect?: boolean;
+  /** First retry delay in ms, doubled after each failed attempt. Default 500. */
+  retryMs?: number;
+  /** Ceiling for the doubling retry delay, in ms. Default 8000. */
+  maxRetryMs?: number;
+  /** Give up (status `"closed"`) after this many consecutive failed attempts.
+   *  Default 0 — keep trying for as long as the app is open. */
+  maxRetries?: number;
 }
+
+/** Where a room's relay link stands. `"reconnecting"` is the one worth
+ *  surfacing: peer-to-peer traffic may still be flowing, but membership
+ *  changes and new peers can't arrive until the relay is back. */
+export type RoomStatus = "connecting" | "connected" | "reconnecting" | "closed";
 
 /** A symmetric room membership. */
 export interface Room<Msg = unknown> {
@@ -66,6 +84,13 @@ export interface Room<Msg = unknown> {
   readonly hosting: boolean;
   /** True once `close()` has torn the room down. */
   readonly closed: boolean;
+  /** The relay link's current state — show "reconnecting…" from this. */
+  readonly status: RoomStatus;
+  /** Relay-link transitions (`"reconnecting"` → `"connected"` → …). Returns
+   *  unsubscribe. Note a reconnect gets us a FRESH member id from the relay,
+   *  so `room.id` may differ afterwards, and the other members see the old one
+   *  leave and a new one join. */
+  onStatus(fn: (status: RoomStatus) => void): () => void;
   /** Send to every other member. */
   send(msg: Msg): void;
   /** Hear from every other member. Returns unsubscribe. */
@@ -84,11 +109,24 @@ export function join<Msg = unknown>(url: string, opts: RoomOptions = {}): Promis
   const full = opts.room
     ? `${url}${url.includes("?") ? "&" : "?"}room=${encodeURIComponent(opts.room)}`
     : url;
-  const ws = connect({ url: full });
+  const reconnectOn = opts.reconnect ?? true;
+  const retryMs = opts.retryMs ?? 500;
+  const maxRetryMs = opts.maxRetryMs ?? 8000;
+  const maxRetries = opts.maxRetries ?? 0;
 
+  let ws: ReturnType<typeof connect>;
   let myId = "";
   let hostId: string | null = null;
   let closed = false;
+  let status: RoomStatus = "connecting";
+  let attempt = 0;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  const statusFns = new Set<(s: RoomStatus) => void>();
+  const setStatus = (next: RoomStatus): void => {
+    if (status === next) return;
+    status = next;
+    for (const fn of statusFns) fn(next);
+  };
   const members = new Set<string>();
   // `peers` is read in draw loops; rebuild the array on membership change
   // rather than spreading the Set on every read.
@@ -121,7 +159,15 @@ export function join<Msg = unknown>(url: string, opts: RoomOptions = {}): Promis
     if (peer) return peer;
     peer = createPeer(opts);
     channels.set(peerId, peer);
-    peer.onSignal = (signal) => ws.sendJson({ type: "signal", to: peerId, signal });
+    peer.onSignal = (signal) => {
+      // Signaling only works while the relay link is up; a signal produced
+      // mid-reconnect is dropped, and `adopt()` re-offers once we're back.
+      try {
+        ws.sendJson({ type: "signal", to: peerId, signal });
+      } catch {
+        /* relay down — the post-welcome adopt() starts the handshake over */
+      }
+    };
     peer.transport.onMessage = (bytes) => {
       const env = decode(bytes) as Envelope;
       deliver(env);
@@ -162,6 +208,13 @@ export function join<Msg = unknown>(url: string, opts: RoomOptions = {}): Promis
     get closed() {
       return closed;
     },
+    get status() {
+      return status;
+    },
+    onStatus(fn) {
+      statusFns.add(fn);
+      return () => statusFns.delete(fn);
+    },
     send(msg) {
       const env: Envelope = { f: myId, d: msg };
       if (hosting()) {
@@ -184,9 +237,12 @@ export function join<Msg = unknown>(url: string, opts: RoomOptions = {}): Promis
     },
     close() {
       closed = true;
+      if (retryTimer !== null) clearTimeout(retryTimer);
+      retryTimer = null;
       for (const peer of channels.values()) peer.transport.close();
       channels.clear();
       ws.close();
+      setStatus("closed");
     },
   };
 
@@ -200,22 +256,72 @@ export function join<Msg = unknown>(url: string, opts: RoomOptions = {}): Promis
       }
     }, opts.timeoutMs ?? 8000);
 
-    ws.onClose = () => {
-      if (!settled) {
-        settled = true;
-        clearTimeout(timer);
-        reject(new Error("Minimotor.Net: relay unreachable"));
+    // A welcome after a reconnect is a fresh membership list, not the first
+    // one: diff it against what we had so the app hears the churn as ordinary
+    // join/leave events rather than having to special-case the reconnect.
+    const applyWelcome = (msg: Notice & { type: "welcome" }): void => {
+      myId = msg.id;
+      hostId = msg.host ?? msg.id; // alone: we are the host-in-waiting
+      const next = new Set(msg.peers.filter((p) => p !== myId));
+      const gone = [...members].filter((id) => !next.has(id));
+      const arrived = [...next].filter((id) => !members.has(id));
+      for (const id of gone) {
+        members.delete(id);
+        channels.get(id)?.transport.close();
+        channels.delete(id);
       }
+      for (const id of arrived) members.add(id);
+      refreshPeers();
+      for (const id of gone) for (const fn of leaveFns) fn(id);
+      for (const id of arrived) for (const fn of joinFns) fn(id);
+      adopt();
     };
 
-    ws.onMessage = (bytes) => {
+    const scheduleRetry = (): void => {
+      if (maxRetries > 0 && attempt >= maxRetries) {
+        closed = true;
+        setStatus("closed");
+        return;
+      }
+      // Exponential backoff from `retryMs`, capped: a relay that is down stays
+      // down for a while, and a roomful of clients shouldn't stampede it.
+      const delay = Math.min(maxRetryMs, retryMs * 2 ** attempt);
+      attempt++;
+      setStatus("reconnecting");
+      retryTimer = setTimeout(open, delay);
+    };
+
+    const handleClose = (): void => {
+      if (closed) return;
+      if (!settled) {
+        // Never joined: offline is the app's business, not something to retry.
+        settled = true;
+        clearTimeout(timer);
+        setStatus("closed");
+        reject(new Error("Minimotor.Net: relay unreachable"));
+        return;
+      }
+      if (!reconnectOn) {
+        closed = true;
+        setStatus("closed");
+        return;
+      }
+      scheduleRetry();
+    };
+
+    function open(): void {
+      retryTimer = null;
+      ws = connect({ url: full });
+      ws.onClose = handleClose;
+      ws.onMessage = handleNotice;
+    }
+
+    function handleNotice(bytes: Uint8Array): void {
       const msg = decode(bytes) as Notice;
       if (msg.type === "welcome") {
-        myId = msg.id;
-        hostId = msg.host ?? msg.id; // alone: we are the host-in-waiting
-        for (const p of msg.peers) if (p !== myId) members.add(p);
-        refreshPeers();
-        adopt();
+        applyWelcome(msg);
+        attempt = 0; // the link is good again; next drop starts the backoff over
+        setStatus("connected");
         if (!settled) {
           settled = true;
           clearTimeout(timer);
@@ -240,7 +346,9 @@ export function join<Msg = unknown>(url: string, opts: RoomOptions = {}): Promis
         // As host we answer any member's offer; as guest only the host's.
         if (hosting() || msg.from === hostId) channelFor(msg.from).applySignal(msg.signal);
       }
-    };
+    }
+
+    open();
   });
 }
 
