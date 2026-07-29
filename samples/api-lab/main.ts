@@ -1,9 +1,5 @@
-// API Lab — the sample that DESIGNED the new API, now running for real.
-// Built increment by increment as an imaginary-API exercise (decision log in
-// ../API-REVIEW.md, numbered [#n]); the engine then implemented the spec
-// (../../API_PLAN.md). Divergences from the imaginary version: the hero
-// spritesheet is generated in code and the music track is omitted (no binary
-// assets in the repo) — everything else is the spec, live.
+// API Lab — one small game exercising the public API. [#n] references
+// API-REVIEW.md.
 import {
   Anim,
   Audio,
@@ -112,22 +108,6 @@ const audioPrefs = Storage.load("api-lab:audio", { music: 0.5, sfx: 1.0 });
 Audio.buses.music.volume = audioPrefs.music;
 Audio.buses.sfx.volume = audioPrefs.sfx;
 
-// [#48]/[#50] One symmetric ROOM; offline is a normal outcome.
-const room = await Net.join(
-  `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws-signal`,
-  {
-    room: "api-lab",
-  },
-).catch(() => null);
-
-// [#49] Declarative replication: share position, get interpolated ghosts.
-const ghosts = room
-  ? Net.sync(room, {
-      hz: 15,
-      state: () => ({ x: player.x, y: player.y }),
-    })
-  : null;
-
 // [#25] The hero sheet — generated art (a breathing, running square with a
 //       face) so the sample ships without binary assets.
 function makeHeroImage(): HTMLCanvasElement {
@@ -166,7 +146,11 @@ const heroSheet = Anim.sheet(makeHeroImage(), {
   },
 });
 const anim = heroSheet.play("idle");
-let facing = 1;
+const ghostAnims = {
+  idle: heroSheet.play("idle"),
+  run: heroSheet.play("run"),
+  jump: heroSheet.play("jump"),
+};
 let wasGrounded = false;
 let squash = Anim.animate({ from: 1, to: 1, ms: 1 }); // [#27]
 
@@ -178,7 +162,6 @@ const dashActive = Timers.window(130);
 const dashCooldown = Timers.cooldown(400);
 let wallDir = 0; // -1 = wall on our left, +1 = on our right
 let canAirDash = true;
-let dashDir = 1;
 const fx = Particles.create(); // [#28]
 
 const Coin = ECS.component<Vec2>(); // [#21]
@@ -195,6 +178,7 @@ const player = {
   h: 32,
   vel: { x: 0, y: 0 },
   grounded: false,
+  facing: 1,
 };
 
 // [#15] The always-existing default camera, configured once.
@@ -204,6 +188,11 @@ Camera.follow(player, {
   damping: 0.15,
 });
 
+// [#48]-[#50] Share the minimal visual state; offline is a normal outcome.
+const signalUrl = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws-signal`;
+const room = await Net.join(signalUrl, { room: "api-lab" }).catch(() => null);
+const ghosts = room && Net.syncBody(room, player, { hz: 15 });
+
 function resetLevel(): void {
   ecs.clear();
   for (const pos of level.spawns("o")) ecs.spawn(Coin.with(pos));
@@ -211,6 +200,7 @@ function resetLevel(): void {
   player.y = start.y - player.h / 2;
   player.vel.x = 0;
   player.vel.y = 0;
+  player.facing = 1;
   score = 0;
   Camera.snap();
 }
@@ -222,7 +212,7 @@ function updateWorld(): void {
   const dashing = dashActive.active;
   if (dashing) {
     // A dash owns the velocity: fixed speed, gravity suspended, trail.
-    player.vel.x = dashDir * DASH_SPEED;
+    player.vel.x = player.facing * DASH_SPEED;
     player.vel.y = 0;
     fx.emit({
       at: { x: player.x + player.w / 2, y: player.y + player.h / 2 },
@@ -244,7 +234,7 @@ function updateWorld(): void {
   } else if (input.jump.pressed && !player.grounded && wallCoyote.active) {
     player.vel.y = JUMP * 0.9;
     player.vel.x = -wallDir * WALL_JUMP_X;
-    facing = -wallDir;
+    player.facing = -wallDir;
     wallCoyote.expire(); // one jump per wall touch
     dashActive.expire(); // a wall jump interrupts a dash
     sfx.jump.play({ pitch: 1.25 });
@@ -262,8 +252,7 @@ function updateWorld(): void {
   // Dash: on the edge, off cooldown, once per airtime (refreshes on landing).
   if (input.dash.pressed && dashCooldown.ready() && (player.grounded || canAirDash)) {
     if (!player.grounded) canAirDash = false;
-    dashDir = run !== 0 ? Math.sign(run) : facing;
-    facing = dashDir;
+    if (run !== 0) player.facing = Math.sign(run);
     dashActive.charge();
     dashCooldown.use();
     sfx.dash.play();
@@ -301,7 +290,7 @@ function updateWorld(): void {
     }
   });
 
-  if (run !== 0 && !dashing) facing = Math.sign(run);
+  if (run !== 0 && !dashing) player.facing = Math.sign(run);
   anim.set(!player.grounded || dashing ? "jump" : Math.abs(player.vel.x) > 0.5 ? "run" : "idle"); // [#25]
 
   if (player.grounded && !wasGrounded) {
@@ -327,10 +316,12 @@ function drawWorld(): void {
   Camera.render(() => {
     Draw.tiles(level, skin); // [#42] data never draws itself
     for (const c of ecs.dense(Coin)) Draw.circle(c, 8, "#ffd166"); // [#21] data pass, no entity
-    if (ghosts) {
-      for (const g of ghosts) Draw.rect(g.x, g.y, 32, 32, "#4ecdc466"); // [#49]
+    for (const g of ghosts || []) {
+      const state =
+        !g.grounded || Math.abs(g.vx) > MOVE + 1 ? "jump" : Math.abs(g.vx) > 0.5 ? "run" : "idle";
+      Draw.sprite(ghostAnims[state], { ...g, w: 32, h: 32 }, { flipX: g.facing < 0, alpha: 0.4 }); // [#49]
     }
-    Draw.sprite(anim, player, { flipX: facing < 0, scaleY: squash.value }); // [#26]
+    Draw.sprite(anim, player, { flipX: player.facing < 0, scaleY: squash.value }); // [#26]
     Draw.particles(fx); // [#28]
   });
   UI.text(`Coins: ${score}/${TOTAL_COINS}`, { x: 10, y: 8, color: "#888" }); // [#6]
@@ -349,8 +340,9 @@ const scenes = Scenes.create({
     },
     draw() {
       UI.text("API LAB", { anchor: "center", y: -30, size: 32 }); // [#33]
-      UI.text("Space to start", { anchor: "center", y: 10, color: "#888" });
+      UI.text("Space / JUMP to start", { anchor: "center", y: 10, color: "#888" });
       UI.text("run · jump · wall jump · Shift to dash", { anchor: "center", y: 36, color: "#555" });
+      OnscreenInput.drawControls(pad);
     },
   },
   playing: {

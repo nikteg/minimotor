@@ -25,7 +25,11 @@ test("API Lab starts from the virtual JUMP button", async ({ browser }) => {
   const title = await canvas.screenshot();
 
   // The button is anchored 78px from the right and 82px from the bottom.
-  await page.touchscreen.tap(800 - 78, 450 - 82);
+  // Hold through at least one fixed step, as a real touch does.
+  const jump = { clientX: 800 - 78, clientY: 450 - 82, pointerId: 1, pointerType: "touch" };
+  await canvas.dispatchEvent("pointerdown", jump);
+  await page.waitForTimeout(50);
+  await canvas.dispatchEvent("pointerup", jump);
   await page.waitForTimeout(300);
   const playing = await canvas.screenshot();
 

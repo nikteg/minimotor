@@ -102,12 +102,13 @@ import * as Storage from "./storage.js";
  *  — plus the standard `Sprites.Sprite` ECS component. */
 import * as Sprites from "./sprites.js";
 /** Dependency-free multiplayer building blocks. `Net.join(url, { room })` opens
- *  a symmetric room and `Net.sync` declaratively replicates state, with
+ *  a symmetric room; `Net.sync` replicates arbitrary state and
+ *  `Net.syncBody(room, body)` handles lightweight or Physics2D bodies, with
  *  `Net.createInterpolator` smoothing snapshots and `Net.createRoster` tracking
  *  peers; host/guest star sessions back host-authoritative designs.
  *
  *    const room = await Net.join("wss://example.com/ws", { room: "demo" });
- *    const ghosts = Net.sync(room, { state: () => ({ x: player.x, y: player.y }) });
+ *    const ghosts = Net.syncBody(room, player);
  *    for (const g of ghosts) Draw.rect(g.x, g.y, 16, 16, "#888");
  */
 import * as Net from "./net/index.js";
