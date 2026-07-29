@@ -117,9 +117,11 @@ describe("Tiles.grid (level = data)", () => {
 describe("Tiles skins & rendering", () => {
   function fakeCtx() {
     const fills: Array<[number, number, number, number, string]> = [];
-    const images: Array<[number, number]> = [];
+    const images: Array<[number, number, number, number]> = [];
+    const smoothing: boolean[] = [];
     const ctx = {
       fillStyle: "",
+      imageSmoothingEnabled: true,
       fillRect(x: number, y: number, w: number, h: number) {
         fills.push([x, y, w, h, ctx.fillStyle]);
       },
@@ -131,16 +133,21 @@ describe("Tiles skins & rendering", () => {
         _sh: number,
         dx: number,
         dy: number,
+        dw: number,
+        dh: number,
       ) {
-        images.push([dx, dy]);
+        images.push([dx, dy, dw, dh]);
+        smoothing.push(ctx.imageSmoothingEnabled);
       },
       canvas: { width: 100, height: 100 },
       fills,
       images,
+      smoothing,
     };
     return ctx as unknown as CanvasRenderingContext2D & {
       fills: typeof fills;
       images: typeof images;
+      smoothing: typeof smoothing;
     };
   }
 
@@ -175,8 +182,28 @@ describe("Tiles skins & rendering", () => {
     const ctx = fakeCtx();
     level.render(ctx, skin);
     expect(ctx.images.length).toBe(5);
+    expect(ctx.smoothing).toEqual([false, false, false, false, false]);
+    expect(ctx.imageSmoothingEnabled).toBe(true);
     expect(seen[0].right).toBe(true); // floor run connects
     expect(seen[4].right).toBe(false); // last cell has no right neighbor
+  });
+
+  it("places adjacent image tiles on one exact shared edge", () => {
+    const level = makeLevel();
+    const image = {} as CanvasImageSource;
+    const tile = set(image, { size: 16, names: { ground: [0, 0] } }).ground;
+    const ctx = fakeCtx();
+    level.render(ctx, { "#": tile, "=": null });
+
+    expect(ctx.images).toEqual([
+      [0, 30, 10, 10],
+      [10, 30, 10, 10],
+      [20, 30, 10, 10],
+      [30, 30, 10, 10],
+      [40, 30, 10, 10],
+    ]);
+    for (let i = 1; i < ctx.images.length; i++)
+      expect(ctx.images[i - 1][0] + ctx.images[i - 1][2]).toBe(ctx.images[i][0]);
   });
 });
 

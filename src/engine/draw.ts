@@ -1,6 +1,7 @@
 import { requireDefault } from "./default-app.js";
 import type { Rect } from "./app.js";
 import { drawText, monoFont, type TextHAlign, type TextVAlign } from "../text.js";
+import { blitPixelAligned } from "./pixel-raster.js";
 
 type Point = { x: number; y: number };
 
@@ -206,22 +207,24 @@ function poly(points: readonly Point[], color: Fill): void {
  *  draws it 1:1. Pass one or both to scale. */
 function image(img: CanvasImageSource, x: number, y: number, w?: number, h?: number): void {
   const ctx = requireDefault().ctx;
-  if (w === undefined && h === undefined) {
-    ctx.drawImage(img, x, y);
-    return;
+  const prevSmoothing = ctx.imageSmoothingEnabled;
+  ctx.imageSmoothingEnabled = false;
+  try {
+    // Intrinsic size: `naturalWidth` for a loaded <img>, plain `width` for a
+    // canvas/bitmap. SVGImageElement's `width` is an SVGAnimatedLength, not a
+    // number, hence the typeof guard.
+    const src = img as {
+      naturalWidth?: number;
+      naturalHeight?: number;
+      width?: number | unknown;
+      height?: number | unknown;
+    };
+    const iw = src.naturalWidth ?? (typeof src.width === "number" ? src.width : 0);
+    const ih = src.naturalHeight ?? (typeof src.height === "number" ? src.height : 0);
+    blitPixelAligned(ctx, img, x, y, w ?? iw, h ?? ih);
+  } finally {
+    ctx.imageSmoothingEnabled = prevSmoothing;
   }
-  // Intrinsic size: `naturalWidth` for a loaded <img>, plain `width` for a
-  // canvas/bitmap. SVGImageElement's `width` is an SVGAnimatedLength, not a
-  // number, hence the typeof guard.
-  const src = img as {
-    naturalWidth?: number;
-    naturalHeight?: number;
-    width?: number | unknown;
-    height?: number | unknown;
-  };
-  const iw = src.naturalWidth ?? (typeof src.width === "number" ? src.width : 0);
-  const ih = src.naturalHeight ?? (typeof src.height === "number" ? src.height : 0);
-  ctx.drawImage(img, x, y, w ?? iw, h ?? ih);
 }
 
 /** A linear-gradient fill from (x0,y0) to (x1,y1). Pass the result as any
@@ -335,7 +338,7 @@ function sprite(spr: SpriteLike, at: Rect, opts: DrawSpriteOptions = {}): void {
   ) {
     const prev = ctx.imageSmoothingEnabled;
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(spr.sheet.image, r.sx, r.sy, r.sw, r.sh, at.x, at.y, at.w, at.h);
+    blitPixelAligned(ctx, spr.sheet.image, r.sx, r.sy, r.sw, r.sh, at.x, at.y, at.w, at.h);
     ctx.imageSmoothingEnabled = prev;
     return;
   }
@@ -348,7 +351,7 @@ function sprite(spr: SpriteLike, at: Rect, opts: DrawSpriteOptions = {}): void {
   ctx.scale((opts.flipX ? -1 : 1) * (opts.scaleX ?? 1), (opts.flipY ? -1 : 1) * (opts.scaleY ?? 1));
   if (opts.rot) ctx.rotate(opts.rot);
   if (opts.alpha !== undefined) ctx.globalAlpha = opts.alpha;
-  ctx.drawImage(spr.sheet.image, r.sx, r.sy, r.sw, r.sh, -at.w / 2, -at.h, at.w, at.h);
+  blitPixelAligned(ctx, spr.sheet.image, r.sx, r.sy, r.sw, r.sh, -at.w / 2, -at.h, at.w, at.h);
   ctx.restore();
 }
 
@@ -493,9 +496,20 @@ function sprites(list: Iterable<DrawSprite>, opts: DrawSpritesOptions = {}): voi
 
     if (rot === 0 && scale === 1 && !flipX && !flipY) {
       if (clipped) {
-        ctx.drawImage(img, s.sx ?? 0, s.sy ?? 0, s.sw!, s.sh!, x - ax * w, y - ay * h, w, h);
+        blitPixelAligned(
+          ctx,
+          img,
+          s.sx ?? 0,
+          s.sy ?? 0,
+          s.sw!,
+          s.sh!,
+          x - ax * w,
+          y - ay * h,
+          w,
+          h,
+        );
       } else {
-        ctx.drawImage(img, x - ax * w, y - ay * h, w, h);
+        blitPixelAligned(ctx, img, x - ax * w, y - ay * h, w, h);
       }
     } else {
       ctx.save();
@@ -505,9 +519,9 @@ function sprites(list: Iterable<DrawSprite>, opts: DrawSpritesOptions = {}): voi
       const ky = scale * (flipY ? -1 : 1);
       if (kx !== 1 || ky !== 1) ctx.scale(kx, ky);
       if (clipped) {
-        ctx.drawImage(img, s.sx ?? 0, s.sy ?? 0, s.sw!, s.sh!, -ax * w, -ay * h, w, h);
+        blitPixelAligned(ctx, img, s.sx ?? 0, s.sy ?? 0, s.sw!, s.sh!, -ax * w, -ay * h, w, h);
       } else {
-        ctx.drawImage(img, -ax * w, -ay * h, w, h);
+        blitPixelAligned(ctx, img, -ax * w, -ay * h, w, h);
       }
       ctx.restore();
     }

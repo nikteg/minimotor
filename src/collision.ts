@@ -294,17 +294,23 @@ export type Ladders = Rect[] | LadderSource;
 export interface ClimbLadderOptions {
   /** Whether the body was already climbing last step. */
   active?: boolean;
+  /** Grab an overlapping ladder without vertical input. Default false. */
+  autoGrab?: boolean;
   /** Vertical climb speed in px/step. Default 3. */
   speed?: number;
   /** Horizontal centering strength, 0..1. Default 0.35. */
   snap?: number;
+  /** Horizontal movement input, -1..1. Any deliberate input detaches from
+   *  the ladder and prevents immediate re-entry. */
+  horizontal?: number;
 }
 
 const ladderCandidates: Rect[] = [];
 
 /** Apply terse platformer ladder movement. Pressing a vertical `axis` while
- * overlapping a ladder enters it; pass the returned boolean back as `active`
- * next step to remain attached while the axis is neutral.
+ * overlapping a ladder enters it; `autoGrab` can enter on contact instead.
+ * Pass the returned boolean back as `active` next step to remain attached
+ * while the axis is neutral.
  *
  *     climbing = Collision.climbLadder(player, level, input.axis("up", "down"), {
  *       active: climbing,
@@ -318,6 +324,7 @@ export function climbLadder(
   axis: number,
   opts: ClimbLadderOptions = {},
 ): boolean {
+  if (Math.abs(opts.horizontal ?? 0) > 0.1) return false;
   ladderCandidates.length = 0;
   const area = { x: body.x, y: body.y, w: body.w, h: body.h };
   const candidates = Array.isArray(ladders) ? ladders : ladders.laddersNear(area, ladderCandidates);
@@ -328,7 +335,7 @@ export function climbLadder(
       break;
     }
   }
-  if (!ladder || (!opts.active && Math.abs(axis) < 0.1)) return false;
+  if (!ladder || (!opts.active && !opts.autoGrab && Math.abs(axis) < 0.1)) return false;
   const targetX = ladder.x + (ladder.w - body.w) / 2;
   body.x += (targetX - body.x) * Math.max(0, Math.min(1, opts.snap ?? 0.35));
   body.vel.y = Math.max(-1, Math.min(1, axis)) * (opts.speed ?? 3);

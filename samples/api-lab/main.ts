@@ -5,6 +5,7 @@ import {
   Assets,
   Audio,
   Camera,
+  Clock,
   Collision,
   Draw,
   Input,
@@ -35,7 +36,6 @@ const HERO_SHEET = {
     run: { row: 1, frames: 6, fps: 12 },
     climb: { row: 2, frames: 4, fps: 8 },
     jump: { row: 5, frames: 2, fps: 8 },
-    dash: { row: 9, frames: 4, fps: 20 },
   },
 } as const;
 
@@ -51,14 +51,14 @@ const art = await Assets.load({
     src: new URL("./assets/gem.png", import.meta.url).href,
     sheet: {
       frame: { w: 15, h: 13 },
-      states: { spin: { row: 0, frames: 5, fps: 10 } },
+      states: { spin: { row: 0, frames: 5, fps: 6 } },
     },
   },
   pickup: {
     src: new URL("./assets/item-feedback.png", import.meta.url).href,
     sheet: {
-      frame: { w: 40, h: 32 },
-      states: { burst: { row: 0, frames: 4, fps: 16, loop: false } },
+      frame: { w: 32, h: 32 },
+      states: { burst: { row: 0, frames: 5, fps: 16, loop: false } },
     },
   },
   death: {
@@ -68,16 +68,25 @@ const art = await Assets.load({
       states: { die: { row: 0, frames: 6, fps: 12, loop: false } },
     },
   },
+  tree: new URL("./assets/tree.png", import.meta.url).href,
+  bush: new URL("./assets/bush.png", import.meta.url).href,
+  sign: new URL("./assets/sign.png", import.meta.url).href,
+  woodenHouse: new URL("./assets/wooden-house.png", import.meta.url).href,
+  strawHouse: new URL("./assets/straw-house.png", import.meta.url).href,
+  pine: new URL("./assets/pine.png", import.meta.url).href,
+  palm: new URL("./assets/palm.png", import.meta.url).href,
+  rock: new URL("./assets/rock.png", import.meta.url).href,
+  bigRock: new URL("./assets/rock-1.png", import.meta.url).href,
+  shrooms: new URL("./assets/shrooms.png", import.meta.url).href,
+  crate: new URL("./assets/crate.png", import.meta.url).href,
+  bigCrate: new URL("./assets/big-crate.png", import.meta.url).href,
 });
 
 // On-screen touch gamepad; autohides on desktop, shows on touch.
 export const pad = OnscreenInput.gamepad({
   opacity: 0.55,
   stick: { anchor: { side: "left", x: 90, y: 90 }, radius: 60 },
-  buttons: [
-    { anchor: { side: "right", x: 128, y: 82 }, r: 48, button: "a", label: "JUMP" },
-    { anchor: { side: "right", x: 44, y: 130 }, r: 32, button: "x", label: "DASH" },
-  ],
+  buttons: [{ anchor: { side: "right", x: 90, y: 90 }, r: 48, button: "a", label: "JUMP" }],
 });
 
 // [#8] Named actions over fused devices; zero wiring.
@@ -88,7 +97,6 @@ const input = Input.map(
     up: ["ArrowUp", "KeyW", "pad:dpad-up", "pad:lstick-up"],
     down: ["ArrowDown", "KeyS", "pad:dpad-down", "pad:lstick-down"],
     jump: ["ArrowUp", "KeyW", "KeyZ", "pad:a"],
-    dash: ["Space", "KeyX", "pad:x"],
     pause: ["Escape", "pad:start"],
   },
   { pad },
@@ -98,30 +106,47 @@ const input = Input.map(
 const MOVE = 3;
 const ACCEL = 0.4;
 const GRAVITY = 0.5;
-const JUMP = -12;
+const JUMP = -10;
 const JUMP_CUTOFF = 0.45;
 const WALL_SLIDE = 1.4; // max fall speed while pressing into a wall
 const WALL_JUMP_X = 4.5; // horizontal kick away from the wall
-const DASH_SPEED = 9;
 const CLIMB_SPEED = 3;
+const BACKGROUND_H = 240;
+const UNDERGROUND_Y = 14 * 32;
+const SURFACE_Y = UNDERGROUND_Y - 32;
+const CAVE_FLOOR_Y = 25 * 32;
+const cameraZoom = () => Math.max(2, Math.ceil(App.viewport.h / BACKGROUND_H));
 
 // [#39] The level IS the source file: ASCII grid + semantics-only legend.
 const level = Tiles.grid(
   `
-................................................
-................................................
-.....g......................g...................
-....====...............g........................
-......................====......................
-............................H...................
-........g...............====H===................
-.......====.................H...................
-............................H...........g.......
-...............g............H..........====.....
-..............====..........H...................
-..................R.........H...................
-..P.........................H...................
-##########....##################....############
+........................................................................................................
+........................................................................................................
+........................................................................................................
+.......g................................................................................................
+.....======............................................g.................................g..............
+....................g................................=====.............................======...........
+..................=====.........................................T.......................................
+.............................T......g...........................H........g..............................
+.............................H....=======.......................H.....======..................T.........
+.............................H..............................g...H.............................Hg........
+.........................g...H............................====..H............................=H==.......
+.......................====..H........R.........................H...L......................R..H.........
+..P..........................H..................................H.............................H.........
+############....#############H##################.....###########H#############.....###########H#########
+................#............H.................#.....#..........H............#.....#..........H........#
+................#............H............g....#.....#..........H............#.....#..........H........#
+................#....g.......H.........=====...#.....#..........H............#.....#.....g....H........#
+................#...==T==....H.................#.....#....g.....H.......g....#.....#..======..H........#
+................#.....H......H............g....#.....#..=====...H......T.....#.....#..........H........#
+................#.....H......H.......g.........#.....#..........H......H.....#.....#....g.....H........#
+................#.....H......H....=======......#.....#...g......H......H.....#.....#..........H....g...#
+................#.....H......H.................#.....#..........H.....gH.....#.....#..........H.=====..#
+................#....gH......H.................#.....#......g.......===H==...#.....#.....g....H........#
+................#..===H=.....H.................#.....#....====.........H.....#.....#...====...H........#
+................#..............................#.....#.................H.....#.....#...................#
+................################################.....#########################.....#####################
+........................................................................................................
 `,
   {
     size: 32,
@@ -129,6 +154,7 @@ const level = Tiles.grid(
       "#": { solid: true },
       "=": { solid: true, oneWay: true }, // [#13]
       H: { ladder: true },
+      T: { ladder: true, solid: true, oneWay: true },
     },
   },
 );
@@ -136,48 +162,111 @@ const level = Tiles.grid(
 const terrain = Tiles.set(art.terrain, {
   size: 16,
   names: {
-    grass: [1, 1],
-    platform: [9, 1],
     ladder: [7, 10],
   },
 });
 
+const grass: Tiles.Selector = (at) => {
+  const left = at.neighbor(-1, 0);
+  const right = at.neighbor(1, 0);
+  const up = at.neighbor(0, -1);
+  const down = at.neighbor(0, 1);
+  return terrain.cell(left ? (right ? 3 : 5) : 1, up ? (down ? 3 : 5) : 1);
+};
+
+const platform: Tiles.Selector = (at) =>
+  terrain.cell(at.neighbor(-1, 0) ? (at.neighbor(1, 0) ? 10 : 11) : 9, 1);
+
 // [#41] Presentation is a SKIN, applied at the draw site; `satisfies` checks
 //       completeness against the legend.
 const skin = {
-  "#": terrain.grass,
-  "=": terrain.platform,
+  "#": grass,
+  "=": platform,
   H: terrain.ladder,
+  T: terrain.ladder,
 } satisfies Tiles.Skin<typeof level>;
 
-// The sheet's grassy slope is a 48×32 region. Its collision is the same plain
-// rect plus one semantic field; moveAndSlide handles the diagonal top.
-const slopes = level.spawns("R").map((marker) => ({
-  x: marker.x - 48,
-  y: marker.y - 16,
-  w: 96,
-  h: 64,
-  slope: "up-right" as const,
-}));
+// Each slope occupies 32×32 source pixels; neighboring atlas space is blank.
+// Its visible surface rises 16 source pixels, while dirt continues beneath it.
+const slopes = [
+  ...level.spawns("R").map((marker) => ({
+    x: marker.x - 32,
+    y: marker.y - 16,
+    w: 64,
+    h: 32,
+    slope: "up-right" as const,
+  })),
+  ...level.spawns("L").map((marker) => ({
+    x: marker.x - 32,
+    y: marker.y - 16,
+    w: 64,
+    h: 32,
+    slope: "up-left" as const,
+  })),
+];
 const slopeSprites = slopes.map((slope) => ({
   img: art.terrain,
   x: slope.x,
   y: slope.y,
   w: slope.w,
-  h: slope.h,
+  h: 64,
   ax: 0,
   ay: 0,
-  sx: 304,
+  sx: slope.slope === "up-right" ? 304 : 368,
   sy: 16,
-  sw: 48,
+  sw: 32,
   sh: 32,
 }));
+
+const caveBackdrops = [
+  { x: 16 * 32, y: 14 * 32, w: 32 * 32, h: 12 * 32 },
+  { x: 53 * 32, y: 14 * 32, w: 25 * 32, h: 12 * 32 },
+  { x: 83 * 32, y: 14 * 32, w: 21 * 32, h: 12 * 32 },
+];
+
+// Crop transparent bottom padding and place the visible pixels on the floor.
+const groundedSprite = (
+  img: HTMLImageElement,
+  x: number,
+  floor: number,
+  sw: number,
+  sh: number,
+) => ({
+  img,
+  x,
+  y: floor - sh * 2,
+  w: sw * 2,
+  h: sh * 2,
+  sx: 0,
+  sy: 0,
+  sw,
+  sh,
+  ax: 0,
+  ay: 0,
+});
+
+const scenery = [
+  groundedSprite(art.sign, 96, SURFACE_Y, 18, 19),
+  groundedSprite(art.bush, 216, SURFACE_Y, 46, 28),
+  groundedSprite(art.tree, 520, SURFACE_Y, 119, 109),
+  groundedSprite(art.bigRock, 828, SURFACE_Y, 53, 49),
+  groundedSprite(art.woodenHouse, 960, SURFACE_Y, 112, 97),
+  groundedSprite(art.rock, 1430, SURFACE_Y, 28, 15),
+  groundedSprite(art.pine, 1740, SURFACE_Y, 82, 124),
+  groundedSprite(art.palm, 1984, SURFACE_Y, 79, 174),
+  groundedSprite(art.strawHouse, 2240, SURFACE_Y, 128, 85),
+  groundedSprite(art.bush, 2700, SURFACE_Y, 46, 28),
+  groundedSprite(art.tree, 3000, SURFACE_Y, 119, 109),
+  groundedSprite(art.shrooms, 624, CAVE_FLOOR_Y, 16, 10),
+  groundedSprite(art.bigCrate, 832, CAVE_FLOOR_Y, 32, 30),
+  groundedSprite(art.crate, 1888, CAVE_FLOOR_Y, 16, 14),
+  groundedSprite(art.bigCrate, 3024, CAVE_FLOOR_Y, 32, 30),
+];
 
 // [#35]-[#38] Synth sfx on the default buses; recipes are tweakable specs.
 const sfx = Audio.sfx({
   jump: { shape: "square", freq: { from: 520, to: 880 }, ms: 90, volume: 0.4 },
   gem: Audio.Recipes.coin(), // [#36]
-  dash: Audio.Recipes.whoosh(),
   death: {
     shape: "sawtooth",
     freq: { from: 240, to: 45 },
@@ -208,7 +297,7 @@ function heroAnimation(color: string) {
   return {
     sprite,
     outline,
-    set(state: "idle" | "run" | "jump" | "dash" | "climb") {
+    set(state: "idle" | "run" | "jump" | "climb") {
       sprite.set(state);
       outline.set(state);
     },
@@ -222,17 +311,14 @@ let playerAnimation = heroAnimation(PLAYER_COLOR);
 const ghostAnimations = new Map<string, ReturnType<typeof heroAnimation>>();
 let wasGrounded = false;
 let squash = Anim.animate({ from: 1, to: 1, ms: 1 }); // [#27]
+let deathSlowmo = Anim.animate({ from: 1, to: 1, ms: 1, clock: Clock.ui });
 
 // [#32] Content: clock-derived, GC is the teardown.
 const gate = Timers.jumpGate({ coyoteMs: 100, bufferMs: 120 }); // [#11]
-// Wall jumps get their own coyote window; dashes a duration + cooldown.
+// Wall jumps get their own short coyote window.
 const wallCoyote = Timers.window(100);
-const dashActive = Timers.window(130);
-const dashCooldown = Timers.cooldown(400);
-const bumpCooldown = Timers.cooldown(250);
 const deathActive = Timers.window(850);
 let wallDir = 0; // -1 = wall on our left, +1 = on our right
-let canAirDash = true;
 let climbing = false;
 const fx = Particles.create(); // [#28]
 const gemAnimation = art.gem.play("spin");
@@ -266,6 +352,7 @@ Camera.follow(player, {
   world: level.rect, // [#39]
   deadzone: { w: 160, h: 100 },
   damping: 0.15,
+  zoom: cameraZoom(),
 });
 
 // One room, online or offline. The fallback keeps every Net helper on the same
@@ -315,14 +402,6 @@ const gems = Net.sharedItems(room, gemSpawns, {
   },
 });
 
-gameEvents.on("bump", ({ target, vx, vy }) => {
-  if (target !== room.id || player.state === "death") return;
-  player.vel.x = vx;
-  player.vel.y = vy;
-  dashActive.expire();
-  Camera.shake(3, 120);
-});
-
 gameEvents.on("death", ({ x, y }) => {
   sfx.death.play({ pitch: [0.9, 1.1] });
   fx.burst({
@@ -338,6 +417,8 @@ gameEvents.on("death", ({ x, y }) => {
 gameEvents.on("respawn", (_data, from) => ghosts.reset(from));
 
 function respawn(active = true, notify = false): void {
+  deathSlowmo = Anim.animate({ from: 1, to: 1, ms: 1, clock: Clock.ui });
+  Clock.world.scale = 1;
   player.x = start.x - player.w / 2 + Net.memberIndex(room) * 28;
   player.y = start.y - player.h / 2;
   player.vel.x = 0;
@@ -359,13 +440,22 @@ function resetLevel(active = true): void {
 
 function killPlayer(): void {
   if (player.state === "death") return;
+  // UI time drives the curve so slow motion cannot slow its own recovery.
+  deathSlowmo = Anim.sequence(
+    [
+      { from: 0.06, to: 0.06, ms: 50 },
+      { from: 0.06, to: 0.25, ms: 130, ease: Mathf.easeOut },
+      { from: 0.25, to: 1, ms: 520, ease: Mathf.easeInOut },
+    ],
+    { clock: Clock.ui },
+  );
+  Clock.world.scale = deathSlowmo.value;
   player.state = "death";
   // Keep the death sheet just inside the camera after the body fell away.
   player.y = Math.min(player.y, level.rect.h - player.h / 2);
   player.vel.x = player.vel.y = 0;
   player.grounded = false;
   climbing = false;
-  dashActive.expire();
   deathActive.charge();
   deathAnimation.reset();
   sfx.death.play();
@@ -385,6 +475,7 @@ function killPlayer(): void {
 }
 
 function updateWorld(): void {
+  Clock.world.scale = deathSlowmo.value;
   if (player.state === "death") {
     if (!deathActive.active) respawn(true, true);
     return;
@@ -405,28 +496,15 @@ function updateWorld(): void {
   } else {
     climbing = Collision.climbLadder(player, level, climbAxis, {
       active: climbing,
+      autoGrab: true,
       speed: CLIMB_SPEED,
+      horizontal: run,
     });
   }
 
-  // The window/cooldown timers are clock-derived (no tick) — they read
-  // Clock.world, so nothing to advance here.
-  const dashing = dashActive.active && !climbing;
   if (climbing) {
-    dashActive.expire();
     player.vel.x = Mathf.approach(player.vel.x, 0, ACCEL * 2);
     if (climbAxis > 0) Collision.dropThrough(player, level);
-  } else if (dashing) {
-    // A dash owns the velocity: fixed speed, gravity suspended, trail.
-    player.vel.x = player.facing * DASH_SPEED;
-    player.vel.y = 0;
-    fx.emit({
-      at: { x: player.x + player.w / 2, y: player.y + player.h / 2 },
-      speed: [0.1, 0.6],
-      life: [120, 260],
-      size: [2, 4],
-      color: player.color,
-    });
   } else {
     player.vel.x = Mathf.approach(player.vel.x, run * MOVE, ACCEL);
     player.vel.y += GRAVITY;
@@ -452,7 +530,6 @@ function updateWorld(): void {
     player.vel.x = -wallDir * WALL_JUMP_X;
     player.facing = -wallDir;
     wallCoyote.expire(); // one jump per wall touch
-    dashActive.expire(); // a wall jump interrupts a dash
     sfx.jump.play({ pitch: 1.25 });
     fx.burst({
       at: { x: player.x + (wallDir > 0 ? player.w : 0), y: player.y + player.h / 2 },
@@ -463,31 +540,7 @@ function updateWorld(): void {
       color: player.color,
     });
   }
-  if (input.jump.released && player.vel.y < 0 && !dashing && !climbing) player.vel.y *= JUMP_CUTOFF;
-
-  // Dash: on the edge, off cooldown, once per airtime (refreshes on landing).
-  if (!climbing && input.dash.pressed && dashCooldown.ready() && (player.grounded || canAirDash)) {
-    if (!player.grounded) canAirDash = false;
-    if (run !== 0) player.facing = Math.sign(run);
-    dashActive.charge();
-    dashCooldown.use();
-    sfx.dash.play();
-    Camera.shake(2, 100); // [#29]
-  }
-
-  if (dashing && bumpCooldown.ready()) {
-    const other = collidableRemotes.find((g) =>
-      Collision.sweptAABB(player, player.vel.x, player.vel.y, g),
-    );
-    if (other) {
-      gameEvents.emit("bump", {
-        target: other.id,
-        vx: player.facing * DASH_SPEED * 0.7,
-        vy: -4,
-      });
-      bumpCooldown.use();
-    }
-  }
+  if (input.jump.released && player.vel.y < 0 && !climbing) player.vel.y *= JUMP_CUTOFF;
 
   // [#14]/[#40] One policy call handles tiles, diagonal slopes, and players.
   const worldSolids = [level, ...slopes, ...collidableRemotes];
@@ -505,23 +558,19 @@ function updateWorld(): void {
   if (!player.grounded && !climbing && (hit.left || hit.right)) {
     wallDir = hit.left ? -1 : 1;
     wallCoyote.charge();
-    dashActive.expire(); // dashing into a wall ends the dash
     if (run === wallDir && player.vel.y > WALL_SLIDE) player.vel.y = WALL_SLIDE;
   }
-  if (player.grounded) canAirDash = true;
 
   for (const gem of gems) if (Collision.circleRect(gem.x, gem.y, 12, player)) gems.take(gem);
 
-  if (run !== 0 && !dashing && !climbing) player.facing = Math.sign(run);
+  if (run !== 0 && !climbing) player.facing = Math.sign(run);
   player.state = climbing
     ? "climb"
-    : dashing
-      ? "dash"
-      : !player.grounded
-        ? "jump"
-        : Math.abs(player.vel.x) > 0.5
-          ? "run"
-          : "idle";
+    : !player.grounded
+      ? "jump"
+      : Math.abs(player.vel.x) > 0.5
+        ? "run"
+        : "idle";
   playerAnimation.set(player.state as HeroState); // [#25]
 
   if (player.grounded && !wasGrounded) {
@@ -534,26 +583,21 @@ function updateWorld(): void {
       size: [1, 2],
       color: "#d59b63",
     });
-    if (hit.impact > 8) {
-      Camera.shake(Mathf.remap(hit.impact, 8, 16, 1, 5), 150); // [#29]
-      sfx.thud.play();
-    }
+    if (hit.impact > 8) sfx.thud.play();
   }
   wasGrounded = player.grounded;
 }
 
-type HeroState = "idle" | "run" | "jump" | "dash" | "climb";
+type HeroState = "idle" | "run" | "jump" | "climb";
 
 const animationState = (body: { state?: string; grounded?: boolean; vx: number }): HeroState =>
   body.state === "climb"
     ? "climb"
-    : body.state === "dash" || Math.abs(body.vx) > MOVE + 1
-      ? "dash"
-      : !body.grounded
-        ? "jump"
-        : Math.abs(body.vx) > 0.5
-          ? "run"
-          : "idle";
+    : !body.grounded
+      ? "jump"
+      : Math.abs(body.vx) > 0.5
+        ? "run"
+        : "idle";
 
 function playerIndex(id: string): number {
   return [room.id, ...room.peers].sort().indexOf(id) + 1;
@@ -600,12 +644,25 @@ function drawHero(
     w: 33,
     h: 32,
   };
-  Draw.sprite(animation.outline, at, {
-    flipX: body.facing < 0,
-    scaleX: 1.12,
-    scaleY: 1.12 * scaleY,
-    alpha,
-  });
+  for (const [x, y] of [
+    [-1, -1],
+    [0, -1],
+    [1, -1],
+    [-1, 0],
+    [1, 0],
+    [-1, 1],
+    [0, 1],
+    [1, 1],
+  ])
+    Draw.sprite(
+      animation.outline,
+      { ...at, x: at.x + x, y: at.y + y },
+      {
+        flipX: body.facing < 0,
+        scaleY,
+        alpha,
+      },
+    );
   Draw.sprite(animation.sprite, at, { flipX: body.facing < 0, scaleY, alpha });
 }
 
@@ -631,9 +688,15 @@ function drawPlayerColor(body: { x: number; y: number; w: number; color: string 
 }
 
 function drawStage(remotes: readonly RemotePlayer[]): void {
+  Camera.zoom = cameraZoom();
   // [#16] Screen space is the default; the camera transforms its block.
   Camera.render(() => {
-    for (let x = 0; x < level.rect.w; x += 768) Draw.image(art.background, x, 0, 768, 480);
+    const view = Camera.rect;
+    // The sky follows the camera while the world geometry scrolls over it.
+    Draw.image(art.background, view.x, view.y, view.w, view.h);
+    Draw.rect(0, UNDERGROUND_Y, level.rect.w, level.rect.h - UNDERGROUND_Y, "#704357");
+    for (const cave of caveBackdrops) Draw.rect(cave.x, cave.y, cave.w, cave.h, "#29263e");
+    Draw.sprites(scenery);
     Draw.tiles(level, skin); // [#42] data never draws itself
     Draw.sprites(slopeSprites);
     for (const gem of gems)
@@ -641,9 +704,9 @@ function drawStage(remotes: readonly RemotePlayer[]): void {
     for (let i = pickupEffects.length - 1; i >= 0; i--) {
       const effect = pickupEffects[i];
       Draw.sprite(effect.animation, {
-        x: effect.x - 20,
+        x: effect.x - 16,
         y: effect.y - 16,
-        w: 40,
+        w: 32,
         h: 32,
       });
       if (effect.animation.done) pickupEffects.splice(i, 1);
@@ -686,7 +749,10 @@ function drawFeature(name: string, description: string): void {
 }
 
 function resumeGame(): void {
-  input.consume("jump"); // A belongs to the modal until released
+  // Modal keys/buttons belong to the modal until released. In particular,
+  // Escape may dismiss during draw before the next fixed update sees it.
+  input.consume("jump");
+  input.consume("pause");
   scenes.pop();
 }
 
@@ -736,11 +802,11 @@ const titleScene: SceneSpec = {
           () => {
             drawFeature(
               "MOVEMENT",
-              "Run, variable jump, coyote time, jump buffering, wall slide/jump, air dash, one-way platforms, smooth slopes, ladders, and fall-out death/respawn.",
+              "Run, variable jump, coyote time, jump buffering, wall slide/jump, one-way platforms, smooth slopes, auto-grab ladders, and fall-out death/respawn.",
             );
             drawFeature(
               "MULTIPLAYER",
-              "Unique colors, synchronized animations, indexed player labels, off-screen indicators, spawn slots, player collision, standing on players, and dash bumps.",
+              "Unique colors, synchronized animations, indexed player labels, off-screen indicators, spawn slots, player collision, and standing on players.",
             );
             drawFeature(
               "SHARED WORLD + NETCODE",
@@ -792,7 +858,7 @@ const pausedScene: SceneSpec = {
     });
   },
   update() {
-    if (input.pause.pressed) scenes.pop();
+    if (input.pause.pressed) resumeGame();
   },
   draw: drawPauseMenu,
 };

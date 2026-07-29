@@ -17,6 +17,8 @@ beforeEach(() => {
   ctx = {
     calls,
     globalAlpha: 1,
+    imageSmoothingEnabled: true,
+    smoothingAtDraw: [] as boolean[],
     fillStyle: "" as string | CanvasGradient,
     strokeStyle: "" as string | CanvasGradient,
     lineWidth: 1,
@@ -42,6 +44,7 @@ beforeEach(() => {
     drawImage: vi.fn((_img: unknown, ...a: number[]) => {
       // Blit → record destination rect (last 4 args) and the current alpha.
       const [dx, dy, dw, dh] = a.slice(-4);
+      (ctx.smoothingAtDraw as boolean[]).push(ctx.imageSmoothingEnabled as boolean);
       calls.push(`draw ${dx},${dy} ${dw}x${dh} @${ctx.globalAlpha}`);
     }),
     canvas: null,
@@ -162,12 +165,13 @@ describe("Draw stroke + poly + image primitives", () => {
   it("image blits at natural size, or scaled when given w/h", () => {
     const img = { width: 40, height: 30 } as HTMLCanvasElement;
     Draw.image(img, 5, 6);
-    // No size given → the 3-arg drawImage; the fake reads the last 4 args, so
-    // assert on the mock directly here.
-    expect(ctx.drawImage).toHaveBeenLastCalledWith(img, 5, 6);
+    // Natural-size images use the same pixel-aligned destination path.
+    expect(ctx.drawImage).toHaveBeenLastCalledWith(img, 5, 6, 40, 30);
 
     Draw.image(img, 5, 6, 80, 60);
     expect(ctx.calls).toContain("draw 5,6 80x60 @1");
+    expect(ctx.smoothingAtDraw).toEqual([false, false]);
+    expect(ctx.imageSmoothingEnabled).toBe(true);
   });
 
   it("image fills in the intrinsic dimension the caller left out", () => {

@@ -200,8 +200,34 @@ describe("Collision.slide / moveAndSlide", () => {
     expect(body.x).toBeGreaterThan(2); // easing toward the ladder center
     expect(climbLadder(body, [ladder], 0, { active: true })).toBe(true);
     expect(body.vel.y).toBe(0);
+    expect(climbLadder(body, [ladder], 0, { active: true, horizontal: 0.5 })).toBe(false);
     body.x = 100;
     expect(climbLadder(body, [ladder], 0, { active: true })).toBe(false);
+  });
+
+  it("can grab a ladder automatically on contact", () => {
+    const ladder = { x: 0, y: 0, w: 20, h: 100 };
+    const body = { x: 2, y: 20, w: 10, h: 10, vel: { x: 0, y: 4 }, grounded: false };
+    expect(climbLadder(body, [ladder], 0)).toBe(false);
+    expect(climbLadder(body, [ladder], 0, { autoGrab: true })).toBe(true);
+    expect(body.vel.y).toBe(0);
+  });
+
+  it("climbs through a one-way ladder cap, then stands on it", () => {
+    const ladder = { x: 0, y: 0, w: 20, h: 100 };
+    const cap = { x: 0, y: 0, w: 20, h: 20, oneWay: true };
+    const body = { x: 5, y: 10, w: 10, h: 10, vel: { x: 0, y: 0 }, grounded: false };
+    let climbing = true;
+    while (climbing) {
+      climbing = climbLadder(body, [ladder], -1, { active: climbing });
+      moveAndSlide(body, [cap]);
+    }
+    for (let step = 0; step < 20 && !body.grounded; step++) {
+      body.vel.y += 0.5;
+      moveAndSlide(body, [cap]);
+    }
+    expect(body.grounded).toBe(true);
+    expect(body.y).toBeCloseTo(-10, 1);
   });
 
   it("accepts a SolidSource and mixed arrays", () => {

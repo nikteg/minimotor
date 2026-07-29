@@ -22,6 +22,7 @@
 // grid broadphase for free.
 
 import type { DrawTilesOptions, Rect } from "./engine/index.js";
+import { blitPixelAligned, fillPixelAligned } from "./engine/pixel-raster.js";
 import type { LadderSource, SlopeDirection, Solid, SolidSource } from "./collision.js";
 import type { Vec2 } from "./vec2.js";
 import { Clock, type ClockHandle } from "./clock.js";
@@ -262,37 +263,52 @@ export function grid<L extends Record<string, TileSpec>>(
     x1: number,
     y1: number,
   ): void {
+    const prevSmoothing = ctx.imageSmoothingEnabled;
+    ctx.imageSmoothingEnabled = false;
     // Flat-color skins repaint the same few colors across thousands of cells;
     // setting fillStyle is a real state change, so only write it when it
     // actually differs. Starts null because the caller's ctx state is unknown.
     let lastFill: string | null = null;
-    for (let cy = y0; cy <= y1; cy++) {
-      for (let cx = x0; cx <= x1; cx++) {
-        const ch = cells[cy][cx];
-        if (isEmptyChar(ch)) continue;
-        let value = s[ch];
-        if (value === null || value === undefined) continue;
-        if (typeof value === "function") {
-          selectorCell.cx = cx;
-          selectorCell.cy = cy;
-          selectorCell.char = ch;
-          value = value(selectorCell);
-          if (value === null) continue;
-        }
-        const x = cx * size;
-        const y = cy * size;
-        if (typeof value === "string") {
-          if (value !== lastFill) {
-            ctx.fillStyle = value;
-            lastFill = value;
+    try {
+      for (let cy = y0; cy <= y1; cy++) {
+        for (let cx = x0; cx <= x1; cx++) {
+          const ch = cells[cy][cx];
+          if (isEmptyChar(ch)) continue;
+          let value = s[ch];
+          if (value === null || value === undefined) continue;
+          if (typeof value === "function") {
+            selectorCell.cx = cx;
+            selectorCell.cy = cy;
+            selectorCell.char = ch;
+            value = value(selectorCell);
+            if (value === null) continue;
           }
-          // A hair of overlap so fractional transforms can't antialias
-          // hairline gaps between neighbouring fills.
-          ctx.fillRect(x, y, size + 0.5, size + 0.5);
-        } else {
-          ctx.drawImage(value.image, value.sx, value.sy, value.sw, value.sh, x, y, size, size);
+          const x = cx * size;
+          const y = cy * size;
+          if (typeof value === "string") {
+            if (value !== lastFill) {
+              ctx.fillStyle = value;
+              lastFill = value;
+            }
+            fillPixelAligned(ctx, x, y, size, size);
+          } else {
+            blitPixelAligned(
+              ctx,
+              value.image,
+              value.sx,
+              value.sy,
+              value.sw,
+              value.sh,
+              x,
+              y,
+              size,
+              size,
+            );
+          }
         }
       }
+    } finally {
+      ctx.imageSmoothingEnabled = prevSmoothing;
     }
   }
 
@@ -472,7 +488,7 @@ export function grid<L extends Record<string, TileSpec>>(
           // Nearest-neighbour so pixel art stays crisp when the blit rescales.
           const prev = ctx.imageSmoothingEnabled;
           ctx.imageSmoothingEnabled = false;
-          ctx.drawImage(baked.canvas, 0, 0, cols * size, rows * size);
+          blitPixelAligned(ctx, baked.canvas, 0, 0, cols * size, rows * size);
           ctx.imageSmoothingEnabled = prev;
           return;
         }
