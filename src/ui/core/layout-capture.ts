@@ -30,6 +30,15 @@ export interface LayoutEntry {
   screenRect: { x: number; y: number; w: number; h: number };
   /** The UI scale active at placement (`currentUiScale`; 1 at the root). */
   scale: number;
+  /** Index (into this same array) of the container this rect was placed in, or
+   *  `undefined` at the top level. Containers always precede their children. */
+  parent?: number;
+  /** This container clips/scrolls its children, so they may legitimately
+   *  extend past its box (`layoutIssues` stops checking inside it). */
+  clips?: boolean;
+  /** The rect came from explicit `x`/`y` rather than a layout slot — it was
+   *  positioned by hand, so it is not expected to sit inside its container. */
+  pinned?: boolean;
 }
 
 // Entries recorded so far THIS frame, and the last completed frame's tree.
@@ -85,6 +94,10 @@ export function layoutTree(): LayoutEntry[] {
   return st().tree;
 }
 
+// The containers currently being filled (indices into this frame's entries),
+// innermost last — see `pushLayoutParent`.
+const parents: number[] = [];
+
 /** Record one resolved rect — called by `place`/`fillRect`/the containers,
  *  always behind a `layoutCaptureActive` guard. `id` is the raw option value
  *  (stringified here so call sites stay one expression). */
@@ -92,6 +105,7 @@ export function recordLayout(
   kind: string,
   id: string | number | undefined,
   rect: { x: number; y: number; w: number; h: number },
+  flags?: { clips?: boolean; pinned?: boolean },
 ): void {
   const tl = uiToScreen(rect.x, rect.y);
   const br = uiToScreen(rect.x + rect.w, rect.y + rect.h);
@@ -101,5 +115,69 @@ export function recordLayout(
     rect: { x: rect.x, y: rect.y, w: rect.w, h: rect.h },
     screenRect: { x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y },
     scale: currentUiScale(),
+    parent: parents[parents.length - 1],
+    clips: flags?.clips,
+    pinned: flags?.pinned,
   });
+}
+
+/** Open the container that recorded the MOST RECENT entry: everything recorded
+ *  until `popLayoutParent` becomes its child. Call it right after a container
+ *  records its own box, around the children callback. */
+export function pushLayoutParent(): void {
+  if (!layoutCaptureActive) return;
+  parents.push(st().frame.length - 1);
+}
+
+/** Close the container opened by `pushLayoutParent`. */
+export function popLayoutParent(): void {
+  if (!layoutCaptureActive) return;
+  parents.pop();
+}
+
+/** A child that escaped its container's box — what `layoutIssues` reports. */
+export interface LayoutIssue {
+  /** The escaping entry and the container it was placed in. */
+  child: LayoutEntry;
+  parent: LayoutEntry;
+  /** How far past each edge it reached, in screen px (0 = inside). */
+  overflow: { left: number; top: number; right: number; bottom: number };
+}
+
+/** Layout problems in the captured frame: children that spill out of the
+ *  container that laid them out. That is the signature of a container which
+ *  failed to size to its content — its children then paint over whatever comes
+ *  after it, the classic "UI drawn on top of UI" bug.
+ *
+ *  Deliberately quiet about the legitimate ways a rect leaves its box: a
+ *  clipping/scrolling container (its content is *meant* to overflow, that's
+ *  what the clip is for) and a hand-positioned `x`/`y` rect (the caller chose
+ *  the coordinates; the container never placed it).
+ *
+ *      UI.layoutCapture(true);
+ *      // ...a frame renders...
+ *      expect(UI.layoutIssues()).toEqual([]); */
+export function layoutIssues(tolerance = 0.5): LayoutIssue[] {
+  const tree = layoutTree();
+  const issues: LayoutIssue[] = [];
+  // A container inside a clip may itself be scrolled out of its ancestor, so
+  // "inside any clipping ancestor" disables the check for the whole subtree.
+  const clipped: boolean[] = [];
+  for (const [i, e] of tree.entries()) {
+    const parentIndex = e.parent;
+    const parent = parentIndex === undefined ? undefined : tree[parentIndex];
+    clipped[i] = !!e.clips || (parentIndex !== undefined && clipped[parentIndex]);
+    if (!parent || e.pinned || clipped[i]) continue;
+    const c = e.screenRect;
+    const p = parent.screenRect;
+    const overflow = {
+      left: Math.max(0, p.x - c.x),
+      top: Math.max(0, p.y - c.y),
+      right: Math.max(0, c.x + c.w - (p.x + p.w)),
+      bottom: Math.max(0, c.y + c.h - (p.y + p.h)),
+    };
+    const worst = Math.max(overflow.left, overflow.top, overflow.right, overflow.bottom);
+    if (worst > tolerance) issues.push({ child: e, parent, overflow });
+  }
+  return issues;
 }

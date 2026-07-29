@@ -252,7 +252,22 @@ export function create(): Ecs {
             if (slot === undefined) continue outer;
             eachRow.push(col.dense[slot]);
           }
-          fn(...eachRow);
+          // Call directly for the arities real queries use: `fn(...eachRow)`
+          // materializes an arguments array per entity, which on the engine's
+          // hottest loop is the whole cost of the row.
+          switch (eachRow.length) {
+            case 2:
+              fn(eachRow[0], eachRow[1]);
+              break;
+            case 3:
+              fn(eachRow[0], eachRow[1], eachRow[2]);
+              break;
+            case 4:
+              fn(eachRow[0], eachRow[1], eachRow[2], eachRow[3]);
+              break;
+            default:
+              fn(...eachRow);
+          }
         }
       } finally {
         if (--iterating === 0) flush();

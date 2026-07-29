@@ -84,6 +84,47 @@ describe("ClockHandle (pull-derived time)", () => {
     expect(fn).not.toHaveBeenCalled();
   });
 
+  // The fire pass runs off a REUSED snapshot array (no per-step allocation),
+  // so these pin the mutation guarantees that snapshot has to preserve.
+  it("a timer cancelled by an earlier callback in the same pass does not fire", () => {
+    const t = stepper();
+    const clock = createClockHandle(t.steps);
+    const victim = vi.fn();
+    let cancelVictim: (() => void) | null = null;
+    clock.after(50, () => cancelVictim?.());
+    cancelVictim = clock.after(60, victim);
+    t.advanceMs(500);
+    _driveClocks();
+    expect(victim).not.toHaveBeenCalled();
+  });
+
+  it("a timer scheduled from inside a callback still fires later", () => {
+    const t = stepper();
+    const clock = createClockHandle(t.steps);
+    const late = vi.fn();
+    clock.after(50, () => clock.after(50, late));
+    t.advanceMs(60);
+    _driveClocks();
+    expect(late).not.toHaveBeenCalled(); // not due yet
+    t.advanceMs(100);
+    _driveClocks();
+    expect(late).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancelling every timer mid-pass leaves the clock idle", () => {
+    const t = stepper();
+    const clock = createClockHandle(t.steps);
+    const other = vi.fn();
+    const cancelOther = clock.every(10, other);
+    clock.after(50, () => cancelOther());
+    t.advanceMs(500);
+    _driveClocks();
+    const callsAfterFirstPass = other.mock.calls.length;
+    t.advanceMs(500);
+    _driveClocks();
+    expect(other).toHaveBeenCalledTimes(callsAfterFirstPass);
+  });
+
   it("timers on a held clock never come due", () => {
     const t = stepper();
     const clock = createClockHandle(t.steps);

@@ -6,7 +6,10 @@ import {
   sweptAABB,
   slide,
   moveAndSlide,
+  grid,
+  contacts,
   type Solid,
+  type SolidSource,
 } from "../collision.js";
 
 describe("rectsOverlap", () => {
@@ -163,5 +166,150 @@ describe("Collision.slide / moveAndSlide", () => {
     const wall = { x: 0, y: 0, w: 5, h: 200 };
     expect(slide(b, { x: -20, y: 0 }, [source, wall]).left).toBe(true);
     expect(b.x).toBeCloseTo(5, 1); // stopped against the wall from the source-mixed array
+  });
+});
+
+describe("Collision.grid", () => {
+  const box = (x: number, y: number): Solid => ({ x, y, w: 16, h: 16 });
+
+  it("reports only the solids near the queried area", () => {
+    const solids = [box(0, 0), box(1000, 0), box(0, 1000)];
+    const g = grid(solids, 64);
+    expect(g.size).toBe(3);
+    expect(g.solidsNear({ x: -8, y: -8, w: 40, h: 40 }, [])).toEqual([solids[0]]);
+    expect(g.solidsNear({ x: 990, y: -8, w: 40, h: 40 }, [])).toEqual([solids[1]]);
+    expect(g.solidsNear({ x: 500, y: 500, w: 40, h: 40 }, [])).toEqual([]);
+  });
+
+  it("reports a solid straddling several cells exactly once", () => {
+    // 200px wide at a 16px cell — spans 13 cells, and the query covers them all.
+    const wide: Solid = { x: 0, y: 0, w: 200, h: 8 };
+    const g = grid([wide], 16);
+    expect(g.solidsNear({ x: -50, y: -50, w: 400, h: 200 }, [])).toEqual([wide]);
+  });
+
+  it("appends to the caller's array rather than replacing it", () => {
+    const g = grid([box(0, 0)], 64);
+    const out: Solid[] = [box(500, 500)];
+    expect(g.solidsNear({ x: 0, y: 0, w: 16, h: 16 }, out)).toBe(out);
+    expect(out).toHaveLength(2);
+  });
+
+  it("handles negative coordinates", () => {
+    const far = box(-1000, -1000);
+    const g = grid([far, box(0, 0)], 64);
+    expect(g.solidsNear({ x: -1010, y: -1010, w: 40, h: 40 }, [])).toEqual([far]);
+  });
+
+  it("stays correct across many queries (stamp dedupe doesn't leak between calls)", () => {
+    const wide: Solid = { x: 0, y: 0, w: 200, h: 8 };
+    const g = grid([wide], 16);
+    const area = { x: -50, y: -50, w: 400, h: 200 };
+    for (let i = 0; i < 5; i++) expect(g.solidsNear(area, [])).toEqual([wide]);
+  });
+
+  it("rebuild() re-buckets for a changed set", () => {
+    const a = box(0, 0);
+    const b = box(1000, 1000);
+    const g = grid([a], 64);
+    g.rebuild([b]);
+    expect(g.size).toBe(1);
+    expect(g.solidsNear({ x: 0, y: 0, w: 16, h: 16 }, [])).toEqual([]);
+    expect(g.solidsNear({ x: 1000, y: 1000, w: 16, h: 16 }, [])).toEqual([b]);
+  });
+
+  it("rejects a non-positive cell size", () => {
+    expect(() => grid([], 0)).toThrow(/cellSize/);
+    expect(() => grid([], -8)).toThrow(/cellSize/);
+  });
+
+  it("drives moveAndSlide exactly like the equivalent plain array", () => {
+    const floor: Solid[] = [];
+    for (let i = 0; i < 40; i++) floor.push({ x: i * 16, y: 100, w: 16, h: 16 });
+
+    const viaArray = { x: 50, y: 60, w: 10, h: 10, vel: { x: 3, y: 60 }, grounded: false };
+    const viaGrid = { x: 50, y: 60, w: 10, h: 10, vel: { x: 3, y: 60 }, grounded: false };
+    const ca = contacts();
+    const cg = contacts();
+    moveAndSlide(viaArray, floor, ca);
+    moveAndSlide(viaGrid, grid(floor, 32), cg);
+
+    expect(viaGrid.x).toBeCloseTo(viaArray.x, 10);
+    expect(viaGrid.y).toBeCloseTo(viaArray.y, 10);
+    expect(viaGrid.grounded).toBe(viaArray.grounded);
+    expect(viaGrid.grounded).toBe(true); // …and it actually landed
+    expect(cg).toEqual(ca);
+  });
+});
+
+describe("Collision.contacts (the scratch opt-out)", () => {
+  const floor: Solid[] = [{ x: 0, y: 100, w: 200, h: 20 }];
+
+  it("two bodies sharing the default scratch alias each other", () => {
+    const lands = { x: 10, y: 60, w: 10, h: 10, vel: { x: 0, y: 60 }, grounded: false };
+    const flies = { x: 10, y: 10, w: 10, h: 10, vel: { x: 0, y: 1 }, grounded: false };
+    const first = moveAndSlide(lands, floor);
+    expect(first.down).toBe(true);
+    moveAndSlide(flies, floor); // second call rewrites the same object
+    expect(first.down).toBe(false); // the first body's result is gone
+  });
+
+  it("…and does not when each body brings its own out", () => {
+    const lands = { x: 10, y: 60, w: 10, h: 10, vel: { x: 0, y: 60 }, grounded: false };
+    const flies = { x: 10, y: 10, w: 10, h: 10, vel: { x: 0, y: 1 }, grounded: false };
+    const a = contacts();
+    const b = contacts();
+    moveAndSlide(lands, floor, a);
+    moveAndSlide(flies, floor, b);
+    expect(a.down).toBe(true); // survives the second resolve
+    expect(b.down).toBe(false);
+    expect(a).not.toBe(b);
+  });
+
+  it("slide() takes an out too, and returns the very object passed in", () => {
+    const rect = { x: 10, y: 60, w: 10, h: 10 };
+    const out = contacts();
+    expect(slide(rect, { x: 0, y: 60 }, floor, out)).toBe(out);
+    expect(out.down).toBe(true);
+  });
+
+  it("clears stale flags on a contact-free move", () => {
+    const out = contacts();
+    const rect = { x: 10, y: 60, w: 10, h: 10 };
+    slide(rect, { x: 0, y: 60 }, floor, out);
+    expect(out.down).toBe(true);
+    slide({ x: 10, y: 0, w: 10, h: 10 }, { x: 1, y: 0 }, floor, out);
+    expect(out.down).toBe(false);
+    expect(out.impact).toBe(0);
+  });
+});
+
+describe("Collision solids-array scanning", () => {
+  it("notices a source appended to an array it has already seen", () => {
+    const platform: Solid = { x: 0, y: 100, w: 200, h: 20 };
+    const source: SolidSource = { solidsNear: (_a, out) => (out.push(platform), out) };
+    const solids: Array<Solid | SolidSource> = [];
+
+    // First pass: plain (and empty) — nothing to hit.
+    const drop = { x: 10, y: 60, w: 10, h: 10, vel: { x: 0, y: 60 }, grounded: false };
+    moveAndSlide(drop, solids);
+    expect(drop.grounded).toBe(false);
+
+    // Appending a source changes the array's length, so the memo is discarded.
+    solids.push(source);
+    const drop2 = { x: 10, y: 60, w: 10, h: 10, vel: { x: 0, y: 60 }, grounded: false };
+    moveAndSlide(drop2, solids);
+    expect(drop2.grounded).toBe(true);
+  });
+
+  it("keeps mixed arrays working across repeat calls", () => {
+    const platform: Solid = { x: 0, y: 100, w: 200, h: 20 };
+    const source: SolidSource = { solidsNear: (_a, out) => (out.push(platform), out) };
+    const solids: Array<Solid | SolidSource> = [source, { x: 0, y: 300, w: 200, h: 20 }];
+    for (let i = 0; i < 3; i++) {
+      const body = { x: 10, y: 60, w: 10, h: 10, vel: { x: 0, y: 60 }, grounded: false };
+      moveAndSlide(body, solids);
+      expect(body.grounded).toBe(true);
+    }
   });
 });

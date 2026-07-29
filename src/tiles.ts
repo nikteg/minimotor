@@ -235,6 +235,10 @@ export function grid<L extends Record<string, TileSpec>>(
     x1: number,
     y1: number,
   ): void {
+    // Flat-color skins repaint the same few colors across thousands of cells;
+    // setting fillStyle is a real state change, so only write it when it
+    // actually differs. Starts null because the caller's ctx state is unknown.
+    let lastFill: string | null = null;
     for (let cy = y0; cy <= y1; cy++) {
       for (let cx = x0; cx <= x1; cx++) {
         const ch = cells[cy][cx];
@@ -251,7 +255,10 @@ export function grid<L extends Record<string, TileSpec>>(
         const x = cx * size;
         const y = cy * size;
         if (typeof value === "string") {
-          ctx.fillStyle = value;
+          if (value !== lastFill) {
+            ctx.fillStyle = value;
+            lastFill = value;
+          }
           // A hair of overlap so fractional transforms can't antialias
           // hairline gaps between neighbouring fills.
           ctx.fillRect(x, y, size + 0.5, size + 0.5);
@@ -296,7 +303,10 @@ export function grid<L extends Record<string, TileSpec>>(
     if (!bctx) return null;
     bctx.scale(deviceScale, deviceScale);
     paintCells(bctx, skin as Record<string, SkinValue>, 0, 0, cols - 1, rows - 1);
-    return { canvas, scale, skinRef: skin };
+    // Record the scale the pixels were actually baked at, not the camera's:
+    // past BAKE_MAX_SCALE they diverge, and comparing against the camera's
+    // would re-bake on zoom changes that produce identical pixels.
+    return { canvas, scale: deviceScale, skinRef: skin };
   }
 
   const level: Level<C> = {
@@ -370,27 +380,45 @@ export function grid<L extends Record<string, TileSpec>>(
           const c = ctx.canvas as { width: number; height: number };
           const det = m.a * m.d - m.b * m.c;
           if (Number.isFinite(det) && det !== 0) {
-            // Inverse-map (sx,sy): x = (d*(sx-e) - c*(sy-f))/det,
-            //                      y = (a*(sy-f) - b*(sx-e))/det.
-            const tlx = (m.c * m.f - m.d * m.e) / det;
-            const tly = (m.b * m.e - m.a * m.f) / det;
-            const brx = (m.d * (c.width - m.e) - m.c * (c.height - m.f)) / det;
-            const bry = (m.a * (c.height - m.f) - m.b * (c.width - m.e)) / det;
-            x0 = Math.max(0, Math.floor(Math.min(tlx, brx) / size));
-            y0 = Math.max(0, Math.floor(Math.min(tly, bry) / size));
-            x1 = Math.min(cols - 1, Math.floor(Math.max(tlx, brx) / size));
-            y1 = Math.min(rows - 1, Math.floor(Math.max(tly, bry) / size));
+            // Inverse-map all FOUR screen corners and take their world AABB.
+            // Two corners suffice for a translate+scale transform, but not for
+            // a rotated one — its world-space bounding box is set by the other
+            // diagonal, so a two-corner box would under-cull and drop tiles.
+            //   x = (d*(sx-e) - c*(sy-f))/det,  y = (a*(sy-f) - b*(sx-e))/det
+            let minX = Infinity;
+            let minY = Infinity;
+            let maxX = -Infinity;
+            let maxY = -Infinity;
+            for (let i = 0; i < 4; i++) {
+              const sx = i & 1 ? c.width : 0;
+              const sy = i & 2 ? c.height : 0;
+              const dx = sx - m.e;
+              const dy = sy - m.f;
+              const wx = (m.d * dx - m.c * dy) / det;
+              const wy = (m.a * dy - m.b * dx) / det;
+              if (wx < minX) minX = wx;
+              if (wx > maxX) maxX = wx;
+              if (wy < minY) minY = wy;
+              if (wy > maxY) maxY = wy;
+            }
+            x0 = Math.max(0, Math.floor(minX / size));
+            y0 = Math.max(0, Math.floor(minY / size));
+            x1 = Math.min(cols - 1, Math.floor(maxX / size));
+            y1 = Math.min(rows - 1, Math.floor(maxY / size));
           }
         } catch {
           // DOMMatrix unavailable (tests/jsdom): draw everything.
         }
       }
       if (opts?.bake === true && !bakeDisabled) {
+        // Compare like with like: `baked.scale` is the device scale the pixels
+        // were rendered at, which is the camera scale CLAMPED to BAKE_MAX_SCALE.
+        const wantScale = Math.min(scale, BAKE_MAX_SCALE);
         const stale =
           !baked ||
           baked.skinRef !== skin ||
-          scale < baked.scale / 1.25 ||
-          scale > baked.scale * 1.25;
+          wantScale < baked.scale / 1.25 ||
+          wantScale > baked.scale * 1.25;
         if (stale) baked = bakeLayer(skin, scale);
         if (baked) {
           // One whole-level blit; the ambient transform positions it.

@@ -45,13 +45,22 @@ export function drawText(
   y: number,
   style: TextStyle = {},
 ): void {
-  ctx.save();
+  // Save the four properties rather than the whole context: `save()/restore()`
+  // pushes every bit of canvas state (transform, clip, compositing, shadows),
+  // and this runs once per string drawn.
+  const prevFont = ctx.font;
+  const prevFill = ctx.fillStyle;
+  const prevAlign = ctx.textAlign;
+  const prevBaseline = ctx.textBaseline;
   ctx.font = style.font ?? monoFont(16);
   ctx.fillStyle = style.color ?? "#fff";
   ctx.textAlign = style.align ?? "left";
   ctx.textBaseline = style.baseline ?? "top";
   ctx.fillText(str, x, y);
-  ctx.restore();
+  ctx.font = prevFont;
+  ctx.fillStyle = prevFill;
+  ctx.textAlign = prevAlign;
+  ctx.textBaseline = prevBaseline;
 }
 
 /** Text centered horizontally and vertically on (cx, cy).

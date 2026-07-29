@@ -8,12 +8,13 @@ import {
   drawFocusRing,
   focusFromPointer,
   hoverCursor,
+  measureWidth,
   place,
   registerFocusable,
   theme,
+  uiCtx,
   uiFont,
   uiPointer,
-  uiCtx,
   widgetId,
 } from "../core/index.js";
 import { tooltip } from "./tooltip.js";
@@ -128,13 +129,14 @@ export function button(
   ctx.save();
   ctx.font = opts.font ?? uiFont(theme.fontSize + 2, true);
   // Auto width: the label plus comfortable padding.
-  const w = opts.w ?? Math.ceil(ctx.measureText(opts.label).width) + theme.buttonPadX;
+  const w = opts.w ?? Math.ceil(measureWidth(ctx, opts.label)) + theme.buttonPadX;
   const rect = place(opts, w, opts.h ?? 30, "button");
   const id = widgetId(opts.id, "button");
   const keyboardFocused = registerFocusable(ctx, {
     id,
     disabled: opts.disabled,
     tabIndex: opts.tabIndex,
+    rect,
   });
 
   const p = uiPointer();

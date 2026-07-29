@@ -9,10 +9,14 @@ import {
   containerKey,
   containerRect,
   currentLayout,
+  currentUiScale,
+  focusReveal,
   getBaseSize,
   getUiScaleSetting,
   layoutArgs,
   layoutCaptureActive,
+  popLayoutParent,
+  pushLayoutParent,
   recordLayout,
   popPointerClip,
   popUiTransform,
@@ -26,6 +30,7 @@ import {
   uiCtx,
   uiHeight,
   uiPointer,
+  uiToScreen,
   uiWidth,
 } from "../core/index.js";
 import { dragScroll, scrollbar } from "./lists.js";
@@ -38,6 +43,51 @@ import { clamp } from "../../mathf.js";
 // that move or stop being drawn age out instead of accumulating.
 const scrollOffsets = sweptCache<number>();
 const scrollAlphas = sweptCache<number>();
+// The focus-reveal epoch each region last scrolled for — so one Tab produces
+// one scroll, and the user can wheel away afterwards without being dragged back.
+const revealSeen = sweptCache<number>();
+
+/** How far this scroll region must move to bring the keyboard-focused widget
+ *  into `bodyRect` (0 when it's already visible, nothing is focused, or this
+ *  region already handled the current focus move). Both rects are compared in
+ *  SCREEN coords — the focus registry stores them that way, so it works the
+ *  same inside a `UI.scaled` block — and the result is converted back into the
+ *  region's own units. */
+function revealOffset(
+  sbId: string,
+  bodyRect: { x: number; y: number; w: number; h: number },
+  horiz: boolean,
+): number {
+  const reveal = focusReveal(revealSeen.get(sbId) ?? -1);
+  if (!reveal) return 0;
+  const scale = currentUiScale();
+  const tl = uiToScreen(bodyRect.x, bodyRect.y);
+  const view = {
+    near: horiz ? tl.x : tl.y,
+    far: (horiz ? tl.x : tl.y) + (horiz ? bodyRect.w : bodyRect.h) * scale,
+  };
+  const near = horiz ? reveal.rect.x : reveal.rect.y;
+  const far = near + (horiz ? reveal.rect.w : reveal.rect.h);
+  // Outside the region entirely (a widget in some other container) — not ours
+  // to reveal. The cross axis is the cheap test for that.
+  const crossNear = horiz ? reveal.rect.y : reveal.rect.x;
+  const crossTl = horiz ? tl.y : tl.x;
+  const crossSize = (horiz ? bodyRect.h : bodyRect.w) * scale;
+  if (crossNear + (horiz ? reveal.rect.h : reveal.rect.w) < crossTl) return 0;
+  if (crossNear > crossTl + crossSize) return 0;
+  // Nudge by the smaller edge overshoot, with a little breathing room, and
+  // claim the epoch so this doesn't repeat while the focus stays put.
+  const PAD = 8 * scale;
+  let delta = 0;
+  if (near < view.near + PAD) delta = near - view.near - PAD;
+  else if (far > view.far - PAD) delta = Math.min(far - view.far + PAD, near - view.near - PAD);
+  if (delta === 0) {
+    revealSeen.set(sbId, reveal.epoch); // already visible — nothing owed
+    return 0;
+  }
+  revealSeen.set(sbId, reveal.epoch);
+  return delta / scale;
+}
 
 /** The `overflow: auto/scroll/hidden` path for the containers: a box bounded on
  *  its scroll axis (a `col` scrolls vertically, a `row` horizontally) whose body
@@ -101,7 +151,9 @@ function scrollable<R>(
     horiz ? { ...opts, w: mainForRect, h: boxCross } : { ...opts, w: boxCross, h: mainForRect },
     cachedBox,
   );
-  if (layoutCaptureActive) recordLayout(kind, opts.id, rect);
+  // `clips`: this region masks its children, so content extending past the box
+  // is the point, not a layout fault (see `layoutIssues`).
+  if (layoutCaptureActive) recordLayout(kind, opts.id, rect, { clips: true });
   cfg.box?.(rect);
   storeContentSize(key, { w: rect.w, h: rect.h, ew: rect.w, eh: rect.h });
 
@@ -178,6 +230,15 @@ function scrollable<R>(
     0,
     max,
   );
+
+  // Follow the keyboard: Tab can move focus to a widget scrolled out of sight,
+  // and a focus ring nobody can see is a dead end. The children have drawn by
+  // now, so the focused widget's rect is known — scroll just far enough to put
+  // it inside the visible body. Also runs after the children so a NESTED region
+  // reveals first and the outer one then reveals the (already-adjusted) inner
+  // region. The new offset lands next frame; only pointer focus is ignored
+  // (clicking a widget proves it was already visible).
+  offset = clamp(offset + revealOffset(sbId, bodyRect, horiz), 0, max);
 
   if (barThick) {
     offset = scrollbar({
@@ -335,9 +396,16 @@ export function clip<R>(
   roundRectPath(ctx, rect.x, rect.y, rect.w, rect.h, 0);
   ctx.clip();
   pushPointerClip(rect);
+  // Captured as a clipping container, so the verification harness treats what's
+  // drawn inside as legitimately maskable rather than as escaped layout.
+  if (layoutCaptureActive) {
+    recordLayout("clip", undefined, rect, { clips: true });
+    pushLayoutParent();
+  }
   try {
     return children();
   } finally {
+    if (layoutCaptureActive) popLayoutParent();
     popPointerClip();
     ctx.restore();
   }
@@ -399,8 +467,9 @@ function scaledToFit<R>(
 
 /** Scale a UI region — the draw AND the pointer, so hit-testing stays correct;
  *  nests; returns the callback's value. Three forms:
- *  - `UI.scaled(() => …)` — fit the global reference size (`UI.setBaseSize`) into
- *    the viewport, times `UI.setScale`. A no-op until a base size is set.
+ *  - `UI.scaled(() => …)` — the global settings: fit the reference size
+ *    (`UI.setBaseSize`) into the viewport if one is set, times `UI.setScale`.
+ *    With no base size it's just the `UI.setScale` factor (a no-op at 1).
  *  - `UI.scaled({ w, h, scale?, align? }, () => …)` — fit an explicit w×h
  *    reference box (forces the aspect ratio, keeps sizing consistent).
  *  - `UI.scaled(factor, () => …)` — a raw uniform multiplier.
@@ -417,10 +486,13 @@ export function scaled<R>(
   maybeChildren?: () => R,
 ): R {
   if (typeof factorOrOptsOrBody === "function") {
-    // No-arg form: fit the global reference size (if any) times the global scale.
+    // No-arg form: fit the global reference size (if any) times the global
+    // scale. Without a base size there's nothing to fit, but the scale
+    // preference still applies — that's the whole UI zoomed by the setting.
     const base = getBaseSize();
-    if (!base) return factorOrOptsOrBody();
-    return scaledToFit(base.w, base.h, getUiScaleSetting(), "center", factorOrOptsOrBody);
+    const factor = getUiScaleSetting();
+    if (base) return scaledToFit(base.w, base.h, factor, "center", factorOrOptsOrBody);
+    return factor === 1 ? factorOrOptsOrBody() : scaledByFactor(factor, factorOrOptsOrBody);
   }
   const children = maybeChildren as () => R;
   if (typeof factorOrOptsOrBody === "number") return scaledByFactor(factorOrOptsOrBody, children);

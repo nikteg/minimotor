@@ -120,6 +120,110 @@ function line(
   ctx.stroke();
 }
 
+/** Outline a rectangle, `width` px thick (default 1). The stroke straddles the
+ *  edge, so a 2px outline extends 1px either side. Positional
+ *  (`rectStroke(x, y, w, h, color, width?)`) or structural
+ *  (`rectStroke(someRect, color, width?)`). */
+function rectStroke(x: number, y: number, w: number, h: number, color: Fill, width?: number): void;
+function rectStroke(rect: Rect, color: Fill, width?: number): void;
+function rectStroke(
+  a: number | Rect,
+  b: number | Fill,
+  // In the structural form this slot carries the line width, not a dimension.
+  c?: number,
+  d?: number,
+  e?: Fill,
+  f?: number,
+): void {
+  const ctx = requireDefault().ctx;
+  if (typeof a === "number") {
+    ctx.strokeStyle = e!;
+    ctx.lineWidth = f ?? 1;
+    ctx.strokeRect(a, b as number, c as number, d!);
+  } else {
+    ctx.strokeStyle = b as Fill;
+    ctx.lineWidth = (c as number | undefined) ?? 1;
+    ctx.strokeRect(a.x, a.y, a.w, a.h);
+  }
+}
+
+/** Outline a circle of radius `r`, `width` px thick (default 1). Positional
+ *  (`circleStroke(x, y, r, color, width?)`) or with a point
+ *  (`circleStroke(pos, r, color, width?)`). */
+function circleStroke(x: number, y: number, r: number, color: Fill, width?: number): void;
+function circleStroke(pos: Point, r: number, color: Fill, width?: number): void;
+function circleStroke(
+  xOrCenter: number | Point,
+  yOrRadius: number,
+  radiusOrColor: number | Fill,
+  colorOrWidth?: Fill | number,
+  maybeWidth?: number,
+): void {
+  const ctx = requireDefault().ctx;
+  let x: number, y: number, r: number, color: Fill, width: number;
+  if (typeof xOrCenter === "number") {
+    x = xOrCenter;
+    y = yOrRadius;
+    r = radiusOrColor as number;
+    color = colorOrWidth as Fill;
+    width = maybeWidth ?? 1;
+  } else {
+    x = xOrCenter.x;
+    y = xOrCenter.y;
+    r = yOrRadius;
+    color = radiusOrColor as Fill;
+    width = (colorOrWidth as number | undefined) ?? 1;
+  }
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
+/** Fill a closed polygon through `points` — the shape primitive that isn't a
+ *  rect or a circle (a triangle ship, a health-bar chevron, a hit spark).
+ *  Fewer than 3 points draw nothing.
+ *
+ *      Draw.poly([{ x: 0, y: -10 }, { x: 8, y: 8 }, { x: -8, y: 8 }], "#0af"); */
+function poly(points: readonly Point[], color: Fill): void {
+  if (points.length < 3) return;
+  const ctx = requireDefault().ctx;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+  ctx.closePath();
+  ctx.fill();
+}
+
+/** Blit a plain image — a loaded `HTMLImageElement`, an offscreen canvas from
+ *  `Sprites.getSprite`, an `ImageBitmap`. The missing primitive between
+ *  `Draw.rect` and the sheet-based `Draw.sprite`/`Draw.sprites`; anchored at
+ *  its top-left, unlike the bottom-center `Draw.sprite`.
+ *
+ *  `w`/`h` default to the image's intrinsic size, so `Draw.image(logo, 20, 20)`
+ *  draws it 1:1. Pass one or both to scale. */
+function image(img: CanvasImageSource, x: number, y: number, w?: number, h?: number): void {
+  const ctx = requireDefault().ctx;
+  if (w === undefined && h === undefined) {
+    ctx.drawImage(img, x, y);
+    return;
+  }
+  // Intrinsic size: `naturalWidth` for a loaded <img>, plain `width` for a
+  // canvas/bitmap. SVGImageElement's `width` is an SVGAnimatedLength, not a
+  // number, hence the typeof guard.
+  const src = img as {
+    naturalWidth?: number;
+    naturalHeight?: number;
+    width?: number | unknown;
+    height?: number | unknown;
+  };
+  const iw = src.naturalWidth ?? (typeof src.width === "number" ? src.width : 0);
+  const ih = src.naturalHeight ?? (typeof src.height === "number" ? src.height : 0);
+  ctx.drawImage(img, x, y, w ?? iw, h ?? ih);
+}
+
 /** A linear-gradient fill from (x0,y0) to (x1,y1). Pass the result as any
  *  `Draw`/`UI` color: `Draw.rect(r, Draw.linear(0, 0, 0, h, [[0,"#0af"],[1,"#014"]]))`.
  *  Gradients are immutable and reusable — for static geometry, create the
@@ -496,6 +600,10 @@ export const Draw = {
   rect,
   circle,
   line,
+  rectStroke,
+  circleStroke,
+  poly,
+  image,
   linear,
   radial,
   opacity,

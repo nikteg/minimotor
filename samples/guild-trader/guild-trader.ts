@@ -1,6 +1,7 @@
 // GUILD TRADER: RPG inventory drag/drop, stack merging, dialogue and loot recipes.
 import { Draw, Gizmos, Goodies, Loop, Perf, Pointer, App, UI } from "minimotor";
 import type { Flow } from "minimotor";
+import "../shared/layout-probe.ts"; // e2e layout-invariant hook (window.__uiProbe)
 
 interface Item {
   name: string;

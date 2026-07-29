@@ -6,13 +6,16 @@ function fakeRoom() {
   const messageFns = new Set<(from: string, msg: unknown) => void>();
   const leaveFns = new Set<(id: string) => void>();
   const sent: unknown[] = [];
-  const room: Room<unknown> & {
+  const room: {
+    -readonly [K in keyof Room<unknown>]: Room<unknown>[K];
+  } & {
     emit(from: string, msg: unknown): void;
     leave(id: string): void;
     sent: unknown[];
   } = {
     id: "me",
-    peers: [],
+    peers: ["peer-1"],
+    peerCount: 1,
     hosting: false,
     closed: false,
     send: (msg) => void sent.push(msg),
@@ -54,6 +57,23 @@ describe("Net.sync", () => {
     ghosts.stop();
     vi.advanceTimersByTime(1000);
     expect(room.sent.length).toBe(2); // stopped
+  });
+
+  it("does not sample or send while alone in the room", () => {
+    const room = fakeRoom();
+    room.peers = [];
+    room.peerCount = 0;
+    const state = vi.fn(() => ({ x: 1 }));
+    sync(room, { hz: 10, state, now: () => 0 });
+    vi.advanceTimersByTime(500);
+    expect(room.sent.length).toBe(0);
+    expect(state).not.toHaveBeenCalled();
+    // A peer arriving resumes broadcasting.
+    room.peers = ["peer-1"];
+    room.peerCount = 1;
+    vi.advanceTimersByTime(100);
+    expect(room.sent.length).toBe(1);
+    expect(state).toHaveBeenCalled();
   });
 
   it("collects peer snapshots and yields interpolated states with ids", () => {

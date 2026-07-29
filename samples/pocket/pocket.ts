@@ -1,5 +1,6 @@
 // POCKET ASTEROIDS: a complete vector arcade loop in a fixed 16:9 viewport.
-// Focus: App fullscreen, Game.letterbox, Goodies torus helpers, Input.map with pad bindings.
+// Focus: App fullscreen + `resolution` letterbox, Goodies torus helpers,
+// Input.map with pad bindings.
 // Controls: left/right rotate, up thrusts, Space fires, H hyperspace.
 import {
   Draw,

@@ -27,7 +27,15 @@
 //     }
 //   });
 
-import { type Body as PlanckBody, Box, Circle, RevoluteJoint, Vec2, World } from "planck";
+import {
+  type Body as PlanckBody,
+  Box,
+  Circle,
+  type Contact,
+  RevoluteJoint,
+  Vec2,
+  World,
+} from "planck";
 import { component, type Ecs as EcsWorld } from "./ecs/index.js";
 import { Sprite } from "./sprites.js";
 
@@ -60,6 +68,20 @@ export interface BodyOptions {
   linearDamping?: number;
   /** Spin fade per second. Default 0. */
   angularDamping?: number;
+  /** Detect overlaps without resolving them — a trigger volume. Sensors still
+   *  fire `onContact`/`onContactEnd`, so this is how you build a goal zone,
+   *  a pickup, or a "player left the arena" check. Default false. */
+  isSensor?: boolean;
+  /** Which layers this body belongs to, as a bitmask. Default `0x0001`. */
+  category?: number;
+  /** Which layers this body collides with, as a bitmask. Default `0xffff`
+   *  (everything). Two bodies touch only if each one's `category` is in the
+   *  other's `mask` — filtering is mutual, so set both sides. */
+  mask?: number;
+  /** Override the category/mask rules for bodies sharing a group: a positive
+   *  group always collides with itself, a negative group never does. 0
+   *  (default) means "no group — use category/mask". */
+  group?: number;
   /** Your tag, surfaced on the body and in `onContact`. */
   data?: unknown;
 }
@@ -83,6 +105,10 @@ export interface Body2D {
   /** Rouse a sleeping body. Teleporting (`x`/`y`) doesn't wake by itself —
    *  call this after moving the world under resting bodies (e.g. on resize). */
   wake(): void;
+  /** Whether this body is a trigger volume rather than a solid (see
+   *  `BodyOptions.isSensor`). Writable, so a door can stop being solid the
+   *  moment it opens. */
+  sensor: boolean;
   /** The `data` tag passed at creation (mutable). */
   data: unknown;
   /** Instant velocity change, mass-scaled (kg·px/s), applied at the center. */
@@ -128,6 +154,35 @@ export interface Pin2D {
   readonly raw: RevoluteJoint;
 }
 
+/** Where a ray met a body. Plain data in pixels — read it, don't hold it
+ *  (`raycast` reuses one result object; copy the fields you need). */
+export interface RayHit {
+  /** The body that was hit. */
+  body: Body2D;
+  /** Impact point x in px. */
+  x: number;
+  /** Impact point y in px. */
+  y: number;
+  /** Surface normal x at the impact, unit length, pointing back at the ray. */
+  nx: number;
+  /** Surface normal y at the impact. */
+  ny: number;
+  /** Distance from the ray's start to the impact, in px. */
+  distance: number;
+  /** Where along the ray the hit landed, 0 at the start and 1 at the end. */
+  fraction: number;
+}
+
+/** Options for `raycast()`. */
+export interface RaycastOptions {
+  /** Let the ray hit sensors too. Default false — a trigger volume shouldn't
+   *  block line of sight. */
+  sensors?: boolean;
+  /** Return false to ignore a body — the standard way to stop a shooter's
+   *  own hitbox from eating its bullet. */
+  filter?: (body: Body2D) => boolean;
+}
+
 /** A physics world. Create bodies, call `step` once per fixed update, read
  *  positions in `draw`. */
 export interface Physics2DWorld {
@@ -145,8 +200,25 @@ export interface Physics2DWorld {
   /** Hinge two bodies together at a world point (px). Bodies rotate freely
    *  around it — or drive it with `motor()`. */
   pin(a: Body2D, b: Body2D, x: number, y: number): Pin2D;
+  /** The first body a segment from (x1, y1) to (x2, y2) hits, or null if the
+   *  line is clear. Line of sight, a hitscan shot, a ground probe under a
+   *  character:
+   *
+   *      const hit = phys.raycast(x, y, x, y + 40, { filter: (b) => b !== self });
+   *      if (hit) grounded = true;
+   *
+   *  The returned object is reused between calls — copy what you keep. */
+  raycast(x1: number, y1: number, x2: number, y2: number, opts?: RaycastOptions): RayHit | null;
+  /** Every body along the segment, nearest first. Allocates a fresh array and
+   *  fresh hits, so it's the one to hold on to — a piercing shot, a laser
+   *  that dims per body it crosses. */
+  raycastAll(x1: number, y1: number, x2: number, y2: number, opts?: RaycastOptions): RayHit[];
   /** Called when two bodies begin touching. Returns an unsubscribe. */
   onContact(cb: (a: Body2D, b: Body2D) => void): () => void;
+  /** Called when two bodies stop touching — the exit half of `onContact`.
+   *  Note a body destroyed mid-overlap does NOT report a separation, so treat
+   *  destruction as its own exit. Returns an unsubscribe. */
+  onContactEnd(cb: (a: Body2D, b: Body2D) => void): () => void;
   /** Live body count (includes static bodies). */
   readonly count: number;
   /** Escape hatch: the underlying planck world. */
@@ -157,6 +229,10 @@ const fixtureDef = (o: BodyOptions) => ({
   density: o.density ?? 1,
   friction: o.friction ?? 0.3,
   restitution: o.restitution ?? 0,
+  isSensor: o.isSensor ?? false,
+  filterCategoryBits: o.category ?? 0x0001,
+  filterMaskBits: o.mask ?? 0xffff,
+  filterGroupIndex: o.group ?? 0,
 });
 
 /** Create an isolated physics world. */
@@ -164,6 +240,16 @@ export function world(opts: Physics2DOptions = {}): Physics2DWorld {
   const ppm = opts.pixelsPerMeter ?? 50;
   const g = opts.gravity ?? { x: 0, y: 1800 };
   const pw = new World({ gravity: new Vec2(g.x / ppm, g.y / ppm) });
+
+  // planck copies the vectors handed to setPosition/setLinearVelocity/
+  // applyForce/applyLinearImpulse, so one scratch serves every setter instead
+  // of minting a Vec2 per assignment (these run per body per step).
+  const v = new Vec2(0, 0);
+  const at = (x: number, y: number): Vec2 => {
+    v.x = x;
+    v.y = y;
+    return v;
+  };
 
   // Active wall frames whose slabs may be gliding toward new targets.
   interface WallSweep {
@@ -182,11 +268,11 @@ export function world(opts: Physics2DOptions = {}): Physics2DWorld {
       const dy = ws.targets[i].y - pos.y;
       const dist = Math.hypot(dx, dy);
       if (dist === 0) {
-        slab.setLinearVelocity(new Vec2(0, 0));
+        slab.setLinearVelocity(at(0, 0));
       } else if (dist <= ws.speed * dt) {
-        slab.setLinearVelocity(new Vec2(dx / dt, dy / dt));
+        slab.setLinearVelocity(at(dx / dt, dy / dt));
       } else {
-        slab.setLinearVelocity(new Vec2((dx / dist) * ws.speed, (dy / dist) * ws.speed));
+        slab.setLinearVelocity(at((dx / dist) * ws.speed, (dy / dist) * ws.speed));
       }
     });
   };
@@ -194,9 +280,14 @@ export function world(opts: Physics2DOptions = {}): Physics2DWorld {
   // Box2D locks the world during a step; destroys requested from inside a
   // contact callback are buffered and applied when the step ends.
   const pendingDestroy: PlanckBody[] = [];
+  const pendingJoints: RevoluteJoint[] = [];
   const destroyBody = (b: PlanckBody) => {
     if (pw.isLocked()) pendingDestroy.push(b);
     else pw.destroyBody(b);
+  };
+  const destroyJoint = (j: RevoluteJoint) => {
+    if (pw.isLocked()) pendingJoints.push(j);
+    else pw.destroyJoint(j);
   };
 
   const wrap = (raw: PlanckBody, data: unknown): Body2D => {
@@ -204,14 +295,14 @@ export function world(opts: Physics2DOptions = {}): Physics2DWorld {
       get x() {
         return raw.getPosition().x * ppm;
       },
-      set x(v) {
-        raw.setPosition(new Vec2(v / ppm, raw.getPosition().y));
+      set x(n) {
+        raw.setPosition(at(n / ppm, raw.getPosition().y));
       },
       get y() {
         return raw.getPosition().y * ppm;
       },
-      set y(v) {
-        raw.setPosition(new Vec2(raw.getPosition().x, v / ppm));
+      set y(n) {
+        raw.setPosition(at(raw.getPosition().x, n / ppm));
       },
       get rot() {
         return raw.getAngle();
@@ -222,14 +313,14 @@ export function world(opts: Physics2DOptions = {}): Physics2DWorld {
       get vx() {
         return raw.getLinearVelocity().x * ppm;
       },
-      set vx(v) {
-        raw.setLinearVelocity(new Vec2(v / ppm, raw.getLinearVelocity().y));
+      set vx(n) {
+        raw.setLinearVelocity(at(n / ppm, raw.getLinearVelocity().y));
       },
       get vy() {
         return raw.getLinearVelocity().y * ppm;
       },
-      set vy(v) {
-        raw.setLinearVelocity(new Vec2(raw.getLinearVelocity().x, v / ppm));
+      set vy(n) {
+        raw.setLinearVelocity(at(raw.getLinearVelocity().x, n / ppm));
       },
       get spin() {
         return raw.getAngularVelocity();
@@ -243,12 +334,19 @@ export function world(opts: Physics2DOptions = {}): Physics2DWorld {
       wake() {
         raw.setAwake(true);
       },
+      get sensor() {
+        const f = raw.getFixtureList();
+        return f ? f.isSensor() : false;
+      },
+      set sensor(on) {
+        for (let f = raw.getFixtureList(); f; f = f.getNext()) f.setSensor(on);
+      },
       data,
       applyImpulse(ix, iy) {
-        raw.applyLinearImpulse(new Vec2(ix / ppm, iy / ppm), raw.getWorldCenter(), true);
+        raw.applyLinearImpulse(at(ix / ppm, iy / ppm), raw.getWorldCenter(), true);
       },
       applyForce(fx, fy) {
-        raw.applyForce(new Vec2(fx / ppm, fy / ppm), raw.getWorldCenter(), true);
+        raw.applyForce(at(fx / ppm, fy / ppm), raw.getWorldCenter(), true);
       },
       destroy() {
         destroyBody(raw);
@@ -271,19 +369,97 @@ export function world(opts: Physics2DOptions = {}): Physics2DWorld {
       angularDamping: o.angularDamping ?? 0,
     });
 
-  const contactCbs = new Set<(a: Body2D, b: Body2D) => void>();
-  pw.on("begin-contact", (contact) => {
-    if (contactCbs.size === 0) return;
-    const a = contact.getFixtureA().getBody().getUserData() as Body2D;
-    const b = contact.getFixtureB().getBody().getUserData() as Body2D;
-    for (const cb of contactCbs) cb(a, b);
+  // ----- raycasting -----
+  // One live hit handed to the visitor, one returned to the caller: the
+  // nearest-hit search overwrites the latter as better hits turn up, so
+  // `raycast` allocates nothing per call.
+  const blankHit = (): RayHit => ({
+    body: null as unknown as Body2D,
+    x: 0,
+    y: 0,
+    nx: 0,
+    ny: 0,
+    distance: 0,
+    fraction: 0,
   });
+  const rayFrom = new Vec2(0, 0);
+  const rayTo = new Vec2(0, 0);
+  const liveHit = blankHit();
+  const scratchHit = blankHit();
+
+  const copyHit = (from: RayHit, to: RayHit): RayHit => {
+    to.body = from.body;
+    to.x = from.x;
+    to.y = from.y;
+    to.nx = from.nx;
+    to.ny = from.ny;
+    to.distance = from.distance;
+    to.fraction = from.fraction;
+    return to;
+  };
+
+  const cast = (
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    o: RaycastOptions,
+    onHit: (hit: RayHit) => void,
+    all = false,
+  ) => {
+    const len = Math.hypot(x2 - x1, y2 - y1);
+    if (len === 0) return; // a zero-length ray has no direction to normalize
+    rayFrom.x = x1 / ppm;
+    rayFrom.y = y1 / ppm;
+    rayTo.x = x2 / ppm;
+    rayTo.y = y2 / ppm;
+    let clip = 1;
+    pw.rayCast(rayFrom, rayTo, (fixture, point, normal, fraction) => {
+      // -1 means "ignore this fixture and keep going" — the ray is unaffected.
+      if (!o.sensors && fixture.isSensor()) return -1;
+      const body = fixture.getBody().getUserData() as Body2D | null;
+      if (!body) return -1;
+      if (o.filter && !o.filter(body)) return -1;
+      liveHit.body = body;
+      liveHit.x = point.x * ppm;
+      liveHit.y = point.y * ppm;
+      liveHit.nx = normal.x;
+      liveHit.ny = normal.y;
+      liveHit.fraction = fraction;
+      liveHit.distance = fraction * len;
+      onHit(liveHit);
+      // Collecting every hit keeps the ray full length; the nearest-hit search
+      // clips it so the broadphase can skip whatever lies past the best so far.
+      if (all) return 1;
+      clip = Math.min(clip, fraction);
+      return clip;
+    });
+  };
+
+  type ContactCb = (a: Body2D, b: Body2D) => void;
+  const beginCbs = new Set<ContactCb>();
+  const endCbs = new Set<ContactCb>();
+  const dispatch = (cbs: Set<ContactCb>, contact: Contact) => {
+    if (cbs.size === 0) return;
+    // Bodies created straight on `phys.raw` carry no wrapper; skip them rather
+    // than handing a listener an undefined `a`.
+    const a = contact.getFixtureA().getBody().getUserData() as Body2D | null;
+    const b = contact.getFixtureB().getBody().getUserData() as Body2D | null;
+    if (!a || !b) return;
+    for (const cb of cbs) cb(a, b);
+  };
+  pw.on("begin-contact", (contact) => dispatch(beginCbs, contact));
+  pw.on("end-contact", (contact) => dispatch(endCbs, contact));
 
   return {
     step(stepMs) {
       const dt = stepMs / 1000;
       for (const ws of sweeps) steer(ws, dt);
       pw.step(dt, 8, 3);
+      // Joints first: destroying a body takes its joints with it, so a joint
+      // queued alongside its body would otherwise be destroyed twice.
+      for (const j of pendingJoints) pw.destroyJoint(j);
+      pendingJoints.length = 0;
       for (const b of pendingDestroy) pw.destroyBody(b);
       pendingDestroy.length = 0;
     },
@@ -361,6 +537,7 @@ export function world(opts: Physics2DOptions = {}): Physics2DWorld {
       const joint = pw.createJoint(
         new RevoluteJoint({}, a.raw, b.raw, new Vec2(x / ppm, y / ppm)),
       )!;
+      let dead = false;
       return {
         motor(speed, maxTorque = 1000) {
           joint.enableMotor(true);
@@ -368,7 +545,11 @@ export function world(opts: Physics2DOptions = {}): Physics2DWorld {
           joint.setMaxMotorTorque(maxTorque);
         },
         destroy() {
-          pw.destroyJoint(joint);
+          // Deferred while the world is locked, and idempotent: destroying
+          // either pinned body already takes the joint with it.
+          if (dead) return;
+          dead = true;
+          destroyJoint(joint);
         },
         get raw() {
           return joint;
@@ -376,9 +557,34 @@ export function world(opts: Physics2DOptions = {}): Physics2DWorld {
       };
     },
 
+    raycast(x1, y1, x2, y2, o = {}) {
+      let best = -1;
+      cast(x1, y1, x2, y2, o, (hit) => {
+        // planck visits proxies in broadphase order, not near-to-far, and
+        // clipping only prunes what comes after — so track the nearest here
+        // rather than trusting the last callback to be the closest.
+        if (best >= 0 && hit.fraction >= best) return;
+        best = hit.fraction;
+        copyHit(hit, scratchHit);
+      });
+      return best < 0 ? null : scratchHit;
+    },
+
+    raycastAll(x1, y1, x2, y2, o = {}) {
+      const hits: RayHit[] = [];
+      cast(x1, y1, x2, y2, o, (hit) => hits.push(copyHit(hit, blankHit())), true);
+      hits.sort((a, b) => a.fraction - b.fraction);
+      return hits;
+    },
+
     onContact(cb) {
-      contactCbs.add(cb);
-      return () => contactCbs.delete(cb);
+      beginCbs.add(cb);
+      return () => beginCbs.delete(cb);
+    },
+
+    onContactEnd(cb) {
+      endCbs.add(cb);
+      return () => endCbs.delete(cb);
     },
 
     get count() {
@@ -422,12 +628,14 @@ export interface AttachOptions {
 export function attach(ecs: EcsWorld, phys: Physics2DWorld, opts: AttachOptions = {}): void {
   const stepMs = opts.stepMs ?? 1000 / 60;
   ecs.system("phys2d:step", () => phys.step(stepMs));
+  // `each`, not `query`: this runs for every simulated body every step, and
+  // the tuple-yielding `query` allocates a row array per entity.
   ecs.system("phys2d:sync", (w) => {
-    for (const [, s, p] of w.query(Sprite, Phys)) {
+    w.each(Sprite, Phys, (_e, s, p) => {
       s.x = p.body.x;
       s.y = p.body.y;
       s.rot = p.body.rot;
-    }
+    });
   });
 }
 

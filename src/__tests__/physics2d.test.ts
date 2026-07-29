@@ -184,3 +184,171 @@ describe("Physics2D", () => {
     expect(boxA.y).toBeCloseTo(boxB.y, 0);
   });
 });
+
+describe("Physics2D.raycast", () => {
+  // A gravity-free world so bodies stay exactly where they're put.
+  const still = () => world({ gravity: { x: 0, y: 0 } });
+
+  it("returns the nearest hit, in px, with the surface normal facing the ray", () => {
+    const phys = still();
+    phys.box(300, 0, 20, 200, { type: "static" }); // far wall
+    const near = phys.box(100, 0, 20, 200, { type: "static" }); // near wall
+
+    const hit = phys.raycast(0, 0, 400, 0);
+    expect(hit).not.toBeNull();
+    expect(hit!.body).toBe(near); // nearest, not merely the last visited
+    expect(hit!.x).toBeCloseTo(90, 5); // left face of the near wall
+    expect(hit!.y).toBeCloseTo(0, 5);
+    expect(hit!.nx).toBeCloseTo(-1, 5); // points back down the ray
+    expect(hit!.ny).toBeCloseTo(0, 5);
+    expect(hit!.distance).toBeCloseTo(90, 5);
+    expect(hit!.fraction).toBeCloseTo(90 / 400, 5);
+  });
+
+  it("returns null when the line is clear, and for a zero-length ray", () => {
+    const phys = still();
+    phys.box(300, 0, 20, 20, { type: "static" });
+    expect(phys.raycast(0, 100, 400, 100)).toBeNull(); // passes below
+    expect(phys.raycast(0, 0, 0, 0)).toBeNull(); // no direction to cast
+  });
+
+  it("skips sensors unless asked, and honours the body filter", () => {
+    const phys = still();
+    const trigger = phys.box(100, 0, 20, 200, { type: "static", isSensor: true });
+    const wall = phys.box(200, 0, 20, 200, { type: "static" });
+
+    expect(phys.raycast(0, 0, 400, 0)!.body).toBe(wall); // sensor is see-through
+    expect(phys.raycast(0, 0, 400, 0, { sensors: true })!.body).toBe(trigger);
+    // The classic "don't shoot yourself" filter.
+    expect(phys.raycast(0, 0, 400, 0, { filter: (b) => b !== wall })).toBeNull();
+  });
+
+  it("reuses one result object — copy what you keep", () => {
+    const phys = still();
+    phys.box(100, 0, 20, 200, { type: "static" });
+    phys.box(100, 300, 20, 200, { type: "static" });
+    const first = phys.raycast(0, 0, 400, 0)!;
+    const x = first.x;
+    const second = phys.raycast(0, 300, 400, 300)!;
+    expect(second).toBe(first); // same object, rewritten
+    expect(first.y).toBe(300); // …so the earlier read is gone
+    expect(x).toBeCloseTo(90, 5); // the copied number survives
+  });
+
+  it("raycastAll collects every body along the ray, nearest first, as fresh objects", () => {
+    const phys = still();
+    const a = phys.box(100, 0, 20, 200, { type: "static" });
+    const b = phys.box(200, 0, 20, 200, { type: "static" });
+    const c = phys.box(300, 0, 20, 200, { type: "static" });
+
+    const hits = phys.raycastAll(0, 0, 400, 0);
+    expect(hits.map((h) => h.body)).toEqual([a, b, c]);
+    expect(hits[0].x).toBeCloseTo(90, 5);
+    expect(hits[1].x).toBeCloseTo(190, 5);
+    expect(hits[2].x).toBeCloseTo(290, 5);
+    expect(hits[0]).not.toBe(hits[1]); // independent objects, safe to keep
+  });
+});
+
+describe("Physics2D sensors and filtering", () => {
+  it("a sensor reports contact but doesn't stop anything", () => {
+    const phys = world();
+    const zone = phys.box(200, 300, 200, 20, { type: "static", isSensor: true });
+    const ball = phys.circle(200, 100, 10);
+    let entered: unknown = null;
+    phys.onContact((a, b) => {
+      if (a === zone || b === zone) entered = a === zone ? b : a;
+    });
+    run(phys, 120);
+    expect(entered).toBe(ball); // it fired…
+    expect(ball.y).toBeGreaterThan(400); // …and the ball fell straight through
+  });
+
+  it("exposes `sensor` as a live property, so a solid can become passable", () => {
+    const phys = world();
+    const floor = phys.box(200, 380, 400, 40, { type: "static" });
+    expect(floor.sensor).toBe(false);
+    const crate = phys.box(200, 100, 40, 40);
+    run(phys, 120);
+    expect(crate.y).toBeLessThan(360); // resting on the floor
+    floor.sensor = true; // the floor opens up
+    crate.wake();
+    run(phys, 120);
+    expect(crate.y).toBeGreaterThan(500); // fell through
+  });
+
+  it("category/mask keeps bodies on separate layers", () => {
+    const PLAYER = 0x0002;
+    const ENEMY = 0x0004;
+    const GROUND = 0x0001;
+    const phys = world();
+    // The floor collides with everything; the two movers ignore each other.
+    phys.box(200, 380, 400, 40, { type: "static" });
+    const player = phys.box(200, 100, 40, 40, { category: PLAYER, mask: GROUND });
+    const enemy = phys.box(200, 100, 40, 40, { category: ENEMY, mask: GROUND });
+    run(phys, 180);
+    // Spawned in the exact same spot: without filtering one would be shoved
+    // aside. Both land on the floor, still stacked on the same x.
+    expect(player.x).toBeCloseTo(200, 1);
+    expect(enemy.x).toBeCloseTo(200, 1);
+    expect(player.y).toBeCloseTo(enemy.y, 1);
+    expect(player.y).toBeLessThan(360); // …and both stopped at the floor
+  });
+
+  it("a negative group never self-collides, whatever the mask says", () => {
+    const phys = world();
+    phys.box(200, 380, 400, 40, { type: "static", group: 0 });
+    const a = phys.box(200, 100, 40, 40, { group: -1 });
+    const b = phys.box(200, 100, 40, 40, { group: -1 });
+    run(phys, 180);
+    expect(a.y).toBeCloseTo(b.y, 1); // passed through each other, both on floor
+  });
+});
+
+describe("Physics2D.onContactEnd", () => {
+  it("fires when two bodies separate", () => {
+    const phys = world();
+    phys.box(200, 380, 400, 40, { type: "static" });
+    phys.circle(200, 300, 10, { restitution: 0.9 });
+    let begins = 0;
+    let ends = 0;
+    phys.onContact(() => begins++);
+    const off = phys.onContactEnd(() => ends++);
+    run(phys, 120);
+    expect(begins).toBeGreaterThan(0);
+    expect(ends).toBeGreaterThan(0); // bounced back off the floor
+
+    const wasEnds = ends;
+    off();
+    run(phys, 120);
+    expect(ends).toBe(wasEnds); // unsubscribed
+  });
+});
+
+describe("Physics2D destroy safety", () => {
+  it("destroying a pin from inside a contact callback is deferred, and is idempotent", () => {
+    const phys = world();
+    const anchor = phys.box(200, 100, 20, 20, { type: "static" });
+    const arm = phys.box(240, 100, 40, 20);
+    const pin = phys.pin(anchor, arm, 200, 100);
+    phys.box(200, 380, 400, 40, { type: "static" }); // floor to fall onto
+    const weight = phys.box(240, 20, 20, 20); // dropped on the arm to trigger a contact
+
+    let threw: unknown = null;
+    let fired = false;
+    phys.onContact((a, b) => {
+      if (a !== weight && b !== weight) return;
+      fired = true;
+      try {
+        pin.destroy(); // the world is locked inside a contact callback
+      } catch (e) {
+        threw = e;
+      }
+    });
+    run(phys, 240);
+    expect(fired).toBe(true);
+    expect(threw).toBeNull();
+    pin.destroy(); // second call is a no-op, not a double free
+    expect(arm.y).toBeGreaterThan(300); // the arm let go and fell to the floor
+  });
+});

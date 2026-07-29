@@ -23,7 +23,11 @@ beforeEach(() => {
     setTransform: vi.fn(),
     fillRect: vi.fn(() => calls.push("fillRect")),
     beginPath: vi.fn(),
-    arc: vi.fn(() => calls.push("arc")),
+    closePath: vi.fn(() => calls.push("closePath")),
+    strokeRect: vi.fn((x: number, y: number, w: number, h: number) =>
+      calls.push(`strokeRect ${x},${y} ${w}x${h}`),
+    ),
+    arc: vi.fn((x: number, y: number, r: number) => calls.push(`arc ${x},${y} r${r}`)),
     fill: vi.fn(() => calls.push("fill")),
     moveTo: vi.fn(),
     lineTo: vi.fn(),
@@ -98,6 +102,91 @@ describe("Draw primitives", () => {
       }),
     ).toThrow("boom");
     expect(ctx.globalAlpha).toBe(1);
+  });
+});
+
+describe("Draw stroke + poly + image primitives", () => {
+  it("rectStroke takes positional and structural forms, width defaulting to 1", () => {
+    Draw.rectStroke(1, 2, 3, 4, "#0f0", 5);
+    expect(ctx.strokeStyle).toBe("#0f0");
+    expect(ctx.lineWidth).toBe(5);
+    expect(ctx.calls).toContain("strokeRect 1,2 3x4");
+
+    Draw.rectStroke({ x: 10, y: 20, w: 30, h: 40 }, "#00f");
+    expect(ctx.strokeStyle).toBe("#00f");
+    expect(ctx.lineWidth).toBe(1); // default
+    expect(ctx.calls).toContain("strokeRect 10,20 30x40");
+  });
+
+  it("circleStroke strokes rather than fills, in both forms", () => {
+    Draw.circleStroke(5, 6, 7, "#f0f", 3);
+    expect(ctx.strokeStyle).toBe("#f0f");
+    expect(ctx.lineWidth).toBe(3);
+    expect(ctx.calls).toContain("arc 5,6 r7");
+    expect(ctx.calls).toContain("stroke");
+    expect(ctx.calls).not.toContain("fill"); // an outline, not a disc
+
+    Draw.circleStroke({ x: 1, y: 2 }, 8, "#fff");
+    expect(ctx.calls).toContain("arc 1,2 r8");
+    expect(ctx.lineWidth).toBe(1);
+  });
+
+  it("poly walks the points and closes the path", () => {
+    const pts = [
+      { x: 0, y: -10 },
+      { x: 8, y: 8 },
+      { x: -8, y: 8 },
+    ];
+    Draw.poly(pts, "#abc");
+    expect(ctx.fillStyle).toBe("#abc");
+    expect(ctx.moveTo).toHaveBeenCalledWith(0, -10);
+    expect(ctx.lineTo).toHaveBeenNthCalledWith(1, 8, 8);
+    expect(ctx.lineTo).toHaveBeenNthCalledWith(2, -8, 8);
+    expect(ctx.calls).toContain("closePath");
+    expect(ctx.calls).toContain("fill");
+  });
+
+  it("poly draws nothing for a degenerate shape", () => {
+    Draw.poly(
+      [
+        { x: 0, y: 0 },
+        { x: 1, y: 1 },
+      ],
+      "#fff",
+    );
+    Draw.poly([], "#fff");
+    expect(ctx.calls).not.toContain("fill");
+    expect(ctx.moveTo).not.toHaveBeenCalled();
+  });
+
+  it("image blits at natural size, or scaled when given w/h", () => {
+    const img = { width: 40, height: 30 } as HTMLCanvasElement;
+    Draw.image(img, 5, 6);
+    // No size given → the 3-arg drawImage; the fake reads the last 4 args, so
+    // assert on the mock directly here.
+    expect(ctx.drawImage).toHaveBeenLastCalledWith(img, 5, 6);
+
+    Draw.image(img, 5, 6, 80, 60);
+    expect(ctx.calls).toContain("draw 5,6 80x60 @1");
+  });
+
+  it("image fills in the intrinsic dimension the caller left out", () => {
+    const img = { width: 40, height: 30 } as HTMLCanvasElement;
+    Draw.image(img, 0, 0, 80); // width only → natural height
+    expect(ctx.calls).toContain("draw 0,0 80x30 @1");
+  });
+
+  it("image prefers naturalWidth for a loaded <img>", () => {
+    // A DOM-attached <img> can report a layout `width` that isn't its real
+    // size; `naturalWidth` is the source of truth.
+    const img = {
+      naturalWidth: 200,
+      naturalHeight: 100,
+      width: 16,
+      height: 8,
+    } as HTMLImageElement;
+    Draw.image(img, 0, 0, undefined, 50);
+    expect(ctx.calls).toContain("draw 0,0 200x50 @1");
   });
 });
 

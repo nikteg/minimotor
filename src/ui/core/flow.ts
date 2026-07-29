@@ -6,7 +6,12 @@
 import { sweptCache } from "./frame-cache.js";
 import { widgetId } from "./identity.js";
 import type { IdPart } from "./identity.js";
-import { layoutCaptureActive, recordLayout } from "./layout-capture.js";
+import {
+  layoutCaptureActive,
+  popLayoutParent,
+  pushLayoutParent,
+  recordLayout,
+} from "./layout-capture.js";
 import { ANCHOR_H, ANCHOR_V, anchorViewport, type TextAnchor } from "./text.js";
 import { uiCtx } from "./context.js";
 import { runtimeSlot } from "./runtime.js";
@@ -240,7 +245,9 @@ export function fillRect(
     ? layout.fill(opts.reserve ?? 0)
     : { x: opts.x ?? 0, y: opts.y ?? 0, w: opts.w ?? 0, h: opts.h ?? 0 };
   lastRectSlot().rect = rect;
-  if (layoutCaptureActive) recordLayout(kind, (opts as { id?: string }).id, rect);
+  if (layoutCaptureActive) {
+    recordLayout(kind, (opts as { id?: string }).id, rect, { pinned: !layout });
+  }
   return rect;
 }
 
@@ -270,7 +277,7 @@ export function place(
     rect = { x: opts.x ?? 0, y: opts.y ?? 0, w: opts.w ?? autoW, h: opts.h ?? defaultH };
   }
   lastRectSlot().rect = rect;
-  if (layoutCaptureActive) recordLayout(kind, (opts as { id?: string }).id, rect);
+  if (layoutCaptureActive) recordLayout(kind, (opts as { id?: string }).id, rect, { pinned });
   return rect;
 }
 
@@ -405,8 +412,29 @@ export interface ContentSize {
 // derived fallback key changes as they move) age out instead of accumulating.
 const contentSizes = sweptCache<ContentSize>();
 
+// The enclosing containers' cache keys, innermost last, with a running count of
+// the child containers each has handed a fallback key to this frame. A NESTED
+// container with no id of its own derives one from its parent's key plus its
+// ordinal — see `containerKey`. Pushed/popped by `runAutoSized`, so the counts
+// restart every frame.
+const keyPath: { key: string | undefined; children: number }[] = [];
+
+export function pushContainerKey(key: string | undefined): void {
+  keyPath.push({ key, children: 0 });
+}
+
+export function popContainerKey(): void {
+  keyPath.pop();
+}
+
 /** Cache key for a container's auto-size: explicit `id`, else the idScope
- *  call-order id, else a position key for pinned containers, else none. */
+ *  call-order id, else a position key for pinned/anchored containers, else —
+ *  for a NESTED container — the enclosing container's key plus this child's
+ *  ordinal. Without a key a container has no auto-size cache at all: it can't
+ *  measure its content, so it collapses to a fallback height and its children
+ *  spill over whatever follows. The ordinal assumes children appear in a stable
+ *  order (the same assumption `idScope`'s auto-ids make); if they don't, the
+ *  size is one frame stale rather than wrong forever. */
 export function containerKey(opts: LayoutOptions, kind: string): string | undefined {
   if (opts.id !== undefined) return `${kind}:${opts.id}`;
   const auto = widgetId(undefined, kind);
@@ -414,7 +442,12 @@ export function containerKey(opts: LayoutOptions, kind: string): string | undefi
   if (opts.x !== undefined && opts.y !== undefined) {
     return `${kind}@${opts.x}:${opts.y}:${opts.w ?? "auto"}`;
   }
-  return undefined;
+  if (opts.anchor !== undefined) {
+    return `${kind}@${opts.anchor}:${opts.w ?? "auto"}:${opts.h ?? "auto"}`;
+  }
+  const parent = keyPath[keyPath.length - 1];
+  if (!parent?.key) return undefined;
+  return `${parent.key}>${kind}#${parent.children++}`;
 }
 
 /** Last-frame measured size for `key` (undefined on the first frame). */
@@ -531,9 +564,18 @@ export function runAutoSized<R>(
     justify,
     reverse,
     (st) => {
-      const r = children(st);
-      storeContentSize(key, measuredContainerSize(st, outer.x, outer.y, pad));
-      return r;
+      // Anonymous nested containers key off this one — see `containerKey` —
+      // and everything placed inside is captured as this container's child.
+      pushContainerKey(key);
+      pushLayoutParent();
+      try {
+        const r = children(st);
+        storeContentSize(key, measuredContainerSize(st, outer.x, outer.y, pad));
+        return r;
+      } finally {
+        popLayoutParent();
+        popContainerKey();
+      }
     },
     fitCross,
     wrap,

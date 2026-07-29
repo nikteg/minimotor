@@ -29,6 +29,7 @@ import {
   Transitions,
   UI,
 } from "minimotor";
+import "../shared/layout-probe.ts"; // e2e layout-invariant hook (window.__uiProbe)
 
 // ---- Types ----
 interface Slot {

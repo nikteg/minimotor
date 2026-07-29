@@ -12,6 +12,7 @@
 // straight back — the immediate-mode round-trip.
 import { App, Draw, Loop, Pointer, UI } from "minimotor";
 import type { TableSort, Theme } from "minimotor";
+import "../shared/layout-probe.ts"; // e2e layout-invariant hook (window.__uiProbe)
 
 // No letterbox `resolution`: rendering at native scale keeps text crisp on
 // high-DPI (Retina) screens — a fractional letterbox factor softens glyphs.
@@ -28,7 +29,7 @@ let reducedMotion = false; // UI.toggle (cosmetic preference — pure state roun
 let disabledToggle = false; // UI.toggle (disabled demo)
 let volume = 65; // UI.slider (0..100)
 let zoom = 1.5; // UI.slider (0.5..3, stepped)
-let uiScale = 1; // UI.scaled factor — the header slider zooms the whole board
+let uiScale = 1; // the header slider's value, published via UI.setScale each frame
 let name = ""; // UI.textInput
 let notes = ""; // UI.textInput (multiline)
 let chatDraft = ""; // UI.textInput (chat: clears on send, keeps focus)
@@ -257,6 +258,11 @@ Loop.run({
       step: 0.25,
       format: (v) => `${v.toFixed(2)}x`,
     });
+    // Publish the knob as the GLOBAL UI scale — the DEFAULT FACTOR the no-arg
+    // `UI.scaled(() => …)` block below applies. The setting is only a
+    // preference; the BLOCK is what applies it, so the boundary between what
+    // zooms (everything inside) and what doesn't (this header) stays visible.
+    UI.setScale(uiScale);
 
     // ---- responsive, scrollable board ----
     // A wrapping row of flowing columns inside a viewport-tall SCROLL column, so
@@ -267,27 +273,29 @@ Loop.run({
     // `idScope` gives the nested containers stable cache ids.
     const th = UI.getTheme(); // drag & drop bins/preview paint from the live theme
     const HEADER_H = 64; // header chrome (screen px); the board sits just below it
-    // The popover draws in native screen space (a frame-end overlay), but its
-    // anchor is measured INSIDE the scaled board — so we map that point to screen
-    // coords with UI.toScreen at capture time (below) and store the SCREEN point.
+    // The popover's anchor, in the board's REFERENCE coords — it's drawn inside
+    // the same block, so it carries over without mapping.
     let popoverAt = { x: 24, y: HEADER_H };
     UI.idScope("panels", () =>
-      // Zoom the whole board — draw AND pointer — by the header's UI-Scale slider.
-      // Inside we lay out in REFERENCE units and read the (scaled) space via
-      // UI.width/height, so the columns still REFLOW to fit; only the zoom differs.
-      // Overlays and the drag preview draw AFTER this block, in native screen space.
-      UI.scaled(uiScale, () => {
+      // ONE scaled block holds everything that zooms: the board, the drag
+      // preview and the overlays. Draw AND pointer are scaled together, so
+      // hit-testing matches. Inside we lay out in REFERENCE units and read the
+      // (scaled) space via UI.width/height, so the columns still REFLOW to fit;
+      // only the zoom differs. UI.fromScreen brings the header's screen-px
+      // chrome into those units, so no division by the scale appears here.
+      UI.scaled(() => {
         const availW = UI.width();
         const availH = UI.height();
         const baseX = 24;
-        const baseY = HEADER_H / uiScale; // pin the board under the header at any zoom
+        const baseY = UI.fromScreen(0, HEADER_H).y; // pin the board under the header
+        const bottomGap = UI.fromScreen(0, 12).y;
         const colW = 300;
         UI.col(
           {
             x: baseX,
             y: baseY,
             w: availW - baseX * 2,
-            h: availH - baseY - 12 / uiScale,
+            h: availH - baseY - bottomGap,
             overflow: "auto",
             pad: 0,
             gap: 0,
@@ -318,8 +326,11 @@ Loop.run({
                 // Buttons — every variant, two per row so the row fits the column.
                 UI.panel({ title: "Buttons", gap: 8 }, () => {
                   UI.row({ gap: 8 }, () => {
+                    // ANCHORED float text — no coordinates, so it pops from the
+                    // top-center of the button just placed, wherever the reflow
+                    // put it, and at the board's zoom.
                     if (UI.button({ id: uiId("btn-default"), label: "Default" }))
-                      UI.floatText("clicked", 120, 120);
+                      UI.floatText("clicked");
                     UI.button({ id: uiId("btn-primary"), label: "Primary", variant: "primary" });
                   });
                   UI.row({ gap: 8 }, () => {
@@ -493,9 +504,9 @@ Loop.run({
                   UI.row({ gap: 8 }, (st) => {
                     if (UI.button({ id: uiId("open-popover"), label: "Popover" }))
                       popoverOpen = !popoverOpen;
-                    // Map the trigger's bottom-left out to screen coords now, while
-                    // the scaled transform is still active.
-                    if (st.last) popoverAt = UI.toScreen(st.last.x, st.last.y + st.last.h);
+                    // Remember the trigger's bottom-left; the popover is drawn
+                    // later in this same block, so the coords carry over.
+                    if (st.last) popoverAt = { x: st.last.x, y: st.last.y + st.last.h };
                     if (UI.button({ id: uiId("open-modal"), label: "Modal" })) modalOpen = true;
                   });
                   UI.row({ gap: 8 }, () => {
@@ -780,94 +791,85 @@ Loop.run({
             });
           },
         );
+
+        // Drag preview: a chip trailing the pointer, above the flowing board.
+        // The pointer arrives in screen coords, so bring it into the block's
+        // units — then the chip is written at its natural size and zooms too.
+        const dragged = UI.draggedItem<{ item: string; from: string }>();
+        if (dragged) {
+          const at = UI.fromScreen(Pointer.x + 8, Pointer.y + 8);
+          Draw.rect(at.x, at.y, 90, 24, th.accent);
+          UI.text(dragged.payload.item, {
+            ...at,
+            w: 90,
+            h: 24,
+            align: "center",
+            color: th.bgActive,
+          });
+        }
+
+        // ================= OVERLAYS — drawn LAST so they sit on top and
+        //                   deaden the widgets behind them =================
+        // Still inside the one scaled block: sitting on top is about draw ORDER,
+        // not about escaping the block. They lay out in the same reference units,
+        // and the viewport-anchored bits (modal centering, the dialog's bottom
+        // edge) measure the block's reference box.
+
+        // Popover anchored beneath its trigger button — the CHILDREN form, so the
+        // box auto-sizes to its content (no manual height). A close button inside
+        // can't override the returned open-state, so it sets a flag we apply after.
+        let popClose = false;
+        popoverOpen = UI.popover(
+          { x: popoverAt.x, y: popoverAt.y + 6, w: 220, title: "Popover", open: popoverOpen },
+          () => {
+            UI.text("A floating anchored panel.", { color: "dim", size: 12, wrap: true, w: 196 });
+            if (UI.button({ id: uiId("pop-close"), label: "Close" })) popClose = true;
+          },
+        );
+        if (popClose) popoverOpen = false;
+
+        // Modal — the CHILDREN form: dim + centered panel whose contents lay
+        // themselves out and whose height shrink-wraps them (no `h`, no rect math).
+        if (modalOpen) {
+          UI.modal({ w: 340, title: "Modal", id: uiId("modal") }, () => {
+            UI.text("A centered dialog over a dimmed backdrop.", { wrap: true, w: 300, h: 40 });
+            // `justify: "end"` measures the content run from the container's
+            // cache, so the row needs an id to right-align from the first frame.
+            UI.row({ justify: "end", id: uiId("modal-actions") }, () => {
+              if (UI.button({ id: uiId("modal-ok"), label: "Got it", variant: "primary", w: 96 }))
+                modalOpen = false;
+            });
+          });
+        }
+
+        // Confirm: a whole dialog in one declarative call.
+        if (confirmOpen) {
+          const hit = UI.confirm({
+            id: uiId("confirm"),
+            title: "Delete save?",
+            lines: ["This cannot be undone.", "Your progress will be lost."],
+            buttons: ["Cancel", "Delete"],
+            variants: ["default", "danger"],
+          });
+          if (hit) confirmOpen = false;
+        }
+
+        // Dialog: bottom-screen speaker box with choices.
+        if (dialogOpen) {
+          const answer = UI.dialog({
+            id: uiId("dialog"),
+            speaker: "GUIDE",
+            lines: ["Welcome to the UI gallery.", "Every primitive here is immediate-mode."],
+            choices: ["Neat", "Close"],
+          });
+          if (answer) dialogOpen = false;
+        }
       }),
     );
 
-    // Drag preview: a chip trailing the pointer, above the flowing board.
-    const dragged = UI.draggedItem<{ item: string; from: string }>();
-    if (dragged) {
-      Draw.rect(Pointer.x + 8, Pointer.y + 8, 90, 24, th.accent);
-      UI.text(dragged.payload.item, {
-        x: Pointer.x + 8,
-        y: Pointer.y + 8,
-        w: 90,
-        h: 24,
-        align: "center",
-        color: th.bgActive,
-      });
-    }
-
-    // ================= OVERLAYS — drawn LAST so they sit on top and
-    //                   deaden the widgets behind them =================
-
-    // Popover anchored beneath its trigger button — the CHILDREN form, so the
-    // box auto-sizes to its content (no manual height). A close button inside
-    // can't override the returned open-state, so it sets a flag we apply after.
-    let popClose = false;
-    // `popoverAt` is already in screen coords (mapped via UI.toScreen at capture),
-    // so it sits under the trigger at any zoom; the popover itself stays native.
-    popoverOpen = UI.popover(
-      {
-        x: popoverAt.x,
-        y: popoverAt.y + 6,
-        w: 220,
-        title: "Popover",
-        open: popoverOpen,
-      },
-      () => {
-        UI.text("A floating anchored panel.", { color: "dim", size: 12, wrap: true, w: 196 });
-        if (UI.button({ id: uiId("pop-close"), label: "Close" })) popClose = true;
-      },
-    );
-    if (popClose) popoverOpen = false;
-
-    // Modal: dim + centered panel; draw contents into the returned rect.
-    if (modalOpen) {
-      const r = UI.modal({ w: 340, h: 160, title: "Modal" });
-      UI.text("A centered dialog over a dimmed backdrop.", {
-        x: r.x + 16,
-        y: r.y + 48,
-        w: r.w - 32,
-        wrap: true,
-        h: 40,
-      });
-      if (
-        UI.button({
-          id: uiId("modal-ok"),
-          label: "Got it",
-          variant: "primary",
-          x: r.x + r.w - 108,
-          y: r.y + r.h - 46,
-          w: 96,
-        })
-      )
-        modalOpen = false;
-    }
-
-    // Confirm: a whole dialog in one declarative call.
-    if (confirmOpen) {
-      const hit = UI.confirm({
-        id: uiId("confirm"),
-        title: "Delete save?",
-        lines: ["This cannot be undone.", "Your progress will be lost."],
-        buttons: ["Cancel", "Delete"],
-        variants: ["default", "danger"],
-      });
-      if (hit) confirmOpen = false;
-    }
-
-    // Dialog: bottom-screen speaker box with choices.
-    if (dialogOpen) {
-      const answer = UI.dialog({
-        id: uiId("dialog"),
-        speaker: "GUIDE",
-        lines: ["Welcome to the UI gallery.", "Every primitive here is immediate-mode."],
-        choices: ["Neat", "Close"],
-      });
-      if (answer) dialogOpen = false;
-    }
-
-    // Floating combat/score texts, then tooltips — always on the very top.
+    // Floating texts, then tooltips — on the very top, and OUTSIDE the block:
+    // these paint things spawned/requested earlier, each of which captured the
+    // scale it was created at. Inside the block they'd be scaled twice.
     UI.drawFloatText();
     UI.drawTips();
   },

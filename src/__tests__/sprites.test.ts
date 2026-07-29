@@ -230,3 +230,28 @@ describe("Sprites.Sprite + interpolate (ECS integration)", () => {
     expect(ecs.dense(Sprite)[0]).toMatchObject({ x: 10, px: 0, py: 0 });
   });
 });
+
+describe("bounded caches", () => {
+  it("getSprite evicts rather than growing without bound", () => {
+    // A size derived from an animating value mints a new key every call. The
+    // cache must cap instead of piling up offscreen canvases forever.
+    const first = getSprite("orb", 10, 1, (g) => g.fillRect(0, 0, 1, 1));
+    for (let i = 0; i < 400; i++) {
+      getSprite("orb", 10 + i, 1, (g) => g.fillRect(0, 0, 1, 1));
+    }
+    // The original size was evicted long ago, so it re-bakes to a NEW canvas.
+    expect(getSprite("orb", 10, 1, (g) => g.fillRect(0, 0, 1, 1))).not.toBe(first);
+    // …while a recently used size is still served from cache.
+    const recent = getSprite("orb", 409, 1, (g) => g.fillRect(0, 0, 1, 1));
+    expect(getSprite("orb", 409, 1, (g) => g.fillRect(0, 0, 1, 1))).toBe(recent);
+  });
+
+  it("tint caches per (source, color) and evicts churned colors", () => {
+    const source = document.createElement("canvas");
+    source.width = source.height = 4;
+    const red = tint(source, "#f00");
+    expect(tint(source, "#f00")).toBe(red); // same color → same canvas
+    for (let i = 0; i < 40; i++) tint(source, `hsl(${i}, 50%, 50%)`);
+    expect(tint(source, "#f00")).not.toBe(red); // evicted, re-baked
+  });
+});

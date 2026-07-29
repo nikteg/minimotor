@@ -7,6 +7,7 @@
 // The server list is mock data — swap fetchServers() for a real request.
 import { Clock, Keys, Loop, Mathf, Perf, App, UI } from "minimotor";
 import type { TableSort, Theme } from "minimotor";
+import "../shared/layout-probe.ts"; // e2e layout-invariant hook (window.__uiProbe)
 
 interface Server {
   name: string;

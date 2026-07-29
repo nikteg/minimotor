@@ -65,6 +65,8 @@ norm, dot, dist, lerp, angle, rotate`, `out`-param variants; `clamp`,
 
 - `Draw.rect/circle/line/text` primitives, positional + structural
   overloads; ambient coordinate space, **screen by default**. (#7, #16, #17)
+  Later joined by the outline/shape/blit gaps: `Draw.rectStroke`,
+  `Draw.circleStroke`, `Draw.poly` and `Draw.image`.
 - `Camera.render(fn)` = world block (default camera);
   `Camera.render(cam, { into }, fn)` = lens → screen-rect (minimap, split
   screen; `into` clips); `Camera.layer(factor, fn)` = parallax (replaces
@@ -217,9 +219,10 @@ fps }, run: {...}, jump: {...} })` returns a shared kit; `kit.play(initial)`
   against the level (player + enemies as top-left `MoverBody`s);
   `Camera.follow`/`Camera.render`; `Audio.tone` synth SFX; `Particles.create`;
   `Stage.init({ resolution })` (no manual letterbox).
-- **Retire `Game.letterbox`/`drawLetterbox`/`letterboxView`** — superseded by
-  `Stage.init({ resolution })`. pixel-adventure and solitaire are now migrated;
-  **pocket** is the last user. Remove once pocket is on `resolution`.
+- **Retire `Game.letterbox`/`drawLetterbox`/`letterboxView`** — DONE. Superseded
+  by `App.init({ resolution })`, which does the fit, the bars, the pointer
+  mapping and the base transform in one place. All samples (pixel-adventure,
+  solitaire, pocket) are on `resolution`; the three functions are deleted.
 
 ## Round-2 exercises (own samples, not in this plan's scope)
 
@@ -234,9 +237,9 @@ fps }, run: {...}, jump: {...} })` returns a shared kit; `kit.play(initial)`
   catalog rather than a grab bag, and neither is gated on the Pixel Adventure
   extraction rules. Admission rules and the growth backlog live in
   ROADMAP § "`Goodies` & `Gizmos` — the lego catalog".
-- **`game.ts` rehoming** (still open): `letterbox`/`drawLetterbox`/`letterboxView`
-  retire outright once `pocket` is on `App.init({ resolution })` (see above);
-  `createScoreTracker` and `formatClock` stay for now.
+- **`game.ts` rehoming** (partly settled): `letterbox`/`drawLetterbox`/
+  `letterboxView` are retired (see above). `createScoreTracker` and
+  `formatClock` stay for now.
 - Spatial-nav implementation details; `Perf.netMeter` learns rooms.
 
 ## Breaking changes register

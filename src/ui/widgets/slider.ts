@@ -8,13 +8,14 @@ import {
   drawFocusRing,
   focusFromPointer,
   hoverCursor,
+  measureWidth,
   place,
   rawPointer,
   registerFocusable,
   runtimeSlot,
   theme,
-  uiFont,
   uiCtx,
+  uiFont,
   uiPointer,
   widgetId,
 } from "../core/index.js";
@@ -88,9 +89,9 @@ export function slider(
   // while dragging.
   ctx.save();
   ctx.font = opts.font ?? uiFont();
-  const labelSpace = opts.label ? Math.ceil(ctx.measureText(opts.label).width) + 10 : 0;
+  const labelSpace = opts.label ? Math.ceil(measureWidth(ctx, opts.label)) + 10 : 0;
   const valueSpace =
-    Math.ceil(Math.max(ctx.measureText(fmt(min)).width, ctx.measureText(fmt(max)).width)) + 12;
+    Math.ceil(Math.max(measureWidth(ctx, fmt(min)), measureWidth(ctx, fmt(max)))) + 12;
   ctx.restore();
   const sx = slot.x + labelSpace;
   const sy = slot.y + slot.h / 2;
@@ -104,6 +105,7 @@ export function slider(
     id,
     disabled: opts.disabled,
     tabIndex: opts.tabIndex,
+    rect: slot,
   });
   const hover = !opts.disabled && pointInRect(p.x, p.y, hit);
   const sd = sliderDragSlot();

@@ -8,11 +8,12 @@ import {
   drawFocusRing,
   focusFromPointer,
   hoverCursor,
+  measureWidth,
   place,
   registerFocusable,
   theme,
-  uiFont,
   uiCtx,
+  uiFont,
   uiPointer,
   widgetId,
 } from "../core/index.js";
@@ -63,7 +64,7 @@ export function toggle(
   const size = opts.size ?? 16;
   ctx.save();
   ctx.font = opts.font ?? uiFont();
-  const labelW = ctx.measureText(opts.label).width;
+  const labelW = measureWidth(ctx, opts.label);
   const w = size + 8 + Math.ceil(labelW);
   // Hit region spans box + label, so the text is clickable too. Placed via a
   // layout, the box is vertically centered on the taller slot.
@@ -74,6 +75,7 @@ export function toggle(
     id,
     disabled: opts.disabled,
     tabIndex: opts.tabIndex,
+    rect,
   });
   const state = opts.disabled ? { hover: false, clicked: false } : buttonState(rect, uiPointer());
   const clicked = state.clicked || (!opts.disabled && consumeKeyboardActivation(id));

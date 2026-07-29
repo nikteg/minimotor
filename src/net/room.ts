@@ -14,6 +14,7 @@
 // explicit close(). The asymmetric hostSession/joinSession pair remains one
 // tier down for genuinely host-authoritative designs.
 
+import { Loop, STEP_MS } from "../engine/index.js";
 import { connect } from "./websocket.js";
 import { createPeer } from "./webrtc.js";
 import type { RtcConfig, Signal } from "./types.js";
@@ -26,8 +27,12 @@ type Notice =
   | { type: "host"; id: string | null }
   | { type: "signal"; from: string; signal: Signal };
 
-const decode = (bytes: Uint8Array): unknown => JSON.parse(new TextDecoder().decode(bytes));
-const encode = (obj: unknown): Uint8Array => new TextEncoder().encode(JSON.stringify(obj));
+// One codec pair for the module: constructing a TextEncoder/TextDecoder per
+// message is pure overhead on a path that runs at the snapshot rate.
+const textDecoder = new TextDecoder();
+const textEncoder = new TextEncoder();
+const decode = (bytes: Uint8Array): unknown => JSON.parse(textDecoder.decode(bytes));
+const encode = (obj: unknown): Uint8Array => textEncoder.encode(JSON.stringify(obj));
 
 interface Envelope {
   f: string; // original sender
@@ -50,8 +55,12 @@ export interface RoomOptions extends RtcConfig {
 export interface Room<Msg = unknown> {
   /** Our member id. */
   readonly id: string;
-  /** The OTHER members' ids (relay-tracked membership). */
+  /** The OTHER members' ids (relay-tracked membership). A LIVE array, rebuilt
+   *  only when membership changes — safe to read every frame, but don't hold
+   *  or mutate it; copy if you need a stable snapshot. */
   readonly peers: string[];
+  /** How many other members are in the room. */
+  readonly peerCount: number;
   /** True while we are the relaying host (internal detail, exposed for
    *  debugging/net meters). */
   readonly hosting: boolean;
@@ -81,6 +90,12 @@ export function join<Msg = unknown>(url: string, opts: RoomOptions = {}): Promis
   let hostId: string | null = null;
   let closed = false;
   const members = new Set<string>();
+  // `peers` is read in draw loops; rebuild the array on membership change
+  // rather than spreading the Set on every read.
+  let peerList: string[] = [];
+  const refreshPeers = (): void => {
+    peerList = [...members];
+  };
   const channels = new Map<string, ReturnType<typeof createPeer>>();
   const messageFns = new Set<(from: string, msg: Msg) => void>();
   const joinFns = new Set<(id: string) => void>();
@@ -136,7 +151,10 @@ export function join<Msg = unknown>(url: string, opts: RoomOptions = {}): Promis
       return myId;
     },
     get peers() {
-      return [...members];
+      return peerList;
+    },
+    get peerCount() {
+      return members.size;
     },
     get hosting() {
       return hosting();
@@ -196,6 +214,7 @@ export function join<Msg = unknown>(url: string, opts: RoomOptions = {}): Promis
         myId = msg.id;
         hostId = msg.host ?? msg.id; // alone: we are the host-in-waiting
         for (const p of msg.peers) if (p !== myId) members.add(p);
+        refreshPeers();
         adopt();
         if (!settled) {
           settled = true;
@@ -205,10 +224,12 @@ export function join<Msg = unknown>(url: string, opts: RoomOptions = {}): Promis
       } else if (msg.type === "peer-join") {
         if (msg.id !== myId && !members.has(msg.id)) {
           members.add(msg.id);
+          refreshPeers();
           for (const fn of joinFns) fn(msg.id);
         }
       } else if (msg.type === "peer-leave") {
         if (members.delete(msg.id)) {
+          refreshPeers();
           channels.get(msg.id)?.transport.close();
           for (const fn of leaveFns) fn(msg.id);
         }
@@ -280,22 +301,44 @@ export function sync<T>(room: Room<unknown>, opts: SyncOptions<T>): PeerStates<T
   });
   const offLeave = room.onLeave((id) => roster.remove(id));
 
-  const interval = setInterval(
-    () => {
-      if (room.closed) {
-        stop();
-        return;
-      }
-      (room as Room<SyncEnvelope<T>>).send({ [SYNC_KEY]: 1, s: opts.state() } as SyncEnvelope<T>);
-    },
-    1000 / (opts.hz ?? 15),
-  );
+  const intervalMs = 1000 / (opts.hz ?? 15);
+
+  /** One broadcast tick. Sampling is skipped outright when we're alone in the
+   *  room — `send` would be a no-op anyway, and `opts.state()` is the app's
+   *  code, which shouldn't run for nobody. */
+  function broadcast(): void {
+    if (room.closed) {
+      stop();
+      return;
+    }
+    if (room.peerCount === 0) return;
+    (room as Room<SyncEnvelope<T>>).send({ [SYNC_KEY]: 1, s: opts.state() } as SyncEnvelope<T>);
+  }
+
+  // Drive off the fixed step when there's a running engine, so replication
+  // freezes with a paused game and throttles with a backgrounded tab like
+  // everything else. With no app (headless bots, tests) fall back to a
+  // wall-clock interval so `sync` still stands alone.
+  let acc = 0;
+  let offStep: (() => void) | null = null;
+  let interval: ReturnType<typeof setInterval> | null = null;
+  try {
+    offStep = Loop.onStep(() => {
+      acc += STEP_MS;
+      if (acc < intervalMs) return;
+      acc = 0;
+      broadcast();
+    });
+  } catch {
+    interval = setInterval(broadcast, intervalMs);
+  }
 
   let stopped = false;
   function stop(): void {
     if (stopped) return;
     stopped = true;
-    clearInterval(interval);
+    offStep?.();
+    if (interval !== null) clearInterval(interval);
     unsubscribe();
     offLeave();
   }

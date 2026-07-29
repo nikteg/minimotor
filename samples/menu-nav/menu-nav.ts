@@ -11,6 +11,7 @@
 // right, an A face button, and the LB/RB/LT/RT shoulders above. `UI.setNavPad`
 // routes UI focus through it so the virtual stick/D-pad walk the menu on touch.
 import { Draw, Input, Keys, Loop, OnscreenInput, App, UI } from "minimotor";
+import "../shared/layout-probe.ts"; // e2e layout-invariant hook (window.__uiProbe)
 
 App.init("game", { fullscreen: true, background: "#12141c", preventNavigation: true });
 const uiId = UI.ids("menu-nav");

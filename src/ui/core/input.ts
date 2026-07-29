@@ -122,22 +122,27 @@ export function claimWheel(over: boolean, wheel: number, atMin: boolean, atMax: 
   return wheel;
 }
 
+// Reused scratch for `rawPointer`. The underlying pointer can't change
+// mid-frame (events dispatch between rAF callbacks), so every call in a frame
+// would build an identical object — and several widgets call it per frame.
+// Read, don't hold.
+const rawScratch = { ...DEAD_POINTER };
+
 /** The pointer, raw, from the current runtime's host app — overlays
  *  themselves read this (their close logic must see clicks even while they
- *  block everyone else). */
+ *  block everyone else). Reused scratch object: read, don't hold. */
 export function rawPointer() {
   try {
     const p = uiApp()?.pointer;
     if (!p) return DEAD_POINTER;
-    return {
-      x: p.x,
-      y: p.y,
-      down: p.down,
-      released: p.frameReleased,
-      pressed: p.framePressed,
-      doublePressed: p.frameDoublePressed,
-      wheel: p.wheel,
-    };
+    rawScratch.x = p.x;
+    rawScratch.y = p.y;
+    rawScratch.down = p.down;
+    rawScratch.released = p.frameReleased;
+    rawScratch.pressed = p.framePressed;
+    rawScratch.doublePressed = p.frameDoublePressed;
+    rawScratch.wheel = p.wheel;
+    return rawScratch;
   } catch {
     // No app yet (headless/tests) — stay inert like `uiPointer`.
     return DEAD_POINTER;
@@ -190,10 +195,35 @@ export function currentUiTransform(): { scale: number; ox: number; oy: number } 
  *  to carry a coordinate measured inside `UI.scaled` (a layout cursor's rect,
  *  an anchor) out to something drawn in screen space later — a frame-end overlay
  *  or a deferred draw — instead of multiplying by the scale by hand (which would
- *  also miss the transform's offset). */
-export function uiToScreen(x: number, y: number): { x: number; y: number } {
+ *  also miss the transform's offset). Pass `out` to write into your own object
+ *  instead of allocating. */
+export function uiToScreen(
+  x: number,
+  y: number,
+  out?: { x: number; y: number },
+): { x: number; y: number } {
   const t = st().transform;
-  return t ? { x: t.ox + t.scale * x, y: t.oy + t.scale * y } : { x, y };
+  const o = out ?? { x: 0, y: 0 };
+  o.x = t ? t.ox + t.scale * x : x;
+  o.y = t ? t.oy + t.scale * y : y;
+  return o;
+}
+
+/** Map a SCREEN point into the active reference space — the inverse of
+ *  `uiToScreen`, identity at the root. Use it to bring a screen-space
+ *  coordinate (a raw pointer position, a fixed pixel inset like a header
+ *  height) into the coords a `UI.scaled` block lays out in, instead of dividing
+ *  by the scale by hand. Pass `out` to write into your own object. */
+export function uiFromScreen(
+  x: number,
+  y: number,
+  out?: { x: number; y: number },
+): { x: number; y: number } {
+  const t = st().transform;
+  const o = out ?? { x: 0, y: 0 };
+  o.x = t ? (x - t.ox) / t.scale : x;
+  o.y = t ? (y - t.oy) / t.scale : y;
+  return o;
 }
 
 /** The pointer for a widget HOLDING A LIVE DRAG (slider knob, scrollbar thumb,
@@ -207,8 +237,17 @@ export function uiToScreen(x: number, y: number): { x: number; y: number } {
 export function dragPointer() {
   const t = st().transform;
   const p = rawPointer();
-  return t ? { ...p, x: (p.x - t.ox) / t.scale, y: (p.y - t.oy) / t.scale } : p;
+  if (!t) return p;
+  dragScratch.x = (p.x - t.ox) / t.scale;
+  dragScratch.y = (p.y - t.oy) / t.scale;
+  dragScratch.down = p.down;
+  dragScratch.released = p.released;
+  dragScratch.pressed = p.pressed;
+  dragScratch.doublePressed = p.doublePressed;
+  dragScratch.wheel = p.wheel;
+  return dragScratch;
 }
+const dragScratch = { ...DEAD_POINTER };
 
 function hostViewport(): { w: number; h: number } {
   const vp = uiApp()?.viewport;
@@ -346,14 +385,25 @@ function computeUiPointer(
     // Innermost clip is the smallest, so testing it alone is enough (clips nest).
     // Clips are stored in screen coords, so gate before mapping into design coords.
     if (clip && !pointInRect(p.x, p.y, clip)) return DEAD_POINTER;
+    // Always COPY: the result is memoized for the rest of the frame, and
+    // `rawPointer` hands back a scratch that later calls overwrite. One
+    // allocation per cache miss (a handful per frame), not per widget.
+    const out = { ...p };
     // Map into the active UI transform's reference coords so a widget's rect (in
     // reference coords) hit-tests against the pointer correctly.
     const t = s.transform;
-    const mapped = t ? { ...p, x: (p.x - t.ox) / t.scale, y: (p.y - t.oy) / t.scale } : p;
+    if (t) {
+      out.x = (p.x - t.ox) / t.scale;
+      out.y = (p.y - t.oy) / t.scale;
+    }
     // A drag gesture in progress swallows the click edges (position/wheel stay).
-    if (s.edgesSuppressed)
-      return { ...mapped, pressed: false, released: false, down: false, doublePressed: false };
-    return mapped;
+    if (s.edgesSuppressed) {
+      out.pressed = false;
+      out.released = false;
+      out.down = false;
+      out.doublePressed = false;
+    }
+    return out;
   } catch {
     return DEAD_POINTER;
   }

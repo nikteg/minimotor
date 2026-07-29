@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { approach, damp, lerpAngle, pingPong } from "../mathf.js";
 import { circleRect, separateCircles, bounceInBounds } from "../collision.js";
-import { letterboxView, formatClock, createScoreTracker } from "../game.js";
+import { formatClock, createScoreTracker } from "../game.js";
 import { randFreeCell, shuffle, addToInventory, beatClock, nearest } from "../goodies/index.js";
 import { patrol, trail, undoStack, seedRng } from "../gizmos/index.js";
 import { grid } from "../ui/index.js";
@@ -91,17 +91,6 @@ describe("Collision.bounceInBounds", () => {
     const v2 = { x: 2, y: 0 };
     bounceInBounds(r2, v2, { x: 0, y: 0, w: 100, h: 100 });
     expect(v2.x).toBe(2); // unchanged
-  });
-});
-
-describe("Game.letterboxView", () => {
-  it("maps logical↔screen and hit-tests the pointer", () => {
-    const v = letterboxView(100, 100, 300, 200); // scale 2, ox 50, oy 0
-    expect(v.scale).toBe(2);
-    expect(v.point(10, 10)).toEqual({ x: 70, y: 20 });
-    expect(v.toLogical(70, 20)).toEqual({ x: 10, y: 10 });
-    expect(v.contains(70, 20, { x: 0, y: 0, w: 20, h: 20 })).toBe(true);
-    expect(v.contains(0, 0, { x: 0, y: 0, w: 20, h: 20 })).toBe(false); // outside the fit
   });
 });
 

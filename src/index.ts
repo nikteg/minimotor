@@ -18,6 +18,8 @@ import {
   bounceInBounds,
   slide,
   moveAndSlide,
+  grid,
+  contacts,
 } from "./collision.js";
 /** Immediate-mode UI: buttons, panels, lists, tables, dialogs, drag-and-drop.
  *  Widgets are drawn and polled every frame from their options — no retained
@@ -114,10 +116,9 @@ import * as Net from "./net/index.js";
  *  wires both into the loop, and `Perf.createNetMeter` tracks throughput. */
 import * as Perf from "./perf/index.js";
 import { Camera } from "./camera/index.js";
-/** Neutral game building blocks: `Game.createScoreTracker` persists score/best,
- *  `Game.letterbox`/`Game.letterboxView` fit a fixed logical area into the
- *  viewport (with screen→logical pointer hit-testing), `Game.drawLetterbox`
- *  masks the bars, and `Game.formatClock` renders `m:ss`. */
+/** Neutral game building blocks: `Game.createScoreTracker` persists score/best
+ *  and `Game.formatClock` renders `m:ss`. Fitting a fixed logical area into the
+ *  viewport lives on `App.init({ resolution })`, not here. */
 import * as Game from "./game.js";
 /** Pure, dependency-free game recipes (call one, get a value) that recur across
  *  genres: `Goodies.leadTarget`/`Goodies.nearest` (steering), `Goodies.floodFill`/
@@ -243,10 +244,17 @@ export type {
   Solid,
   SolidSource,
   Solids,
+  SolidGrid,
   Contacts,
   MoverBody,
 } from "./collision.js";
-export type { CameraOptions, CameraLens, RenderOptions, FollowTarget } from "./camera/index.js";
+export type {
+  CameraOptions,
+  CameraLens,
+  RenderOptions,
+  ScreenMapOptions,
+  FollowTarget,
+} from "./camera/index.js";
 export type {
   ParticleSystem,
   BurstOptions,
@@ -370,6 +378,8 @@ const Collision = {
   rectsOverlap,
   slide,
   moveAndSlide,
+  grid,
+  contacts,
   circleHit,
   crossedDown,
   pointInRect,
@@ -378,19 +388,11 @@ const Collision = {
   separateCircles,
   bounceInBounds,
 };
-export {
-  Collision,
-  slide,
-  moveAndSlide,
-  rectsOverlap,
-  circleHit,
-  crossedDown,
-  pointInRect,
-  sweptAABB,
-  circleRect,
-  separateCircles,
-  bounceInBounds,
-};
+// One way in, not three: collision reaches users through the `Collision`
+// namespace only. The loose per-function re-exports that used to sit here were
+// a duplicate of it (and of the default export's `Collision`), so they bought
+// no capability — just more surface to keep honest.
+export { Collision };
 export { UI };
 export type {
   BarOptions,

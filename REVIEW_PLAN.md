@@ -24,7 +24,7 @@ Status legend: ⬜ todo · 🟡 in progress · ✅ done
 
 ## Priority 0 — silent total failures
 
-### P0.1 ⬜ `App.init()` twice kills Clock timers and the whole UI kernel
+### P0.1 ✅ `App.init()` twice kills Clock timers and the whole UI kernel
 
 **Severity: high.** Silent, total, affects two subsystems, and `App.init` is
 documented as re-callable ("Calling it again tears down the previous default and
@@ -88,7 +88,7 @@ instead of a boolean. Fewer moving parts; slightly more per-call work.
 Note when writing the harness: the loop's `if (!lastTime) lastTime = time` means
 a first `tick(0)` yields zero elapsed. Drive with `tick(16)` then `tick(400)`.
 
-### P0.2 ⬜ `app.destroy()` leaks `frameHandlers`
+### P0.2 ✅ `app.destroy()` leaks `frameHandlers`
 
 `engine/app.ts:804-806` clears `stepHandlers`, `stepStartHandlers` and
 `resizeHandlers` but not `frameHandlers` (declared `app.ts:581`). One-line fix;
@@ -98,7 +98,7 @@ fold into P0.1's test.
 
 ## Priority 1 — performance
 
-### P1.1 ⬜ Memoize `measureText` (biggest single win)
+### P1.1 ✅ Memoize `measureText` (biggest single win)
 
 **Problem.** 24 unmemoized `measureText` call sites, all on per-frame widget
 paths. Cost per widget:
@@ -154,7 +154,7 @@ baseline) working; jsdom tests depend on it.
 frame issues no new `measureText` (spy on a mock ctx). Existing UI tests stay
 green.
 
-### P1.2 ⬜ Per-step array copies in `clock.ts`
+### P1.2 ✅ Per-step array copies in `clock.ts`
 
 `fireAll()` does `[...driven]` (`clock.ts:62`) and `fire()` does `[...timers]`
 (`clock.ts:100`) — **every fixed step**, for every clock with a live timer.
@@ -166,7 +166,7 @@ reallocated) or mark-and-sweep on the `dead` flag that `TimerJob` already
 carries. Keep the "a timer cancelled mid-fire does not fire" guarantee — add a
 test for it if one is missing.
 
-### P1.3 ⬜ Net per-message and per-frame allocations
+### P1.3 ✅ Net per-message and per-frame allocations
 
 | Item                                                        | File                  | Fix                                                                                                                                                                                                     |
 | ----------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -175,7 +175,7 @@ test for it if one is missing.
 | `sync` iterator spreads `{...state, id}` per peer per frame | `net/room.ts:311-317` | Reuse a per-peer output object, or document as allocating and leave it (draw-loop only, bounded by peer count — lowest priority of the four).                                                           |
 | `sync` drives on `setInterval`                              | `net/room.ts:283-292` | Not loop-driven, so it isn't pause-aware, isn't throttled with the tab, and broadcasts into an empty room. Move to `Loop.onStep` with an accumulator, and skip the send when `room.peers.length === 0`. |
 
-### P1.4 ⬜ ECS / Physics2D iteration allocations
+### P1.4 ✅ ECS / Physics2D iteration allocations
 
 - `ecs/world.ts:255` — `each` calls `fn(...eachRow)`; the spread materializes an
   arguments array per entity. Special-case arities 1–3 (which covers essentially
@@ -187,7 +187,7 @@ test for it if one is missing.
   available. Switch it; this is the engine's own hot loop and it should model the
   advice.
 
-### P1.5 ⬜ `Solid[]` has no broadphase
+### P1.5 ✅ `Solid[]` has no broadphase
 
 `collision.ts:311-332`. The "fast path" for a plain `Solid[]` returns **the whole
 array unfiltered**, and `slide()` then sweeps every element across up to 3
@@ -209,7 +209,7 @@ Collision.grid(solids: Solid[], cellSize: number): SolidSource
 Also cache the `isSource` scan result — or drop the scan by asking callers to
 pass a homogeneous array and checking only `solids[0]`.
 
-### P1.6 ⬜ Smaller per-frame allocations
+### P1.6 ✅ Smaller per-frame allocations
 
 - `ui/core/input.ts:128-145` — `rawPointer()` builds a fresh object every call,
   including once per frame from `clearGestureClaim()`. Fill a module-scope
@@ -233,7 +233,7 @@ pass a homogeneous array and checking only `solids[0]`.
 
 ## Priority 2 — correctness defects
 
-### P2.1 ⬜ Camera pixel snapping is in world units
+### P2.1 ✅ Camera pixel snapping is in world units
 
 `camera/camera.ts:219-224`:
 
@@ -250,7 +250,7 @@ quantizes to 3-device-pixel jumps — visibly worse than not snapping at all.
 Add a test asserting the applied translation lands on a whole device pixel at
 zoom 1, 2 and 3.
 
-### P2.2 ⬜ `Camera.toWorld` / `toScreen` ignore shake and `into`
+### P2.2 ✅ `Camera.toWorld` / `toScreen` ignore shake and `into`
 
 `camera/camera.ts:289-302`. Both use only `state.x/y` and `state.zoom`.
 `Camera.toWorld(Pointer)` is documented as _the_ mouse-picking call
@@ -267,7 +267,7 @@ For `into`, either store the last-rendered `into` rect on the lens, or add an
 explicit `toWorld(p, { into })` overload — the explicit form is more in keeping
 with the codebase's "no hidden frame state" style.
 
-### P2.3 ⬜ `Camera.shake` restack drops amplitude
+### P2.3 ✅ `Camera.shake` restack drops amplitude
 
 `camera/camera.ts:285`:
 
@@ -285,7 +285,7 @@ const live = shakeAmp > 0 && steps() - shakeStart < shakeSteps;
 shakeAmp = Math.max(live ? shakeAmp : 0, amplitude);
 ```
 
-### P2.4 ⬜ `UI.listItem`'s transparent guard never fires
+### P2.4 ✅ `UI.listItem`'s transparent guard never fires
 
 `ui/widgets/lists.ts:683` — `if (ctx.fillStyle !== "transparent")`. Canvas
 normalizes `fillStyle` on read; assigning `"transparent"` reads back as
@@ -293,7 +293,7 @@ normalizes `fillStyle` on read; assigning `"transparent"` reads back as
 `fillRect` every frame. Track the intended color in a local instead of
 round-tripping through the context.
 
-### P2.5 ⬜ `Sprites.getSprite` cache is unbounded
+### P2.5 ✅ `Sprites.getSprite` cache is unbounded
 
 `sprites.ts:15-16` — `getSprite` uses a plain `Map` while `getLayer` right beside
 it uses `lruCache(16)`. The real key folds in `size` and `dpr`
@@ -306,7 +306,7 @@ radius, a zoom-derived size) grows full canvases without bound. Same shape in
 (64–128), and bound the tint color map similarly. Document the churn hazard the
 way `Particles`' `dotCache` already does (`particles.ts:108-114`).
 
-### P2.6 ⬜ Tile cull under-culls a rotated transform
+### P2.6 ✅ Tile cull under-culls a rotated transform
 
 `tiles.ts:364-387` derives the visible rect from only the top-left and
 bottom-right screen corners. Correct for translate+scale, wrong under rotation
@@ -314,7 +314,7 @@ bottom-right screen corners. Correct for translate+scale, wrong under rotation
 four corners and take the min/max. Low priority — nothing in the engine rotates
 the camera today — but the code is presented as general.
 
-### P2.7 ⬜ Doc fixes
+### P2.7 ✅ Doc fixes
 
 - `clock.ts:172` — example says `Clock.world.resume()`; the API is `release()`.
 - `tiles.ts:388-394` — bake staleness compares the _camera_ scale against
@@ -329,7 +329,7 @@ the camera today — but the code is presented as general.
 Lower priority than the above; these are ergonomics and consistency, and some
 are already registered elsewhere.
 
-### P3.1 ⬜ The scratch-object contract needs an opt-out
+### P3.1 ✅ The scratch-object contract needs an opt-out
 
 "Reused scratch object: read, don't hold" appears on `Contacts`, `Contact`,
 `BounceFaces`, `Camera.rect`, `Level.solidsNear` and `FrameTimings`. The sharpest
@@ -347,7 +347,7 @@ moveAndSlide(body, solids, out?: Contacts): Contacts
 
 Default path unchanged and still allocation-free; careful callers opt out.
 
-### P3.2 ⬜ Collapse the duplicate collision exports
+### P3.2 ✅ Collapse the duplicate collision exports
 
 `index.ts:369-393` exports all ten collision functions **twice** — once loose,
 once inside the `Collision` namespace — and then `Minimotor.Collision` a third
@@ -358,7 +358,7 @@ Worth a wider pass: `Minimotor` is currently importable as named exports, as a
 `Minimotor` namespace object, and as a default export. That's a deliberate
 convenience, but it should be a documented choice rather than an accident.
 
-### P3.3 ⬜ `Draw` gaps
+### P3.3 ✅ `Draw` gaps
 
 There is no way to blit a plain loaded `HTMLImageElement` — `Draw.sprite` needs
 a `SpriteLike` and `Draw.sprites` needs an iterable, so the common case drops to
@@ -373,7 +373,7 @@ a `SpriteLike` and `Draw.sprites` needs an iterable, so the common case drops to
 Also consider trimming the overload machinery: `Draw.line` (`draw.ts:88-121`) has
 6 parameters, 5 casts and a runtime `typeof` branch inside a drawing primitive.
 
-### P3.4 ⬜ Finish retiring `Game.letterbox*`
+### P3.4 ✅ Finish retiring `Game.letterbox*`
 
 `game.ts:49-130`. `App.init({ resolution })` does fit, bars, pointer mapping and
 transform correctly; `Game.letterbox` / `drawLetterbox` / `letterboxView` do a
@@ -382,30 +382,36 @@ concept. `letterboxView` additionally returns four closures that allocate per
 call.
 
 Already registered in `API_PLAN.md:220-222` — blocked only on migrating the
-`pocket` sample. **Action: migrate `pocket` to `resolution`, then delete all
-three.** Keep `createScoreTracker` and `formatClock`.
+`pocket` sample. **Done.** `pocket` turned out to be on `App.init({ resolution })`
+already; only its stale header comment still named `Game.letterbox`. Nothing
+called any of the three, so all three (and the `LetterboxView` interface) are
+deleted. `createScoreTracker` and `formatClock` stay.
 
 ---
 
 ## Priority 4 — missing features
 
-### P4.1 ⬜ Physics2D — close the real gaps
+### P4.1 🟡 Physics2D — close the real gaps
 
 The adapter is elegant but thin enough that games fall through it within a day.
 Ranked by how fast a real game hits them:
 
-1. **Raycast** — `phys.raycast(x1, y1, x2, y2, opts?)`. Line-of-sight, ground
-   probes, hitscan weapons, laser sights. planck exposes `world.rayCast`;
-   the work is the px↔m conversion and a plain-data result shape.
-2. **Sensors / triggers** — expose `isSensor` on `BodyOptions`. Overlap without
-   collision (pickups, trigger volumes, checkpoints, water) is currently
-   impossible without `body.raw`.
-3. **Collision filtering** — `category` / `mask` (and optionally `group`) on
-   `BodyOptions`. Any game past one entity type needs layers.
-4. **End-contact** — `onContactEnd(cb)`. Today you can detect touch and never
-   separation, so "is the player standing on this" needs manual bookkeeping.
-   (`API_PLAN.md:227` proposes `onContact` → a pollable `contacts` list, which
-   would subsume this — either shape is fine, but pick one.)
+1. ✅ **Raycast** — shipped as `phys.raycast(x1, y1, x2, y2, opts?)` returning a
+   reused plain-data `RayHit` (`body`, px `x`/`y`, unit normal, `distance`,
+   `fraction`), plus `phys.raycastAll` which allocates fresh hits sorted
+   nearest-first. `opts` takes `sensors` (default false — triggers don't block
+   line of sight) and a `filter(body)` predicate. Note planck visits proxies in
+   broadphase order, NOT near-to-far, so the nearest hit is tracked explicitly
+   rather than by trusting the last callback.
+2. ✅ **Sensors / triggers** — `isSensor` on `BodyOptions`, plus a writable
+   `body.sensor` so a solid can become passable at runtime.
+3. ✅ **Collision filtering** — `category` / `mask` / `group` on `BodyOptions`
+   (defaults `0x0001` / `0xffff` / `0`).
+4. ✅ **End-contact** — `onContactEnd(cb)`, alongside the existing `onContact`;
+   both now skip contacts whose bodies were created directly on `phys.raw` and
+   so carry no wrapper. (`API_PLAN.md:227` proposes `onContact` → a pollable
+   `contacts` list, which would subsume this — the callback shape is what
+   shipped.)
 5. **World queries** — `phys.queryAABB(rect)` and `phys.pointPick(x, y)`.
    Click-to-select and area effects.
 6. **Mouse/drag joint** — dragging a body with the pointer is table stakes for a
@@ -416,9 +422,15 @@ Ranked by how fast a real game hits them:
 Keep the existing style throughout: pixels in, pixels out, plain-data results,
 `raw` escape hatch preserved.
 
-Two adjacent cleanups while in here: every `Body2D` setter allocates a
-`new Vec2` (`physics2d.ts:203-259`), and `Pin2D.destroy()` doesn't guard
-`pw.isLocked()` the way `destroyBody` does (`physics2d.ts:196-200,369-371`).
+Two adjacent cleanups, both ✅ done: the `Body2D` setters (and the wall-sweep
+steering) now share one scratch `Vec2` — verified safe, since planck copies the
+vectors passed to `setPosition`/`setLinearVelocity`/`applyForce`/
+`applyLinearImpulse`. `Pin2D.destroy()` now defers through the same
+`pw.isLocked()` queue as `destroyBody` (joints drained before bodies, since
+destroying a body takes its joints with it) and is idempotent.
+
+**Remaining: items 5–7** (world queries, mouse/drag joint, more shapes and
+joints).
 
 ### P4.2 ⬜ Audio — stereo pan
 
@@ -467,21 +479,26 @@ own section describing what they are and how to find one.
 
 Each step is independently shippable and testable.
 
-| #   | Work                           | Items                  | Rough size                      |
-| --- | ------------------------------ | ---------------------- | ------------------------------- |
-| 1   | Re-init lifecycle fix          | P0.1, P0.2             | small, high value               |
-| 2   | `measureText` memo             | P1.1                   | medium, biggest perf win        |
-| 3   | Camera correctness             | P2.1, P2.2, P2.3       | small                           |
-| 4   | Cheap allocation sweep         | P1.2, P1.3, P1.6, P2.4 | small                           |
-| 5   | Cache bounds + doc fixes       | P2.5, P2.7             | small                           |
-| 6   | Physics2D gaps                 | P4.1 items 1–4         | medium-large                    |
-| 7   | Collision broadphase           | P1.5, P3.1             | medium                          |
-| 8   | Draw primitives + surface trim | P3.2, P3.3             | small                           |
-| 9   | `Game.letterbox` retirement    | P3.4                   | small, needs `pocket` migration |
-| 10  | Catalog growth                 | §7 backlog             | ongoing                         |
+| #   | Work                           | Items                  | Status               |
+| --- | ------------------------------ | ---------------------- | -------------------- |
+| 1   | Re-init lifecycle fix          | P0.1, P0.2             | ✅ done              |
+| 2   | `measureText` memo             | P1.1                   | ✅ done              |
+| 3   | Camera correctness             | P2.1, P2.2, P2.3       | ✅ done              |
+| 4   | Cheap allocation sweep         | P1.2, P1.3, P1.6, P2.4 | ✅ done (+ P1.4)     |
+| 5   | Cache bounds + doc fixes       | P2.5, P2.7             | ✅ done (+ P2.6)     |
+| 6   | Physics2D gaps                 | P4.1 items 1–4         | ✅ done (5–7 remain) |
+| 7   | Collision broadphase           | P1.5, P3.1             | ✅ done              |
+| 8   | Draw primitives + surface trim | P3.2, P3.3             | ✅ done              |
+| 9   | `Game.letterbox` retirement    | P3.4                   | ✅ done              |
+| 10  | Catalog growth                 | §7 backlog             | ⬜ ongoing           |
 
-Steps 1–5 are all low-risk and together remove every known silent failure plus
-the dominant per-frame cost. They are the right first pass.
+Steps 1–9 are shipped: 583 unit tests across 44 files, 27 Playwright specs, and
+`pnpm verify` (tsc src + samples, oxlint, oxfmt) all green.
+
+Still open, in rough priority order: **P4.1 items 5–7** (world queries, a
+mouse/drag joint, more shapes and joints), **P4.2** (audio stereo pan),
+**P4.3** (net reconnect/backoff), and the **§7 catalog growth backlog** — the
+ongoing one.
 
 ## Verification gate
 

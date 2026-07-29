@@ -52,6 +52,15 @@ export interface RenderOptions {
   into?: Rect;
 }
 
+/** Options for `toWorld` / `toScreen`. */
+export interface ScreenMapOptions {
+  /** The SAME screen sub-rect the lens was rendered `into`. A lens drawn into
+   *  a sub-rect (minimap, split screen) maps world→screen with a different
+   *  scale and offset than a full-canvas one, so picking through it must say
+   *  which rect it means. Omit for a full-canvas lens. */
+  into?: Rect;
+}
+
 /** A world→screen lens: position, zoom, follow, shake, and space conversions. */
 export interface CameraLens {
   /** Top-left of the visible world rect (before shake). */
@@ -72,10 +81,14 @@ export interface CameraLens {
   snap(): void;
   /** Impact shake: `amplitude` px decaying linearly over `ms`. */
   shake(amplitude: number, ms: number): void;
-  /** Screen point → world point. `Camera.toWorld(Pointer)` is mouse picking. */
-  toWorld(p: Vec2, out?: Vec2): Vec2;
-  /** World point → screen point (off-screen markers, HUD callouts). */
-  toScreen(p: Vec2, out?: Vec2): Vec2;
+  /** Screen point → world point. `Camera.toWorld(Pointer)` is mouse picking.
+   *  Accounts for zoom, shake and the pixel snap — it inverts exactly the
+   *  transform `render` applied. For a lens rendered into a screen sub-rect,
+   *  pass that rect as `opts.into`. */
+  toWorld(p: Vec2, out?: Vec2 | null, opts?: ScreenMapOptions): Vec2;
+  /** World point → screen point (off-screen markers, HUD callouts). The
+   *  inverse of `toWorld`; same `opts.into` rule. */
+  toScreen(p: Vec2, out?: Vec2 | null, opts?: ScreenMapOptions): Vec2;
   /** Run `fn` with this lens applied: `Draw.*` inside is world space. */
   render(fn: () => void): void;
   render(opts: RenderOptions, fn: () => void): void;
@@ -98,6 +111,13 @@ function normRect(r: Rect | { w: number; h: number }): Rect {
   return { x: (r as Rect).x ?? 0, y: (r as Rect).y ?? 0, w: r.w, h: r.h };
 }
 
+/** The world→screen affine a lens applies: `screen = scale * world + t`. */
+interface Mapping {
+  scale: number;
+  tx: number;
+  ty: number;
+}
+
 export function createCamera(options: CameraOptions = {}): CameraLens {
   const steps = options.steps ?? stepNow;
   let world = options.world ? normRect(options.world) : null;
@@ -115,6 +135,12 @@ export function createCamera(options: CameraOptions = {}): CameraLens {
 
   const scratchRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   const scratchVec: Vec2 = { x: 0, y: 0 };
+  // Per-lens scratch for the hot pull paths (fold runs per elapsed step, and
+  // mapping runs on every render/pick) — these never escape the call.
+  const scratchTarget = { x: 0, y: 0 };
+  const scratchDesired = { x: 0, y: 0 };
+  const scratchShake = { x: 0, y: 0 };
+  const scratchMap: Mapping = { scale: 1, tx: 0, ty: 0 };
 
   function view(): { w: number; h: number } {
     return options.view ?? App.viewport;
@@ -122,7 +148,9 @@ export function createCamera(options: CameraOptions = {}): CameraLens {
 
   function targetPoint(): { x: number; y: number } {
     const t = target!;
-    return { x: t.x + (t.w ?? 0) / 2, y: t.y + (t.h ?? 0) / 2 };
+    scratchTarget.x = t.x + (t.w ?? 0) / 2;
+    scratchTarget.y = t.y + (t.h ?? 0) / 2;
+    return scratchTarget;
   }
 
   /** Where the camera wants its top-left, honoring deadzone + world clamp. */
@@ -157,7 +185,9 @@ export function createCamera(options: CameraOptions = {}): CameraLens {
           ? world.y + (world.h - effH) / 2
           : clamp(wantY, world.y, world.y + world.h - effH);
     }
-    return { x: wantX, y: wantY };
+    scratchDesired.x = wantX;
+    scratchDesired.y = wantY;
+    return scratchDesired;
   }
 
   /** Fold forward by the steps elapsed since the last read. */
@@ -181,15 +211,24 @@ export function createCamera(options: CameraOptions = {}): CameraLens {
     }
   }
 
+  /** Is a shake still inside its fade window? Asked directly rather than
+   *  inferred from a nonzero offset — `wobble` legitimately returns 0 on some
+   *  steps, and treating those as "no shake" drops a live one. */
+  function shakeLive(now: number): boolean {
+    return shakeAmp > 0 && now - shakeStart < shakeSteps;
+  }
+
   function shakeOffset(): { x: number; y: number } {
     const now = steps();
-    const t = now - shakeStart;
-    if (shakeAmp <= 0 || t >= shakeSteps) return { x: 0, y: 0 };
-    const k = 1 - t / shakeSteps; // linear falloff
-    return {
-      x: shakeAmp * k * wobble(now * 1.7 + 0.3),
-      y: shakeAmp * k * wobble(now * 2.3 + 7.1),
-    };
+    if (!shakeLive(now)) {
+      scratchShake.x = 0;
+      scratchShake.y = 0;
+      return scratchShake;
+    }
+    const k = 1 - (now - shakeStart) / shakeSteps; // linear falloff
+    scratchShake.x = shakeAmp * k * wobble(now * 1.7 + 0.3);
+    scratchShake.y = shakeAmp * k * wobble(now * 2.3 + 7.1);
+    return scratchShake;
   }
 
   function visibleRect(): Rect {
@@ -202,26 +241,42 @@ export function createCamera(options: CameraOptions = {}): CameraLens {
     return scratchRect;
   }
 
-  function applyLens(ctx: CanvasRenderingContext2D, into: Rect | null): void {
+  /** The lens's world→screen affine, `screen = scale * world + t`, written
+   *  into `out`. THE single definition of this camera's mapping: `applyLens`
+   *  pushes it onto the canvas and `toWorld`/`toScreen` invert it, so a pick
+   *  can never disagree with what was actually drawn (shake and the pixel snap
+   *  included). Folds pending steps via `visibleRect`. */
+  function mapping(into: Rect | null, out: Mapping): Mapping {
     const r = visibleRect();
     const sh = shakeOffset();
+    if (into) {
+      const s = Math.min(into.w / r.w, into.h / r.h); // uniform, letterboxed
+      out.scale = s;
+      out.tx = into.x + (into.w - r.w * s) / 2 - s * (r.x + sh.x);
+      out.ty = into.y + (into.h - r.h * s) / 2 - s * (r.y + sh.y);
+    } else {
+      const z = state.zoom;
+      out.scale = z;
+      // Whole-pixel translate: keeps integer world geometry on integer device
+      // pixels — no tile seams, no sprite shimmer. Snap AFTER the zoom, in
+      // device space: rounding the world coordinate first would quantize
+      // camera motion to zoom-sized jumps (3 px at zoom 3), which is worse
+      // than not snapping. A sub-device-pixel quantize is imperceptible.
+      out.tx = -Math.round((state.x + sh.x) * z);
+      out.ty = -Math.round((state.y + sh.y) * z);
+    }
+    return out;
+  }
+
+  function applyLens(ctx: CanvasRenderingContext2D, into: Rect | null): void {
     if (into) {
       ctx.beginPath();
       ctx.rect(into.x, into.y, into.w, into.h);
       ctx.clip();
-      const s = Math.min(into.w / r.w, into.h / r.h); // uniform, letterboxed
-      const tx = into.x + (into.w - r.w * s) / 2;
-      const ty = into.y + (into.h - r.h * s) / 2;
-      ctx.translate(tx, ty);
-      ctx.scale(s, s);
-      ctx.translate(-(r.x + sh.x), -(r.y + sh.y));
-    } else {
-      ctx.scale(state.zoom, state.zoom);
-      // Whole-pixel translate: keeps integer world geometry on integer
-      // device pixels — no tile seams, no sprite shimmer. A <1px quantize
-      // of camera motion is imperceptible.
-      ctx.translate(-Math.round(state.x + sh.x), -Math.round(state.y + sh.y));
     }
+    const m = mapping(into, scratchMap);
+    ctx.translate(m.tx, m.ty);
+    ctx.scale(m.scale, m.scale);
   }
 
   function render(a: RenderOptions | (() => void), b?: () => void): void {
@@ -282,22 +337,22 @@ export function createCamera(options: CameraOptions = {}): CameraLens {
     shake(amplitude, ms) {
       const now = steps();
       // Stack by keeping the stronger amplitude, restarting the fade.
-      shakeAmp = Math.max(shakeOffset().x !== 0 || shakeOffset().y !== 0 ? shakeAmp : 0, amplitude);
+      shakeAmp = Math.max(shakeLive(now) ? shakeAmp : 0, amplitude);
       shakeStart = now;
       shakeSteps = Math.max(1, Math.round(ms * STEPS_PER_MS));
     },
-    toWorld(p, out) {
-      fold();
+    toWorld(p, out, opts) {
+      const m = mapping(opts?.into ?? null, scratchMap);
       const o = out ?? scratchVec;
-      o.x = p.x / state.zoom + state.x;
-      o.y = p.y / state.zoom + state.y;
+      o.x = (p.x - m.tx) / m.scale;
+      o.y = (p.y - m.ty) / m.scale;
       return o;
     },
-    toScreen(p, out) {
-      fold();
+    toScreen(p, out, opts) {
+      const m = mapping(opts?.into ?? null, scratchMap);
       const o = out ?? scratchVec;
-      o.x = (p.x - state.x) * state.zoom;
-      o.y = (p.y - state.y) * state.zoom;
+      o.x = m.scale * p.x + m.tx;
+      o.y = m.scale * p.y + m.ty;
       return o;
     },
     render,
@@ -387,14 +442,15 @@ export const Camera = {
     def().snap();
   },
   /** Screen point → world point through the default camera.
-   *  `Camera.toWorld(Pointer)` is mouse picking. */
-  toWorld(p: Vec2, out?: Vec2): Vec2 {
-    return def().toWorld(p, out);
+   *  `Camera.toWorld(Pointer)` is mouse picking — zoom, shake and the pixel
+   *  snap included. */
+  toWorld(p: Vec2, out?: Vec2 | null, opts?: ScreenMapOptions): Vec2 {
+    return def().toWorld(p, out, opts);
   },
   /** World point → screen point through the default camera (off-screen
    *  markers, HUD callouts). */
-  toScreen(p: Vec2, out?: Vec2): Vec2 {
-    return def().toScreen(p, out);
+  toScreen(p: Vec2, out?: Vec2 | null, opts?: ScreenMapOptions): Vec2 {
+    return def().toScreen(p, out, opts);
   },
   /** Top-left `x` of the default camera's visible world rect (before shake).
    *  Reading folds pending steps forward; writing sets it directly. */

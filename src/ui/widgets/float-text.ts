@@ -3,6 +3,7 @@
 // ages on the kernel's fixed step (registered via onStep), so it pauses with the
 // loop; make your own pool with createFloatText and drive advance(dt) yourself.
 import {
+  currentUiScale,
   ensureWired,
   lastWidgetRect,
   onReset,
@@ -23,6 +24,10 @@ export interface FloatTextOptions {
   color?: string;
   /** Font. Default "bold 14px monospace". */
   font?: string;
+  /** Uniform draw scale for the glyphs and the rise speed. Default 1.
+   *  `UI.floatText` fills this in from the active `UI.scaled` factor so a text
+   *  spawned inside a zoomed board pops at the board's size. */
+  scale?: number;
 }
 
 /** One live floating text in a pool — the record `spawn` creates and
@@ -44,6 +49,8 @@ export interface FloatText {
   color: string;
   /** Canvas font string. */
   font: string;
+  /** Uniform draw scale for the glyphs (1 = unscaled). */
+  scale: number;
 }
 
 /** A pool of rising, fading texts. Pure — drive `advance(dt)` yourself (the
@@ -71,11 +78,12 @@ export function createFloatText(): FloatTextManager {
         text,
         x,
         y,
-        vy: opts.vy ?? -50,
+        vy: (opts.vy ?? -50) * (opts.scale ?? 1),
         life: opts.life ?? 900,
         remaining: opts.life ?? 900,
         color: opts.color ?? "#fff",
         font: opts.font ?? "bold 14px monospace",
+        scale: opts.scale ?? 1,
       });
     },
 
@@ -101,7 +109,17 @@ export function createFloatText(): FloatTextManager {
         ctx.globalAlpha = Math.min(1, (2 * t.remaining) / t.life);
         ctx.fillStyle = t.color;
         ctx.font = t.font;
-        ctx.fillText(t.text, t.x, t.y);
+        if (t.scale === 1) {
+          ctx.fillText(t.text, t.x, t.y);
+        } else {
+          // Scale about the text's own position — the font string is opaque, so
+          // zoom the glyphs with the transform instead of rewriting it.
+          ctx.save();
+          ctx.translate(t.x, t.y);
+          ctx.scale(t.scale, t.scale);
+          ctx.fillText(t.text, 0, 0);
+          ctx.restore();
+        }
       }
       ctx.restore();
     },
@@ -133,8 +151,9 @@ function ensureFloatTextHooks(): void {
 /** Spawn a rising, fading text at (x, y) — score pops, damage numbers,
  *  pickup labels. Aged on the fixed step; draw with `drawFloatText`. Coords are
  *  taken in the CURRENT space: spawn inside a `UI.scaled` block and the point is
- *  mapped to screen for you, so it still lands right when `drawFloatText` paints
- *  it later (after the transform is gone).
+ *  mapped to screen for you — and the block's scale rides along — so it still
+ *  lands (and sizes) right when `drawFloatText` paints it later, after the
+ *  transform is gone.
  *
  *  Omit `x`/`y` to ANCHOR: the text rises from the top-center of the last
  *  placed widget, so a flowing button needs no coordinates:
@@ -160,8 +179,11 @@ export function floatText(
     px = anchor ? anchor.x + anchor.w / 2 : 0;
     py = anchor ? anchor.y - 4 : 0;
   }
+  // Position AND size follow the space the text was spawned in: the point maps
+  // out to screen, and the active `UI.scaled` factor rides along as the draw
+  // scale (`drawFloatText` paints after the transform is gone).
   const p = uiToScreen(px, py);
-  floats().spawn(str, p.x, p.y, opts);
+  floats().spawn(str, p.x, p.y, { scale: currentUiScale(), ...opts });
 }
 
 /** Draw all live floating texts. Call late in `draw` so they sit on top. */

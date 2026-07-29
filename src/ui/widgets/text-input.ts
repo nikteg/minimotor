@@ -17,6 +17,7 @@ import {
   focusFromPointer,
   isInOverlayPass,
   isOverlayActive,
+  measureWidth,
   onFrameEnd,
   onReset,
   place,
@@ -243,7 +244,7 @@ function indexAtLocalX(ctx: CanvasRenderingContext2D, str: string, xLocal: numbe
   if (xLocal <= 0) return 0;
   let prev = 0;
   for (let i = 1; i <= str.length; i++) {
-    const w = ctx.measureText(str.slice(0, i)).width;
+    const w = measureWidth(ctx, str.slice(0, i));
     if (xLocal < (prev + w) / 2) return i - 1;
     prev = w;
   }
@@ -429,6 +430,7 @@ export function textInput(opts: TextInputOptions): TextInputResult {
     disabled: opts.disabled,
     tabIndex: opts.tabIndex,
     native: true,
+    rect,
     focus: () => {
       if (s.editor?.id === id) s.editor.input.focus({ preventScroll: true });
       else openTextEditor(resolvedOpts);
@@ -579,8 +581,8 @@ export function textInput(opts: TextInputOptions): TextInputResult {
           const a = Math.max(sel.start, ls);
           const b = Math.min(sel.end, le);
           if (b <= a) continue;
-          const ax = innerX + ctx.measureText(shown.slice(ls, a)).width;
-          const bx = innerX + ctx.measureText(shown.slice(ls, b)).width;
+          const ax = innerX + measureWidth(ctx, shown.slice(ls, a));
+          const bx = innerX + measureWidth(ctx, shown.slice(ls, b));
           ctx.fillRect(ax, top + i * lineH + 2, bx - ax, lineH - 4);
         }
         ctx.globalAlpha = 1;
@@ -589,24 +591,24 @@ export function textInput(opts: TextInputOptions): TextInputResult {
       lines.forEach((line, i) => centeredText(ctx, line.text, innerX, top + i * lineH + lineH / 2));
       if (blink && lines.length > 0) {
         const line = lines[caretLine];
-        const caretX = innerX + ctx.measureText(shown.slice(line.start, caretIdx)).width;
+        const caretX = innerX + measureWidth(ctx, shown.slice(line.start, caretIdx));
         ctx.fillStyle = theme.accent;
         ctx.fillRect(caretX, top + caretLine * lineH + 3, 1, lineH - 6);
       }
     } else {
       // Single line: scroll horizontally so the caret stays inside the clip.
-      const caretLocalX = ctx.measureText(shown.slice(0, caretIdx)).width;
+      const caretLocalX = measureWidth(ctx, shown.slice(0, caretIdx));
       let scroll = active.scrollX;
       if (caretLocalX - scroll > innerW) scroll = caretLocalX - innerW;
       if (caretLocalX - scroll < 0) scroll = caretLocalX;
-      const maxScroll = Math.max(0, ctx.measureText(shown).width - innerW);
+      const maxScroll = Math.max(0, measureWidth(ctx, shown) - innerW);
       scroll = Math.max(0, Math.min(scroll, maxScroll));
       active.scrollX = scroll;
       const baseX = innerX - scroll;
 
       if (sel.start !== sel.end) {
-        const a = baseX + ctx.measureText(shown.slice(0, sel.start)).width;
-        const b = baseX + ctx.measureText(shown.slice(0, sel.end)).width;
+        const a = baseX + measureWidth(ctx, shown.slice(0, sel.start));
+        const b = baseX + measureWidth(ctx, shown.slice(0, sel.end));
         ctx.fillStyle = theme.accentSoft;
         ctx.globalAlpha = 0.4;
         ctx.fillRect(a, rect.y + 6, b - a, Math.max(4, rect.h - 12));

@@ -46,7 +46,8 @@ async function menuRect(
 
 // The open menu's row buttons — id-less row-high buttons inside the menu list's
 // screen rect (the menu is an overlay ABOVE the board, so nothing else is drawn
-// there). Returned as row-top offsets from the list's top edge, sorted.
+// there). Returned as row-top offsets from the list's top edge, sorted. The menu
+// inherits the control's UI scale, so a row is ITEM_H × that scale on screen.
 async function menuRowYs(page: Page): Promise<number[]> {
   const [tree, menu] = await Promise.all([getTree(page), menuRect(page)]);
   if (!menu) return [];
@@ -55,7 +56,7 @@ async function menuRowYs(page: Page): Promise<number[]> {
       (e) =>
         e.kind === "button" &&
         !e.id &&
-        Math.abs(e.screenRect.h - ITEM_H) < 0.5 &&
+        Math.abs(e.screenRect.h - ITEM_H * e.scale) < 0.5 &&
         Math.abs(e.screenRect.x - menu.x) < 0.5 &&
         e.screenRect.y > menu.y - ITEM_H &&
         e.screenRect.y < menu.y + menu.h,
@@ -247,13 +248,44 @@ test("the City menu still scrolls with the board zoomed (UI scale 1.5)", async (
     .poll(async () => (await getTree(page)).filter((e) => e.scale === 1.5).length)
     .toBeGreaterThan(0);
   const menu = await openCityMenu(page);
-  // Wheel exactly 8 rows up (the overlay menu itself stays unscaled), then the
-  // top row must be "London" — same arithmetic as the unscaled wheel test.
+  // The menu zooms WITH the board (rows are 1.5 × ITEM_H on screen), but the
+  // scroll offset it accumulates is in the board's reference units — so the
+  // wheel arithmetic is the unscaled one: 8 rows up puts "London" at the top.
   await page.mouse.move(menu.x + menu.w / 2, menu.y + menu.h / 2);
   await page.mouse.wheel(0, -8 * ITEM_H);
   await page.waitForTimeout(100);
-  await page.mouse.click(menu.x + menu.w / 2, menu.y + ITEM_H / 2);
+  await page.mouse.click(menu.x + menu.w / 2, menu.y + (ITEM_H * 1.5) / 2);
   await expect.poll(() => getCity(page)).toBe("London");
+});
+
+test("the Theme select toggles at its scaled on-screen position (UI scale 1.5)", async ({
+  page,
+}) => {
+  // The reported bug: with the board zoomed, the theme dropdown's hit area was
+  // off by the scale once its menu was open — the control read the RAW (screen)
+  // pointer against a rect in reference coords, so clicking it could neither
+  // pick nor close, and a click in empty space toggled it instead.
+  await openGallery(page);
+  await page.evaluate(() => window.__uiGallery!.setScale(1.5));
+  await expect
+    .poll(async () => (await getTree(page)).filter((e) => e.scale === 1.5).length)
+    .toBeGreaterThan(0);
+  const theme = async () => (await getTree(page)).find((e) => e.id === "ui-gallery:theme")!;
+  const menuOpen = async () => (await getTree(page)).some((e) => e.id === "ui-gallery:theme:menu");
+
+  const control = await theme();
+  const r = control.screenRect;
+  expect(r.h).toBeCloseTo(control.rect.h * 1.5, 1); // the control itself is zoomed
+  await page.mouse.click(r.x + r.w / 2, r.y + r.h / 2);
+  await expect.poll(menuOpen).toBe(true);
+  // The menu hangs under the control, at the control's width and zoom.
+  const menu = (await getTree(page)).find((e) => e.id === "ui-gallery:theme:menu")!;
+  expect(menu.scale).toBe(1.5);
+  expect(menu.screenRect.y).toBeGreaterThan(r.y + r.h);
+  expect(menu.screenRect.x).toBeCloseTo(r.x + 2 * 1.5, 1);
+  // Clicking the control again closes it (this is what the bug broke).
+  await page.mouse.click(r.x + r.w / 2, r.y + r.h / 2);
+  await expect.poll(menuOpen).toBe(false);
 });
 
 test("phone-sized flow: scroll the board to the City select, open it, swipe its menu", async ({

@@ -11,6 +11,8 @@ import {
   consumeKeyboardActivation,
   consumeKeyboardCommand,
   drawBox,
+  currentUiTransform,
+  dragPointer,
   drawFocusRing,
   ensureWired,
   enterOverlay,
@@ -22,7 +24,8 @@ import {
   onReset,
   place,
   pointerGestureOwned,
-  rawPointer,
+  popUiTransform,
+  pushUiTransform,
   registerFocusable,
   requiredWidgetId,
   runtimeSlot,
@@ -30,8 +33,9 @@ import {
   theme,
   uiCtx,
   uiFont,
+  uiHeight,
   uiPointer,
-  uiToScreen,
+  uiWidth,
 } from "../core/index.js";
 import { button } from "./button.js";
 import { list, scrollGestureActive } from "./lists.js";
@@ -55,9 +59,14 @@ export interface SelectEditor {
 export interface SelectOverlayRequest<T = unknown> {
   ctx: CanvasRenderingContext2D;
   opts: SelectOptions<T> & { id: string };
-  /** The control's rect in SCREEN-logical coords (mapped via `uiToScreen` at
-   *  capture time — the deferred menu draws after any `UI.scaled` popped). */
+  /** The control's rect in the coords it was DRAWN in (reference coords inside
+   *  a `UI.scaled` block). The overlay pass re-applies `transform` before
+   *  drawing, so the menu anchors under the control and zooms with it. */
   rect: { x: number; y: number; w: number; h: number };
+  /** The UI transform in force when the select drew, or `null` at the root —
+   *  the overlay pass runs after every `UI.scaled` block has popped, so the
+   *  menu has to restore it itself. `w`/`h` are the reference-space size. */
+  transform: { scale: number; ox: number; oy: number; w: number; h: number } | null;
 }
 
 // All select state, per UI runtime (each game owns its editor/menu). `seen` is
@@ -268,6 +277,7 @@ export function select<T>(opts: SelectOptions<T>): SelectResult<T> {
     disabled: opts.disabled,
     tabIndex: opts.tabIndex,
     native: true,
+    rect,
     focus: () => {
       if (s.editor?.id === id) s.editor.select.focus({ preventScroll: true });
       else openSelectEditor(resolvedOpts, currentIndex, false);
@@ -279,7 +289,12 @@ export function select<T>(opts: SelectOptions<T>): SelectResult<T> {
       }
     },
   });
-  const p = s.editor?.id === id ? rawPointer() : uiPointer();
+  // With our menu open the ordinary `uiPointer` is dead (we're the overlay's
+  // background), so read the ungated `dragPointer` instead — still mapped into
+  // the active UI transform's reference coords, which is the space `rect` is
+  // in. (The RAW pointer would be in screen coords and miss the control by the
+  // UI scale — clicking the control then couldn't close its own menu.)
+  const p = s.editor?.id === id ? dragPointer() : uiPointer();
   const hovered = !opts.disabled && pointInRect(p.x, p.y, rect);
   if (hovered) hoverCursor(true);
 
@@ -349,15 +364,18 @@ export function select<T>(opts: SelectOptions<T>): SelectResult<T> {
     markFocusableOverlay(id);
     // Defer the menu until frame-end so siblings drawn later in the callback
     // layout cannot paint over it. Input is still captured immediately.
-    // The overlay pass runs AFTER any enclosing `UI.scaled` block has popped
-    // (native screen space), so capture the control's rect in SCREEN coords
-    // now, while the transform is still active — the menu then anchors under
-    // the control at any zoom.
+    // The overlay pass runs AFTER any enclosing `UI.scaled` block has popped,
+    // so snapshot the transform alongside the rect and let the pass restore
+    // it: the menu then anchors under the control AND zooms with it (rows,
+    // labels and hit-testing all in the control's own space).
     enterOverlay();
-    const tl = uiToScreen(rect.x, rect.y);
-    const br = uiToScreen(rect.x + rect.w, rect.y + rect.h);
-    const screenRect = { x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y };
-    s.request = { ctx, opts: resolvedOpts, rect: screenRect } as SelectOverlayRequest;
+    const t = currentUiTransform();
+    s.request = {
+      ctx,
+      opts: resolvedOpts,
+      rect,
+      transform: t ? { ...t, w: uiWidth(), h: uiHeight() } : null,
+    } as SelectOverlayRequest;
     editor.changed = false;
   }
   return { value, changed, open: !!editor?.open };
@@ -369,8 +387,27 @@ export function drawSelectOverlay(): void {
   s.request = null;
   if (!request || !s.editor?.open || s.editor.id !== request.opts.id) return;
   // The overlay pass runs inside this runtime's frame end, so the ambient
-  // context already points at the canvas the select was drawn on.
-  drawSelectMenu(request.ctx, request.opts, request.rect);
+  // context already points at the canvas the select was drawn on — but every
+  // `UI.scaled` block has popped by now, canvas-side and pointer-side. Restore
+  // the transform the control drew under so the menu matches it.
+  const t = request.transform;
+  const ctx = request.ctx;
+  if (!t) {
+    drawSelectMenu(ctx, request.opts, request.rect);
+    return;
+  }
+  ctx.save();
+  ctx.translate(t.ox, t.oy);
+  ctx.scale(t.scale, t.scale);
+  // The overlay pass is at the root (no enclosing transform to compose with),
+  // so the snapshot's absolute offset goes in as-is.
+  pushUiTransform(t.scale, t.ox, t.oy, t.w, t.h);
+  try {
+    drawSelectMenu(ctx, request.opts, request.rect);
+  } finally {
+    popUiTransform();
+    ctx.restore();
+  }
 }
 
 function drawSelectMenu(
@@ -379,7 +416,9 @@ function drawSelectMenu(
   rect: { x: number; y: number; w: number; h: number },
 ): void {
   const editor = st().editor!;
-  const p = rawPointer();
+  // Ungated (we own the overlay) but mapped through the restored transform, so
+  // it compares against `rect`/`menu` in the coords they're laid out in.
+  const p = dragPointer();
   const value = editor.index >= 0 ? opts.options[editor.index]?.value : opts.value;
   const count = opts.options.length;
   // Clamp the upper bound to ≥ 1 so an empty option list still yields 1 row of

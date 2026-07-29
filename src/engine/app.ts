@@ -803,6 +803,7 @@ function buildApp(options: AppOptions): App {
       if (portraitMq && portraitApply) portraitMq.removeEventListener?.("change", portraitApply);
       stepHandlers.clear();
       stepStartHandlers.clear();
+      frameHandlers.clear();
       resizeHandlers.clear();
       if (appsByCanvas.get(canvas) === app) appsByCanvas.delete(canvas);
       clearDefaultApp(app);

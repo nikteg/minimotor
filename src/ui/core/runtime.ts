@@ -21,11 +21,14 @@ export interface UiRuntime {
   host: CanvasRenderingContext2D | null;
   /** Per-module state, indexed by each `runtimeSlot`'s id. */
   slots: unknown[];
-  /** Frame-lifecycle hooks registered on this runtime's host loop. */
-  wired: boolean;
+  /** The app this runtime's frame-lifecycle hooks are registered on, or null
+   *  when unwired. Held as the APP rather than a boolean so that replacing it
+   *  (a second `App.init`, or a destroyed isolated app) is detectable —
+   *  `ensureWired` re-attaches instead of leaving the UI kernel dead. */
+  wiredTo: App | null;
 }
 
-const defaultRuntime: UiRuntime = { host: null, slots: [], wired: false };
+const defaultRuntime: UiRuntime = { host: null, slots: [], wiredTo: null };
 let current: UiRuntime = defaultRuntime;
 const byCtx = new WeakMap<CanvasRenderingContext2D, UiRuntime>();
 
@@ -50,7 +53,7 @@ export function runtimeFor(ctx: CanvasRenderingContext2D | null): UiRuntime {
   const existing = byCtx.get(ctx);
   if (existing) return existing;
   if (getDefaultApp()?.ctx === ctx) return defaultRuntime;
-  const rt: UiRuntime = { host: ctx, slots: [], wired: false };
+  const rt: UiRuntime = { host: ctx, slots: [], wiredTo: null };
   byCtx.set(ctx, rt);
   allRuntimes.push(rt);
   return rt;
@@ -114,7 +117,7 @@ export function uiApp(): App | null {
 export function resetRuntimes(): void {
   for (const rt of allRuntimes) {
     rt.slots.length = 0;
-    rt.wired = false;
+    rt.wiredTo = null;
   }
   current = defaultRuntime;
 }

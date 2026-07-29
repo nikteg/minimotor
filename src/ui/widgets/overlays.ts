@@ -1,16 +1,18 @@
 import { ButtonVariant, button } from "./button.js";
 import { PanelFrame, paintFrame } from "./panel.js";
+import { panel, row } from "./layout.js";
 import { scrollGestureActive } from "./lists.js";
 import {
+  LayoutChildren,
   cachedContentSize,
-  centeredText,
-  enterOverlay,
   ensureWired,
+  enterOverlay,
+  flow,
   lastWidgetRect,
+  measureWidth,
   pointerGestureOwned,
   rawPointer,
   runAutoSized,
-  flow,
   sweptCache,
   text,
   theme,
@@ -20,6 +22,13 @@ import {
 } from "../core/index.js";
 import { anchorViewport } from "../core/index.js";
 import { pointInRect } from "../../collision.js";
+
+// Scale is LEXICAL: an overlay is scaled by the `UI.scaled` block it's drawn
+// in, like any other widget — it just has to be drawn LATE (so it paints over
+// the screen and deadens what's behind it), which is ordering, not scoping.
+// Draw them at the end of the same block as the rest of the UI. Widgets that
+// paint in a DEFERRED pass (the select drop menu, tooltips, float text) can't
+// do that — they snapshot the block they were requested in and replay it.
 
 // ---------- Popover ----------
 
@@ -142,24 +151,47 @@ export function popover(opts: PopoverOptions, children?: () => void): boolean {
 export interface ModalOptions {
   /** Dialog width in px. */
   w: number;
-  /** Dialog height in px. */
-  h: number;
+  /** Dialog height in px. REQUIRED in the value form; omit it in the children
+   *  form and the dialog auto-sizes to its content (measured last frame). */
+  h?: number;
   /** Optional title, drawn in the panel's title strip. */
   title?: string;
+  /** Stable identity for the auto-size cache (children form). Defaults to the
+   *  title; give one when several modals share a title. */
+  id?: string;
+  /** Body layout axis (children form). Default `"col"`. */
+  dir?: "row" | "col";
+  /** Gap between children (children form). Default 8. */
+  gap?: number;
+  /** Inner padding (children form). Default `theme.pad`. */
+  pad?: number;
 }
 
-/** Dim the whole screen and open a centered panel. Returns the panel rect —
- *  draw the dialog contents (text, buttons) inside it after the call. While
- *  a modal is up, every widget drawn BEFORE it in the frame ignores the
- *  pointer, so clicks can't land through the backdrop; widgets drawn after
- *  (the dialog's own) work normally. Call it LAST in your draw. For the
- *  common title/lines/buttons dialog, `confirm()` does all of this for you:
+/** Dim the whole screen and open a centered panel. Two forms:
  *
- *    if (confirming) {
- *      const r = UI.modal({ w: 340, h: 150, title: "CONFIRM" });
- *      if (UI.button({ x: r.x + 12, ... label: "OK" })) { ... }
- *    } */
-export function modal(opts: ModalOptions): { x: number; y: number; w: number; h: number } {
+ *  VALUE — returns the panel rect and you draw into it (`h` required):
+ *
+ *    const r = UI.modal({ w: 340, h: 150, title: "CONFIRM" });
+ *    if (UI.button({ x: r.x + 12, y: r.y + 100, label: "OK" })) { ... }
+ *
+ *  CHILDREN — the dialog is a `panel`, so its contents LAY THEMSELVES OUT and
+ *  its height shrink-wraps them (omit `h`). Returns the callback's value:
+ *
+ *    const hit = UI.modal({ w: 340, title: "CONFIRM" }, () => {
+ *      UI.text("Delete this save?");
+ *      return UI.row({ justify: "end", gap: 8 }, () => UI.button({ label: "OK" }));
+ *    });
+ *
+ *  While a modal is up, every widget drawn BEFORE it in the frame ignores the
+ *  pointer, so clicks can't land through the backdrop; widgets drawn after (the
+ *  dialog's own) work normally. Call it LAST in your draw. For the common
+ *  title/lines/buttons dialog, `confirm()` does all of this for you. */
+export function modal(opts: ModalOptions): { x: number; y: number; w: number; h: number };
+export function modal<R>(opts: ModalOptions, children: LayoutChildren<R>): R;
+export function modal<R>(
+  opts: ModalOptions,
+  children?: LayoutChildren<R>,
+): R | { x: number; y: number; w: number; h: number } {
   const ctx = uiCtx();
   ensureWired();
   enterOverlay();
@@ -168,10 +200,28 @@ export function modal(opts: ModalOptions): { x: number; y: number; w: number; h:
   ctx.fillStyle = theme.dim;
   ctx.fillRect(0, 0, vp.w, vp.h);
   ctx.restore();
+  if (children) {
+    // The dialog IS a panel: centered by the anchor, auto-sized on the axis
+    // left unspecified, and laying its children out like any container.
+    return panel(
+      {
+        anchor: "center",
+        w: opts.w,
+        h: opts.h,
+        title: opts.title,
+        id: opts.id ?? `modal:${opts.title ?? ""}`,
+        dir: opts.dir,
+        gap: opts.gap,
+        pad: opts.pad,
+      },
+      children,
+    );
+  }
+  const h = opts.h ?? 0;
   const x = Math.round((vp.w - opts.w) / 2);
-  const y = Math.round((vp.h - opts.h) / 2);
-  paintFrame(ctx, { x, y, w: opts.w, h: opts.h, title: opts.title });
-  return { x, y, w: opts.w, h: opts.h };
+  const y = Math.round((vp.h - h) / 2);
+  paintFrame(ctx, { x, y, w: opts.w, h, title: opts.title });
+  return { x, y, w: opts.w, h };
 }
 
 // ---------- Confirm (declarative dialog) ----------
@@ -224,55 +274,45 @@ export function confirm(optsOrTitle: ConfirmOptions | string): string | null {
   const buttons = opts.buttons ?? ["OK"];
   const lineH = theme.fontSize + 8;
 
-  // Size to content: widest of title, lines, and the button row.
+  // Width still sizes to content: widest of title, lines, and the button row.
+  // (The HEIGHT is the panel's job now — it shrink-wraps what we lay out.)
   ctx.save();
   ctx.font = uiFont(theme.fontSize + 2, true);
-  const buttonsW = buttons.reduce(
-    (sum, l) => sum + Math.ceil(ctx.measureText(l).width) + 28 + 8,
-    0,
-  );
+  const buttonsW = buttons.reduce((sum, l) => sum + Math.ceil(measureWidth(ctx, l)) + 28 + 8, 0);
   ctx.font = uiFont(theme.fontSize + 1, true);
-  const titleW = opts.title ? Math.ceil(ctx.measureText(opts.title).width) : 0;
+  const titleW = opts.title ? Math.ceil(measureWidth(ctx, opts.title)) : 0;
   ctx.font = uiFont();
-  const lineW = Math.ceil(Math.max(0, ...lines.map((l) => ctx.measureText(l).width)));
+  const lineW = Math.ceil(Math.max(0, ...lines.map((l) => measureWidth(ctx, l))));
   ctx.restore();
   const w = Math.max(opts.minW ?? 300, lineW + 32, buttonsW + 24, titleW + 24);
-  const h = (opts.title ? 30 : 0) + 16 + lines.length * lineH + 16 + 34 + 12;
-
-  const r = modal({ w, h, title: opts.title });
-
-  ctx.save();
-  ctx.font = uiFont();
-  ctx.textAlign = "left";
-  let ty = r.y + (opts.title ? 30 : 0) + 16 + lineH / 2;
-  lines.forEach((line, i) => {
-    ctx.fillStyle = i === 0 ? theme.text : theme.textDim;
-    centeredText(ctx, line, r.x + 16, ty);
-    ty += lineH;
-  });
-  ctx.restore();
 
   // Buttons right-aligned; array order reads left → right. Without explicit
   // variants, the last (rightmost, primary-action) button goes accent.
   const variantFor = (i: number): ButtonVariant =>
     opts.variants?.[i] ?? (i === buttons.length - 1 ? "primary" : "default");
-  const btnBar = flow({ x: r.x + r.w - 12, y: r.y + r.h - 46, gap: 8, h: 34, align: "end" });
-  let hit: string | null = null;
-  for (let i = buttons.length - 1; i >= 0; i--) {
-    if (
-      button({
-        id: `${opts.id ?? opts.title ?? "confirm"}:button:${i}`,
-        tabIndex: i,
-        at: btnBar,
-        label: buttons[i],
-        variant: variantFor(i),
-        h: 34,
-      })
-    ) {
-      hit = buttons[i];
+  const idPrefix = opts.id ?? opts.title ?? "confirm";
+  return modal({ w, title: opts.title, id: `confirm:${idPrefix}`, gap: 6 }, () => {
+    for (const [i, line] of lines.entries()) {
+      text(line, { h: lineH, color: i === 0 ? undefined : "dim" });
     }
-  }
-  return hit;
+    let hit: string | null = null;
+    row({ justify: "end", gap: 8, h: 34, id: `${idPrefix}:buttons` }, () => {
+      for (const [i, label] of buttons.entries()) {
+        if (
+          button({
+            id: `${idPrefix}:button:${i}`,
+            tabIndex: i,
+            label,
+            variant: variantFor(i),
+            h: 34,
+          })
+        ) {
+          hit = label;
+        }
+      }
+    });
+    return hit;
+  });
 }
 
 // ---------- Dialogue box ----------

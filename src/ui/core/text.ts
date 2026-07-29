@@ -1,7 +1,8 @@
 import { uiCtx } from "./context.js";
 import { Flow, currentLayout, place } from "./flow.js";
 import { centeredText, theme, uiFont } from "./theme.js";
-import { currentUiTransform } from "./input.js";
+import { currentUiTransform, uiHeight, uiWidth } from "./input.js";
+import { measureWidth } from "./measure.js";
 import { uiApp } from "./runtime.js";
 
 // ---------- Text ----------
@@ -42,6 +43,14 @@ export const ANCHOR_V: Record<TextAnchor, 0 | 0.5 | 1> = {
   bottomRight: 1,
 };
 
+/** The box viewport-anchored chrome positions against, in the CURRENT space:
+ *  the host app's viewport at the root, and the REFERENCE box inside a
+ *  `UI.scaled` block (what `UI.width`/`UI.height` report). Anchoring against the
+ *  device viewport inside a scaled block would put "centered" and "bottom" off
+ *  by the scale — a modal, a dialogue box or a flipped drop-menu laid out in
+ *  reference coords must measure the space in those same coords. Safe-area
+ *  insets are mapped in too (and clamped at 0 — a scaled box that starts past
+ *  the notch owes it nothing). */
 export function anchorViewport(ctx: CanvasRenderingContext2D): {
   w: number;
   h: number;
@@ -49,6 +58,15 @@ export function anchorViewport(ctx: CanvasRenderingContext2D): {
   safeTop: number;
 } {
   const vp = uiApp()?.viewport;
+  const t = currentUiTransform();
+  if (t) {
+    return {
+      w: uiWidth(),
+      h: uiHeight(),
+      safeLeft: Math.max(0, ((vp?.safeLeft ?? 0) - t.ox) / t.scale),
+      safeTop: Math.max(0, ((vp?.safeTop ?? 0) - t.oy) / t.scale),
+    };
+  }
   if (vp) return vp;
   return { w: ctx.canvas.width, h: ctx.canvas.height, safeLeft: 0, safeTop: 0 };
 }
@@ -106,13 +124,13 @@ export function resolveColor(c: string | undefined): string {
 }
 
 /** Width of `text` in the given font (default: the theme's base font) —
- *  for sizing custom layouts around labels. */
+ *  for sizing custom layouts around labels. Memoized per (font, string). */
 export function textWidth(text: string, font?: string): number {
   const ctx = uiCtx();
-  ctx.save();
+  const prevFont = ctx.font;
   ctx.font = font ?? uiFont();
-  const w = ctx.measureText(text).width;
-  ctx.restore();
+  const w = measureWidth(ctx, text);
+  ctx.font = prevFont;
   return w;
 }
 
@@ -125,7 +143,7 @@ export function wrapLines(ctx: CanvasRenderingContext2D, str: string, maxW: numb
   let line = "";
   for (const word of words) {
     const candidate = line ? `${line} ${word}` : word;
-    if (line && ctx.measureText(candidate).width > maxW) {
+    if (line && measureWidth(ctx, candidate) > maxW) {
       lines.push(line);
       line = word;
     } else {
@@ -180,7 +198,7 @@ export function text(str: string, rawOpts?: TextOptions): void {
     }
   }
   ctx.font = opts.font ?? uiFont(opts.size ?? theme.fontSize, opts.bold ?? false);
-  const natural = Math.ceil(ctx.measureText(str).width);
+  const natural = Math.ceil(measureWidth(ctx, str));
   const lineH = (opts.size ?? theme.fontSize) + 6;
   const rect = place(opts, natural, opts.h ?? lineH, "text");
 

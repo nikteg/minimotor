@@ -10,6 +10,7 @@
 // pick and start a backing groove from the on-screen Music controls.
 import { Audio, Draw, Keys, Loop, Mathf, Perf, Pointer, App, UI } from "minimotor";
 import type { KeyCode } from "minimotor";
+import "../shared/layout-probe.ts"; // e2e layout-invariant hook (window.__uiProbe)
 
 // The viewport is LIVE (mutated on resize) — piano + bars lay out from it.
 const vp = App.init("game", { background: "#12141c", plugins: [Perf.plugin()] });

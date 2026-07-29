@@ -28,6 +28,7 @@
 
 export * from "./context.js";
 export * from "./frame-cache.js";
+export * from "./measure.js";
 export * from "./layout-capture.js";
 export * from "./runtime.js";
 export * from "./theme.js";

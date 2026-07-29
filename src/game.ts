@@ -1,7 +1,12 @@
 // ---------- Game helpers ----------
-// Neutral, reusable building blocks: score/best persistence and letterbox
-// scaling. Opinionated, pre-styled screens (game-over / level-complete
+// Neutral, reusable building blocks: score/best persistence and clock
+// formatting. Opinionated, pre-styled screens (game-over / level-complete
 // overlays) deliberately live in game code, not the engine.
+//
+// Fitting a fixed logical area into the viewport is NOT here: `App.init({
+// resolution })` does the fit, the bars, the pointer mapping and the base
+// transform in one place. The hand-rolled `letterbox`/`drawLetterbox`/
+// `letterboxView` trio that used to live here was a weaker duplicate of it.
 
 import * as Storage from "./storage.js";
 
@@ -42,89 +47,6 @@ export function createScoreTracker(storageKey: string): ScoreTracker {
     },
     save() {
       Storage.save(storageKey, _best);
-    },
-  };
-}
-
-/** Letterbox scaling: compute the scale and offset to fit a fixed game
- *  area (gameW × gameH) inside the viewport while maintaining aspect ratio.
- *  Returns { scale, ox, oy }. */
-export function letterbox(
-  gameW: number,
-  gameH: number,
-  viewW: number,
-  viewH: number,
-): { scale: number; ox: number; oy: number } {
-  const scale = Math.min(viewW / gameW, viewH / gameH);
-  const ox = (viewW - gameW * scale) / 2;
-  const oy = (viewH - gameH * scale) / 2;
-  return { scale, ox, oy };
-}
-
-/** Draw the letterbox background (fills the full canvas, then draws the
- *  game-area background). Call at the start of your draw function. */
-export function drawLetterbox(
-  ctx: CanvasRenderingContext2D,
-  viewW: number,
-  viewH: number,
-  gameW: number,
-  gameH: number,
-  bgColor = "#000",
-  gameBgColor = "#111",
-): { scale: number; ox: number; oy: number } {
-  ctx.fillStyle = bgColor;
-  ctx.fillRect(0, 0, viewW, viewH);
-  const { scale, ox, oy } = letterbox(gameW, gameH, viewW, viewH);
-  ctx.fillStyle = gameBgColor;
-  ctx.fillRect(ox, oy, gameW * scale, gameH * scale);
-  return { scale, ox, oy };
-}
-
-/** A letterbox fit plus the coordinate mapping between fixed logical game
- *  coordinates and on-screen pixels. Games that lay out at a fixed resolution
- *  and hit-test the pointer against logical rects need the SCREEN→LOGICAL
- *  inverse, which is the easy-to-get-wrong part (divide, don't just add the
- *  offset). Build once per frame from the live viewport. */
-export interface LetterboxView {
-  scale: number;
-  ox: number;
-  oy: number;
-  /** Logical point → screen point. */
-  point(x: number, y: number): { x: number; y: number };
-  /** Logical rect → screen rect. */
-  rect(r: { x: number; y: number; w: number; h: number }): {
-    x: number;
-    y: number;
-    w: number;
-    h: number;
-  };
-  /** Screen point → logical point (e.g. the pointer). */
-  toLogical(sx: number, sy: number): { x: number; y: number };
-  /** Is the screen point inside the logical rect `r`? (pointer hit-test) */
-  contains(sx: number, sy: number, r: { x: number; y: number; w: number; h: number }): boolean;
-}
-
-/** Build a `LetterboxView` fitting a fixed `gameW`×`gameH` logical area into a
- *  `viewW`×`viewH` viewport, with the logical↔screen mappings (including the
- *  screen→logical inverse for pointer hit-testing). Build once per frame. */
-export function letterboxView(
-  gameW: number,
-  gameH: number,
-  viewW: number,
-  viewH: number,
-): LetterboxView {
-  const { scale, ox, oy } = letterbox(gameW, gameH, viewW, viewH);
-  return {
-    scale,
-    ox,
-    oy,
-    point: (x, y) => ({ x: ox + x * scale, y: oy + y * scale }),
-    rect: (r) => ({ x: ox + r.x * scale, y: oy + r.y * scale, w: r.w * scale, h: r.h * scale }),
-    toLogical: (sx, sy) => ({ x: (sx - ox) / scale, y: (sy - oy) / scale }),
-    contains: (sx, sy, r) => {
-      const lx = (sx - ox) / scale;
-      const ly = (sy - oy) / scale;
-      return lx >= r.x && lx <= r.x + r.w && ly >= r.y && ly <= r.y + r.h;
     },
   };
 }

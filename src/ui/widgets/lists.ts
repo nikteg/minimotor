@@ -667,6 +667,7 @@ export function listItem(opts: ListItemOptions): boolean {
     id,
     disabled: opts.disabled,
     tabIndex: opts.tabIndex,
+    rect: opts,
   });
   const state = opts.disabled ? { hover: false, clicked: false } : buttonState(opts, uiPointer());
   const clicked = state.clicked || (!opts.disabled && consumeKeyboardActivation(id));
@@ -675,12 +676,19 @@ export function listItem(opts: ListItemOptions): boolean {
   hoverCursor(hover);
   if (hover && opts.tooltip) tooltip(opts.tooltip);
   ctx.save();
-  ctx.fillStyle = opts.selected
+  // Decide the fill as a VALUE. Reading it back off the context can't work:
+  // canvas normalizes fillStyle, so an assigned "transparent" reads as
+  // "rgba(0, 0, 0, 0)" and a `!== "transparent"` guard never matches — every
+  // row then paid a no-op fillRect.
+  const bg = opts.selected
     ? (opts.bgSelected ?? "rgba(78,205,196,0.18)")
     : hover
       ? (opts.bgHover ?? "rgba(255,255,255,0.05)")
-      : (opts.bg ?? "transparent");
-  if (ctx.fillStyle !== "transparent") ctx.fillRect(opts.x, opts.y, opts.w, opts.h);
+      : opts.bg;
+  if (bg && bg !== "transparent") {
+    ctx.fillStyle = bg;
+    ctx.fillRect(opts.x, opts.y, opts.w, opts.h);
+  }
   if (opts.selected) {
     ctx.fillStyle = theme.accent;
     ctx.fillRect(opts.x, opts.y, 3, opts.h);

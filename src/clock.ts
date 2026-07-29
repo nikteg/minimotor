@@ -17,7 +17,7 @@
 // loop's fixed step. A clock with no pending timers is referenced by nothing
 // and GCs away with its owner.
 
-import { Loop, STEP_MS, stepNow } from "./engine/index.js";
+import { Loop, STEP_MS, onDefaultAppChange, stepNow } from "./engine/index.js";
 import { animate as animateValue, type AnimateOptions, type Motion } from "./anim/value.js";
 
 /** A running timer; call to cancel early. */
@@ -58,10 +58,19 @@ interface TimerJob {
 const driven = new Set<() => boolean>();
 let driverWired = false;
 
+// A snapshot is needed (a callback may schedule on another clock mid-pass, and
+// a clock that runs dry is dropped from the set), but this runs on EVERY fixed
+// step — so reuse one array instead of allocating a copy per step. Not
+// reentrant; nothing drives the clocks from inside a timer callback.
+const drivenScratch: (() => boolean)[] = [];
+
 function fireAll(): void {
-  for (const fire of [...driven]) {
+  drivenScratch.length = 0;
+  for (const fire of driven) drivenScratch.push(fire);
+  for (const fire of drivenScratch) {
     if (!fire()) driven.delete(fire);
   }
+  drivenScratch.length = 0;
 }
 
 function ensureDriver(): void {
@@ -74,6 +83,14 @@ function ensureDriver(): void {
     // Wiring retries on the next timer registration.
   }
 }
+
+// `Loop.onStep` registers on the app that is default RIGHT NOW. A second
+// `App.init()` destroys that app and takes the registration with it, so every
+// pending timer would stop firing with no error. Re-wire onto the new app.
+onDefaultAppChange(() => {
+  driverWired = false;
+  if (driven.size > 0) ensureDriver();
+});
 
 /** Drive timer firing manually — for tests without a running loop. */
 export function _driveClocks(): void {
@@ -95,9 +112,17 @@ export function createClockHandle(steps: () => number = stepNow): ClockHandle {
     anchorSteps = steps();
   };
 
+  // Per-clock scratch for the same reason as `drivenScratch`: a firing
+  // callback may cancel or schedule timers on this clock, so the pass runs off
+  // a snapshot — but it runs every fixed step, so the snapshot is reused. The
+  // `dead` re-check below is what makes a mid-pass cancel take effect.
+  const fireScratch: TimerJob[] = [];
+
   const fire = (): boolean => {
     const now = nowMs();
-    for (const t of [...timers]) {
+    fireScratch.length = 0;
+    for (const t of timers) fireScratch.push(t);
+    for (const t of fireScratch) {
       while (!t.dead && t.due <= now) {
         t.fn();
         if (t.interval > 0) t.due += t.interval;
@@ -107,6 +132,7 @@ export function createClockHandle(steps: () => number = stepNow): ClockHandle {
         }
       }
     }
+    fireScratch.length = 0;
     return timers.size > 0;
   };
 
@@ -169,7 +195,7 @@ let uiClock = createClockHandle();
  *
  *    Clock.world.scale = 0.25;   // slow motion
  *    Clock.world.hold();         // hit-stop: the world freezes, UI keeps ticking
- *    Clock.world.resume();
+ *    Clock.world.release();
  */
 export const Clock = {
   /** World time: the content clock — held by modal scene pushes, scalable for

@@ -123,12 +123,16 @@ function runtimeFrameEnd(rt: UiRuntime): void {
 export function ensureWired(): void {
   wireFocusKeyboard();
   const rt = currentRuntime();
-  if (rt.wired) return;
   // Wiring needs the runtime's host app; without one (headless/tests) stay
   // unwired and retry next call.
   const app = uiApp();
   if (!app) return;
-  rt.wired = true;
+  // Compare the APP, not a "wired once" flag: a second `App.init()` destroys
+  // the app these hooks live on and takes them with it. Re-attaching to the
+  // new app here is what keeps the UI kernel alive across a re-init (without
+  // it the pointer cache, overlay capture and focus registry all go dead).
+  if (rt.wiredTo === app) return;
+  rt.wiredTo = app;
   app.onStep(() => {
     withRuntime(rt, () => {
       padNav();

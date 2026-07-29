@@ -8,6 +8,7 @@
 import { gamepad, Buttons } from "../../input/gamepad.js";
 import { roundRectPath, theme } from "./theme.js";
 import { isInOverlayPass } from "./lifecycle.js";
+import { uiToScreen } from "./input.js";
 import {
   type UiRuntime,
   allRuntimes,
@@ -25,6 +26,9 @@ export interface FocusEntry {
   overlay: boolean;
   tabIndex: number;
   native: boolean;
+  /** Where the widget drew, in SCREEN-logical coords — so a scroll region can
+   *  bring a keyboard-focused widget into view (see `focusReveal`). */
+  rect?: { x: number; y: number; w: number; h: number };
   focus?: () => void;
   blur?: () => void;
 }
@@ -48,6 +52,10 @@ interface FocusState {
   navPad: ReturnType<typeof gamepad> | null;
   // Last left-stick vector, for edge-detecting stick-driven menu nav in padNav.
   lastNavStick: { x: number; y: number };
+  // Bumped every time KEYBOARD/pad traversal moves the focus. Scroll regions
+  // compare it against the last value they acted on, so they reveal the newly
+  // focused widget exactly once and never fight a manual scroll afterwards.
+  revealEpoch: number;
 }
 
 const fs = runtimeSlot<FocusState>(() => ({
@@ -62,6 +70,7 @@ const fs = runtimeSlot<FocusState>(() => ({
   command: null,
   navPad: null,
   lastNavStick: { x: 0, y: 0 },
+  revealEpoch: 0,
 }));
 
 // Read another runtime's focus state (keyboard routing) without switching.
@@ -110,7 +119,26 @@ export function setWidgetFocus(id: string | null): void {
   if (s.focused === id) return;
   s.registry.find((entry) => entry.id === s.focused)?.blur?.();
   s.focused = id;
+  s.revealEpoch++; // a scroll region should bring the new focus into view
   s.registry.find((entry) => entry.id === id)?.focus?.();
+}
+
+/** Whether a scroll region still owes the keyboard-focused widget a reveal,
+ *  paired with where that widget drew (SCREEN-logical coords). `seen` is the
+ *  epoch the caller last acted on; a region that returns a rect should store
+ *  the returned `epoch` so it only scrolls once per focus move. Null when the
+ *  focus came from the pointer (the widget was already visible — clicking it
+ *  proves it), when nothing is focused, or when the widget hasn't drawn yet. */
+export function focusReveal(
+  seen: number,
+): { epoch: number; rect: { x: number; y: number; w: number; h: number } } | null {
+  const s = fs();
+  if (!s.visible || s.revealEpoch === seen || !s.focused) return null;
+  // This frame's registry first (the widget may have just moved), else the
+  // completed one from last frame.
+  const entry =
+    s.frame.find((e) => e.id === s.focused) ?? s.registry.find((e) => e.id === s.focused);
+  return entry?.rect ? { epoch: s.revealEpoch, rect: entry.rect } : null;
 }
 
 export function moveWidgetFocus(direction: 1 | -1): void {
@@ -153,6 +181,9 @@ export function registerFocusable(
     disabled?: boolean;
     tabIndex?: number;
     native?: boolean;
+    /** The widget's rect in the coords it drew in — recorded (mapped to screen)
+     *  so a scroll region can reveal it when the keyboard focuses it. */
+    rect?: { x: number; y: number; w: number; h: number };
     focus?: () => void;
     blur?: () => void;
   },
@@ -160,12 +191,16 @@ export function registerFocusable(
   if (!opts.id) return false;
   const s = fs();
   wireFocusCanvas(ctx, currentRuntime());
+  const r = opts.rect;
+  const tl = r ? uiToScreen(r.x, r.y) : null;
+  const br = r ? uiToScreen(r.x + r.w, r.y + r.h) : null;
   s.frame.push({
     id: opts.id,
     disabled: opts.disabled ?? false,
     overlay: isInOverlayPass(),
     tabIndex: opts.tabIndex ?? 0,
     native: opts.native ?? false,
+    rect: tl && br ? { x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y } : undefined,
     focus: opts.focus,
     blur: opts.blur,
   });

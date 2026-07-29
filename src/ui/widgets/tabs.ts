@@ -7,12 +7,13 @@ import {
   drawFocusRing,
   focusFromPointer,
   hoverCursor,
+  measureWidth,
   place,
   registerFocusable,
   roundRectPath,
   theme,
-  uiFont,
   uiCtx,
+  uiFont,
   uiPointer,
   widgetId,
 } from "../core/index.js";
@@ -46,11 +47,10 @@ export function tabs(opts: TabsOptions): number {
   // Auto width: equal cells sized to the widest label.
   const w =
     opts.w ??
-    (Math.ceil(Math.max(...opts.items.map((t) => ctx.measureText(t).width))) + 26) *
-      opts.items.length;
+    (Math.ceil(Math.max(...opts.items.map((t) => measureWidth(ctx, t)))) + 26) * opts.items.length;
   const rect = place(opts, w, opts.h ?? 30, "tabs");
   const id = widgetId(opts.id, "tabs");
-  const keyboardFocused = registerFocusable(ctx, { id, tabIndex: opts.tabIndex });
+  const keyboardFocused = registerFocusable(ctx, { id, tabIndex: opts.tabIndex, rect });
   const cellW = rect.w / opts.items.length;
   const p = uiPointer();
   let active = opts.active;

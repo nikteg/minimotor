@@ -2,7 +2,7 @@
 // Pre-render expensive drawing operations (shadowBlur, gradients) to an
 // offscreen canvas once, then blit with drawImage each frame.
 
-import { lruCache } from "./cache.js";
+import { lruCache, type LruCache } from "./cache.js";
 import { component, type Component, type Ecs } from "./ecs/index.js";
 import type { DrawSprite } from "./engine/index.js";
 
@@ -12,8 +12,17 @@ export interface SpriteCanvas extends HTMLCanvasElement {
   logicalSize: number;
 }
 
-const cache = new Map<string, SpriteCanvas>();
-const layerCache = lruCache<HTMLCanvasElement>(16); // layers are big; keep only the recent few
+// Both caches have an OPEN key space — size, dpr and any caller-supplied
+// discriminator fold into the key — so both are bounded. Baking at a size
+// derived from an animating value (a pulsing radius, a zoom-derived size)
+// would otherwise pile up offscreen canvases forever. Sprites are small, so
+// they get a roomy cap; layers are full-size, so only the recent few.
+const cache = lruCache<SpriteCanvas>(128);
+const layerCache = lruCache<HTMLCanvasElement>(16);
+// Tints per source image. The outer WeakMap dies with the image; the inner
+// per-color cache is bounded for the same reason as above (a tint color
+// computed per frame is a plausible mistake).
+const TINTS_PER_SOURCE = 16;
 
 // Last DPR any bake was requested at. A change (window dragged between 1×
 // and 2× monitors) strands every entry baked for the old DPR — sweep them so
@@ -25,7 +34,9 @@ function sweepOtherDpr(dpr: number): void {
   if (dpr === lastDpr) return;
   lastDpr = dpr;
   const keep = "@" + dpr;
-  for (const key of cache.keys()) if (!key.endsWith(keep)) cache.delete(key);
+  // Deleting the entry the iterator is standing on is well-defined for a Map,
+  // which is what backs these caches — no snapshot needed.
+  for (const [key] of cache.entries()) if (!key.endsWith(keep)) cache.delete(key);
   for (const [key] of layerCache.entries()) if (!key.endsWith(keep)) layerCache.delete(key);
 }
 
@@ -37,7 +48,10 @@ function sweepOtherDpr(dpr: number): void {
  *  cache key, so dragging the window between 1× and 2× monitors re-bakes
  *  sharp sprites automatically instead of serving stale ones.
  *  `draw` is called once with the offscreen 2D context (already DPR-scaled
- *  and translated to center). */
+ *  and translated to center).
+ *  The cache is a bounded LRU: a key space that churns (a size recomputed every
+ *  frame) can't grow it without limit, but it will thrash re-bakes — bake at a
+ *  fixed set of sizes. */
 export function getSprite(
   cacheKey: string,
   size: number,
@@ -97,13 +111,14 @@ export function getLayer(
 
 const tintCache = new WeakMap<
   HTMLCanvasElement | HTMLImageElement | ImageBitmap,
-  Map<string, HTMLCanvasElement>
+  LruCache<HTMLCanvasElement>
 >();
 
 /** A solid-`color` silhouette of `source` — the same opaque shape, flat-filled.
  *  Draw it over the original at a fading alpha for a hit "white flash" (pair
  *  the alpha with `Goodies.flash`), or use it for damage tints and team colors.
- *  Cached per (source, color), so call it every frame freely.
+ *  Cached per (source, color) — a bounded LRU per source image — so call it
+ *  every frame freely, as long as the colors come from a fixed set.
  *
  *    ctx.drawImage(frame, x, y);
  *    ctx.globalAlpha = flash.value;
@@ -120,7 +135,7 @@ export function tint(
   );
   let byColor = tintCache.get(source);
   if (!byColor) {
-    byColor = new Map();
+    byColor = lruCache<HTMLCanvasElement>(TINTS_PER_SOURCE);
     tintCache.set(source, byColor);
   }
   const key = `${color}@${w}x${h}`;

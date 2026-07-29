@@ -271,6 +271,103 @@ export interface SolidSource {
  *  mixed array of both — `[level, movingPlatform]`. */
 export type Solids = Solid[] | SolidSource | Array<Solid | SolidSource>;
 
+// ---------- Uniform-grid broadphase ----------
+
+/** A `SolidSource` that buckets loose solids into a uniform grid. */
+export interface SolidGrid extends SolidSource {
+  /** Re-bucket for a changed set of solids. The grid holds the `Solid` objects
+   *  themselves, so moving one by mutating its `x`/`y` needs a rebuild — this
+   *  is a broadphase for *static* geometry. */
+  rebuild(solids: Solid[]): void;
+  /** How many solids are currently indexed. */
+  readonly size: number;
+}
+
+// Cell coordinates are shifted positive and packed into one number so buckets
+// key off a number instead of a per-lookup string. Exact for |cell| < 2^20,
+// which at a 64px cell is ±67M px; past that keys can collide, and a collision
+// only ever over-reports — which `solidsNear` explicitly permits.
+const CELL_ORIGIN = 1 << 20;
+const CELL_SPAN = 1 << 21;
+
+/** Bucket static solids into a uniform grid for O(1)-ish broadphase, so a
+ *  sliding body sweeps only the handful of solids near it instead of all of
+ *  them. Pass the result anywhere `Solids` is taken:
+ *
+ *      const level = Collision.grid(crates, 64);   // once, at load
+ *      Collision.moveAndSlide(player, level);      // every step
+ *
+ *  `cellSize` wants to be roughly the size of a typical solid: too small and
+ *  big solids land in many buckets, too large and each bucket holds too much.
+ *  Solids larger than a cell are indexed in every cell they touch and still
+ *  reported once per query. */
+export function grid(solids: Solid[], cellSize: number): SolidGrid {
+  if (!(cellSize > 0)) throw new Error("Collision.grid: cellSize must be > 0");
+  const cells = new Map<number, number[]>();
+  let items: Solid[] = [];
+  // Per-query stamps dedupe solids that straddle several cells without
+  // allocating a Set per call.
+  let stamps = new Uint32Array(0);
+  let stamp = 0;
+
+  const build = (next: Solid[]): void => {
+    cells.clear();
+    items = next;
+    if (stamps.length < items.length) stamps = new Uint32Array(items.length);
+    else stamps.fill(0);
+    stamp = 0;
+    for (let i = 0; i < items.length; i++) {
+      const s = items[i];
+      const x0 = Math.floor(s.x / cellSize);
+      const x1 = Math.floor((s.x + s.w) / cellSize);
+      const y0 = Math.floor(s.y / cellSize);
+      const y1 = Math.floor((s.y + s.h) / cellSize);
+      for (let cy = y0; cy <= y1; cy++) {
+        for (let cx = x0; cx <= x1; cx++) {
+          const key = (cx + CELL_ORIGIN) * CELL_SPAN + (cy + CELL_ORIGIN);
+          const bucket = cells.get(key);
+          if (bucket) bucket.push(i);
+          else cells.set(key, [i]);
+        }
+      }
+    }
+  };
+  build(solids);
+
+  return {
+    rebuild: build,
+    get size() {
+      return items.length;
+    },
+    solidsNear(area, out) {
+      if (items.length === 0) return out;
+      // Wrap the stamp counter rather than letting it overflow to a value a
+      // stale entry might already hold.
+      if (stamp === 0xffffffff) {
+        stamps.fill(0);
+        stamp = 0;
+      }
+      const mark = ++stamp;
+      const x0 = Math.floor(area.x / cellSize);
+      const x1 = Math.floor((area.x + area.w) / cellSize);
+      const y0 = Math.floor(area.y / cellSize);
+      const y1 = Math.floor((area.y + area.h) / cellSize);
+      for (let cy = y0; cy <= y1; cy++) {
+        for (let cx = x0; cx <= x1; cx++) {
+          const bucket = cells.get((cx + CELL_ORIGIN) * CELL_SPAN + (cy + CELL_ORIGIN));
+          if (!bucket) continue;
+          for (const i of bucket) {
+            if (stamps[i] === mark) continue;
+            stamps[i] = mark;
+            out.push(items[i]);
+          }
+        }
+      }
+      return out;
+    },
+  };
+}
+
 /** Which sides touched during a slide, plus the entry speed (px/step) into
  *  the first blocking surface — 0 when contact-free. Reused scratch object:
  *  read, don't hold. */
@@ -308,18 +405,33 @@ function isSource(s: Solid | SolidSource): s is SolidSource {
   return typeof (s as SolidSource).solidsNear === "function";
 }
 
+// Whether an array holds any SolidSource, memoized per array. Levels are
+// usually one long-lived array walked every step by every mover, so re-deriving
+// this from scratch each call is pure overhead. Keyed by array identity and
+// invalidated by length, which covers building up or tearing down a level.
+// Swapping a source INTO an existing array in place, without changing its
+// length, is the one mutation this won't notice — pass a new array for that.
+const plainScan = new WeakMap<object, { len: number; plain: boolean }>();
+
+function isPlain(solids: Array<Solid | SolidSource>): boolean {
+  const memo = plainScan.get(solids);
+  if (memo && memo.len === solids.length) return memo.plain;
+  let plain = true;
+  for (const s of solids) {
+    if (isSource(s)) {
+      plain = false;
+      break;
+    }
+  }
+  plainScan.set(solids, { len: solids.length, plain });
+  return plain;
+}
+
 function gather(solids: Solids, area: Rect): Solid[] {
   if (Array.isArray(solids)) {
     // Fast path: a plain Solid[] with no sources is read-only to the slide
     // loop, so use it as-is — no per-call element copy.
-    let plain = true;
-    for (const s of solids) {
-      if (isSource(s)) {
-        plain = false;
-        break;
-      }
-    }
-    if (plain) return solids as Solid[];
+    if (isPlain(solids)) return solids as Solid[];
     slideCandidates.length = 0;
     for (const s of solids) {
       if (isSource(s)) s.solidsNear(area, slideCandidates);
@@ -331,12 +443,30 @@ function gather(solids: Solids, area: Rect): Solid[] {
   return solids.solidsNear(area, slideCandidates);
 }
 
+/** A fresh, zeroed `Contacts` — pass it as the `out` argument to `slide` /
+ *  `moveAndSlide` when you need a result that outlives the next call. */
+export function contacts(): Contacts {
+  return { up: false, down: false, left: false, right: false, impact: 0 };
+}
+
 /** Swept move-and-slide: advance `rect` by `vel`, sliding along `solids` —
  *  no tunneling at speed. Returns which sides touched (scratch object).
  *  Deliberately does NOT touch velocity or grounded: what a contact MEANS is
- *  game policy (see `moveAndSlide` for the default). */
-export function slide(rect: Rect, vel: { x: number; y: number }, solids: Solids): Contacts {
-  const c = slideContacts;
+ *  game policy (see `moveAndSlide` for the default).
+ *
+ *  The default result is one module-wide scratch object, so resolving two
+ *  bodies in a step makes the first result alias the second. Pass your own
+ *  `out` (see `contacts()`) when you need to keep it:
+ *
+ *      const hit = Collision.contacts();        // once, per body
+ *      Collision.slide(rect, vel, level, hit);  // every step */
+export function slide(
+  rect: Rect,
+  vel: { x: number; y: number },
+  solids: Solids,
+  out: Contacts = slideContacts,
+): Contacts {
+  const c = out;
   c.up = c.down = c.left = c.right = false;
   c.impact = 0;
 
@@ -398,9 +528,14 @@ export function slide(rect: Rect, vel: { x: number; y: number }, solids: Solids)
 /** The default platformer path: swept-slides `body` by `body.vel`, zeroes
  *  the blocked velocity components (land/bonk clears `vel.y`, walls clear
  *  `vel.x`), sets `body.grounded`, honors `oneWay`. Still returns the
- *  contacts (wall jumps read `left`/`right`; shake reads `impact`). */
-export function moveAndSlide(body: MoverBody, solids: Solids): Contacts {
-  const c = slide(body, body.vel, solids);
+ *  contacts (wall jumps read `left`/`right`; shake reads `impact`).
+ *  Takes an `out` for the same reason `slide` does. */
+export function moveAndSlide(
+  body: MoverBody,
+  solids: Solids,
+  out: Contacts = slideContacts,
+): Contacts {
+  const c = slide(body, body.vel, solids, out);
   if (c.left || c.right) body.vel.x = 0;
   if (c.up || c.down) body.vel.y = 0;
   body.grounded = c.down;

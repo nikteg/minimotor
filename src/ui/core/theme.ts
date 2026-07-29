@@ -1,5 +1,7 @@
 // ---------- Theme ----------
 
+import { measureWidth, metrics } from "./measure.js";
+
 /** Every color, font and metric the widgets use. Override any subset with
  *  `setTheme`; per-widget style options still win over the theme. */
 export interface Theme {
@@ -150,15 +152,17 @@ export function drawBox(
 }
 
 /** Trim `text` with a trailing ellipsis until it fits `maxW` (binary search).
- *  Returns the string unchanged when it already fits. */
+ *  Returns the string unchanged when it already fits. Every probe goes through
+ *  the memo, so a label that keeps its text and width costs map hits after the
+ *  first frame instead of ~log₂(n) real measurements. */
 export function ellipsize(ctx: CanvasRenderingContext2D, text: string, maxW: number): string {
-  if (maxW <= 0 || ctx.measureText(text).width <= maxW) return text;
+  if (maxW <= 0 || measureWidth(ctx, text) <= maxW) return text;
   const ell = "…";
   let lo = 0;
   let hi = text.length;
   while (lo < hi) {
     const mid = (lo + hi + 1) >> 1;
-    if (ctx.measureText(text.slice(0, mid) + ell).width <= maxW) lo = mid;
+    if (measureWidth(ctx, text.slice(0, mid) + ell) <= maxW) lo = mid;
     else hi = mid - 1;
   }
   return lo > 0 ? text.slice(0, lo) + ell : ell;
@@ -177,15 +181,14 @@ export function centeredText(
 ): void {
   // measureText's actualBoundingBox values are relative to the CURRENT
   // textBaseline — pin it before measuring, or state leaked from caller
-  // drawing (e.g. "middle") skews the correction.
+  // drawing (e.g. "middle") skews the correction. (`metrics` pins it for its
+  // own measurement too; this one is for the fillText below.)
   ctx.textBaseline = "alphabetic";
   // Clip to width with an ellipsis rather than passing `maxW` to fillText,
   // which SQUISHES the glyphs horizontally. (Multi-line wrapping is handled by
   // the caller via `wrapLines`; this keeps a single line from stretching.)
   const str = maxW !== undefined ? ellipsize(ctx, text, maxW) : text;
-  const m = ctx.measureText(str);
-  const asc = m.actualBoundingBoxAscent ?? 0;
-  const desc = m.actualBoundingBoxDescent ?? 0;
+  const { asc, desc } = metrics(ctx, str);
   if (asc || desc) {
     ctx.fillText(str, x, cy + (asc - desc) / 2);
   } else {

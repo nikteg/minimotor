@@ -19,13 +19,26 @@ import {
   button,
   clip,
   col,
+  drawFloatText,
+  floatText,
+  focusedId,
+  fromScreen,
+  height,
   layoutCapture,
+  layoutIssues,
   layoutTree,
+  modal,
+  panel,
+  row,
   scaled,
   scrollbar,
   select,
+  setBaseSize,
+  setScale,
   slider,
   text,
+  toScreen,
+  width,
 } from "../index.js";
 
 let rafCallback: ((t: number) => void) | null = null;
@@ -34,6 +47,9 @@ const origGc = HTMLCanvasElement.prototype.getContext;
 interface CtxCalls {
   /** fillText in DEVICE coords: [text, x, y]. */
   fillText: [string, number, number][];
+  /** The device scale in force at each `fillText`, index-aligned with it — how
+   *  big the glyphs actually came out. */
+  textScale: number[];
   /** fillRect / path-rect in DEVICE coords: [x, y, w, h]. */
   rects: [number, number, number, number][];
 }
@@ -41,7 +57,7 @@ interface CtxCalls {
 // A 2D mock with a live (scale + translate) transform, so recorded draw calls
 // land in DEVICE coords like a real canvas.
 function makeCtx(canvas: HTMLCanvasElement): CanvasRenderingContext2D & { _calls: CtxCalls } {
-  const calls: CtxCalls = { fillText: [], rects: [] };
+  const calls: CtxCalls = { fillText: [], textScale: [], rects: [] };
   let m = { sx: 1, sy: 1, tx: 0, ty: 0 };
   const stack: (typeof m)[] = [];
   return {
@@ -77,8 +93,10 @@ function makeCtx(canvas: HTMLCanvasElement): CanvasRenderingContext2D & { _calls
       calls.rects.push([m.sx * x + m.tx, m.sy * y + m.ty, w * m.sx, h * m.sy]),
     fillRect: (x: number, y: number, w: number, h: number) =>
       calls.rects.push([m.sx * x + m.tx, m.sy * y + m.ty, w * m.sx, h * m.sy]),
-    fillText: (t: string, x: number, y: number) =>
-      calls.fillText.push([t, m.sx * x + m.tx, m.sy * y + m.ty]),
+    fillText: (t: string, x: number, y: number) => {
+      calls.fillText.push([t, m.sx * x + m.tx, m.sy * y + m.ty]);
+      calls.textScale.push(m.sx);
+    },
     measureText: (t: string) => ({ width: t.length * 10 }),
     globalAlpha: 1,
     font: "",
@@ -152,6 +170,12 @@ function tick(ms = 16): void {
   const cb = rafCallback;
   rafCallback = null;
   cb?.(now);
+}
+
+// Auto-sized containers size from LAST frame's measurement, so a nest of them
+// needs a frame per level to converge — settle before asserting on boxes.
+function settle(frames = 6): void {
+  for (let i = 0; i < frames; i++) tick();
 }
 
 const downAt = (canvas: HTMLCanvasElement, x: number, y: number) =>
@@ -293,6 +317,77 @@ describe("scrollbar under UI.scaled", () => {
   });
 });
 
+describe("UI.setScale + the no-arg UI.scaled block", () => {
+  it("the block applies the global scale; nothing outside it is scaled", () => {
+    setScale(1.5);
+    const { game } = build(() => {
+      bar({ x: 10, y: 10, w: 100, h: 10, value: 1 }); // outside — native
+      scaled(() => {
+        bar({ x: 10, y: 40, w: 100, h: 10, value: 1 }); // inside — zoomed
+      });
+    });
+    tick();
+    const calls = ctxCalls(game);
+    expect(calls.rects).toContainEqual([10, 10, 100, 10]);
+    expect(calls.rects).toContainEqual([15, 60, 150, 15]);
+  });
+
+  it("UI.fromScreen is the inverse of UI.toScreen inside the block", () => {
+    setScale(2);
+    let round: { x: number; y: number } | null = null;
+    let out: { x: number; y: number } | null = null;
+    build(() => {
+      scaled(() => {
+        out = { ...toScreen(30, 40) };
+        round = { ...fromScreen(out.x, out.y) };
+      });
+    });
+    tick();
+    expect(out).toEqual({ x: 60, y: 80 });
+    expect(round).toEqual({ x: 30, y: 40 });
+  });
+});
+
+describe("overlays under UI.scaled", () => {
+  it("a modal drawn inside the block is centered and sized in REFERENCE units", () => {
+    // The overlay scales because of the block it's drawn in — nothing ambient.
+    // The 1024×768 viewport reads as 512×384 inside scaled(2), so a 100×40
+    // dialog centers at reference (206, 172) → screen (412, 344) at double
+    // size, and the dim backdrop covers the whole reference box — which maps
+    // back to the entire screen, not a quarter of it.
+    const { game } = build(() => {
+      scaled(2, () => {
+        modal({ w: 100, h: 40, title: "T" });
+      });
+    });
+    tick();
+    const calls = ctxCalls(game);
+    expect(calls.rects).toContainEqual([0, 0, 1024, 768]); // backdrop, full screen
+    expect(calls.rects).toContainEqual([412, 344, 200, 80]); // dialog, ×2
+  });
+
+  it("the children form auto-sizes to its content and returns the callback's value", () => {
+    let ret: string | null = null;
+    let boxes: [number, number, number, number][] = [];
+    const { game } = build(() => {
+      ret = modal({ w: 120, title: "T", id: "m" }, () => {
+        button({ id: "ok", label: "OK", h: 30 });
+        return "picked";
+      });
+    });
+    tick();
+    tick(); // second frame: the auto-sized panel has settled on its content
+    boxes = ctxCalls(game).rects;
+    expect(ret).toBe("picked");
+    // NO height was given: the dialog wrapped its content (title strip + pad +
+    // a 30-high button) snugly instead of falling back to a fixed box.
+    const dialogBox = boxes.find(([x, , w]) => w === 120 && x === (1024 - 120) / 2);
+    expect(dialogBox).toBeDefined();
+    expect(dialogBox![3]).toBeGreaterThan(32); // taller than the bare title strip
+    expect(dialogBox![3]).toBeLessThan(120); // ...but shrink-wrapped, not the viewport
+  });
+});
+
 describe("select menu under UI.scaled", () => {
   it("the deferred drop menu opens at the control's ON-SCREEN position", () => {
     let value = "a";
@@ -319,11 +414,180 @@ describe("select menu under UI.scaled", () => {
     upAt(120, 52);
     tick(); // the release opens the editor; the menu draws in this frame's overlay pass
     const calls = ctxCalls(game);
-    // Menu backdrop: control screen rect (20,20,200,64) → menu at y = 20+64+2,
-    // 2 options × 30 + 2×2 pad = 64 tall. Unscaled-anchor bug would put it at
-    // (10, 44, 100, 64).
-    expect(calls.rects).toContainEqual([20, 86, 200, 64]);
+    // Menu backdrop, in the control's OWN (reference) space: under the control
+    // at y = 10+32+2 = 44, and 2 options × 30 + 2×2 pad = 64 tall — then ×2 to
+    // device: (20, 88, 200, 128). The unscaled-anchor bug put it at (10,44,…);
+    // the unscaled-CONTENT bug drew a 64px-tall menu at the scaled anchor.
+    expect(calls.rects).toContainEqual([20, 88, 200, 128]);
     expect(calls.rects).not.toContainEqual([10, 44, 100, 64]);
+    expect(calls.rects).not.toContainEqual([20, 86, 200, 64]);
+  });
+
+  it("the open control still hit-tests at its ON-SCREEN position (click to close)", () => {
+    // With its own menu open the select reads an ungated pointer — which used
+    // to be the RAW (screen) one, compared against a REFERENCE-space rect: at
+    // any scale ≠ 1 clicking the control missed it, so it could not be closed
+    // by clicking it again, and clicking the empty space `rect / scale` away
+    // toggled it instead.
+    let value = "a";
+    let open = false;
+    const { canvas } = build(() => {
+      scaled(2, () => {
+        const res = select({
+          id: "sel",
+          x: 10,
+          y: 10,
+          w: 100,
+          h: 32,
+          value,
+          options: [
+            { label: "A", value: "a" },
+            { label: "B", value: "b" },
+          ],
+        });
+        value = res.value;
+        open = res.open;
+      });
+    });
+    tick();
+    const click = (x: number, y: number) => {
+      downAt(canvas, x, y);
+      tick();
+      upAt(x, y);
+      tick();
+    };
+    click(120, 52); // screen center of the control: reference (60, 26) × 2
+    expect(open).toBe(true);
+    click(120, 52); // clicking it again closes it
+    expect(open).toBe(false);
+    click(120, 52);
+    expect(open).toBe(true);
+    // ...and the OPTIONS hit-test where they're drawn: the menu body starts at
+    // reference y = 44 + 2 pad, so option B's row is 76..106 → screen 152..212.
+    click(120, 182);
+    tick(); // the pick commits in the overlay pass; `select` reads it next frame
+    expect(value).toBe("b");
+    expect(open).toBe(false);
+  });
+});
+
+describe("layoutIssues (the overlap detector)", () => {
+  it("is empty for a layout whose containers all fit their content", () => {
+    layoutCapture(true);
+    const { game } = build(() => {
+      panel({ x: 10, y: 10, w: 300, title: "OUTER" }, () => {
+        panel({ title: "INNER" }, () => {
+          button({ label: "A", id: "a", h: 30 });
+          button({ label: "B", id: "b", h: 30 });
+        });
+        row({ gap: 8 }, () => {
+          button({ label: "C", id: "c", h: 30 });
+          button({ label: "D", id: "d", h: 30 });
+        });
+      });
+    });
+    settle();
+    begin(game.ctx);
+    expect(layoutIssues()).toEqual([]);
+  });
+
+  it("reports a child that spills out of its container", () => {
+    // A container pinned SHORTER than its content: the children run past the
+    // bottom edge and would paint over whatever is drawn under it.
+    layoutCapture(true);
+    const { game } = build(() => {
+      col({ x: 10, y: 10, w: 200, h: 40, id: "squeezed" }, () => {
+        button({ label: "A", id: "a", h: 30 });
+        button({ label: "B", id: "b", h: 30 });
+        button({ label: "C", id: "c", h: 30 });
+      });
+    });
+    settle();
+    begin(game.ctx);
+    const issues = layoutIssues();
+    expect(issues.length).toBeGreaterThan(0);
+    expect(issues.map((i) => i.child.id)).toContain("c");
+    expect(issues[0].parent.id).toBe("squeezed");
+    expect(issues.at(-1)!.overflow.bottom).toBeGreaterThan(0);
+  });
+
+  it("stays quiet about clipped content and hand-positioned rects", () => {
+    layoutCapture(true);
+    const { game } = build(() => {
+      // A scroll region whose content is taller than its box — overflowing is
+      // exactly what it is for.
+      col({ x: 10, y: 10, w: 200, h: 60, overflow: "auto", id: "scroll" }, () => {
+        for (let i = 0; i < 8; i++) button({ label: `B${i}`, id: `b${i}`, h: 30 });
+      });
+      // …and a widget the caller placed by hand, outside the panel that happens
+      // to enclose the call.
+      panel({ x: 10, y: 200, w: 100, h: 40, id: "p" }, () => {
+        text("far away", { x: 400, y: 400 });
+      });
+    });
+    settle();
+    begin(game.ctx);
+    expect(layoutIssues()).toEqual([]);
+  });
+});
+
+describe("nested containers without an id", () => {
+  it("auto-sizes to its content instead of collapsing onto the next sibling", () => {
+    // The synth-sample bug: a `panel` nested in a `panel`, neither carrying an
+    // `id` nor sitting in an `idScope`, had no auto-size cache key at all — so
+    // it could not measure its content, kept the fallback height, and its
+    // children painted straight over the widgets that flowed after it.
+    layoutCapture(true);
+    const { game } = build(() => {
+      panel({ x: 10, y: 10, w: 300, title: "OUTER" }, () => {
+        panel({ title: "INNER" }, () => {
+          button({ label: "A", id: "inner-a", h: 30 });
+          button({ label: "B", id: "inner-b", h: 30 });
+        });
+        button({ label: "AFTER", id: "after", h: 30 });
+      });
+    });
+    tick();
+    tick(); // the auto-sized containers settle on last frame's measurement
+    begin(game.ctx);
+    const tree = layoutTree();
+    const inner = tree.filter((e) => e.kind === "panel")[1]!;
+    const a = tree.find((e) => e.id === "inner-a")!;
+    const b = tree.find((e) => e.id === "inner-b")!;
+    const after = tree.find((e) => e.id === "after")!;
+    // The inner panel wraps both of its buttons…
+    expect(inner.rect.h).toBeGreaterThan(a.rect.h + b.rect.h);
+    expect(b.rect.y + b.rect.h).toBeLessThanOrEqual(inner.rect.y + inner.rect.h);
+    // …and the sibling after it starts BELOW it, not on top of its children.
+    expect(after.rect.y).toBeGreaterThanOrEqual(inner.rect.y + inner.rect.h);
+  });
+});
+
+describe("keyboard focus in a scroll region", () => {
+  it("scrolls a focused widget that is out of view into view", () => {
+    // Tab can reach a widget scrolled past the clip — a focus ring nobody can
+    // see is a dead end, so the region follows the focus.
+    layoutCapture(true);
+    const { game, canvas } = build(() => {
+      col({ x: 0, y: 0, w: 200, h: 100, overflow: "auto", id: "scroller" }, () => {
+        for (let i = 0; i < 12; i++) button({ label: `B${i}`, id: `b${i}`, h: 30 });
+      });
+    });
+    tick();
+    tick();
+    const tab = () => {
+      canvas.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
+      tick();
+      tick(); // the reveal lands on the frame after the focus moves
+    };
+    // Tab down past the visible window (100px tall ≈ 3 rows of 30 + gaps).
+    for (let i = 0; i < 8; i++) tab();
+    begin(game.ctx); // focus + layout live on the app's UI runtime
+    expect(focusedId()).toBe("b7");
+    const b7 = layoutTree().find((e) => e.id === "b7")!;
+    // Before the fix the region never moved, so b7 drew far below the clip.
+    expect(b7.screenRect.y).toBeGreaterThanOrEqual(0);
+    expect(b7.screenRect.y + b7.screenRect.h).toBeLessThanOrEqual(100);
   });
 });
 
@@ -394,5 +658,138 @@ describe("layoutCapture", () => {
     expect(layoutTree().length).toBeGreaterThan(0);
     layoutCapture(false);
     expect(layoutTree()).toEqual([]);
+  });
+});
+
+describe("the UI.scaled forms", () => {
+  it("fits an explicit reference box, and UI.width/height report reference units", () => {
+    // Viewport 1024×768, reference 640×360 → fit = min(1.6, 2.133) = 1.6,
+    // letterboxed vertically: ox = 0, oy = (768 - 576) / 2 = 96.
+    layoutCapture(true);
+    let space = { w: 0, h: 0 };
+    const { game } = build(() => {
+      scaled({ w: 640, h: 360 }, () => {
+        space = { w: width(), h: height() };
+        button({ x: 0, y: 0, w: 100, h: 40, label: "GO", id: "go" });
+      });
+    });
+    settle(2);
+    begin(game.ctx);
+    expect(space).toEqual({ w: 640, h: 360 });
+    const go = layoutTree().find((e) => e.id === "go")!;
+    expect(go.scale).toBe(1.6);
+    expect(go.screenRect).toEqual({ x: 0, y: 96, w: 160, h: 64 });
+  });
+
+  it("honours the fit form's scale multiplier and top-left align", () => {
+    layoutCapture(true);
+    const { game } = build(() => {
+      scaled({ w: 640, h: 360, scale: 0.5, align: "top-left" }, () => {
+        button({ x: 0, y: 0, w: 100, h: 40, label: "GO", id: "go" });
+      });
+    });
+    settle(2);
+    begin(game.ctx);
+    const go = layoutTree().find((e) => e.id === "go")!;
+    expect(go.scale).toBeCloseTo(0.8, 5);
+    expect(go.screenRect).toEqual({ x: 0, y: 0, w: 80, h: 32 });
+  });
+
+  it("the no-arg form fits UI.setBaseSize times UI.setScale", () => {
+    layoutCapture(true);
+    const { game } = build(() => {
+      setBaseSize({ w: 640, h: 360 });
+      setScale(0.5);
+      scaled(() => {
+        button({ x: 0, y: 0, w: 100, h: 40, label: "GO", id: "go" });
+      });
+    });
+    settle(2);
+    begin(game.ctx);
+    const go = layoutTree().find((e) => e.id === "go")!;
+    // fit 1.6 × the 0.5 setting = 0.8, centred: ox = (1024 - 512) / 2 = 256,
+    // oy = (768 - 288) / 2 = 240.
+    expect(go.scale).toBeCloseTo(0.8, 5);
+    expect(go.screenRect).toEqual({ x: 256, y: 240, w: 80, h: 32 });
+  });
+
+  it("with no base size, the no-arg form is just the UI.setScale factor", () => {
+    layoutCapture(true);
+    let space = { w: 0, h: 0 };
+    const { game } = build(() => {
+      setScale(2);
+      scaled(() => {
+        space = { w: width(), h: height() };
+        button({ x: 10, y: 10, w: 100, h: 40, label: "GO", id: "go" });
+      });
+    });
+    settle(2);
+    begin(game.ctx);
+    // The scale zooms the whole UI, so the reference space HALVES.
+    expect(space).toEqual({ w: 512, h: 384 });
+    const go = layoutTree().find((e) => e.id === "go")!;
+    expect(go.scale).toBe(2);
+    expect(go.screenRect).toEqual({ x: 20, y: 20, w: 200, h: 80 });
+  });
+
+  it("nests: the inner block composes with the outer one, pointer mapping too", () => {
+    layoutCapture(true);
+    let round = { x: 0, y: 0 };
+    const { game } = build(() => {
+      scaled(2, () => {
+        scaled(3, () => {
+          button({ x: 10, y: 10, w: 20, h: 10, label: "N", id: "n" });
+          const s = toScreen(10, 10);
+          round = fromScreen(s.x, s.y);
+        });
+      });
+    });
+    settle(2);
+    begin(game.ctx);
+    const n = layoutTree().find((e) => e.id === "n")!;
+    expect(n.scale).toBe(6);
+    expect(n.screenRect).toEqual({ x: 60, y: 60, w: 120, h: 60 });
+    expect(round).toEqual({ x: 10, y: 10 });
+  });
+
+  it("anchored text measures the REFERENCE box, not the device viewport", () => {
+    // `anchorViewport` inside a scaled block must use UI.width/height — a
+    // bottom-right anchor belongs at the reference corner, not the screen one.
+    const { game } = build(() => {
+      scaled({ w: 640, h: 360 }, () => {
+        text("BR", { anchor: "bottomRight" });
+      });
+    });
+    tick();
+    const br = ctxCalls(game).fillText.find(([t]) => t === "BR")!;
+    expect(br).toBeDefined();
+    // Reference (640, 360) → device (0 + 640 × 1.6, 96 + 360 × 1.6) = (1024, 672).
+    expect(br[1]).toBeLessThanOrEqual(1024);
+    expect(br[1]).toBeGreaterThan(940);
+    expect(br[2]).toBeLessThanOrEqual(672);
+    expect(br[2]).toBeGreaterThan(620);
+  });
+
+  it("float text spawned inside a scaled block keeps that block's scale", () => {
+    // `drawFloatText` runs after every transform is popped, so the spawn has to
+    // capture the scale — otherwise the pop draws at native size.
+    let spawned = false;
+    const { game } = build(() => {
+      scaled(2, () => {
+        if (!spawned) floatText("+10", 50, 60);
+        spawned = true;
+      });
+      drawFloatText();
+    });
+    tick();
+    const calls = ctxCalls(game);
+    const i = calls.fillText.findIndex(([t]) => t === "+10");
+    expect(i).toBeGreaterThanOrEqual(0);
+    // Spawn point (50, 60) × 2 = device (100, 120) — the reference point mapped
+    // out to screen, not left at its unscaled (50, 60).
+    expect(calls.fillText[i][1]).toBe(100);
+    expect(calls.fillText[i][2]).toBe(120);
+    // …and the glyphs come out at the spawning block's scale, not native size.
+    expect(calls.textScale[i]).toBe(2);
   });
 });
