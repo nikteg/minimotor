@@ -255,9 +255,13 @@ export function bounceInBounds(
 //                     blocked components, sets body.grounded. Custom policy
 //                     (bounce, sticky walls) drops down to slide().
 
+/** Direction a slope rises toward. `"up-right"` has its low end on the left;
+ * `"up-left"` has its low end on the right. */
+export type SlopeDirection = "up-left" | "up-right";
+
 /** A static obstacle. `oneWay` platforms collide only when landed on from
- *  above (pass through from below/sides) — the classic jump-through shelf. */
-export type Solid = Rect & { oneWay?: boolean };
+ * above. A `slope` is a walkable diagonal surface across the rect. */
+export type Solid = Rect & { oneWay?: boolean; slope?: SlopeDirection };
 
 /** Anything that can answer "which solids are near this area?" — tile maps
  *  implement this for O(1) broadphase. `out` is appended to and returned. */
@@ -270,6 +274,67 @@ export interface SolidSource {
 /** Solids for slide/moveAndSlide: a plain array, a source (tile map), or a
  *  mixed array of both — `[level, movingPlatform]`. */
 export type Solids = Solid[] | SolidSource | Array<Solid | SolidSource>;
+
+/** Surface y at world `x` on a slope, clamped to its horizontal extent. */
+export function slopeY(slope: Solid & { slope: SlopeDirection }, x: number): number {
+  const t = Math.max(0, Math.min(1, (x - slope.x) / slope.w));
+  return slope.slope === "up-right" ? slope.y + slope.h * (1 - t) : slope.y + slope.h * t;
+}
+
+/** Anything that can append nearby ladder rectangles. Tile levels implement
+ * this when their legend contains `{ ladder: true }`. */
+export interface LadderSource {
+  laddersNear(area: Rect, out: Rect[]): Rect[];
+}
+
+/** Ladder rectangles or a queryable level. */
+export type Ladders = Rect[] | LadderSource;
+
+/** Options for `climbLadder`. */
+export interface ClimbLadderOptions {
+  /** Whether the body was already climbing last step. */
+  active?: boolean;
+  /** Vertical climb speed in px/step. Default 3. */
+  speed?: number;
+  /** Horizontal centering strength, 0..1. Default 0.35. */
+  snap?: number;
+}
+
+const ladderCandidates: Rect[] = [];
+
+/** Apply terse platformer ladder movement. Pressing a vertical `axis` while
+ * overlapping a ladder enters it; pass the returned boolean back as `active`
+ * next step to remain attached while the axis is neutral.
+ *
+ *     climbing = Collision.climbLadder(player, level, input.axis("up", "down"), {
+ *       active: climbing,
+ *     });
+ *
+ * While active this centers the body, sets `vel.y`, and clears `grounded`.
+ * Gravity and jump-to-detach remain game policy. */
+export function climbLadder(
+  body: MoverBody,
+  ladders: Ladders,
+  axis: number,
+  opts: ClimbLadderOptions = {},
+): boolean {
+  ladderCandidates.length = 0;
+  const area = { x: body.x, y: body.y, w: body.w, h: body.h };
+  const candidates = Array.isArray(ladders) ? ladders : ladders.laddersNear(area, ladderCandidates);
+  let ladder: Rect | undefined;
+  for (const candidate of candidates) {
+    if (rectsOverlap(body, candidate)) {
+      ladder = candidate;
+      break;
+    }
+  }
+  if (!ladder || (!opts.active && Math.abs(axis) < 0.1)) return false;
+  const targetX = ladder.x + (ladder.w - body.w) / 2;
+  body.x += (targetX - body.x) * Math.max(0, Math.min(1, opts.snap ?? 0.35));
+  body.vel.y = Math.max(-1, Math.min(1, axis)) * (opts.speed ?? 3);
+  body.grounded = false;
+  return true;
+}
 
 // ---------- Uniform-grid broadphase ----------
 
@@ -485,6 +550,7 @@ export function slide(
     const best = slideBest;
     let hasBest = false;
     for (const s of sols) {
+      if (s.slope) continue; // diagonal top face is resolved by moveAndSlide
       if (s.oneWay) {
         if (dy <= 0) continue; // pass through unless falling…
         if (rect.y + rect.h > s.y + SKIN) continue; // …from fully above the top
@@ -535,7 +601,49 @@ export function moveAndSlide(
   solids: Solids,
   out: Contacts = slideContacts,
 ): Contacts {
+  const startX = body.x;
+  const startY = body.y;
+  const dx = body.vel.x;
+  const dy = body.vel.y;
+  const wasGrounded = body.grounded;
   const c = slide(body, body.vel, solids, out);
+
+  // Slopes are top-only diagonal floors. Catch a downward crossing, or keep a
+  // previously grounded body glued to the surface while walking up/down it.
+  if (dy >= 0) {
+    slideArea.x = Math.min(startX, body.x) - 1;
+    slideArea.y = Math.min(startY, body.y) - 1;
+    slideArea.w = body.w + Math.abs(body.x - startX) + 2;
+    slideArea.h = body.h + Math.abs(body.y - startY) + 2;
+    const candidates = gather(solids, slideArea);
+    const footX = body.x + body.w / 2;
+    const previousBottom = startY + body.h;
+    const currentBottom = body.y + body.h;
+    let bestY = Infinity;
+    for (const slope of candidates) {
+      if (
+        !slope.slope ||
+        footX < slope.x ||
+        footX > slope.x + slope.w ||
+        body.x + body.w <= slope.x ||
+        body.x >= slope.x + slope.w
+      ) {
+        continue;
+      }
+      const surface = slopeY(slope as Solid & { slope: SlopeDirection }, footX);
+      const crossed = previousBottom <= surface + SKIN && currentBottom >= surface - SKIN;
+      const followDistance =
+        Math.abs(dx) * (slope.h / Math.max(slope.w, SKIN)) + Math.max(0, dy) + 1;
+      const following = wasGrounded && Math.abs(currentBottom - surface) <= followDistance;
+      if ((crossed || following) && surface < bestY) bestY = surface;
+    }
+    if (bestY < Infinity) {
+      body.y = bestY - body.h - SKIN;
+      c.down = true;
+      c.impact = Math.max(c.impact, Math.abs(dy));
+    }
+  }
+
   if (c.left || c.right) body.vel.x = 0;
   if (c.up || c.down) body.vel.y = 0;
   body.grounded = c.down;

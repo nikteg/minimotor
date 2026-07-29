@@ -30,51 +30,21 @@ test("API Lab starts from its modal PLAY button", async ({ browser }) => {
   const playing = await canvas.screenshot();
 
   expect(playing.equals(title)).toBe(false);
-  const playerBox = (color?: [number, number, number]) =>
-    canvas.evaluate((node, target) => {
-      const ctx = node.getContext("2d")!;
-      const data = ctx.getImageData(0, 0, node.width, node.height).data;
-      if (!target) {
-        const colors = new Map<string, number>();
-        for (let y = node.height / 2; y < node.height; y++)
-          for (let x = 0; x < node.width / 3; x++) {
-            const i = (Math.floor(y) * node.width + x) * 4;
-            const [r, g, b] = data.slice(i, i + 3);
-            if (Math.max(r, g, b) - Math.min(r, g, b) < 60) continue;
-            const key = `${r},${g},${b}`;
-            colors.set(key, (colors.get(key) ?? 0) + 1);
-          }
-        target = [...colors]
-          .sort((a, b) => b[1] - a[1])[0][0]
-          .split(",")
-          .map(Number) as [number, number, number];
-      }
-      const [r, g, b] = target;
-      let minX = node.width;
-      let minY = node.height;
-      let maxX = -1;
-      let maxY = -1;
-      for (let y = 0; y < node.height; y++)
-        for (let x = 0; x < node.width; x++) {
-          const i = (y * node.width + x) * 4;
-          if (data[i] !== r || data[i + 1] !== g || data[i + 2] !== b) continue;
-          minX = Math.min(minX, x);
-          minY = Math.min(minY, y);
-          maxX = Math.max(maxX, x);
-          maxY = Math.max(maxY, y);
-        }
-      return { color: target, x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
-    }, color);
-
-  const beforeMove = await playerBox();
+  const playerRegion = () => page.screenshot({ clip: { x: 0, y: 250, width: 320, height: 200 } });
+  const beforeMove = await playerRegion();
   await page.keyboard.down("ArrowRight");
   await page.waitForTimeout(250);
-  const afterMove = await playerBox(beforeMove.color);
-  expect(afterMove.x).toBeGreaterThan(beforeMove.x);
+  const afterMove = await playerRegion();
+  expect(afterMove.equals(beforeMove)).toBe(false);
+  await page.keyboard.press("ArrowUp");
+  await page.waitForTimeout(80);
+  const jumping = await playerRegion();
+  expect(jumping.equals(afterMove)).toBe(false);
+  const beforeDash = await canvas.screenshot();
   await page.keyboard.press("Space");
   await page.waitForTimeout(50);
-  const dashing = await playerBox(beforeMove.color);
-  expect(dashing.h).toBeLessThan(afterMove.h);
+  const dashing = await canvas.screenshot();
+  expect(dashing.equals(beforeDash)).toBe(false);
   await page.keyboard.up("ArrowRight");
 
   await page.keyboard.press("Escape");

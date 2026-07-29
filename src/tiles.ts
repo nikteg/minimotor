@@ -3,7 +3,7 @@
 //
 //   LEVEL = DATA.  `Tiles.grid(ascii, { size, legend })` — the ASCII grid IS
 //   the source file. Legend chars are tiles with SEMANTICS ONLY (solid,
-//   oneWay — plain JSON facts); "." and " " are empty; any other char is a
+//   oneWay, slope, ladder — plain JSON facts); "." and " " are empty; any other char is a
 //   spawn MARKER the game queries (`spawns`, `spawnOne`). The whole level
 //   definition is serializable and collides server-side (no canvas anywhere).
 //
@@ -22,7 +22,7 @@
 // grid broadphase for free.
 
 import type { DrawTilesOptions, Rect } from "./engine/index.js";
-import type { Solid } from "./collision.js";
+import type { LadderSource, SlopeDirection, Solid, SolidSource } from "./collision.js";
 import type { Vec2 } from "./vec2.js";
 import { Clock, type ClockHandle } from "./clock.js";
 
@@ -32,6 +32,10 @@ export interface TileSpec {
   solid?: boolean;
   /** Land on top, pass through from below/sides. */
   oneWay?: boolean;
+  /** Walkable diagonal surface across this tile. */
+  slope?: SlopeDirection;
+  /** Climbable region; queried by `Collision.climbLadder`. */
+  ladder?: boolean;
 }
 
 /** Options for `grid()` (exported as `Tiles.GridOptions`): tile `size` and char `legend`. */
@@ -44,7 +48,7 @@ export interface GridOptions<L extends Record<string, TileSpec>> {
 }
 
 /** A level: pure data + queries. Rendering lives in `Draw.tiles`. */
-export interface Level<C extends string = string> {
+export interface Level<C extends string = string> extends SolidSource, LadderSource {
   /** Tile size in px. */
   readonly size: number;
   /** Grid width in tiles. */
@@ -64,9 +68,14 @@ export interface Level<C extends string = string> {
   spawnOne(char: string): Vec2;
   /** Is the world point inside a solid tile? */
   solidAt(x: number, y: number): boolean;
+  /** Is the world point inside a ladder tile? */
+  ladderAt(x: number, y: number): boolean;
   /** SolidSource: appends the solid tiles near `area` into `out`. The rects
    *  are pooled — valid until the next call. */
   solidsNear(area: Rect, out: Solid[]): Solid[];
+  /** LadderSource: appends ladder tiles near `area` to `out`. Rects are pooled
+   * and valid until the next call. */
+  laddersNear(area: Rect, out: Rect[]): Rect[];
   /** Renderer channel — call `Draw.tiles(level, skin)` instead. `opts.bake`
    *  blits a whole-level baked canvas for static layers (see
    *  `DrawTilesOptions`). */
@@ -156,7 +165,7 @@ function cellHash(cx: number, cy: number): number {
 }
 
 /** Parse an ASCII grid into a level — the string IS the level file. Legend
- *  chars carry semantics only (`solid`, `oneWay` — plain JSON facts); `"."`
+ *  chars carry semantics only (`solid`, `oneWay`, `slope`, `ladder` — plain JSON facts); `"."`
  *  and space are empty; any OTHER char is a spawn marker you query with
  *  `spawns`/`spawnOne`. The result is pure data: paint it with
  *  `Draw.tiles(level, skin)`, collide against it with
@@ -192,13 +201,19 @@ export function grid<L extends Record<string, TileSpec>>(
 
   // Pooled rects handed out by solidsNear — valid until the next call.
   const pool: Solid[] = [];
+  const ladderPool: Rect[] = [];
   let poolUsed = 0;
-  function pooledSolid(x: number, y: number, oneWay: boolean): Solid {
+  let ladderPoolUsed = 0;
+  function pooledSolid(
+    x: number,
+    y: number,
+    oneWay: boolean,
+    slope: SlopeDirection | undefined,
+  ): Solid {
     let r = pool[poolUsed];
     if (!r) {
-      // Full shape up front — assigning oneWay (never deleting it) keeps one
-      // hidden class across the whole pool.
-      r = { x: 0, y: 0, w: 0, h: 0, oneWay: false };
+      // Full shape up front keeps one hidden class across the whole pool.
+      r = { x: 0, y: 0, w: 0, h: 0, oneWay: false, slope: undefined };
       pool[poolUsed] = r;
     }
     poolUsed++;
@@ -207,6 +222,18 @@ export function grid<L extends Record<string, TileSpec>>(
     r.w = size;
     r.h = size;
     r.oneWay = oneWay;
+    r.slope = slope;
+    return r;
+  }
+
+  function pooledLadder(x: number, y: number): Rect {
+    let r = ladderPool[ladderPoolUsed];
+    if (!r) ladderPool[ladderPoolUsed] = r = { x: 0, y: 0, w: 0, h: 0 };
+    ladderPoolUsed++;
+    r.x = x;
+    r.y = y;
+    r.w = size;
+    r.h = size;
     return r;
   }
 
@@ -344,7 +371,11 @@ export function grid<L extends Record<string, TileSpec>>(
       return all[0];
     },
     solidAt(x, y) {
-      return specAt(Math.floor(x / size), Math.floor(y / size))?.solid === true;
+      const spec = specAt(Math.floor(x / size), Math.floor(y / size));
+      return spec?.solid === true || spec?.slope !== undefined;
+    },
+    ladderAt(x, y) {
+      return specAt(Math.floor(x / size), Math.floor(y / size))?.ladder === true;
     },
     solidsNear(area, out) {
       poolUsed = 0;
@@ -355,8 +386,24 @@ export function grid<L extends Record<string, TileSpec>>(
       for (let cy = y0; cy <= y1; cy++) {
         for (let cx = x0; cx <= x1; cx++) {
           const spec = legend[cells[cy][cx]];
-          if (spec?.solid) {
-            out.push(pooledSolid(cx * size, cy * size, spec.oneWay === true));
+          if (spec?.solid || spec?.slope) {
+            out.push(pooledSolid(cx * size, cy * size, spec.oneWay === true, spec.slope));
+          }
+        }
+      }
+      return out;
+    },
+    laddersNear(area, out) {
+      ladderPoolUsed = 0;
+      const x0 = Math.max(0, Math.floor(area.x / size));
+      const y0 = Math.max(0, Math.floor(area.y / size));
+      const x1 = Math.min(cols - 1, Math.floor((area.x + area.w) / size));
+      const y1 = Math.min(rows - 1, Math.floor((area.y + area.h) / size));
+      for (let cy = y0; cy <= y1; cy++) {
+        for (let cx = x0; cx <= x1; cx++) {
+          const spec = legend[cells[cy][cx]];
+          if (spec?.ladder) {
+            out.push(pooledLadder(cx * size, cy * size));
           }
         }
       }

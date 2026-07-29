@@ -4,5 +4,7 @@ import type { Protocol } from "minimotor";
 export type GameProtocol = Protocol<{
   events: {
     bump: { target: string; vx: number; vy: number };
+    death: { x: number; y: number };
+    respawn: Record<string, never>;
   };
 }>;

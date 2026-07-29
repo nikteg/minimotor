@@ -19,6 +19,8 @@ import {
   slide,
   moveAndSlide,
   dropThrough,
+  slopeY,
+  climbLadder,
   grid,
   contacts,
 } from "./collision.js";
@@ -247,6 +249,10 @@ export type {
   Solid,
   SolidSource,
   Solids,
+  SlopeDirection,
+  LadderSource,
+  Ladders,
+  ClimbLadderOptions,
   SolidGrid,
   Contacts,
   MoverBody,
@@ -388,6 +394,7 @@ export type {
  *
  *    body.vel.y += GRAVITY;
  *    Collision.moveAndSlide(body, level);   // moves body, zeroes blocked axes
+ *    climbing = Collision.climbLadder(body, level, input.axis("up", "down"));
  *    if (body.grounded && input.jump.pressed) body.vel.y = -JUMP;
  */
 const Collision = {
@@ -395,6 +402,8 @@ const Collision = {
   slide,
   moveAndSlide,
   dropThrough,
+  slopeY,
+  climbLadder,
   grid,
   contacts,
   circleHit,

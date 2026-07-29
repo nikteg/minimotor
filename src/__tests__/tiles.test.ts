@@ -78,6 +78,22 @@ describe("Tiles.grid (level = data)", () => {
     expect(out.some((s) => s.oneWay)).toBe(true);
   });
 
+  it("provides slope solids and ladder queries from legend semantics", () => {
+    const level = grid(">/", {
+      size: 16,
+      legend: {
+        ">": { slope: "up-right" },
+        "/": { ladder: true },
+      },
+    });
+    const solids = level.solidsNear(level.rect, []);
+    expect(solids).toHaveLength(1);
+    expect(solids[0]).toMatchObject({ slope: "up-right", w: 16, h: 16 });
+    expect(level.solidAt(4, 4)).toBe(true);
+    expect(level.ladderAt(20, 4)).toBe(true);
+    expect(level.laddersNear(level.rect, [])).toEqual([{ x: 16, y: 0, w: 16, h: 16 }]);
+  });
+
   it("is a SolidSource: moveAndSlide collides against it directly", () => {
     const level = makeLevel();
     const body = { x: 2, y: 10, w: 6, h: 6, vel: { x: 0, y: 30 }, grounded: false };

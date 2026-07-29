@@ -8,7 +8,7 @@ export type SyncBody =
   | { x: number; y: number; vel: { x: number; y: number } }
   | { x: number; y: number; vx: number; vy: number };
 
-type Metadata = "w" | "h" | "rot" | "spin" | "grounded" | "facing" | "color" | "active";
+type Metadata = "w" | "h" | "rot" | "spin" | "grounded" | "facing" | "color" | "active" | "state";
 
 export interface BodySnapshot {
   x: number;
@@ -23,6 +23,8 @@ export interface BodySnapshot {
   facing?: number;
   color?: string;
   active?: boolean;
+  /** Discrete presentation/gameplay state, such as `"climb"` or `"death"`. */
+  state?: string;
 }
 
 /** The shallow, JSON-safe body state sent by `syncBody`. Every numeric field
@@ -40,7 +42,17 @@ export function bodyState<B extends SyncBody>(body: B): BodyState<B> {
     vx: flat ? body.vel.x : body.vx,
     vy: flat ? body.vel.y : body.vy,
   };
-  for (const key of ["w", "h", "rot", "spin", "grounded", "facing", "color", "active"] as const) {
+  for (const key of [
+    "w",
+    "h",
+    "rot",
+    "spin",
+    "grounded",
+    "facing",
+    "color",
+    "active",
+    "state",
+  ] as const) {
     if (key in source) out[key] = source[key];
   }
   return out as BodyState<B>;
@@ -80,7 +92,17 @@ export function applyBodyState<B extends SyncBody>(body: B, state: BodySnapshot)
     body.vy = state.vy;
   }
   const target = body as SyncBody & Partial<Record<Metadata, number | boolean | string>>;
-  for (const key of ["w", "h", "rot", "spin", "grounded", "facing", "color", "active"] as const) {
+  for (const key of [
+    "w",
+    "h",
+    "rot",
+    "spin",
+    "grounded",
+    "facing",
+    "color",
+    "active",
+    "state",
+  ] as const) {
     const value = state[key];
     if (key in target && value !== undefined) target[key] = value as never;
   }

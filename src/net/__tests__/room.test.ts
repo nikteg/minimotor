@@ -119,6 +119,22 @@ describe("Net.sync", () => {
     ghosts.stop();
   });
 
+  it("resets interpolation so teleports and respawns snap on the next snapshot", () => {
+    const room = fakeRoom();
+    const ghosts = sync<{ x: number }>(room, {
+      state: () => ({ x: 0 }),
+      delayMs: 100,
+      now: () => 200,
+    });
+    room.emit("peer-1", { __mm_sync: 1, s: { x: 10 } });
+    room.emit("peer-1", { __mm_sync: 1, s: { x: 20 } });
+    ghosts.reset("peer-1");
+    expect([...ghosts]).toEqual([]);
+    room.emit("peer-1", { __mm_sync: 1, s: { x: 100 } });
+    expect([...ghosts]).toEqual([{ id: "peer-1", x: 100 }]);
+    ghosts.stop();
+  });
+
   it("prunes peers that go quiet past the timeout", () => {
     const room = fakeRoom();
     let now = 0;

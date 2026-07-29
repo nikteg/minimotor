@@ -7,6 +7,8 @@ import {
   slide,
   moveAndSlide,
   dropThrough,
+  slopeY,
+  climbLadder,
   grid,
   contacts,
   type Solid,
@@ -168,6 +170,38 @@ describe("Collision.slide / moveAndSlide", () => {
     const solidBody = { x: 10, y: 40, w: 10, h: 10, vel: { x: 0, y: 0 }, grounded: true };
     expect(dropThrough(solidBody, [floor])).toBe(false);
     expect(solidBody).toMatchObject({ y: 40, grounded: true });
+  });
+
+  it("lands on slopes, follows them horizontally, and passes through from below", () => {
+    const slope: Solid = { x: 0, y: 0, w: 100, h: 100, slope: "up-right" };
+    expect(slopeY(slope as Solid & { slope: "up-right" }, 50)).toBe(50);
+
+    const body = { x: 45, y: 0, w: 10, h: 10, vel: { x: 0, y: 60 }, grounded: false };
+    moveAndSlide(body, [slope]);
+    expect(body.grounded).toBe(true);
+    expect(body.y).toBeCloseTo(40, 2);
+
+    body.vel = { x: 10, y: 0 };
+    moveAndSlide(body, [slope]);
+    expect(body.grounded).toBe(true);
+    expect(body.y).toBeCloseTo(30, 2);
+
+    const jumper = { x: 45, y: 70, w: 10, h: 10, vel: { x: 0, y: -30 }, grounded: false };
+    moveAndSlide(jumper, [slope]);
+    expect(jumper.y).toBe(40);
+    expect(jumper.grounded).toBe(false);
+  });
+
+  it("enters and remains on a ladder with one helper", () => {
+    const ladder = { x: 0, y: 0, w: 20, h: 100 };
+    const body = { x: 2, y: 20, w: 10, h: 10, vel: { x: 0, y: 4 }, grounded: true };
+    expect(climbLadder(body, [ladder], -1)).toBe(true);
+    expect(body).toMatchObject({ grounded: false, vel: { y: -3 } });
+    expect(body.x).toBeGreaterThan(2); // easing toward the ladder center
+    expect(climbLadder(body, [ladder], 0, { active: true })).toBe(true);
+    expect(body.vel.y).toBe(0);
+    body.x = 100;
+    expect(climbLadder(body, [ladder], 0, { active: true })).toBe(false);
   });
 
   it("accepts a SolidSource and mixed arrays", () => {

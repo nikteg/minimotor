@@ -2,6 +2,7 @@
 // API-REVIEW.md.
 import {
   Anim,
+  Assets,
   Audio,
   Camera,
   Collision,
@@ -14,18 +15,60 @@ import {
   Particles,
   Perf,
   Scenes,
+  Sprites,
   App,
   Storage,
   Tiles,
   Timers,
   UI,
-  Vec2,
   type SceneSpec,
 } from "minimotor";
 import type { GameProtocol } from "./protocol.js";
 
 // [#1]/[#3] Live viewport, engine-owned background.
 App.init("game", { background: "#222" });
+
+const HERO_SHEET = {
+  frame: { w: 33, h: 32 },
+  states: {
+    idle: { row: 0, frames: 4, fps: 6 },
+    run: { row: 1, frames: 6, fps: 12 },
+    climb: { row: 2, frames: 4, fps: 8 },
+    jump: { row: 5, frames: 2, fps: 8 },
+    dash: { row: 9, frames: 4, fps: 20 },
+  },
+} as const;
+
+// [#2]/[#25] Real CC0 sprite sheets, loaded once and then used synchronously.
+const art = await Assets.load({
+  background: new URL("./assets/sunnyland-background.png", import.meta.url).href,
+  terrain: new URL("./assets/sunnyland-tileset.png", import.meta.url).href,
+  hero: {
+    src: new URL("./assets/foxy.png", import.meta.url).href,
+    sheet: HERO_SHEET,
+  },
+  gem: {
+    src: new URL("./assets/gem.png", import.meta.url).href,
+    sheet: {
+      frame: { w: 15, h: 13 },
+      states: { spin: { row: 0, frames: 5, fps: 10 } },
+    },
+  },
+  pickup: {
+    src: new URL("./assets/item-feedback.png", import.meta.url).href,
+    sheet: {
+      frame: { w: 40, h: 32 },
+      states: { burst: { row: 0, frames: 4, fps: 16, loop: false } },
+    },
+  },
+  death: {
+    src: new URL("./assets/death.png", import.meta.url).href,
+    sheet: {
+      frame: { w: 40, h: 41 },
+      states: { die: { row: 0, frames: 6, fps: 12, loop: false } },
+    },
+  },
+});
 
 // On-screen touch gamepad; autohides on desktop, shows on touch.
 export const pad = OnscreenInput.gamepad({
@@ -42,6 +85,7 @@ const input = Input.map(
   {
     left: ["ArrowLeft", "KeyA", "pad:dpad-left", "pad:lstick-left"],
     right: ["ArrowRight", "KeyD", "pad:dpad-right", "pad:lstick-right"],
+    up: ["ArrowUp", "KeyW", "pad:dpad-up", "pad:lstick-up"],
     down: ["ArrowDown", "KeyS", "pad:dpad-down", "pad:lstick-down"],
     jump: ["ArrowUp", "KeyW", "KeyZ", "pad:a"],
     dash: ["Space", "KeyX", "pad:x"],
@@ -59,49 +103,88 @@ const JUMP_CUTOFF = 0.45;
 const WALL_SLIDE = 1.4; // max fall speed while pressing into a wall
 const WALL_JUMP_X = 4.5; // horizontal kick away from the wall
 const DASH_SPEED = 9;
+const CLIMB_SPEED = 3;
 
 // [#39] The level IS the source file: ASCII grid + semantics-only legend.
 const level = Tiles.grid(
   `
 ................................................
 ................................................
-................................................
-......o.................o......................
-.....===...............===.....................
-..............o.......................o........
-.............===.............======............
-...o......................o.....................
-..===........#####.......===........o..........
-.............#...#.................====.........
-..P..........#...#..............................
-################################################
+.....g......................g...................
+....====...............g........................
+......................====......................
+............................H...................
+........g...............====H===................
+.......====.................H...................
+............................H...........g.......
+...............g............H..........====.....
+..............====..........H...................
+..................R.........H...................
+..P.........................H...................
+##########....##################....############
 `,
   {
-    size: 50,
+    size: 32,
     legend: {
       "#": { solid: true },
       "=": { solid: true, oneWay: true }, // [#13]
+      H: { ladder: true },
     },
   },
 );
 
+const terrain = Tiles.set(art.terrain, {
+  size: 16,
+  names: {
+    grass: [1, 1],
+    platform: [9, 1],
+    ladder: [7, 10],
+  },
+});
+
 // [#41] Presentation is a SKIN, applied at the draw site; `satisfies` checks
 //       completeness against the legend.
 const skin = {
-  "#": "#3a3f4a",
-  "=": null,
+  "#": terrain.grass,
+  "=": terrain.platform,
+  H: terrain.ladder,
 } satisfies Tiles.Skin<typeof level>;
-const platforms: { x: number; y: number; w: number; h: number }[] = [];
-for (let cy = 0; cy < level.rows; cy++)
-  for (let cx = 0; cx < level.cols; cx++)
-    if (level.at(cx, cy) === "=")
-      platforms.push({ x: cx * level.size, y: cy * level.size, w: level.size, h: 8 });
+
+// The sheet's grassy slope is a 48×32 region. Its collision is the same plain
+// rect plus one semantic field; moveAndSlide handles the diagonal top.
+const slopes = level.spawns("R").map((marker) => ({
+  x: marker.x - 48,
+  y: marker.y - 16,
+  w: 96,
+  h: 64,
+  slope: "up-right" as const,
+}));
+const slopeSprites = slopes.map((slope) => ({
+  img: art.terrain,
+  x: slope.x,
+  y: slope.y,
+  w: slope.w,
+  h: slope.h,
+  ax: 0,
+  ay: 0,
+  sx: 304,
+  sy: 16,
+  sw: 48,
+  sh: 32,
+}));
 
 // [#35]-[#38] Synth sfx on the default buses; recipes are tweakable specs.
 const sfx = Audio.sfx({
   jump: { shape: "square", freq: { from: 520, to: 880 }, ms: 90, volume: 0.4 },
-  coin: Audio.Recipes.coin(), // [#36]
+  gem: Audio.Recipes.coin(), // [#36]
   dash: Audio.Recipes.whoosh(),
+  death: {
+    shape: "sawtooth",
+    freq: { from: 240, to: 45 },
+    ms: 420,
+    volume: 0.55,
+    filter: { type: "lowpass", freq: { from: 1200, to: 120 } },
+  },
   thud: {
     noise: true,
     freq: 120,
@@ -116,121 +199,24 @@ const audioPrefs = Storage.load("api-lab:audio", { music: 0.5, sfx: 1.0 });
 Audio.buses.music.volume = audioPrefs.music;
 Audio.buses.sfx.volume = audioPrefs.sfx;
 
-// [#25] The hero sheet — generated art (a breathing, running square with a
-//       face) so the sample ships without binary assets.
-const heroLooks = [
-  [0, 0],
-  [-2, -2],
-  [0, -2],
-  [2, -2],
-  [-2, 0],
-  [2, 0],
-  [-2, 2],
-  [0, 2],
-  [2, 2],
-] as const;
-
-function makeHeroImage(color: string): HTMLCanvasElement {
-  const statesPerLook = 4;
-  const c = document.createElement("canvas");
-  c.width = 6 * 32;
-  c.height = heroLooks.length * statesPerLook * 32;
-  const g = c.getContext("2d")!;
-  const eyes = (h: number, look: (typeof heroLooks)[number], x = 0) => {
-    g.fillStyle = "#1b2528";
-    g.fillRect(x - 8 + look[0], -h + 6 + look[1], 5, 5);
-    g.fillRect(x + 3 + look[0], -h + 6 + look[1], 5, 5);
-  };
-  const drawHero = (
-    col: number,
-    row: number,
-    squish: number,
-    lean: number,
-    look: (typeof heroLooks)[number],
-  ) => {
-    const x = col * 32;
-    const y = row * 32;
-    const h = Math.min(32, 31 - squish);
-    g.save();
-    g.translate(x + 16, y + 32);
-    g.transform(1, 0, lean, 1, 0, 0); // run lean (kept tiny: frames must stay in-cell)
-    g.fillStyle = color;
-    // Body fills the collision box (1px cell margin so frames never bleed
-    // into sheet neighbours): flush against walls when colliding sideways.
-    g.fillRect(-15, -h, 30, h);
-    eyes(h, look);
-    g.restore();
-  };
-  const drawDash = (col: number, row: number, look: (typeof heroLooks)[number]) => {
-    const x = col * 32;
-    const y = row * 32;
-    const bob = col % 2;
-    const h = 20;
-    g.save();
-    g.translate(x + 16, y + 31 - bob);
-    g.transform(1, 0, 0.12, 1, 0, 0);
-    g.fillStyle = color;
-    g.beginPath();
-    g.moveTo(-15, -h);
-    g.lineTo(9, -h);
-    g.lineTo(15, -h / 2);
-    g.lineTo(9, 0);
-    g.lineTo(-12, 0);
-    g.lineTo(-15, -4);
-    g.lineTo(-9 - (col % 3), -7);
-    g.lineTo(-15, -10);
-    g.lineTo(-9 + (col % 2), -14);
-    g.closePath();
-    g.fill();
-    eyes(h, look, 1);
-    g.restore();
-  };
-  for (let look = 0; look < heroLooks.length; look++) {
-    const row = look * statesPerLook;
-    for (let f = 0; f < 4; f++) drawHero(f, row, f === 1 || f === 2 ? 1 : 0, 0, heroLooks[look]); // idle breathe
-    for (let f = 0; f < 6; f++)
-      drawHero(f, row + 1, f % 3 === 0 ? 2 : 0, f % 2 === 0 ? 0.06 : -0.03, heroLooks[look]); // run
-    drawHero(0, row + 2, -3, 0, heroLooks[look]); // jump stretch
-    for (let f = 0; f < 4; f++) drawDash(f, row + 3, heroLooks[look]);
-  }
-  return c;
-}
-
 function heroAnimation(color: string) {
-  const sheet = Anim.sheet(makeHeroImage(color), {
-    frame: { w: 32, h: 32 },
-    states: {
-      idle: { row: 0, frames: 4, fps: 6 },
-      run: { row: 1, frames: 6, fps: 12 },
-      jump: { row: 2, frames: 1 },
-      dash: { row: 3, frames: 4, fps: 24 },
-    },
-  });
-  const cursor = sheet.play("idle");
-  const rect = { sx: 0, sy: 0, sw: 32, sh: 32 };
-  let look = 0;
+  const sprite = art.hero.play("idle");
+  const outline = Anim.sheet(
+    Sprites.tint(art.hero.image as HTMLImageElement, color),
+    HERO_SHEET,
+  ).play("idle");
   return {
-    get sheet() {
-      return sheet;
-    },
-    get rect() {
-      const current = cursor.rect;
-      rect.sx = current.sx;
-      rect.sy = current.sy + look * 4 * 32;
-      return rect;
-    },
-    set: cursor.set,
-    look(vx: number, vy: number, facing: number) {
-      if (Math.hypot(vx, vy) <= 0.5) return void (look = 0);
-      const x = Math.sign(vx) * facing * 2;
-      const y = Math.sign(vy) * 2;
-      look = heroLooks.findIndex(([lx, ly]) => lx === x && ly === y);
+    sprite,
+    outline,
+    set(state: "idle" | "run" | "jump" | "dash" | "climb") {
+      sprite.set(state);
+      outline.set(state);
     },
   };
 }
 
 const PLAYER_COLOR = "#4ecdc4";
-const colorFor = (index: number) => `hsl(${(index * 137.508 + 174) % 360} 70% 62%)`;
+const colorFor = (index: number) => `hsl(${(index * 137.508 + 320) % 360} 90% 65%)`;
 
 let playerAnimation = heroAnimation(PLAYER_COLOR);
 const ghostAnimations = new Map<string, ReturnType<typeof heroAnimation>>();
@@ -244,25 +230,35 @@ const wallCoyote = Timers.window(100);
 const dashActive = Timers.window(130);
 const dashCooldown = Timers.cooldown(400);
 const bumpCooldown = Timers.cooldown(250);
+const deathActive = Timers.window(850);
 let wallDir = 0; // -1 = wall on our left, +1 = on our right
 let canAirDash = true;
+let climbing = false;
 const fx = Particles.create(); // [#28]
+const gemAnimation = art.gem.play("spin");
+const deathAnimation = art.death.play("die");
+const pickupEffects: {
+  x: number;
+  y: number;
+  animation: ReturnType<typeof art.pickup.play>;
+}[] = [];
 
-const coinSpawns = level.spawns("o");
+const gemSpawns = level.spawns("g");
 let score = 0;
 
 // [#9]/[#12]/[#14] Vec2 + Rect + MoverBody in one plain object.
 const start = level.spawnOne("P");
 const player = {
-  x: start.x - 16,
-  y: start.y - 16,
-  w: 32,
-  h: 32,
+  x: start.x - 11,
+  y: start.y - 14,
+  w: 22,
+  h: 28,
   vel: { x: 0, y: 0 },
   grounded: false,
   facing: 1,
   color: PLAYER_COLOR,
   active: false,
+  state: "idle",
 };
 
 // [#15] The always-existing default camera, configured once.
@@ -286,57 +282,141 @@ playerAnimation = heroAnimation(player.color);
 const ghosts = Net.syncBody(room, player);
 const netTime = Net.networkTime(room);
 const gameEvents = Net.events<GameProtocol>(room);
-const coins = Net.sharedItems(room, coinSpawns, {
-  channel: "coins",
+const gems = Net.sharedItems(room, gemSpawns, {
+  channel: "gems",
   respawnMs: 4000,
   now: () => netTime.now,
-  canTake(coin, by) {
+  canTake(gem, by) {
     const collector = by === room.id ? player : ghosts.latest(by);
-    return !!collector?.active && !!Collision.circleRect(coin.x, coin.y, 24, collector);
+    return (
+      !!collector?.active &&
+      collector.state !== "death" &&
+      !!Collision.circleRect(gem.x, gem.y, 24, collector)
+    );
   },
-  onTake(coin, by) {
+  onTake(_gem, by) {
     if (by === room.id) score++;
   },
-  onEffect(coin) {
+  onEffect(gem) {
+    pickupEffects.push({
+      x: gem.x,
+      y: gem.y,
+      animation: art.pickup.play("burst"),
+    });
     fx.burst({
-      at: coin,
+      at: gem,
       count: 12,
       speed: [1, 3],
       life: [200, 400],
       size: [1, 3],
       color: "#ffd166",
     });
-    sfx.coin.play({ pitch: [0.95, 1.15] });
+    sfx.gem.play({ pitch: [0.95, 1.15] });
   },
 });
 
 gameEvents.on("bump", ({ target, vx, vy }) => {
-  if (target !== room.id) return;
+  if (target !== room.id || player.state === "death") return;
   player.vel.x = vx;
   player.vel.y = vy;
   dashActive.expire();
   Camera.shake(3, 120);
 });
 
-function resetLevel(active = true): void {
-  player.x = start.x - player.w / 2 + Net.memberIndex(room) * 36;
+gameEvents.on("death", ({ x, y }) => {
+  sfx.death.play({ pitch: [0.9, 1.1] });
+  fx.burst({
+    at: { x, y },
+    count: 16,
+    speed: [1, 4],
+    life: [250, 500],
+    size: [2, 4],
+    color: "#ff8a5b",
+  });
+});
+
+gameEvents.on("respawn", (_data, from) => ghosts.reset(from));
+
+function respawn(active = true, notify = false): void {
+  player.x = start.x - player.w / 2 + Net.memberIndex(room) * 28;
   player.y = start.y - player.h / 2;
   player.vel.x = 0;
   player.vel.y = 0;
   player.grounded = false;
   player.facing = 1;
   player.active = active;
-  score = 0;
+  player.state = "idle";
+  climbing = false;
+  deathAnimation.reset();
   Camera.snap();
+  if (notify) gameEvents.emit("respawn", {});
+}
+
+function resetLevel(active = true): void {
+  respawn(active);
+  score = 0;
+}
+
+function killPlayer(): void {
+  if (player.state === "death") return;
+  player.state = "death";
+  // Keep the death sheet just inside the camera after the body fell away.
+  player.y = Math.min(player.y, level.rect.h - player.h / 2);
+  player.vel.x = player.vel.y = 0;
+  player.grounded = false;
+  climbing = false;
+  dashActive.expire();
+  deathActive.charge();
+  deathAnimation.reset();
+  sfx.death.play();
+  fx.burst({
+    at: { x: player.x + player.w / 2, y: player.y + player.h / 2 },
+    count: 16,
+    speed: [1, 4],
+    life: [250, 500],
+    size: [2, 4],
+    color: "#ff8a5b",
+  });
+  gameEvents.emit("death", {
+    x: player.x + player.w / 2,
+    y: player.y + player.h / 2,
+  });
+  Camera.shake(5, 250);
 }
 
 function updateWorld(): void {
+  if (player.state === "death") {
+    if (!deathActive.active) respawn(true, true);
+    return;
+  }
+
   const remotes = [...ghosts].filter((ghost) => ghost.active);
+  const collidableRemotes = remotes.filter((ghost) => ghost.state !== "death");
   const run = input.axis("left", "right"); // [#8]
+  const climbAxis = input.axis("up", "down");
+
+  // [#14] The level itself is the ladder source. One helper handles entering,
+  // staying attached, centering, and vertical velocity.
+  const ladderJump = climbing && input.jump.pressed && !input.up.down;
+  if (ladderJump) {
+    climbing = false;
+    player.vel.y = JUMP * 0.85;
+    sfx.jump.play({ pitch: 1.15 });
+  } else {
+    climbing = Collision.climbLadder(player, level, climbAxis, {
+      active: climbing,
+      speed: CLIMB_SPEED,
+    });
+  }
+
   // The window/cooldown timers are clock-derived (no tick) — they read
   // Clock.world, so nothing to advance here.
-  const dashing = dashActive.active;
-  if (dashing) {
+  const dashing = dashActive.active && !climbing;
+  if (climbing) {
+    dashActive.expire();
+    player.vel.x = Mathf.approach(player.vel.x, 0, ACCEL * 2);
+    if (climbAxis > 0) Collision.dropThrough(player, level);
+  } else if (dashing) {
     // A dash owns the velocity: fixed speed, gravity suspended, trail.
     player.vel.x = player.facing * DASH_SPEED;
     player.vel.y = 0;
@@ -345,7 +425,7 @@ function updateWorld(): void {
       speed: [0.1, 0.6],
       life: [120, 260],
       size: [2, 4],
-      color: "#9ee7ff",
+      color: player.color,
     });
   } else {
     player.vel.x = Mathf.approach(player.vel.x, run * MOVE, ACCEL);
@@ -354,13 +434,20 @@ function updateWorld(): void {
 
   // Ground jump (coyote + buffer via the gate), else wall jump (its own
   // coyote window charged by recent wall contact).
-  const dropping = input.down.down && input.jump.pressed && Collision.dropThrough(player, level);
+  const dropping =
+    !climbing && input.down.down && input.jump.pressed && Collision.dropThrough(player, level);
   if (dropping) {
     gate.coyote.expire();
-  } else if (gate.try(input.jump.pressed, player.grounded)) {
+  } else if (!climbing && !ladderJump && gate.try(input.jump.pressed, player.grounded)) {
     player.vel.y = JUMP;
     sfx.jump.play(); // [#36]
-  } else if (input.jump.pressed && !player.grounded && wallCoyote.active) {
+  } else if (
+    !climbing &&
+    !ladderJump &&
+    input.jump.pressed &&
+    !player.grounded &&
+    wallCoyote.active
+  ) {
     player.vel.y = JUMP * 0.9;
     player.vel.x = -wallDir * WALL_JUMP_X;
     player.facing = -wallDir;
@@ -373,13 +460,13 @@ function updateWorld(): void {
       speed: [0.5, 2],
       life: [120, 240],
       size: [1, 2],
-      color: "#9ee7ff",
+      color: player.color,
     });
   }
-  if (input.jump.released && player.vel.y < 0 && !dashing) player.vel.y *= JUMP_CUTOFF;
+  if (input.jump.released && player.vel.y < 0 && !dashing && !climbing) player.vel.y *= JUMP_CUTOFF;
 
   // Dash: on the edge, off cooldown, once per airtime (refreshes on landing).
-  if (input.dash.pressed && dashCooldown.ready() && (player.grounded || canAirDash)) {
+  if (!climbing && input.dash.pressed && dashCooldown.ready() && (player.grounded || canAirDash)) {
     if (!player.grounded) canAirDash = false;
     if (run !== 0) player.facing = Math.sign(run);
     dashActive.charge();
@@ -389,7 +476,9 @@ function updateWorld(): void {
   }
 
   if (dashing && bumpCooldown.ready()) {
-    const other = remotes.find((g) => Collision.sweptAABB(player, player.vel.x, player.vel.y, g));
+    const other = collidableRemotes.find((g) =>
+      Collision.sweptAABB(player, player.vel.x, player.vel.y, g),
+    );
     if (other) {
       gameEvents.emit("bump", {
         target: other.id,
@@ -400,13 +489,20 @@ function updateWorld(): void {
     }
   }
 
-  // [#14]/[#40] Policy path against the tilemap: grid broadphase for free.
-  const hit = Collision.moveAndSlide(player, remotes.length ? [level, ...remotes] : level);
-  Vec2.clampRect(player, 0, 0, level.rect.w - player.w, level.rect.h - player.h); // [#10]
+  // [#14]/[#40] One policy call handles tiles, diagonal slopes, and players.
+  const worldSolids = [level, ...slopes, ...collidableRemotes];
+  const hit = Collision.moveAndSlide(player, worldSolids);
+  player.x = Math.max(0, Math.min(player.x, level.rect.w - player.w));
+  player.y = Math.max(0, player.y); // no bottom clamp: falling out is meaningful
+
+  if (player.y > level.rect.h + 40) {
+    killPlayer();
+    return;
+  }
 
   // Wall state (from this step's contacts): recent touch charges the wall
   // coyote; pressing into the wall while falling becomes a wall slide.
-  if (!player.grounded && (hit.left || hit.right)) {
+  if (!player.grounded && !climbing && (hit.left || hit.right)) {
     wallDir = hit.left ? -1 : 1;
     wallCoyote.charge();
     dashActive.expire(); // dashing into a wall ends the dash
@@ -414,22 +510,29 @@ function updateWorld(): void {
   }
   if (player.grounded) canAirDash = true;
 
-  for (const coin of coins) if (Collision.circleRect(coin.x, coin.y, 10, player)) coins.take(coin);
+  for (const gem of gems) if (Collision.circleRect(gem.x, gem.y, 12, player)) gems.take(gem);
 
-  if (run !== 0 && !dashing) player.facing = Math.sign(run);
-  playerAnimation.set(
-    dashing ? "dash" : !player.grounded ? "jump" : Math.abs(player.vel.x) > 0.5 ? "run" : "idle",
-  ); // [#25]
+  if (run !== 0 && !dashing && !climbing) player.facing = Math.sign(run);
+  player.state = climbing
+    ? "climb"
+    : dashing
+      ? "dash"
+      : !player.grounded
+        ? "jump"
+        : Math.abs(player.vel.x) > 0.5
+          ? "run"
+          : "idle";
+  playerAnimation.set(player.state as HeroState); // [#25]
 
   if (player.grounded && !wasGrounded) {
-    squash = Anim.animate({ from: 0.6, to: 1, ms: 150, ease: Mathf.easeOut }); // [#27]
+    squash = Anim.animate({ from: 0.8, to: 1, ms: 120, ease: Mathf.easeOut }); // [#27]
     fx.burst({
       at: { x: player.x + player.w / 2, y: player.y + player.h },
       count: 8,
       speed: [0.5, 2],
       life: [150, 300],
       size: [1, 2],
-      color: "#999",
+      color: "#d59b63",
     });
     if (hit.impact > 8) {
       Camera.shake(Mathf.remap(hit.impact, 8, 16, 1, 5), 150); // [#29]
@@ -439,14 +542,18 @@ function updateWorld(): void {
   wasGrounded = player.grounded;
 }
 
-const animationState = (body: { grounded?: boolean; vx: number }) =>
-  Math.abs(body.vx) > MOVE + 1
-    ? "dash"
-    : !body.grounded
-      ? "jump"
-      : Math.abs(body.vx) > 0.5
-        ? "run"
-        : "idle";
+type HeroState = "idle" | "run" | "jump" | "dash" | "climb";
+
+const animationState = (body: { state?: string; grounded?: boolean; vx: number }): HeroState =>
+  body.state === "climb"
+    ? "climb"
+    : body.state === "dash" || Math.abs(body.vx) > MOVE + 1
+      ? "dash"
+      : !body.grounded
+        ? "jump"
+        : Math.abs(body.vx) > 0.5
+          ? "run"
+          : "idle";
 
 function playerIndex(id: string): number {
   return [room.id, ...room.peers].sort().indexOf(id) + 1;
@@ -478,23 +585,89 @@ type RemotePlayer = Net.BodySnapshot & {
   facing: number;
 };
 
+const ghostDeaths = new Map<string, ReturnType<typeof art.death.play>>();
+const ghostStates = new Map<string, string | undefined>();
+
+function drawHero(
+  animation: ReturnType<typeof heroAnimation>,
+  body: { x: number; y: number; w: number; h: number; facing: number },
+  alpha = 1,
+  scaleY = 1,
+): void {
+  const at = {
+    x: body.x + (body.w - 33) / 2,
+    y: body.y + body.h - 32,
+    w: 33,
+    h: 32,
+  };
+  Draw.sprite(animation.outline, at, {
+    flipX: body.facing < 0,
+    scaleX: 1.12,
+    scaleY: 1.12 * scaleY,
+    alpha,
+  });
+  Draw.sprite(animation.sprite, at, { flipX: body.facing < 0, scaleY, alpha });
+}
+
+function drawDeath(
+  animation: ReturnType<typeof art.death.play>,
+  body: { x: number; y: number; w: number; h: number },
+  alpha = 1,
+): void {
+  Draw.sprite(
+    animation,
+    {
+      x: body.x + body.w / 2 - 20,
+      y: body.y + body.h - 41,
+      w: 40,
+      h: 41,
+    },
+    { alpha },
+  );
+}
+
+function drawPlayerColor(body: { x: number; y: number; w: number; color: string }): void {
+  Draw.rect(body.x + body.w / 2 - 4, body.y - 4, 8, 3, body.color);
+}
+
 function drawStage(remotes: readonly RemotePlayer[]): void {
   // [#16] Screen space is the default; the camera transforms its block.
   Camera.render(() => {
+    for (let x = 0; x < level.rect.w; x += 768) Draw.image(art.background, x, 0, 768, 480);
     Draw.tiles(level, skin); // [#42] data never draws itself
-    for (const platform of platforms)
-      Draw.rect(platform.x, platform.y, platform.w, platform.h, "#31555a");
-    for (const coin of coins) Draw.circle(coin, 8, "#ffd166"); // [#21]
+    Draw.sprites(slopeSprites);
+    for (const gem of gems)
+      Draw.sprite(gemAnimation, { x: gem.x - 15, y: gem.y - 13, w: 30, h: 26 }); // [#21]
+    for (let i = pickupEffects.length - 1; i >= 0; i--) {
+      const effect = pickupEffects[i];
+      Draw.sprite(effect.animation, {
+        x: effect.x - 20,
+        y: effect.y - 16,
+        w: 40,
+        h: 32,
+      });
+      if (effect.animation.done) pickupEffects.splice(i, 1);
+    }
     for (const g of remotes) {
-      let animation = ghostAnimations.get(g.id);
-      if (!animation) ghostAnimations.set(g.id, (animation = heroAnimation(g.color)));
-      animation.set(animationState(g));
-      animation.look(g.vx, g.vy, g.facing);
-      Draw.sprite(animation, g, { flipX: g.facing < 0, alpha: 0.65 }); // [#49]
+      const previous = ghostStates.get(g.id);
+      ghostStates.set(g.id, g.state);
+      if (g.state === "death") {
+        let death = ghostDeaths.get(g.id);
+        if (!death) ghostDeaths.set(g.id, (death = art.death.play("die")));
+        if (previous !== "death") death.reset();
+        drawDeath(death, g, 0.75);
+      } else {
+        let animation = ghostAnimations.get(g.id);
+        if (!animation) ghostAnimations.set(g.id, (animation = heroAnimation(g.color)));
+        animation.set(animationState(g));
+        drawHero(animation, g, 0.7);
+      }
+      drawPlayerColor(g);
     }
     if (player.active) {
-      playerAnimation.look(player.vel.x, player.vel.y, player.facing);
-      Draw.sprite(playerAnimation, player, { flipX: player.facing < 0, scaleY: squash.value }); // [#26]
+      if (player.state === "death") drawDeath(deathAnimation, player);
+      else drawHero(playerAnimation, player, 1, squash.value); // [#26]
+      drawPlayerColor(player);
     }
     Draw.particles(fx); // [#28]
   });
@@ -502,7 +675,7 @@ function drawStage(remotes: readonly RemotePlayer[]): void {
 
 function drawHud(remotes: readonly RemotePlayer[]): void {
   drawPlayerLabels(remotes);
-  UI.text(`Coins: ${score}`, { x: 10, y: 8, color: "#888" }); // [#6]
+  UI.text(`Gems: ${score}`, { x: 10, y: 8, color: "#888" }); // [#6]
 }
 
 function drawFeature(name: string, description: string): void {
@@ -563,7 +736,7 @@ const titleScene: SceneSpec = {
           () => {
             drawFeature(
               "MOVEMENT",
-              "Run, variable jump, coyote time, jump buffering, wall slide/jump, air dash, and down+jump through one-way platforms.",
+              "Run, variable jump, coyote time, jump buffering, wall slide/jump, air dash, one-way platforms, smooth slopes, ladders, and fall-out death/respawn.",
             );
             drawFeature(
               "MULTIPLAYER",
@@ -571,11 +744,11 @@ const titleScene: SceneSpec = {
             );
             drawFeature(
               "SHARED WORLD + NETCODE",
-              "Host-validated coins hide instantly, play predicted pickup effects, sync to everyone, and respawn after 4 seconds. Typed events, host migration, 60 Hz player snapshots, bounded extrapolation, adaptive jitter buffering, network time, and RTT are built in.",
+              "Host-validated gems hide instantly, play predicted sheet effects, sync to everyone, and respawn after 4 seconds. Movement, climbing, death states, sounds, typed events, host migration, 60 Hz snapshots, extrapolation, adaptive jitter buffering, network time, and RTT are built in.",
             );
             drawFeature(
               "ENGINE",
-              "Responsive canvas, ASCII tilemaps, swept collision, scenes/pause and audio settings, camera, particles, animation, synth audio, storage, immediate UI, and a virtual gamepad.",
+              "Responsive canvas, Sunny Land tiles and sprite sheets, semantic ASCII levels, swept/slope collision, ladder movement, scenes, camera, particles, animation, synth audio, storage, immediate UI, perf graphs, and a virtual gamepad.",
             );
             drawFeature(
               "FALLBACK",

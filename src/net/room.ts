@@ -441,6 +441,9 @@ export interface PeerStates<T> extends Iterable<T & { id: string }> {
   readonly ids: string[];
   /** Latest received state, without render interpolation delay. */
   latest(id: string): (T & { id: string }) | null;
+  /** Clear one peer's interpolation buffer so its next snapshot snaps. Use
+   * for teleports and respawns. */
+  reset(id: string): void;
   /** Stop broadcasting and listening (also stops when the room closes). */
   stop(): void;
 }
@@ -518,6 +521,9 @@ export function sync<T>(room: Room<unknown>, opts: SyncOptions<T>): PeerStates<T
     latest(id) {
       const state = roster.latest(id);
       return state === null ? null : { ...state, id };
+    },
+    reset(id) {
+      roster.reset(id);
     },
     stop,
     *[Symbol.iterator]() {

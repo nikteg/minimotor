@@ -78,9 +78,11 @@ buttons, panels, lists, tables, dialogs, drag-and-drop). `UI.vw`/`UI.vh`
 provide constrained viewport-relative sizes; modals clamp their preferred
 width inside the viewport automatically.
 
-**Collision & math** — `Collision` (pure, allocation-free: `moveAndSlide`
-platformer resolution, one-way platforms and `dropThrough`, swept AABB,
-overlap tests), `Vec2`, `Mathf` (lerp, damp, clamp, easing, randomness).
+**Collision & math** — `Collision` (swept `moveAndSlide`, one-way platforms,
+walkable slopes, `climbLadder`, `dropThrough`, swept AABB and overlap tests),
+`Vec2`, `Mathf` (lerp, damp, clamp, easing, randomness). Tile legends can
+declare `{ slope: "up-right" }` and `{ ladder: true }`, so the same ASCII level
+drives rendering, broadphase, slopes, and climbing.
 
 **Audio** — `Audio.sfx` (crash-safe sound effects), `Audio.music`, buses and
 mixing, plus `Audio.tone` / `Audio.engine` synthesis. All WebAudio, no assets

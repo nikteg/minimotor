@@ -23,6 +23,7 @@ describe("Net.bodyState", () => {
         grounded: true,
         facing: -1,
         color: "#4ecdc4",
+        state: "climb",
       }),
     ).toEqual({
       x: 1,
@@ -34,6 +35,7 @@ describe("Net.bodyState", () => {
       grounded: true,
       facing: -1,
       color: "#4ecdc4",
+      state: "climb",
     });
   });
 
