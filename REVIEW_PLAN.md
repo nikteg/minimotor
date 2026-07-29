@@ -422,8 +422,16 @@ Ranked by how fast a real game hits them:
    (`body`, `move`, `release`, `raw`) or null. A spring, not a teleport, so the
    dragged body still collides on the way; dynamic bodies only, `strength` /
    `frequency` / `damping` tune the pull. The `physics` sample drags with it.
-7. **More shapes and joints** — polygon, edge/chain (terrain), plus distance /
-   prismatic / weld joints. Lower priority; `box`/`circle`/`pin` covers a lot.
+7. ✅ **More shapes and joints** — `polygon(x, y, points, opts?)` (px offsets
+   from the center; Box2D hulls them, so winding is not the caller's problem)
+   and `chain(points, opts?)` (static, zero-thickness terrain in world px —
+   fast movers crossing it want `bullet`). Joints: `rope` (distance, defaults
+   to the gap the bodies already have, `stiffness` turns it into a spring),
+   `slider` (prismatic, with `min`/`max` travel and a `motor` in px/s), and
+   `weld`. They share a `Joint2D` handle — deferred, idempotent `destroy()`
+   plus `raw` — which `Pin2D` now extends. `rope.setLength` wakes both bodies:
+   a hanging load is asleep, and a winch that only takes effect the next time
+   something else disturbs it is a bug the test caught.
 
 Keep the existing style throughout: pixels in, pixels out, plain-data results,
 `raw` escape hatch preserved.
@@ -435,7 +443,8 @@ vectors passed to `setPosition`/`setLinearVelocity`/`applyForce`/
 `pw.isLocked()` queue as `destroyBody` (joints drained before bodies, since
 destroying a body takes its joints with it) and is idempotent.
 
-**Remaining: item 7** (more shapes and joints).
+**All of P4.1 is shipped.** The one deliberate omission is a concave-shape
+helper: build those from several convex bodies, or weld convex pieces.
 
 ### P4.2 ✅ Audio — stereo pan
 
@@ -498,20 +507,21 @@ what is on the shelf.
 
 Each step is independently shippable and testable.
 
-| #   | Work                           | Items                  | Status              |
-| --- | ------------------------------ | ---------------------- | ------------------- |
-| 1   | Re-init lifecycle fix          | P0.1, P0.2             | ✅ done             |
-| 2   | `measureText` memo             | P1.1                   | ✅ done             |
-| 3   | Camera correctness             | P2.1, P2.2, P2.3       | ✅ done             |
-| 4   | Cheap allocation sweep         | P1.2, P1.3, P1.6, P2.4 | ✅ done (+ P1.4)    |
-| 5   | Cache bounds + doc fixes       | P2.5, P2.7             | ✅ done (+ P2.6)    |
-| 6   | Physics2D gaps                 | P4.1 items 1–4         | ✅ done (7 remains) |
-| 7   | Collision broadphase           | P1.5, P3.1             | ✅ done             |
-| 8   | Draw primitives + surface trim | P3.2, P3.3             | ✅ done             |
-| 9   | `Game.letterbox` retirement    | P3.4                   | ✅ done             |
-| 10  | Catalog growth                 | §7 backlog             | ⬜ ongoing          |
-| 11  | UI scale + layout invariants   | (not in the original)  | ✅ done             |
-| 12  | Queries, drag, pan, reconnect  | P4.1 5–6, P4.2, P4.3   | ✅ done             |
+| #   | Work                           | Items                  | Status           |
+| --- | ------------------------------ | ---------------------- | ---------------- |
+| 1   | Re-init lifecycle fix          | P0.1, P0.2             | ✅ done          |
+| 2   | `measureText` memo             | P1.1                   | ✅ done          |
+| 3   | Camera correctness             | P2.1, P2.2, P2.3       | ✅ done          |
+| 4   | Cheap allocation sweep         | P1.2, P1.3, P1.6, P2.4 | ✅ done (+ P1.4) |
+| 5   | Cache bounds + doc fixes       | P2.5, P2.7             | ✅ done (+ P2.6) |
+| 6   | Physics2D gaps                 | P4.1 items 1–4         | ✅ done          |
+| 7   | Collision broadphase           | P1.5, P3.1             | ✅ done          |
+| 8   | Draw primitives + surface trim | P3.2, P3.3             | ✅ done          |
+| 9   | `Game.letterbox` retirement    | P3.4                   | ✅ done          |
+| 10  | Catalog growth                 | §7 backlog             | ⬜ ongoing       |
+| 11  | UI scale + layout invariants   | (not in the original)  | ✅ done          |
+| 12  | Queries, drag, pan, reconnect  | P4.1 5–6, P4.2, P4.3   | ✅ done          |
+| 13  | Shapes + joints                | P4.1 item 7            | ✅ done          |
 
 Step 11 was found in use rather than in review: `UI.scaled` is now the only
 thing that applies scale (`UI.setScale` is just the default factor the no-arg
@@ -520,11 +530,11 @@ form reads), deferred chrome replays the transform it was requested under, and
 them — the "UI drawn on top of UI" signature — with unit coverage plus an e2e
 that asserts the invariant across six sample pages.
 
-Steps 1–9, 11 and 12 are shipped: 619 unit tests across 46 files, 37 Playwright
+Steps 1–9 and 11–13 are shipped: 670 unit tests across 49 files, 39 Playwright
 tests, and `pnpm verify` (tsc src + samples, oxlint, oxfmt) all green.
 
-Still open: **P4.1 item 7** (more shapes and joints — polygon, edge/chain,
-distance/prismatic/weld) and the **§7 catalog growth backlog**, the ongoing one.
+Still open: the **§7 catalog growth backlog** — the ongoing one. Every numbered
+priority in this plan is now shipped.
 
 ## Verification gate
 

@@ -368,9 +368,18 @@ describe("Physics2D shapes", () => {
     expect(tri.y).toBeLessThan(345);
 
     // Hull, not bounding box: the corner beside the apex is outside the shape.
-    const still = phys.polygon(600, 100, [{ x: 0, y: -20 }, { x: 20, y: 20 }, { x: -20, y: 20 }], {
-      type: "static",
-    });
+    const still = phys.polygon(
+      600,
+      100,
+      [
+        { x: 0, y: -20 },
+        { x: 20, y: 20 },
+        { x: -20, y: 20 },
+      ],
+      {
+        type: "static",
+      },
+    );
     expect(phys.pointPick(600, 110)).toBe(still); // inside, near the base
     expect(phys.pointPick(618, 82)).toBeNull(); // in the box, outside the triangle
   });

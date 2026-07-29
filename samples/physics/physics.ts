@@ -3,10 +3,10 @@
 // component next to a Sprites.Sprite; a sync system copies the transform
 // over each step, and Draw.sprites(ecs.dense(Sprites.Sprite)) renders everything. No custom draw
 // code for the bodies at all.
-// Demonstrates: Physics2D.world/box/circle/walls/pin, onContact, deferred
-// destroy, wake() on resize, drag() for grabbing a body with the pointer, the
-// ECS body-in-a-component pattern, and the separate "minimotor/physics2d"
-// entry (core stays dep-free).
+// Demonstrates: Physics2D.world/box/circle/polygon/chain/walls, the pin and
+// rope joints, onContact, deferred destroy, wake() on resize, drag() for
+// grabbing a body with the pointer, the ECS body-in-a-component pattern, and
+// the separate "minimotor/physics2d" entry (core stays dep-free).
 import {
   Audio,
   Camera,
@@ -228,9 +228,11 @@ Loop.run({
         grab = null;
       }
     } else if (Pointer.down && spawnTick++ % 6 === 0) {
-      // Hold to pour crates; shift-click (or X) pours balls instead.
+      // Hold to pour boxes and polygons; shift-click (or X) pours balls.
       if (Keys.down("ShiftLeft") || Keys.down("ShiftRight") || Keys.down("KeyX")) {
         spawnBall(Pointer.x, Pointer.y);
+      } else if (Math.random() < 0.3) {
+        spawnWedge(Pointer.x, Pointer.y);
       } else {
         spawnCrate(Pointer.x, Pointer.y);
       }
@@ -254,6 +256,18 @@ Loop.run({
       ctx.arc(anchor.x, anchor.y, 5, 0, Math.PI * 2);
       ctx.fill();
 
+      // The chain is scenery with no renderer of its own — it IS this polyline,
+      // so drawing the same points is drawing the collision shape.
+      for (let i = 1; i < rampPoints.length; i++) {
+        const a = rampPoints[i - 1];
+        const b = rampPoints[i];
+        Draw.line(a.x, a.y, b.x, b.y, "#5c7cfa", 3);
+      }
+      // The rope, likewise: a joint holding two points a fixed distance apart.
+      Draw.line(hook.x, hook.y, wrecker.x, wrecker.y, "#868e96", 2);
+      ctx.fillStyle = "#7d8894";
+      ctx.fillRect(hook.x - 5, hook.y - 5, 10, 10);
+
       Draw.sprites(ecs.dense(Sprites.Sprite)); // every body, via the built-in renderer
 
       // The drag spring, drawn so the grab reads as a rubber band.
@@ -261,7 +275,7 @@ Loop.run({
     });
 
     UI.text(`bodies: ${phys.count}`, { x: 10, y: 6, size: 14 });
-    UI.text("drag a body · hold empty space to pour · +Shift/X balls · R reset", {
+    UI.text("drag anything (try the wrecking ball) · hold to pour · +Shift/X balls · R reset", {
       x: 10,
       y: vp.h - 24,
       size: 14,
