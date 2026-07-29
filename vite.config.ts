@@ -123,8 +123,8 @@ export default defineConfig({
   // Don't pre-bundle the engine so edits to its build output show up without
   // clearing Vite's dep cache.
   optimizeDeps: { exclude: ["minimotor"] },
-  server: { port: 8765, strictPort: true },
-  preview: { port: 8765, strictPort: true },
+  server: { host: true, port: 8765, strictPort: true },
+  preview: { host: true, port: 8765, strictPort: true },
   build: {
     target: "es2020",
     outDir: here("./samples-dist"),

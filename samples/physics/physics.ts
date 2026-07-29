@@ -43,6 +43,15 @@ const crateTex = (color: string) =>
     c.fillStyle = "rgba(255,255,255,0.18)";
     c.fillRect(-TEX / 2, -TEX / 2, TEX, 6);
   });
+const wedgeTex = Sprites.getSprite("phys-wedge", TEX, vp.dpr, (c) => {
+  c.fillStyle = "#63e6be";
+  c.beginPath();
+  c.moveTo(0, -TEX / 2);
+  c.lineTo(TEX / 2, TEX / 2);
+  c.lineTo(-TEX / 2, TEX / 2);
+  c.closePath();
+  c.fill();
+});
 const ballTex = Sprites.getSprite("phys-ball", TEX, vp.dpr, (c) => {
   c.fillStyle = "#4ecdc4";
   c.beginPath();
@@ -68,8 +77,40 @@ const plank = phys.box(vp.w / 2, vp.h * 0.55, paddle.w, paddle.h, {
 const hinge = phys.pin(anchor, plank, vp.w / 2, vp.h * 0.55);
 hinge.motor(1.5, 80000); // slow constant spin — flings whatever lands on it
 
+// A chain: zero-thickness scenery, the shape for terrain. Points are world px,
+// so the ramp is literally the polyline we draw. It has no `set()` — rebuild it
+// when the viewport changes.
+let rampPoints: { x: number; y: number }[] = [];
+let ramp = phys.chain([]);
+function buildRamp() {
+  ramp.destroy();
+  rampPoints = [
+    { x: 0, y: vp.h - 190 },
+    { x: vp.w * 0.22, y: vp.h - 60 },
+    { x: vp.w * 0.3, y: vp.h },
+  ];
+  ramp = phys.chain(rampPoints, { friction: 0.5 });
+}
+buildRamp();
+
+// A rope pendulum: a distance joint holding a heavy ball under a fixed point.
+// Grab it (drag works on any dynamic body) and swing it into the pile.
+const hook = phys.box(vp.w * 0.8, 40, 8, 8, { type: "static" });
+const wrecker = phys.circle(vp.w * 0.8, 40 + 160, 22, { density: 6, friction: 0.4 });
+ecs.spawn(
+  Sprites.Sprite.with({ x: wrecker.x, y: wrecker.y, img: ballTex, w: 44, h: 44 }),
+  Phys.with({ body: wrecker }),
+);
+phys.rope(hook, wrecker);
+
 App.onResize((next) => {
   vp = next;
+  buildRamp();
+  // The rope's anchors are body-local, so moving both ends keeps the hang.
+  const hdx = vp.w * 0.8 - hook.x;
+  hook.x += hdx;
+  wrecker.x += hdx;
+  wrecker.wake();
   // Re-target the frame: the kinematic walls glide to the new rect, sweeping
   // bodies ahead of them — everything pushes on everything else, no teleports.
   frame.set(0, 0, vp.w, vp.h);
@@ -96,6 +137,24 @@ function spawnCrate(x: number, y: number) {
   );
 }
 
+// A convex polygon body — the points are px offsets from its center, and the
+// same triangle the texture draws.
+function spawnWedge(x: number, y: number) {
+  const s = Mathf.randRange(26, 44);
+  const body = phys.polygon(
+    x,
+    y,
+    [
+      { x: 0, y: -s / 2 },
+      { x: s / 2, y: s / 2 },
+      { x: -s / 2, y: s / 2 },
+    ],
+    { friction: 0.5, restitution: 0.05, data: "wedge" },
+  );
+  body.rot = Mathf.randRange(0, Math.PI);
+  ecs.spawn(Sprites.Sprite.with({ x, y, img: wedgeTex, w: s, h: s }), Phys.with({ body }));
+}
+
 function spawnBall(x: number, y: number) {
   const r = Mathf.randRange(10, 20);
   const body = phys.circle(x, y, r, {
@@ -109,10 +168,12 @@ function spawnBall(x: number, y: number) {
 
 function reset() {
   for (const [e, p] of ecs.query(Phys)) {
+    if (p.body === wrecker) continue; // the pendulum is scenery, not clutter
     p.body.destroy();
     ecs.despawn(e);
   }
   for (let i = 0; i < 8; i++) spawnCrate(Mathf.randRange(60, vp.w - 60), Mathf.randRange(0, 200));
+  for (let i = 0; i < 4; i++) spawnWedge(Mathf.randRange(60, vp.w - 60), Mathf.randRange(0, 180));
   for (let i = 0; i < 5; i++) spawnBall(Mathf.randRange(60, vp.w - 60), Mathf.randRange(0, 150));
 }
 reset();

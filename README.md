@@ -63,7 +63,8 @@ sprites, tiles, gradients), `Keys` / `Pointer` / `Mouse` (polled input),
 
 **Input** — `Input.map` binds keys/gamepad buttons to named actions with edge
 state; `OnscreenInput` renders an opt-in touch gamepad that shares the same
-code path as a hardware pad.
+code path as a hardware pad. `pad.buttonBounds("a")` locates a virtual button
+semantically for canvas automation.
 
 **Game structure** — `Scenes` (scene stack with `Transitions` for fade/wipe),
 `ECS` (tiny entity-component-system), `Fsm` (finite state machines), `Clock` /
@@ -73,20 +74,24 @@ code path as a hardware pad.
 **Rendering & feel** — `Sprites` (offscreen pre-rendering, tinting, atlas
 baking), `Anim` (sheet/state animation + value tweens), `Particles`, `Tiles`
 (ASCII-grid levels with tileset skins and auto-tiling), `UI` (immediate-mode
-buttons, panels, lists, tables, dialogs, drag-and-drop).
+buttons, panels, lists, tables, dialogs, drag-and-drop). `UI.vw`/`UI.vh`
+provide constrained viewport-relative sizes; modals clamp their preferred
+width inside the viewport automatically.
 
 **Collision & math** — `Collision` (pure, allocation-free: `moveAndSlide`
-platformer resolution, swept AABB, overlap tests), `Vec2`, `Mathf` (lerp,
-damp, clamp, easing, randomness).
+platformer resolution, one-way platforms and `dropThrough`, swept AABB,
+overlap tests), `Vec2`, `Mathf` (lerp, damp, clamp, easing, randomness).
 
 **Audio** — `Audio.sfx` (crash-safe sound effects), `Audio.music`, buses and
 mixing, plus `Audio.tone` / `Audio.engine` synthesis. All WebAudio, no assets
 required.
 
-**Multiplayer** — `Net.join(url, { room })` opens a symmetric room over
-WebSocket or WebRTC; `Net.sync` declaratively replicates state, with snapshot
-interpolation and roster tracking. Pair with `minimotor/server` for the Node
-side.
+**Multiplayer** — `Net.join` opens a symmetric WebRTC room; `syncBody`/
+`syncBodies` replicate lightweight or Physics2D bodies, while `syncEntities`,
+`sharedItems`, typed `events`, binding/ownership, synchronized time, prediction,
+diagnostics, and adverse-network simulation cover the usual multiplayer
+plumbing. Pair with `minimotor/server` for authoritative rooms, input buffering,
+presence, and matchmaking.
 
 **Ready-made legos** — the small pieces of game knowledge that otherwise get
 rewritten (usually slightly wrong) in every project, for any kind of game.
@@ -96,6 +101,67 @@ inventory stacking, world wrapping. `Gizmos` holds the **stateful gadgets** —
 create one, then tick it: combos, patrols, trails, ability charges, checkpoint
 routes, seeded RNG and shuffle bags, undo stacks, arcade car handling and
 skidmarks. Both surfaces are flat: `Goodies.floodFill`, `Gizmos.combo`.
+
+## Multiplayer quick start
+
+```ts
+const raw = await Net.join("/ws-signal", { room: "arena", fallback: "local" });
+const room = Net.monitorRoom(raw);
+const players = Net.syncBody(room, player);
+const crates = Net.syncBodies(room, () => localCrates, { id: (crate) => crate.id });
+const game = Net.events<{ shoot: Shot; damage: Damage }>(room);
+const time = Net.networkTime(room);
+const coins = Net.sharedItems(room, coinSpawns, {
+  respawnMs: 4000,
+  now: () => time.now,
+  onEffect: () => sfx.coin.play(),
+});
+
+for (const remote of players) Draw.sprite(hero, { ...remote, w: 32, h: 32 });
+for (const coin of coins) Draw.circle(coin, 8);
+```
+
+`syncEntities` covers arbitrary dynamic collections; `bindEntities` turns
+remote states into render objects or physics proxies. `own`/`owns`/
+`hasAuthority` handle authority, `createPrediction` reconciles responsive local
+input, and `simulateNetwork` adds latency, jitter, and loss during development.
+`syncBody`/`syncBodies` use bounded position-derived extrapolation on stable
+links and automatically restore a jitter buffer when arrivals become uneven;
+velocity units can be per-step or per-second. `room.meter` plugs directly into
+`Perf.plugin`.
+
+With `fallback: "local"`, an unreachable relay becomes a one-player room:
+events, requests, authority, sync, and game logic keep the same code path.
+
+Body/entity sync uses an adaptive jitter buffer by default: one send interval
+on stable links, expanding when arrivals become uneven. Set `delayMs` to a
+number to pin it (`0` disables the render buffer).
+
+Use one protocol type for peer events and authoritative WebSocket games:
+
+```ts
+// protocol.ts — imported by both builds
+type Game = Protocol<{
+  events: { damage: { hp: number } };
+  requests: { shoot: { angle: number } };
+  client: { type: "input"; x: number };
+  server: { type: "world"; players: Player[] };
+}>;
+
+// client
+const events = Net.events<Game>(room);
+events.request("shoot", { angle: 1.2 });
+const server = Net.connectProtocol<Game>({ url });
+
+// server
+const room = serveProtocol<Game>(wss, {
+  onMessage: (client, input) => room.broadcast({ type: "world", players }),
+});
+```
+
+`events`, `requests`, client→server messages, and server→client messages are
+checked from that shared file. This is compile-time safety; validate untrusted
+network data at runtime when security matters.
 
 **Odds and ends** — `Game` (score tracking, clock formatting), `Storage`
 (crash-safe localStorage), `Perf` (FPS HUD and net meter).

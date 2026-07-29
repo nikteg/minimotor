@@ -1,6 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { wireButton, preventTouchFocus, vibrate, map, createGamepadTracker } from "../index.js";
-import { App } from "../../engine/index.js";
+import {
+  wireButton,
+  preventTouchFocus,
+  vibrate,
+  map,
+  createGamepadTracker,
+  gamepads,
+  navigation,
+  registerGamepad,
+} from "../index.js";
 
 beforeEach(() => {
   document.body.innerHTML = "";
@@ -120,6 +128,30 @@ describe("Input", () => {
       expect(input.right.value).toBeCloseTo(0.8); // analog magnitude
     });
 
+    it("can consume a UI-owned action until its bindings are released", () => {
+      let step = 0;
+      const downs = new Set<number>([0]);
+      const input = map(
+        { jump: ["pad:a"] },
+        {
+          keys: fakeKeys(new Set(), { pressed: new Set(), released: new Set() }),
+          pad: fakeStickPad([], downs),
+          steps: () => step,
+        },
+      );
+      input.consume("jump");
+      expect(input.jump.down).toBe(false);
+      expect(input.jump.pressed).toBe(false);
+      step++;
+      expect(input.jump.pressed).toBe(false);
+      downs.clear();
+      step++;
+      expect(input.jump.released).toBe(false);
+      downs.add(0);
+      step++;
+      expect(input.jump.pressed).toBe(true);
+    });
+
     it("axis fuses opposing actions, analog-aware", () => {
       let step = 0;
       const held = new Set<string>();
@@ -216,6 +248,33 @@ describe("Input", () => {
       expect(t.axis(0)).toBe(0); // inside the deadzone
       expect(t.axis(1)).toBe(-0.6);
       expect(t.axis(9)).toBe(0); // no such axis
+    });
+
+    it("combines stick and d-pad into semantic navigation axes", () => {
+      const t = createGamepadTracker(() =>
+        fakePad({
+          axes: [0.6, 0],
+          buttons: Array.from({ length: 16 }, (_, i) => ({
+            pressed: i === 12 || i === 0 || i === 1,
+          })),
+        } as Partial<Gamepad>),
+      );
+      t.poll();
+      expect(navigation(t, { stick: 0 })).toMatchObject({
+        x: 0.6,
+        y: -1,
+        acceptPressed: true,
+        cancelPressed: true,
+      });
+    });
+
+    it("discovers registered virtual pads until they unregister", () => {
+      const pad = createGamepadTracker(() => fakePad());
+      pad.poll();
+      const unregister = registerGamepad(pad);
+      expect(gamepads()).toContain(pad);
+      unregister();
+      expect(gamepads()).not.toContain(pad);
     });
 
     it("reports disconnect and releases held buttons exactly once", () => {

@@ -5,9 +5,11 @@ import { scrollGestureActive } from "./lists.js";
 import {
   LayoutChildren,
   cachedContentSize,
+  consumeDismissRequest,
   ensureWired,
   enterOverlay,
   flow,
+  hasActiveNavPad,
   lastWidgetRect,
   measureWidth,
   pointerGestureOwned,
@@ -149,8 +151,8 @@ export function popover(opts: PopoverOptions, children?: () => void): boolean {
 
 /** A centered dialog over a dimmed backdrop. */
 export interface ModalOptions {
-  /** Dialog width in px. */
-  w: number;
+  /** Preferred dialog width in px. Clamped inside the viewport. Default 360. */
+  w?: number;
   /** Dialog height in px. REQUIRED in the value form; omit it in the children
    *  form and the dialog auto-sizes to its content (measured last frame). */
   h?: number;
@@ -165,6 +167,15 @@ export interface ModalOptions {
   gap?: number;
   /** Inner padding (children form). Default `theme.pad`. */
   pad?: number;
+  /** Space kept from every viewport edge while clamping. Default 12. */
+  margin?: number;
+  /** Close action for the conventional gamepad B / keyboard Escape gesture.
+   * Omit for a non-dismissible modal. */
+  onDismiss?: () => void;
+  /** Show focus on the first enabled control when the modal opens. By default
+   * the control is focused logically, but its ring is shown only when a
+   * gamepad is active. Set explicitly to override that behavior. */
+  showFocus?: boolean;
 }
 
 /** Dim the whole screen and open a centered panel. Two forms:
@@ -194,7 +205,8 @@ export function modal<R>(
 ): R | { x: number; y: number; w: number; h: number } {
   const ctx = uiCtx();
   ensureWired();
-  enterOverlay();
+  if (opts.onDismiss && consumeDismissRequest()) opts.onDismiss();
+  enterOverlay(opts.showFocus ?? hasActiveNavPad());
   const vp = anchorViewport(ctx);
   ctx.save();
   ctx.fillStyle = theme.dim;
@@ -203,11 +215,13 @@ export function modal<R>(
   if (children) {
     // The dialog IS a panel: centered by the anchor, auto-sized on the axis
     // left unspecified, and laying its children out like any container.
+    const margin = opts.margin ?? 12;
     return panel(
       {
         anchor: "center",
-        w: opts.w,
+        w: opts.w ?? 360,
         h: opts.h,
+        margin,
         title: opts.title,
         id: opts.id ?? `modal:${opts.title ?? ""}`,
         dir: opts.dir,
@@ -218,10 +232,13 @@ export function modal<R>(
     );
   }
   const h = opts.h ?? 0;
-  const x = Math.round((vp.w - opts.w) / 2);
-  const y = Math.round((vp.h - h) / 2);
-  paintFrame(ctx, { x, y, w: opts.w, h, title: opts.title });
-  return { x, y, w: opts.w, h };
+  const margin = opts.margin ?? 12;
+  const w = Math.min(opts.w ?? 360, vp.w - margin * 2);
+  const clampedH = Math.min(h, vp.h - margin * 2);
+  const x = Math.round((vp.w - w) / 2);
+  const y = Math.round((vp.h - clampedH) / 2);
+  paintFrame(ctx, { x, y, w, h: clampedH, title: opts.title });
+  return { x, y, w, h: clampedH };
 }
 
 // ---------- Confirm (declarative dialog) ----------

@@ -541,3 +541,37 @@ export function moveAndSlide(
   body.grounded = c.down;
   return c;
 }
+
+/** Drop a grounded mover through the one-way platform directly beneath it.
+ * Returns `false` without changing the body when it is not standing on a
+ * one-way surface, so solid floors can never be dropped through accidentally.
+ *
+ * Call on the down+jump edge, before `moveAndSlide`:
+ *
+ *     if (input.down.down && input.jump.pressed)
+ *       Collision.dropThrough(player, level);
+ *
+ * The tiny downward nudge puts the body below the platform's top-face test;
+ * subsequent `moveAndSlide` calls then pass through normally. */
+export function dropThrough(body: MoverBody, solids: Solids): boolean {
+  const bottom = body.y + body.h;
+  slideArea.x = body.x;
+  slideArea.y = bottom - 1;
+  slideArea.w = body.w;
+  slideArea.h = 2;
+  const candidates = gather(solids, slideArea);
+  for (const solid of candidates) {
+    if (
+      solid.oneWay &&
+      body.x < solid.x + solid.w &&
+      body.x + body.w > solid.x &&
+      Math.abs(bottom - solid.y) <= 1
+    ) {
+      body.y += 1;
+      body.vel.y = Math.max(body.vel.y, 1);
+      body.grounded = false;
+      return true;
+    }
+  }
+  return false;
+}

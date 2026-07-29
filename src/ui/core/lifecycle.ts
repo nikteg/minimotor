@@ -53,10 +53,10 @@ export function isInOverlayPass(): boolean {
 
 /** Mark that an overlay ran this frame and open its live-input pass — called by
  *  the overlay widgets (popover/modal), which own the capture semantics. */
-export function enterOverlay(): void {
+export function enterOverlay(focusVisible = false): void {
   const o = overlay();
   o.seen = true;
-  markFocusTrap();
+  markFocusTrap(focusVisible);
   o.inPass = true;
 }
 

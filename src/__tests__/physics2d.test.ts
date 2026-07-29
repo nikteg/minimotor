@@ -353,6 +353,105 @@ describe("Physics2D destroy safety", () => {
   });
 });
 
+describe("Physics2D shapes", () => {
+  it("drops a polygon onto the floor and takes the convex hull of its points", () => {
+    const phys = world();
+    phys.box(200, 380, 400, 40, { type: "static" }); // floor top at y=360
+    // A triangle, points given clockwise on screen — winding is Box2D's problem.
+    const tri = phys.polygon(200, 100, [
+      { x: 0, y: -20 },
+      { x: 20, y: 20 },
+      { x: -20, y: 20 },
+    ]);
+    run(phys, 180);
+    expect(tri.y).toBeGreaterThan(330); // landed, flat side down
+    expect(tri.y).toBeLessThan(345);
+
+    // Hull, not bounding box: the corner beside the apex is outside the shape.
+    const still = phys.polygon(600, 100, [{ x: 0, y: -20 }, { x: 20, y: 20 }, { x: -20, y: 20 }], {
+      type: "static",
+    });
+    expect(phys.pointPick(600, 110)).toBe(still); // inside, near the base
+    expect(phys.pointPick(618, 82)).toBeNull(); // in the box, outside the triangle
+  });
+
+  it("catches a falling body on a chain and lets it roll downhill", () => {
+    const phys = world();
+    // A ramp descending to the right: y 200 at x 0, y 400 at x 600.
+    phys.chain([
+      { x: 0, y: 200 },
+      { x: 600, y: 400 },
+    ]);
+    // `bullet`, because a chain has no thickness: a fast body meeting one
+    // without continuous collision goes straight through.
+    const ball = phys.circle(100, 150, 10, { friction: 0.1, bullet: true });
+    // Riding the surface = sitting one radius above the ramp line under it.
+    const ride = () => Math.abs(ball.y - (200 + (ball.x / 600) * 200 - 10));
+
+    run(phys, 45);
+    expect(ride()).toBeLessThan(15); // caught by the chain, not fallen through
+    const x0 = ball.x;
+    run(phys, 45);
+    expect(ball.x).toBeGreaterThan(x0); // and it runs down the slope…
+    expect(ride()).toBeLessThan(15); // …still on it
+  });
+});
+
+describe("Physics2D joints", () => {
+  it("hangs a body from a rope and winches it in", () => {
+    const phys = world();
+    const anchor = phys.box(200, 100, 10, 10, { type: "static" });
+    const load = phys.box(200, 250, 20, 20);
+    const rope = phys.rope(anchor, load); // holds the current 150px gap
+    run(phys, 180);
+    expect(load.y - anchor.y).toBeGreaterThan(140);
+    expect(load.y - anchor.y).toBeLessThan(160);
+
+    rope.setLength(60);
+    run(phys, 180);
+    expect(load.y - anchor.y).toBeLessThan(75);
+
+    rope.destroy();
+    rope.destroy(); // idempotent
+    run(phys, 120);
+    expect(load.y - anchor.y).toBeGreaterThan(200); // cut loose, it falls
+  });
+
+  it("drives a lift along its axis and stops at the limit", () => {
+    const phys = world({ gravity: { x: 0, y: 0 } });
+    const ground = phys.box(200, 400, 10, 10, { type: "static" });
+    const platform = phys.box(200, 400, 80, 12, { type: "dynamic" });
+    const lift = phys.slider(ground, platform, 0, -1, { min: 0, max: 200 });
+    expect(lift.travel).toBeCloseTo(0, 1);
+
+    lift.motor(120); // rise at 120 px/s
+    run(phys, 60); // 1 s
+    expect(platform.y).toBeLessThan(300); // moved up…
+    expect(platform.x).toBeCloseTo(200, 1); // …and nowhere else
+
+    run(phys, 180); // long enough to run past the limit
+    expect(lift.travel).toBeLessThanOrEqual(201);
+    expect(platform.y).toBeGreaterThan(195);
+  });
+
+  it("welds two bodies into one, until the weld is destroyed", () => {
+    const phys = world();
+    const a = phys.box(200, 100, 20, 20);
+    const b = phys.box(240, 100, 20, 20);
+    const seam = phys.weld(a, b, 220, 100);
+    run(phys, 120);
+    // They fell together, keeping their relative offset.
+    expect(b.x - a.x).toBeGreaterThan(35);
+    expect(b.x - a.x).toBeLessThan(45);
+    expect(Math.abs(b.y - a.y)).toBeLessThan(5);
+
+    seam.destroy();
+    a.applyImpulse(-4000, 0);
+    run(phys, 120);
+    expect(b.x - a.x).toBeGreaterThan(60); // free to drift apart
+  });
+});
+
 describe("Physics2D world queries", () => {
   it("queryAABB returns the bodies overlapping the rect, and nothing else", () => {
     const phys = world({ gravity: { x: 0, y: 0 } });

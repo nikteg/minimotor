@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { serve, type ServerSocket } from "../room.js";
+import { serve, serveProtocol, type ServerSocket } from "../room.js";
 import { signaling } from "../signaling.js";
+import type { Protocol } from "../../protocol.js";
 
 // A WebSocket-like socket + server test double.
 class MockSocket implements ServerSocket {
@@ -64,6 +65,22 @@ describe("net/server room", () => {
     a.message(JSON.stringify({ type: "state", x: 3 }));
     a.message("not json{");
     expect(got).toEqual([{ type: "state", x: 3 }]);
+  });
+
+  it("uses one protocol for inbound and outbound messages", () => {
+    type Game = Protocol<{
+      client: { type: "move"; x: number };
+      server: { type: "world"; x: number };
+    }>;
+    const srv = new MockServer();
+    const room = serveProtocol<Game>(srv, {
+      onMessage(client, msg) {
+        room.send(client, { type: "world", x: msg.x });
+      },
+    });
+    const client = srv.connect();
+    client.message('{"type":"move","x":4}');
+    expect(client.json()).toEqual([{ type: "world", x: 4 }]);
   });
 
   it("assigns stable ids and removes clients on close", () => {

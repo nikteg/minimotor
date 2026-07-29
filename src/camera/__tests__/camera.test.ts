@@ -127,6 +127,16 @@ describe("createCamera (pull-based lens)", () => {
     expect(world.y).toBeCloseTo(80);
   });
 
+  it("returns owned vectors unless an output vector is supplied", () => {
+    const cam = createCamera({ view: VIEW });
+    const first = cam.toScreen({ x: 1, y: 2 });
+    const second = cam.toScreen({ x: 3, y: 4 });
+    expect(first).not.toBe(second);
+    expect(first).toEqual({ x: 1, y: 2 });
+    const out = { x: 0, y: 0 };
+    expect(cam.toWorld({ x: 5, y: 6 }, out)).toBe(out);
+  });
+
   it("shake never outlives its duration and leaves the culling rect unshaken", () => {
     const t = stepper();
     const cam = createCamera({ view: VIEW, steps: t.steps });

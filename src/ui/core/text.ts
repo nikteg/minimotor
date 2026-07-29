@@ -109,8 +109,8 @@ export interface TextOptions {
   /** Vertical-only inset override in px (see `pad`). */
   padY?: number;
   /** Word-wrap to multiple lines within the available width instead of
-   *  squeezing one line to fit. The lines are stacked and vertically centered
-   *  in the slot — give the slot enough `h` for them (≈ `size + 6` per line). */
+   *  squeezing one line to fit. In a layout, or when `w`/`maxWidth` is known,
+   *  an omitted `h` grows automatically to fit every line. */
   wrap?: boolean;
   /** Clamp width (px) for a single line — the glyphs squeeze rather than
    *  spill. In a layout the slot width is used automatically (unless `wrap`). */
@@ -200,12 +200,36 @@ export function text(str: string, rawOpts?: TextOptions): void {
   ctx.font = opts.font ?? uiFont(opts.size ?? theme.fontSize, opts.bold ?? false);
   const natural = Math.ceil(measureWidth(ctx, str));
   const lineH = (opts.size ?? theme.fontSize) + 6;
-  const rect = place(opts, natural, opts.h ?? lineH, "text");
+  const padX = opts.padX ?? opts.pad ?? theme.textPad;
+  const padY = opts.padY ?? opts.pad ?? theme.textPad;
+  const layout =
+    opts.x === undefined && opts.y === undefined ? (opts.at ?? currentLayout()) : undefined;
+  const wrapWidth =
+    opts.maxWidth ??
+    (opts.w !== undefined
+      ? opts.w - padX * 2
+      : layout?.dir === "col" && layout.crossSize !== undefined
+        ? layout.crossSize - padX * 2
+        : layout?.dir === "row"
+          ? layout.remaining - padX * 2
+          : undefined);
+  const autoH =
+    opts.wrap && wrapWidth !== undefined
+      ? wrapLines(ctx, str, Math.max(0, wrapWidth)).length * lineH + padY * 2
+      : lineH;
+  const autoW =
+    opts.wrap && opts.w === undefined && layout?.dir === "row" ? layout.remaining : undefined;
+  const rect = place(
+    opts.wrap && wrapWidth !== undefined
+      ? { ...opts, w: autoW ?? opts.w, h: opts.h ?? autoH }
+      : opts,
+    natural,
+    autoH,
+    "text",
+  );
 
   // Inset within the slot (pad shorthand + per-axis overrides). Falls back to
   // the theme's textPad (default 0 → flush) so a global inset is one setTheme.
-  const padX = opts.padX ?? opts.pad ?? theme.textPad;
-  const padY = opts.padY ?? opts.pad ?? theme.textPad;
   const bx = rect.x + padX;
   const bw = rect.w - padX * 2;
   const by = rect.y + padY;

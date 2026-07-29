@@ -42,6 +42,48 @@ export interface GamepadState {
   released(button: number): boolean;
 }
 
+export interface GamepadNavigation {
+  /** Horizontal navigation axis, -1..1. */
+  x: number;
+  /** Vertical navigation axis, -1..1. */
+  y: number;
+  /** Conventional primary/accept action edge. */
+  acceptPressed: boolean;
+  /** Conventional back/cancel action edge. */
+  cancelPressed: boolean;
+}
+
+const navigationState: GamepadNavigation = {
+  x: 0,
+  y: 0,
+  acceptPressed: false,
+  cancelPressed: false,
+};
+
+/** Semantic UI navigation from a gamepad: D-pad axes plus, optionally, a
+ * stick. Keeps menu code independent of standard-mapping button indices.
+ * Returns a reused object; read it, don't hold it. */
+export function navigation(
+  pad: GamepadState,
+  options: { stick?: false | 0 | 1 } = {},
+): GamepadNavigation {
+  const stick = options.stick ?? false;
+  const axis = stick === false ? -1 : stick * 2;
+  const sx = axis < 0 ? 0 : pad.axis(axis);
+  const sy = axis < 0 ? 0 : pad.axis(axis + 1);
+  navigationState.x = Math.max(
+    -1,
+    Math.min(1, sx + Number(pad.down(Buttons.DpadRight)) - Number(pad.down(Buttons.DpadLeft))),
+  );
+  navigationState.y = Math.max(
+    -1,
+    Math.min(1, sy + Number(pad.down(Buttons.DpadDown)) - Number(pad.down(Buttons.DpadUp))),
+  );
+  navigationState.acceptPressed = pad.pressed(Buttons.A);
+  navigationState.cancelPressed = pad.pressed(Buttons.B);
+  return navigationState;
+}
+
 const DEADZONE = 0.15;
 
 /** Create a gamepad tracker fed by `read` (injectable for tests). Call `poll()`
@@ -94,6 +136,7 @@ export function createGamepadTracker(
 
 // Default facade: one tracker per pad index, polled on the loop's fixed step.
 const defaultPads = new Map<number, ReturnType<typeof createGamepadTracker>>();
+const registeredPads = new Set<GamepadState>();
 
 let padsWired = false;
 
@@ -130,8 +173,39 @@ export function gamepad(index = 0): GamepadState {
   return pad;
 }
 
+const connectedPads: GamepadState[] = [];
+
+/** Register a virtual or externally managed pad for APIs that discover all
+ * gamepads, such as UI navigation. Engine-created on-screen pads register
+ * themselves; custom integrations can use the returned cleanup function. */
+export function registerGamepad(pad: GamepadState): () => void {
+  registeredPads.add(pad);
+  return () => registeredPads.delete(pad);
+}
+
+/** Every connected registered and hardware gamepad. Returns a reused array;
+ * read it, don't hold it. */
+export function gamepads(): readonly GamepadState[] {
+  connectedPads.length = 0;
+  for (const pad of registeredPads) {
+    if (pad.connected) connectedPads.push(pad);
+  }
+  const raw =
+    typeof navigator !== "undefined" && typeof navigator.getGamepads === "function"
+      ? navigator.getGamepads()
+      : [];
+  for (let i = 0; i < raw.length; i++) {
+    if (!raw[i]) continue;
+    const pad = gamepad(i);
+    if (pad.connected && !connectedPads.includes(pad)) connectedPads.push(pad);
+  }
+  return connectedPads;
+}
+
 /** Reset gamepad facade state and loop wiring — for tests. */
 export function _resetGamepads(): void {
   defaultPads.clear();
+  registeredPads.clear();
+  connectedPads.length = 0;
   padsWired = false;
 }

@@ -31,13 +31,18 @@ import {
   AABB,
   type Body as PlanckBody,
   Box,
+  Chain,
   Circle,
   type Contact,
+  DistanceJoint,
   type Fixture,
   type Joint,
   MouseJoint,
+  Polygon,
+  PrismaticJoint,
   RevoluteJoint,
   Vec2,
+  WeldJoint,
   World,
 } from "planck";
 import { component, type Ecs as EcsWorld } from "./ecs/index.js";
@@ -146,16 +151,81 @@ export interface Walls2D {
   destroy(): void;
 }
 
+/** What every joint factory hands back: a way to let go, and the raw joint.
+ *  `destroy()` is deferred while the world is stepping and idempotent —
+ *  destroying either joined body already takes the joint with it. */
+export interface Joint2D<J extends Joint = Joint> {
+  /** Remove the joint. */
+  destroy(): void;
+  /** Escape hatch: the underlying planck joint. */
+  readonly raw: J;
+}
+
 /** A revolute joint from `pin()`. */
-export interface Pin2D {
+export interface Pin2D extends Joint2D<RevoluteJoint> {
   /** Drive the joint like a motor: target speed in rad/s, with the torque
    *  budget to reach it (`maxTorque` default 1000). Pass speed 0 to brake, or
    *  call `destroy()` to let go. */
   motor(speedRadPerSec: number, maxTorque?: number): void;
-  /** Remove the joint. */
-  destroy(): void;
-  /** Escape hatch: the underlying planck joint. */
-  readonly raw: RevoluteJoint;
+}
+
+/** Options for `rope()`. */
+export interface RopeOptions {
+  /** Distance to hold, in px. Default: however far apart they are right now. */
+  length?: number;
+  /** Springiness in Hz — 0 (default) is a rigid rod, low values sag and bounce
+   *  like a bungee. */
+  stiffness?: number;
+  /** Spring damping: 0 oscillates forever, 1 is critically damped.
+   *  Default 0.7. Only matters with a `stiffness`. */
+  damping?: number;
+}
+
+/** A distance joint from `rope()` — holds two bodies a fixed distance apart,
+ *  or springs between them when given a `stiffness`. */
+export interface Rope2D extends Joint2D<DistanceJoint> {
+  /** Re-target the held distance in px (winch it in, pay it out). */
+  setLength(px: number): void;
+}
+
+/** Options for `slider()`. */
+export interface SliderOptions {
+  /** Travel limits along the axis in px, measured from the starting position
+   *  (`min` behind, `max` ahead). Omit for unlimited travel. */
+  min?: number;
+  /** See `min`. */
+  max?: number;
+}
+
+/** A prismatic joint from `slider()` — the bodies may only slide along one
+ *  axis relative to each other: lifts, doors, pistons. */
+export interface Slider2D extends Joint2D<PrismaticJoint> {
+  /** Drive the slide: target speed in px/s along the axis, with the force
+   *  budget to reach it (`maxForce` default 1000). Speed 0 brakes and holds. */
+  motor(speedPxPerSec: number, maxForce?: number): void;
+  /** How far along the axis the bodies currently sit, in px. */
+  readonly travel: number;
+}
+
+/** A weld joint from `weld()` — two bodies rigidly fused. Not perfectly rigid
+ *  (the solver allows a little give under load), which is what makes
+ *  breakable-joint effects easy: watch the travel and `destroy()`. */
+export type Weld2D = Joint2D<WeldJoint>;
+
+/** Options for `chain()` — static terrain, so no mass-related settings. */
+export interface ChainOptions {
+  /** Sliding friction 0..1. Default 0.3. */
+  friction?: number;
+  /** Bounciness 0..1. Default 0. */
+  restitution?: number;
+  /** Join the last point back to the first, sealing the loop. Default false. */
+  loop?: boolean;
+  /** Which layers this belongs to, as a bitmask. Default `0x0001`. */
+  category?: number;
+  /** Which layers it collides with. Default `0xffff`. */
+  mask?: number;
+  /** Your tag, surfaced on the body and in `onContact`. */
+  data?: unknown;
 }
 
 /** Where a ray met a body. Plain data in pixels — read it, don't hold it
@@ -239,9 +309,38 @@ export interface Physics2DWorld {
    *  the walls glide to the new rect kinematically, sweeping bodies along
    *  physically instead of leaving them stranded. */
   walls(x: number, y: number, w: number, h: number, opts?: WallsOptions): Walls2D;
+  /** A convex polygon body centered at (x, y). `points` are px offsets from
+   *  that center — a triangle, a hexagon, a ship hull:
+   *
+   *      phys.polygon(x, y, [{ x: 0, y: -20 }, { x: 16, y: 12 }, { x: -16, y: 12 }]);
+   *
+   *  Box2D takes the CONVEX HULL of what you pass (so winding doesn't matter,
+   *  and a dent in your outline is silently filled in) and caps it at 8
+   *  vertices. Build concave shapes as several bodies, or weld convex pieces. */
+  polygon(x: number, y: number, points: { x: number; y: number }[], opts?: BodyOptions): Body2D;
+  /** A static line strip through world points (px) — hills, cave walls, a
+   *  race track's edge. Zero thickness and no inside, so it is scenery to
+   *  collide with, not an object: fast movers should be `bullet` bodies.
+   *
+   *      phys.chain(ridgePoints, { friction: 0.6 }); */
+  chain(points: { x: number; y: number }[], opts?: ChainOptions): Body2D;
   /** Hinge two bodies together at a world point (px). Bodies rotate freely
    *  around it — or drive it with `motor()`. */
   pin(a: Body2D, b: Body2D, x: number, y: number): Pin2D;
+  /** Hold two bodies a fixed distance apart (their centers): a rope, a tow
+   *  line, or — with `stiffness` — a spring. Default length is how far apart
+   *  they already are, so build the scene, then rope it. */
+  rope(a: Body2D, b: Body2D, opts?: RopeOptions): Rope2D;
+  /** Let two bodies slide along one axis relative to each other, and nothing
+   *  else: a lift, a sliding door, a piston. The axis is a direction in world
+   *  px (it gets normalized); the joint anchors where `b` sits now:
+   *
+   *      const lift = phys.slider(ground, platform, 0, -1, { min: 0, max: 200 });
+   *      lift.motor(120);   // rises at 120 px/s until it hits `max` */
+  slider(a: Body2D, b: Body2D, axisX: number, axisY: number, opts?: SliderOptions): Slider2D;
+  /** Fuse two bodies at a world point (px) so they move as one — until you
+   *  `destroy()` it. Debris sticking to a wall, a two-part boss. */
+  weld(a: Body2D, b: Body2D, x: number, y: number): Weld2D;
   /** The first body a segment from (x1, y1) to (x2, y2) hits, or null if the
    *  line is clear. Line of sight, a hitscan shot, a ground probe under a
    *  character:
@@ -545,6 +644,21 @@ export function world(opts: Physics2DOptions = {}): Physics2DWorld {
     return found;
   };
 
+  // The half of every joint handle that is the same for all of them: a
+  // deferred, idempotent destroy (destroying either joined body already took
+  // the joint with it) plus the raw escape hatch.
+  const handle = <J extends Joint>(joint: J): Joint2D<J> => {
+    let dead = false;
+    return {
+      destroy() {
+        if (dead) return;
+        dead = true;
+        destroyJoint(joint);
+      },
+      raw: joint,
+    };
+  };
+
   // A mouse joint pulls a body toward a point relative to some other body;
   // that other body is this fixture-less static anchor, made on first drag.
   let ground: PlanckBody | null = null;
@@ -587,6 +701,34 @@ export function world(opts: Physics2DOptions = {}): Physics2DWorld {
     circle(x, y, r, o = {}) {
       const raw = makeBody(x, y, o);
       raw.createFixture(new Circle(r / ppm), fixtureDef(o));
+      return wrap(raw, o.data);
+    },
+
+    polygon(x, y, points, o = {}) {
+      const raw = makeBody(x, y, o);
+      raw.createFixture(
+        new Polygon(points.map((p) => new Vec2(p.x / ppm, p.y / ppm))),
+        fixtureDef(o),
+      );
+      return wrap(raw, o.data);
+    },
+
+    chain(points, o = {}) {
+      // The body sits at the origin and the chain carries world coordinates,
+      // so the points a caller drew the terrain with are the points it gets.
+      const raw = pw.createBody({ type: "static" });
+      raw.createFixture(
+        new Chain(
+          points.map((p) => new Vec2(p.x / ppm, p.y / ppm)),
+          o.loop ?? false,
+        ),
+        {
+          friction: o.friction ?? 0.3,
+          restitution: o.restitution ?? 0,
+          filterCategoryBits: o.category ?? 0x0001,
+          filterMaskBits: o.mask ?? 0xffff,
+        },
+      );
       return wrap(raw, o.data);
     },
 
@@ -651,24 +793,75 @@ export function world(opts: Physics2DOptions = {}): Physics2DWorld {
       const joint = pw.createJoint(
         new RevoluteJoint({}, a.raw, b.raw, new Vec2(x / ppm, y / ppm)),
       )!;
-      let dead = false;
       return {
+        ...handle(joint),
         motor(speed, maxTorque = 1000) {
           joint.enableMotor(true);
           joint.setMotorSpeed(speed);
           joint.setMaxMotorTorque(maxTorque);
         },
-        destroy() {
-          // Deferred while the world is locked, and idempotent: destroying
-          // either pinned body already takes the joint with it.
-          if (dead) return;
-          dead = true;
-          destroyJoint(joint);
-        },
-        get raw() {
-          return joint;
+      };
+    },
+
+    rope(a, b, o = {}) {
+      const joint = pw.createJoint(
+        new DistanceJoint(
+          {
+            // A distance joint with length 0 is degenerate, and planck says so
+            // loudly — clamp anything the caller (or coincident bodies) hands
+            // us to something the solver can work with.
+            length: Math.max(0.01, (o.length ?? Math.hypot(b.x - a.x, b.y - a.y)) / ppm),
+            frequencyHz: o.stiffness ?? 0,
+            dampingRatio: o.damping ?? 0.7,
+          },
+          a.raw,
+          b.raw,
+          new Vec2(a.x / ppm, a.y / ppm),
+          new Vec2(b.x / ppm, b.y / ppm),
+        ),
+      )!;
+      return {
+        ...handle(joint),
+        setLength(px) {
+          joint.setLength(Math.max(0.01, px / ppm));
+          // A hanging load goes to sleep; the winch has to rouse it, or the
+          // new length only takes effect the next time something else does.
+          a.wake();
+          b.wake();
         },
       };
+    },
+
+    slider(a, b, axisX, axisY, o = {}) {
+      const len = Math.hypot(axisX, axisY) || 1; // planck needs a unit axis
+      const joint = pw.createJoint(
+        new PrismaticJoint(
+          {
+            enableLimit: o.min !== undefined || o.max !== undefined,
+            lowerTranslation: (o.min ?? 0) / ppm,
+            upperTranslation: (o.max ?? 0) / ppm,
+          },
+          a.raw,
+          b.raw,
+          new Vec2(b.x / ppm, b.y / ppm),
+          new Vec2(axisX / len, axisY / len),
+        ),
+      )!;
+      return {
+        ...handle(joint),
+        motor(speed, maxForce = 1000) {
+          joint.enableMotor(true);
+          joint.setMotorSpeed(speed / ppm);
+          joint.setMaxMotorForce(maxForce);
+        },
+        get travel() {
+          return joint.getJointTranslation() * ppm;
+        },
+      };
+    },
+
+    weld(a, b, x, y) {
+      return handle(pw.createJoint(new WeldJoint({}, a.raw, b.raw, new Vec2(x / ppm, y / ppm)))!);
     },
 
     raycast(x1, y1, x2, y2, o = {}) {

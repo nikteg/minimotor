@@ -10,7 +10,7 @@ test("minimal sample loads and renders square", async ({ page }) => {
   await expect(page.locator("canvas#game")).toBeVisible();
 });
 
-test("API Lab starts from the virtual JUMP button", async ({ browser }) => {
+test("API Lab starts from its modal PLAY button", async ({ browser }) => {
   const context = await browser.newContext({
     hasTouch: true,
     isMobile: true,
@@ -24,16 +24,66 @@ test("API Lab starts from the virtual JUMP button", async ({ browser }) => {
   await page.waitForTimeout(300);
   const title = await canvas.screenshot();
 
-  // The button is anchored 78px from the right and 82px from the bottom.
-  // Hold through at least one fixed step, as a real touch does.
-  const jump = { clientX: 800 - 78, clientY: 450 - 82, pointerId: 1, pointerType: "touch" };
-  await canvas.dispatchEvent("pointerdown", jump);
-  await page.waitForTimeout(50);
-  await canvas.dispatchEvent("pointerup", jump);
+  await canvas.focus(); // focuses the modal's first interactive widget: PLAY
+  await page.keyboard.press("Enter");
   await page.waitForTimeout(300);
   const playing = await canvas.screenshot();
 
   expect(playing.equals(title)).toBe(false);
+  const playerBox = (color?: [number, number, number]) =>
+    canvas.evaluate((node, target) => {
+      const ctx = node.getContext("2d")!;
+      const data = ctx.getImageData(0, 0, node.width, node.height).data;
+      if (!target) {
+        const colors = new Map<string, number>();
+        for (let y = node.height / 2; y < node.height; y++)
+          for (let x = 0; x < node.width / 3; x++) {
+            const i = (Math.floor(y) * node.width + x) * 4;
+            const [r, g, b] = data.slice(i, i + 3);
+            if (Math.max(r, g, b) - Math.min(r, g, b) < 60) continue;
+            const key = `${r},${g},${b}`;
+            colors.set(key, (colors.get(key) ?? 0) + 1);
+          }
+        target = [...colors]
+          .sort((a, b) => b[1] - a[1])[0][0]
+          .split(",")
+          .map(Number) as [number, number, number];
+      }
+      const [r, g, b] = target;
+      let minX = node.width;
+      let minY = node.height;
+      let maxX = -1;
+      let maxY = -1;
+      for (let y = 0; y < node.height; y++)
+        for (let x = 0; x < node.width; x++) {
+          const i = (y * node.width + x) * 4;
+          if (data[i] !== r || data[i + 1] !== g || data[i + 2] !== b) continue;
+          minX = Math.min(minX, x);
+          minY = Math.min(minY, y);
+          maxX = Math.max(maxX, x);
+          maxY = Math.max(maxY, y);
+        }
+      return { color: target, x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
+    }, color);
+
+  const beforeMove = await playerBox();
+  await page.keyboard.down("ArrowRight");
+  await page.waitForTimeout(250);
+  const afterMove = await playerBox(beforeMove.color);
+  expect(afterMove.x).toBeGreaterThan(beforeMove.x);
+  await page.keyboard.press("Space");
+  await page.waitForTimeout(50);
+  const dashing = await playerBox(beforeMove.color);
+  expect(dashing.h).toBeLessThan(afterMove.h);
+  await page.keyboard.up("ArrowRight");
+
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(100);
+  const paused = await canvas.screenshot();
+  await page.keyboard.press("Enter"); // modal focus is trapped on Resume
+  await page.waitForTimeout(100);
+  const resumed = await canvas.screenshot();
+  expect(resumed.equals(paused)).toBe(false);
   await context.close();
 });
 

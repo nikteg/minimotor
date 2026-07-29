@@ -38,6 +38,8 @@ import {
   slider,
   text,
   toScreen,
+  vh,
+  vw,
   width,
 } from "../index.js";
 
@@ -236,6 +238,14 @@ describe("hit-testing under UI.scaled", () => {
 });
 
 describe("slider drags vs clipped siblings (the ui-gallery scale slider)", () => {
+  it("shows useful decimals for a default unit-range slider", () => {
+    const { game } = build(() => {
+      slider({ x: 20, y: 20, w: 200, value: 0.5, label: "Music", id: "music" });
+    });
+    tick();
+    expect(ctxCalls(game).fillText.some(([text]) => text === "0.50")).toBe(true);
+  });
+
   it("a native-space slider drags while other sliders sit inside a clipped scroll region", () => {
     // The gallery shape: a UI-scale slider in native space, driving a UI.scaled
     // board whose widgets (more sliders included) live inside a clipped scroll
@@ -265,10 +275,10 @@ describe("slider drags vs clipped siblings (the ui-gallery scale slider)", () =>
     // Press ON the header slider's track (sy = 35), then drag right.
     downAt(canvas, 100, 35);
     tick();
-    expect(scale).toBe(1.25); // track press jumps the value
+    expect(scale).toBe(1.5); // track press jumps the value
     moveTo(180, 35);
     tick();
-    expect(scale).toBe(1.75); // ...and the DRAG follows (used to stay at 1.25)
+    expect(scale).toBe(2); // ...and the DRAG follows
     upAt(180, 35);
     tick();
     expect(volume).toBe(50); // the clipped slider never moved
@@ -648,6 +658,32 @@ describe("layoutCapture", () => {
     expect(txt.rect.y).toBeGreaterThanOrEqual(btn.rect.y + btn.rect.h);
   });
 
+  it("auto-sizes wrapped text through row and column gaps", () => {
+    layoutCapture(true);
+    const { game } = build(() => {
+      col({ x: 10, y: 10, w: 160, gap: 6, id: "features" }, () => {
+        row({ gap: 4, id: "feature" }, () => {
+          text("HEAD");
+          text("one two three four five six seven", { wrap: true });
+        });
+        button({ label: "NEXT", id: "next" });
+      });
+    });
+    settle(4); // nested row, then column, settle their measured heights
+    begin(game.ctx);
+    const tree = layoutTree();
+    const feature = tree.find((e) => e.id === "feature")!;
+    const next = tree.find((e) => e.id === "next")!;
+    const labels = tree.filter((e) => e.kind === "text");
+    const description = labels[1];
+
+    expect(description.rect.h).toBeGreaterThan(20);
+    expect(description.rect.x + description.rect.w).toBeLessThanOrEqual(
+      feature.rect.x + feature.rect.w,
+    );
+    expect(next.rect.y).toBeGreaterThanOrEqual(feature.rect.y + feature.rect.h + 6);
+  });
+
   it("turning capture off clears the tree", () => {
     layoutCapture(true);
     const { game } = build(() => {
@@ -666,16 +702,16 @@ describe("the UI.scaled forms", () => {
     // Viewport 1024×768, reference 640×360 → fit = min(1.6, 2.133) = 1.6,
     // letterboxed vertically: ox = 0, oy = (768 - 576) / 2 = 96.
     layoutCapture(true);
-    let space = { w: 0, h: 0 };
+    let space = { w: 0, h: 0, halfW: 0, halfH: 0 };
     const { game } = build(() => {
       scaled({ w: 640, h: 360 }, () => {
-        space = { w: width(), h: height() };
+        space = { w: width(), h: height(), halfW: vw(50), halfH: vh(50, { max: 150 }) };
         button({ x: 0, y: 0, w: 100, h: 40, label: "GO", id: "go" });
       });
     });
     settle(2);
     begin(game.ctx);
-    expect(space).toEqual({ w: 640, h: 360 });
+    expect(space).toEqual({ w: 640, h: 360, halfW: 320, halfH: 150 });
     const go = layoutTree().find((e) => e.id === "go")!;
     expect(go.scale).toBe(1.6);
     expect(go.screenRect).toEqual({ x: 0, y: 96, w: 160, h: 64 });

@@ -99,6 +99,7 @@ describe("drawPerfHud", () => {
       restore: vi.fn(),
       fillRect: vi.fn((x: number, y: number, w: number, h: number) => rects.push([x, y, w, h])),
       fillText: vi.fn(),
+      measureText: vi.fn((text: string) => ({ width: text.length * 6 })),
     } as unknown as CanvasRenderingContext2D & {
       fillText: ReturnType<typeof vi.fn>;
       save: ReturnType<typeof vi.fn>;
@@ -143,6 +144,34 @@ describe("drawPerfHud", () => {
     const upLine = ctx.fillText.mock.calls[4][0] as string;
     expect(upLine).toContain("↑ 30/s");
     expect(upLine).toContain("2.0 KB/s");
+  });
+
+  it("can arrange performance and network stats in a horizontal bar", () => {
+    const { ctx } = recorder();
+    const options = {
+      viewW: 800,
+      layout: "horizontal" as const,
+      timings: { updateMs: 0.42, drawMs: 1.26, steps: 1 },
+      net: { upMsgs: 30, downMsgs: 12, upBps: 2048, downBps: 512 },
+    };
+    const box = drawPerfHud(ctx, stats, options);
+    const labels = ctx.fillText.mock.calls.map((call) => call[0] as string);
+    expect(box.w).toBeGreaterThan(box.h);
+    expect(box.x + box.w).toBe(796);
+    expect(labels).toContain("FPS 60");
+    expect(labels).toContain("UPDATE 0.4 · DRAW 1.3 ms");
+    expect(labels).toContain("SENT 2.0 KB/s · 30 msg/s");
+    expect(labels).toContain("RECEIVED 0.5 KB/s · 12 msg/s");
+
+    const changed = drawPerfHud(
+      recorder().ctx,
+      { fps: 9, frameMs: 100, minMs: 7, maxMs: 123, avgMs: 20 },
+      {
+        ...options,
+        net: { upMsgs: 999, downMsgs: 1, upBps: 102400, downBps: 0 },
+      },
+    );
+    expect(changed).toEqual(box);
   });
 
   it("grows the box and draws a labeled strip when a sparkline is attached", () => {

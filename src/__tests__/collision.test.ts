@@ -6,6 +6,7 @@ import {
   sweptAABB,
   slide,
   moveAndSlide,
+  dropThrough,
   grid,
   contacts,
   type Solid,
@@ -151,6 +152,22 @@ describe("Collision.slide / moveAndSlide", () => {
     expect(body.vel.y).toBe(0); // landing clears vertical
     expect(body.vel.x).toBe(3); // horizontal untouched
     expect(c.impact).toBe(30);
+  });
+
+  it("drops through only while standing on a one-way platform", () => {
+    const shelf = { x: 0, y: 50, w: 100, h: 8, oneWay: true };
+    const body = { x: 10, y: 40, w: 10, h: 10, vel: { x: 0, y: 0 }, grounded: true };
+    expect(dropThrough(body, [shelf])).toBe(true);
+    expect(body.y).toBe(41);
+    expect(body.vel.y).toBe(1);
+    expect(body.grounded).toBe(false);
+    moveAndSlide(body, [shelf]);
+    expect(body.y).toBe(42);
+
+    const floor = { x: 0, y: 50, w: 100, h: 8 };
+    const solidBody = { x: 10, y: 40, w: 10, h: 10, vel: { x: 0, y: 0 }, grounded: true };
+    expect(dropThrough(solidBody, [floor])).toBe(false);
+    expect(solidBody).toMatchObject({ y: 40, grounded: true });
   });
 
   it("accepts a SolidSource and mixed arrays", () => {

@@ -18,6 +18,7 @@ import {
   bounceInBounds,
   slide,
   moveAndSlide,
+  dropThrough,
   grid,
   contacts,
 } from "./collision.js";
@@ -102,10 +103,10 @@ import * as Storage from "./storage.js";
  *  — plus the standard `Sprites.Sprite` ECS component. */
 import * as Sprites from "./sprites.js";
 /** Dependency-free multiplayer building blocks. `Net.join(url, { room })` opens
- *  a symmetric room; `Net.sync` replicates arbitrary state and
- *  `Net.syncBody(room, body)` handles lightweight or Physics2D bodies, with
- *  `Net.createInterpolator` smoothing snapshots and `Net.createRoster` tracking
- *  peers; host/guest star sessions back host-authoritative designs.
+ *  a symmetric room; `Net.syncBody`/`syncBodies` handle lightweight or
+ *  Physics2D bodies, `syncEntities` handles dynamic collections, and typed
+ *  events, ownership, network time, prediction, and diagnostics cover the
+ *  common multiplayer loop.
  *
  *    const room = await Net.join("wss://example.com/ws", { room: "demo" });
  *    const ghosts = Net.syncBody(room, player);
@@ -149,7 +150,8 @@ import * as Tiles from "./tiles.js";
 import * as Transitions from "./transitions.js";
 /** Opt-in on-screen touch gamepad. `OnscreenInput.gamepad(config)` returns a
  *  `GamepadState` for `Input.map({ pad })` and `OnscreenInput.drawControls(pad)`
- *  renders it — touch and a hardware pad share one code path. */
+ *  renders it — touch and a hardware pad share one code path.
+ *  `pad.buttonBounds("a")` locates a semantic canvas button for automation. */
 import * as OnscreenInput from "./onscreen.js";
 
 export {
@@ -274,6 +276,7 @@ export type {
 } from "./perf/index.js";
 export type {
   GamepadState,
+  GamepadNavigation,
   PadButton,
   PadCode,
   Binding,
@@ -364,6 +367,18 @@ export type {
   InterpolatorOptions,
   Roster,
   RosterOptions,
+  Protocol,
+  ProtocolShape,
+  StateOf,
+  EventsOf,
+  RequestsOf,
+  ClientMessageOf,
+  ServerMessageOf,
+  ProtocolTransport,
+  SharedItemId,
+  SharedItem,
+  SharedItemsOptions,
+  SharedItems,
 } from "./net/index.js";
 
 /** Pure, allocation-free collision geometry. `Collision.moveAndSlide`/
@@ -379,6 +394,7 @@ const Collision = {
   rectsOverlap,
   slide,
   moveAndSlide,
+  dropThrough,
   grid,
   contacts,
   circleHit,

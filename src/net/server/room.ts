@@ -7,6 +7,8 @@
 // bookkeeping. Reach these from the `minimotor/server` entry point (they are
 // deliberately NOT part of the browser `Minimotor` bundle).
 
+import type { ClientMessageOf, ProtocolShape, ServerMessageOf } from "../protocol.js";
+
 /** The slice of a WebSocket connection a room uses. `ws`'s WebSocket satisfies
  *  it structurally, so callers pass their sockets with no cast or `ws` import. */
 export interface ServerSocket {
@@ -115,4 +117,12 @@ export function serve<Send = unknown, Recv = unknown>(
   });
 
   return room;
+}
+
+/** Serve the browser and server sides of one shared JSON `Protocol`. */
+export function serveProtocol<P extends ProtocolShape>(
+  server: SocketServer,
+  opts: RoomOptions<ClientMessageOf<P>> = {},
+): Room<ServerMessageOf<P>> {
+  return serve<ServerMessageOf<P>, ClientMessageOf<P>>(server, opts);
 }

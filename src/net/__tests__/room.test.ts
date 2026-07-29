@@ -59,6 +59,16 @@ describe("Net.sync", () => {
     expect(room.sent.length).toBe(2); // stopped
   });
 
+  it("broadcasts at 30 Hz by default", () => {
+    const room = fakeRoom();
+    const ghosts = sync(room, { state: () => ({ x: 1 }) });
+    vi.advanceTimersByTime(32);
+    expect(room.sent).toHaveLength(0);
+    vi.advanceTimersByTime(2);
+    expect(room.sent).toHaveLength(1);
+    ghosts.stop();
+  });
+
   it("does not sample or send while alone in the room", () => {
     const room = fakeRoom();
     room.peers = [];
@@ -88,6 +98,7 @@ describe("Net.sync", () => {
     room.emit("peer-1", { __mm_sync: 1, s: { x: 10 } });
     now = 100;
     room.emit("peer-1", { __mm_sync: 1, s: { x: 20 } });
+    expect(ghosts.latest("peer-1")).toEqual({ id: "peer-1", x: 20 });
     const states = [...ghosts];
     expect(states.length).toBe(1);
     expect(states[0].id).toBe("peer-1");

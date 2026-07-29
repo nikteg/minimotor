@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { connect, createPeer, createInterpolator, type Signal } from "../index.js";
+import {
+  connect,
+  connectProtocol,
+  createPeer,
+  createInterpolator,
+  type Protocol,
+  type Signal,
+} from "../index.js";
 
 const flushMicrotasks = () => new Promise((r) => setTimeout(r, 0));
 
@@ -170,6 +177,21 @@ describe("Net", () => {
       w.onMessage = (d) => (got = new TextDecoder().decode(d));
       ws.onmessage?.(new MessageEvent("message", { data: JSON.stringify({ hi: 1 }) }));
       expect(JSON.parse(got)).toEqual({ hi: 1 });
+    });
+    it("sends and receives a shared JSON protocol", () => {
+      type Game = Protocol<{
+        client: { type: "move"; x: number };
+        server: { type: "world"; x: number };
+      }>;
+      const game = connectProtocol<Game>({ url: "ws://x" });
+      const ws = MockWS.instances[0];
+      ws._open();
+      game.send({ type: "move", x: 2 });
+      expect(JSON.parse(ws.sent[0] as string)).toEqual({ type: "move", x: 2 });
+      const received = vi.fn();
+      game.onMessage = received;
+      ws.onmessage?.(new MessageEvent("message", { data: '{"type":"world","x":3}' }));
+      expect(received).toHaveBeenCalledWith({ type: "world", x: 3 });
     });
   });
 
@@ -342,6 +364,21 @@ describe("createInterpolator (snapshot interpolation)", () => {
     expect(ip.size).toBe(1);
   });
 
+  it("adapts from one packet interval when arrivals become jittery", () => {
+    const ip = createInterpolator<{ x: number }>({
+      delayMs: "auto",
+      expectedIntervalMs: 50,
+      now: () => 0,
+    });
+    ip.push({ x: 1 }, 0);
+    ip.push({ x: 2 }, 50);
+    expect(ip.delayMs).toBe(50);
+    ip.push({ x: 3 }, 150);
+    expect(ip.delayMs).toBe(65);
+    ip.clear();
+    expect(ip.delayMs).toBe(50);
+  });
+
   it("supports a custom lerp (e.g. angle wrap-around)", () => {
     const ip = createInterpolator<number>({
       delayMs: 0,
@@ -351,6 +388,21 @@ describe("createInterpolator (snapshot interpolation)", () => {
     ip.push(0, 0);
     ip.push(100, 100);
     expect(ip.sample()).toBe(100);
+  });
+
+  it("can trade a stable render buffer for bounded extrapolation", () => {
+    const ip = createInterpolator<{ x: number }>({
+      delayMs: "auto",
+      expectedIntervalMs: 100,
+      maxExtrapolationMs: 50,
+      extrapolate: (a, b, t) => ({ x: a.x + (b.x - a.x) * t }),
+      now: () => 125,
+    });
+    ip.push({ x: 0 }, 0);
+    ip.push({ x: 10 }, 100);
+    expect(ip.delayMs).toBe(0);
+    expect(ip.sample()).toEqual({ x: 12.5 });
+    expect(ip.sample(1000)).toEqual({ x: 15 }); // capped to 50ms
   });
 
   it("evicts the oldest snapshots past maxSnapshots", () => {

@@ -11,6 +11,9 @@ export interface PerfHudOptions {
   viewW?: number;
   /** Corner to draw in. Default `"top-right"`. */
   anchor?: "top-left" | "top-right";
+  /** Metric arrangement. `"horizontal"` is a compact horizontal bar.
+   * Default `"vertical"`. */
+  layout?: "vertical" | "horizontal";
   /** If given, two extra lines show up/down message and byte rates. */
   net?: NetStats;
   /** If given, one extra line shows the engine's update/draw cost and how many
@@ -31,6 +34,104 @@ const rate = (perSec: number) => Math.round(perSec);
 
 const kbps = (bps: number) => (bps / 1024).toFixed(1);
 
+function drawHorizontalPerfHud(
+  ctx: CanvasRenderingContext2D,
+  stats: PerfStats,
+  opts: PerfHudOptions,
+): { x: number; y: number; w: number; h: number } {
+  const fpsColor = stats.fps >= 55 ? "#4ecdc4" : stats.fps >= 30 ? "#ffd43b" : "#ff6b6b";
+  type Segment = { text: string; color: string; width: number };
+  const primary: Segment[] = [
+    { text: `FPS ${stats.fps}`, color: fpsColor, width: 52 },
+    { text: `FRAME ${stats.frameMs} ms`, color: "#aaa", width: 82 },
+    { text: `MIN ${stats.minMs} · MAX ${stats.maxMs} ms`, color: "#777", width: 120 },
+  ];
+  const secondary: Segment[] = [];
+  if (opts.timings) {
+    const { updateMs, drawMs, steps } = opts.timings;
+    primary.push({
+      text: `UPDATE ${updateMs.toFixed(1)} · DRAW ${drawMs.toFixed(1)} ms${
+        steps > 1 ? ` ×${steps}` : ""
+      }`,
+      color: "#aaa",
+      width: 166,
+    });
+  }
+  if (opts.entities !== undefined || opts.heapMB !== undefined) {
+    const parts: string[] = [];
+    if (opts.entities !== undefined) parts.push(`ENTITIES ${opts.entities}`);
+    if (opts.heapMB !== undefined) parts.push(`HEAP ${Math.round(opts.heapMB)} MB`);
+    secondary.push({ text: parts.join(" · "), color: "#aaa", width: 174 });
+  }
+  if (opts.net) {
+    secondary.push(
+      {
+        text: `SENT ${kbps(opts.net.upBps)} KB/s · ${rate(opts.net.upMsgs)} msg/s`,
+        color: "#4ecdc4",
+        width: 156,
+      },
+      {
+        text: `RECEIVED ${kbps(opts.net.downBps)} KB/s · ${rate(opts.net.downMsgs)} msg/s`,
+        color: "#ffd43b",
+        width: 180,
+      },
+    );
+  }
+  const rows = secondary.length ? [primary, secondary] : [primary];
+
+  const sparks = [
+    opts.graphs?.frame && { spark: opts.graphs.frame, label: "frame ms", color: "#b197fc" },
+    opts.net && opts.graphs?.up && { spark: opts.graphs.up, label: "sent KB/s", color: "#4ecdc4" },
+    opts.net &&
+      opts.graphs?.down && {
+        spark: opts.graphs.down,
+        label: "received KB/s",
+        color: "#ffd43b",
+      },
+  ].filter(Boolean) as { spark: Sparkline; label: string; color: string }[];
+
+  ctx.save();
+  ctx.font = "10px monospace";
+  ctx.textBaseline = "top";
+  ctx.textAlign = "left";
+  const textW = Math.max(
+    ...rows.map((segments) => segments.reduce((sum, segment) => sum + segment.width, 0)),
+  );
+  const boxW = Math.ceil(Math.max(textW + 8, sparks.length ? 300 : 0));
+  const textH = 10 + rows.length * 14;
+  const boxH = textH + (sparks.length ? 30 : 0);
+  const bgX =
+    (opts.anchor ?? "top-right") === "top-right" && opts.viewW !== undefined
+      ? opts.viewW - 4 - boxW
+      : 4;
+  const bgY = 4;
+
+  ctx.fillStyle = "rgba(0,0,0,0.55)";
+  ctx.fillRect(bgX, bgY, boxW, boxH);
+  rows.forEach((segments, row) => {
+    let x = bgX + 4;
+    for (const segment of segments) {
+      ctx.fillStyle = segment.color;
+      ctx.fillText(segment.text, x, bgY + 7 + row * 14);
+      x += segment.width;
+    }
+  });
+
+  if (sparks.length) {
+    const graphGap = 4;
+    const graphW = (boxW - 8 - graphGap * (sparks.length - 1)) / sparks.length;
+    sparks.forEach(({ spark, label, color }, index) => {
+      const graphX = bgX + 4 + index * (graphW + graphGap);
+      ctx.font = "9px monospace";
+      ctx.fillStyle = color;
+      ctx.fillText(label, graphX, bgY + textH - 1);
+      spark.draw(ctx, graphX, bgY + textH + 9, graphW, 16, color);
+    });
+  }
+  ctx.restore();
+  return { x: bgX, y: bgY, w: boxW, h: boxH };
+}
+
 /** Draw a compact perf HUD. Defaults to the top-right corner (pass `viewW` so it
  *  can anchor there); call after your own draw code. Returns the box rect, so
  *  callers can hit-test it (the plugin's click-to-dim uses this). */
@@ -39,6 +140,8 @@ export function drawPerfHud(
   stats: PerfStats,
   opts: PerfHudOptions = {},
 ): { x: number; y: number; w: number; h: number } {
+  if (opts.layout === "horizontal") return drawHorizontalPerfHud(ctx, stats, opts);
+
   const net = opts.net;
   const timings = opts.timings;
   const anchor = opts.anchor ?? "top-right";

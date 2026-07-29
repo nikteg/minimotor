@@ -62,6 +62,9 @@ export interface RoomOptions extends RtcConfig {
   /** Give up (status `"closed"`) after this many consecutive failed attempts.
    *  Default 0 — keep trying for as long as the app is open. */
   maxRetries?: number;
+  /** Resolve to a one-player local room if the initial relay join fails.
+   *  Multiplayer code then remains the offline code path. */
+  fallback?: "local";
 }
 
 /** Where a room's relay link stands. `"reconnecting"` is the one worth
@@ -79,9 +82,13 @@ export interface Room<Msg = unknown> {
   readonly peers: string[];
   /** How many other members are in the room. */
   readonly peerCount: number;
+  /** Current relay host id. Changes when host migration occurs. */
+  readonly hostId: string | null;
   /** True while we are the relaying host (internal detail, exposed for
    *  debugging/net meters). */
   readonly hosting: boolean;
+  /** True for a local fallback room with no network transport. */
+  readonly local: boolean;
   /** True once `close()` has torn the room down. */
   readonly closed: boolean;
   /** The relay link's current state — show "reconnecting…" from this. */
@@ -103,8 +110,45 @@ export interface Room<Msg = unknown> {
   close(): void;
 }
 
-/** Join a room by name. Resolves once the relay welcomes us; rejects when
- *  the relay is unreachable (offline single-player is a `.catch` away). */
+/** A one-player room implementing the full Room API without a transport. */
+export function localRoom<Msg = unknown>(): Room<Msg> {
+  let closed = false;
+  let status: RoomStatus = "connected";
+  const statusFns = new Set<(status: RoomStatus) => void>();
+  return {
+    id: "local",
+    peers: [],
+    peerCount: 0,
+    hostId: "local",
+    hosting: true,
+    local: true,
+    get closed() {
+      return closed;
+    },
+    get status() {
+      return status;
+    },
+    onStatus(fn) {
+      statusFns.add(fn);
+      return () => statusFns.delete(fn);
+    },
+    send() {},
+    onMessage: () => () => {},
+    onJoin: () => () => {},
+    onLeave: () => () => {},
+    close() {
+      if (closed) return;
+      closed = true;
+      status = "closed";
+      for (const fn of statusFns) fn(status);
+      statusFns.clear();
+    },
+  };
+}
+
+/** Join a room by name. Resolves once the relay welcomes us. Set
+ *  `fallback: "local"` to resolve to the same API as a one-player local host
+ *  when the relay is unavailable; otherwise the initial failure rejects. */
 export function join<Msg = unknown>(url: string, opts: RoomOptions = {}): Promise<Room<Msg>> {
   const full = opts.room
     ? `${url}${url.includes("?") ? "&" : "?"}room=${encodeURIComponent(opts.room)}`
@@ -202,9 +246,13 @@ export function join<Msg = unknown>(url: string, opts: RoomOptions = {}): Promis
     get peerCount() {
       return members.size;
     },
+    get hostId() {
+      return hostId;
+    },
     get hosting() {
       return hosting();
     },
+    local: false,
     get closed() {
       return closed;
     },
@@ -246,7 +294,7 @@ export function join<Msg = unknown>(url: string, opts: RoomOptions = {}): Promis
     },
   };
 
-  return new Promise<Room<Msg>>((resolve, reject) => {
+  const joining = new Promise<Room<Msg>>((resolve, reject) => {
     let settled = false;
     const timer = setTimeout(() => {
       if (!settled) {
@@ -350,6 +398,7 @@ export function join<Msg = unknown>(url: string, opts: RoomOptions = {}): Promis
 
     open();
   });
+  return opts.fallback === "local" ? joining.catch(() => localRoom<Msg>()) : joining;
 }
 
 // ---------- Net.sync: declarative state replication (#49) ----------
@@ -364,18 +413,22 @@ interface SyncEnvelope<T> {
 /** Options for `sync`: broadcast rate, the local-state sampler, and the
  *  interpolation delay applied to remote peers. */
 export interface SyncOptions<T> {
-  /** Broadcasts per second. Default 15. */
+  /** Broadcasts per second. Default 30. */
   hz?: number;
   /** Sample OUR state to share — called on each send tick. */
   state: () => T;
-  /** Interpolation delay (ms) — how far behind live the ghosts render.
-   *  Default 100 ms. */
-  delayMs?: number;
+  /** Interpolation delay (ms), or `"auto"` for an arrival-jitter buffer.
+   *  Default `"auto"`: one send interval on a stable connection. */
+  delayMs?: number | "auto";
   /** Forget a peer after this long without a snapshot (ms). Default 5000. */
   timeoutMs?: number;
   /** Custom blend (angles, nested shapes). Numbers lerp by default; other
    *  fields step. */
   lerp?: (a: T, b: T, t: number) => T;
+  /** Optional short-horizon projection beyond the newest snapshot. */
+  extrapolate?: (a: T, b: T, t: number) => T;
+  /** Projection cap in milliseconds. Default 0 (disabled). */
+  maxExtrapolationMs?: number;
   /** Millisecond clock — injectable for tests. */
   now?: () => number;
 }
@@ -386,6 +439,8 @@ export interface PeerStates<T> extends Iterable<T & { id: string }> {
   readonly size: number;
   /** The ids of those peers. */
   readonly ids: string[];
+  /** Latest received state, without render interpolation delay. */
+  latest(id: string): (T & { id: string }) | null;
   /** Stop broadcasting and listening (also stops when the room closes). */
   stop(): void;
 }
@@ -394,10 +449,14 @@ export interface PeerStates<T> extends Iterable<T & { id: string }> {
  *  else's states back, interpolated and timeout-pruned. Fuses the exported
  *  lower-tier parts (`createInterpolator` + `createRoster` + a send timer). */
 export function sync<T>(room: Room<unknown>, opts: SyncOptions<T>): PeerStates<T> {
+  const intervalMs = 1000 / (opts.hz ?? 30);
   const roster = createRoster<T>({
-    delayMs: opts.delayMs,
+    delayMs: opts.delayMs ?? "auto",
+    expectedIntervalMs: intervalMs,
     timeoutMs: opts.timeoutMs,
     lerp: opts.lerp,
+    extrapolate: opts.extrapolate,
+    maxExtrapolationMs: opts.maxExtrapolationMs,
     now: opts.now,
   });
 
@@ -408,8 +467,6 @@ export function sync<T>(room: Room<unknown>, opts: SyncOptions<T>): PeerStates<T
     if (isSync(msg)) roster.update(from, msg.s);
   });
   const offLeave = room.onLeave((id) => roster.remove(id));
-
-  const intervalMs = 1000 / (opts.hz ?? 15);
 
   /** One broadcast tick. Sampling is skipped outright when we're alone in the
    *  room — `send` would be a no-op anyway, and `opts.state()` is the app's
@@ -457,6 +514,10 @@ export function sync<T>(room: Room<unknown>, opts: SyncOptions<T>): PeerStates<T
     },
     get ids() {
       return roster.ids;
+    },
+    latest(id) {
+      const state = roster.latest(id);
+      return state === null ? null : { ...state, id };
     },
     stop,
     *[Symbol.iterator]() {

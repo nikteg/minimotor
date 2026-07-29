@@ -210,6 +210,7 @@ describe("Net.createRoster", () => {
     const r = createRoster<{ x: number }>({ delayMs: 0, timeoutMs: 1000, now: () => clock });
     expect(r.update("a", { x: 1 }).isNew).toBe(true);
     expect(r.update("a", { x: 2 }).isNew).toBe(false); // seen before
+    expect(r.latest("a")).toEqual({ x: 2 });
     expect(r.size).toBe(1);
     clock = 1000;
     r.update("b", { x: 9 });

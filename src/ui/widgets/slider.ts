@@ -40,7 +40,8 @@ export interface SliderOptions extends Flowable {
   step?: number;
   /** Caption drawn left of the track. */
   label?: string;
-  /** Value text drawn right of the track. Default the rounded value. */
+  /** Value text drawn right of the track. By default unit ranges show two
+   *  decimals, stepped ranges match their step precision, and others round. */
   format?: (v: number) => string;
   /** Identity for drag tracking and keyboard focus. Defaults to the position. */
   id?: string;
@@ -81,7 +82,10 @@ export function slider(
   const min = opts.min ?? 0;
   const max = opts.max ?? 1;
   const slot = place(opts, opts.w ?? 140, opts.h ?? 30, "slider");
-  const fmt = (v: number) => (opts.format ? opts.format(v) : `${Math.round(v)}`);
+  const stepText = opts.step?.toString() ?? "";
+  const stepDecimals = stepText.includes(".") ? stepText.length - stepText.indexOf(".") - 1 : 0;
+  const decimals = opts.step !== undefined ? stepDecimals : max - min <= 1 ? 2 : 0;
+  const fmt = (v: number) => (opts.format ? opts.format(v) : v.toFixed(decimals));
   // Reserve room INSIDE the slot for both the left label and the right value
   // readout, so the track sits between them and neither spills past the
   // widget's box. The value width is taken from the range extremes (not the

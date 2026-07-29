@@ -34,6 +34,7 @@ export * from "./overlays.js";
 export * from "./dragdrop.js";
 export * from "./float-text.js";
 export * from "./tooltip.js";
+export * from "./world-label.js";
 export { select } from "./select.js";
 export type { SelectOption, SelectOptions, SelectResult } from "./select.js";
 export { textInput } from "./text-input.js";

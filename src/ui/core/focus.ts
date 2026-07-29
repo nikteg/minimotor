@@ -5,7 +5,8 @@
 // is per UI runtime (two apps on one page each get their own focus machine);
 // the single window-level keyboard listener routes each event to the runtime
 // whose canvas (or focused widget) it belongs to.
-import { gamepad, Buttons } from "../../input/gamepad.js";
+import { gamepad, gamepads, navigation, type GamepadState } from "../../input/gamepad.js";
+import { STEP_MS } from "../../engine/index.js";
 import { roundRectPath, theme } from "./theme.js";
 import { isInOverlayPass } from "./lifecycle.js";
 import { uiToScreen } from "./input.js";
@@ -41,22 +42,31 @@ interface FocusState {
   // only keyboard traversal paints the dotted focus indicator.
   visible: boolean;
   trapSeen: boolean;
+  trapFocusVisible: boolean;
   overlayActive: boolean;
   beforeOverlay: string | null;
   activation: string | null;
   command: { id: string; key: string } | null;
-  // The gamepad that drives UI focus navigation (dpad moves focus, A activates,
-  // dpad left/right feed the focused slider). Defaults to hardware pad 0; a game
-  // with an on-screen gamepad calls `UI.setNavPad(pad)` so its virtual dpad
-  // drives menus too (a fused pad covers hardware + touch at once).
+  dismissRequested: boolean;
+  // An optional extra pad for integrations that do not register with Input.
+  // Hardware and engine-created on-screen pads are discovered automatically.
   navPad: ReturnType<typeof gamepad> | null;
-  // Last left-stick vector, for edge-detecting stick-driven menu nav in padNav.
-  lastNavStick: { x: number; y: number };
+  repeatV: NavRepeat;
+  repeatH: NavRepeat;
   // Bumped every time KEYBOARD/pad traversal moves the focus. Scroll regions
   // compare it against the last value they acted on, so they reveal the newly
   // focused widget exactly once and never fight a manual scroll afterwards.
   revealEpoch: number;
 }
+
+interface NavRepeat {
+  key: string | null;
+  elapsed: number;
+  next: number;
+  count: number;
+}
+
+const navRepeat = (): NavRepeat => ({ key: null, elapsed: 0, next: 350, count: 0 });
 
 const fs = runtimeSlot<FocusState>(() => ({
   frame: [],
@@ -64,23 +74,45 @@ const fs = runtimeSlot<FocusState>(() => ({
   focused: null,
   visible: false,
   trapSeen: false,
+  trapFocusVisible: false,
   overlayActive: false,
   beforeOverlay: null,
   activation: null,
   command: null,
+  dismissRequested: false,
   navPad: null,
-  lastNavStick: { x: 0, y: 0 },
+  repeatV: navRepeat(),
+  repeatH: navRepeat(),
   revealEpoch: 0,
 }));
 
 // Read another runtime's focus state (keyboard routing) without switching.
 const focusOf = (rt: UiRuntime): FocusState => withRuntime(rt, fs);
 
-/** Route UI focus navigation (gamepad dpad/A) through `pad` — e.g. an on-screen
- *  gamepad, so its virtual dpad walks the focusable widgets and A activates.
- *  Pass `null` to fall back to hardware pad 0. Per UI runtime. */
+/** Add an unregistered custom UI navigation pad. Hardware and engine-created
+ * on-screen pads are discovered automatically, so most games never need this.
+ * Pass `null` to remove the custom pad. Per UI runtime. */
 export function setNavPad(pad: ReturnType<typeof gamepad> | null): void {
   fs().navPad = pad;
+}
+
+/** Whether a connected navigation pad is being used right now. This is an
+ * input-modality hint for overlays, not merely a connection check: an idle
+ * controller should not make a newly opened modal paint a focus ring. */
+export function hasActiveNavPad(): boolean {
+  const s = fs();
+  let pads: readonly GamepadState[];
+  try {
+    pads = s.navPad ? [s.navPad, ...gamepads()] : gamepads();
+  } catch {
+    return false;
+  }
+  return pads.some((pad) => {
+    if (!pad.connected) return false;
+    for (let axis = 0; axis < 4; axis++) if (Math.abs(pad.axis(axis)) > 0.2) return true;
+    for (let button = 0; button < 16; button++) if (pad.down(button)) return true;
+    return false;
+  });
 }
 
 let focusKeyboardWired = false;
@@ -253,6 +285,15 @@ export function consumeKeyboardCommand(id: string | undefined): string | null {
   return key;
 }
 
+/** Consume the current frame's semantic modal-dismiss request (gamepad B or
+ * Escape). Modal owns the close action; focus only owns the input convention. */
+export function consumeDismissRequest(): boolean {
+  const s = fs();
+  if (!s.dismissRequested) return false;
+  s.dismissRequested = false;
+  return true;
+}
+
 /** Move keyboard focus to a registered widget. */
 export function focus(id: string): void {
   const s = fs();
@@ -283,39 +324,55 @@ export function focusPrevious(): void {
   moveWidgetFocus(-1);
 }
 
-// Pad navigation drives the SAME focus machine as Tab/Enter (API_PLAN #46):
-// dpad up/down traverse, dpad left/right feed the focused widget (sliders),
-// A activates. Spatial (geometry-based) traversal is a planned refinement.
-// Runs per runtime, from its host loop's step.
+function repeatPulse(state: NavRepeat, key: string | null): boolean {
+  if (!key) {
+    state.key = null;
+    state.elapsed = state.count = 0;
+    state.next = 350;
+    return false;
+  }
+  if (state.key !== key) {
+    state.key = key;
+    state.elapsed = state.count = 0;
+    state.next = 350;
+    return true;
+  }
+  state.elapsed += STEP_MS;
+  if (state.elapsed < state.next) return false;
+  state.count++;
+  state.next += Math.max(50, 120 - state.count * 10);
+  return true;
+}
+
+// Pad navigation drives the SAME focus machine as Tab/Enter (API_PLAN #46).
+// Directions fire immediately, then repeat after a short hold with an
+// accelerating cadence — sliders adjust smoothly without making menu taps
+// overshoot. A activates. Runs per runtime from its host loop's fixed step.
 export function padNav(): void {
   const s = fs();
-  let pad: ReturnType<typeof gamepad>;
+  let pads: readonly GamepadState[];
   try {
-    pad = s.navPad ?? gamepad();
+    pads = s.navPad ? [s.navPad, ...gamepads()] : gamepads();
   } catch {
     return;
   }
-  if (!pad.connected) return;
-  // Left-stick nav, edge-detected (one step per flick past the threshold) — ONLY
-  // when a nav pad is explicitly wired via setNavPad, so a game's movement stick
-  // never hijacks menu focus. The d-pad always navigates.
-  let stickV = 0;
-  let stickH = 0;
-  if (s.navPad) {
-    const T = 0.5;
-    const sx = pad.axis(0);
-    const sy = pad.axis(1);
-    if (sy > T && s.lastNavStick.y <= T) stickV = 1;
-    else if (sy < -T && s.lastNavStick.y >= -T) stickV = -1;
-    if (sx > T && s.lastNavStick.x <= T) stickH = 1;
-    else if (sx < -T && s.lastNavStick.x >= -T) stickH = -1;
-    s.lastNavStick = { x: sx, y: sy };
+  let x = 0;
+  let y = 0;
+  let accept = false;
+  let cancel = false;
+  for (const pad of pads) {
+    if (!pad.connected) continue;
+    const nav = navigation(pad, { stick: 0 });
+    if (Math.abs(nav.x) > Math.abs(x)) x = nav.x;
+    if (Math.abs(nav.y) > Math.abs(y)) y = nav.y;
+    accept ||= nav.acceptPressed;
+    cancel ||= nav.cancelPressed;
   }
-  const down = pad.pressed(Buttons.DpadDown) || stickV > 0;
-  const up = pad.pressed(Buttons.DpadUp) || stickV < 0;
-  if (down || up) {
+  const T = 0.5;
+  const vertical = y > T ? "ArrowDown" : y < -T ? "ArrowUp" : null;
+  if (repeatPulse(s.repeatV, vertical)) {
     s.visible = true;
-    const dir: 1 | -1 = down ? 1 : -1;
+    const dir: 1 | -1 = vertical === "ArrowDown" ? 1 : -1;
     const before = s.focused;
     moveWidgetFocus(dir);
     // Focus didn't move — a single candidate, or a trapped overlay (an open
@@ -325,11 +382,12 @@ export function padNav(): void {
       s.command = { id: s.focused, key: dir > 0 ? "ArrowDown" : "ArrowUp" };
     }
   }
+  const horizontal = x > T ? "ArrowRight" : x < -T ? "ArrowLeft" : null;
+  const horizontalPulse = repeatPulse(s.repeatH, horizontal);
+  if (cancel) s.dismissRequested = true;
   if (!s.focused) return;
-  if (pad.pressed(Buttons.A)) s.activation = s.focused;
-  if (pad.pressed(Buttons.DpadLeft) || stickH < 0) s.command = { id: s.focused, key: "ArrowLeft" };
-  if (pad.pressed(Buttons.DpadRight) || stickH > 0)
-    s.command = { id: s.focused, key: "ArrowRight" };
+  if (accept) s.activation = s.focused;
+  if (horizontalPulse) s.command = { id: s.focused, key: horizontal as "ArrowLeft" | "ArrowRight" };
 }
 
 // Window keyboard wiring: Tab/Shift+Tab traverse, Enter/Space activate, Arrows
@@ -370,16 +428,17 @@ export function wireFocusKeyboard(): void {
           event.preventDefault();
           event.stopImmediatePropagation();
           moveWidgetFocus(event.shiftKey ? -1 : 1);
-        } else if (!entry?.native && (event.key === "Enter" || event.key === " ")) {
+        } else if (s.focused && !entry?.native && (event.key === "Enter" || event.key === " ")) {
           event.preventDefault();
           event.stopImmediatePropagation();
-          if (s.focused) s.activation = s.focused;
-        } else if (!entry?.native && event.key.startsWith("Arrow")) {
+          s.activation = s.focused;
+        } else if (s.focused && !entry?.native && event.key.startsWith("Arrow")) {
           event.preventDefault();
           event.stopImmediatePropagation();
-          if (s.focused) s.command = { id: s.focused, key: event.key };
+          s.command = { id: s.focused, key: event.key };
         } else if (event.key === "Escape" && !entry?.native) {
-          blur();
+          if (s.overlayActive) s.dismissRequested = true;
+          else blur();
         }
       });
     },
@@ -411,6 +470,9 @@ export function focusEndFrame(): void {
   if (!wasFocusOverlay && s.trapSeen) s.beforeOverlay = s.focused;
   s.overlayActive = s.trapSeen;
   const candidates = focusCandidates();
+  if (!wasFocusOverlay && s.overlayActive && s.trapFocusVisible && candidates.length) {
+    s.visible = true;
+  }
   const focusMissing = !candidates.some((entry) => entry.id === s.focused);
   if (focusMissing && (s.focused || s.overlayActive)) {
     const restore =
@@ -423,9 +485,13 @@ export function focusEndFrame(): void {
   }
   if (wasFocusOverlay && !s.overlayActive) s.beforeOverlay = null;
   s.trapSeen = false;
+  s.trapFocusVisible = false;
+  s.dismissRequested = false;
 }
 
 /** An overlay ran this frame — trap focus into it (called by `enterOverlay`). */
-export function markFocusTrap(): void {
-  fs().trapSeen = true;
+export function markFocusTrap(focusVisible = false): void {
+  const s = fs();
+  s.trapSeen = true;
+  s.trapFocusVisible ||= focusVisible;
 }

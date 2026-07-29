@@ -10,11 +10,17 @@ import { Interpolator, createInterpolator } from "./interpolation.js";
 export interface RosterOptions<T> {
   /** Interpolation delay passed to each peer's interpolator (see
    *  `createInterpolator`). */
-  delayMs?: number;
+  delayMs?: number | "auto";
+  /** Initial packet interval for adaptive interpolation. */
+  expectedIntervalMs?: number;
   /** Drop a peer after this long without an update, in ms. Default 5000. */
   timeoutMs?: number;
   /** Custom blend for interpolation (angles, nested objects). */
   lerp?: (a: T, b: T, t: number) => T;
+  /** Optional projection beyond the newest snapshot. */
+  extrapolate?: (a: T, b: T, t: number) => T;
+  /** Projection cap in milliseconds. Default 0. */
+  maxExtrapolationMs?: number;
   /** Millisecond clock — injectable for tests. Default `performance.now`. */
   now?: () => number;
 }
@@ -35,6 +41,9 @@ export interface Roster<T> {
   /** Interpolated state for ONE peer (its own on-demand `sample`), or null if
    *  it isn't tracked or has no sample yet. */
   sampleOne(id: string, atMs?: number): T | null;
+  /** Most recently received state, without interpolation delay. Use for
+   *  authority checks; render with `sample`/`sampleOne`. */
+  latest(id: string): T | null;
   /** Clear a peer's interpolation buffer so its next update SNAPS instead of
    *  sweeping — for a respawn or teleport. Keeps the peer tracked; no-op if the
    *  id is unknown. */
@@ -51,7 +60,7 @@ export interface Roster<T> {
 export function createRoster<T>(options: RosterOptions<T> = {}): Roster<T> {
   const timeout = options.timeoutMs ?? 5000;
   const clock = options.now ?? (() => performance.now());
-  const peers = new Map<string, { interp: Interpolator<T>; lastSeen: number }>();
+  const peers = new Map<string, { interp: Interpolator<T>; latest: T; lastSeen: number }>();
   return {
     update(id, state, atMs = clock()) {
       let peer = peers.get(id);
@@ -60,13 +69,18 @@ export function createRoster<T>(options: RosterOptions<T> = {}): Roster<T> {
         peer = {
           interp: createInterpolator<T>({
             delayMs: options.delayMs,
+            expectedIntervalMs: options.expectedIntervalMs,
             lerp: options.lerp,
+            extrapolate: options.extrapolate,
+            maxExtrapolationMs: options.maxExtrapolationMs,
             now: options.now,
           }),
+          latest: state,
           lastSeen: atMs,
         };
         peers.set(id, peer);
       }
+      peer.latest = state;
       peer.lastSeen = atMs;
       peer.interp.push(state, atMs);
       return { isNew };
@@ -95,6 +109,9 @@ export function createRoster<T>(options: RosterOptions<T> = {}): Roster<T> {
     sampleOne(id, atMs = clock()) {
       const peer = peers.get(id);
       return peer ? peer.interp.sample(atMs) : null;
+    },
+    latest(id) {
+      return peers.get(id)?.latest ?? null;
     },
     reset(id) {
       peers.get(id)?.interp.clear();

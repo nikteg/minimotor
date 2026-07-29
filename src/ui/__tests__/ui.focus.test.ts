@@ -5,7 +5,19 @@
 // it can only be verified by actually running frames.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp, type App } from "../../engine/index.js";
-import { _reset, begin, button, col, focusedId, modal, text } from "../index.js";
+import {
+  _reset,
+  begin,
+  button,
+  col,
+  focus as focusWidget,
+  focusedId,
+  modal,
+  setNavPad,
+  slider,
+  text,
+} from "../index.js";
+import { Buttons, type GamepadState } from "../../input/gamepad.js";
 
 let rafCallback: ((t: number) => void) | null = null;
 const origGc = HTMLCanvasElement.prototype.getContext;
@@ -103,6 +115,25 @@ function focused(game: App): string | null {
 }
 
 describe("Tab traversal", () => {
+  it("leaves gameplay Space and arrows alone when no widget is focused", () => {
+    let showButton = true;
+    const { game, canvas } = build(() => {
+      if (showButton) button({ label: "Play", id: "play" });
+    });
+    tick();
+    tick();
+    showButton = false;
+    tick();
+    expect(focused(game)).toBeNull();
+
+    canvas.dispatchEvent(new KeyboardEvent("keydown", { key: " ", code: "Space", bubbles: true }));
+    canvas.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowLeft", code: "ArrowLeft", bubbles: true }),
+    );
+    expect(game.keys.down("Space")).toBe(true);
+    expect(game.keys.down("ArrowLeft")).toBe(true);
+  });
+
   it("walks the widgets in draw order, and Shift+Tab walks back", () => {
     const { game, canvas } = build(() => {
       col({ x: 0, y: 0, w: 200, gap: 4 }, () => {
@@ -152,6 +183,42 @@ describe("Tab traversal", () => {
 });
 
 describe("the overlay focus trap", () => {
+  it("focuses the first enabled modal control without a visible ring for idle input", () => {
+    const { game } = build(() => {
+      modal({ title: "Paused", id: "pause" }, () => {
+        button({ label: "Disabled", id: "disabled", disabled: true });
+        button({ label: "Resume", id: "resume" });
+      });
+    });
+    tick();
+    expect(focused(game)).toBe("resume");
+    vi.mocked(game.ctx.setLineDash).mockClear();
+    tick();
+    expect(game.ctx.setLineDash).not.toHaveBeenCalled();
+  });
+
+  it("visibly focuses the first modal control when a gamepad opened it", () => {
+    const pad: GamepadState = {
+      connected: true,
+      axis: () => 0,
+      down: (button) => button === Buttons.Start,
+      pressed: () => false,
+      released: () => false,
+    };
+    const { game } = build(() => {
+      modal({ title: "Paused", id: "pause" }, () => {
+        button({ label: "Resume", id: "resume" });
+      });
+    });
+    begin(game.ctx);
+    setNavPad(pad);
+    tick();
+    vi.mocked(game.ctx.setLineDash).mockClear();
+    tick();
+    expect(focused(game)).toBe("resume");
+    expect(game.ctx.setLineDash).toHaveBeenCalled();
+  });
+
   it("keeps Tab inside an open modal and restores focus when it closes", () => {
     let open = false;
     const { game, canvas } = build(() => {
@@ -196,5 +263,57 @@ describe("the overlay focus trap", () => {
     tick();
     expect(open).toBe(false);
     expect(focused(game)).toBe("open");
+  });
+});
+
+describe("gamepad navigation", () => {
+  it("dismisses a modal with the semantic B action", () => {
+    let open = true;
+    let pressedB = false;
+    const pad: GamepadState = {
+      connected: true,
+      axis: () => 0,
+      down: () => false,
+      pressed: (button) => button === Buttons.B && pressedB,
+      released: () => false,
+    };
+    const { game } = build(() => {
+      if (open) modal({ title: "Pause", onDismiss: () => (open = false) }, () => text("Paused"));
+    });
+    tick();
+    tick();
+    begin(game.ctx);
+    setNavPad(pad);
+    pressedB = true;
+    tick();
+    expect(open).toBe(false);
+  });
+
+  it("repeats a held direction after a delay to adjust sliders", () => {
+    let volume = 0.5;
+    const held = new Set<number>();
+    const pad: GamepadState = {
+      connected: true,
+      axis: () => 0,
+      down: (button) => held.has(button),
+      pressed: () => false,
+      released: () => false,
+    };
+    const { game } = build(() => {
+      volume = slider({ x: 10, y: 10, w: 200, value: volume, id: "volume" });
+    });
+    tick(20);
+    tick(20);
+    begin(game.ctx);
+    setNavPad(pad);
+    focusWidget("volume");
+
+    held.add(Buttons.DpadRight);
+    tick(20);
+    expect(volume).toBeCloseTo(0.51);
+    for (let i = 0; i < 10; i++) tick(20);
+    expect(volume).toBeCloseTo(0.51); // still inside the initial hold delay
+    for (let i = 0; i < 10; i++) tick(20);
+    expect(volume).toBeGreaterThan(0.51);
   });
 });

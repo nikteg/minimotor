@@ -1,4 +1,5 @@
 import { Transport, WsConfig } from "./types.js";
+import type { ClientMessageOf, ProtocolShape, ServerMessageOf } from "./protocol.js";
 
 // ---------- WebSocket ----------
 
@@ -138,4 +139,49 @@ export function connect(config: WsConfig): Transport {
 
   doConnect();
   return transport;
+}
+
+/** A JSON connection typed from the same `Protocol` used by the server. */
+export interface ProtocolTransport<P extends ProtocolShape> {
+  send(message: ClientMessageOf<P>): void;
+  trySend(message: ClientMessageOf<P>): boolean;
+  onMessage: ((message: ServerMessageOf<P>) => void) | null;
+  onClose: (() => void) | null;
+  onState: Transport["onState"];
+  readonly state: Transport["state"];
+  close(): void;
+}
+
+/** Connect a typed JSON protocol. Invalid JSON frames are ignored. */
+export function connectProtocol<P extends ProtocolShape>(config: WsConfig): ProtocolTransport<P> {
+  const raw = connect(config);
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  const channel: ProtocolTransport<P> = {
+    onMessage: null,
+    onClose: null,
+    onState: null,
+    get state() {
+      return raw.state;
+    },
+    send(message) {
+      raw.sendJson(message);
+    },
+    trySend(message) {
+      return raw.trySend(encoder.encode(JSON.stringify(message)));
+    },
+    close() {
+      raw.close();
+    },
+  };
+  raw.onMessage = (bytes) => {
+    try {
+      channel.onMessage?.(JSON.parse(decoder.decode(bytes)) as ServerMessageOf<P>);
+    } catch {
+      // Typed JSON can coexist with binary heartbeats or unrelated frames.
+    }
+  };
+  raw.onClose = () => channel.onClose?.();
+  raw.onState = (state) => channel.onState?.(state);
+  return channel;
 }

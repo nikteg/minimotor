@@ -65,6 +65,7 @@ describe("Net.join", () => {
     const room = await joining;
     expect(room.id).toBe("me");
     expect(room.peers).toEqual(["a", "b"]);
+    expect(room.hostId).toBe("me");
     expect(room.status).toBe("connected");
     room.close();
     expect(room.status).toBe("closed");
@@ -87,6 +88,16 @@ describe("Net.join", () => {
     expect(await failed).toMatch(/unreachable/);
     vi.advanceTimersByTime(30_000);
     expect(sockets.length).toBe(1);
+  });
+
+  it("can fall back to the same API as a local host", async () => {
+    const joining = join("/ws", { fallback: "local" });
+    last().drop();
+    const room = await joining;
+    expect(room.local).toBe(true);
+    expect(room.hosting).toBe(true);
+    expect(room.id).toBe("local");
+    expect(room.peerCount).toBe(0);
   });
 });
 

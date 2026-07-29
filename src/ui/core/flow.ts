@@ -51,6 +51,9 @@ export interface FlowOptions {
 export interface Flow {
   /** Main axis. */
   readonly dir: "row" | "col";
+  /** Space offered across the flow: width for a column, height for a row.
+   *  Wrapped widgets use this to measure their natural cross-axis size. */
+  readonly crossSize: number | undefined;
   /** True when the container shrink-wraps its cross axis — widgets should
    *  place at their natural cross size rather than filling. `place` reads it. */
   readonly fitCross: boolean;
@@ -148,6 +151,7 @@ export function flow(opts: FlowOptions): Flow {
 
   return {
     dir,
+    crossSize: dir === "col" ? opts.w : opts.h,
     fitCross: opts.fitCross ?? false,
     wrap: wrapping,
     next: advance,

@@ -212,6 +212,14 @@ Audio.Recipes.coin(), ... }); sfx.coin.play({ pitch: [0.95, 1.1] })`.
   OR the new symmetric room:
   `const room = await Net.join(url, { room: "name" })` +
   `Net.sync(room, { hz, state: () => ({...}) })` → iterate ghost states.
+- Bodies: `Net.syncBody(room, player)` or
+  `Net.syncBodies(room, () => bodies, { id: (body) => body.id })`.
+- Dynamic state and one-shot messages: `Net.syncEntities` + typed `Net.events`.
+- Share one `Protocol` between `Net.events` or `Net.connectProtocol` in the
+  client and `serveProtocol` in an authoritative server.
+- `Net.bindEntities`, ownership helpers, `Net.networkTime`,
+  `Net.createPrediction`, `Net.monitorRoom`, and `Net.simulateNetwork` cover
+  remote objects, authority, clocks, reconciliation, and bad-link testing.
 - `createInterpolator` / `createRoster` unchanged.
 
 ## Ground rules

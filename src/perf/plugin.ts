@@ -11,6 +11,9 @@ import { createPerfTracker } from "./tracker.js";
 export interface PerfOptions {
   /** Corner to draw in. Default `"top-right"`. */
   anchor?: "top-left" | "top-right";
+  /** Metric arrangement. `"horizontal"` is a compact horizontal bar.
+   * Default `"vertical"`. */
+  layout?: "vertical" | "horizontal";
   /** A `NetMeter` to display network throughput alongside the frame stats. */
   net?: NetMeter;
   /** An ECS world (anything with a numeric `size`) to show its live entity
@@ -70,6 +73,7 @@ export function plugin(opts: PerfOptions = {}): EnginePlugin {
       const winBox = drawPerfHud(ctx, stats, {
         viewW: app.canvas.width / vp.dpr, // window CSS width
         anchor: opts.anchor ?? "top-right",
+        layout: opts.layout,
         net,
         timings: app.timings,
         entities: opts.world?.size,

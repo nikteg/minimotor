@@ -22,7 +22,13 @@
 
 import { Draw, App } from "./engine/index.js";
 import { Loop } from "./engine/index.js";
-import { Buttons, createGamepadTracker, type GamepadState, type PadButton } from "./input/index.js";
+import {
+  Buttons,
+  createGamepadTracker,
+  registerGamepad,
+  type GamepadState,
+  type PadButton,
+} from "./input/index.js";
 import { getTheme } from "./ui/core/theme.js";
 
 /** Placement inset from a bottom corner, in logical px. `y` counts UP from the
@@ -106,7 +112,23 @@ export interface OnscreenGamepadConfig {
 
 /** What `OnscreenInput.gamepad` returns: a `GamepadState` (for `Input.map`) that
  *  also knows how to render itself via `OnscreenInput.drawControls`. */
-export type OnscreenPad = GamepadState;
+export type OnscreenPad = GamepadState & {
+  /** Client-space bounds for a configured semantic button, like
+   *  `getBoundingClientRect()` for a canvas control. */
+  buttonBounds(button: PadButton): ControlBounds | null;
+};
+
+/** A canvas control's viewport-relative CSS-pixel bounds. */
+export interface ControlBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
 
 // ---------- Pure helpers (exported for tests) ----------
 
@@ -197,7 +219,7 @@ type TouchTarget = { kind: "stick"; which: Which } | { kind: "button"; spec: But
 
 interface PadInternal {
   cfg: ResolvedConfig;
-  tracker: GamepadState & { poll(): void };
+  tracker: OnscreenPad & { poll(): void };
   stick: { x: number; y: number };
   rstick: { x: number; y: number };
   pointers: Map<number, TouchTarget>;
@@ -278,6 +300,33 @@ function anchorCenter(anchor: Anchor): { x: number; y: number } {
   return {
     x: anchor.side === "left" ? anchor.x : w - anchor.x,
     y: h - anchor.y,
+  };
+}
+
+function buttonBounds(st: PadInternal, button: PadButton): ControlBounds | null {
+  const spec = st.cfg.buttons.find((candidate) => candidate.button === button);
+  if (!spec) return null;
+  const canvas = App.canvas;
+  const rect = canvas.getBoundingClientRect();
+  const window = windowSize();
+  const center = anchorCenter(spec.anchor);
+  const cx = rect.left + (center.x / window.w) * rect.width;
+  const cy = rect.top + (center.y / window.h) * rect.height;
+  const rx = (spec.r / window.w) * rect.width;
+  const ry = (spec.r / window.h) * rect.height;
+  const left = cx - rx;
+  const top = cy - ry;
+  const width = rx * 2;
+  const height = ry * 2;
+  return {
+    x: left,
+    y: top,
+    width,
+    height,
+    left,
+    top,
+    right: left + width,
+    bottom: top + height,
   };
 }
 
@@ -452,7 +501,7 @@ export function gamepad(config: OnscreenGamepadConfig = {}): OnscreenPad {
 
   const st: PadInternal = {
     cfg,
-    tracker: undefined as unknown as GamepadState & { poll(): void },
+    tracker: undefined as unknown as OnscreenPad & { poll(): void },
     stick: { x: 0, y: 0 },
     rstick: { x: 0, y: 0 },
     pointers: new Map(),
@@ -465,17 +514,21 @@ export function gamepad(config: OnscreenGamepadConfig = {}): OnscreenPad {
     listening: false,
   };
 
-  st.tracker = createGamepadTracker(() => {
-    const touch = synthFromTouch(st);
-    const hw = readHardware(cfg.mergeIndex);
-    // Any real-pad activity flips the live source to hardware (drives autohide).
-    if (hw && (hw.buttons.some((b) => b.pressed) || hw.axes.some((a) => Math.abs(a) > 0.2))) {
-      st.lastSource = "hardware";
-    }
-    return fuseGamepad(touch, hw) as unknown as Gamepad;
-  });
+  st.tracker = Object.assign(
+    createGamepadTracker(() => {
+      const touch = synthFromTouch(st);
+      const hw = readHardware(cfg.mergeIndex);
+      // Any real-pad activity flips the live source to hardware (drives autohide).
+      if (hw && (hw.buttons.some((b) => b.pressed) || hw.axes.some((a) => Math.abs(a) > 0.2))) {
+        st.lastSource = "hardware";
+      }
+      return fuseGamepad(touch, hw) as unknown as Gamepad;
+    }),
+    { buttonBounds: (button: PadButton) => buttonBounds(st, button) },
+  );
 
   registry.set(st.tracker, st);
+  registerGamepad(st.tracker);
   ensureWired(st);
   return st.tracker;
 }

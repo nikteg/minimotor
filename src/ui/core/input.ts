@@ -268,6 +268,29 @@ export function uiHeight(): number {
   return st().transform?.h ?? hostViewport().h;
 }
 
+export interface RelativeSizeOptions {
+  /** Smallest returned size in logical px. */
+  min?: number;
+  /** Largest returned size in logical px. */
+  max?: number;
+}
+
+function relativeSize(total: number, percent: number, options: RelativeSizeOptions): number {
+  return Math.max(options.min ?? 0, Math.min(options.max ?? Infinity, (total * percent) / 100));
+}
+
+/** A percentage of the current UI width, optionally constrained. Respects
+ * `UI.scaled` reference space. */
+export function vw(percent: number, options: RelativeSizeOptions = {}): number {
+  return relativeSize(uiWidth(), percent, options);
+}
+
+/** A percentage of the current UI height, optionally constrained. Respects
+ * `UI.scaled` reference space. */
+export function vh(percent: number, options: RelativeSizeOptions = {}): number {
+  return relativeSize(uiHeight(), percent, options);
+}
+
 // Global UI-scale defaults that the no-arg `UI.scaled(body)` reads: a reference
 // size the UI is laid out against, and a multiplier on top. Set once (or never).
 // Deliberately shared by every runtime — it's app configuration, not UI state.

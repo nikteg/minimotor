@@ -84,7 +84,8 @@ export interface CameraLens {
   /** Screen point → world point. `Camera.toWorld(Pointer)` is mouse picking.
    *  Accounts for zoom, shake and the pixel snap — it inverts exactly the
    *  transform `render` applied. For a lens rendered into a screen sub-rect,
-   *  pass that rect as `opts.into`. */
+   *  pass that rect as `opts.into`. Returns a new vector unless `out` is
+   *  supplied for allocation-free hot paths. */
   toWorld(p: Vec2, out?: Vec2 | null, opts?: ScreenMapOptions): Vec2;
   /** World point → screen point (off-screen markers, HUD callouts). The
    *  inverse of `toWorld`; same `opts.into` rule. */
@@ -134,7 +135,6 @@ export function createCamera(options: CameraOptions = {}): CameraLens {
   let shakeSteps = 0;
 
   const scratchRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
-  const scratchVec: Vec2 = { x: 0, y: 0 };
   // Per-lens scratch for the hot pull paths (fold runs per elapsed step, and
   // mapping runs on every render/pick) — these never escape the call.
   const scratchTarget = { x: 0, y: 0 };
@@ -343,14 +343,14 @@ export function createCamera(options: CameraOptions = {}): CameraLens {
     },
     toWorld(p, out, opts) {
       const m = mapping(opts?.into ?? null, scratchMap);
-      const o = out ?? scratchVec;
+      const o = out ?? { x: 0, y: 0 };
       o.x = (p.x - m.tx) / m.scale;
       o.y = (p.y - m.ty) / m.scale;
       return o;
     },
     toScreen(p, out, opts) {
       const m = mapping(opts?.into ?? null, scratchMap);
-      const o = out ?? scratchVec;
+      const o = out ?? { x: 0, y: 0 };
       o.x = m.scale * p.x + m.tx;
       o.y = m.scale * p.y + m.ty;
       return o;

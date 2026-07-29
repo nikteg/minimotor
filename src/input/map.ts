@@ -76,6 +76,9 @@ export interface InputMapMethods<A extends string> {
   /** Replace an action's bindings (rebinding UIs: this + `bindings` +
    *  `Storage`). */
   rebind(action: A, bindings: Binding[]): void;
+  /** Suppress an action until all of its bindings are released. Use when UI
+   * consumes a gameplay button (for example A resumes without also jumping). */
+  consume(action: A): void;
   /** The current bindings — plain JSON, ready for `Storage.save`. */
   readonly bindings: Record<A, Binding[]>;
 }
@@ -172,6 +175,8 @@ export function map<A extends string>(
     curValue: number;
   }
   const folds = new Map<A, Fold>();
+  const consumed = new Set<A>();
+  const consumedReleaseStep = new Map<A, number>();
 
   function padActivity(name: A): { active: boolean; value: number } {
     const gp = pad();
@@ -221,20 +226,36 @@ export function map<A extends string>(
     return false;
   }
 
+  function suppressed(name: A): boolean {
+    if (consumed.has(name)) {
+      if (anyKey(name, (code) => keySource.down(code)) || padActivity(name).active) return true;
+      consumed.delete(name);
+      consumedReleaseStep.set(name, steps());
+      return true;
+    }
+    if (consumedReleaseStep.get(name) === steps()) return true;
+    consumedReleaseStep.delete(name);
+    return false;
+  }
+
   function actionState(name: A): ActionState {
     return {
       get down() {
+        if (suppressed(name)) return false;
         return anyKey(name, (c) => keySource.down(c)) || fold(name).curActive;
       },
       get pressed() {
+        if (suppressed(name)) return false;
         const f = fold(name);
         return anyKey(name, (c) => keySource.pressed(c)) || (f.curActive && !f.prevActive);
       },
       get released() {
+        if (suppressed(name)) return false;
         const f = fold(name);
         return anyKey(name, (c) => keySource.released(c)) || (!f.curActive && f.prevActive);
       },
       get value() {
+        if (suppressed(name)) return 0;
         const key = anyKey(name, (c) => keySource.down(c)) ? 1 : 0;
         return Math.max(key, fold(name).curValue);
       },
@@ -265,6 +286,9 @@ export function map<A extends string>(
     },
     rebind(action: A, next: Binding[]): void {
       store[action] = [...next];
+    },
+    consume(action: A): void {
+      consumed.add(action);
     },
   });
   Object.defineProperty(result, "bindings", {
