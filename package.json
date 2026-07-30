@@ -3,31 +3,146 @@
   "version": "0.2.0",
   "description": "Minimal 2D canvas framework — fixed-step loop, drawing, input, collision, audio — for small games and playful apps",
   "license": "MIT",
+  "bin": {
+    "mm": "./build/cli/index.js"
+  },
+  "files": [
+    "build",
+    "src/cli/__examples",
+    "README.md"
+  ],
   "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": {
       "types": "./build/index.d.ts",
       "default": "./build/index.js"
     },
+    "./audio": {
+      "types": "./build/features/audio/index.d.ts",
+      "default": "./build/features/audio/index.js"
+    },
+    "./animation": {
+      "types": "./build/features/animation/index.d.ts",
+      "default": "./build/features/animation/index.js"
+    },
+    "./aseprite": {
+      "types": "./build/aseprite/index.d.ts",
+      "default": "./build/aseprite/index.js"
+    },
+    "./assets": {
+      "types": "./build/assets.d.ts",
+      "default": "./build/assets.js"
+    },
+    "./camera": {
+      "types": "./build/camera/index.d.ts",
+      "default": "./build/camera/index.js"
+    },
+    "./debug": {
+      "types": "./build/debug.d.ts",
+      "default": "./build/debug.js"
+    },
+    "./input": {
+      "types": "./build/features/input/index.d.ts",
+      "default": "./build/features/input/index.js"
+    },
+    "./ldtk": {
+      "types": "./build/ldtk/index.d.ts",
+      "default": "./build/ldtk/index.js"
+    },
+    "./onscreen-input": {
+      "types": "./build/features/onscreen-input/index.d.ts",
+      "default": "./build/features/onscreen-input/index.js"
+    },
+    "./net": {
+      "types": "./build/features/networking/index.d.ts",
+      "default": "./build/features/networking/index.js"
+    },
+    "./particles": {
+      "types": "./build/particles.d.ts",
+      "default": "./build/particles.js"
+    },
+    "./platformer": {
+      "types": "./build/features/platformer/index.d.ts",
+      "default": "./build/features/platformer/index.js"
+    },
+    "./portals": {
+      "types": "./build/portals.d.ts",
+      "default": "./build/portals.js"
+    },
+    "./scenes": {
+      "types": "./build/scenes.d.ts",
+      "default": "./build/scenes.js"
+    },
+    "./storage": {
+      "types": "./build/features/storage.d.ts",
+      "default": "./build/features/storage.js"
+    },
+    "./timers": {
+      "types": "./build/features/timers/index.d.ts",
+      "default": "./build/features/timers/index.js"
+    },
+    "./ui": {
+      "types": "./build/features/ui/index.d.ts",
+      "default": "./build/features/ui/index.js"
+    },
     "./physics2d": {
       "types": "./build/physics2d.d.ts",
       "default": "./build/physics2d.js"
     },
+    "./performance": {
+      "types": "./build/features/performance-monitoring.d.ts",
+      "default": "./build/features/performance-monitoring.js"
+    },
+    "./snapshots": {
+      "types": "./build/features/snapshots.d.ts",
+      "default": "./build/features/snapshots.js"
+    },
+    "./autosave": {
+      "types": "./build/features/autosave.d.ts",
+      "default": "./build/features/autosave.js"
+    },
+    "./capture": {
+      "types": "./build/features/capture.d.ts",
+      "default": "./build/features/capture.js"
+    },
+    "./accessibility": {
+      "types": "./build/features/accessibility.d.ts",
+      "default": "./build/features/accessibility.js"
+    },
+    "./replay": {
+      "types": "./build/features/replay.d.ts",
+      "default": "./build/features/replay.js"
+    },
+    "./determinism": {
+      "types": "./build/features/determinism.d.ts",
+      "default": "./build/features/determinism.js"
+    },
     "./server": {
       "types": "./build/server.d.ts",
       "default": "./build/server.js"
+    },
+    "./cli": {
+      "types": "./build/cli/index.d.ts",
+      "default": "./build/cli/index.js"
+    },
+    "./cli/*": {
+      "types": "./build/cli/features/*.feature.d.ts",
+      "default": "./build/cli/features/*.feature.js"
     }
   },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
     "prepare": "tsc",
-    "samples": "vite",
+    "samples": "mm dev",
     "samples:build": "vite build",
     "samples:preview": "vite preview",
     "server:build": "tsc -p tsconfig.server.json",
     "docs:api": "node tools/gen-api-docs.ts",
-    "test:e2e": "playwright test",
+    "api-lab:levels": "mm level build tools/api-lab-levels.mjs --skin tools/api-lab-levels.mjs --template samples/api-lab/assets/api-lab.ldtk -o samples/api-lab/assets/api-lab.ldtk",
+    "ldtk:types": "mm ldtk types samples/api-lab/assets/api-lab.ldtk -o samples/api-lab/api-lab.generated.ts",
+    "test:e2e": "mm test",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -37,7 +152,12 @@
     "verify:samples": "tsc -p samples/tsconfig.json",
     "verify:lint": "oxlint",
     "verify:format": "oxfmt --check .",
-    "verify": "pnpm run --parallel \"/^verify:.+$/\""
+    "verify:assets": "mm assets check samples/api-lab",
+    "verify:cli": "mm --help",
+    "verify:generated": "pnpm ldtk:types --check",
+    "verify:ldtk": "mm ldtk check samples/api-lab/assets/api-lab.ldtk",
+    "verify:level-design": "pnpm api-lab:levels --check && mm level check samples/api-lab/assets/api-lab.ldtk --portal-boundaries --reciprocal-portals",
+    "verify": "pnpm build && pnpm run --parallel \"/^verify:.+$/\""
   },
   "dependencies": {
     "planck": "^1.5.0",
@@ -45,6 +165,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.50.0",
+    "@types/node": "^26.1.1",
     "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^4.1.10",
     "jsdom": "^29.1.1",

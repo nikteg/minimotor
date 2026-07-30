@@ -1,3 +1,4 @@
+import { createPerformanceMonitoring } from "minimotor/performance";
 // Synth: a playable instrument + a scheduled backing band.
 // Demonstrates: Audio.tone (custom voices on the SFX bus), Audio.Music
 // (look-ahead scheduler: note/kick/noiseHit), and the Audio.Mixer — both buses
@@ -8,12 +9,20 @@
 // O P the black keys. Z/X shift octaves, 1-4 pick the waveform (all mirrored by
 // the SYNTH panel's tab strip + Octave slider). Click the on-screen piano too;
 // pick and start a backing groove from the on-screen Music controls.
-import { Audio, Draw, Keys, Loop, Mathf, Perf, Pointer, App, UI } from "minimotor";
-import type { KeyCode } from "minimotor";
-import "../shared/layout-probe.ts"; // e2e layout-invariant hook (window.__uiProbe)
+import { createAudio } from "minimotor/audio";
+import { createUI } from "minimotor/ui";
+import { Mathf, App } from "minimotor";
+import { KeyCode } from "minimotor";
+import { installLayoutProbe } from "../shared/layout-probe.ts";
 
 // The viewport is LIVE (mutated on resize) — piano + bars lay out from it.
-const vp = App.init("game", { background: "#12141c", plugins: [Perf.plugin()] });
+const game = App.create("game", { background: "#12141c" });
+createPerformanceMonitoring(game);
+const vp = game.viewport;
+const { Draw, Keys, Loop, Pointer } = game;
+const Audio = createAudio(game);
+const UI = createUI(game);
+installLayoutProbe(UI);
 
 const midiFreq = (m: number) => 440 * 2 ** ((m - 69) / 12);
 

@@ -3,21 +3,22 @@
 // `load()` RETURNS the composed resources keyed by your manifest keys, so you
 // hold real references and never look anything up by string:
 //
-//   const { hero, terrain, level } = await Minimotor.Assets.load({
+//   const Assets = createAssets(game);
+//   const { hero, terrain, level } = await Assets.load({
 //     hero: {
-//       src: "hero.png",                                    // → Anim.sheet Sheet
-//       sheet: { frame: { w: 32, h: 32 }, states: { idle: { row: 0, frames: 4, fps: 8 } } },
+//       src: "hero.png",
+//       aseprite: "hero.json",                              // → tagged Aseprite sheet
 //     },
 //     terrain: "terrain.png",                               // → HTMLImageElement
 //     level:   "level1.json",                               // → parsed JSON
 //   });
-//   const anim = hero.play("idle");  ctx.drawImage(terrain, x, y);
+//   const anim = Animation.play(hero, "idle");  ctx.drawImage(terrain, x, y);
 //
 // The raw image/JSON is also cached by name, so the string-lookup style still
 // works (`Assets.image("terrain")`) — handy for loading in stages. Draw a
 // loading bar straight from the live progress, no callback wiring:
 //
-//   if (Minimotor.Assets.loading) UI.bar(x, y, w, h, Minimotor.Assets.progress);
+//   if (Assets.loading) UI.bar(x, y, w, h, Assets.progress);
 
 import {
   sheet as animSheet,
@@ -25,35 +26,49 @@ import {
   type SheetImage,
   type SheetOptions,
 } from "./anim/index.js";
+import {
+  sheet as asepriteSheet,
+  type Json as AsepriteJson,
+  type Sheet as AsepriteSheet,
+  type State as AsepriteState,
+} from "./aseprite/index.js";
 import { tint as tintSprite, type SpriteCanvas } from "./sprites.js";
+import type { Game } from "./engine/app.js";
 
 /** A manifest entry: a plain URL, or a `{ src }` spec that composes the loaded
  *  image into a higher-level resource. Extensions decide the loader:
- *  .png/.jpg/.jpeg/.webp/.gif/.bmp → image; .json → parsed JSON;
+ *  .png/.jpg/.jpeg/.webp/.gif/.bmp → image; .json/.tmj/.tsj/.ldtk → parsed JSON;
  *  .ogg/.mp3/.wav/.m4a → ArrayBuffer (decoded lazily by `Audio.music`/sfx). */
 export type AssetSpec =
   | string
   /** Slice the loaded image into a named-state `Sheet` (Anim.sheet). */
   | { src: string; sheet: SheetOptions<string> }
+  /** Load an Aseprite-exported PNG plus JSON atlas. */
+  | {
+      src: string;
+      aseprite: string | AsepriteJson;
+    }
   /** Pre-render a solid-colour silhouette of the image (Sprites.tint). */
   | { src: string; tint: string }
   /** An image with no composition — same as the bare URL, spelled explicitly. */
   | { src: string };
 
 type AudioUrl = `${string}.${"ogg" | "mp3" | "wav" | "m4a"}`;
-type JsonUrl = `${string}.json`;
+type JsonUrl = `${string}.${"json" | "tmj" | "tsj" | "ldtk" | "ldtkl"}`;
 
 /** What a manifest entry loads as — the per-key typing behind
  *  `const art = await Assets.load({ hero: "hero.png" })`. */
 export type LoadedAsset<S extends AssetSpec> = S extends { sheet: SheetOptions<string> }
   ? Sheet<S["sheet"]["states"] extends Record<infer K extends string, unknown> ? K : string>
-  : S extends { tint: string }
-    ? SpriteCanvas
-    : S extends JsonUrl | { src: JsonUrl }
-      ? unknown
-      : S extends AudioUrl | { src: AudioUrl }
-        ? ArrayBuffer
-        : HTMLImageElement;
+  : S extends { aseprite: infer D }
+    ? AsepriteSheet<AsepriteState<D>>
+    : S extends { tint: string }
+      ? SpriteCanvas
+      : S extends JsonUrl | { src: JsonUrl }
+        ? unknown
+        : S extends AudioUrl | { src: AudioUrl }
+          ? ArrayBuffer
+          : HTMLImageElement;
 
 /** The typed record `load()` resolves with: keys from the manifest, value
  *  types from each spec. `art.herp` is a compile error. */
@@ -66,11 +81,16 @@ export type AssetManifest = Record<string, AssetSpec>;
 export type ProgressFn = (loaded: number, total: number) => void;
 
 const IMAGE_EXT = /\.(png|jpe?g|webp|gif|bmp)$/i;
-const JSON_EXT = /\.json$/i;
+const JSON_EXT = /\.(json|tmj|tsj|ldtk|ldtkl)$/i;
 const AUDIO_EXT = /\.(ogg|mp3|wav|m4a)$/i;
 
 function specSrc(spec: AssetSpec): string {
   return typeof spec === "string" ? spec : spec.src;
+}
+
+interface RawAseprite {
+  image: SheetImage;
+  data: AsepriteJson;
 }
 
 function loadImage(url: string): Promise<HTMLImageElement> {
@@ -119,19 +139,39 @@ function loadOne(url: string): Promise<unknown> {
   if (JSON_EXT.test(url)) return loadJson(url);
   if (AUDIO_EXT.test(url)) return loadAudio(url);
   return Promise.reject(
-    new Error(`Minimotor.Assets: unknown asset type for "${url}" (expected image, .json or audio)`),
+    new Error(
+      `Minimotor.Assets: unknown asset type for "${url}" (expected image, JSON map, or audio)`,
+    ),
   );
 }
 
 // Build the composed resource a spec asks for from its raw (cached) asset.
 function compose(spec: AssetSpec, raw: unknown): unknown {
   if (typeof spec === "string") return raw;
+  if ("aseprite" in spec) {
+    const source = raw as RawAseprite;
+    return asepriteSheet(source.image, source.data);
+  }
   if ("sheet" in spec) return animSheet(raw as SheetImage, spec.sheet);
   if ("tint" in spec) return tintSprite(raw as HTMLImageElement, spec.tint);
   return raw;
 }
 
-/** An isolated asset cache. `Minimotor.Assets` is a shared default instance. */
+async function loadSpec(spec: AssetSpec): Promise<{ raw: unknown; cached: unknown }> {
+  if (typeof spec !== "string" && "aseprite" in spec) {
+    const [image, data] = await Promise.all([
+      loadOne(spec.src),
+      typeof spec.aseprite === "string" ? loadJson(spec.aseprite) : spec.aseprite,
+    ]);
+    const raw = { image: image as SheetImage, data: data as AsepriteJson };
+    return { raw, cached: image };
+  }
+  const raw = await loadOne(specSrc(spec));
+  return { raw, cached: raw };
+}
+
+/** An isolated asset cache. Use `createAssets(game)` for lifecycle ownership,
+ * or `createAssetStore()` for an ownerless cache. */
 export interface AssetStore {
   /** Load every entry in parallel; resolves with the composed resources keyed
    *  by manifest key. `onProgress` fires as each one completes. The raw
@@ -154,7 +194,8 @@ export interface AssetStore {
   readonly loading: boolean;
 }
 
-export function createAssets(): AssetStore {
+/** Create a standalone cache when no game lifecycle should own it. */
+export function createAssetStore(): AssetStore {
   const cache = new Map<string, unknown>();
   // Aggregate progress across concurrent/staged loads: reset once everything
   // in flight has settled, so `progress` reads 1 and `loading` reads false.
@@ -173,8 +214,8 @@ export function createAssets(): AssetStore {
       const settled = await Promise.allSettled(
         names.map(async (name) => {
           try {
-            const raw = await loadOne(specSrc(manifest[name]));
-            cache.set(name, raw);
+            const { raw, cached } = await loadSpec(manifest[name]);
+            cache.set(name, cached);
             result[name] = compose(manifest[name], raw);
             loaded++;
             onProgress?.(loaded, total);
@@ -231,14 +272,9 @@ export function createAssets(): AssetStore {
   return store;
 }
 
-/** The default shared asset store (`Minimotor.Assets`). `load` takes a
- *  manifest and returns the composed resources keyed by your names; loaded
- *  assets stay retrievable by name (`Assets.image("hero")`), and the live
- *  `Assets.progress` drives a loading bar with no callback wiring.
- *
- *    const { hero, level } = await Assets.load({
- *      hero: "img/hero.png",
- *      level: "maps/1.json",
- *    });
- */
-export const Assets = createAssets();
+/** Create an asset cache owned and cleared by one game. */
+export function createAssets(game: Game): AssetStore {
+  const store = createAssetStore();
+  game.use({ name: "Assets", onDestroy: () => store.clear() });
+  return store;
+}

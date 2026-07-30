@@ -1,3 +1,4 @@
+import { createPerformanceMonitoring } from "minimotor/performance";
 // Swept collision demo: why Collision.sweptAABB beats a point-in-time overlap
 // test for fast movers.
 // Demonstrates: Collision.sweptAABB(box, dx, dy, target) vs rectsOverlap. A
@@ -6,15 +7,21 @@
 // crossing and reports where + on which face it hit.
 //
 // Controls:  Space = toggle method (swept ⇄ per-frame)   ↑/↓ = speed
-import { Audio, Collision, Draw, Keys, Loop, Mathf, Perf, App, UI } from "minimotor";
+import { createAudio } from "minimotor/audio";
+import { createUI } from "minimotor/ui";
+import { Collision, Mathf, App } from "minimotor";
 
 // The viewport is LIVE (mutated on resize) — wall/reset derive from it; the
 // engine owns clearing via `background`.
-const view = App.init("game", {
+const game = App.create("game", {
   background: "#101418",
   preventNavigation: true,
-  plugins: [Perf.plugin()],
 });
+createPerformanceMonitoring(game);
+const view = game.viewport;
+const { Draw, Keys, Loop } = game;
+const Audio = createAudio(game);
+const UI = createUI(game);
 
 const midY = () => view.h / 2;
 

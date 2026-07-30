@@ -9,22 +9,24 @@
 //
 // Capture stays OFF until a spec turns it on, so this costs a page a single
 // object assignment and nothing per frame.
-import { UI } from "minimotor";
+import type { UiApi } from "minimotor/ui";
 
 declare global {
   interface Window {
     __uiProbe?: {
       capture(on: boolean): void;
-      tree(): ReturnType<typeof UI.layoutTree>;
-      issues(): ReturnType<typeof UI.layoutIssues>;
+      tree(): ReturnType<UiApi["layoutTree"]>;
+      issues(): ReturnType<UiApi["layoutIssues"]>;
       focused(): string | null;
     };
   }
 }
 
-window.__uiProbe = {
-  capture: UI.layoutCapture,
-  tree: UI.layoutTree,
-  issues: UI.layoutIssues,
-  focused: UI.focusedId,
-};
+export function installLayoutProbe(UI: UiApi): void {
+  window.__uiProbe = {
+    capture: UI.layoutCapture,
+    tree: UI.layoutTree,
+    issues: UI.layoutIssues,
+    focused: UI.focusedId,
+  };
+}

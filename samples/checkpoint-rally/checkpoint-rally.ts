@@ -1,3 +1,4 @@
+import { createPerformanceMonitoring } from "minimotor/performance";
 // CHECKPOINT RALLY: drive a rigid-body car around a long winding circuit,
 // hitting the numbered gates in order to complete laps and chasing your best
 // lap time. A Physics2D (planck/Box2D) world integrates the car body while a
@@ -6,28 +7,27 @@
 // obstacles. Focus: Gizmos.car (drives an injected physics body), Physics2D,
 // Camera.follow (dead-zone follow) and Gizmos.checkpointRoute (gates/laps).
 // Space = handbrake for drifts. A corner minimap sits below the HUD.
-import {
-  Audio,
-  Camera,
-  Collision,
-  Draw,
-  Gizmos,
-  Input,
-  Keys,
-  Loop,
-  Mathf,
-  Perf,
-  App,
-  Storage,
-  UI,
-} from "minimotor";
-import { Physics2D } from "minimotor/physics2d";
+import { createAudio } from "minimotor/audio";
+import { createCamera } from "minimotor/camera";
+import { createInput } from "minimotor/input";
+import { createBrowserStorage } from "minimotor/storage";
+import { createUI } from "minimotor/ui";
+import { Collision, Gizmos, Mathf, App } from "minimotor";
+import { createPhysics2D } from "minimotor/physics2d";
 
-const view = App.init("game", {
+const game = App.create("game", {
   background: "#12161f",
   preventNavigation: true,
-  plugins: [Perf.plugin()],
 });
+createPerformanceMonitoring(game);
+const view = game.viewport;
+const { Draw, Keys, Loop } = game;
+const Audio = createAudio(game);
+const Camera = createCamera(game);
+const Input = createInput(game);
+const Physics2D = createPhysics2D(game);
+const Storage = createBrowserStorage(game);
+const UI = createUI(game, Input);
 const input = Input.map({
   left: ["ArrowLeft", "KeyA"],
   right: ["ArrowRight", "KeyD"],
@@ -58,7 +58,11 @@ const CD_STEP = 900,
 // ---- Physics world: just the car body. The road-edge WALLS are a smooth
 // analytic soft-wall (below) rather than per-segment boxes — those thin boxes
 // overlapped at corners and wedged the car. There are no mid-track obstacles.
-const phys = Physics2D.world({ gravity: { x: 0, y: 0 }, pixelsPerMeter: 50 });
+const phys = Physics2D.world({
+  gravity: { x: 0, y: 0 },
+  pixelsPerMeter: 50,
+  autoStep: false,
+});
 const body = phys.box(0, 0, 40, 22, {
   type: "dynamic",
   density: 1.35,
@@ -94,7 +98,7 @@ function nearestOnTrack(px: number, py: number) {
 }
 const car = Gizmos.car(body, { acceleration: 900, grip: 7.5, steer: 0.8 });
 
-// The always-existing default camera: dead-zone follow over the big world.
+// The game-bound primary camera: dead-zone follow over the big world.
 // Shake isn't used here; the zoom pulls back a touch for road context.
 Camera.follow(body, {
   world: { w: worldW, h: worldH },
@@ -123,7 +127,7 @@ let lapTime = 0,
   gateLock = -1;
 // Best lap lives OUTSIDE reset() so it survives R restarts, and is persisted
 // across page loads via the crash-safe Storage wrapper.
-let bestLap = Storage.load("checkpoint-rally.best", 0);
+let bestLap = await Storage.load("checkpoint-rally.best", 0);
 let state = "countdown",
   cdTime = 0,
   redLit = 0,
@@ -208,7 +212,7 @@ Loop.run({
       lastLap = lapTime;
       if (!bestLap || lastLap < bestLap) {
         bestLap = lastLap;
-        Storage.save("checkpoint-rally.best", bestLap);
+        void Storage.save("checkpoint-rally.best", bestLap);
       }
       lapTime = 0;
       prevLap = route.lap;

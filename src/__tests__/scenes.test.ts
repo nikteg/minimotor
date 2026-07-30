@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { Scenes } from "../scenes.js";
+import { createSceneStack } from "../scenes.js";
 import { createClockHandle, type ClockHandle } from "../clock.js";
 
 function makeClock(): ClockHandle {
@@ -11,7 +11,7 @@ function makeClock(): ClockHandle {
 describe("Scenes.create (typed stack)", () => {
   it("enters the FIRST scene in the map on creation", () => {
     const enter = vi.fn();
-    const scenes = Scenes.create({ title: { enter }, playing: {} }, { clock: makeClock() });
+    const scenes = createSceneStack({ title: { enter }, playing: {} }, { clock: makeClock() });
     expect(scenes.active).toBe("title");
     expect(enter).toHaveBeenCalledTimes(1);
   });
@@ -19,7 +19,7 @@ describe("Scenes.create (typed stack)", () => {
   it("is structurally AppCallbacks: update ticks the top scene only", () => {
     const titleUpdate = vi.fn();
     const playUpdate = vi.fn();
-    const scenes = Scenes.create(
+    const scenes = createSceneStack(
       { title: { update: titleUpdate }, playing: { update: playUpdate } },
       { clock: makeClock() },
     );
@@ -32,7 +32,7 @@ describe("Scenes.create (typed stack)", () => {
 
   it("go replaces the stack, firing exits then enter", () => {
     const order: string[] = [];
-    const scenes = Scenes.create(
+    const scenes = createSceneStack(
       {
         a: { exit: () => order.push("exit a") },
         b: { enter: () => order.push("enter b") },
@@ -47,7 +47,7 @@ describe("Scenes.create (typed stack)", () => {
   it("push overlays: below keeps drawing, only the top updates", () => {
     const drew: string[] = [];
     const below = vi.fn();
-    const scenes = Scenes.create(
+    const scenes = createSceneStack(
       {
         playing: { update: below, draw: () => drew.push("playing") },
         paused: { draw: () => drew.push("paused") },
@@ -63,7 +63,7 @@ describe("Scenes.create (typed stack)", () => {
 
   it("draw starts at the topmost opaque scene", () => {
     const drew: string[] = [];
-    const scenes = Scenes.create(
+    const scenes = createSceneStack(
       {
         world: { draw: () => drew.push("world") },
         cover: { draw: () => drew.push("cover"), opaque: true },
@@ -79,7 +79,7 @@ describe("Scenes.create (typed stack)", () => {
 
   it("push holds the world clock; pop releases it (the time boundary)", () => {
     const clock = makeClock();
-    const scenes = Scenes.create({ playing: {}, paused: {} }, { clock });
+    const scenes = createSceneStack({ playing: {}, paused: {} }, { clock });
     expect(clock.held).toBe(false);
     scenes.push("paused");
     expect(clock.held).toBe(true);
@@ -89,14 +89,14 @@ describe("Scenes.create (typed stack)", () => {
 
   it("holdsTime: false keeps world time flowing under the modal", () => {
     const clock = makeClock();
-    const scenes = Scenes.create({ playing: {}, paused: { holdsTime: false } }, { clock });
+    const scenes = createSceneStack({ playing: {}, paused: { holdsTime: false } }, { clock });
     scenes.push("paused");
     expect(clock.held).toBe(false); // live-world pause menu
   });
 
   it("stacked modals: the hold survives until the last holder pops", () => {
     const clock = makeClock();
-    const scenes = Scenes.create({ playing: {}, inventory: {}, dialog: {} }, { clock });
+    const scenes = createSceneStack({ playing: {}, inventory: {}, dialog: {} }, { clock });
     scenes.push("inventory");
     scenes.push("dialog");
     expect(clock.held).toBe(true);
@@ -108,7 +108,7 @@ describe("Scenes.create (typed stack)", () => {
 
   it("go releases any modal hold (fresh stack, fresh time)", () => {
     const clock = makeClock();
-    const scenes = Scenes.create({ playing: {}, paused: {}, title: {} }, { clock });
+    const scenes = createSceneStack({ playing: {}, paused: {}, title: {} }, { clock });
     scenes.push("paused");
     expect(clock.held).toBe(true);
     scenes.go("title");
@@ -116,7 +116,7 @@ describe("Scenes.create (typed stack)", () => {
   });
 
   it("unknown scene names throw", () => {
-    const scenes = Scenes.create({ only: {} }, { clock: makeClock() });
+    const scenes = createSceneStack({ only: {} }, { clock: makeClock() });
     // @ts-expect-error unknown name
     expect(() => scenes.go("nope")).toThrow(/no scene/);
     // @ts-expect-error unknown name
@@ -124,6 +124,8 @@ describe("Scenes.create (typed stack)", () => {
   });
 
   it("requires at least one scene", () => {
-    expect(() => Scenes.create({} as Record<string, never>)).toThrow(/at least one/);
+    expect(() => createSceneStack({} as Record<string, never>, { clock: makeClock() })).toThrow(
+      /at least one/,
+    );
   });
 });

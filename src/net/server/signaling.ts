@@ -41,27 +41,43 @@ export type SignalingNotice =
  *    import { signaling } from "minimotor/server";
  *    signaling(new WebSocketServer({ port: 8080 })); */
 export function signaling(server: SocketServer): Room<SignalingNotice> {
-  // The host is the first peer to connect. If it leaves, the oldest remaining
-  // peer is promoted so a session can survive a host drop (guests re-offer to
-  // the new host on the `host` notice).
-  let hostId: string | null = null;
+  // The host is the first peer to connect to a given `?room=`. If it leaves,
+  // the oldest remaining peer in that room is promoted so a session survives a
+  // host drop (guests re-offer to the new host on the `host` notice). Rooms are
+  // fully isolated: one endpoint can carry as many as clients ask for.
+  const hosts = new Map<string, string>();
+  const hostOf = (group: string): string | null => hosts.get(group) ?? null;
+  const tell = (group: string, msg: SignalingNotice, except?: RoomClient): void => {
+    for (const client of room.group(group)) if (client !== except) room.send(client, msg);
+  };
   const room: Room<SignalingNotice> = serve<SignalingNotice, SignalRelay>(server, {
     onJoin(client) {
-      if (hostId === null) hostId = client.id;
-      const peers = room.clients.filter((c) => c !== client).map((c) => c.id);
-      room.send(client, { type: "welcome", id: client.id, host: hostId, peers });
-      room.relay(client, { type: "peer-join", id: client.id });
+      if (!hosts.has(client.group)) hosts.set(client.group, client.id);
+      const peers = room
+        .group(client.group)
+        .filter((c) => c !== client)
+        .map((c) => c.id);
+      room.send(client, {
+        type: "welcome",
+        id: client.id,
+        host: hostOf(client.group),
+        peers,
+      });
+      tell(client.group, { type: "peer-join", id: client.id }, client);
     },
     onMessage(client, msg) {
       if (msg?.type !== "signal" || typeof msg.to !== "string") return;
-      const target: RoomClient | undefined = room.clients.find((c) => c.id === msg.to);
+      // Only ever route within the sender's own room.
+      const target = room.group(client.group).find((c) => c.id === msg.to);
       if (target) room.send(target, { type: "signal", from: client.id, signal: msg.signal });
     },
     onLeave(client) {
-      room.broadcast({ type: "peer-leave", id: client.id });
-      if (client.id === hostId) {
-        hostId = room.clients[0]?.id ?? null;
-        room.broadcast({ type: "host", id: hostId });
+      tell(client.group, { type: "peer-leave", id: client.id });
+      if (client.id === hostOf(client.group)) {
+        const next = room.group(client.group)[0]?.id;
+        if (next === undefined) hosts.delete(client.group);
+        else hosts.set(client.group, next);
+        tell(client.group, { type: "host", id: hostOf(client.group) });
       }
     },
   });

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { Particles } from "../particles.js";
+import { createParticleSystem } from "../particles.js";
 import { createClockHandle } from "../clock.js";
 
 function stepper(): { steps: () => number; advanceMs: (ms: number) => void } {
@@ -13,7 +13,7 @@ function stepper(): { steps: () => number; advanceMs: (ms: number) => void } {
 }
 
 function sys(rng: () => number, t: ReturnType<typeof stepper>) {
-  return Particles.create({ rng, clock: createClockHandle(t.steps) });
+  return createParticleSystem({ rng, clock: createClockHandle(t.steps) });
 }
 
 describe("Particles.create", () => {
@@ -58,7 +58,7 @@ describe("Particles.create", () => {
   it("freezes with a held clock — pause needs no cooperation", () => {
     const t = stepper();
     const clock = createClockHandle(t.steps);
-    const p = Particles.create({ rng: () => 0.5, clock });
+    const p = createParticleSystem({ rng: () => 0.5, clock });
     p.burst({ at: { x: 0, y: 0 }, count: 3, life: 100 });
     clock.hold();
     t.advanceMs(1000);
@@ -68,7 +68,7 @@ describe("Particles.create", () => {
   it("emit() is chance-gated, one particle per call", () => {
     const t = stepper();
     let roll = 0;
-    const p = Particles.create({ rng: () => roll, clock: createClockHandle(t.steps) });
+    const p = createParticleSystem({ rng: () => roll, clock: createClockHandle(t.steps) });
     roll = 0.9;
     p.emit({ at: { x: 0, y: 0 }, chance: 0.5 }); // 0.9 >= 0.5 → no emit
     expect(p.count).toBe(0);

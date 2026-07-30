@@ -46,7 +46,7 @@ export interface ComponentInit<T> {
 export type AnyComponent = Component<any>;
 
 // oxlint-disable-next-line typescript/no-explicit-any
-type AnyInit = ComponentInit<any>;
+export type AnyComponentInit = ComponentInit<any>;
 
 /** An entity id. Encodes a slot index plus a generation counter, so a handle to
  *  a despawned-and-recycled slot is detected as dead by `world.alive()`. */
@@ -64,7 +64,7 @@ export type RenderSystem = (world: Ecs, ctx: CanvasRenderingContext2D) => void;
  *  game, drop it to tear it down. */
 export interface Ecs {
   /** Create an entity, optionally attaching components. Returns its id. */
-  spawn(...inits: AnyInit[]): Entity;
+  spawn(...inits: AnyComponentInit[]): Entity;
   /** Mark an entity (and all its components) for removal. Safe inside
    *  `each`/`query`: deferred automatically and applied when the outermost
    *  iteration ends — no skipped-element bugs, nothing to call. */
@@ -99,7 +99,7 @@ export interface Ecs {
    *  attached, packed (a sparse set's dense side). This is the zero-copy bridge
    *  to code that consumes component data in bulk without the ECS knowing what
    *  that code does: e.g. hand the `Sprite` store to the renderer with
-   *  `Draw.sprites(ecs.dense(Sprites.Sprite), { alpha, view })`. The array is
+   *  `Draw.sprites(ecs.dense(Sprites.Sprite), { interpolation, view })`. The array is
    *  the store's own backing — read and mutate elements freely, but don't
    *  change its length (spawn/despawn own that). Empty when nothing holds `c`. */
   dense<T>(c: Component<T>): readonly T[];

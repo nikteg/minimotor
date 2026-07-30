@@ -2,7 +2,8 @@
 // Demonstrates: Net.connect — transport.sendJson, transport.onMessage
 // (string frames now arrive decoded), transport.onClose and transport.onState.
 // No game loop; the engine's networking works standalone.
-import { Net, type Transport } from "minimotor";
+import * as Net from "minimotor/net";
+import type { Transport } from "minimotor/net";
 
 const dec = new TextDecoder();
 

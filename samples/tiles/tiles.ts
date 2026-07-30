@@ -1,3 +1,4 @@
+import { createPerformanceMonitoring } from "minimotor/performance";
 // Tilemap demo: Minimotor.Tiles.
 // - The level is an ASCII grid ("g" grass, "d" dirt, "b" brick) built below;
 //   tiles blit from a small procedurally-baked atlas via the skin.
@@ -5,23 +6,19 @@
 //   player rect against the solid tiles and reports which faces made contact.
 // - Draw.tiles culls to the camera view.
 // - Works with keyboard (←→/AD + Space) and a gamepad (left stick + A).
-import {
-  Audio,
-  Camera,
-  Collision,
-  Draw,
-  Input,
-  Keys,
-  Loop,
-  Mathf,
-  Perf,
-  Sprites,
-  App,
-  Tiles,
-  UI,
-} from "minimotor";
+import { createAudio } from "minimotor/audio";
+import { createCamera } from "minimotor/camera";
+import { createInput } from "minimotor/input";
+import { createUI } from "minimotor/ui";
+import { Collision, Mathf, Sprites, App, Tiles } from "minimotor";
 
-App.init("game", { background: "#1b2432", plugins: [Perf.plugin()] });
+const game = App.create("game", { background: "#1b2432" });
+createPerformanceMonitoring(game);
+const { Draw, Keys, Loop } = game;
+const Audio = createAudio(game);
+const Camera = createCamera(game);
+const Input = createInput(game);
+const UI = createUI(game, Input);
 
 const TW = 24;
 const COLS = 120;

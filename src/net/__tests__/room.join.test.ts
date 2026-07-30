@@ -39,6 +39,82 @@ class FakeWebSocket {
   }
 }
 
+/** Minimal RTC doubles: enough for a guest to dial its host and for us to see
+ *  which of the two data channels each send landed on. */
+class FakeChannel {
+  label: string;
+  readyState = "connecting";
+  binaryType = "";
+  sent: Uint8Array[] = [];
+  onopen: (() => void) | null = null;
+  onmessage: ((e: { data: unknown }) => void) | null = null;
+  onclose: (() => void) | null = null;
+  constructor(label: string) {
+    this.label = label;
+  }
+  send(data: Uint8Array) {
+    this.sent.push(data.slice());
+  }
+  close() {
+    this.readyState = "closed";
+    this.onclose?.();
+  }
+  open() {
+    this.readyState = "open";
+    this.onopen?.();
+  }
+}
+
+let channels: FakeChannel[] = [];
+const laneNamed = (label: string): FakeChannel => channels.find((c) => c.label === label)!;
+
+class FakePeerConnection {
+  iceGatheringState = "complete";
+  connectionState = "new";
+  localDescription = { type: "offer", sdp: "x" };
+  onicecandidate: unknown = null;
+  ondatachannel: unknown = null;
+  onconnectionstatechange: unknown = null;
+  createDataChannel(label: string) {
+    const channel = new FakeChannel(label);
+    channels.push(channel);
+    return channel;
+  }
+  createOffer() {
+    return Promise.resolve({ type: "offer", sdp: "x" });
+  }
+  createAnswer() {
+    return Promise.resolve({ type: "answer", sdp: "x" });
+  }
+  setLocalDescription() {
+    return Promise.resolve();
+  }
+  setRemoteDescription() {
+    return Promise.resolve();
+  }
+  addIceCandidate() {
+    return Promise.resolve();
+  }
+  addEventListener() {}
+  removeEventListener() {}
+  close() {
+    this.connectionState = "closed";
+  }
+}
+
+/** Read back one wire frame: [u8 idLen][id][u8 tagLen][tag][payload]. */
+function readFrame(bytes: Uint8Array) {
+  const decoder = new TextDecoder();
+  let at = 0;
+  const idLength = bytes[at++];
+  const from = decoder.decode(bytes.subarray(at, at + idLength));
+  at += idLength;
+  const tagLength = bytes[at++];
+  const tag = decoder.decode(bytes.subarray(at, at + tagLength));
+  at += tagLength;
+  return { from, tag, payload: bytes.subarray(at) };
+}
+
 const welcome = (peers: string[] = [], id = "me") => ({
   type: "welcome",
   id,
@@ -48,8 +124,10 @@ const welcome = (peers: string[] = [], id = "me") => ({
 
 beforeEach(() => {
   sockets = [];
+  channels = [];
   vi.useFakeTimers();
   vi.stubGlobal("WebSocket", FakeWebSocket);
+  vi.stubGlobal("RTCPeerConnection", FakePeerConnection);
 });
 
 afterEach(() => {
@@ -203,5 +281,82 @@ describe("Net.join reconnect", () => {
     vi.advanceTimersByTime(30_000);
     expect(sockets.length).toBe(1);
     expect(room.status).toBe("closed");
+  });
+});
+
+describe("Net.join delivery lanes", () => {
+  /** Join as a GUEST so `adopt()` dials the host and opens both channels. */
+  async function guestRoom() {
+    const joining = join("/ws");
+    last().open();
+    last().say({ type: "welcome", id: "me", host: "h", peers: ["h"] });
+    const room = await joining;
+    for (const channel of channels) channel.open();
+    return room;
+  }
+
+  it("puts messages on the reliable lane and snapshots on the unreliable one", async () => {
+    const room = await guestRoom();
+    expect(channels.map((c) => c.label)).toEqual(["mm-fast", "mm-safe"]);
+
+    room.send({ hello: true });
+    room.sendBytes("b", new Uint8Array([1, 2, 3]));
+    // An explicit opt-out puts a message on the unreliable lane too.
+    room.send({ snapshot: true }, { reliable: false });
+
+    expect(laneNamed("mm-safe").sent).toHaveLength(1);
+    expect(laneNamed("mm-fast").sent).toHaveLength(2);
+
+    const event = readFrame(laneNamed("mm-safe").sent[0]);
+    expect(event).toMatchObject({ from: "me", tag: "" });
+    expect(JSON.parse(new TextDecoder().decode(event.payload))).toEqual({ hello: true });
+
+    const snapshot = readFrame(laneNamed("mm-fast").sent[0]);
+    expect(snapshot).toMatchObject({ from: "me", tag: "b" });
+    expect(Array.from(snapshot.payload)).toEqual([1, 2, 3]);
+    room.close();
+  });
+
+  it("routes each lane to the matching listener, tagged with the true sender", async () => {
+    const room = await guestRoom();
+    const messages: unknown[] = [];
+    const packets: Array<{ from: string; bytes: number[] }> = [];
+    room.onMessage((from, msg) => messages.push({ from, msg }));
+    room.onBytes("b", (from, bytes) => packets.push({ from, bytes: Array.from(bytes) }));
+
+    // The host forwards another guest's frame verbatim, so `from` is the
+    // ORIGINAL sender rather than the peer we received it from.
+    const encoder = new TextEncoder();
+    const jsonPayload = encoder.encode(JSON.stringify({ shot: 1 }));
+    const framed = new Uint8Array([1, 97, 0, ...jsonPayload]); // id "a", empty tag
+    laneNamed("mm-safe").onmessage?.({ data: framed.buffer });
+    laneNamed("mm-fast").onmessage?.({ data: new Uint8Array([1, 98, 1, 98, 9, 9]).buffer });
+
+    expect(messages).toEqual([{ from: "a", msg: { shot: 1 } }]);
+    expect(packets).toEqual([{ from: "b", bytes: [9, 9] }]);
+    room.close();
+  });
+
+  it("survives a truncated or malformed frame", async () => {
+    const room = await guestRoom();
+    const heard = vi.fn();
+    room.onMessage(heard);
+    laneNamed("mm-safe").onmessage?.({ data: new Uint8Array([9]).buffer }); // too short
+    laneNamed("mm-safe").onmessage?.({ data: new Uint8Array([1, 97, 0, 123]).buffer }); // bad JSON
+    expect(heard).not.toHaveBeenCalled();
+    expect(room.status).toBe("connected");
+    room.close();
+  });
+
+  it("closes and forgets a peer's channels when it leaves", async () => {
+    const room = await guestRoom();
+    last().say({ type: "peer-leave", id: "h" });
+    expect(laneNamed("mm-fast").readyState).toBe("closed");
+    expect(laneNamed("mm-safe").readyState).toBe("closed");
+    // Nothing is queued at a departed peer.
+    const before = laneNamed("mm-fast").sent.length;
+    room.sendBytes("b", new Uint8Array([1]));
+    expect(laneNamed("mm-fast").sent).toHaveLength(before);
+    room.close();
   });
 });

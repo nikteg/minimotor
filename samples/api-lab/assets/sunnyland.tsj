@@ -1,0 +1,50 @@
+{
+  "type": "tileset",
+  "version": "1.10",
+  "tiledversion": "1.11.2",
+  "name": "Sunny Land",
+  "tilewidth": 16,
+  "tileheight": 16,
+  "tilecount": 575,
+  "columns": 25,
+  "image": "sunnyland-tileset.png",
+  "imagewidth": 400,
+  "imageheight": 368,
+  "tiles": [
+    { "id": 26, "class": "ground9" },
+    { "id": 34, "class": "platformLeft" },
+    { "id": 35, "class": "platformMiddle" },
+    { "id": 36, "class": "platformRight" },
+    {
+      "id": 44,
+      "class": "slopeUp",
+      "properties": [
+        { "name": "cols", "type": "int", "value": 2 },
+        { "name": "rows", "type": "int", "value": 2 }
+      ]
+    },
+    {
+      "id": 47,
+      "class": "slopeDown",
+      "properties": [
+        { "name": "cols", "type": "int", "value": 2 },
+        { "name": "rows", "type": "int", "value": 2 }
+      ]
+    },
+    {
+      "id": 120,
+      "class": "steepUp",
+      "properties": [{ "name": "rows", "type": "int", "value": 2 }]
+    },
+    {
+      "id": 122,
+      "class": "steepDown",
+      "properties": [{ "name": "rows", "type": "int", "value": 2 }]
+    },
+    { "id": 257, "class": "ladder" },
+    { "id": 376, "class": "innerBottomRight" },
+    { "id": 380, "class": "innerBottomLeft" },
+    { "id": 426, "class": "innerTopRight" },
+    { "id": 430, "class": "innerTopLeft" }
+  ]
+}

@@ -1,13 +1,12 @@
-import { requireDefault } from "./default-app.js";
 import type { KeyCode } from "./keycodes.js";
 
 /** Polled keyboard state. `down` is level-triggered (held); `pressed` and
  *  `released` are edge-triggered and true for exactly one update step per
  *  physical transition — that's why no `onKeyDown` callback is needed.
  *
- *    if (Minimotor.Keys.down("ArrowLeft")) move();   // held
- *    if (Minimotor.Keys.pressed("Space"))  jump();   // this step only
- *    if (Minimotor.Keys.released("KeyR"))  letGo(); */
+ *    if (game.Keys.down("ArrowLeft")) move();   // held
+ *    if (game.Keys.pressed("Space"))  jump();   // this step only
+ *    if (game.Keys.released("KeyR"))  letGo(); */
 export interface Keys {
   /** True while the key is held. */
   down(code: KeyCode): boolean;
@@ -19,6 +18,14 @@ export interface Keys {
    *  succession (within ~300ms) — double-tap a direction to dash, etc. Auto-
    *  repeat doesn't count; the second tap also fires `pressed`. */
   doublePressed(code: KeyCode): boolean;
+  /** Layout-aware `KeyboardEvent.key` state. Use this for text-like shortcuts
+   *  such as `"?"` that live on different physical keys across keyboard
+   *  layouts. Game controls should normally use `down(code)` instead. */
+  keyDown(key: string): boolean;
+  /** Layout-aware press edge; the `key` counterpart of `pressed(code)`. */
+  keyPressed(key: string): boolean;
+  /** Layout-aware release edge; the `key` counterpart of `released(code)`. */
+  keyReleased(key: string): boolean;
 }
 
 /** Polled pointer (mouse + touch) in logical CSS pixels, relative to the
@@ -55,51 +62,3 @@ export interface Pointer {
    *  across the frame's wheel events, cleared at frame end. */
   readonly wheel: number;
 }
-
-/** Polled keyboard — read inside `update`. */
-export const Keys: Keys = {
-  down: (code) => requireDefault().keys.down(code),
-  pressed: (code) => requireDefault().keys.pressed(code),
-  released: (code) => requireDefault().keys.released(code),
-  doublePressed: (code) => requireDefault().keys.doublePressed(code),
-};
-
-/** Polled pointer — read inside `update`. */
-export const Pointer: Pointer = {
-  get x() {
-    return requireDefault().pointer.x;
-  },
-  get y() {
-    return requireDefault().pointer.y;
-  },
-  get inside() {
-    return requireDefault().pointer.inside;
-  },
-  get down() {
-    return requireDefault().pointer.down;
-  },
-  get pressed() {
-    return requireDefault().pointer.pressed;
-  },
-  get released() {
-    return requireDefault().pointer.released;
-  },
-  get doublePressed() {
-    return requireDefault().pointer.doublePressed;
-  },
-  get frameDoublePressed() {
-    return requireDefault().pointer.frameDoublePressed;
-  },
-  get frameReleased() {
-    return requireDefault().pointer.frameReleased;
-  },
-  get framePressed() {
-    return requireDefault().pointer.framePressed;
-  },
-  get wheel() {
-    return requireDefault().pointer.wheel;
-  },
-};
-
-/** Mouse-oriented alias for the normalized canvas-relative pointer position. */
-export const Mouse: Pointer = Pointer;

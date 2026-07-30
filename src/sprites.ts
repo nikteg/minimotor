@@ -290,7 +290,7 @@ export function contentBounds(
 // The sprite component + its renderer live OUTSIDE the ECS core: the ECS is a
 // content-agnostic data container, and rendering is a rendering concern. Attach
 // `Sprites.Sprite` to entities, then blit the store with
-// `Draw.sprites(ecs.dense(Sprites.Sprite), { alpha, view })`. Data never draws
+// `Draw.sprites(ecs.dense(Sprites.Sprite), { interpolation, view })`. Data never draws
 // itself — the ECS holds it, `Draw` renders it, and neither imports the other.
 
 /** The standard sprite component's data: position + texture + presentation.
@@ -306,7 +306,8 @@ export const Sprite: Component<SpriteData> = component<SpriteData>("Sprite");
 
 /** Register the per-step interpolation snapshot for the `Sprite` store on
  *  `ecs`: each update it records every sprite's current `x`/`y` into `px`/`py`
- *  BEFORE your systems move them, so `Draw.sprites(list, { alpha: Loop.alpha })`
+ *  BEFORE your systems move them, so
+ *  `Draw.sprites(list, { interpolation: Loop.interpolation })`
  *  can draw one step behind and interpolate — smooth motion on 90/120/144 Hz
  *  displays. Opt-in (skip it and sprites simply aren't interpolated), and it
  *  must run before your movement systems, so call it right after

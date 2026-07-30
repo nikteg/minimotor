@@ -9,7 +9,7 @@
 // tear it down. Simulation folds forward from the system's clock on read —
 // paused clock, frozen particles — and only DRAWING is explicit:
 //
-//   const fx = Particles.create();
+//   const fx = Particles.createSystem();
 //   fx.burst({ at: coin, count: 12, speed: [1, 3], life: [200, 400] });
 //   fx.emit({ at: torch, chance: 0.4, color: "#f80" });  // per-step, immediate-mode
 //   // in the world pass:  Draw.particles(fx);
@@ -17,7 +17,8 @@
 // Units: speeds in px/step, gravity px/step², lifetimes in ms.
 
 import { lruCache } from "./cache.js";
-import { Clock, type ClockHandle } from "./clock.js";
+import type { ClockHandle } from "./clock.js";
+import type { Game } from "./engine/index.js";
 
 interface Particle {
   x: number;
@@ -95,8 +96,8 @@ export interface ParticleSystem {
 
 /** Config for a particle system — the clock it lives in and (test) RNG source. */
 export interface ParticleOptions {
-  /** The time this system lives in. Default `Clock.world` (freezes on hold). */
-  clock?: ClockHandle;
+  /** The time this system lives in. */
+  clock: ClockHandle;
   /** Random source — injectable for tests. */
   rng?: () => number;
 }
@@ -145,12 +146,12 @@ const DEFAULT_SIZE: Range = [2, 4];
 const DEFAULT_LIFE: Range = 600;
 const DEFAULT_COLOR = "#fff";
 
-/** Create a particle system. Its simulation is pull-derived from `options.clock`
- *  (default `Clock.world`, so a held clock freezes it); pass `options.rng` to make
- *  emission deterministic in tests. Make as many as the draw order needs. */
-function create(options: ParticleOptions = {}): ParticleSystem {
+/** Create a standalone particle system. Its simulation is pull-derived from
+ * `options.clock`; pass `options.rng` to make emission deterministic in tests.
+ * Game code normally uses `createParticles(game).createSystem()`. */
+export function createParticleSystem(options: ParticleOptions): ParticleSystem {
   const rng = options.rng ?? Math.random;
-  const clock = options.clock ?? Clock.world;
+  const clock = options.clock;
   const live: Particle[] = [];
   const pool: Particle[] = []; // dead particles, reused by the next burst
   let lastMs = clock.now;
@@ -249,5 +250,11 @@ function create(options: ParticleOptions = {}): ParticleSystem {
   };
 }
 
-/** Particle systems are created, never ambient: `Particles.create()`. */
-export const Particles = { create };
+/** Create particle systems that default to one game's world clock. */
+export function createParticles(game: Game) {
+  return {
+    createSystem(options: Omit<ParticleOptions, "clock"> & { clock?: ClockHandle } = {}) {
+      return createParticleSystem({ clock: game.Clock.world, ...options });
+    },
+  };
+}

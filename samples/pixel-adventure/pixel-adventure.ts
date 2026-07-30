@@ -1,3 +1,5 @@
+import { createAnimation } from "minimotor/animation";
+import { createPerformanceMonitoring } from "minimotor/performance";
 // PIXEL ADVENTURE — a polished mini-platformer on Pixel Frog's CC0 itch.io kit.
 // The headline: the player ships as one PNG PER STATE (idle/run/jump/fall/hit),
 // so it's the poster child for `Anim.states` — the multi-image companion to
@@ -7,27 +9,16 @@
 // resolution letterboxed stage.
 // Controls: A/D or arrows move; W/Up/Space jump (coyote + buffered, wall jump);
 // R restarts.
-import {
-  Anim,
-  Assets,
-  Audio,
-  Camera,
-  Collision,
-  Draw,
-  Input,
-  Keys,
-  Loop,
-  Mathf,
-  OnscreenInput,
-  Particles,
-  Perf,
-  Sprites,
-  App,
-  Tiles,
-  Timers,
-  UI,
-} from "minimotor";
-import type { Level, StateCursor, SheetCursor, MoverBody } from "minimotor";
+import { createAssets } from "minimotor/assets";
+import { createAudio } from "minimotor/audio";
+import { createCamera } from "minimotor/camera";
+import { createInput } from "minimotor/input";
+import { createOnscreenInput } from "minimotor/onscreen-input";
+import { createParticles } from "minimotor/particles";
+import { createTimers } from "minimotor/timers";
+import { createUI } from "minimotor/ui";
+import { Collision, Mathf, Sprites, App, Tiles } from "minimotor";
+import { Level, StateCursor, SheetCursor, MoverBody } from "minimotor";
 
 // A fixed 480×270 logical stage, letterboxed into the window by the engine —
 // world and HUD both draw in this space (no manual letterbox math).
@@ -35,15 +26,25 @@ const GAME_W = 480;
 const GAME_H = 270;
 const TILE = 48; // collision cell (world px)
 const FW = 32; // player frame size in its source strips
-App.init("game", {
+const game = App.create("game", {
   resolution: { w: GAME_W, h: GAME_H },
   // Inject the engine's fullscreen handling: viewport-fit=cover + no user zoom
   // (kills the iOS long-press/double-tap zoom), safe-area insets, and the
   // letterbox fitting inside them.
   fullscreen: true,
   preventNavigation: true,
-  plugins: [Perf.plugin()],
 });
+const Anim = createAnimation(game);
+createPerformanceMonitoring(game);
+const { Draw, Keys, Loop } = game;
+const Assets = createAssets(game);
+const Audio = createAudio(game);
+const Camera = createCamera(game);
+const Input = createInput(game);
+const Particles = createParticles(game);
+const Timers = createTimers(game);
+const UI = createUI(game, Input);
+const OnscreenInput = createOnscreenInput(game, Input);
 
 // On-screen touch gamepad — renders in the true window corners (outside the
 // letterbox bars), auto-hidden on desktop and shown on touch devices.
@@ -195,7 +196,7 @@ let coins: Coin[] = [];
 let goal = { x: 0, y: 0 };
 let lives = 3;
 let mode: "play" | "won" | "gameover" = "play";
-const fx = Particles.create();
+const fx = Particles.createSystem();
 
 const spawn = { x: 96, y: 10 * TILE }; // player feet-center start (world px)
 
@@ -361,7 +362,7 @@ Assets.load(
 
     goal = { x: data.goal[0] * TILE + TILE / 2, y: data.goal[1] * TILE + TILE / 2 };
     makeStaticLayers();
-    resetRun(); // builds the player, then points the default camera at it
+    resetRun(); // builds the player, then points the primary camera at it
     ready = true;
   })
   .catch((error) => (failed = String(error)));

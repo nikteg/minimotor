@@ -1,3 +1,4 @@
+import { createPerformanceMonitoring, createNetMeter } from "minimotor/performance";
 // A real multiplayer game over WebSocket. Open this page in two (or ten) tabs:
 // every tab is a player, relayed through the dev server's /ws-relay endpoint
 // (see vite.config.ts — a dumb broadcaster, no game logic on the server).
@@ -11,7 +12,10 @@
 //   network's packet rate — we deliberately send at only 20 Hz to prove it),
 //   and pruned when they go quiet, all in one helper,
 // - Perf.createNetMeter in the HUD for live traffic rates.
-import { Audio, Draw, Keys, Loop, Mathf, Net, Perf, App, UI } from "minimotor";
+import { createAudio } from "minimotor/audio";
+import { createNet } from "minimotor/net";
+import { createUI } from "minimotor/ui";
+import { Mathf, App } from "minimotor";
 
 const dec = new TextDecoder();
 
@@ -28,12 +32,17 @@ interface NetMsg {
   y: number;
 }
 
-const meter = Perf.createNetMeter();
+const meter = createNetMeter();
 // The viewport is LIVE (mutated on resize) — movement clamps read it fresh.
-const vp = App.init("game", {
+const game = App.create("game", {
   background: "#14141c",
-  plugins: [Perf.plugin({ net: meter })],
 });
+createPerformanceMonitoring(game, { net: meter });
+const vp = game.viewport;
+const { Draw, Keys, Loop } = game;
+const Audio = createAudio(game);
+const Net = createNet(game);
+const UI = createUI(game);
 
 const sfx = Audio.sfx({ join: Audio.Recipes.coin() });
 

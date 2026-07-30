@@ -8,7 +8,7 @@
 //
 // A `Transition` is plain data (duration + how to draw coverage `t`), so custom
 // ones are one object literal. The runner (`run`) is pure and fixed-step —
-// testable without an engine; the `Scenes` facade drives it for you.
+// testable without an engine; a game-bound scene stack drives it for you.
 
 import type { Viewport } from "./engine/index.js";
 import { clamp } from "./mathf.js";

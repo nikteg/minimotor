@@ -1,12 +1,8 @@
 // Minimotor — a minimal 2D canvas framework for small games and playful apps.
-// The whole engine is reached through PascalCase `Minimotor.*` namespaces.
-// Engine runtime: App / Loop / Draw / Keys / Pointer / Mouse (backed by one default
-// app built via App.init). Services & helpers: Audio, Sprites, Storage, etc.
-// Isolated app instances (tests / multiple apps) are created with
-// `App.create`; extra camera lenses with `Camera.create`.
+// App creates isolated games. Optional stateful capabilities live at explicit
+// subpaths (`minimotor/audio`, `minimotor/net`, `minimotor/ui`, ...).
 
-import { App, Loop, Draw, Keys, Pointer, Mouse } from "./engine/index.js";
-import { Vec2 } from "./vec2.js";
+import { App, createApp } from "./engine/index.js";
 import {
   rectsOverlap,
   circleHit,
@@ -31,12 +27,10 @@ import {
  *    if (UI.button("Play", { x: 300, y: 200 })) start();
  *    UI.panel({ x: 20, y: 20, w: 200, h: 120, title: "Inventory" });
  */
-import * as UI from "./ui/index.js";
-import { Particles } from "./particles.js";
-import { Scenes } from "./scenes.js";
-import { Clock } from "./clock.js";
-import { Signals } from "./signals.js";
-import { Assets } from "./assets.js";
+/** Area-to-area travel over the scene stack. `Portals.create` automatically
+ * detects trigger overlap after fixed gameplay steps, places the body at a
+ * destination marker, and navigates to that area's scene. Shared bodies carry
+ * `area`, so multiplayer teleports snap. */
 /** Tiny archetype-free entity-component-system. `ECS.component` declares a
  *  component and `ECS.create` builds a world; then `world.spawn`,
  *  `world.query`/`world.dense` and `world.system` handle iteration and per-step
@@ -48,10 +42,9 @@ import { Assets } from "./assets.js";
  *    for (const [id, p] of world.query(Pos)) p.x += 1;
  */
 import * as ECS from "./ecs/index.js";
-/** Frame-based sprite animation: `Anim.sheet` (one strip, many frames),
- *  `Anim.states` (one image per state, switched by key) and composable value
- *  tweens (`Anim.animate`, `Anim.sequence`, `Anim.parallel`). Cursors here are
- *  `Draw.sprite`-ready.
+/** Frame-based sprite animation: `Anim.sheet` (regular grid), `Anim.states`
+ *  (one image per state), motion behaviors, and composable value tweens (`Anim.animate`,
+ *  `Anim.sequence`, `Anim.parallel`). Cursors here are `Draw.sprite`-ready.
  *
  *    const hero = Anim.sheet(img, {
  *      frame: { w: 32, h: 32 },
@@ -60,7 +53,10 @@ import * as ECS from "./ecs/index.js";
  *    const anim = hero.play("idle");   // per-entity cursor
  *    Draw.sprite(anim, player);
  */
-import * as Anim from "./anim/index.js";
+/** Aseprite sprite-sheet JSON: static atlas frames, tagged animation,
+ * per-frame timing, trim placement, layers, slices, pivots, and nine-slice
+ * centers. `Aseprite.sheet(image, json)` is also what `Assets.load({ aseprite })`
+ * composes automatically. */
 /** General finite state machine: `Fsm.create(states, initial)` builds a machine
  *  of named states with `enter`/`update`/`exit`. `machine.update()` runs the
  *  active state and transitions on the name it returns; `machine.go(name)`
@@ -70,7 +66,6 @@ import * as Fsm from "./fsm.js";
  *  slow-mo affect them). `Timers.window` (coyote grace), `Timers.buffer` (early
  *  press buffering), `Timers.cooldown` (reuse gate), and `Timers.jumpGate` (the
  *  first two composed into forgiving-jump timing). */
-import * as Timers from "./timers.js";
 /** WebAudio helpers that own the `AudioContext`, timing and volume. `Audio.sfx`
  *  builds crash-safe sound effects, `Audio.music` schedules a song,
  *  `Audio.bus`/`Audio.master` mix, and `Audio.tone`/`Audio.engine` synthesize.
@@ -81,7 +76,6 @@ import * as Timers from "./timers.js";
  *    });
  *    sounds.jump.play();
  */
-import * as Audio from "./audio/index.js";
 /** Small math helpers (named à la Unity so it never shadows `Math`):
  *  interpolation (`Mathf.lerp`, `Mathf.damp`, `Mathf.approach`), ranges
  *  (`Mathf.clamp`, `Mathf.remap`), oscillators (`Mathf.pingPong`, `Mathf.wave`),
@@ -94,11 +88,9 @@ import * as Mathf from "./mathf.js";
  *    const input = Input.map({ jump: ["Space", "pad:a"], left: ["ArrowLeft", "KeyA"] });
  *    if (input.jump.pressed) player.vel.y = -JUMP;
  */
-import * as Input from "./input/index.js";
 /** Crash-safe `localStorage` wrapper: `Storage.load(key, fallback)` and
  *  `Storage.save(key, value)` round-trip any JSON-serializable value and never
  *  throw — private browsing, quota, or corrupt data all fall back silently. */
-import * as Storage from "./storage.js";
 /** Offscreen pre-rendering and sprite-sheet baking. `Sprites.getSprite`/
  *  `Sprites.getLayer` cache expensive draws, `Sprites.tint` recolors, and
  *  `Sprites.atlas`/`Sprites.packAtlas` build sheets for `Anim.sheet`/`Tiles.grid`
@@ -114,15 +106,12 @@ import * as Sprites from "./sprites.js";
  *    const ghosts = Net.syncBody(room, player);
  *    for (const g of ghosts) Draw.rect(g.x, g.y, 16, 16, "#888");
  */
-import * as Net from "./net/index.js";
-/** FPS / frame-time monitoring. `Perf.createPerfTracker` rolls min/max/avg over
- *  a window, `Perf.drawPerfHud` renders an on-canvas overlay, `Perf.plugin`
- *  wires both into the loop, and `Perf.createNetMeter` tracks throughput. */
-import * as Perf from "./perf/index.js";
-import { Camera } from "./camera/index.js";
+/** FPS / frame-time monitoring lives at `minimotor/performance`, where
+ * `createPerformanceMonitoring(game)` owns the HUD lifecycle and standalone
+ * tracker/meter factories remain available for custom displays. */
 /** Neutral game building blocks: `Game.createScoreTracker` persists score/best
  *  and `Game.formatClock` renders `m:ss`. Fitting a fixed logical area into the
- *  viewport lives on `App.init({ resolution })`, not here. */
+ *  viewport lives on `App.create(canvas, { resolution })`, not here. */
 import * as Game from "./game.js";
 /** Pure, dependency-free game recipes (call one, get a value) that recur across
  *  genres: `Goodies.leadTarget`/`Goodies.nearest` (steering), `Goodies.floodFill`/
@@ -134,18 +123,31 @@ import * as Goodies from "./goodies/index.js";
  *  `Gizmos.checkpointRoute`, `Gizmos.seedRng`/`Gizmos.shuffleBag`,
  *  `Gizmos.undoStack`, and `Gizmos.car`/`Gizmos.skidmarks`. */
 import * as Gizmos from "./gizmos/index.js";
-/** ASCII-grid levels as pure data: `Tiles.grid(ascii, { size, legend })` builds
- *  a queryable, `SolidSource` `Level` (feed to `Collision.moveAndSlide`);
- *  `Tiles.set` slices a tileset image into named cells plus `pick`/`anim`/
- *  `auto16` selectors, joined to a level by a `Skin` at `Draw.tiles`.
+/** ASCII and Tiled levels as pure data: `Tiles.grid` and `Tiles.Tiled.grid`
+ *  build the same queryable `SolidSource` `Level` (feed
+ *  it to `Collision.moveAndSlide`). `Tiles.Tiled.set(image, tsj)` reads atlas
+ *  names, regions, animations, and Wang terrain directly from Tiled JSON.
+ *  `Tiles.world` gives
+ *  ordinary string maps the same multi-level portal/transition contract.
+ *  `span` lets one map char own a multi-cell collision shape. `Tiles.set`
+ *  slices a tileset image into cells/regions plus `pick`/`anim`/`auto9`/`auto16`
+ *  selectors, joined to a level by a `Skin` at `Draw.tiles`.
  *
- *    const level = Tiles.grid("##########\\n#..P.....#\\n##########", {
+ *    const level = Tiles.grid("R.######\\n#..P...#", {
  *      size: 16,
- *      legend: { "#": { solid: true } },   // unknown chars (P) become spawn markers
+ *      legend: {
+ *        "#": { solid: true },
+ *        R: { slope: "up-right", span: [2, 1] },
+ *      },
  *    });
+ *    const tiles = Tiles.set(terrainImage, { size: 16, names: { ground: [0, 0] } });
+ *    const skin = { "#": tiles.ground, R: tiles.region(4, 2, 2, 2) };
  *    const start = level.spawnOne("P");
  */
-import * as Tiles from "./tiles.js";
+import * as Tiles from "./tiles/index.js";
+/** LDtk project adapter. `LDtk.grid` produces generic collision levels;
+ * `LDtk.tiles` reads painted layers, and `LDtk.world` caches every level,
+ * entity, visual layer, and portal behind one gameplay-facing object. */
 /** Cover → swap → reveal scene transitions passed to `Scenes.go`. `Transitions.fade`
  *  and `Transitions.wipe` are ready-made; a `Transition` is plain data, and the
  *  pure fixed-step runner `Transitions.run` fires the swap at full coverage. */
@@ -154,39 +156,14 @@ import * as Transitions from "./transitions.js";
  *  `GamepadState` for `Input.map({ pad })` and `OnscreenInput.drawControls(pad)`
  *  renders it — touch and a hardware pad share one code path.
  *  `pad.buttonBounds("a")` locates a semantic canvas button for automation. */
-import * as OnscreenInput from "./onscreen.js";
 
-export {
-  App,
-  Loop,
-  Draw,
-  Keys,
-  Pointer,
-  Mouse,
-  Audio,
-  Input,
-  Storage,
-  Sprites,
-  Net,
-  Perf,
-  Camera,
-  Game,
-  Goodies,
-  Gizmos,
-  Tiles,
-  Transitions,
-  Mathf,
-  Scenes,
-  ECS,
-  Clock,
-  Signals,
-  Assets,
-  Anim,
-  Fsm,
-  Timers,
-  Particles,
-  OnscreenInput,
-};
+export { App, createApp, Sprites, Game, Goodies, Gizmos, Tiles, Transitions, Mathf, ECS, Fsm };
+export type {
+  PlatformerAnimationState,
+  PlatformerAnimationBody,
+  PlatformerAnimationCursor,
+  PlatformerAnimations,
+} from "./features/platformer/index.js";
 export type {
   Anchor,
   StickSpec,
@@ -203,7 +180,7 @@ export type {
   FrameTimings,
   AppCallbacks,
   AppOptions,
-  AppInitOptions,
+  DrawApi,
   DrawTextOptions,
   DrawSpriteOptions,
   DrawSprite,
@@ -216,9 +193,19 @@ export type {
   GradientStops,
 } from "./engine/index.js";
 export type { SceneSpec, SceneStack, GoOptions, SceneStackOptions } from "./scenes.js";
+export type {
+  Portal,
+  PortalArea,
+  PortalBody,
+  PortalDestination,
+  PortalOptions,
+  PortalRouter,
+  PortalTravel,
+} from "./portals.js";
 export type { Component, ComponentInit, Entity, Ecs, System, RenderSystem } from "./ecs/index.js";
 export type { ClockHandle, Cancel } from "./clock.js";
 export type { SignalBus } from "./signals.js";
+export { createSignals } from "./signals.js";
 export type {
   AssetStore,
   AssetManifest,
@@ -302,8 +289,9 @@ export type {
   Skin,
   SkinValue,
   TileSet,
+  TileSetEntry,
   TileSetOptions,
-} from "./tiles.js";
+} from "./tiles/index.js";
 export type { Transition, TransitionRender, TransitionRun } from "./transitions.js";
 
 export type {
@@ -385,6 +373,8 @@ export type {
   SharedItem,
   SharedItemsOptions,
   SharedItems,
+  Shared,
+  BodyState,
 } from "./net/index.js";
 
 /** Pure, allocation-free collision geometry. `Collision.moveAndSlide`/
@@ -419,7 +409,6 @@ const Collision = {
 // a duplicate of it (and of the default export's `Collision`), so they bought
 // no capability — just more surface to keep honest.
 export { Collision };
-export { UI };
 export type {
   BarOptions,
   ButtonOptions,
@@ -464,43 +453,6 @@ export type {
   SelectResult,
   Theme,
   ToggleOptions,
-} from "./ui/index.js";
+} from "./features/ui/api.js";
 
 export { Vec2 } from "./vec2.js";
-
-export const Minimotor = {
-  App,
-  Vec2,
-  Loop,
-  Draw,
-  Keys,
-  Pointer,
-  Mouse,
-  Audio,
-  Input,
-  Storage,
-  Sprites,
-  Net,
-  Perf,
-  Camera,
-  Game,
-  Goodies,
-  Gizmos,
-  Tiles,
-  Transitions,
-  Mathf,
-  Scenes,
-  ECS,
-  Clock,
-  Signals,
-  Assets,
-  Anim,
-  Fsm,
-  Timers,
-  Particles,
-  Collision,
-  UI,
-  OnscreenInput,
-};
-
-export default Minimotor;

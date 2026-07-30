@@ -17,7 +17,7 @@
 // loop's fixed step. A clock with no pending timers is referenced by nothing
 // and GCs away with its owner.
 
-import { Loop, STEP_MS, onDefaultAppChange, stepNow } from "./engine/index.js";
+import { STEP_MS, type Runtime } from "./engine/app.js";
 import { animate as animateValue, type AnimateOptions, type Motion } from "./anim/value.js";
 
 /** A running timer; call to cancel early. */
@@ -56,7 +56,6 @@ interface TimerJob {
 // drives them. Fire returns false when the clock has no timers left, which
 // drops it from the set (nothing references an idle clock).
 const driven = new Set<() => boolean>();
-let driverWired = false;
 
 // A snapshot is needed (a callback may schedule on another clock mid-pass, and
 // a clock that runs dry is dropped from the set), but this runs on EVERY fixed
@@ -73,24 +72,9 @@ function fireAll(): void {
   drivenScratch.length = 0;
 }
 
-function ensureDriver(): void {
-  if (driverWired) return;
-  try {
-    Loop.onStep(fireAll);
-    driverWired = true;
-  } catch {
-    // No default app yet: steps aren't advancing, so nothing can come due.
-    // Wiring retries on the next timer registration.
-  }
+function registerStandalone(fire: () => boolean): void {
+  driven.add(fire);
 }
-
-// `Loop.onStep` registers on the app that is default RIGHT NOW. A second
-// `App.init()` destroys that app and takes the registration with it, so every
-// pending timer would stop firing with no error. Re-wire onto the new app.
-onDefaultAppChange(() => {
-  driverWired = false;
-  if (driven.size > 0) ensureDriver();
-});
 
 /** Drive timer firing manually — for tests without a running loop. */
 export function _driveClocks(): void {
@@ -98,7 +82,10 @@ export function _driveClocks(): void {
 }
 
 /** Build a clock over a fixed-step source (injectable for tests). */
-export function createClockHandle(steps: () => number = stepNow): ClockHandle {
+export function createClockHandle(
+  steps: () => number = () => 0,
+  register: (fire: () => boolean) => void = registerStandalone,
+): ClockHandle {
   let anchorSteps = steps();
   let anchorMs = 0;
   let scaleV = 1;
@@ -138,8 +125,7 @@ export function createClockHandle(steps: () => number = stepNow): ClockHandle {
 
   const schedule = (t: TimerJob): Cancel => {
     timers.add(t);
-    driven.add(fire);
-    ensureDriver();
+    register(fire);
     return () => {
       t.dead = true;
       timers.delete(t);
@@ -185,38 +171,25 @@ export function createClockHandle(steps: () => number = stepNow): ClockHandle {
   return handle;
 }
 
-let worldClock = createClockHandle();
-let uiClock = createClockHandle();
+export interface ClockApi {
+  readonly world: ClockHandle;
+  readonly ui: ClockHandle;
+  create(): ClockHandle;
+}
 
-/** The two ambient clocks + custom timelines. `Clock.world` drives the world
- *  (pausable, scalable), `Clock.ui` keeps menus and HUD ticking while the
- *  world is held; `Clock.create` makes an independent timeline. Slow-mo and
- *  hit-stop are one-liners:
- *
- *    Clock.world.scale = 0.25;   // slow motion
- *    Clock.world.hold();         // hit-stop: the world freezes, UI keeps ticking
- *    Clock.world.release();
- */
-export const Clock = {
-  /** World time: the content clock — held by modal scene pushes, scalable for
-   *  slow-mo. The default clock for all world content (motions, cursors,
-   *  animated tiles). */
-  get world(): ClockHandle {
-    return worldClock;
-  },
-  /** Interface time: never held by convention — pause menus stay alive. */
-  get ui(): ClockHandle {
-    return uiClock;
-  },
-  /** A custom timeline with the full toolkit (cutscenes, boss clocks). */
-  create(): ClockHandle {
-    return createClockHandle();
-  },
-  /** Reset the ambient clocks and timer wiring — for tests. */
-  _reset(): void {
-    worldClock = createClockHandle();
-    uiClock = createClockHandle();
-    driven.clear();
-    driverWired = false;
-  },
-};
+/** Create world/UI/custom clocks permanently driven by one app. */
+export function createClockApi(app: Pick<Runtime, "steps" | "onStep">): ClockApi {
+  const active = new Set<() => boolean>();
+  const register = (fire: () => boolean) => active.add(fire);
+  app.onStep(() => {
+    for (const fire of active) if (!fire()) active.delete(fire);
+  });
+  const steps = () => app.steps;
+  const world = createClockHandle(steps, register);
+  const ui = createClockHandle(steps, register);
+  return {
+    world,
+    ui,
+    create: () => createClockHandle(steps, register),
+  };
+}

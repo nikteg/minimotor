@@ -8,17 +8,29 @@
 //   • Pointer: click anything.
 //
 // The on-screen pad is drawn like a real controller — left stick, a D-pad to its
-// right, an A face button, and the LB/RB/LT/RT shoulders above. `UI.setNavPad`
-// routes UI focus through it so the virtual stick/D-pad walk the menu on touch.
-import { Draw, Input, Keys, Loop, OnscreenInput, App, UI } from "minimotor";
-import "../shared/layout-probe.ts"; // e2e layout-invariant hook (window.__uiProbe)
+// right, an A face button, and the LB/RB/LT/RT shoulders above. Every pad
+// registered with Input automatically participates in UI navigation.
+import { createInput } from "minimotor/input";
+import { createOnscreenInput } from "minimotor/onscreen-input";
+import { createUI } from "minimotor/ui";
+import { App } from "minimotor";
+import { installLayoutProbe } from "../shared/layout-probe.ts";
 
-App.init("game", { fullscreen: true, background: "#12141c", preventNavigation: true });
+const game = App.create("game", {
+  fullscreen: true,
+  background: "#12141c",
+  preventNavigation: true,
+});
+const { Draw, Keys, Loop } = game;
+const Input = createInput(game);
+const UI = createUI(game, Input);
+installLayoutProbe(UI);
+const OnscreenInput = createOnscreenInput(game, Input);
 const uiId = UI.ids("menu-nav");
 
 const pad = OnscreenInput.gamepad({
   opacity: 0.55,
-  // Left analog stick — moves focus (via setNavPad).
+  // Left analog stick — moves focus.
   stick: { anchor: { side: "left", x: 92, y: 92 }, radius: 56 },
   buttons: [
     // D-pad, to the RIGHT of the left stick.
@@ -35,8 +47,6 @@ const pad = OnscreenInput.gamepad({
     { anchor: { side: "right", x: 96, y: 314 }, r: 28, button: "r2", label: "RT" },
   ],
 });
-UI.setNavPad(pad); // the virtual stick + D-pad now drive UI focus
-
 const TABS = [
   { name: "Video", subs: ["Display", "Quality"] },
   { name: "Audio", subs: ["Levels", "Output"] },

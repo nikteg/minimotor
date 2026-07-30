@@ -1,9 +1,13 @@
-import { requireDefault } from "./default-app.js";
 import type { Rect } from "./app.js";
 import { drawText, monoFont, type TextHAlign, type TextVAlign } from "../text.js";
 import { blitPixelAligned } from "./pixel-raster.js";
 
 type Point = { x: number; y: number };
+
+interface DrawTarget {
+  readonly ctx: CanvasRenderingContext2D;
+  readonly spriteScratch: DrawSprite[];
+}
 
 /** Options for `Draw.text` — plain ambient-space text (world-anchored damage
  *  numbers, name tags). For themed, screen-space HUD text use `UI.text`. */
@@ -41,10 +45,17 @@ export type GradientStops = Array<[number, string]>;
  *  (`rect(someRect, color)` — anything with `x`/`y`/`w`/`h`). `color` is a CSS
  *  color or a `Draw.linear`/`Draw.radial` gradient. Screen space at the top
  *  level, world space inside `Camera.render`. */
-function rect(x: number, y: number, w: number, h: number, color: Fill): void;
-function rect(rect: Rect, color: Fill): void;
-function rect(a: number | Rect, b: number | Fill, c?: number, d?: number, e?: Fill): void {
-  const ctx = requireDefault().ctx;
+function rect(this: DrawTarget, x: number, y: number, w: number, h: number, color: Fill): void;
+function rect(this: DrawTarget, rect: Rect, color: Fill): void;
+function rect(
+  this: DrawTarget,
+  a: number | Rect,
+  b: number | Fill,
+  c?: number,
+  d?: number,
+  e?: Fill,
+): void {
+  const ctx = this.ctx;
   if (typeof a === "number") {
     ctx.fillStyle = e!;
     ctx.fillRect(a, b as number, c!, d!);
@@ -56,15 +67,16 @@ function rect(a: number | Rect, b: number | Fill, c?: number, d?: number, e?: Fi
 
 /** Fill a circle of radius `r`. Positional (`circle(x, y, r, color)`) or with a
  *  point (`circle(pos, r, color)`). */
-function circle(x: number, y: number, r: number, color: Fill): void;
-function circle(pos: Point, r: number, color: Fill): void;
+function circle(this: DrawTarget, x: number, y: number, r: number, color: Fill): void;
+function circle(this: DrawTarget, pos: Point, r: number, color: Fill): void;
 function circle(
+  this: DrawTarget,
   xOrCenter: number | Point,
   yOrRadius: number,
   radiusOrColor: number | Fill,
   maybeColor?: Fill,
 ): void {
-  const ctx = requireDefault().ctx;
+  const ctx = this.ctx;
   let x: number, y: number, r: number, color: Fill;
   if (typeof xOrCenter === "number") {
     x = xOrCenter;
@@ -86,9 +98,18 @@ function circle(
 /** Stroke a line between two points, `width` px thick (default 1). Positional
  *  (`line(x1, y1, x2, y2, color, width?)`) or point form (`line(a, b, color,
  *  width?)`). */
-function line(x1: number, y1: number, x2: number, y2: number, color: Fill, width?: number): void;
-function line(a: Point, b: Point, color: Fill, width?: number): void;
 function line(
+  this: DrawTarget,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  color: Fill,
+  width?: number,
+): void;
+function line(this: DrawTarget, a: Point, b: Point, color: Fill, width?: number): void;
+function line(
+  this: DrawTarget,
   x1OrFrom: number | Point,
   y1OrTo: number | Point,
   x2OrColor?: number | Fill,
@@ -96,7 +117,7 @@ function line(
   maybeColor?: Fill,
   maybeWidth?: number,
 ): void {
-  const ctx = requireDefault().ctx;
+  const ctx = this.ctx;
   let x1: number, y1: number, x2: number, y2: number, color: Fill, width: number;
   if (typeof x1OrFrom === "number") {
     x1 = x1OrFrom;
@@ -125,9 +146,18 @@ function line(
  *  edge, so a 2px outline extends 1px either side. Positional
  *  (`rectStroke(x, y, w, h, color, width?)`) or structural
  *  (`rectStroke(someRect, color, width?)`). */
-function rectStroke(x: number, y: number, w: number, h: number, color: Fill, width?: number): void;
-function rectStroke(rect: Rect, color: Fill, width?: number): void;
 function rectStroke(
+  this: DrawTarget,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  color: Fill,
+  width?: number,
+): void;
+function rectStroke(this: DrawTarget, rect: Rect, color: Fill, width?: number): void;
+function rectStroke(
+  this: DrawTarget,
   a: number | Rect,
   b: number | Fill,
   // In the structural form this slot carries the line width, not a dimension.
@@ -136,7 +166,7 @@ function rectStroke(
   e?: Fill,
   f?: number,
 ): void {
-  const ctx = requireDefault().ctx;
+  const ctx = this.ctx;
   if (typeof a === "number") {
     ctx.strokeStyle = e!;
     ctx.lineWidth = f ?? 1;
@@ -151,16 +181,24 @@ function rectStroke(
 /** Outline a circle of radius `r`, `width` px thick (default 1). Positional
  *  (`circleStroke(x, y, r, color, width?)`) or with a point
  *  (`circleStroke(pos, r, color, width?)`). */
-function circleStroke(x: number, y: number, r: number, color: Fill, width?: number): void;
-function circleStroke(pos: Point, r: number, color: Fill, width?: number): void;
 function circleStroke(
+  this: DrawTarget,
+  x: number,
+  y: number,
+  r: number,
+  color: Fill,
+  width?: number,
+): void;
+function circleStroke(this: DrawTarget, pos: Point, r: number, color: Fill, width?: number): void;
+function circleStroke(
+  this: DrawTarget,
   xOrCenter: number | Point,
   yOrRadius: number,
   radiusOrColor: number | Fill,
   colorOrWidth?: Fill | number,
   maybeWidth?: number,
 ): void {
-  const ctx = requireDefault().ctx;
+  const ctx = this.ctx;
   let x: number, y: number, r: number, color: Fill, width: number;
   if (typeof xOrCenter === "number") {
     x = xOrCenter;
@@ -187,9 +225,9 @@ function circleStroke(
  *  Fewer than 3 points draw nothing.
  *
  *      Draw.poly([{ x: 0, y: -10 }, { x: 8, y: 8 }, { x: -8, y: 8 }], "#0af"); */
-function poly(points: readonly Point[], color: Fill): void {
+function poly(this: DrawTarget, points: readonly Point[], color: Fill): void {
   if (points.length < 3) return;
-  const ctx = requireDefault().ctx;
+  const ctx = this.ctx;
   ctx.fillStyle = color;
   ctx.beginPath();
   ctx.moveTo(points[0].x, points[0].y);
@@ -205,8 +243,15 @@ function poly(points: readonly Point[], color: Fill): void {
  *
  *  `w`/`h` default to the image's intrinsic size, so `Draw.image(logo, 20, 20)`
  *  draws it 1:1. Pass one or both to scale. */
-function image(img: CanvasImageSource, x: number, y: number, w?: number, h?: number): void {
-  const ctx = requireDefault().ctx;
+function image(
+  this: DrawTarget,
+  img: CanvasImageSource,
+  x: number,
+  y: number,
+  w?: number,
+  h?: number,
+): void {
+  const ctx = this.ctx;
   const prevSmoothing = ctx.imageSmoothingEnabled;
   ctx.imageSmoothingEnabled = false;
   try {
@@ -232,13 +277,14 @@ function image(img: CanvasImageSource, x: number, y: number, w?: number, h?: num
  *  Gradients are immutable and reusable — for static geometry, create the
  *  gradient once and reuse it rather than calling this per frame. */
 function linear(
+  this: DrawTarget,
   x0: number,
   y0: number,
   x1: number,
   y1: number,
   stops: GradientStops,
 ): CanvasGradient {
-  const ctx = requireDefault().ctx;
+  const ctx = this.ctx;
   const g = ctx.createLinearGradient(x0, y0, x1, y1);
   for (const [at, color] of stops) g.addColorStop(at, color);
   return g;
@@ -248,8 +294,15 @@ function linear(
  *  (x1,y1,r1). A 3-arg center form covers the common concentric case.
  *  Gradients are immutable and reusable — for static geometry, create the
  *  gradient once and reuse it rather than calling this per frame. */
-function radial(cx: number, cy: number, r: number, stops: GradientStops): CanvasGradient;
 function radial(
+  this: DrawTarget,
+  cx: number,
+  cy: number,
+  r: number,
+  stops: GradientStops,
+): CanvasGradient;
+function radial(
+  this: DrawTarget,
   x0: number,
   y0: number,
   r0: number,
@@ -259,6 +312,7 @@ function radial(
   stops: GradientStops,
 ): CanvasGradient;
 function radial(
+  this: DrawTarget,
   x0: number,
   y0: number,
   r0: number,
@@ -267,7 +321,7 @@ function radial(
   r1?: number,
   maybeStops?: GradientStops,
 ): CanvasGradient {
-  const ctx = requireDefault().ctx;
+  const ctx = this.ctx;
   const g = Array.isArray(x1OrStops)
     ? ctx.createRadialGradient(x0, y0, 0, x0, y0, r0)
     : ctx.createRadialGradient(x0, y0, r0, x1OrStops as number, y1!, r1!);
@@ -278,8 +332,8 @@ function radial(
 
 /** Run `fn` with a global opacity multiplier applied (nests correctly and
  *  restores after) — fade-outs, ghosts, dimmed layers without touching ctx. */
-function opacity(value: number, fn: () => void): void {
-  const ctx = requireDefault().ctx;
+function opacity(this: DrawTarget, value: number, fn: () => void): void {
+  const ctx = this.ctx;
   const prev = ctx.globalAlpha;
   ctx.globalAlpha = prev * value;
   try {
@@ -294,7 +348,16 @@ function opacity(value: number, fn: () => void): void {
  *  the engine's anim cursors qualify without an import. */
 export interface SpriteLike {
   /** The current frame's source sub-rect within `sheet.image` (px). */
-  readonly rect: { sx: number; sy: number; sw: number; sh: number };
+  readonly rect: {
+    sx: number;
+    sy: number;
+    sw: number;
+    sh: number;
+    sourceW?: number;
+    sourceH?: number;
+    offsetX?: number;
+    offsetY?: number;
+  };
   /** The sheet the frame is blitted from. */
   readonly sheet: { image: CanvasImageSource };
 }
@@ -321,9 +384,15 @@ export interface DrawSpriteOptions {
  *  bottom-center (feet planted). `opts`: `flipX`/`flipY`, `scaleX`/`scaleY`
  *  (squash & stretch), `rot`, `alpha`. For many ECS sprites at once use
  *  `Draw.sprites`. */
-function sprite(spr: SpriteLike, at: Rect, opts: DrawSpriteOptions = {}): void {
-  const ctx = requireDefault().ctx;
+function sprite(this: DrawTarget, spr: SpriteLike, at: Rect, opts: DrawSpriteOptions = {}): void {
+  const ctx = this.ctx;
   const r = spr.rect;
+  const sourceW = r.sourceW ?? r.sw;
+  const sourceH = r.sourceH ?? r.sh;
+  const dw = (r.sw / sourceW) * at.w;
+  const dh = (r.sh / sourceH) * at.h;
+  const dx = ((r.offsetX ?? 0) / sourceW) * at.w;
+  const dy = ((r.offsetY ?? 0) / sourceH) * at.h;
   // Fast path: no flip/squash/rotation/alpha means the transform below is
   // identity apart from position (translate to the bottom-center anchor, then
   // blit back up-left by the same amounts) — one direct drawImage, no
@@ -338,7 +407,7 @@ function sprite(spr: SpriteLike, at: Rect, opts: DrawSpriteOptions = {}): void {
   ) {
     const prev = ctx.imageSmoothingEnabled;
     ctx.imageSmoothingEnabled = false;
-    blitPixelAligned(ctx, spr.sheet.image, r.sx, r.sy, r.sw, r.sh, at.x, at.y, at.w, at.h);
+    blitPixelAligned(ctx, spr.sheet.image, r.sx, r.sy, r.sw, r.sh, at.x + dx, at.y + dy, dw, dh);
     ctx.imageSmoothingEnabled = prev;
     return;
   }
@@ -351,7 +420,18 @@ function sprite(spr: SpriteLike, at: Rect, opts: DrawSpriteOptions = {}): void {
   ctx.scale((opts.flipX ? -1 : 1) * (opts.scaleX ?? 1), (opts.flipY ? -1 : 1) * (opts.scaleY ?? 1));
   if (opts.rot) ctx.rotate(opts.rot);
   if (opts.alpha !== undefined) ctx.globalAlpha = opts.alpha;
-  blitPixelAligned(ctx, spr.sheet.image, r.sx, r.sy, r.sw, r.sh, -at.w / 2, -at.h, at.w, at.h);
+  blitPixelAligned(
+    ctx,
+    spr.sheet.image,
+    r.sx,
+    r.sy,
+    r.sw,
+    r.sh,
+    -at.w / 2 + dx,
+    -at.h + dy,
+    dw,
+    dh,
+  );
   ctx.restore();
 }
 
@@ -410,30 +490,33 @@ export interface DrawSprite {
   sw?: number;
   /** Source-rect height in `img` (px). */
   sh?: number;
-  /** Previous-step x — blended toward `x` by `opts.alpha` for interpolated
+  /** Previous-step x — blended toward `x` by `opts.interpolation` for interpolated
    *  motion. Needs `py` too. */
   px?: number;
-  /** Previous-step y — blended toward `y` by `opts.alpha`. */
+  /** Previous-step y — blended toward `y` by `opts.interpolation`. */
   py?: number;
 }
 
-/** Options for the batched `Draw.sprites` — interpolation `alpha` and cull `view`. */
+/** Options for the batched `Draw.sprites`: interpolation and culling. */
 export interface DrawSpritesOptions {
-  /** Interpolation factor 0..1 (`Loop.alpha`): blends px/py→x/y for stutter-
-   *  free motion on non-60 Hz displays. */
-  alpha?: number;
+  /** Position between previous and current fixed states, from 0 to 1. Pass
+   * `Loop.interpolation` to blend px/py→x/y for smooth rendered motion. */
+  interpolation?: number;
   /** Visible world rect — sprites fully outside are skipped before transform. */
   view?: { x: number; y: number; w: number; h: number };
 }
 
-const spriteScratch: DrawSprite[] = [];
-
 /** Blit an iterable of sprites, sorted by `z` (ties keep order). Honors
  *  anchor/rotation/scale/flip/alpha/visibility, culls to `view`, and
- *  interpolates px/py when `opts.alpha` is given. */
-function sprites(list: Iterable<DrawSprite>, opts: DrawSpritesOptions = {}): void {
-  const ctx = requireDefault().ctx;
-  const lerp = opts.alpha;
+ *  interpolates px/py when `opts.interpolation` is given. */
+function sprites(
+  this: DrawTarget,
+  list: Iterable<DrawSprite>,
+  opts: DrawSpritesOptions = {},
+): void {
+  const ctx = this.ctx;
+  const spriteScratch = this.spriteScratch;
+  const lerp = opts.interpolation;
   const view = opts.view;
 
   spriteScratch.length = 0;
@@ -553,13 +636,29 @@ export interface TilesLike<S> {
   render(ctx: CanvasRenderingContext2D, skin: S, opts?: DrawTilesOptions): void;
 }
 
+/** An editor-authored visual tile layer that already knows its source cells. */
+export interface SkinlessTilesLike {
+  readonly skinless: true;
+  render(ctx: CanvasRenderingContext2D): void;
+}
+
 /** Paint a tile level (from `Tiles.grid`) with a `skin` mapping each legend key
  *  to a fill. In the ambient space — put it inside `Camera.render` to scroll
  *  with the world. The `skin` type-checks against the level's legend. Pass
  *  `{ bake: true }` to blit a static layer from one baked canvas (see
- *  `DrawTilesOptions`). */
-function tiles<S>(level: TilesLike<S>, skin: S, opts?: DrawTilesOptions): void {
-  level.render(requireDefault().ctx, skin, opts);
+ *  `DrawTilesOptions`). LDtk Tile/AutoLayers already contain their visuals and
+ *  use the shorter `Draw.tiles(layer)` form. */
+function tiles(this: DrawTarget, level: SkinlessTilesLike): void;
+function tiles<S>(this: DrawTarget, level: TilesLike<S>, skin: S, opts?: DrawTilesOptions): void;
+function tiles<S>(
+  this: DrawTarget,
+  level: TilesLike<S> | SkinlessTilesLike,
+  skin?: S,
+  opts?: DrawTilesOptions,
+): void {
+  const ctx = this.ctx;
+  if ("skinless" in level && level.skinless) level.render(ctx);
+  else (level as TilesLike<S>).render(ctx, skin as S, opts);
 }
 
 /** Anything Draw.particles can render — particle systems expose a `render`
@@ -570,17 +669,17 @@ export interface ParticleLike {
   render(ctx: CanvasRenderingContext2D): void;
 }
 
-/** Render a particle system (`Particles.create()`), typically inside a
+/** Render a particle system (`Particles.createSystem()`), typically inside a
  *  `Camera.render` block for world-space effects. */
-function particles(sys: ParticleLike): void {
-  sys.render(requireDefault().ctx);
+function particles(this: DrawTarget, sys: ParticleLike): void {
+  sys.render(this.ctx);
 }
 
 /** Draw plain ambient-space text (world-anchored damage numbers, name tags) —
  *  see `DrawTextOptions` for `x`/`y`/`size`/`color`/`align`/`baseline`. For
  *  themed, screen-space HUD text use `UI.text`. */
-function text(str: string, opts: DrawTextOptions): void {
-  const ctx = requireDefault().ctx;
+function text(this: DrawTarget, str: string, opts: DrawTextOptions): void {
+  const ctx = this.ctx;
   drawText(ctx, str, opts.x, opts.y, {
     font: opts.font ?? (opts.size !== undefined ? monoFont(opts.size) : undefined),
     color: opts.color,
@@ -589,41 +688,67 @@ function text(str: string, opts: DrawTextOptions): void {
   });
 }
 
-/** Rendering: ambient-space primitives (screen at top level, world inside
- *  `Camera.render`) plus the raw `ctx` escape hatch.
- *
- *    Draw.rect(player.x, player.y, 32, 32, "#4ecdc4");
- *    Draw.circle(orb, 6, "#ffd166");
- *    Draw.text("score 12", { x: 8, y: 8, color: "#fff" });
- */
-export const Draw = {
-  /** The raw 2D canvas context — the escape hatch for effects the `Draw.*`
-   *  primitives don't cover (gradients, paths, compositing). Under the current
-   *  ambient transform (screen, or world inside `Camera.render`). */
-  get ctx(): CanvasRenderingContext2D {
-    return requireDefault().ctx;
-  },
-  /** Real time since the previous frame, in fixed steps (see `App.frameScale`). */
-  get frameScale(): number {
-    return requireDefault().frameScale;
-  },
-  /** Render interpolation factor 0..1 — see `App.alpha`. */
-  get alpha(): number {
-    return requireDefault().alpha;
-  },
-  rect,
-  circle,
-  line,
-  rectStroke,
-  circleStroke,
-  poly,
-  image,
-  linear,
-  radial,
-  opacity,
-  text,
-  sprite,
-  sprites,
-  tiles,
-  particles,
-};
+export interface DrawApi {
+  /** Raw context under the current screen/camera transform. */
+  readonly ctx: CanvasRenderingContext2D;
+  rect(x: number, y: number, w: number, h: number, color: Fill): void;
+  rect(rect: Rect, color: Fill): void;
+  circle(x: number, y: number, r: number, color: Fill): void;
+  circle(pos: Point, r: number, color: Fill): void;
+  line(x1: number, y1: number, x2: number, y2: number, color: Fill, width?: number): void;
+  line(a: Point, b: Point, color: Fill, width?: number): void;
+  rectStroke(x: number, y: number, w: number, h: number, color: Fill, width?: number): void;
+  rectStroke(rect: Rect, color: Fill, width?: number): void;
+  circleStroke(x: number, y: number, r: number, color: Fill, width?: number): void;
+  circleStroke(pos: Point, r: number, color: Fill, width?: number): void;
+  poly(points: readonly Point[], color: Fill): void;
+  image(img: CanvasImageSource, x: number, y: number, w?: number, h?: number): void;
+  linear(x0: number, y0: number, x1: number, y1: number, stops: GradientStops): CanvasGradient;
+  radial(cx: number, cy: number, r: number, stops: GradientStops): CanvasGradient;
+  radial(
+    x0: number,
+    y0: number,
+    r0: number,
+    x1: number,
+    y1: number,
+    r1: number,
+    stops: GradientStops,
+  ): CanvasGradient;
+  opacity(value: number, fn: () => void): void;
+  text(str: string, opts: DrawTextOptions): void;
+  sprite(spr: SpriteLike, at: Rect, opts?: DrawSpriteOptions): void;
+  sprites(list: Iterable<DrawSprite>, opts?: DrawSpritesOptions): void;
+  tiles(level: SkinlessTilesLike): void;
+  tiles<S>(level: TilesLike<S>, skin: S, opts?: DrawTilesOptions): void;
+  particles(sys: ParticleLike): void;
+}
+
+/** Create a renderer permanently bound to one app/context. */
+export function createDraw(host: { readonly ctx: CanvasRenderingContext2D }): DrawApi {
+  const target: DrawTarget = {
+    get ctx() {
+      return host.ctx;
+    },
+    spriteScratch: [],
+  };
+  return {
+    get ctx() {
+      return target.ctx;
+    },
+    rect: rect.bind(target) as DrawApi["rect"],
+    circle: circle.bind(target) as DrawApi["circle"],
+    line: line.bind(target) as DrawApi["line"],
+    rectStroke: rectStroke.bind(target) as DrawApi["rectStroke"],
+    circleStroke: circleStroke.bind(target) as DrawApi["circleStroke"],
+    poly: poly.bind(target),
+    image: image.bind(target),
+    linear: linear.bind(target),
+    radial: radial.bind(target) as DrawApi["radial"],
+    opacity: opacity.bind(target),
+    text: text.bind(target),
+    sprite: sprite.bind(target),
+    sprites: sprites.bind(target),
+    tiles: tiles.bind(target) as DrawApi["tiles"],
+    particles: particles.bind(target),
+  };
+}

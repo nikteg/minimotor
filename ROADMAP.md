@@ -37,9 +37,9 @@ The host and I/O. Reached through PascalCase `Minimotor.*` namespaces backed by
 one default engine built by `Stage.init()`.
 
 - ✅ `Stage` — canvas/viewport/DPR, safe-area insets, `onResize`, `pauseOnPortrait`
-- ✅ `Loop` — fixed-step accumulator, per-step edge-clearing, `frameScale`
+- ✅ `Loop` — fixed-step accumulator, per-step edge-clearing, explicit frame timing
 - ✅ `Keys` / `Pointer` — polled input (`down`/`pressed`/`released`)
-- ✅ `Draw` — `ctx`, `frameScale`
+- ✅ `Draw` — `ctx` and rendering primitives
 - ✅ `Audio` — crash-safe SFX + scheduled `Music`, plus `Audio.Mixer`: named
   channel buses under a master, per-bus volume/mute, dynamic biquad filters,
   aux sends into shared reverb/delay effects, a master compressor/limiter and
@@ -903,7 +903,7 @@ hoppspelet) as proof it actually simplifies code — the discipline used so far.
    `Stage.init` re-init teardown, DPR-keyed sprite cache. _Perf:_ allocation-free
    `drawSprites` fast path (+ view culling), `world.each` callback queries,
    owned-component despawn, pooled + pre-baked-blit particles, ring-buffer perf
-   tracker, cached pointer rect. _Features:_ `Loop.alpha` render interpolation
+   tracker, cached pointer rect. _Features:_ `Loop.interpolation` render interpolation
    (with `px`/`py` sprite snapshots), sprite `flipX`/`flipY`, scene `opaque`,
    camera `snapTo`/`wx`/`wy`/`zoom`, JSON `Storage`, `Input.actions` mapping,
    SFX bus + presets (`Sfx.blip/jump/coin`), `Net.trySend`, fixed WebRTC

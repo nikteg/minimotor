@@ -1,14 +1,22 @@
+import { createAnimation } from "minimotor/animation";
+import { createPerformanceMonitoring } from "minimotor/performance";
 // Sprite-sheet animation on the ECS.
 // Demonstrates: Sprites.atlas (procedural sprite-sheet baking), Anim.sheet
 // (frame slicing + clock-derived playback), the ECS Sprite source-rect
 // (sx/sy/sw/sh), Draw.sprites(ecs.dense(Sprites.Sprite)), and Goodies.wrap. The sheet is generated
 // procedurally so the sample needs no asset files — an 8-frame
 // pulsing/rotating star.
-import { Anim, Draw, ECS, Goodies, Loop, Mathf, Perf, Pointer, Sprites, App, UI } from "minimotor";
+import { createUI } from "minimotor/ui";
+import { ECS, Goodies, Mathf, Sprites, App } from "minimotor";
 
 const ecs = ECS.create();
 
-const view = App.init("game", { background: "#12141c", plugins: [Perf.plugin({ world: ecs })] });
+const game = App.create("game", { background: "#12141c" });
+const Anim = createAnimation(game);
+createPerformanceMonitoring(game, { world: ecs });
+const view = game.viewport;
+const { Draw, Loop, Pointer } = game;
+const UI = createUI(game);
 
 const FRAMES = 8;
 const CELL = 64;

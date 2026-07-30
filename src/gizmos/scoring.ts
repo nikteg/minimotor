@@ -3,7 +3,7 @@
 // scoreRank, beatClock — stay in Goodies.scoring.) Clock-derived: the streak
 // decays as `Clock.world` advances — no tick(), just `hit()` and read.
 
-import { Clock, type ClockHandle } from "../clock.js";
+import type { ClockHandle } from "../clock.js";
 
 /** A decaying hit-streak multiplier returned by `combo()`. */
 export interface Combo {
@@ -29,13 +29,16 @@ export interface Combo {
  *
  *    const combo = Minimotor.Gizmos.combo({ windowMs: 2000 });
  *    // on hit: combo.hit(); score += points * combo.multiplier; */
-export function combo(
-  options: { windowMs?: number; step?: number; max?: number; clock?: ClockHandle } = {},
-): Combo {
+export function combo(options: {
+  windowMs?: number;
+  step?: number;
+  max?: number;
+  clock: ClockHandle;
+}): Combo {
   const windowMs = Math.max(1, options.windowMs ?? 2000);
   const step = options.step ?? 1;
   const cap = options.max ?? Infinity;
-  const clock = options.clock ?? Clock.world;
+  const clock = options.clock;
   let count = 0;
   let lastHit = -Infinity;
 

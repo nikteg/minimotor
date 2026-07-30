@@ -1,27 +1,29 @@
+import { createPerformanceMonitoring } from "minimotor/performance";
 // Juice demo: impact feedback with the engine's Particles, Camera.shake and
 // Input.vibrate (plus Mathf randoms for variety).
-// Demonstrates: Particles.create() + fx.burst (CPU emitter, clock-derived),
+// Demonstrates: Particles.createSystem() + fx.burst (CPU emitter, clock-derived),
 // Camera.shake (decaying screen-shake — applied inside Camera.render),
 // Input.vibrate (haptics, no-op on desktop) and Mathf.randRange / randItem.
-import {
-  Audio,
-  Camera,
-  Draw,
-  Input,
-  Loop,
-  Mathf,
-  Particles,
-  Perf,
-  Pointer,
-  App,
-  UI,
-} from "minimotor";
+import { createAudio } from "minimotor/audio";
+import { createCamera } from "minimotor/camera";
+import { createInput } from "minimotor/input";
+import { createParticles } from "minimotor/particles";
+import { createUI } from "minimotor/ui";
+import { Mathf, App } from "minimotor";
 
-const view = App.init("game", { background: "#14141c", plugins: [Perf.plugin()] });
+const game = App.create("game", { background: "#14141c" });
+createPerformanceMonitoring(game);
+const view = game.viewport;
+const { Draw, Loop, Pointer } = game;
+const Audio = createAudio(game);
+const Camera = createCamera(game);
+const Input = createInput(game);
+const Particles = createParticles(game);
+const UI = createUI(game, Input);
 
 const COLORS = ["#ff6b6b", "#4ecdc4", "#ffe066", "#a06bff", "#6bff9e", "#ff9f43"];
 
-const fx = Particles.create();
+const fx = Particles.createSystem();
 
 // One shared "impact" — a burst, a shake and a buzz, all scaled by `power`.
 function impact(x: number, y: number, power: number) {

@@ -1,7 +1,9 @@
+import { createPerformanceMonitoring } from "minimotor/performance";
 // GUILD TRADER: RPG inventory drag/drop, stack merging, dialogue and loot recipes.
-import { Draw, Gizmos, Goodies, Loop, Perf, Pointer, App, UI } from "minimotor";
-import type { Flow } from "minimotor";
-import "../shared/layout-probe.ts"; // e2e layout-invariant hook (window.__uiProbe)
+import { createUI } from "minimotor/ui";
+import { Gizmos, Goodies, App } from "minimotor";
+import { Flow } from "minimotor";
+import { installLayoutProbe } from "../shared/layout-probe.ts";
 
 interface Item {
   name: string;
@@ -18,11 +20,15 @@ interface DragPayload {
 }
 
 // Live viewport; the engine owns the background clear.
-const vp = App.init("game", {
+const game = App.create("game", {
   background: "#101722",
-  plugins: [Perf.plugin()],
   preventNavigation: true,
 });
+createPerformanceMonitoring(game);
+const vp = game.viewport;
+const { Draw, Loop, Pointer } = game;
+const UI = createUI(game);
+installLayoutProbe(UI);
 
 const items: Record<string, Item> = {
   potion: { name: "POTION", color: "#ff6b6b", max: 5 },

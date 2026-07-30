@@ -1,8 +1,14 @@
+import { createAnimation } from "minimotor/animation";
+import { createPerformanceMonitoring } from "minimotor/performance";
 // ASSET QUEST: a tiny playable archive loaded from a manifest at runtime.
 // Focus: Assets.load/progress/json and Anim.sheet, with plain JSON level data.
-import { Anim, Assets, Collision, Draw, Keys, Loop, Particles, Perf, App, UI } from "minimotor";
-import type { SheetCursor } from "minimotor";
-import * as Sfx from "../shared/sfx.ts";
+import { createAssets } from "minimotor/assets";
+import { createAudio } from "minimotor/audio";
+import { createParticles } from "minimotor/particles";
+import { createUI } from "minimotor/ui";
+import { Collision, App } from "minimotor";
+import { SheetCursor } from "minimotor";
+import { createSfx } from "../shared/sfx.ts";
 
 interface Level {
   name?: string;
@@ -16,11 +22,19 @@ interface Relic {
 }
 
 // The viewport is LIVE (mutated on resize); the engine clears to `background`.
-const vp = App.init("game", {
+const game = App.create("game", {
   background: "#111827",
-  plugins: [Perf.plugin()],
   preventNavigation: true,
 });
+const Anim = createAnimation(game);
+createPerformanceMonitoring(game);
+const vp = game.viewport;
+const { Draw, Keys, Loop } = game;
+const Assets = createAssets(game);
+const Audio = createAudio(game);
+const Sfx = createSfx(Audio);
+const Particles = createParticles(game);
+const UI = createUI(game);
 let progress = 0;
 let ready = false;
 let failed = ""; // non-empty once the manifest load rejects → show a failed screen
@@ -34,7 +48,7 @@ const TILE = 48; // world tile size in px — the grid coordinate unit
 const BODY_R = 15; // the hero's collision radius, shared by wall probing and pickups
 const player = { x: 96, y: 128, speed: 2.4 }; // px/step
 const gate = { x: 12 * TILE + TILE / 2, y: TILE + TILE / 2 };
-const fx = Particles.create();
+const fx = Particles.createSystem();
 
 // Build a deliberately clean 8-frame astronaut sheet procedurally (slicing
 // arbitrary artwork was the source of the old "spinning icon" bug).

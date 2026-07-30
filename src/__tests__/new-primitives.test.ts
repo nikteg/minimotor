@@ -4,7 +4,7 @@ import { circleRect, separateCircles, bounceInBounds } from "../collision.js";
 import { formatClock, createScoreTracker } from "../game.js";
 import { randFreeCell, shuffle, addToInventory, beatClock, nearest } from "../goodies/index.js";
 import { patrol, trail, undoStack, seedRng } from "../gizmos/index.js";
-import { grid } from "../ui/index.js";
+import { grid } from "../features/ui/api.js";
 import { createRoster } from "../net/index.js";
 
 describe("Mathf.approach", () => {

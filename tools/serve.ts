@@ -1,5 +1,5 @@
 // WebSocket sidecar for the built samples showcase — ONLY the networking
-// endpoints (/ws-echo, /ws-relay, /ws-signal, /ws-road-rivals) plus a /healthz
+// endpoints (/ws-echo, /ws-relay, /ws-signal, /ws-rooms, /ws-road-rivals) plus a /healthz
 // liveness probe. Static files are served by nginx (see tools/nginx.conf); this
 // process handles nothing but socket upgrades. Compiled with its import graph by
 // tsc to plain ESM under server-dist/ (`pnpm run server:build`); the sidecar
@@ -8,6 +8,7 @@ import { createServer, type Server } from "node:http";
 import { WebSocketServer } from "ws";
 import { createRoadRivalsServer } from "../samples/road-rivals/src/server/index.js";
 import { signaling } from "../src/net/server/signaling.js";
+import { rooms } from "../src/net/server/rooms.js";
 
 const PORT = Number(process.env.PORT ?? 8765);
 
@@ -31,6 +32,8 @@ function attachSockets(server: Server): void {
   const relay = new WebSocketServer({ noServer: true });
   const signal = new WebSocketServer({ noServer: true });
   signaling(signal);
+  const roomServer = new WebSocketServer({ noServer: true });
+  rooms(roomServer);
   const road = createRoadRivalsServer();
 
   echo.on("connection", (sock) => {
@@ -53,9 +56,11 @@ function attachSockets(server: Server): void {
           ? relay
           : path === "/ws-signal"
             ? signal
-            : path === "/ws-road-rivals"
-              ? road
-              : null;
+            : path === "/ws-rooms"
+              ? roomServer
+              : path === "/ws-road-rivals"
+                ? road
+                : null;
     if (!wss) return socket.destroy();
     wss.handleUpgrade(req, socket, head, (sock) => wss.emit("connection", sock, req));
   });

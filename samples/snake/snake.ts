@@ -1,22 +1,23 @@
+import { createPerformanceMonitoring } from "minimotor/performance";
 // Snake: classic grid-based snake with growing tail and self-collision
 // Demonstrates: game loop, input, UI, storage and Goodies.wrap grid movement
-import {
-  Audio,
-  Camera,
-  Draw,
-  Game,
-  Goodies,
-  Keys,
-  Loop,
-  Particles,
-  Perf,
-  App,
-  UI,
-} from "minimotor";
-import { drawGameOver } from "../shared/overlays.ts";
+import { createAudio } from "minimotor/audio";
+import { createCamera } from "minimotor/camera";
+import { createParticles } from "minimotor/particles";
+import { createUI } from "minimotor/ui";
+import { Game, Goodies, App } from "minimotor";
+import { createOverlays } from "../shared/overlays.ts";
 
 // The viewport is LIVE (mutated on resize) — grid sizing reacts in onResize.
-const view = App.init("game", { preventNavigation: true, plugins: [Perf.plugin()] });
+const game = App.create("game", { preventNavigation: true });
+createPerformanceMonitoring(game);
+const view = game.viewport;
+const { Draw, Keys, Loop } = game;
+const { drawGameOver } = createOverlays(Draw);
+const Audio = createAudio(game);
+const Camera = createCamera(game);
+const Particles = createParticles(game);
+const UI = createUI(game);
 
 const CELL = 20;
 let COLS = Math.max(2, Math.floor(view.w / CELL));
@@ -28,7 +29,7 @@ let dir = { x: 1, y: 0 };
 let nextDir = { x: 1, y: 0 };
 let food = spawnFood();
 const scores = Game.createScoreTracker("snake_best");
-const fx = Particles.create();
+const fx = Particles.createSystem();
 let tick = 0;
 let gameOver = false;
 
@@ -39,7 +40,7 @@ function spawnFood() {
   return Goodies.randFreeCell(COLS, ROWS, occupied) ?? snake[0];
 }
 
-App.onResize(() => {
+game.onResize(() => {
   COLS = Math.max(2, Math.floor(view.w / CELL));
   ROWS = Math.max(2, Math.floor(view.h / CELL));
   // Segments outside the new grid wrap on their next move; food must stay
@@ -138,7 +139,7 @@ Loop.run({
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, view.w, view.h);
 
-    // The default camera is identity — this block just applies the shake.
+    // The primary camera is identity — this block just applies the shake.
     Camera.render(() => {
       // Faint grid.
       ctx.strokeStyle = "rgba(255,255,255,0.04)";

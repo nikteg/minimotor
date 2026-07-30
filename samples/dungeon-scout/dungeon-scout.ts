@@ -1,12 +1,19 @@
+import { createPerformanceMonitoring } from "minimotor/performance";
 // DUNGEON SCOUT: grid recipes in a tiny roguelike — a SEEDED layout (seedRng),
 // a distance-from-hero heatmap (distanceField), plus line-of-sight fog.
-import { Draw, Gizmos, Goodies, Input, Keys, Loop, Mathf, Perf, Pointer, App, UI } from "minimotor";
+import { createInput } from "minimotor/input";
+import { createUI } from "minimotor/ui";
+import { Gizmos, Goodies, Mathf, App } from "minimotor";
 
-const view = App.init("game", {
+const game = App.create("game", {
   background: "#0d1118",
-  plugins: [Perf.plugin()],
   preventNavigation: true,
 });
+createPerformanceMonitoring(game);
+const view = game.viewport;
+const { Draw, Keys, Loop, Pointer } = game;
+const Input = createInput(game);
+const UI = createUI(game, Input);
 const input = Input.map({
   up: ["ArrowUp", "KeyW"],
   down: ["ArrowDown", "KeyS"],

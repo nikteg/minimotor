@@ -1,3 +1,4 @@
+import { createPerformanceMonitoring } from "minimotor/performance";
 // Breakout on Scenes + ECS.
 // - Blocks are ECS entities (spawned per wave, queried for collision + render,
 //   despawned on hit). Ball and paddle stay plain objects — single instances,
@@ -7,23 +8,12 @@
 // - The stage runs at a FIXED 400×700 resolution, letterboxed into the window
 //   by the engine — no manual save/translate/scale, and view.w/view.h ARE the
 //   logical size. The pointer and all drawing are in board coordinates.
-import {
-  Audio,
-  Camera,
-  Collision,
-  Draw,
-  ECS,
-  Game,
-  Keys,
-  Loop,
-  Mathf,
-  Perf,
-  Scenes,
-  App,
-  UI,
-  Vec2,
-} from "minimotor";
-import { drawGameOver } from "../shared/overlays.ts";
+import { createAudio } from "minimotor/audio";
+import { createCamera } from "minimotor/camera";
+import { createScenes } from "minimotor/scenes";
+import { createUI } from "minimotor/ui";
+import { Collision, ECS, Game, Mathf, App, Vec2 } from "minimotor";
+import { createOverlays } from "../shared/overlays.ts";
 
 const GW = 400;
 const GH = 700;
@@ -42,13 +32,19 @@ const ecs = ECS.create();
 
 // Fixed-resolution stage: the engine fits GW×GH into the window (play area
 // "#151515", letterbox bars "#0a0a0a"). The perf HUD shows live entity count.
-App.init("game", {
+const game = App.create("game", {
   resolution: { w: GW, h: GH },
   background: "#151515",
   barColor: "#0a0a0a",
   preventNavigation: true,
-  plugins: [Perf.plugin({ world: ecs })],
 });
+createPerformanceMonitoring(game, { world: ecs });
+const { Draw, Keys, Loop } = game;
+const { drawGameOver } = createOverlays(Draw);
+const Audio = createAudio(game);
+const Camera = createCamera(game);
+const Scenes = createScenes(game);
+const UI = createUI(game);
 
 const PADDLE_W = 80;
 const PADDLE_H = 14;
@@ -189,7 +185,7 @@ const scenes = Scenes.create({
     },
 
     draw() {
-      // Shake the playfield only (default camera is identity — this applies the
+      // Shake the playfield only (primary camera is identity — this applies the
       // shake). Everything is already in board space thanks to `resolution`.
       Camera.render(() => {
         // Draw pass: just the block data, no entity id → dense() (the

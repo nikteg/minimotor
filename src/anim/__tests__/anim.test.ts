@@ -21,7 +21,7 @@ const OPTS = {
   states: {
     idle: { row: 0, frames: 4, fps: 10 }, // 100ms per frame
     run: { row: 1, frames: 2, fps: 10 },
-    hit: { row: 2, frames: 3, fps: 10, loop: false },
+    hit: { row: 2, frames: 3, fps: 10 },
   },
 } as const;
 
@@ -70,7 +70,7 @@ describe("Anim.sheet", () => {
   it("non-looping states hold the last frame and report done", () => {
     const t = stepper();
     const clock = createClockHandle(t.steps);
-    const cur = sheet(img, OPTS).play("hit", { clock });
+    const cur = sheet(img, OPTS).once("hit", { clock });
     t.advanceMs(1000);
     expect(cur.frame).toBe(2); // held at the last of 3 frames
     expect(cur.done).toBe(true);
@@ -86,11 +86,26 @@ describe("Anim.sheet", () => {
     expect(cur.frame).toBe(1); // frozen mid-cycle
   });
 
+  it("pauses one cursor without holding its shared clock", () => {
+    const t = stepper();
+    const clock = createClockHandle(t.steps);
+    const cur = sheet(img, OPTS).play("idle", { clock });
+    t.advanceMs(150);
+    cur.pause();
+    t.advanceMs(500);
+    expect(cur.paused).toBe(true);
+    expect(cur.frame).toBe(1);
+    cur.resume();
+    t.advanceMs(50);
+    expect(cur.paused).toBe(false);
+    expect(cur.frame).toBe(2);
+  });
+
   it("unknown states throw at play and set", () => {
     const s = sheet(img, OPTS);
     // @ts-expect-error — unknown state name
     expect(() => s.play("rnu")).toThrow(/unknown state/);
-    const cur = s.play("idle");
+    const cur = s.play("idle", { clock: createClockHandle() });
     // @ts-expect-error — unknown state name
     expect(() => cur.set("rnu")).toThrow(/unknown state/);
   });
@@ -106,7 +121,7 @@ const KIT = {
   idle: { image: idleImg, frames: 4, fps: 10 }, // 100ms per frame
   run: { image: runImg, frames: 2, fps: 10 },
   jump: { image: jumpImg },
-  hit: { image: runImg, frames: 2, fps: 10, loop: false },
+  hit: { image: runImg, frames: 2, fps: 10 },
 } as const;
 
 describe("Anim.states (multi-image)", () => {
@@ -120,7 +135,7 @@ describe("Anim.states (multi-image)", () => {
   });
 
   it("exposes the ACTIVE state's image as SpriteLike (switches with set)", () => {
-    const cur = states(KIT).play("idle");
+    const cur = states(KIT).play("idle", { clock: createClockHandle() });
     expect(cur.sheet.image).toBe(idleImg);
     cur.set("run");
     expect(cur.sheet.image).toBe(runImg);
@@ -163,7 +178,7 @@ describe("Anim.states (multi-image)", () => {
   it("non-looping states hold the last frame and report done", () => {
     const t = stepper();
     const clock = createClockHandle(t.steps);
-    const cur = states(KIT).play("hit", { clock });
+    const cur = states(KIT).once("hit", { clock });
     t.advanceMs(1000);
     expect(cur.frame).toBe(1); // held at the last of 2 frames
     expect(cur.done).toBe(true);
@@ -177,11 +192,24 @@ describe("Anim.states (multi-image)", () => {
     expect(cur.frame).toBe(0);
   });
 
+  it("can pause and resume one cursor", () => {
+    const t = stepper();
+    const clock = createClockHandle(t.steps);
+    const cur = states(KIT).play("idle", { clock });
+    t.advanceMs(150);
+    cur.pause();
+    t.advanceMs(500);
+    expect(cur.frame).toBe(1);
+    cur.resume();
+    t.advanceMs(50);
+    expect(cur.frame).toBe(2);
+  });
+
   it("unknown states throw at play and set", () => {
     const kit = states(KIT);
     // @ts-expect-error — unknown state name
     expect(() => kit.play("nope")).toThrow(/unknown state/);
-    const cur = kit.play("idle");
+    const cur = kit.play("idle", { clock: createClockHandle() });
     // @ts-expect-error — unknown state name
     expect(() => cur.set("nope")).toThrow(/unknown state/);
   });

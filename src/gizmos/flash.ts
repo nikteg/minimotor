@@ -29,11 +29,7 @@ export interface Flash {
  *    // vector art:  draw normally, then overlay white at `flash.value` alpha.
  *    // sprite art:  ctx.globalAlpha = flash.value;
  *    //              ctx.drawImage(Sprites.tint(frame, "#fff"), x, y); ctx.globalAlpha = 1; */
-export function flash(
-  durationMs: number,
-  ease?: (t: number) => number,
-  clock?: ClockHandle,
-): Flash {
+export function flash(durationMs: number, clock: ClockHandle, ease?: (t: number) => number): Flash {
   let motion: Motion | null = null;
   return {
     hit() {

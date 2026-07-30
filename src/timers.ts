@@ -1,6 +1,6 @@
 // ---------- Timers ----------
 // Polled timing latches read as booleans. They DERIVE from a clock
-// (`Clock.world` by default) — nothing to tick, nothing to register: you call
+// (injected by `createTimers(game)`) — nothing to tick, nothing to register: you call
 // the event method (`charge`/`trigger`/`use`) and read the state. A held clock
 // (pause) freezes them; slow-mo stretches them. Not platformer-specific —
 // grace windows, buffered inputs and cooldowns recur across genres.
@@ -15,7 +15,7 @@
 //   if (coyote.active && jumpBuf.consume()) jump();
 //   if (dashCd.ready() && dashInput) { dash(); dashCd.use(); }
 
-import { Clock, type ClockHandle } from "./clock.js";
+import type { ClockHandle } from "./clock.js";
 
 /** A grace window: `active` for `ms` after the last `charge()`. Coyote time,
  *  "recently damaged" invulnerability, any "still counts for a moment" gate. */
@@ -30,9 +30,9 @@ export interface Window {
   readonly remaining: number;
 }
 
-/** Make a grace `Window` of `ms`, deriving from `clock` (default `Clock.world`).
+/** Make a grace `Window` of `ms`, deriving from the explicit `clock`.
  *  Starts closed until the first `charge()`. */
-export function window(ms: number, clock: ClockHandle = Clock.world): Window {
+export function window(ms: number, clock: ClockHandle): Window {
   let until = -Infinity;
   return {
     charge() {
@@ -62,9 +62,9 @@ export interface Buffer {
   readonly armed: boolean;
 }
 
-/** Make a `Buffer` with a `ms` window, deriving from `clock` (default
- *  `Clock.world`). Starts disarmed until the first `trigger()`. */
-export function buffer(ms: number, clock: ClockHandle = Clock.world): Buffer {
+/** Make a `Buffer` with a `ms` window, deriving from the explicit `clock`.
+ * Starts disarmed until the first `trigger()`. */
+export function buffer(ms: number, clock: ClockHandle): Buffer {
   let until = -Infinity;
   return {
     trigger() {
@@ -93,9 +93,9 @@ export interface Cooldown {
   readonly remaining: number;
 }
 
-/** Make a `Cooldown` of `ms`, deriving from `clock` (default `Clock.world`).
+/** Make a `Cooldown` of `ms`, deriving from the explicit `clock`.
  *  Starts `ready()` until the first `use()`. */
-export function cooldown(ms: number, clock: ClockHandle = Clock.world): Cooldown {
+export function cooldown(ms: number, clock: ClockHandle): Cooldown {
   let readyAt = -Infinity;
   return {
     use() {
@@ -118,8 +118,8 @@ export interface JumpGateOptions {
   coyoteMs?: number;
   /** Input buffer before landing, in ms. Default 120. */
   bufferMs?: number;
-  /** Clock the grace/buffer derive from. Default `Clock.world`. */
-  clock?: ClockHandle;
+  /** Clock the grace/buffer derive from. */
+  clock: ClockHandle;
 }
 
 /** One `try` per step deciding when a jump fires. */
@@ -141,8 +141,8 @@ export interface JumpGate {
  *
  *    const gate = Minimotor.Timers.jumpGate({ coyoteMs: 100, bufferMs: 130 });
  *    if (gate.try(input.jump.pressed, player.grounded)) player.vel.y = JUMP; */
-export function jumpGate(opts: JumpGateOptions = {}): JumpGate {
-  const clock = opts.clock ?? Clock.world;
+export function jumpGate(opts: JumpGateOptions): JumpGate {
+  const clock = opts.clock;
   const coyote = window(opts.coyoteMs ?? 100, clock);
   const buf = buffer(opts.bufferMs ?? 120, clock);
   return {

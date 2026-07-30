@@ -1,24 +1,26 @@
+import { createPerformanceMonitoring } from "minimotor/performance";
 // PARALLAX COURIER: deliver a signal through a huge neon valley.
-// Focus: the always-existing default Camera (follow, dead-zone, zoom,
+// Focus: the game-bound primary camera (follow, dead-zone, zoom,
 // screen↔world mapping via Camera.toWorld) and Camera.layer for stable
 // procedural parallax scenery.
-import {
-  Camera,
-  Draw,
-  Input,
-  Keys,
-  Loop,
-  Mathf,
-  Particles,
-  Perf,
-  Pointer,
-  App,
-  UI,
-} from "minimotor";
-import * as Sfx from "../shared/sfx.ts";
+import { createCamera } from "minimotor/camera";
+import { createInput } from "minimotor/input";
+import { createParticles } from "minimotor/particles";
+import { createUI } from "minimotor/ui";
+import { Mathf, App } from "minimotor";
+import { createSfx } from "../shared/sfx.ts";
 
 // The viewport is LIVE (mutated on resize); the engine owns clearing.
-const view = App.init("game", { background: "#080b18", plugins: [Perf.plugin()] });
+const game = App.create("game", { background: "#080b18" });
+createPerformanceMonitoring(game);
+const view = game.viewport;
+const { Draw, Keys, Loop, Pointer } = game;
+const Camera = createCamera(game);
+const Audio = createAudio(game);
+const Sfx = createSfx(Audio);
+const Input = createInput(game);
+const Particles = createParticles(game);
+const UI = createUI(game, Input);
 const input = Input.map({
   left: ["ArrowLeft", "KeyA"],
   right: ["ArrowRight", "KeyD"],
@@ -39,7 +41,7 @@ const drones = Array.from({ length: 9 }, (_, i) => ({
   y: 180 + ((i * 157) % 600),
   phase: i * 1.7,
 }));
-const fx = Particles.create();
+const fx = Particles.createSystem();
 let beaconIndex = 0,
   lives = 3,
   elapsed = 0,
@@ -78,7 +80,7 @@ function hitCourier(d: { x: number; y: number; phase: number }) {
     Sfx.lose();
   }
 }
-// The default camera: follow the courier inside a dead-zone, clamped to the
+// The primary camera: follow the courier inside a dead-zone, clamped to the
 // world. It reads the live viewport itself — nothing to rebind on resize.
 Camera.follow(courier, {
   world: { w: worldW, h: worldH },
@@ -269,3 +271,4 @@ Loop.run({
     }
   },
 });
+import { createAudio } from "minimotor/audio";

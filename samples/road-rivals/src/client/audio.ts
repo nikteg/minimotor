@@ -1,5 +1,6 @@
-import { Audio, Mathf } from "minimotor";
+import { Mathf } from "minimotor";
 import type { Bus } from "minimotor";
+import type { AudioApi } from "minimotor/audio";
 
 interface AudioState {
   player: { inCar: boolean; x: number; y: number };
@@ -20,7 +21,7 @@ function noiseBuffer(ctx: AudioContext, seconds: number): AudioBuffer {
   return buffer;
 }
 
-export function createRoadAudio(getState: () => AudioState) {
+export function createRoadAudio(Audio: AudioApi, getState: () => AudioState) {
   let roadAudioReady = false;
   Audio.Mixer.setMasterVolume(0.82);
   Audio.Mixer.compressor({ threshold: -15, ratio: 10, attack: 0.004, release: 0.18, knee: 5 });

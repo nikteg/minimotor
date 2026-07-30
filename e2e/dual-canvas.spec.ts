@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 // Two independent games on one page: the default game (canvas#game) and an
-// isolated App.create instance (canvas#game2), each running its own UI via
+// isolated App.createInstance instance (canvas#game2), each running its own UI via
 // UI.begin(ctx). Clicking a button on one canvas must bump only ITS counter —
 // input, focus and widget state stay per-game.
 test("dual-canvas: two games' UIs work independently", async ({ page }) => {

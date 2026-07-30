@@ -4,7 +4,7 @@
 // stay in Goodies.pacing.)
 
 import { clamp } from "../mathf.js";
-import { Clock, type ClockHandle } from "../clock.js";
+import type { ClockHandle } from "../clock.js";
 
 /** An in-order checkpoint/lap tracker, returned by `checkpointRoute()`. */
 export interface CheckpointRoute {
@@ -77,11 +77,11 @@ export function charges(options: {
   max: number;
   refillMs: number;
   start?: number;
-  clock?: ClockHandle;
+  clock: ClockHandle;
 }): Charges {
   const max = Math.max(0, Math.floor(options.max));
   const refillMs = Math.max(1, options.refillMs);
-  const clock = options.clock ?? Clock.world;
+  const clock = options.clock;
   let count = clamp(Math.floor(options.start ?? max), 0, max);
   let accrueSince = clock.now; // when the current partial charge began
 

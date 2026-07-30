@@ -1,4 +1,4 @@
-import { Loop, STEP_MS } from "../engine/index.js";
+import { everyMs } from "./rate.js";
 import type { Room } from "./room.js";
 
 const HOST_STATE_KEY = "__mm_host_state";
@@ -37,21 +37,7 @@ export function hostState<T>(room: Room<unknown>, options: HostStateOptions<T>):
     (room as Room<HostStateEnvelope<T>>).send({ [HOST_STATE_KEY]: 1, state: latest });
   };
   const offJoin = room.onJoin(broadcast);
-  const intervalMs = 1000 / (options.hz ?? 10);
-  let acc = 0;
-  let interval: ReturnType<typeof setInterval> | null = null;
-  let offStep: (() => void) | null = null;
-  try {
-    offStep = Loop.onStep(() => {
-      acc += STEP_MS;
-      if (acc >= intervalMs) {
-        acc = 0;
-        broadcast();
-      }
-    });
-  } catch {
-    interval = setInterval(broadcast, intervalMs);
-  }
+  const offTick = everyMs(1000 / (options.hz ?? 10), broadcast);
 
   return {
     get value() {
@@ -59,8 +45,7 @@ export function hostState<T>(room: Room<unknown>, options: HostStateOptions<T>):
       return latest;
     },
     stop() {
-      offStep?.();
-      if (interval !== null) clearInterval(interval);
+      offTick();
       offMessage();
       offJoin();
     },

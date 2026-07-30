@@ -1,3 +1,4 @@
+import { createPerformanceMonitoring } from "minimotor/performance";
 // A full GUI screen built from the immediate-mode UI kit — the kind of menu a
 // multiplayer game puts in front of Net.connect. Everything redraws every
 // frame; there is no widget tree and no DOM.
@@ -5,9 +6,10 @@
 // drag + track paging via Pointer.wheel/framePressed) / button (incl.
 // disabled) / float, plus Clock.ui.after driving a fake refresh and join.
 // The server list is mock data — swap fetchServers() for a real request.
-import { Clock, Keys, Loop, Mathf, Perf, App, UI } from "minimotor";
-import type { TableSort, Theme } from "minimotor";
-import "../shared/layout-probe.ts"; // e2e layout-invariant hook (window.__uiProbe)
+import { createUI } from "minimotor/ui";
+import { Mathf, App } from "minimotor";
+import { TableSort, Theme } from "minimotor";
+import { installLayoutProbe } from "../shared/layout-probe.ts";
 
 interface Server {
   name: string;
@@ -26,11 +28,14 @@ interface Rect {
 
 // The stage viewport is LIVE (mutated on resize); the UI.panel self-centers in it
 // via anchor:"center", so no viewport handle is needed here.
-App.init("game", {
+const game = App.create("game", {
   background: "#0b0e14",
-  plugins: [Perf.plugin()],
   preventNavigation: true,
 });
+createPerformanceMonitoring(game);
+const { Clock, Keys, Loop } = game;
+const UI = createUI(game);
+installLayoutProbe(UI);
 
 // ---- mock data -------------------------------------------------------------
 

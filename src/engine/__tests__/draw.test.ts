@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Draw, App } from "../index.js";
+import { App, type DrawApi } from "../index.js";
 import { create } from "../../ecs/index.js";
 import { Sprite } from "../../sprites.js";
 import type { DrawSprite } from "../index.js";
@@ -10,6 +10,7 @@ function fakeGradient() {
 }
 
 let ctx: Record<string, unknown> & { calls: string[] };
+let Draw: DrawApi;
 
 beforeEach(() => {
   const origGc = HTMLCanvasElement.prototype.getContext;
@@ -54,7 +55,7 @@ beforeEach(() => {
     ctx.canvas = this;
     return ctx as unknown as CanvasRenderingContext2D;
   };
-  App.init(document.createElement("canvas"));
+  Draw = App.create(document.createElement("canvas")).Draw;
 });
 
 afterEach(() => {
@@ -192,6 +193,27 @@ describe("Draw stroke + poly + image primitives", () => {
     Draw.image(img, 0, 0, undefined, 50);
     expect(ctx.calls).toContain("draw 0,0 200x50 @1");
   });
+
+  it("preserves a trimmed sprite's placement in its original frame", () => {
+    const image = { width: 32, height: 32 } as HTMLImageElement;
+    Draw.sprite(
+      {
+        sheet: { image },
+        rect: {
+          sx: 4,
+          sy: 5,
+          sw: 8,
+          sh: 10,
+          sourceW: 16,
+          sourceH: 20,
+          offsetX: 3,
+          offsetY: 4,
+        },
+      },
+      { x: 100, y: 50, w: 32, h: 40 },
+    );
+    expect(ctx.calls).toContain("draw 106,58 16x20 @1");
+  });
 });
 
 describe("Draw.sprites", () => {
@@ -246,7 +268,7 @@ describe("Draw.sprites", () => {
   });
 
   it("interpolates between the previous and current step positions", () => {
-    Draw.sprites([{ x: 10, y: 0, img, px: 0, py: 0 }], { alpha: 0.5 });
+    Draw.sprites([{ x: 10, y: 0, img, px: 0, py: 0 }], { interpolation: 0.5 });
     expect(ctx.calls).toContain("draw -5,-10 20x20 @1"); // rendered at x=5
   });
 

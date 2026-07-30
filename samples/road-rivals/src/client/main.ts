@@ -1,35 +1,16 @@
+import { createNetMeter, createPerformanceMonitoring } from "minimotor/performance";
+import { createCamera } from "minimotor/camera";
+import { createAudio } from "minimotor/audio";
+import { createInput } from "minimotor/input";
+import { createNet } from "minimotor/net";
+import { createOnscreenInput } from "minimotor/onscreen-input";
+import { createUI } from "minimotor/ui";
 // Road Rivals — top-down shooter + enterable car + WebSocket multiplayer.
 // Local movement/vehicle simulation is authoritative. Remote actors are drawn
 // 100 ms in the past from Net.createInterpolator snapshot buffers.
-import {
-  Camera,
-  Collision,
-  Draw,
-  ECS,
-  Gizmos,
-  Goodies,
-  Input,
-  Keys,
-  Loop,
-  Mathf,
-  Mouse,
-  Net,
-  OnscreenInput,
-  Perf,
-  App,
-  Transitions,
-  UI,
-} from "minimotor";
-import type {
-  Car,
-  Entity,
-  Flash,
-  Interpolator,
-  Skidmarks,
-  Transition,
-  TransitionRun,
-} from "minimotor";
-import { Physics2D } from "minimotor/physics2d";
+import { Collision, ECS, Gizmos, Goodies, Mathf, App, Transitions } from "minimotor";
+import { Car, Entity, Flash, Interpolator, Skidmarks, Transition, TransitionRun } from "minimotor";
+import { createPhysics2D } from "minimotor/physics2d";
 import type { Body2D } from "minimotor/physics2d";
 import {
   CAR_TYPES,
@@ -251,11 +232,10 @@ interface RosterRow {
   local?: boolean;
 }
 
-const meter = Perf.createNetMeter();
+const meter = createNetMeter();
 // The viewport is LIVE (mutated on resize); the engine clears to `background`.
-const vp = App.init("game", {
+const game = App.create("game", {
   background: "#101719",
-  plugins: [Perf.plugin({ net: meter })],
   // Fixed 16:9 logical stage, letterboxed INSIDE the safe area — so on a notched
   // phone the play field never draws under the notch/home-indicator (the bars
   // absorb it) and the aspect ratio is stable across devices. Tune the numbers to
@@ -269,8 +249,18 @@ const vp = App.init("game", {
   // away mid-match.
   preventNavigation: true,
 });
+createPerformanceMonitoring(game);
 
 // On-screen touch twin-stick pad: LEFT stick moves/steers+throttles, RIGHT stick
+const vp = game.viewport;
+const { Clock, Draw, Keys, Loop, Mouse } = game;
+const Camera = createCamera(game);
+const Audio = createAudio(game);
+const Input = createInput(game);
+const Net = createNet(game);
+const Physics2D = createPhysics2D(game);
+const UI = createUI(game, Input);
+const OnscreenInput = createOnscreenInput(game, Input);
 // aims + auto-fires, HANDBRAKE (hold) and a contextual ENTER/EXIT CAR button.
 // Autohide keeps it hidden on desktop and shown on touch (default), so keyboard
 // + mouse are unaffected. `tryToggleCar`/`nearestEnterableCar`/`player` are used
@@ -302,7 +292,7 @@ const spawn =
     ? { x: roadsX[0], y: roadsY[0] }
     : { x: roadsX[roadsX.length - 1], y: roadsY[roadsY.length - 1] };
 
-const playerFlash = Gizmos.flash(150);
+const playerFlash = Gizmos.flash(150, Clock.world);
 const player: Player = {
   x: spawn.x,
   y: spawn.y,
@@ -326,19 +316,19 @@ const cars: FleetCar[] = fleetPoints(clientNo).map((point, index) => ({
   health: 100,
   respawn: 0,
   type: point.type,
-  flash: Gizmos.flash(180),
+  flash: Gizmos.flash(180, Clock.world),
   body: null as unknown as Body2D,
   drive: null as unknown as Car,
 }));
 let car = cars[0];
 let carBody: Body2D = null as unknown as Body2D;
 // The game lerps `cameraFocus` itself (mouse-look offset + spectator target),
-// so the default camera follows it rigidly; the world clamp comes for free.
+// so its primary camera follows it rigidly; the world clamp comes for free.
 const cameraFocus = { x: spawn.x, y: spawn.y };
 Camera.follow(cameraFocus, { world: WORLD, damping: 1 });
 Camera.snap();
 
-// Adapter over the default Camera facade: the old bespoke camera object exposed
+// Small adapter over the game-bound Camera API: the old bespoke camera exposed
 // world↔screen helpers and an immediate snapTo. Shake now folds into
 // `Camera.render`, so it is not part of these transforms.
 const camera = {
@@ -458,7 +448,7 @@ const {
   radioSound,
   unlockRoadAudio,
   updateEngineSound,
-} = createRoadAudio(() => ({ player, car, gameState }));
+} = createRoadAudio(Audio, () => ({ player, car, gameState }));
 addEventListener("keydown", unlockRoadAudio, { once: true });
 addEventListener("pointerdown", unlockRoadAudio, { once: true });
 
@@ -528,7 +518,7 @@ transport.onMessage = (bytes) => {
           vy: 0,
           health: state.health,
           dead: state.dead ? 1 : 0,
-          flash: Gizmos.flash(130),
+          flash: Gizmos.flash(130, Clock.world),
           interp: Net.createInterpolator<BotState>({ delayMs: 100 }),
         };
         botById.set(state.id, bot);
@@ -658,7 +648,7 @@ transport.onMessage = (bytes) => {
   if (isNew || !remote) {
     remote = {
       color: msg.color ?? "#fff",
-      carFlash: Gizmos.flash(180),
+      carFlash: Gizmos.flash(180, Clock.world),
       life: msg.life ?? 0,
       sample: (atMs?: number) => remoteRoster.sampleOne(peerId, atMs),
       prevCar: null,
@@ -1282,7 +1272,7 @@ function updateProjectiles(dt: number) {
 
 let sendStep = 0;
 const { drawCarHealth, drawEnterCarPrompt, drawInventory, drawMinimap, drawPlayerHealth } =
-  createRoadHud(() => ({
+  createRoadHud(UI, () => ({
     Pickup,
     activeWeapon,
     buildings,
@@ -1439,7 +1429,7 @@ Loop.run({
       cameraTargetX += (Mouse.x - vp.w / 2) * 0.42;
       cameraTargetY += (Mouse.y - vp.h / 2) * 0.42;
     }
-    const cameraFollow = 1 - Math.pow(1 - 0.14, Draw.frameScale);
+    const cameraFollow = 1 - Math.pow(1 - 0.14, Loop.frameDelta / Loop.step);
     cameraFocus.x = Mathf.lerp(cameraFocus.x, cameraTargetX, cameraFollow);
     cameraFocus.y = Mathf.lerp(cameraFocus.y, cameraTargetY, cameraFollow);
     camera.snapTo(cameraFocus.x, cameraFocus.y);
@@ -1717,7 +1707,7 @@ Loop.run({
       ctx.moveTo(Mouse.x, Mouse.y + 5);
       ctx.lineTo(Mouse.x, Mouse.y + 13);
       ctx.stroke();
-      App.setCursor("none");
+      game.setCursor("none");
     }
     OnscreenInput.drawControls(pad);
   },

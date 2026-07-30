@@ -1,3 +1,4 @@
+import { createPerformanceMonitoring } from "minimotor/performance";
 // Rigid-body physics: the opt-in Physics2D adapter (planck / Box2D) driven by
 // the fixed-step loop — composed with the ECS. Each body lives in a `Phys`
 // component next to a Sprites.Sprite; a sync system copies the transform
@@ -7,32 +8,27 @@
 // rope joints, onContact, deferred destroy, wake() on resize, drag() for
 // grabbing a body with the pointer, the ECS body-in-a-component pattern, and
 // the separate "minimotor/physics2d" entry (core stays dep-free).
-import {
-  Audio,
-  Camera,
-  Draw,
-  ECS,
-  Keys,
-  Loop,
-  Mathf,
-  Perf,
-  Pointer,
-  Sprites,
-  App,
-  UI,
-} from "minimotor";
-import { Physics2D } from "minimotor/physics2d";
+import { createAudio } from "minimotor/audio";
+import { createCamera } from "minimotor/camera";
+import { createUI } from "minimotor/ui";
+import { ECS, Mathf, Sprites, App } from "minimotor";
+import { createPhysics2D } from "minimotor/physics2d";
 import type { Drag2D } from "minimotor/physics2d";
 
 const ecs = ECS.create();
-const { Phys } = Physics2D; // the standard body-holding component
-
-let vp = App.init("game", {
+const game = App.create("game", {
   background: "#12141c",
-  plugins: [Perf.plugin({ world: ecs })],
 });
+createPerformanceMonitoring(game, { world: ecs });
+const vp = game.viewport;
+const { Draw, Keys, Loop, Pointer } = game;
+const Audio = createAudio(game);
+const Camera = createCamera(game);
+const Physics2D = createPhysics2D(game);
+const UI = createUI(game);
+const { Phys } = Physics2D;
 
-const phys = Physics2D.world(); // gravity 1800 px/s² down
+const phys = Physics2D.world({ autoStep: false }); // stepped by the ECS below
 
 // ---- pre-rendered textures (base 64px, scaled per body via Sprite w/h) ----
 const TEX = 64;
@@ -103,8 +99,7 @@ ecs.spawn(
 );
 phys.rope(hook, wrecker);
 
-App.onResize((next) => {
-  vp = next;
+game.onResize(() => {
   buildRamp();
   // The rope's anchors are body-local, so moving both ends keeps the hang.
   const hdx = vp.w * 0.8 - hook.x;
@@ -242,7 +237,7 @@ Loop.run({
   },
 
   draw(ctx) {
-    // The default camera is identity — this block just applies the shake.
+    // The primary camera is identity — this block just applies the shake.
     Camera.render(() => {
       // Paddle — the one hand-drawn shape (no texture, just a rotated rect).
       ctx.save();

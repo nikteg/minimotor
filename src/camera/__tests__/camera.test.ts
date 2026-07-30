@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createCamera } from "../camera.js";
+import { createLens, type CameraOptions } from "../index.js";
+import type { DrawApi } from "../../engine/index.js";
 
 // A hand-cranked step source: cameras fold forward by elapsed steps on read.
 function stepper(): { steps: () => number; advance: (n: number) => void } {
@@ -13,6 +14,17 @@ function stepper(): { steps: () => number; advance: (n: number) => void } {
 }
 
 const VIEW = { w: 400, h: 300 };
+const draw = { ctx: {} as CanvasRenderingContext2D } as DrawApi;
+const createCamera = (
+  options: Omit<CameraOptions, "view" | "steps" | "draw"> &
+    Partial<Pick<CameraOptions, "view" | "steps" | "draw">>,
+) =>
+  createLens({
+    view: VIEW,
+    steps: () => 0,
+    draw,
+    ...options,
+  });
 
 describe("createCamera (pull-based lens)", () => {
   it("starts at identity and stays put with no target", () => {

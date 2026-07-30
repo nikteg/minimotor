@@ -19,8 +19,7 @@
 // read, so nothing ticks, holding the clock freezes it, and calling `set` with
 // the current state every step never restarts the loop.
 
-import { Clock, type ClockHandle } from "../clock.js";
-import type { FrameRect, SheetImage } from "./sheet.js";
+import { type FrameRect, type PlaybackOptions, type SheetImage } from "./sheet.js";
 
 /** One state's clip: an image plus how to read frames out of it. */
 export interface StateClip {
@@ -31,9 +30,6 @@ export interface StateClip {
   frames?: number;
   /** Playback speed in frames/second. Default 12 (ignored for 1 frame). */
   fps?: number;
-  /** Loop at the end (default true); false holds the last frame and reports
-   *  `done`. */
-  loop?: boolean;
   /** Source cell size in px. Defaults to `image.width / frames` × full height —
    *  override only for padded strips or non-strip layouts. */
   frame?: { w: number; h: number };
@@ -53,6 +49,12 @@ export interface StateCursor<K extends string = string> {
   set(state: K): void;
   /** Restart the current state's timeline. */
   reset(): void;
+  /** Freeze on the current frame. */
+  pause(): void;
+  /** Continue from the frozen frame. */
+  resume(): void;
+  /** Whether playback is currently frozen. */
+  readonly paused: boolean;
   /** Current frame index within the state. */
   readonly frame: number;
   /** Source rect of the current frame (reused scratch — read, don't hold). */
@@ -64,8 +66,10 @@ export interface StateCursor<K extends string = string> {
 /** A shared, immutable multi-image state kit (one image per state); `play`
  *  starts a cheap per-entity `StateCursor`. */
 export interface StateKit<K extends string = string> {
-  /** Start a playback cursor. `clock` defaults to `Clock.world`. */
-  play(initial: K, opts?: { clock?: ClockHandle }): StateCursor<K>;
+  /** Start a playback cursor on the supplied clock. */
+  play(initial: K, opts: PlaybackOptions): StateCursor<K>;
+  /** Play one state once, hold its final frame, and report `done`. */
+  once(initial: K, opts: PlaybackOptions): StateCursor<K>;
   /** Source rect for an arbitrary state/frame (manual draws, HUD icons).
    *  Reused scratch — read, don't hold. */
   rect(state: K, frame: number): FrameRect;
@@ -93,62 +97,82 @@ export function states<K extends string>(clips: Record<K, StateClip>): StateKit<
     return scratch;
   }
 
+  const makeCursor = (initial: K, playOpts: PlaybackOptions, loop: boolean): StateCursor<K> => {
+    if (!clips[initial]) throw new Error(`Anim.states: unknown state "${initial}"`);
+    const clock = playOpts.clock;
+    let state = initial;
+    let start = clock.now;
+    let pausedAt: number | undefined;
+    const now = () => pausedAt ?? clock.now;
+
+    const frameIndex = (): number => {
+      const clip = clips[state];
+      const n = frameCount(clip);
+      if (n === 1) return 0;
+      const fps = clip.fps ?? 12;
+      const idx = Math.floor(((now() - start) * fps) / 1000);
+      return loop ? idx % n : Math.min(idx, n - 1);
+    };
+
+    const sheetFacade = {
+      get image() {
+        return clips[state].image;
+      },
+    };
+
+    const cursor: StateCursor<K> = {
+      sheet: sheetFacade,
+      get state() {
+        return state;
+      },
+      set(next) {
+        if (next !== state) {
+          if (!clips[next]) throw new Error(`Anim.states: unknown state "${next}"`);
+          state = next;
+          start = now();
+        }
+      },
+      reset() {
+        start = now();
+      },
+      pause() {
+        pausedAt ??= clock.now;
+      },
+      resume() {
+        if (pausedAt === undefined) return;
+        start += clock.now - pausedAt;
+        pausedAt = undefined;
+      },
+      get paused() {
+        return pausedAt !== undefined;
+      },
+      get frame() {
+        return frameIndex();
+      },
+      get rect() {
+        return rectFor(state, frameIndex());
+      },
+      get done() {
+        if (loop) return false;
+        const clip = clips[state];
+        const n = frameCount(clip);
+        const fps = clip.fps ?? 12;
+        return now() - start >= (n * 1000) / fps;
+      },
+    };
+    return cursor;
+  };
+
   const self: StateKit<K> = {
     rect: rectFor,
     image(state) {
       return clips[state].image;
     },
-    play(initial, playOpts = {}) {
-      if (!clips[initial]) throw new Error(`Anim.states: unknown state "${initial}"`);
-      const clock = playOpts.clock ?? Clock.world;
-      let state = initial;
-      let start = clock.now;
-
-      const frameIndex = (): number => {
-        const clip = clips[state];
-        const n = frameCount(clip);
-        if (n === 1) return 0;
-        const fps = clip.fps ?? 12;
-        const idx = Math.floor(((clock.now - start) * fps) / 1000);
-        return (clip.loop ?? true) ? idx % n : Math.min(idx, n - 1);
-      };
-
-      // Stable SpriteLike facade — a getter so it always reflects the active
-      // state's image without allocating per read.
-      const sheetFacade = {
-        get image() {
-          return clips[state].image;
-        },
-      };
-
-      return {
-        sheet: sheetFacade,
-        get state() {
-          return state;
-        },
-        set(next) {
-          if (next === state) return; // the load-bearing no-op
-          if (!clips[next]) throw new Error(`Anim.states: unknown state "${next}"`);
-          state = next;
-          start = clock.now;
-        },
-        reset() {
-          start = clock.now;
-        },
-        get frame() {
-          return frameIndex();
-        },
-        get rect() {
-          return rectFor(state, frameIndex());
-        },
-        get done() {
-          const clip = clips[state];
-          if (clip.loop ?? true) return false;
-          const n = frameCount(clip);
-          const fps = clip.fps ?? 12;
-          return clock.now - start >= (n * 1000) / fps;
-        },
-      };
+    once(initial, playOpts) {
+      return makeCursor(initial, playOpts, false);
+    },
+    play(initial, playOpts) {
+      return makeCursor(initial, playOpts, true);
     },
   };
   return self;

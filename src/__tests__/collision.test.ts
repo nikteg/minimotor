@@ -192,6 +192,92 @@ describe("Collision.slide / moveAndSlide", () => {
     expect(jumper.grounded).toBe(false);
   });
 
+  it("walks from either slope direction onto an adjoining solid plateau", () => {
+    const rightSlope: Solid = { x: 0, y: 0, w: 64, h: 32, slope: "up-right" };
+    const rightPlateau: Solid = { x: 64, y: 0, w: 64, h: 64 };
+    const right = {
+      x: 38,
+      y: -20,
+      w: 20,
+      h: 20,
+      vel: { x: 0, y: 24 },
+      grounded: false,
+    };
+    moveAndSlide(right, [rightSlope, rightPlateau]);
+    for (let i = 0; i < 10; i++) {
+      right.vel.x = 4;
+      right.vel.y = 0.5;
+      moveAndSlide(right, [rightSlope, rightPlateau]);
+    }
+    expect(right.x).toBeGreaterThan(54);
+    expect(right.grounded).toBe(true);
+    expect(right.y + right.h).toBeCloseTo(0, 2);
+
+    const leftPlateau: Solid = { x: 0, y: 0, w: 64, h: 64 };
+    const leftSlope: Solid = { x: 64, y: 0, w: 64, h: 32, slope: "up-left" };
+    const left = {
+      x: 90,
+      y: -8,
+      w: 20,
+      h: 20,
+      vel: { x: 0, y: 24 },
+      grounded: false,
+    };
+    moveAndSlide(left, [leftPlateau, leftSlope]);
+    for (let i = 0; i < 10; i++) {
+      left.vel.x = -4;
+      left.vel.y = 0.5;
+      moveAndSlide(left, [leftPlateau, leftSlope]);
+    }
+    expect(left.x).toBeLessThan(64);
+    expect(left.grounded).toBe(true);
+    expect(left.y + left.h).toBeCloseTo(0, 2);
+  });
+
+  it("walks up a steep slope defined by a tall rectangle", () => {
+    const ground: Solid = { x: -32, y: 32, w: 32, h: 16 };
+    const slope: Solid = { x: 0, y: 0, w: 16, h: 32, slope: "up-right" };
+    const plateau: Solid = { x: 16, y: 0, w: 16, h: 32 };
+    const body = {
+      x: -12,
+      y: 8,
+      w: 12,
+      h: 24,
+      vel: { x: 0, y: 0 },
+      grounded: true,
+    };
+    for (let step = 0; step < 28; step++) {
+      body.vel.x = 1;
+      body.vel.y = 0.25;
+      moveAndSlide(body, [ground, slope, plateau]);
+    }
+    expect(body.x).toBeGreaterThan(14);
+    expect(body.grounded).toBe(true);
+    expect(body.y + body.h).toBeCloseTo(0, 2);
+  });
+
+  it("walks down a steep slope onto its lower ground", () => {
+    const ground: Solid = { x: -32, y: 32, w: 32, h: 16 };
+    const slope: Solid = { x: 0, y: 0, w: 16, h: 32, slope: "up-right" };
+    const plateau: Solid = { x: 16, y: 0, w: 16, h: 32 };
+    const body = {
+      x: 18,
+      y: -24,
+      w: 12,
+      h: 24,
+      vel: { x: 0, y: 0 },
+      grounded: true,
+    };
+    for (let step = 0; step < 28; step++) {
+      body.vel.x = -1;
+      body.vel.y = 0.25;
+      moveAndSlide(body, [ground, slope, plateau]);
+    }
+    expect(body.x).toBeLessThan(0);
+    expect(body.grounded).toBe(true);
+    expect(body.y + body.h).toBeCloseTo(32, 2);
+  });
+
   it("enters and remains on a ladder with one helper", () => {
     const ladder = { x: 0, y: 0, w: 20, h: 100 };
     const body = { x: 2, y: 20, w: 10, h: 10, vel: { x: 0, y: 4 }, grounded: true };
@@ -211,6 +297,20 @@ describe("Collision.slide / moveAndSlide", () => {
     expect(climbLadder(body, [ladder], 0)).toBe(false);
     expect(climbLadder(body, [ladder], 0, { autoGrab: true })).toBe(true);
     expect(body.vel.y).toBe(0);
+  });
+
+  it("enters a ladder below a platform by pressing down", () => {
+    const ladder = { x: 0, y: 20, w: 20, h: 100 };
+    const source = {
+      laddersNear(area: { x: number; y: number; w: number; h: number }, out: Array<typeof ladder>) {
+        if (area.y + area.h > ladder.y) out.push(ladder);
+        return out;
+      },
+    };
+    const body = { x: 5, y: 10, w: 10, h: 10, vel: { x: 0, y: 0 }, grounded: true };
+    expect(climbLadder(body, source, 0)).toBe(false);
+    expect(climbLadder(body, source, 1)).toBe(true);
+    expect(body).toMatchObject({ grounded: false, vel: { y: 3 } });
   });
 
   it("climbs through a one-way ladder cap, then stands on it", () => {

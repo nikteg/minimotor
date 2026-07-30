@@ -20,16 +20,8 @@
 //   const input = Input.map({ jump: ["Space", "pad:a"], left: ["KeyA", "pad:lstick-left"] }, { pad });
 //   // draw(): OnscreenInput.drawControls(pad);
 
-import { Draw, App } from "./engine/index.js";
-import { Loop } from "./engine/index.js";
-import {
-  Buttons,
-  createGamepadTracker,
-  registerGamepad,
-  type GamepadState,
-  type PadButton,
-} from "./input/index.js";
-import { getTheme } from "./ui/core/theme.js";
+import { Buttons, createGamepadTracker, type GamepadState, type PadButton } from "./input/index.js";
+import { getTheme } from "./features/ui/core/theme.js";
 
 /** Placement inset from a bottom corner, in logical px. `y` counts UP from the
  *  bottom edge, so a layout survives aspect-ratio / resolution changes. */
@@ -218,6 +210,7 @@ type Which = "left" | "right";
 type TouchTarget = { kind: "stick"; which: Which } | { kind: "button"; spec: ButtonSpec };
 
 interface PadInternal {
+  runtime: OnscreenRuntime;
   cfg: ResolvedConfig;
   tracker: OnscreenPad & { poll(): void };
   stick: { x: number; y: number };
@@ -230,6 +223,16 @@ interface PadInternal {
   wantPaint: boolean; // set by drawControls(), consumed by the onFrame paint
   wired: boolean;
   listening: boolean;
+  cleanups: (() => void)[];
+}
+
+export interface OnscreenRuntime {
+  canvas: HTMLCanvasElement;
+  ctx: CanvasRenderingContext2D;
+  viewport: { dpr: number };
+  onStepStart(handler: () => void): () => void;
+  onFrame(handler: () => void): () => void;
+  registerGamepad(pad: GamepadState): () => void;
 }
 
 const registry = new WeakMap<GamepadState, PadInternal>();
@@ -277,16 +280,16 @@ function synthFromTouch(st: PadInternal): RawPad {
 let rectCache: DOMRect | null = null;
 
 /** Window size in CSS px (the full canvas, ignoring any letterbox). */
-function windowSize(): { w: number; h: number } {
-  const canvas = App.canvas;
-  const dpr = App.viewport.dpr;
+function windowSize(st: PadInternal): { w: number; h: number } {
+  const { canvas, viewport } = st.runtime;
+  const dpr = viewport.dpr;
   return { w: canvas.width / dpr, h: canvas.height / dpr };
 }
 
 /** Map a pointer's client coords to WINDOW CSS px (no letterbox offset/scale). */
-function toWindow(clientX: number, clientY: number): { x: number; y: number } {
-  const canvas = App.canvas;
-  const { w, h } = windowSize();
+function toWindow(st: PadInternal, clientX: number, clientY: number): { x: number; y: number } {
+  const { canvas } = st.runtime;
+  const { w, h } = windowSize(st);
   rectCache ??= canvas.getBoundingClientRect();
   const rect = rectCache;
   return {
@@ -295,8 +298,8 @@ function toWindow(clientX: number, clientY: number): { x: number; y: number } {
   };
 }
 
-function anchorCenter(anchor: Anchor): { x: number; y: number } {
-  const { w, h } = windowSize();
+function anchorCenter(st: PadInternal, anchor: Anchor): { x: number; y: number } {
+  const { w, h } = windowSize(st);
   return {
     x: anchor.side === "left" ? anchor.x : w - anchor.x,
     y: h - anchor.y,
@@ -306,10 +309,10 @@ function anchorCenter(anchor: Anchor): { x: number; y: number } {
 function buttonBounds(st: PadInternal, button: PadButton): ControlBounds | null {
   const spec = st.cfg.buttons.find((candidate) => candidate.button === button);
   if (!spec) return null;
-  const canvas = App.canvas;
+  const { canvas } = st.runtime;
   const rect = canvas.getBoundingClientRect();
-  const window = windowSize();
-  const center = anchorCenter(spec.anchor);
+  const window = windowSize(st);
+  const center = anchorCenter(st, spec.anchor);
   const cx = rect.left + (center.x / window.w) * rect.width;
   const cy = rect.top + (center.y / window.h) * rect.height;
   const rx = (spec.r / window.w) * rect.width;
@@ -351,7 +354,7 @@ function fireHaptics(cfg: ResolvedConfig, spec: ButtonSpec, phase: "press" | "re
 function hitTest(st: PadInternal, x: number, y: number): TouchTarget | null {
   for (const spec of st.cfg.buttons) {
     if (spec.disabled?.()) continue; // grayed-out button ignores touches
-    const c = anchorCenter(spec.anchor);
+    const c = anchorCenter(st, spec.anchor);
     if (Math.hypot(x - c.x, y - c.y) <= spec.r) return { kind: "button", spec };
   }
   // Generous grab: anywhere within ~1.6× the travel radius starts a stick.
@@ -361,7 +364,7 @@ function hitTest(st: PadInternal, x: number, y: number): TouchTarget | null {
   ];
   for (const [which, spec] of sticks) {
     if (!spec) continue;
-    const c = anchorCenter(spec.anchor);
+    const c = anchorCenter(st, spec.anchor);
     if (Math.hypot(x - c.x, y - c.y) <= spec.radius * 1.6) return { kind: "stick", which };
   }
   return null;
@@ -370,7 +373,7 @@ function hitTest(st: PadInternal, x: number, y: number): TouchTarget | null {
 function updateStick(st: PadInternal, which: Which, x: number, y: number): void {
   const s = which === "left" ? st.cfg.stick : st.cfg.rightStick;
   if (!s) return;
-  const c = anchorCenter(s.anchor);
+  const c = anchorCenter(st, s.anchor);
   const v = computeStick(x - c.x, y - c.y, s.radius, s.deadzone ?? 0);
   if (which === "left") st.stick = v;
   else st.rstick = v;
@@ -378,13 +381,10 @@ function updateStick(st: PadInternal, which: Which, x: number, y: number): void 
 
 function attachListeners(st: PadInternal): void {
   if (st.listening) return;
-  let canvas: HTMLCanvasElement;
-  try {
-    canvas = App.canvas;
-  } catch {
-    return; // no default app yet — retry on the next poll/draw
-  }
+  const { canvas } = st.runtime;
   st.listening = true;
+  const listeners = new AbortController();
+  st.cleanups.push(() => listeners.abort());
   // Stop the browser eating touches: `touch-action:none` kills scroll/zoom/
   // double-tap-zoom; disabling text selection + the iOS long-press callout stops
   // hold-to-select/magnifier from hijacking a finger that's holding the stick or
@@ -399,32 +399,40 @@ function attachListeners(st: PadInternal): void {
   const isActuator = (e: PointerEvent) =>
     e.pointerType === "touch" || e.pointerType === "pen" || st.fade > 0.1;
 
-  canvas.addEventListener("pointerdown", (e) => {
-    if (!isActuator(e)) return;
-    const { x, y } = toWindow(e.clientX, e.clientY);
-    const target = hitTest(st, x, y);
-    if (!target) return;
-    e.preventDefault();
-    try {
-      canvas.setPointerCapture(e.pointerId);
-    } catch {
-      /* capture unsupported */
-    }
-    st.pointers.set(e.pointerId, target);
-    st.lastSource = "touch";
-    if (target.kind === "stick") updateStick(st, target.which, x, y);
-    else {
-      target.spec.onHold?.(true);
-      fireHaptics(st.cfg, target.spec, "press");
-    }
-  });
+  canvas.addEventListener(
+    "pointerdown",
+    (e) => {
+      if (!isActuator(e)) return;
+      const { x, y } = toWindow(st, e.clientX, e.clientY);
+      const target = hitTest(st, x, y);
+      if (!target) return;
+      e.preventDefault();
+      try {
+        canvas.setPointerCapture(e.pointerId);
+      } catch {
+        /* capture unsupported */
+      }
+      st.pointers.set(e.pointerId, target);
+      st.lastSource = "touch";
+      if (target.kind === "stick") updateStick(st, target.which, x, y);
+      else {
+        target.spec.onHold?.(true);
+        fireHaptics(st.cfg, target.spec, "press");
+      }
+    },
+    { signal: listeners.signal },
+  );
 
-  canvas.addEventListener("pointermove", (e) => {
-    const target = st.pointers.get(e.pointerId);
-    if (!target || target.kind !== "stick") return;
-    const { x, y } = toWindow(e.clientX, e.clientY);
-    updateStick(st, target.which, x, y);
-  });
+  canvas.addEventListener(
+    "pointermove",
+    (e) => {
+      const target = st.pointers.get(e.pointerId);
+      if (!target || target.kind !== "stick") return;
+      const { x, y } = toWindow(st, e.clientX, e.clientY);
+      updateStick(st, target.which, x, y);
+    },
+    { signal: listeners.signal },
+  );
 
   const release = (e: PointerEvent) => {
     const target = st.pointers.get(e.pointerId);
@@ -444,18 +452,18 @@ function attachListeners(st: PadInternal): void {
       fireHaptics(st.cfg, target.spec, "release");
     }
   };
-  canvas.addEventListener("pointerup", release);
-  canvas.addEventListener("pointercancel", release);
+  canvas.addEventListener("pointerup", release, { signal: listeners.signal });
+  canvas.addEventListener("pointercancel", release, { signal: listeners.signal });
   // Safety net: if the OS steals the pointer for a system gesture (an iOS
   // long-press, say) without a pointerup/pointercancel, capture is lost — treat
   // that as a release so the stick/button can't get stuck at its last value.
-  canvas.addEventListener("lostpointercapture", release);
+  canvas.addEventListener("lostpointercapture", release, { signal: listeners.signal });
   // The rect is cached for hot-path coordinate math; invalidate on layout change.
   const invalidate = () => {
     rectCache = null;
   };
-  window.addEventListener("resize", invalidate);
-  window.addEventListener("scroll", invalidate, true);
+  window.addEventListener("resize", invalidate, { signal: listeners.signal });
+  window.addEventListener("scroll", invalidate, { capture: true, signal: listeners.signal });
 }
 
 // ---------- Poll wiring ----------
@@ -463,15 +471,11 @@ function attachListeners(st: PadInternal): void {
 function ensureWired(st: PadInternal): void {
   attachListeners(st);
   if (st.wired) return;
-  try {
-    Loop.onStepStart(() => st.tracker.poll());
-    // Paint from onFrame, which fires AFTER the (letterbox-)clipped draw — so the
-    // pad lands in the physical window corners, outside any camera/letterbox.
-    Loop.onFrame(() => paint(st));
-    st.wired = true;
-  } catch {
-    // No default app yet — retry on the next call.
-  }
+  st.cleanups.push(st.runtime.onStepStart(() => st.tracker.poll()));
+  // Paint from onFrame, which fires AFTER the (letterbox-)clipped draw — so the
+  // pad lands in the physical window corners, outside any camera/letterbox.
+  st.cleanups.push(st.runtime.onFrame(() => paint(st)));
+  st.wired = true;
 }
 
 // ---------- Public API ----------
@@ -487,7 +491,10 @@ function ensureWired(st: PadInternal): void {
  *      });
  *      const input = Input.map({ jump: ["Space", "pad:a"] }, { pad });
  *      // draw(): OnscreenInput.drawControls(pad); */
-export function gamepad(config: OnscreenGamepadConfig = {}): OnscreenPad {
+export function createOnscreenGamepad(
+  runtime: OnscreenRuntime,
+  config: OnscreenGamepadConfig = {},
+): OnscreenPad {
   const cfg: ResolvedConfig = {
     mergeIndex: config.merge === false ? null : typeof config.merge === "number" ? config.merge : 0,
     autohide: config.autohide ?? true,
@@ -500,6 +507,7 @@ export function gamepad(config: OnscreenGamepadConfig = {}): OnscreenPad {
   };
 
   const st: PadInternal = {
+    runtime,
     cfg,
     tracker: undefined as unknown as OnscreenPad & { poll(): void },
     stick: { x: 0, y: 0 },
@@ -512,6 +520,7 @@ export function gamepad(config: OnscreenGamepadConfig = {}): OnscreenPad {
     wantPaint: false,
     wired: false,
     listening: false,
+    cleanups: [],
   };
 
   st.tracker = Object.assign(
@@ -528,7 +537,7 @@ export function gamepad(config: OnscreenGamepadConfig = {}): OnscreenPad {
   );
 
   registry.set(st.tracker, st);
-  registerGamepad(st.tracker);
+  st.cleanups.push(runtime.registerGamepad(st.tracker));
   ensureWired(st);
   return st.tracker;
 }
@@ -571,9 +580,9 @@ function paint(st: PadInternal): void {
   const alpha = st.cfg.opacity * st.fade;
   if (alpha <= 0.01) return;
 
-  const ctx = Draw.ctx;
+  const ctx = st.runtime.ctx;
   const th = getTheme();
-  const dpr = App.viewport.dpr;
+  const dpr = st.runtime.viewport.dpr;
   ctx.save();
   // Reset to WINDOW space: 1 unit = 1 CSS px, origin at the true window corner
   // (drop the letterbox scale/offset the base transform carries).
@@ -587,7 +596,7 @@ function paint(st: PadInternal): void {
   // Sticks: base ring + knob offset by the live vector (left, then right).
   const drawStick = (spec: StickSpec | undefined, v: { x: number; y: number }) => {
     if (!spec) return;
-    const c = anchorCenter(spec.anchor);
+    const c = anchorCenter(st, spec.anchor);
     const r = spec.radius;
     ctx.beginPath();
     ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
@@ -606,7 +615,7 @@ function paint(st: PadInternal): void {
   // Buttons: filled disc, brighter while a finger holds it, grayed when disabled.
   for (const spec of st.cfg.buttons) {
     const disabled = spec.disabled?.() ?? false;
-    const c = anchorCenter(spec.anchor);
+    const c = anchorCenter(st, spec.anchor);
     const held =
       !disabled && [...st.pointers.values()].some((tt) => tt.kind === "button" && tt.spec === spec);
     ctx.save();
@@ -630,4 +639,12 @@ function paint(st: PadInternal): void {
 /** Drop all cached listener/poll state — for tests. */
 export function _resetOnscreen(): void {
   rectCache = null;
+}
+
+export function destroyOnscreenGamepad(pad: OnscreenPad): void {
+  const st = registry.get(pad);
+  if (!st) return;
+  for (const cleanup of st.cleanups.splice(0).reverse()) cleanup();
+  st.pointers.clear();
+  registry.delete(pad);
 }

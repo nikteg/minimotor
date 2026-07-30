@@ -1,0 +1,82 @@
+import * as InputModule from "../../input/index.js";
+import type { GamepadState } from "../../input/gamepad.js";
+import type { Game } from "../../engine/app.js";
+
+export type InputApi = Omit<typeof InputModule, "map" | "createInputContext"> & {
+  context(initial?: string): InputModule.InputContextApi;
+  gamepad(index?: number): GamepadState;
+  gamepads(): readonly GamepadState[];
+  registerGamepad(pad: GamepadState): () => void;
+  map<A extends string>(
+    bindings: Record<A, readonly InputModule.Binding[]>,
+    options?: Partial<InputModule.InputMapOptions>,
+  ): InputModule.InputMap<A>;
+  destroy(): void;
+};
+
+/** Create input maps and gamepad polling bound to one game. */
+export function createInput(game: Game): InputApi {
+  const {
+    map: _standaloneMap,
+    createInputContext: _standaloneContext,
+    ...standaloneInput
+  } = InputModule;
+  const hardware = new Map<number, ReturnType<typeof InputModule.createGamepadTracker>>();
+  const registered = new Set<GamepadState>();
+  const connected: GamepadState[] = [];
+
+  const gamepad = (index = 0): GamepadState => {
+    let pad = hardware.get(index);
+    if (!pad) {
+      pad = InputModule.createGamepadTracker(() =>
+        typeof navigator.getGamepads === "function" ? navigator.getGamepads()[index] : null,
+      );
+      hardware.set(index, pad);
+    }
+    return pad;
+  };
+
+  const unsubscribe = game.Loop.onStepStart(() => {
+    for (const pad of hardware.values()) pad.poll();
+  });
+
+  let destroyed = false;
+  const destroy = () => {
+    if (destroyed) return;
+    destroyed = true;
+    unsubscribe();
+    hardware.clear();
+    registered.clear();
+  };
+  const api: InputApi = {
+    ...standaloneInput,
+    context: InputModule.createInputContext,
+    gamepad,
+    gamepads() {
+      connected.length = 0;
+      for (const pad of registered) if (pad.connected) connected.push(pad);
+      const raw = typeof navigator.getGamepads === "function" ? navigator.getGamepads() : [];
+      for (let i = 0; i < raw.length; i++) {
+        if (!raw[i]) continue;
+        const pad = gamepad(i);
+        if (pad.connected && !connected.includes(pad)) connected.push(pad);
+      }
+      return connected;
+    },
+    registerGamepad(pad) {
+      registered.add(pad);
+      return () => registered.delete(pad);
+    },
+    map(bindings, options = {}) {
+      return InputModule.map(bindings, {
+        ...options,
+        keys: options.keys ?? game.Keys,
+        steps: options.steps ?? (() => game.Loop.steps),
+        pad: options.pad === undefined ? gamepad() : options.pad,
+      });
+    },
+    destroy,
+  };
+  game.use({ name: "Input", onDestroy: destroy });
+  return api;
+}

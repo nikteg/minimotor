@@ -1,6 +1,11 @@
-import { App, Loop, Keys, Anim, Assets, Draw } from "minimotor";
+import { createAnimation } from "minimotor/animation";
+import { createAssets } from "minimotor/assets";
+import { App } from "minimotor";
 
-App.init("game", { background: "#12141c" });
+const game = App.create("game", { background: "#12141c" });
+const Anim = createAnimation(game);
+const { Loop, Keys, Draw } = game;
+const Assets = createAssets(game);
 
 // One image PER state (idle.png, run.png, …) — the multi-image companion to
 // Anim.sheet. `art.idle` etc. are typed from the manifest keys.

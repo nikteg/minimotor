@@ -16,9 +16,9 @@
 // step-tracked by the engine) and the pad tracker, with pad edges folded
 // per step on read (API_PLAN law 4).
 
-import { Keys, stepNow, type KeyCode } from "../engine/index.js";
+import type { KeyCode } from "../engine/index.js";
 import type { Vec2 } from "../vec2.js";
-import { Buttons, gamepad, type GamepadState } from "./gamepad.js";
+import { Buttons, type GamepadState } from "./gamepad.js";
 
 /** Standard-mapping gamepad inputs by name (sticks as four directions). */
 export type PadButton =
@@ -128,12 +128,12 @@ interface KeysLike {
 
 /** Options for `map()`: injectable key, pad and step sources (mainly for tests). */
 export interface InputMapOptions {
-  /** Key source — defaults to the engine's `Keys`. Injectable for tests. */
-  keys?: KeysLike;
-  /** Pad source — defaults to `gamepad(0)`. Injectable for tests. */
+  /** Key source. Game-bound `Input.map` injects `game.Keys`. */
+  keys: KeysLike;
+  /** Pad source. Game-bound `Input.map` injects gamepad 0. */
   pad?: GamepadState | null;
-  /** Fixed-step source — injectable for tests. */
-  steps?: () => number;
+  /** Fixed-step source. Game-bound `Input.map` injects `game.Loop.steps`. */
+  steps: () => number;
 }
 
 /** Build a typed action map from a plain object: each key is an action name,
@@ -151,19 +151,11 @@ export interface InputMapOptions {
  *      player.vel.x = input.axis("left", "right") * SPEED; */
 export function map<A extends string>(
   bindings: Record<A, readonly Binding[]>,
-  options: InputMapOptions = {},
+  options: InputMapOptions,
 ): InputMap<A> {
-  const steps = options.steps ?? stepNow;
-  const keySource: KeysLike = options.keys ?? Keys;
-  let padSource: GamepadState | null | undefined = options.pad;
-  const pad = (): GamepadState | null => {
-    if (padSource !== undefined) return padSource;
-    try {
-      return gamepad();
-    } catch {
-      return null; // no default app yet — keyboard-only until one exists
-    }
-  };
+  const steps = options.steps;
+  const keySource = options.keys;
+  const pad = (): GamepadState | null => options.pad ?? null;
 
   const store = {} as Record<A, Binding[]>;
   for (const name of Object.keys(bindings) as A[]) store[name] = [...bindings[name]];

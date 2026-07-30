@@ -17,7 +17,7 @@ export interface PerfHudOptions {
   /** If given, two extra lines show up/down message and byte rates. */
   net?: NetStats;
   /** If given, one extra line shows the engine's update/draw cost and how many
-   *  fixed steps ran (`App.timings` — the `plugin()` passes it for you). */
+   *  fixed steps ran (`Loop.timings` — the `plugin()` passes it for you). */
   timings?: FrameTimings;
   /** Live entity count to display (pass `world.size`). */
   entities?: number;

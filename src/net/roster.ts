@@ -29,8 +29,10 @@ export interface RosterOptions<T> {
  *  prunes any that go quiet. */
 export interface Roster<T> {
   /** Feed a state update for peer `id` (creating its interpolator on first
-   *  sight and stamping last-seen). `{ isNew }` flags a just-joined peer. */
-  update(id: string, state: T, atMs?: number): { isNew: boolean };
+   *  sight and stamping last-seen). Pass the sender's clock as `sentAt` when
+   *  the protocol carries one — see `Interpolator.push`. `{ isNew }` flags a
+   *  just-joined peer. */
+  update(id: string, state: T, atMs?: number, sentAt?: number): { isNew: boolean };
   /** Remove a peer explicitly (e.g. on a `bye`). True if it existed. */
   remove(id: string): boolean;
   /** Drop peers unseen for `timeoutMs`; returns the removed ids. Call each
@@ -62,7 +64,7 @@ export function createRoster<T>(options: RosterOptions<T> = {}): Roster<T> {
   const clock = options.now ?? (() => performance.now());
   const peers = new Map<string, { interp: Interpolator<T>; latest: T; lastSeen: number }>();
   return {
-    update(id, state, atMs = clock()) {
+    update(id, state, atMs = clock(), sentAt) {
       let peer = peers.get(id);
       const isNew = !peer;
       if (!peer) {
@@ -82,7 +84,7 @@ export function createRoster<T>(options: RosterOptions<T> = {}): Roster<T> {
       }
       peer.latest = state;
       peer.lastSeen = atMs;
-      peer.interp.push(state, atMs);
+      peer.interp.push(state, atMs, sentAt);
       return { isNew };
     },
     remove(id) {

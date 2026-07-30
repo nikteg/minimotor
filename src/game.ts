@@ -3,7 +3,7 @@
 // formatting. Opinionated, pre-styled screens (game-over / level-complete
 // overlays) deliberately live in game code, not the engine.
 //
-// Fitting a fixed logical area into the viewport is NOT here: `App.init({
+// Fitting a fixed logical area into the viewport is NOT here: `App.create(canvas, {
 // resolution })` does the fit, the bars, the pointer mapping and the base
 // transform in one place. The hand-rolled `letterbox`/`drawLetterbox`/
 // `letterboxView` trio that used to live here was a weaker duplicate of it.

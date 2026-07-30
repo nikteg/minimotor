@@ -308,9 +308,10 @@ export interface ClimbLadderOptions {
 const ladderCandidates: Rect[] = [];
 
 /** Apply terse platformer ladder movement. Pressing a vertical `axis` while
- * overlapping a ladder enters it; `autoGrab` can enter on contact instead.
- * Pass the returned boolean back as `active` next step to remain attached
- * while the axis is neutral.
+ * overlapping a ladder enters it; pressing down while standing on its top
+ * enters from above; `autoGrab` can enter on contact instead. Pass the returned
+ * boolean back as `active` next step to remain attached while the axis is
+ * neutral.
  *
  *     climbing = Collision.climbLadder(player, level, input.axis("up", "down"), {
  *       active: climbing,
@@ -326,11 +327,19 @@ export function climbLadder(
 ): boolean {
   if (Math.abs(opts.horizontal ?? 0) > 0.1) return false;
   ladderCandidates.length = 0;
-  const area = { x: body.x, y: body.y, w: body.w, h: body.h };
+  const enteringDown = !opts.active && axis > 0.1;
+  // A grounded body merely touches a ladder cap, so probe one pixel below
+  // its feet when Down expresses intent to enter it.
+  const area = { x: body.x, y: body.y, w: body.w, h: body.h + (enteringDown ? 1 : 0) };
   const candidates = Array.isArray(ladders) ? ladders : ladders.laddersNear(area, ladderCandidates);
   let ladder: Rect | undefined;
   for (const candidate of candidates) {
-    if (rectsOverlap(body, candidate)) {
+    const touchesTop =
+      enteringDown &&
+      body.x < candidate.x + candidate.w &&
+      body.x + body.w > candidate.x &&
+      Math.abs(body.y + body.h - candidate.y) <= 1;
+    if (rectsOverlap(body, candidate) || touchesTop) {
       ladder = candidate;
       break;
     }
@@ -515,6 +524,50 @@ function gather(solids: Solids, area: Rect): Solid[] {
   return solids.solidsNear(area, slideCandidates);
 }
 
+function connectedSlopeAtSide(
+  solids: readonly Solid[],
+  solid: Solid,
+  movingRight: boolean,
+): (Solid & { slope: SlopeDirection }) | undefined {
+  const edge = movingRight ? solid.x : solid.x + solid.w;
+  for (const candidate of solids) {
+    if (!candidate.slope) continue;
+    const slopeEdge = movingRight ? candidate.x + candidate.w : candidate.x;
+    if (
+      Math.abs(slopeEdge - edge) <= SKIN &&
+      Math.abs(slopeY(candidate as Solid & { slope: SlopeDirection }, edge) - solid.y) <= SKIN
+    ) {
+      return candidate as Solid & { slope: SlopeDirection };
+    }
+  }
+}
+
+/** A mover climbing a slope touches the adjoining plateau's vertical face
+ * before its center reaches the endpoint. That face is walkable only while
+ * the mover's feet are following the connected slope surface. */
+function crossesWalkableSlopeSide(
+  rect: Rect,
+  dx: number,
+  dy: number,
+  solid: Solid,
+  solids: readonly Solid[],
+  sweep: Sweep,
+): boolean {
+  if (sweep.nx === 0 || dy < 0) return false;
+  const slope = connectedSlopeAtSide(solids, solid, sweep.nx < 0);
+  if (!slope) return false;
+  const x = rect.x + dx * sweep.t;
+  const footX = x + rect.w / 2;
+  const bottom = rect.y + dy * sweep.t + rect.h;
+  const surface = slopeY(slope, footX);
+  const ratio = slope.h / Math.max(slope.w, SKIN);
+  // On a narrow/steep slope the body's center is already meaningfully above
+  // the endpoint when its leading edge first enters. Include that half-width
+  // footprint so grounded bodies can transition onto slopes steeper than 1:1.
+  const follow = (Math.abs(dx) + rect.w / 2) * ratio + Math.max(0, dy) + 1;
+  return Math.abs(bottom - surface) <= follow + SKIN;
+}
+
 /** A fresh, zeroed `Contacts` — pass it as the `out` argument to `slide` /
  *  `moveAndSlide` when you need a result that outlives the next call. */
 export function contacts(): Contacts {
@@ -564,6 +617,7 @@ export function slide(
       }
       if (!sweptAABBInto(rect, dx, dy, s, slideSweep)) continue;
       if (s.oneWay && slideSweep.ny !== -1) continue; // only the top face is solid
+      if (crossesWalkableSlopeSide(rect, dx, dy, s, sols, slideSweep)) continue;
       if (!hasBest || slideSweep.t < best.t) {
         best.t = slideSweep.t;
         best.nx = slideSweep.nx;
@@ -639,8 +693,8 @@ export function moveAndSlide(
       }
       const surface = slopeY(slope as Solid & { slope: SlopeDirection }, footX);
       const crossed = previousBottom <= surface + SKIN && currentBottom >= surface - SKIN;
-      const followDistance =
-        Math.abs(dx) * (slope.h / Math.max(slope.w, SKIN)) + Math.max(0, dy) + 1;
+      const ratio = slope.h / Math.max(slope.w, SKIN);
+      const followDistance = (Math.abs(dx) + body.w / 2) * ratio + Math.max(0, dy) + 1;
       const following = wasGrounded && Math.abs(currentBottom - surface) <= followDistance;
       if ((crossed || following) && surface < bestY) bestY = surface;
     }
@@ -648,6 +702,35 @@ export function moveAndSlide(
       body.y = bestY - body.h - SKIN;
       c.down = true;
       c.impact = Math.max(c.impact, Math.abs(dy));
+    }
+
+    // Once the feet cross the endpoint, transfer slope support to the
+    // adjoining flat top. Until then the slope branch above remains in charge.
+    if (wasGrounded && !c.down && dx !== 0) {
+      const movingRight = dx > 0;
+      const footX = body.x + body.w / 2;
+      const currentBottom = body.y + body.h;
+      for (const solid of candidates) {
+        if (solid.slope || solid.oneWay) continue;
+        const edge = movingRight ? solid.x : solid.x + solid.w;
+        if (
+          (movingRight ? footX < edge : footX > edge) ||
+          !connectedSlopeAtSide(candidates, solid, movingRight)
+        ) {
+          continue;
+        }
+        const follow = Math.abs(dx) + Math.max(0, dy) + 1;
+        if (
+          body.x < solid.x + solid.w &&
+          body.x + body.w > solid.x &&
+          Math.abs(currentBottom - solid.y) <= follow
+        ) {
+          body.y = solid.y - body.h - SKIN;
+          c.down = true;
+          c.impact = Math.max(c.impact, Math.abs(dy));
+          break;
+        }
+      }
     }
   }
 
@@ -661,9 +744,9 @@ export function moveAndSlide(
  * Returns `false` without changing the body when it is not standing on a
  * one-way surface, so solid floors can never be dropped through accidentally.
  *
- * Call on the down+jump edge, before `moveAndSlide`:
+ * Call while the player's drop action is held, before `moveAndSlide`:
  *
- *     if (input.down.down && input.jump.pressed)
+ *     if (input.down.down)
  *       Collision.dropThrough(player, level);
  *
  * The tiny downward nudge puts the body below the platform's top-face test;

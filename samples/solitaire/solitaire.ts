@@ -1,35 +1,31 @@
+import { createAnimation } from "minimotor/animation";
+import { createPerformanceMonitoring } from "minimotor/performance";
 // SOLITAIRE: classic Klondike built with a broad sweep of Minimotor primitives.
 // Demonstrates: App / Loop / Pointer / Draw, Scenes.create + Transitions,
 // UI immediate-mode widgets + drag/drop, Input.map, Audio.Sfx, Storage,
 // Timers, Clock.world timers, Anim motions (the AI's card glide + win cascade),
 // Signals, Fsm, Particles.create, Collision, Mathf, a fixed-`resolution`
-// letterboxed stage, Goodies.shuffle & gridFormation, Perf.plugin,
+// letterboxed stage, Goodies.shuffle & gridFormation, performance monitoring,
 // Sprites.getSprite, and Anim.sheet for a win sparkle.
+import { createAudio } from "minimotor/audio";
+import { createInput } from "minimotor/input";
+import { createParticles } from "minimotor/particles";
+import { createScenes } from "minimotor/scenes";
+import { createBrowserStorage } from "minimotor/storage";
+import { createTimers } from "minimotor/timers";
+import { createUI } from "minimotor/ui";
 import {
-  Anim,
-  Audio,
-  Clock,
   Collision,
-  Draw,
+  createSignals,
   Fsm,
   Gizmos,
   Goodies,
-  Input,
-  Loop,
   Mathf,
-  Particles,
-  Perf,
-  Pointer,
-  Scenes,
-  Signals,
   Sprites,
   App,
-  Storage,
-  Timers,
   Transitions,
-  UI,
 } from "minimotor";
-import "../shared/layout-probe.ts"; // e2e layout-invariant hook (window.__uiProbe)
+import { installLayoutProbe } from "../shared/layout-probe.ts";
 
 // ---- Types ----
 interface Slot {
@@ -115,15 +111,27 @@ function isRed(suit: string) {
 // The stage runs at a FIXED logical resolution, letterboxed into the window by
 // the engine: `vp.w`/`vp.h` ARE `LOGICAL_W`/`LOGICAL_H`, the pointer arrives in
 // logical coordinates, and all drawing is scaled — no manual letterbox math.
-const vp = App.init("game", {
+const game = App.create("game", {
   fullscreen: true,
   resolution: { w: LOGICAL_W, h: LOGICAL_H },
   background: "#0b3d2e",
   barColor: "#062",
   preventNavigation: true,
-  plugins: [Perf.plugin()],
 });
-App.onResize(() => {
+const Anim = createAnimation(game);
+const Signals = createSignals();
+createPerformanceMonitoring(game);
+const vp = game.viewport;
+const { Clock, Draw, Loop, Pointer } = game;
+const Audio = createAudio(game);
+const Input = createInput(game);
+const Particles = createParticles(game);
+const Scenes = createScenes(game);
+const Storage = createBrowserStorage(game);
+const Timers = createTimers(game);
+const UI = createUI(game, Input);
+installLayoutProbe(UI);
+game.onResize(() => {
   Sprites.clearSpriteCache();
   buildCardBackSprite();
 });
@@ -144,16 +152,16 @@ let aiVisited = new Set<string>();
 let gameStartedAt = 0;
 let stats: Stats = { wins: 0, games: 0, bestTime: 0 };
 
-const fx = Particles.create();
+const fx = Particles.createSystem();
 
 const statsKey = "solitaire_stats_v1";
 
-function loadStats() {
-  stats = Storage.load(statsKey, { wins: 0, games: 0, bestTime: 0 });
+async function loadStats() {
+  stats = await Storage.load(statsKey, { wins: 0, games: 0, bestTime: 0 });
 }
 
 function saveStats() {
-  Storage.save(statsKey, stats);
+  void Storage.save(statsKey, stats);
 }
 
 // ---- Layout (fixed logical coordinates) ----
@@ -671,12 +679,12 @@ function drawPiles(ctx: CanvasRenderingContext2D) {
       payload: { type: "stock" },
       disabled: true,
     });
-    if (stockSource.hovered) App.setCursor("pointer");
+    if (stockSource.hovered) game.setCursor("pointer");
   } else {
     drawEmptySlot(ctx, stockRect, "↺");
   }
   if (Collision.pointInRect(Pointer.x, Pointer.y, layout.stock)) {
-    App.setCursor("pointer");
+    game.setCursor("pointer");
     if (Pointer.frameReleased) drawFromStock();
   }
 
@@ -696,7 +704,7 @@ function drawPiles(ctx: CanvasRenderingContext2D) {
         from: { type: "waste", index: waste.length - 1 },
       },
     });
-    if (src.hovered) App.setCursor("grab");
+    if (src.hovered) game.setCursor("grab");
     // Double-click the waste's top card to send it home (classic Klondike gesture).
     // A double-click's press also arms the drag above — cancel it so the card
     // doesn't get "picked up" the instant it's sent home.
@@ -728,7 +736,7 @@ function drawPiles(ctx: CanvasRenderingContext2D) {
           from: { type: "foundation", col: i, index: pile.length - 1 },
         },
       });
-      if (src.hovered) App.setCursor("grab");
+      if (src.hovered) game.setCursor("grab");
     } else {
       drawEmptySlot(ctx, rect, FOUNDATION_SUITS[i]);
     }
@@ -806,7 +814,7 @@ function drawPiles(ctx: CanvasRenderingContext2D) {
               from: { type: "tableau", col, index: idx },
             },
           });
-          if (src.hovered) App.setCursor("grab");
+          if (src.hovered) game.setCursor("grab");
         }
       }
 

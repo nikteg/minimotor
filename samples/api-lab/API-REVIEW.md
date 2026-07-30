@@ -1,10 +1,10 @@
 # Minimotor API Review — running notes
 
-Dogfooding review: this sample is built one feature at a time, and after each
-increment the API it touched is judged. Verdicts: **keep** / **change** /
-**undecided**. Items marked "change" get an ideal-API sketch (before/after,
-non-compiling sketches are fine). Minimotor itself is not modified during this
-exercise — these notes are the design spec for later changes.
+Dogfooding review: this sample exercises each capability through explicit,
+game-owned factories. After each increment, the API it touched is judged.
+Verdicts: **keep** / **change** / **undecided**. Items marked "change" get an
+ideal-API sketch. These notes began as a design spec; accepted changes are now
+implemented directly in Minimotor and exercised by this sample.
 
 ---
 
@@ -260,7 +260,7 @@ call. The floor is now just another solid.
 ## Increment 5 — camera (world bigger than screen)
 
 **What we built:** a fixed 2400×600 world with platforms in world
-coordinates, and the default camera configured to follow the player with
+coordinates, and the primary camera configured to follow the player with
 deadzone + damping. Draw code wraps the world pass in `Camera.render(...)`;
 top level stays screen space (#16, after a three-design discussion).
 `Stage.init`'s return value went unused for the first time — with a camera,
@@ -360,7 +360,7 @@ deadZoneY })` has two problems: `viewW`/`viewH` is the #1 stale-snapshot
     ```
 
     `into` clips; omitted `into` = full canvas; `Camera.render(fn)` with no
-    camera argument = the default camera (#16's world block). `Camera.rect`
+    camera argument = the primary camera (#16's world block). `Camera.rect`
     being a structural Rect (#9) makes the viewfinder a one-liner.
     - Verdict: **change** (agreed)
 
@@ -408,7 +408,7 @@ block, score in the HUD. First contact with the ECS in the imaginary API.
     (`ECS.create()`, `Entities`), or accept that consumers rename.
     - Verdict: **change** (agreed) — `ECS.create()` replaces `ECS.world()`;
       the blessed instance idiom is `const ecs = ECS.create()`. The `World`
-      type (and `Minimotor.World` default instance) get renamed accordingly
+      type (and `implicit world instance) get renamed accordingly
       in the change-plan. Break-even guidance (arrays vs ECS) goes in docs.
 
 ---
@@ -478,10 +478,11 @@ scaled by fall speed (`impact` captured before `moveAndSlide` zeroes it),
 `Particles.draw()` placed explicitly in the world pass.
 
 28. **Particles: explicit instances (no singleton), self-stepping sim,
-    explicit draw.** `const fx = Particles.create()` — Niklas questioned the
+    explicit draw.** `const fx = Particles.createSystem()` — Niklas questioned the
     original singleton proposal; discussion produced a taxonomy law:
-    - **Platform facades are singletons** (one per canvas/game, truthfully):
-      `Stage`, `Loop`, `Draw`, `UI`, `Keys`, `Pointer`, default `Camera`.
+    - **Runtime services belong to one explicit game**:
+      `game.Loop`, `game.Draw`, `game.Keys`, `game.Pointer`, plus factories
+      such as `createUI(game)` and `createCamera(game)`.
     - **Game content is explicit instances** (plural by nature): `Input.map`,
       `ECS.create`, `Timers.jumpGate`, sheet cursors, motions,
       `createCamera`, and now `Particles.create` — particles want plurality
@@ -586,8 +587,8 @@ entire handoff.
     - `jumpGate.try()` — updates internal timers from elapsed on call.
       Nothing holds them → dropping the reference IS the teardown → scenes
       need zero lifecycle API for content, and #28's taxonomy gets its
-      enforcement mechanism for free. (The default camera may register — it's
-      a platform facade and lives forever.) "Zero wiring" is now stated as:
+      enforcement mechanism for free. Game-bound services register against
+      their owner and are destroyed with it. "Zero wiring" is now stated as:
       **pull, don't push — derive from the clock, never register.**
 
     Expanded (discussion): two mechanisms under the law —
@@ -694,7 +695,7 @@ whoosh`. Each returns a plain SfxSpec — inspect it, tweak it, learn
       juice, noted not specced: pitch-bending sfx by `Clock.world.scale`
       during slow-mo.)
     - `Audio.*` master (volume/mute, persisted via `Storage`) is the
-      platform facade; sfx maps and music instances are content (#28
+      game-owned mixer API; sfx maps and music instances are content (#28
       taxonomy holds).
     - Verdict: **change** (agreed)
 
@@ -812,6 +813,29 @@ all derive from `level`. The hand-kept `world` const is gone.
       it at zero cost). Markers need no skin entry and stay typed as
       plain `string` (extracting chars from the ASCII literal type is
       gymnastics that dies on runtime-loaded levels — not specced).
+    - **Multi-cell shapes stay tiles.** A legend entry may declare
+      `span: [cols, rows]`, while its skin uses
+      `tiles.region(col, row, cols, rows)`. The API Lab slopes are therefore
+      ordinary `R`/`L` map cells with both collision and atlas art handled by
+      `Tiles`; no marker conversion, custom `Solid[]`, sprite construction, or
+      extra draw call. Spans also work for larger ladders, doors, and arches.
+      Slope shape falls out of the same geometry: `[2, 1]` is a shallow
+      two-cell ramp and `[1, 1]` is the usual 45° one-cell ramp. Taller custom
+      ratios such as `[1, 2]` remain possible without another collision API.
+    - **Nine-grid terrain is the common automatic tier.**
+      `tiles.auto9(base, { stride, connect: "solid" })` reads the conventional
+      top/middle/bottom × left/middle/right atlas. `stride` supports atlases
+      whose entries have padding; semantic connectivity joins ground to slope
+      spans even when their legend characters differ. `auto16` remains the
+      richer bitmask tier for concave/cardinal combinations.
+    - **Multi-character legend glyphs preserve visual geometry.** This is not
+      a named-token matrix: a glyph consumes its literal ASCII columns.
+      Longest match wins, and width becomes the default horizontal span, so
+      `//#####\\` visibly authors two-cell slopes without anchor-plus-dot
+      notation. Explicit `span` remains for vertical/taller footprints.
+      Tileset names are a separate descriptive layer and may name either
+      `[col, row]` cells or `[col, row, cols, rows]` regions—e.g.
+      `terrain.ground9`, `terrain.slopeDown`, and `terrain.steepUp`.
     - Verdict: **change** (agreed)
 
 42. **Data never draws itself — `Draw` owns all rendering.** (From Niklas:
@@ -1054,9 +1078,8 @@ Quick dispositions; each "flag" is a candidate for a round-2 review.
 - **Transitions** (fade/wipe): should become a `scenes.go`/`push` option —
   `scenes.go("playing", { transition: fade(300) })` — instead of a manual
   run/swap API. Flag with that sketch.
-- **createGame builder**: fluent `.use().pauseOnPortrait().build()` is the
-  only builder in the API; everything else takes options objects. Flag:
-  `createGame(options)` directly.
+- **App construction**: the old fluent builder was removed. The API now uses
+  `createApp(canvas, options)` directly.
 - **Fullscreen**: two exports orbiting `Stage` — fold into
   `Stage.init({ fullscreen: ... })` / `Stage.fullscreen()`. Flag.
 - **game.ts grab-bag** (`createScoreTracker`, `letterbox`, `formatClock`):

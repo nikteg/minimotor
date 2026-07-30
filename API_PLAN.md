@@ -57,7 +57,7 @@ norm, dot, dist, lerp, angle, rotate`, `out`-param variants; `clamp`,
   truth. (#3)
 - `update()` — drop the `stepMs` param. **Breaking.** (#5)
 - `draw(ctx)` keeps ctx as escape hatch (idiomatic code won't use it). (#2)
-- `createGame(options)` replaces the fluent builder. (sweep)
+- `createApp(canvas, options)` is the single explicit app constructor. (sweep)
 - Fullscreen folds into Stage (`Stage.init({ fullscreen })` /
   `Stage.fullscreen()`). (sweep)
 
@@ -79,7 +79,7 @@ deadzone, damping })`; `Camera.x/y/zoom/rect`; `Camera.shake(mag, ms)`
 - `UI.text` = themed HUD widget with `anchor` positioning (safe-area
   aware); `Text.drawText/drawCentered` retire from the public tier. (#6,
   #17, #33)
-- `Draw.sprites(list, { alpha, view })` — the z-sorted batch renderer, off
+- `Draw.sprites(list, { interpolation, view })` — the z-sorted batch renderer, off
   the ECS (`ecs.dense(Sprites.Sprite)` supplies the data). See post-port
   follow-ups.
 
@@ -127,7 +127,7 @@ mixed array`. (#13, #14, #29, #40)
   top-level-await pattern documented; progress callback kept. (#24)
 - `Anim.sheet(img, { frame, states })` + `sheet.play(state)` cursors
   (self-deriving, same-state `set` is a no-op, typed states). (#25)
-- `Particles.create()` (no singleton); `burst({ at, count, speed, life,
+- `Particles.createSystem()` (no singleton); `burst({ at, count, speed, life,
 size, color })`; immediate-mode `emit({ at, chance, ... })` — the
   each-loop is the attachment; no Emitter component. (#28, #30)
 - Tiles: `Tiles.grid(ascii, { size, legend })` — legend = semantics only
@@ -208,7 +208,7 @@ fps }, run: {...}, jump: {...} })` returns a shared kit; `kit.play(initial)`
      registers a normal system.
      The bridge is a generic accessor: `ecs.dense(Component)` returns any
      component's packed backing array (useful beyond sprites). Call site:
-     `Draw.sprites(ecs.dense(Sprites.Sprite), { alpha: Loop.alpha, view })`. Draw
+     `Draw.sprites(ecs.dense(Sprites.Sprite), { interpolation: Loop.interpolation, view })`. Draw
      owns rendering; the ECS owns generic data; neither imports the other.
 - **pixel-adventure rewritten — DONE.** Fully ported off the old API and back
   in the TS gate (no longer excluded). It's now the showcase for `Anim.states`
@@ -220,7 +220,7 @@ fps }, run: {...}, jump: {...} })` returns a shared kit; `kit.play(initial)`
   `Camera.follow`/`Camera.render`; `Audio.tone` synth SFX; `Particles.create`;
   `Stage.init({ resolution })` (no manual letterbox).
 - **Retire `Game.letterbox`/`drawLetterbox`/`letterboxView`** — DONE. Superseded
-  by `App.init({ resolution })`, which does the fit, the bars, the pointer
+  by `App.create(canvas, { resolution })`, which does the fit, the bars, the pointer
   mapping and the base transform in one place. All samples (pixel-adventure,
   solitaire, pocket) are on `resolution`; the three functions are deleted.
 

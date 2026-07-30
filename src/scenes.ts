@@ -20,9 +20,9 @@
 // `holdsTime: false` — the "live world under the pause menu" look); `go`
 // replaces the stack and holds nothing.
 
-import { Clock, type ClockHandle } from "./clock.js";
+import type { ClockHandle } from "./clock.js";
 import { run as runTransition, type Transition, type TransitionRun } from "./transitions.js";
-import { App } from "./engine/index.js";
+import type { Game } from "./engine/index.js";
 
 /** One scene. Every hook is optional; hooks capture game state via closure. */
 export interface SceneSpec {
@@ -72,18 +72,21 @@ export interface SceneStack<K extends string> {
 
 /** Config for `Scenes.create`. */
 export interface SceneStackOptions {
-  /** The clock that modal `push`es hold while they sit on the stack. Default
-   *  `Clock.world`. */
-  clock?: ClockHandle;
+  /** The clock that modal `push`es hold while they sit on the stack. */
+  clock: ClockHandle;
+  /** Interface clock for transitions. */
+  uiClock?: ClockHandle;
+  /** Live viewport used by transition overlays. */
+  view?: { w: number; h: number };
 }
 
 /** Build a typed scene stack from a `map` of named `SceneSpec`s. The first key
  *  is the opening scene (entered immediately). The result is structurally
  *  `AppCallbacks`, so `Loop.run(scenes)` is the whole handoff. Throws if `map`
  *  is empty. */
-function create<K extends string>(
+export function createSceneStack<K extends string>(
   map: Record<K, SceneSpec>,
-  options: SceneStackOptions = {},
+  options: SceneStackOptions,
 ): SceneStack<K> {
   const names = Object.keys(map) as K[];
   if (names.length === 0) throw new Error("Scenes.create: at least one scene is required");
@@ -92,7 +95,7 @@ function create<K extends string>(
   let transitionLast = 0;
   let held = false;
 
-  const clock = (): ClockHandle => options.clock ?? Clock.world;
+  const clock = (): ClockHandle => options.clock;
 
   function resolve(name: K): SceneSpec {
     const scene = map[name];
@@ -124,7 +127,7 @@ function create<K extends string>(
   const self: SceneStack<K> = {
     go(name, opts = {}) {
       if (opts.transition && !transition) {
-        transitionLast = Clock.ui.now;
+        transitionLast = (options.uiClock ?? options.clock).now;
         transition = runTransition(opts.transition, () => goNow(name));
       } else {
         goNow(name);
@@ -164,16 +167,10 @@ function create<K extends string>(
       for (let i = from; i < stack.length; i++) resolve(stack[i]).draw?.();
       if (transition) {
         // Transitions run in interface time (they must play over a held world).
-        const now = Clock.ui.now;
+        const now = (options.uiClock ?? options.clock).now;
         transition.advance(now - transitionLast);
         transitionLast = now;
-        let view: { w: number; h: number };
-        try {
-          view = App.viewport;
-        } catch {
-          view = { w: ctx.canvas.width, h: ctx.canvas.height };
-        }
-        transition.draw(ctx, view);
+        transition.draw(ctx, options.view ?? { w: ctx.canvas.width, h: ctx.canvas.height });
         if (transition.done) transition = null;
       }
     },
@@ -184,5 +181,16 @@ function create<K extends string>(
   return self;
 }
 
-/** Typed scene stacks are created, never ambient: `Scenes.create({...})`. */
-export const Scenes = { create };
+/** Scene factory bound to one game's clocks and viewport. */
+export function createScenes(game: Game) {
+  return {
+    create<K extends string>(map: Record<K, SceneSpec>, options: Partial<SceneStackOptions> = {}) {
+      return createSceneStack(map, {
+        clock: game.Clock.world,
+        uiClock: game.Clock.ui,
+        view: game.viewport,
+        ...options,
+      });
+    },
+  };
+}

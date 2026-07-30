@@ -1,24 +1,23 @@
+import { createPerformanceMonitoring } from "minimotor/performance";
 // Bounce: a glowing ball ricochets around the walls; every wall hit counts a
 // bounce AND speeds the ball up. Simple on purpose, but juiced — each bounce
 // fires spark particles, a short Camera.shake and a soft synth boop, and the
 // ball trails and glows. It plays itself; watch it escalate.
-import {
-  Audio,
-  Camera,
-  Collision,
-  Draw,
-  Gizmos,
-  Loop,
-  Mathf,
-  Particles,
-  Perf,
-  App,
-  UI,
-  Vec2,
-} from "minimotor";
+import { createAudio } from "minimotor/audio";
+import { createCamera } from "minimotor/camera";
+import { createParticles } from "minimotor/particles";
+import { createUI } from "minimotor/ui";
+import { Collision, Gizmos, Mathf, App, Vec2 } from "minimotor";
 
 // The viewport is LIVE (mutated on resize) — wall bounds read it directly.
-const view = App.init("game", { preventNavigation: true, plugins: [Perf.plugin()] });
+const game = App.create("game", { preventNavigation: true });
+createPerformanceMonitoring(game);
+const view = game.viewport;
+const { Clock, Draw, Loop } = game;
+const Audio = createAudio(game);
+const Camera = createCamera(game);
+const Particles = createParticles(game);
+const UI = createUI(game);
 
 Audio.Mixer.compressor(); // keep stacked bounce notes clean
 Audio.Mixer.reverb("hall", { seconds: 0.9, decay: 2.2, wet: 0.4 });
@@ -41,8 +40,8 @@ const partials: { mul: number; gain: number; type: OscillatorType }[] = [
 ];
 const trail = Gizmos.trail(12); // bounded motion ring
 let bounces = 0;
-const ballFlash = Gizmos.flash(140); // white "hit" blink on the ball itself
-const fx = Particles.create();
+const ballFlash = Gizmos.flash(140, Clock.world); // white "hit" blink on the ball itself
+const fx = Particles.createSystem();
 
 function bounceNote() {
   // A full, warm marimba-ish note (custom filter automation → the playSfx
@@ -123,7 +122,7 @@ Loop.run({
       ]),
     );
 
-    // The default camera is identity — this block just applies the shake.
+    // The primary camera is identity — this block just applies the shake.
     Camera.render(() => {
       // Motion trail (oldest = faintest/smallest).
       const pts = trail.points;

@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { createAssets } from "../assets.js";
+import { describe, it, expect, expectTypeOf, vi, beforeEach, afterEach } from "vitest";
+import { createAssetStore as createAssets } from "../assets.js";
+import { createClockHandle } from "../clock.js";
 
 // Wrap real jsdom images so `instanceof HTMLImageElement` still holds, but make
 // setting `src` resolve (or reject) the load asynchronously.
@@ -48,6 +49,14 @@ describe("Assets", () => {
     const a = createAssets();
     await a.load({ map: "level1.json" });
     expect(a.json<{ level: number }>("map")).toEqual({ level: 1 });
+  });
+
+  it("recognizes Tiled and LDtk JSON extensions", async () => {
+    const fetch = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({}) }));
+    vi.stubGlobal("fetch", fetch);
+    const a = createAssets();
+    await a.load({ map: "level.tmj", tiles: "terrain.tsj", project: "world.ldtk" });
+    expect(fetch).toHaveBeenCalledTimes(3);
   });
 
   it("reports progress as each asset resolves", async () => {
@@ -123,6 +132,47 @@ describe("Assets", () => {
     // plain URL → the image; .json → parsed data
     expect(res.terrain).toBeInstanceOf(HTMLImageElement);
     expect(res.map).toEqual({ level: 3 });
+  });
+
+  it("loads an Aseprite image and JSON as a typed animation sheet", async () => {
+    const data = {
+      frames: [{ frame: { x: 0, y: 0, w: 16, h: 16 }, duration: 100 }],
+      meta: { frameTags: [{ name: "idle", from: 0, to: 0 }] },
+    } as const;
+    const a = createAssets();
+    const result = await a.load({
+      hero: {
+        src: "hero.png",
+        aseprite: data,
+      },
+    });
+    expectTypeOf(result.hero.play).parameter(0).toEqualTypeOf<"idle">();
+    expect(result.hero.play("idle", { clock: createClockHandle() }).rect).toEqual({
+      sx: 0,
+      sy: 0,
+      sw: 16,
+      sh: 16,
+    });
+    expect(a.image("hero")).toBeInstanceOf(HTMLImageElement);
+  });
+
+  it("fetches an external Aseprite JSON atlas", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          frames: [{ frame: { x: 0, y: 0, w: 8, h: 8 }, duration: 80 }],
+          meta: { frameTags: [{ name: "spin", from: 0, to: 0 }] },
+        }),
+      })),
+    );
+    const a = createAssets();
+    const result = await a.load({
+      gem: { src: "gem.png", aseprite: "gem.json" },
+    });
+    expect(result.gem.states).toEqual(["spin"]);
   });
 
   it("still caches the raw image for a composed spec", async () => {

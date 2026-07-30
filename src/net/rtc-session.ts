@@ -115,7 +115,7 @@ export function host<Send = unknown, Recv = unknown>(
     onGuestLeave: null,
     onMessage: null,
     close() {
-      for (const peer of peers.values()) peer.transport.close();
+      for (const peer of peers.values()) peer.close();
       peers.clear();
       ws.close();
     },
@@ -145,7 +145,7 @@ export function host<Send = unknown, Recv = unknown>(
       peerFor(msg.from).applySignal(msg.signal);
     } else if (msg.type === "peer-leave") {
       const peer = peers.get(msg.id);
-      if (peer) peer.transport.close(); // fires onClose → onGuestLeave
+      if (peer) peer.close(); // fires onClose → onGuestLeave
     }
   };
 
@@ -178,7 +178,7 @@ export function join<Send = unknown, Recv = unknown>(
     onClose: null,
     onMessage: null,
     close() {
-      peer.transport.close();
+      peer.close();
       ws.close();
     },
   };
@@ -210,7 +210,7 @@ export function join<Send = unknown, Recv = unknown>(
     } else if (msg.type === "host") {
       // Host handed over: drop the dead channel and re-offer to the new host.
       hostId = msg.id;
-      peer.transport.close();
+      peer.close();
       peer = makePeer();
       offerHost();
     } else if (msg.type === "signal" && msg.from === hostId) {

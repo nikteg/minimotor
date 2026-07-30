@@ -1,4 +1,4 @@
-import { Loop, STEP_MS } from "../engine/index.js";
+import { everyMs } from "./rate.js";
 import type { Room } from "./room.js";
 
 const SHARED_ITEMS_KEY = "__mm_shared_items";
@@ -75,7 +75,15 @@ export function sharedItems<T extends object>(
   const channel = options.channel ?? "items";
   const now = options.now ?? (() => performance.now());
   const items = source.map(
-    (item, index) => ({ ...item, id: options.id?.(item, index) ?? index }) as SharedItem<T>,
+    (item, index) =>
+      ({
+        ...item,
+        id:
+          options.id?.(item, index) ??
+          ("id" in item && (typeof item.id === "string" || typeof item.id === "number")
+            ? item.id
+            : index),
+      }) as SharedItem<T>,
   );
   const byId = new Map(items.map((item) => [item.id, item]));
   const unavailable = new Map<SharedItemId, number>();
@@ -135,21 +143,7 @@ export function sharedItems<T extends object>(
     });
   };
   const offJoin = room.onJoin(broadcast);
-  const intervalMs = 1000 / (options.hz ?? 4);
-  let acc = 0;
-  let interval: ReturnType<typeof setInterval> | null = null;
-  let offStep: (() => void) | null = null;
-  try {
-    offStep = Loop.onStep(() => {
-      acc += STEP_MS;
-      if (acc >= intervalMs) {
-        acc = 0;
-        broadcast();
-      }
-    });
-  } catch {
-    interval = setInterval(broadcast, intervalMs);
-  }
+  const offTick = everyMs(1000 / (options.hz ?? 4), broadcast);
 
   return {
     all: items,
@@ -171,8 +165,7 @@ export function sharedItems<T extends object>(
       return byId.has(id) && (unavailable.get(id) ?? 0) <= t && (pending.get(id) ?? 0) <= t;
     },
     stop() {
-      offStep?.();
-      if (interval !== null) clearInterval(interval);
+      offTick();
       offMessage();
       offJoin();
       pending.clear();

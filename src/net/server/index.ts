@@ -4,6 +4,7 @@
 // tick, and a WebRTC signaling relay. Reached via the `minimotor/server`
 // entry point — kept out of the browser bundle.
 export * from "./room.js";
+export * from "./rooms.js";
 export * from "./tick.js";
 export * from "./signaling.js";
 export * from "./presence.js";

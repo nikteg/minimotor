@@ -1,3 +1,5 @@
+import { createAnimation } from "minimotor/animation";
+import { createPerformanceMonitoring } from "minimotor/performance";
 // Ascent — a Celeste-style precision platformer built from Minimotor
 // primitives, dressed in the "Lore" pixel-art set (CC assets under
 // ./assets). Three hand-built rooms, Madeline-style movement:
@@ -15,32 +17,32 @@
 //           R restart room. Dash refills on the ground or a floating orb; the
 //           orb goes dim while spent.
 
-import {
-  Anim,
-  Assets,
-  Audio,
-  Camera,
-  Draw,
-  ECS,
-  Fsm,
-  Gizmos,
-  Input,
-  Keys,
-  Loop,
-  Mathf,
-  OnscreenInput,
-  Particles,
-  Perf,
-  Sprites,
-  App,
-  Storage,
-  Timers,
-  UI,
-} from "minimotor";
-import type { SheetCursor, SpriteLike } from "minimotor";
+import { createAssets } from "minimotor/assets";
+import { createAudio } from "minimotor/audio";
+import { createCamera } from "minimotor/camera";
+import { createInput } from "minimotor/input";
+import { createOnscreenInput } from "minimotor/onscreen-input";
+import { createParticles } from "minimotor/particles";
+import { createBrowserStorage } from "minimotor/storage";
+import { createTimers } from "minimotor/timers";
+import { createUI } from "minimotor/ui";
+import { ECS, Fsm, Gizmos, Mathf, Sprites, App } from "minimotor";
+import { SheetCursor, SpriteLike } from "minimotor";
 
-let vp = App.init("game", { preventNavigation: true, plugins: [Perf.plugin()] });
-App.onResize((next) => (vp = next));
+const game = App.create("game", { preventNavigation: true });
+const Anim = createAnimation(game);
+createPerformanceMonitoring(game);
+const vp = game.viewport;
+const { Clock, Draw, Keys, Loop } = game;
+const Assets = createAssets(game);
+const Audio = createAudio(game);
+const Camera = createCamera(game);
+const Input = createInput(game);
+const Particles = createParticles(game);
+const Storage = createBrowserStorage(game);
+const Timers = createTimers(game);
+const UI = createUI(game, Input);
+const OnscreenInput = createOnscreenInput(game, Input);
 
 // On-screen touch gamepad (hidden on desktop, shown on touch by default).
 const pad = OnscreenInput.gamepad({
@@ -278,7 +280,7 @@ const DASH_FRAMES = 11;
 const DASH_FREEZE = 3;
 
 // Particle system (immediate-mode bursts, rendered via Draw.particles).
-const fx = Particles.create();
+const fx = Particles.createSystem();
 
 // ---------------------------------------------------------------------------
 // Sound — layered synth SFX from Audio.tone: a pitched voice plus a filtered
@@ -358,7 +360,7 @@ const player = {
 
 // Celeste-style single air dash: one charge, refilled instantly on the ground
 // or a crystal (never on a timer — refillMs is only there to satisfy the API).
-const dash = Gizmos.charges({ max: 1, refillMs: 1 });
+const dash = Gizmos.charges({ max: 1, refillMs: 1, clock: Clock.world });
 
 const jumpGate = Timers.jumpGate({ coyoteMs: 100, bufferMs: 130 });
 const wallCoyote = Timers.window(90);
@@ -614,7 +616,7 @@ function makeFsm(): Fsm.Machine<PlayerState> {
 let levelIndex = 0;
 let level!: BuiltLevel;
 let deaths = 0;
-let bestDeaths: number | null = Storage.load<number | null>("ascent_best", null);
+let bestDeaths: number | null = await Storage.load<number | null>("ascent_best", null);
 let won = false;
 let ready = false;
 let fade = 1;
@@ -686,7 +688,7 @@ function nextLevel(): void {
     won = true;
     if (bestDeaths === null || deaths < bestDeaths) {
       bestDeaths = deaths;
-      Storage.save("ascent_best", bestDeaths);
+      void Storage.save("ascent_best", bestDeaths);
     }
     SFX.win();
     return;
@@ -1025,7 +1027,7 @@ Loop.run({
     const offX = (vp.w - WORLD_W * scale) / 2;
     const offY = (vp.h - WORLD_H * scale) / 2;
 
-    // World block: the default camera is identity, so render() only layers on
+    // World block: the primary camera is identity, so render() only layers on
     // the screen-shake offset (triggered by Camera.shake on dash/death).
     Camera.render(() => {
       ctx.save();

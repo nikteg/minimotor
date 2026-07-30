@@ -1,5 +1,8 @@
+import { createPerformanceMonitoring } from "minimotor/performance";
 // LEAD DEFENDER: predictive aiming, angle steering, wave scaling and radial spawns.
-import { Collision, Draw, Goodies, Keys, Loop, Particles, Perf, App, UI } from "minimotor";
+import { createParticles } from "minimotor/particles";
+import { createUI } from "minimotor/ui";
+import { Collision, Goodies, App } from "minimotor";
 
 interface Enemy {
   x: number;
@@ -18,16 +21,20 @@ interface Bullet {
 }
 
 // Live viewport; the engine owns the background clear.
-const vp = App.init("game", {
+const game = App.create("game", {
   background: "#080d18",
-  plugins: [Perf.plugin()],
   preventNavigation: true,
 });
+createPerformanceMonitoring(game);
+const vp = game.viewport;
+const { Draw, Keys, Loop } = game;
+const Particles = createParticles(game);
+const UI = createUI(game);
 // Per-step constants (the fixed step is the time unit — 60 steps/s).
 const BULLET_SPEED = 5; // px/step (was 300 px/s)
 const TURRET_TURN = 5 / 60; // rad/step (was 5 rad/s)
 const FIRE_COOLDOWN = 11; // steps (was 0.18 s)
-const fx = Particles.create();
+const fx = Particles.createSystem();
 let enemies: Enemy[] = [],
   bullets: Bullet[] = [],
   wave = 0,

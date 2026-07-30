@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { createApp, App, Loop, Keys, Pointer, Mouse, Draw, type AppCallbacks } from "../index.js";
+import { createRuntime, App, type AppCallbacks, type Runtime } from "../index.js";
 
 // jsdom canvas support + a controllable requestAnimationFrame.
 let rafCallback: ((t: number) => void) | null = null;
@@ -29,11 +29,11 @@ beforeEach(() => {
   );
 });
 
-function build(canvasId = "game"): { game: App; canvas: HTMLCanvasElement } {
+function build(canvasId = "game"): { game: Runtime; canvas: HTMLCanvasElement } {
   const canvas = document.createElement("canvas");
   canvas.id = canvasId;
   document.body.appendChild(canvas);
-  const game = createApp({ canvas: canvasId });
+  const game = createRuntime({ canvas: canvasId });
   return { game, canvas };
 }
 
@@ -54,12 +54,20 @@ describe("createApp", () => {
 
   it("accepts a canvas element directly", () => {
     const canvas = document.createElement("canvas");
-    const game = createApp({ canvas });
+    const game = createRuntime({ canvas });
     expect(game.canvas).toBe(canvas);
   });
 
+  it("creates an explicit game with bound core services", () => {
+    const canvas = document.createElement("canvas");
+    const game = App.create(canvas);
+    expect(game.canvas).toBe(canvas);
+    expect(game.Draw.ctx.canvas).toBe(canvas);
+    expect(game.Loop).toBeDefined();
+  });
+
   it("throws for a missing canvas id", () => {
-    expect(() => createApp({ canvas: "nope" })).toThrow(/not found/);
+    expect(() => createRuntime({ canvas: "nope" })).toThrow(/not found/);
   });
 
   // NOTE: createApp also marks the canvas as a gesture surface (touch-action:
@@ -71,7 +79,7 @@ describe("createApp", () => {
     const canvas = document.createElement("canvas");
     const early = vi.fn();
     const late = vi.fn();
-    const game = createApp({ canvas, plugins: [{ name: "early", onInit: early }] });
+    const game = createRuntime({ canvas, plugins: [{ name: "early", onInit: early }] });
     expect(early).toHaveBeenCalledTimes(1);
     game.use({ name: "late", onInit: late });
     expect(late).toHaveBeenCalledTimes(1);
@@ -122,7 +130,7 @@ describe("canvas gesture guards", () => {
 
 describe("run / loop", () => {
   function withCallbacks(cb: Partial<AppCallbacks> = {}): {
-    game: App;
+    game: Runtime;
     update: ReturnType<typeof vi.fn>;
     draw: ReturnType<typeof vi.fn>;
   } {
@@ -244,12 +252,12 @@ describe("run / loop", () => {
     }
   });
 
-  it("exposes alpha as the unsimulated fraction of a step", () => {
+  it("exposes interpolation as the unsimulated fraction of a step", () => {
     const { game } = withCallbacks();
     tick(16);
     tick(40); // 24ms → one step consumed, ~7.33ms remains
     const step = 1000 / 60;
-    expect(game.alpha).toBeCloseTo((24 - step) / step, 2);
+    expect(game.interpolation).toBeCloseTo((24 - step) / step, 2);
   });
 });
 
@@ -276,6 +284,20 @@ describe("input", () => {
     window.dispatchEvent(new KeyboardEvent("keyup", { code: "ArrowLeft" }));
     expect(game.keys.down("ArrowLeft")).toBe(false);
     expect(game.keys.released("ArrowLeft")).toBe(true);
+  });
+
+  it("tracks layout-aware key values independently of physical codes", () => {
+    const { game } = build();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "?", code: "Equal", shiftKey: true }));
+    expect(game.keys.down("Equal")).toBe(true);
+    expect(game.keys.keyDown("?")).toBe(true);
+    expect(game.keys.keyPressed("?")).toBe(true);
+
+    // Releasing Shift first may change the keyup value to "+". The value
+    // recorded on keydown must still be released.
+    window.dispatchEvent(new KeyboardEvent("keyup", { key: "+", code: "Equal" }));
+    expect(game.keys.keyDown("?")).toBe(false);
+    expect(game.keys.keyReleased("?")).toBe(true);
   });
 
   it("pressed() is edge-triggered and observed by update, then cleared", () => {
@@ -442,6 +464,7 @@ describe("input", () => {
     input.dispatchEvent(space);
     expect(space.defaultPrevented).toBe(false);
     expect(game.keys.down("Space")).toBe(false);
+    expect(game.keys.keyDown(" ")).toBe(false);
 
     const select = document.createElement("select");
     document.body.appendChild(select);
@@ -453,11 +476,12 @@ describe("input", () => {
     select.dispatchEvent(arrow);
     expect(arrow.defaultPrevented).toBe(false);
     expect(game.keys.down("ArrowDown")).toBe(false);
+    expect(game.keys.keyDown("ArrowDown")).toBe(false);
   });
 
   it("honors a custom preventKeys set", () => {
     const canvas = document.createElement("canvas");
-    const game = createApp({ canvas, preventKeys: ["KeyZ"] });
+    const game = createRuntime({ canvas, preventKeys: ["KeyZ"] });
     const ez = new KeyboardEvent("keydown", { code: "KeyZ", cancelable: true });
     window.dispatchEvent(ez);
     expect(ez.defaultPrevented).toBe(true);
@@ -481,7 +505,7 @@ describe("live viewport & background", () => {
 
   it("fills the configured background at the start of every frame", () => {
     const canvas = document.createElement("canvas");
-    const game = createApp({ canvas, background: "#123456" });
+    const game = createRuntime({ canvas, background: "#123456" });
     const ctx = game.ctx as unknown as { fillRect: ReturnType<typeof vi.fn>; fillStyle?: string };
     game.run({ update: vi.fn(), draw: vi.fn() });
     tick(16);
@@ -493,7 +517,7 @@ describe("live viewport & background", () => {
     Object.defineProperty(window, "innerWidth", { value: 800, configurable: true });
     Object.defineProperty(window, "innerHeight", { value: 600, configurable: true });
     const canvas = document.createElement("canvas");
-    const game = createApp({ canvas, resolution: { w: 200, h: 200 } });
+    const game = createRuntime({ canvas, resolution: { w: 200, h: 200 } });
     const vp = game.viewport;
     expect(vp.w).toBe(200); // logical size, not the window
     expect(vp.h).toBe(200);
@@ -507,7 +531,7 @@ describe("live viewport & background", () => {
     Object.defineProperty(window, "innerHeight", { value: 600, configurable: true });
     const canvas = document.createElement("canvas");
     canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 800, height: 600 }) as DOMRect;
-    const game = createApp({ canvas, resolution: { w: 200, h: 200 } });
+    const game = createRuntime({ canvas, resolution: { w: 200, h: 200 } });
     // Window center (400,300) → logical center (100,100).
     window.dispatchEvent(new PointerEvent("pointermove", { clientX: 400, clientY: 300 }));
     expect(game.pointer.x).toBeCloseTo(100);
@@ -543,7 +567,7 @@ describe("live viewport & background", () => {
       } as unknown as CanvasRenderingContext2D;
     };
     const canvas = document.createElement("canvas");
-    const game = createApp({ canvas, resolution: { w: 200, h: 200 } });
+    const game = createRuntime({ canvas, resolution: { w: 200, h: 200 } });
     game.run({ update: vi.fn(), draw: () => log.push("draw") });
     tick(16);
     // The draw runs inside clip(rect 0,0,200,200), then the clip is restored.
@@ -562,7 +586,7 @@ describe("plugins", () => {
     const canvas = document.createElement("canvas");
     const calls: string[] = [];
     const hook = (name: string) => () => calls.push(name);
-    const game = createApp({
+    const game = createRuntime({
       canvas,
       plugins: [
         {
@@ -593,7 +617,7 @@ describe("pauseOnPortrait", () => {
       vi.fn(() => ({ matches: true, addEventListener: vi.fn() })),
     );
     const canvas = document.createElement("canvas");
-    const game = createApp({ canvas, pauseOnPortrait: true });
+    const game = createRuntime({ canvas, pauseOnPortrait: true });
     expect(game.paused).toBe(true);
   });
 
@@ -603,48 +627,7 @@ describe("pauseOnPortrait", () => {
       vi.fn(() => ({ matches: false, addEventListener: vi.fn() })),
     );
     const canvas = document.createElement("canvas");
-    const game = createApp({ canvas, pauseOnPortrait: true });
+    const game = createRuntime({ canvas, pauseOnPortrait: true });
     expect(game.paused).toBe(false);
-  });
-});
-
-// NOTE: this block must stay LAST — it initialises the module-global default
-// game via App.init(); no earlier test touches it, so the "before init" case
-// still observes the null default.
-describe("global facade (App / Loop / Keys / Pointer / Draw)", () => {
-  it("throws when a namespace is used before App.init", () => {
-    expect(() => Keys.down("Space")).toThrow(/App\.init/);
-    expect(() => Loop.run({ update: vi.fn(), draw: vi.fn() })).toThrow(/App\.init/);
-    expect(() => Draw.ctx).toThrow(/App\.init/);
-  });
-
-  it("App.init builds the default app and the namespaces delegate to it", () => {
-    const canvas = document.createElement("canvas");
-    canvas.id = "facade";
-    document.body.appendChild(canvas);
-
-    const vp = App.init("facade");
-    expect(vp.canvas).toBe(canvas);
-    expect(App.viewport).toBe(vp);
-    expect(App.canvas).toBe(canvas);
-    expect(Draw.ctx).toBeDefined();
-
-    const drawn = vi.fn();
-    Loop.run({ update: vi.fn(), draw: drawn });
-    tick(16);
-    expect(drawn).toHaveBeenCalled();
-
-    window.dispatchEvent(new KeyboardEvent("keydown", { code: "ArrowUp" }));
-    expect(Keys.down("ArrowUp")).toBe(true);
-    expect(Pointer.x).toBe(-1);
-    expect(Mouse.x).toBe(Pointer.x);
-    expect(Mouse.inside).toBe(false);
-  });
-
-  it("passes plugins from App.init options through to the default app", () => {
-    const canvas = document.createElement("canvas");
-    const onInit = vi.fn();
-    App.init(canvas, { plugins: [{ name: "spy", onInit }] });
-    expect(onInit).toHaveBeenCalledTimes(1);
   });
 });

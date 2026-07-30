@@ -1,23 +1,22 @@
+import { createAnimation } from "minimotor/animation";
+import { createPerformanceMonitoring } from "minimotor/performance";
 // CLOCKWORK: a tiny arcade garden where everything is scheduled, animated and
 // decoupled by engine services. Focus: Clock, Anim motions and Signals.
-import {
-  Anim,
-  Clock,
-  Draw,
-  Gizmos,
-  Keys,
-  Loop,
-  Mathf,
-  Particles,
-  Perf,
-  Pointer,
-  Signals,
-  App,
-  UI,
-} from "minimotor";
-import * as Sfx from "../shared/sfx.ts";
+import { createParticles } from "minimotor/particles";
+import { createUI } from "minimotor/ui";
+import { createSignals, Gizmos, Mathf, App } from "minimotor";
+import { createSfx } from "../shared/sfx.ts";
 
-const vp = App.init("game", { background: "#0b1020", plugins: [Perf.plugin()] }); // live viewport
+const game = App.create("game", { background: "#0b1020" });
+const Anim = createAnimation(game);
+const Signals = createSignals();
+createPerformanceMonitoring(game);
+const vp = game.viewport;
+const { Clock, Draw, Keys, Loop, Pointer } = game;
+const Audio = createAudio(game);
+const Sfx = createSfx(Audio);
+const Particles = createParticles(game);
+const UI = createUI(game); // live viewport
 
 interface Bud {
   x: number;
@@ -27,7 +26,7 @@ interface Bud {
   life: number;
 }
 
-const fx = Particles.create();
+const fx = Particles.createSystem();
 const buds: Bud[] = [];
 const hud = {
   score: 0,
@@ -39,8 +38,8 @@ const hud = {
 };
 // A decaying combo (keep harvesting within the window or the streak drops) and
 // a hit-flash for the "garden went quiet" damage blink.
-const combo = Gizmos.combo({ windowMs: 3200 });
-const damage = Gizmos.flash(320);
+const combo = Gizmos.combo({ windowMs: 3200, clock: Clock.world });
+const damage = Gizmos.flash(320, Clock.world);
 let state = "play";
 function resetRun() {
   buds.length = 0;
@@ -229,3 +228,4 @@ Loop.run({
     }
   },
 });
+import { createAudio } from "minimotor/audio";

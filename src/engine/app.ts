@@ -1,22 +1,13 @@
+import { applyFullscreen, preventNavigation } from "../fullscreen.js";
+import { createClockApi, type ClockApi } from "../clock.js";
 import type { Keys, Pointer } from "./input.js";
-import { clearDefaultApp } from "./default-app.js";
 import type { KeyCode } from "./keycodes.js";
+import { createDraw, type DrawApi } from "./draw.js";
+import { createLoop, type LoopApi } from "./loop.js";
 
-// ---------- Minimal 2D canvas framework ----------
-// The engine is reached through PascalCase `Minimotor.*` namespaces, all backed
-// by ONE default app that `App.init()` builds. Application code never imports
-// an instance and never threads a per-frame context — it reads the namespaces:
-//
-//     const vp = Minimotor.App.init("game", { plugins: [Minimotor.Perf.plugin()] });
-//
-//     Minimotor.Loop.run({
-//       update() { if (Minimotor.Keys.pressed("Space")) jump(); },
-//       draw()   { Minimotor.Draw.ctx.clearRect(0, 0, vp.w, vp.h); },
-//     });
-//
-// `createApp()` below returns an isolated `App` and stays exported for tests
-// (and anyone who genuinely needs multiple independent apps). The namespaces
-// are thin facades over the default instance it produces.
+// ---------- Runtime ----------
+// One private canvas runtime backs each public app. Game code receives the
+// PascalCase services assembled by `createApp()` at the bottom of this file.
 //
 // Convention: read input (`Keys`/`Pointer`) in `update`, draw (`Draw.ctx`) in
 // `draw`. It isn't type-enforced, but edge input (`pressed`/`released`) is only
@@ -66,28 +57,28 @@ export interface Viewport {
   offsetY: number;
 }
 
-/** Plugins hook into the app lifecycle; each hook receives the `App`.
- *  Register with the builder's `use()` or `Loop.use()`. */
+/** Plugins hook into the app lifecycle; each hook receives its app.
+ *  Register with that app's `use()`. */
 export interface EnginePlugin {
   /** Plugin name, for identification/debugging. */
   name: string;
   /** Called once after the canvas is ready, before the first frame. */
-  onInit?: (app: App) => void;
+  onInit?: (app: Runtime) => void;
   /** Called once per frame, before the user's update step(s). */
-  beforeUpdate?: (app: App) => void;
+  beforeUpdate?: (app: Runtime) => void;
   /** Called once per frame, after the user's update step(s). */
-  afterUpdate?: (app: App) => void;
+  afterUpdate?: (app: Runtime) => void;
   /** Called before the user's draw. */
-  beforeDraw?: (app: App) => void;
+  beforeDraw?: (app: Runtime) => void;
   /** Called after the user's draw. */
-  afterDraw?: (app: App) => void;
+  afterDraw?: (app: Runtime) => void;
   /** Called after a viewport resize. */
-  onResize?: (app: App) => void;
+  onResize?: (app: Runtime) => void;
+  /** Called when the app is destroyed. Remove global listeners here. */
+  onDestroy?: (app: Runtime) => void;
 }
 
-/** The per-frame callbacks. Input is read from the polled namespaces
- *  (`Minimotor.Keys` / `Minimotor.Pointer`) or, for an isolated app, its
- *  props. */
+/** The per-frame callbacks. Input is read from the game's polled services. */
 export interface AppCallbacks {
   /** Fixed-timestep simulation. May run 0..N times per rendered frame; every
    *  call represents exactly one fixed step (1000/60 ms), so THE STEP IS THE
@@ -111,26 +102,26 @@ export interface FrameTimings {
   steps: number;
 }
 
-/** An isolated built app. Its state (`keys`, `ctx`, …) is read directly; the
- *  `Minimotor.*` namespaces expose the same surface on the default instance. */
-export interface App {
+/** An isolated built app. Its state (`keys`, `ctx`, …) is read directly. */
+export interface Runtime {
   /** The backing canvas element. */
   readonly canvas: HTMLCanvasElement;
   /** The 2D drawing context (`draw` gets the same one as its argument). */
   readonly ctx: CanvasRenderingContext2D;
   /** The live viewport (same object forever; fields mutate in place on resize). */
   readonly viewport: Viewport;
-  /** Polled keyboard state — read in `update` (`Minimotor.Keys` on the default app). */
+  /** Polled keyboard state — read in `update`. */
   readonly keys: Keys;
-  /** Polled pointer state — read in `update` (`Minimotor.Pointer` on the default app). */
+  /** Polled pointer state — read in `update`. */
   readonly pointer: Pointer;
-  /** Real time since the previous frame, in fixed steps. */
-  readonly frameScale: number;
-  /** Render interpolation factor 0..1: how far the unsimulated remainder of
-   *  real time has progressed into the next fixed step. Draw at
-   *  `prev + (curr - prev) * alpha` for stutter-free motion on non-60 Hz
-   *  displays. */
-  readonly alpha: number;
+  /** Real time since the previous rendered frame, in milliseconds. */
+  readonly frameDelta: number;
+  /** How far the unsimulated remainder has progressed between the previous and
+   * current fixed states, from 0 to 1. Render at
+   * `prev + (curr - prev) * interpolation` for smooth motion. */
+  readonly interpolation: number;
+  /** Fixed updates completed by this app since it was created. */
+  readonly steps: number;
   /** True while paused: `update` is frozen but `draw` keeps running. */
   readonly paused: boolean;
   /** Last frame's update/draw cost (see `FrameTimings`). The same object is
@@ -163,7 +154,7 @@ export interface App {
   /** Register a plugin after build (calls its `onInit` immediately). */
   use(plugin: EnginePlugin): void;
   /** Register callbacks and start the loop (idempotent restart of callbacks). */
-  run(callbacks: AppCallbacks): App;
+  run(callbacks: AppCallbacks): Runtime;
   /** Freeze updates; `draw` keeps running so overlays can render. */
   pause(): void;
   /** Resume from a `pause()`. */
@@ -172,13 +163,13 @@ export interface App {
   stop(): void;
   /** Tear the app down: stop the loop and remove every window/canvas listener
    *  it registered. The instance is unusable afterwards. Needed for tests,
-   *  hot-reload, and re-running `App.init`. */
+   *  hot-reload, and replacing a game instance. */
   destroy(): void;
 }
 
 /** Config for building an app instance — canvas, resolution, plugins, and
  *  input/clear behavior. */
-export interface AppOptions {
+export interface RuntimeOptions {
   /** Canvas element id (without `#`) or the element itself. */
   canvas: string | HTMLCanvasElement;
   /** Key codes whose default browser action (scrolling, etc.) is suppressed
@@ -198,7 +189,7 @@ export interface AppOptions {
   resolution?: { w: number; h: number };
   /** Letterbox bar color (only with `resolution`). Default "#000". */
   barColor?: string;
-  /** Lifecycle plugins (e.g. `Perf.plugin()`). */
+  /** Low-level lifecycle plugins used by game-bound capability factories. */
   plugins?: EnginePlugin[];
   /** Auto-pause while a coarse-pointer device is held in portrait. Default
    *  false. */
@@ -213,22 +204,6 @@ export const STEP_MS = 1000 / 60;
 const DOUBLE_PRESS_MS = 300;
 const DOUBLE_CLICK_SLOP = 24;
 
-// Global fixed-step counter: the engine's heartbeat, shared by every app
-// instance (in practice one runs at a time). Pull-based content (cameras,
-// motions, cursors) folds forward by "steps elapsed since my last read"
-// instead of registering step handlers — see API_PLAN law 4.
-let globalSteps = 0;
-
-/** Number of fixed update steps executed since module load. Monotonic; the
- *  time base for pull-derived content. */
-export function stepNow(): number {
-  return globalSteps;
-}
-
-function advanceStepCounter(): void {
-  globalSteps += 1;
-}
-
 /** Spiral-of-death guard: at most this many catch-up steps per frame; any
  *  further backlog is dropped (better a one-off slow-motion hitch than a
  *  feedback loop of ever-longer frames). */
@@ -236,19 +211,17 @@ const MAX_CATCHUP_STEPS = 5;
 
 const DEFAULT_PREVENT_KEYS = ["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"];
 
-/** Create an isolated app. Prefer `Minimotor.App.init()` for app code;
- *  this stays exported for tests and multi-app scenarios. */
-export function createApp(options: AppOptions): App {
-  return buildApp(options);
+/** Build the low-level canvas runtime used by `createApp()`. */
+export function createRuntime(options: RuntimeOptions): Runtime {
+  return buildRuntime(options);
 }
 
-// Canvas → app registry. UI code handed only a rendering context (via
-// `UI.begin`) uses this to reach the right app's pointer/viewport/cursor —
-// the piece that lets two independent apps each drive their own UI.
-const appsByCanvas = new WeakMap<HTMLCanvasElement, App>();
+// Canvas → runtime registry. A game-bound UI uses its rendering context to
+// reach the right pointer/viewport/cursor, so two apps remain isolated.
+const appsByCanvas = new WeakMap<HTMLCanvasElement, Runtime>();
 
 /** The app bound to `canvas`, or `null` — isolated instances included. */
-export function appForCanvas(canvas: HTMLCanvasElement): App | null {
+export function appForCanvas(canvas: HTMLCanvasElement): Runtime | null {
   return appsByCanvas.get(canvas) ?? null;
 }
 
@@ -259,7 +232,7 @@ function resolveCanvas(canvas: string | HTMLCanvasElement): HTMLCanvasElement {
   return el as HTMLCanvasElement;
 }
 
-function buildApp(options: AppOptions): App {
+function buildRuntime(options: RuntimeOptions): Runtime {
   const plugins = [...(options.plugins ?? [])];
   const pauseOnPortrait = options.pauseOnPortrait ?? false;
   const canvas = resolveCanvas(options.canvas);
@@ -357,12 +330,19 @@ function buildApp(options: AppOptions): App {
   // `doublePressed` is true for exactly one step, like `pressed`.
   const doublePressedKeys = new Set<string>();
   const lastKeyDownAt = new Map<string, number>();
+  const heldKeyValues = new Set<string>();
+  const pressedKeyValues = new Set<string>();
+  const releasedKeyValues = new Set<string>();
+  const keyValueByCode = new Map<string, string>();
 
   const keys: Keys = {
     down: (code) => heldKeys.has(code),
     pressed: (code) => pressedKeys.has(code),
     released: (code) => releasedKeys.has(code),
     doublePressed: (code) => doublePressedKeys.has(code),
+    keyDown: (key) => heldKeyValues.has(key),
+    keyPressed: (key) => pressedKeyValues.has(key),
+    keyReleased: (key) => releasedKeyValues.has(key),
   };
 
   const ptr = {
@@ -418,7 +398,7 @@ function buildApp(options: AppOptions): App {
   };
 
   // ---- Frame state ----
-  let frameScale = 1;
+  let frameDelta = STEP_MS;
   const timings: FrameTimings = { updateMs: 0, drawMs: 0, steps: 0 };
   let paused = false;
   let callbacks: AppCallbacks | null = null;
@@ -426,6 +406,7 @@ function buildApp(options: AppOptions): App {
   let destroyed = false;
   let lastTime = 0;
   let accumulator = 0;
+  let stepsElapsed = 0;
 
   const preventKeys = new Set(options.preventKeys ?? DEFAULT_PREVENT_KEYS);
   const editingText = (target: EventTarget | null) => {
@@ -446,6 +427,9 @@ function buildApp(options: AppOptions): App {
     if (preventKeys.has(e.code)) e.preventDefault();
     if (!heldKeys.has(e.code)) {
       pressedKeys.add(e.code); // ignore auto-repeat
+      pressedKeyValues.add(e.key);
+      heldKeyValues.add(e.key);
+      keyValueByCode.set(e.code, e.key);
       const t = performance.now();
       if (t - (lastKeyDownAt.get(e.code) ?? Number.NEGATIVE_INFINITY) <= DOUBLE_PRESS_MS) {
         doublePressedKeys.add(e.code);
@@ -456,8 +440,12 @@ function buildApp(options: AppOptions): App {
   };
   const onKeyUp = (e: KeyboardEvent) => {
     heldKeys.delete(e.code); // also clear a held key if focus changed mid-hold
+    const key = keyValueByCode.get(e.code) ?? e.key;
+    keyValueByCode.delete(e.code);
+    heldKeyValues.delete(key);
     if (editingText(e.target)) return;
     releasedKeys.add(e.code);
+    releasedKeyValues.add(key);
   };
   window.addEventListener("keydown", onKeyDown);
   window.addEventListener("keyup", onKeyUp);
@@ -571,6 +559,8 @@ function buildApp(options: AppOptions): App {
     pressedKeys.clear();
     releasedKeys.clear();
     doublePressedKeys.clear();
+    pressedKeyValues.clear();
+    releasedKeyValues.clear();
     ptr.pressed = false;
     ptr.released = false;
     ptr.doublePressed = false;
@@ -652,7 +642,7 @@ function buildApp(options: AppOptions): App {
     if (paused) {
       lastTime = time;
       accumulator = 0;
-      frameScale = 0;
+      frameDelta = 0;
       // No step will consume edge input while paused — drop it so a key pressed
       // mid-pause doesn't fire pressed() on the first step after resume().
       consumeEdges();
@@ -667,7 +657,7 @@ function buildApp(options: AppOptions): App {
     let elapsed = time - lastTime;
     lastTime = time;
     if (elapsed > 250) elapsed = 250;
-    frameScale = elapsed / STEP_MS;
+    frameDelta = elapsed;
     accumulator += elapsed;
 
     for (const p of plugins) p.beforeUpdate?.(app);
@@ -680,7 +670,7 @@ function buildApp(options: AppOptions): App {
         accumulator = 0;
         break;
       }
-      advanceStepCounter();
+      stepsElapsed += 1;
       for (const h of stepStartHandlers) h(); // poll-only inputs sample here
       callbacks!.update();
       for (const h of stepHandlers) h(); // timers / tweens advance one step
@@ -702,7 +692,7 @@ function buildApp(options: AppOptions): App {
     endFrame();
   }
 
-  const app: App = {
+  const app: Runtime = {
     canvas,
     ctx,
     get viewport() {
@@ -710,11 +700,14 @@ function buildApp(options: AppOptions): App {
     },
     keys,
     pointer,
-    get frameScale() {
-      return frameScale;
+    get frameDelta() {
+      return frameDelta;
     },
-    get alpha() {
+    get interpolation() {
       return accumulator / STEP_MS;
+    },
+    get steps() {
+      return stepsElapsed;
     },
     get paused() {
       return paused;
@@ -801,12 +794,12 @@ function buildApp(options: AppOptions): App {
       canvas.removeEventListener("touchend", onTouchEnd);
       canvas.removeEventListener("selectstart", stopGesture);
       if (portraitMq && portraitApply) portraitMq.removeEventListener?.("change", portraitApply);
+      for (const p of plugins) p.onDestroy?.(app);
       stepHandlers.clear();
       stepStartHandlers.clear();
       frameHandlers.clear();
       resizeHandlers.clear();
       if (appsByCanvas.get(canvas) === app) appsByCanvas.delete(canvas);
-      clearDefaultApp(app);
     },
   };
 
@@ -900,3 +893,100 @@ function readViewport(canvas: HTMLCanvasElement, resolution?: { w: number; h: nu
     offsetY,
   };
 }
+
+// ---------- Public app ----------
+
+/** One completely isolated game application. Optional systems bind directly
+ * to this object through their own factories. */
+export interface Game {
+  readonly canvas: HTMLCanvasElement;
+  readonly ctx: CanvasRenderingContext2D;
+  readonly viewport: Viewport;
+  readonly Draw: DrawApi;
+  readonly Loop: LoopApi;
+  readonly Clock: ClockApi;
+  readonly Keys: Keys;
+  readonly Pointer: Pointer;
+  readonly Mouse: Pointer;
+  readonly visible: boolean;
+  readonly focused: boolean;
+  resetTransform(): void;
+  setCursor(cursor: string, priority?: number): void;
+  onResize(handler: Parameters<Runtime["onResize"]>[0]): () => void;
+  use(plugin: EnginePlugin): void;
+  destroy(): void;
+}
+
+export interface AppOptions extends Omit<RuntimeOptions, "canvas"> {
+  fullscreen?: boolean;
+  preventNavigation?: boolean;
+  pauseWhenHidden?: boolean;
+  pauseWhenBlurred?: boolean;
+}
+
+/** Create one isolated game application. */
+export function createApp(canvas: string | HTMLCanvasElement, options: AppOptions = {}): Game {
+  if (options.fullscreen) applyFullscreen();
+  if (options.preventNavigation) preventNavigation(true);
+  const {
+    fullscreen: _fullscreen,
+    preventNavigation: _navigation,
+    pauseWhenHidden,
+    pauseWhenBlurred,
+    ...runtimeOptions
+  } = options;
+  const runtime = createRuntime({ canvas, ...runtimeOptions });
+  let visible = typeof document === "undefined" || document.visibilityState !== "hidden";
+  let focused = typeof document === "undefined" || document.hasFocus();
+  const game = {
+    canvas: runtime.canvas,
+    ctx: runtime.ctx,
+    viewport: runtime.viewport,
+    Draw: createDraw(runtime),
+    Loop: createLoop(runtime),
+    Clock: createClockApi(runtime),
+    Keys: runtime.keys,
+    Pointer: runtime.pointer,
+    Mouse: runtime.pointer,
+    get visible() {
+      return visible;
+    },
+    get focused() {
+      return focused;
+    },
+    resetTransform: () => runtime.resetTransform(),
+    setCursor: (cursor: string, priority?: number) => runtime.setCursor(cursor, priority),
+    onResize: (handler: Parameters<Runtime["onResize"]>[0]) => runtime.onResize(handler),
+    use: (plugin: EnginePlugin) => runtime.use(plugin),
+    destroy: () => {},
+  } satisfies Game;
+
+  if (typeof document !== "undefined" && typeof window !== "undefined") {
+    const syncLifecycle = () => {
+      visible = document.visibilityState !== "hidden";
+      focused = document.hasFocus();
+      if ((pauseWhenHidden && !visible) || (pauseWhenBlurred && !focused)) game.Loop.pause();
+    };
+    document.addEventListener("visibilitychange", syncLifecycle);
+    window.addEventListener("focus", syncLifecycle);
+    window.addEventListener("blur", syncLifecycle);
+    runtime.use({
+      name: "Lifecycle",
+      onDestroy() {
+        document.removeEventListener("visibilitychange", syncLifecycle);
+        window.removeEventListener("focus", syncLifecycle);
+        window.removeEventListener("blur", syncLifecycle);
+      },
+    });
+  }
+
+  game.destroy = () => runtime.destroy();
+  return game;
+}
+
+/** App creation plus page-level presentation helpers. */
+export const App = {
+  create: createApp,
+  fullscreen: applyFullscreen,
+  preventNavigation,
+};

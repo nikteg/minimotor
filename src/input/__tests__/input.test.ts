@@ -5,9 +5,7 @@ import {
   vibrate,
   map,
   createGamepadTracker,
-  gamepads,
   navigation,
-  registerGamepad,
 } from "../index.js";
 
 beforeEach(() => {
@@ -266,15 +264,6 @@ describe("Input", () => {
         acceptPressed: true,
         cancelPressed: true,
       });
-    });
-
-    it("discovers registered virtual pads until they unregister", () => {
-      const pad = createGamepadTracker(() => fakePad());
-      pad.poll();
-      const unregister = registerGamepad(pad);
-      expect(gamepads()).toContain(pad);
-      unregister();
-      expect(gamepads()).not.toContain(pad);
     });
 
     it("reports disconnect and releases held buttons exactly once", () => {

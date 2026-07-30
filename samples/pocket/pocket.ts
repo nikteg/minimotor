@@ -1,21 +1,13 @@
+import { createPerformanceMonitoring } from "minimotor/performance";
 // POCKET ASTEROIDS: a complete vector arcade loop in a fixed 16:9 viewport.
 // Focus: App fullscreen + `resolution` letterbox, Goodies torus helpers,
 // Input.map with pad bindings.
 // Controls: left/right rotate, up thrusts, Space fires, H hyperspace.
-import {
-  Draw,
-  Game,
-  Gizmos,
-  Goodies,
-  Input,
-  Loop,
-  Mathf,
-  Particles,
-  Perf,
-  App,
-  UI,
-} from "minimotor";
-import * as Sfx from "../shared/sfx.ts";
+import { createInput } from "minimotor/input";
+import { createParticles } from "minimotor/particles";
+import { createUI } from "minimotor/ui";
+import { Game, Gizmos, Goodies, Mathf, App } from "minimotor";
+import { createSfx } from "../shared/sfx.ts";
 
 // A roomier logical viewport keeps ships and rocks readable on large screens.
 const W = 480,
@@ -24,13 +16,19 @@ const W = 480,
 // (uniform scale + bars) at any window size, so the vector art never distorts.
 // All drawing is in logical W×H space — no manual save/translate/scale. The
 // engine owns clearing: `background` is the field, `barColor` the bars.
-App.init("game", {
+const game = App.create("game", {
   fullscreen: true,
   resolution: { w: W, h: H },
   background: "#080d1b",
   barColor: "#03050c",
-  plugins: [Perf.plugin()],
 });
+createPerformanceMonitoring(game);
+const { Clock, Draw, Loop } = game;
+const Audio = createAudio(game);
+const Sfx = createSfx(Audio);
+const Input = createInput(game);
+const Particles = createParticles(game);
+const UI = createUI(game, Input);
 const input = Input.map({
   left: ["ArrowLeft", "KeyA", "pad:dpad-left", "pad:lstick-left"],
   right: ["ArrowRight", "KeyD", "pad:dpad-right", "pad:lstick-right"],
@@ -45,11 +43,11 @@ const BULLET_SPEED = 3.7; // px/step (was 220 px/s)
 const BULLET_TTL = 66; // steps (was 1.1 s)
 const FIRE_COOLDOWN = 11; // steps (was 0.18 s)
 const best = Game.createScoreTracker("pocket-asteroids-best");
-const fx = Particles.create();
+const fx = Particles.createSystem();
 const ship = { x: W / 2, y: H / 2, vx: 0, vy: 0, angle: -Math.PI / 2, cooldown: 0, invuln: 0 };
 // One hyperspace jump that recharges over 4s (a Goodies charge meter). fraction
 // drives the HUD bar; refill() tops it off on respawn.
-const hyper = Gizmos.charges({ max: 1, refillMs: 4000 });
+const hyper = Gizmos.charges({ max: 1, refillMs: 4000, clock: Clock.world });
 interface Bullet {
   x: number;
   y: number;
@@ -361,3 +359,4 @@ Loop.run({
     }
   },
 });
+import { createAudio } from "minimotor/audio";

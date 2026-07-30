@@ -1,26 +1,23 @@
+import { createPerformanceMonitoring } from "minimotor/performance";
 // Scenes: menu -> play -> game over, with a pause overlay pushed on top.
 // Demonstrates: Scenes.create typed map + Loop.run(scenes), go/push/pop,
 // enter/exit lifecycle, stacked draw, transitions — fade into play, wipe down
 // into game over — and the UI helpers: immediate-mode buttons (menu / game
 // over), floating score text, a time bar. A push holds Clock.world, so the
 // world beneath the pause overlay freezes for free.
-import {
-  Audio,
-  Collision,
-  Draw,
-  Game,
-  Keys,
-  Loop,
-  Mathf,
-  Perf,
-  Scenes,
-  App,
-  Transitions,
-  UI,
-} from "minimotor";
-import type { DrawTextOptions } from "minimotor";
+import { createAudio } from "minimotor/audio";
+import { createScenes } from "minimotor/scenes";
+import { createUI } from "minimotor/ui";
+import { Collision, Game, Mathf, App, Transitions } from "minimotor";
+import { DrawTextOptions } from "minimotor";
 
-const view = App.init("game", { background: "#12141c", plugins: [Perf.plugin()] }); // live viewport — every scene lays out from it
+const game = App.create("game", { background: "#12141c" });
+createPerformanceMonitoring(game);
+const view = game.viewport;
+const { Draw, Keys, Loop } = game;
+const Audio = createAudio(game);
+const Scenes = createScenes(game);
+const UI = createUI(game); // live viewport — every scene lays out from it
 
 const center = (text: string, y: number, opts: Partial<DrawTextOptions> = {}) =>
   Draw.text(text, { x: view.w / 2, y, align: "center", ...opts });

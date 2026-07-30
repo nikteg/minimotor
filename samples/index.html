@@ -641,8 +641,8 @@
           "dual-canvas",
           "Dual Canvas",
           "",
-          ["App.create", "UI.begin", "multi-game"],
-          "Two independent games on one page — the default game plus an isolated App.create instance, each driving its own immediate-mode UI via UI.begin(ctx).",
+          ["createApp", "createUI", "multi-game"],
+          "Two independent apps on one page, each driving its own explicitly bound immediate-mode UI.",
         ],
         [
           "swept",
@@ -650,6 +650,13 @@
           "",
           ["Collision", "sweptAABB"],
           "A projectile into a thin wall — toggle swept vs per-frame overlap and watch fast movers tunnel.",
+        ],
+        [
+          "netroom",
+          "Net Room",
+          "",
+          ["Net.game", "share", "multiplayer"],
+          "The smallest real multiplayer game: join a room, share a blob, grab shared coins. Add ?server to route the identical code through a dedicated server instead of peer-to-peer.",
         ],
         [
           "netpeer",

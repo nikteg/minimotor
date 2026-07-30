@@ -1,5 +1,6 @@
-import { Mathf, UI } from "minimotor";
+import { Mathf } from "minimotor";
 import type { Component, Ecs } from "minimotor";
+import type { UiApi } from "minimotor/ui";
 import {
   CAR_TYPES,
   WEAPONS,
@@ -61,7 +62,7 @@ export interface HudState {
   vp: { w: number; h: number };
 }
 
-export function createRoadHud(getState: () => HudState) {
+export function createRoadHud(UI: UiApi, getState: () => HudState) {
   function drawEnterCarPrompt() {
     const { camera, gameState, nearestEnterableCar, player, vp } = getState();
     const nearCar = nearestEnterableCar();

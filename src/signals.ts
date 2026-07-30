@@ -4,8 +4,9 @@
 // dependency. Handler exceptions are isolated so one bad listener can't stop
 // the rest (or crash the loop).
 //
-//   Minimotor.Signals.on("score", n => hud.score += n);
-//   Minimotor.Signals.emit("score", 10);
+//   const Signals = createSignals();
+//   Signals.on("score", n => hud.score += n);
+//   Signals.emit("score", 10);
 
 type Handler = (payload: unknown) => void;
 
@@ -99,12 +100,3 @@ export function createSignals(): SignalBus {
   };
   return bus;
 }
-
-/** The default global bus (`Minimotor.Signals`) — fire-and-forget events that
- *  decouple systems (gameplay emits, HUD/audio listen). `on` returns its own
- *  unsubscribe function.
- *
- *    const off = Signals.on("score", (n) => (hud.score += n));
- *    Signals.emit("score", 10);
- */
-export const Signals = createSignals();

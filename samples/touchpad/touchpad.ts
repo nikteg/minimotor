@@ -1,6 +1,16 @@
-import { App, Loop, Draw, Input, OnscreenInput, Goodies, Gizmos, Perf, UI } from "minimotor";
+import { createPerformanceMonitoring } from "minimotor/performance";
+import { createInput } from "minimotor/input";
+import { createOnscreenInput } from "minimotor/onscreen-input";
+import { createUI } from "minimotor/ui";
+import { App, Goodies, Gizmos } from "minimotor";
 
-const view = App.init("game", { background: "#0f141a", plugins: [Perf.plugin()] });
+const game = App.create("game", { background: "#0f141a" });
+createPerformanceMonitoring(game);
+const view = game.viewport;
+const { Loop, Draw } = game;
+const Input = createInput(game);
+const UI = createUI(game, Input);
+const OnscreenInput = createOnscreenInput(game, Input);
 
 // An on-screen gamepad: a left analog stick + two face buttons. `autohide:false`
 // keeps it on screen on desktop too — a mouse drives it while it's visible, and

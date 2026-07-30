@@ -1,5 +1,3 @@
-import { Loop } from "../engine/index.js";
-
 // ---------- Gamepad ----------
 // The Gamepad API is poll-only, so state is sampled at the start of every
 // fixed step (`Loop.onStepStart`, before the user's `update`) and exposed with
@@ -87,8 +85,8 @@ export function navigation(
 const DEADZONE = 0.15;
 
 /** Create a gamepad tracker fed by `read` (injectable for tests). Call `poll()`
- *  once per fixed step; the default `Input.gamepad()` facade wires this to
- *  `Loop.onStepStart` for you. */
+ * once per fixed step; game-bound `Input.gamepad()` wires this to that game's
+ * `Loop.onStepStart` for you. */
 export function createGamepadTracker(
   read: () => Gamepad | null | undefined,
 ): GamepadState & { poll(): void } {
@@ -132,80 +130,4 @@ export function createGamepadTracker(
       }
     },
   };
-}
-
-// Default facade: one tracker per pad index, polled on the loop's fixed step.
-const defaultPads = new Map<number, ReturnType<typeof createGamepadTracker>>();
-const registeredPads = new Set<GamepadState>();
-
-let padsWired = false;
-
-function ensurePadsWired(): void {
-  if (padsWired) return;
-  try {
-    Loop.onStepStart(() => {
-      for (const pad of defaultPads.values()) pad.poll();
-    });
-    padsWired = true;
-  } catch {
-    // No default app yet — polling retries wiring on the next gamepad() call.
-  }
-}
-
-/** The default gamepad (or pad `index`), polled on the loop's fixed step.
- *  Safe everywhere: reports `connected: false` and neutral inputs where the
- *  Gamepad API is unsupported or nothing is plugged in.
- *
- *    const pad = Minimotor.Input.gamepad();
- *    if (pad.pressed(Input.Buttons.A)) jump();
- *    player.x += pad.axis(0) * speed; */
-export function gamepad(index = 0): GamepadState {
-  ensurePadsWired();
-  let pad = defaultPads.get(index);
-  if (!pad) {
-    pad = createGamepadTracker(() =>
-      typeof navigator !== "undefined" && typeof navigator.getGamepads === "function"
-        ? navigator.getGamepads()[index]
-        : null,
-    );
-    defaultPads.set(index, pad);
-  }
-  return pad;
-}
-
-const connectedPads: GamepadState[] = [];
-
-/** Register a virtual or externally managed pad for APIs that discover all
- * gamepads, such as UI navigation. Engine-created on-screen pads register
- * themselves; custom integrations can use the returned cleanup function. */
-export function registerGamepad(pad: GamepadState): () => void {
-  registeredPads.add(pad);
-  return () => registeredPads.delete(pad);
-}
-
-/** Every connected registered and hardware gamepad. Returns a reused array;
- * read it, don't hold it. */
-export function gamepads(): readonly GamepadState[] {
-  connectedPads.length = 0;
-  for (const pad of registeredPads) {
-    if (pad.connected) connectedPads.push(pad);
-  }
-  const raw =
-    typeof navigator !== "undefined" && typeof navigator.getGamepads === "function"
-      ? navigator.getGamepads()
-      : [];
-  for (let i = 0; i < raw.length; i++) {
-    if (!raw[i]) continue;
-    const pad = gamepad(i);
-    if (pad.connected && !connectedPads.includes(pad)) connectedPads.push(pad);
-  }
-  return connectedPads;
-}
-
-/** Reset gamepad facade state and loop wiring — for tests. */
-export function _resetGamepads(): void {
-  defaultPads.clear();
-  registeredPads.clear();
-  connectedPads.length = 0;
-  padsWired = false;
 }

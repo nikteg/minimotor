@@ -1,0 +1,15 @@
+{
+  "frames": [
+    { "frame": { "x": 0, "y": 0, "w": 15, "h": 13 }, "duration": 167 },
+    { "frame": { "x": 15, "y": 0, "w": 15, "h": 13 }, "duration": 167 },
+    { "frame": { "x": 30, "y": 0, "w": 15, "h": 13 }, "duration": 167 },
+    { "frame": { "x": 45, "y": 0, "w": 15, "h": 13 }, "duration": 167 },
+    { "frame": { "x": 60, "y": 0, "w": 15, "h": 13 }, "duration": 167 }
+  ],
+  "meta": {
+    "app": "https://www.aseprite.org/",
+    "image": "gem.png",
+    "size": { "w": 75, "h": 13 },
+    "frameTags": [{ "name": "spin", "from": 0, "to": 4, "direction": "forward" }]
+  }
+}

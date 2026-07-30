@@ -1,4 +1,5 @@
-import { Loop, STEP_MS } from "../engine/index.js";
+import { everyMs } from "./rate.js";
+import type { SyncCodec } from "./body-codec.js";
 import { createRoster } from "./roster.js";
 import type { Room } from "./room.js";
 
@@ -8,6 +9,8 @@ const composite = (owner: string, id: string): string => `${owner}\0${id}`;
 interface EntityEnvelope<S> {
   [ENTITIES_KEY]: 1;
   entities: Array<{ id: string; state: S }>;
+  /** The sender's clock when the batch was sampled — see `Interpolator.push`. */
+  t?: number;
 }
 
 export interface SyncEntitiesOptions<E, S extends object> {
@@ -21,6 +24,8 @@ export interface SyncEntitiesOptions<E, S extends object> {
   extrapolate?: (a: S, b: S, t: number) => S;
   maxExtrapolationMs?: number;
   now?: () => number;
+  /** Pack the batch into a binary lane instead of JSON — see `SyncOptions`. */
+  codec?: SyncCodec<Array<{ id: string; state: S }>>;
 }
 
 export type RemoteEntity<S extends object> = S & { id: string; owner: string };
@@ -57,18 +62,35 @@ export function syncEntities<E, S extends object>(
     value !== null &&
     (value as Record<string, unknown>)[ENTITIES_KEY] === 1;
 
-  const offMessage = room.onMessage((owner, message) => {
-    if (!isMessage(message)) return;
+  const clock = options.now ?? (() => performance.now());
+  const codec = options.codec;
+
+  /** One peer's advertised set: update what it still owns, despawn the rest. */
+  const applyBatch = (
+    owner: string,
+    entities: Array<{ id: string; state: S }>,
+    sentAt: number | undefined,
+  ): void => {
     const next = new Set<string>();
-    for (const entity of message.entities) {
+    const at = clock();
+    for (const entity of entities) {
       next.add(entity.id);
-      roster.update(composite(owner, entity.id), entity.state);
+      roster.update(composite(owner, entity.id), entity.state, at, sentAt);
     }
     for (const old of ownerIds.get(owner) ?? []) {
       if (!next.has(old)) roster.remove(composite(owner, old));
     }
     ownerIds.set(owner, next);
-  });
+  };
+
+  const offMessage = codec
+    ? room.onBytes(codec.tag, (owner, bytes) => {
+        const packet = codec.decode(bytes);
+        if (packet) applyBatch(owner, packet.state, packet.sentAt);
+      })
+    : room.onMessage((owner, message) => {
+        if (isMessage(message)) applyBatch(owner, message.entities, message.t);
+      });
   const offLeave = room.onLeave((owner) => {
     for (const id of ownerIds.get(owner) ?? []) roster.remove(composite(owner, id));
     ownerIds.delete(owner);
@@ -81,30 +103,23 @@ export function syncEntities<E, S extends object>(
       id: options.id(entity),
       state: options.state(entity),
     }));
-    (room as Room<EntityEnvelope<S>>).send({ [ENTITIES_KEY]: 1, entities });
+    const sentAt = clock();
+    if (codec) room.sendBytes(codec.tag, codec.encode(entities, sentAt), { reliable: false });
+    else {
+      (room as Room<EntityEnvelope<S>>).send(
+        { [ENTITIES_KEY]: 1, entities, t: sentAt },
+        { reliable: false },
+      );
+    }
   };
 
-  let acc = 0;
-  let interval: ReturnType<typeof setInterval> | null = null;
-  let offStep: (() => void) | null = null;
-  try {
-    offStep = Loop.onStep(() => {
-      acc += STEP_MS;
-      if (acc >= intervalMs) {
-        acc = 0;
-        broadcast();
-      }
-    });
-  } catch {
-    interval = setInterval(broadcast, intervalMs);
-  }
+  const offTick = everyMs(intervalMs, broadcast);
 
   let stopped = false;
   function stop(): void {
     if (stopped) return;
     stopped = true;
-    offStep?.();
-    if (interval !== null) clearInterval(interval);
+    offTick();
     offMessage();
     offLeave();
     roster.clear();
@@ -139,7 +154,8 @@ export interface EntityBinding<T> {
 }
 
 /** Bind synchronized states to live render objects or kinematic physics
- * proxies. Automatically updates once per fixed step when an App is running. */
+ * proxies. Call `update` from the game loop, or use game-bound `Net.bindEntities`
+ * to have it scheduled automatically. */
 export function bindEntities<S extends object, T>(
   states: EntityStates<S>,
   options: BindEntitiesOptions<S, T>,
@@ -163,17 +179,10 @@ export function bindEntities<S extends object, T>(
       bound.delete(key);
     }
   };
-  let offStep: (() => void) | null = null;
-  try {
-    offStep = Loop.onStep(update);
-  } catch {
-    // Headless callers invoke update() themselves.
-  }
   return {
     entities: bound,
     update,
     stop() {
-      offStep?.();
       for (const target of bound.values()) options.destroy?.(target);
       bound.clear();
     },

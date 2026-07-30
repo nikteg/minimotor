@@ -6,6 +6,7 @@ import { defineConfig, type Plugin } from "vite";
 import { WebSocketServer } from "ws";
 import { createRoadRivalsServer } from "./samples/road-rivals/src/server/index.js";
 import { signaling } from "./src/net/server/signaling.js";
+import { rooms } from "./src/net/server/rooms.js";
 
 const here = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
@@ -41,6 +42,8 @@ function attach(httpServer: Server | null): void {
   const relay = new WebSocketServer({ noServer: true });
   const signal = new WebSocketServer({ noServer: true });
   signaling(signal);
+  const roomServer = new WebSocketServer({ noServer: true });
+  rooms(roomServer);
   const road = createRoadRivalsServer();
   echo.on("connection", (sock) => {
     sock.on("message", (data, isBinary) => sock.send(data, { binary: isBinary }));
@@ -62,9 +65,11 @@ function attach(httpServer: Server | null): void {
           ? relay
           : path === "/ws-signal"
             ? signal
-            : path === "/ws-road-rivals"
-              ? road
-              : null;
+            : path === "/ws-rooms"
+              ? roomServer
+              : path === "/ws-road-rivals"
+                ? road
+                : null;
     if (!wss) return;
     wss.handleUpgrade(req, socket, head, (sock) => wss.emit("connection", sock, req));
   });
@@ -116,6 +121,45 @@ export default defineConfig({
     // "/physics2d" subpath (string aliases also match "<find>/…" prefixes).
     alias: [
       { find: "minimotor/physics2d", replacement: here("./build/physics2d.js") },
+      {
+        find: "minimotor/animation",
+        replacement: here("./build/features/animation/index.js"),
+      },
+      { find: "minimotor/aseprite", replacement: here("./build/aseprite/index.js") },
+      { find: "minimotor/assets", replacement: here("./build/assets.js") },
+      { find: "minimotor/audio", replacement: here("./build/features/audio/index.js") },
+      { find: "minimotor/camera", replacement: here("./build/camera/index.js") },
+      { find: "minimotor/debug", replacement: here("./build/debug.js") },
+      { find: "minimotor/input", replacement: here("./build/features/input/index.js") },
+      { find: "minimotor/ldtk", replacement: here("./build/ldtk/index.js") },
+      {
+        find: "minimotor/onscreen-input",
+        replacement: here("./build/features/onscreen-input/index.js"),
+      },
+      { find: "minimotor/net", replacement: here("./build/features/networking/index.js") },
+      { find: "minimotor/particles", replacement: here("./build/particles.js") },
+      {
+        find: "minimotor/performance",
+        replacement: here("./build/features/performance-monitoring.js"),
+      },
+      {
+        find: "minimotor/platformer",
+        replacement: here("./build/features/platformer/index.js"),
+      },
+      { find: "minimotor/portals", replacement: here("./build/portals.js") },
+      { find: "minimotor/scenes", replacement: here("./build/scenes.js") },
+      { find: "minimotor/storage", replacement: here("./build/features/storage.js") },
+      { find: "minimotor/snapshots", replacement: here("./build/features/snapshots.js") },
+      { find: "minimotor/autosave", replacement: here("./build/features/autosave.js") },
+      { find: "minimotor/capture", replacement: here("./build/features/capture.js") },
+      {
+        find: "minimotor/accessibility",
+        replacement: here("./build/features/accessibility.js"),
+      },
+      { find: "minimotor/replay", replacement: here("./build/features/replay.js") },
+      { find: "minimotor/determinism", replacement: here("./build/features/determinism.js") },
+      { find: "minimotor/timers", replacement: here("./build/features/timers/index.js") },
+      { find: "minimotor/ui", replacement: here("./build/features/ui/index.js") },
       { find: "minimotor/server", replacement: here("./build/server.js") },
       { find: "minimotor", replacement: here("./build/index.js") },
     ],

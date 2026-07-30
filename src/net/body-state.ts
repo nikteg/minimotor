@@ -1,5 +1,6 @@
 import { sync, type PeerStates, type Room, type SyncOptions } from "./room.js";
 import { lerp, lerpAngle } from "../mathf.js";
+import { bodiesCodec, bodyCodec, type SyncCodec } from "./body-codec.js";
 import { syncEntities, type EntityStates, type SyncEntitiesOptions } from "./entities.js";
 
 /** Lightweight game bodies use nested velocity; Physics2D bodies use flat
@@ -8,7 +9,17 @@ export type SyncBody =
   | { x: number; y: number; vel: { x: number; y: number } }
   | { x: number; y: number; vx: number; vy: number };
 
-type Metadata = "w" | "h" | "rot" | "spin" | "grounded" | "facing" | "color" | "active" | "state";
+type Metadata =
+  | "w"
+  | "h"
+  | "rot"
+  | "spin"
+  | "grounded"
+  | "facing"
+  | "color"
+  | "active"
+  | "state"
+  | "area";
 
 export interface BodySnapshot {
   x: number;
@@ -25,6 +36,9 @@ export interface BodySnapshot {
   active?: boolean;
   /** Discrete presentation/gameplay state, such as `"climb"` or `"death"`. */
   state?: string;
+  /** Current level/area id. A change is a teleport boundary, not a motion
+   * sample to interpolate across. */
+  area?: string;
 }
 
 /** The shallow, JSON-safe body state sent by `syncBody`. Every numeric field
@@ -52,6 +66,7 @@ export function bodyState<B extends SyncBody>(body: B): BodyState<B> {
     "color",
     "active",
     "state",
+    "area",
   ] as const) {
     if (key in source) out[key] = source[key];
   }
@@ -60,6 +75,7 @@ export function bodyState<B extends SyncBody>(body: B): BodyState<B> {
 
 /** Blend body snapshots, taking the shortest arc for Physics2D rotation. */
 export function lerpBodyState<T extends BodySnapshot>(a: T, b: T, t: number): T {
+  if (a.area !== b.area) return { ...b };
   const out = { ...b };
   for (const key of ["x", "y", "vx", "vy", "spin", "facing"] as const) {
     if (typeof a[key] === "number" && typeof b[key] === "number") {
@@ -73,6 +89,7 @@ export function lerpBodyState<T extends BodySnapshot>(a: T, b: T, t: number): T 
 /** Project body position/rotation from its two newest snapshots. Velocity units
  * do not matter: projection derives motion from the observed positions. */
 export function extrapolateBodyState<T extends BodySnapshot>(a: T, b: T, t: number): T {
+  if (a.area !== b.area) return { ...b };
   const out = { ...b };
   out.x = lerp(a.x, b.x, t);
   out.y = lerp(a.y, b.y, t);
@@ -102,6 +119,7 @@ export function applyBodyState<B extends SyncBody>(body: B, state: BodySnapshot)
     "color",
     "active",
     "state",
+    "area",
   ] as const) {
     const value = state[key];
     if (key in target && value !== undefined) target[key] = value as never;
@@ -127,6 +145,7 @@ export function syncBody<B extends SyncBody>(
     lerp: options.lerp ?? lerpBodyState,
     extrapolate: options.extrapolate ?? extrapolateBodyState,
     maxExtrapolationMs: options.maxExtrapolationMs ?? 50,
+    codec: options.codec ?? (bodyCodec<BodyState<B>>() as SyncCodec<BodyState<B>>),
     state: () => bodyState(read()),
   });
 }
@@ -149,5 +168,6 @@ export function syncBodies<B extends SyncBody>(
     lerp: options.lerp ?? lerpBodyState,
     extrapolate: options.extrapolate ?? extrapolateBodyState,
     maxExtrapolationMs: options.maxExtrapolationMs ?? 50,
+    codec: options.codec ?? bodiesCodec<BodyState<B>>(),
   });
 }

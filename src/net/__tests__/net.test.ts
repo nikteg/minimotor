@@ -78,14 +78,18 @@ class MockPC {
   ondatachannel: ((e: RTCDataChannelEvent) => void) | null = null;
   onicegatheringstatechange: (() => void) | null = null;
   onconnectionstatechange: (() => void) | null = null;
+  /** The unreliable channel — the first one `createPeer` opens. */
   dc: MockDC | null = null;
+  channels = new Map<string, MockDC>();
   constructor(c?: RTCConfiguration) {
     this.iceServers = c?.iceServers ?? [];
     MockPC.instances.push(this);
   }
   createDataChannel(label: string) {
-    this.dc = new MockDC(label);
-    return this.dc as unknown as RTCDataChannel;
+    const channel = new MockDC(label);
+    this.channels.set(label, channel);
+    this.dc ??= channel;
+    return channel as unknown as RTCDataChannel;
   }
   createOffer() {
     return Promise.resolve({ type: "offer", sdp: "offer" } as RTCSessionDescriptionInit);
@@ -390,7 +394,7 @@ describe("createInterpolator (snapshot interpolation)", () => {
     expect(ip.sample()).toBe(100);
   });
 
-  it("can trade a stable render buffer for bounded extrapolation", () => {
+  it("keeps the render buffer and uses extrapolation only to cover gaps", () => {
     const ip = createInterpolator<{ x: number }>({
       delayMs: "auto",
       expectedIntervalMs: 100,
@@ -400,9 +404,98 @@ describe("createInterpolator (snapshot interpolation)", () => {
     });
     ip.push({ x: 0 }, 0);
     ip.push({ x: 10 }, 100);
-    expect(ip.delayMs).toBe(0);
-    expect(ip.sample()).toEqual({ x: 12.5 });
-    expect(ip.sample(1000)).toEqual({ x: 15 }); // capped to 50ms
+    // Projection does NOT cost the buffer: the target still sits one packet
+    // interval back, where two real snapshots surround it.
+    expect(ip.delayMs).toBe(100);
+    expect(ip.sample()).toEqual({ x: 2.5 });
+    // Only once the next snapshot fails to show up does projection take over,
+    // still capped to maxExtrapolationMs past the newest pair.
+    expect(ip.sample(1000)).toEqual({ x: 15 });
+  });
+
+  it("bounds projection when snapshots arrive bunched together", () => {
+    const wild = createInterpolator<{ x: number }>({
+      delayMs: 0,
+      expectedIntervalMs: 16,
+      maxExtrapolationMs: 50,
+      extrapolate: (a, b, t) => ({ x: a.x + (b.x - a.x) * t }),
+      now: () => 0,
+    });
+    // Two snapshots 16ms of motion apart that landed 1ms apart: without a span
+    // floor this projects ~20x the real motion.
+    wild.push({ x: 0 }, 100);
+    wild.push({ x: 3 }, 101);
+    expect(wild.sample(140)!.x).toBeLessThanOrEqual(3 + 3 * 1.5);
+  });
+
+  it("places snapshots by sender time, not arrival, when stamps are given", () => {
+    const ip = createInterpolator<{ x: number }>({ delayMs: 0, now: () => 0 });
+    // Sent 100ms apart, delivered 1ms apart by a hiccup in the link. The
+    // second packet is the faster one, so it sets the clock mapping:
+    // local 501 == sender 1100.
+    ip.push({ x: 0 }, 500, 1000);
+    ip.push({ x: 10 }, 501, 1100);
+    // The blend still takes 100ms of local time to traverse — arrival bunching
+    // does not compress the motion.
+    expect(ip.sample(451)).toEqual({ x: 5 });
+    expect(ip.sample(401)).toEqual({ x: 0 });
+  });
+
+  it("drops duplicate and reordered snapshots by their sender stamp", () => {
+    const ip = createInterpolator<{ x: number }>({ now: () => 0 });
+    ip.push({ x: 1 }, 10, 1000);
+    ip.push({ x: 2 }, 11, 900); // reordered straggler
+    ip.push({ x: 3 }, 12, 1000); // duplicate
+    expect(ip.size).toBe(1);
+  });
+
+  it("renders bunched, jittery arrivals as smooth motion", () => {
+    // The sender's fixed-step accumulator emits 0 snapshots one frame and 2 the
+    // next, and the link adds +-3ms — the everyday case that used to make
+    // remote players jitter and rubber-band.
+    const ip = createInterpolator<{ x: number }>({
+      delayMs: "auto",
+      expectedIntervalMs: 1000 / 60,
+      maxExtrapolationMs: 50,
+      lerp: (a, b, t) => ({ x: a.x + (b.x - a.x) * t }),
+      extrapolate: (a, b, t) => ({ x: a.x + (b.x - a.x) * t }),
+      now: () => 0,
+    });
+    const step = 1000 / 60;
+    const packets: Array<{ at: number; sentAt: number; x: number }> = [];
+    let x = 0;
+    let sentAt = 0;
+    const wobble = [0.7, -2.1, 1.4, 2.8, -1.2, 0.3, -2.6, 1.9]; // deterministic
+    for (let frame = 0; frame < 240; frame++) {
+      const steps = frame % 7 === 0 ? 0 : frame % 7 === 1 ? 2 : 1;
+      for (let s = 0; s < steps; s++) {
+        x += 3; // 3 px per simulation step
+        sentAt += step;
+        packets.push({ at: frame * step + wobble[(frame + s) % wobble.length], sentAt, x });
+      }
+    }
+    packets.sort((a, b) => a.at - b.at);
+
+    let next = 0;
+    let previous: number | null = null;
+    let maxJump = 0;
+    let backwards = 0;
+    for (let ms = 0; ms < 240 * step; ms += step) {
+      while (next < packets.length && packets[next].at <= ms) {
+        ip.push({ x: packets[next].x }, packets[next].at, packets[next].sentAt);
+        next++;
+      }
+      const rendered = ip.sample(ms);
+      if (rendered && previous !== null) {
+        maxJump = Math.max(maxJump, Math.abs(rendered.x - previous));
+        if (rendered.x < previous - 0.01) backwards++;
+      }
+      if (rendered) previous = rendered.x;
+    }
+    // True motion is 3px per frame; anything much past that is the projection
+    // dividing by an arrival gap instead of a simulation interval.
+    expect(maxJump).toBeLessThan(6);
+    expect(backwards).toBe(0);
   });
 
   it("evicts the oldest snapshots past maxSnapshots", () => {

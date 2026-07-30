@@ -87,7 +87,8 @@ export function matchmake<Send = unknown, Recv = unknown>(
   }
 
   server.on("connection", (socket) => {
-    const client: RoomClient = { id: `c${nextId++}`, socket };
+    // Matchmaking has its own room codes, so the URL's `?room=` group is unused.
+    const client: RoomClient = { id: `c${nextId++}`, socket, group: "" };
     socket.on("message", (raw: unknown) => {
       let msg: Recv;
       try {

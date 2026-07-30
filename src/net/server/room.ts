@@ -21,10 +21,19 @@ export interface ServerSocket {
   on(event: string, handler: (...args: unknown[]) => void): void;
 }
 
+/** The upgrade request behind a connection — `ws` passes it as the second
+ *  argument to its `connection` event, and `url` carries the query string. */
+export interface ConnectionRequest {
+  url?: string;
+}
+
 /** The slice of a WebSocket *server* a room uses — `ws`'s WebSocketServer. */
 export interface SocketServer {
   /** Subscribe to new client connections. */
-  on(event: "connection", handler: (socket: ServerSocket) => void): void;
+  on(
+    event: "connection",
+    handler: (socket: ServerSocket, request?: ConnectionRequest) => void,
+  ): void;
 }
 
 /** One connected client: a stable id plus its socket. */
@@ -33,6 +42,9 @@ export interface RoomClient {
   readonly id: string;
   /** The underlying connection. */
   readonly socket: ServerSocket;
+  /** The `?room=` this client asked for, `""` when it named none. Clients in
+   *  different groups never see each other — one endpoint hosts many rooms. */
+  readonly group: string;
 }
 
 /** Lifecycle callbacks for `serve`: join, per-client message, and leave. */
@@ -55,6 +67,8 @@ export interface Room<Send> {
   broadcast(msg: Send): void;
   /** JSON-encode and send to every client except `from` — the classic relay. */
   relay(from: RoomClient, msg: Send): void;
+  /** The clients sharing one `?room=` group. */
+  group(name: string): RoomClient[];
 }
 
 const OPEN = 1;
@@ -94,10 +108,16 @@ export function serve<Send = unknown, Recv = unknown>(
       const data = JSON.stringify(msg);
       for (const c of clients) if (c !== from && isOpen(c.socket)) c.socket.send(data);
     },
+    group(name) {
+      return clients.filter((c) => c.group === name);
+    },
   };
 
-  server.on("connection", (socket) => {
-    const client: RoomClient = { id: `c${nextId++}`, socket };
+  server.on("connection", (socket, request) => {
+    const query = request?.url?.indexOf("?") ?? -1;
+    const group =
+      query >= 0 ? (new URLSearchParams(request!.url!.slice(query)).get("room") ?? "") : "";
+    const client: RoomClient = { id: `c${nextId++}`, socket, group };
     clients.push(client);
     opts.onJoin?.(client);
     socket.on("message", (raw: unknown) => {

@@ -14,9 +14,11 @@
 // explicit close(). The asymmetric hostSession/joinSession pair remains one
 // tier down for genuinely host-authoritative designs.
 
-import { Loop, STEP_MS } from "../engine/index.js";
+import { decodeJson, encodeJson, frame, unframe } from "./frame.js";
+import { everyMs } from "./rate.js";
+import type { SyncCodec } from "./body-codec.js";
 import { connect } from "./websocket.js";
-import { createPeer } from "./webrtc.js";
+import { createPeer, type RtcPeer } from "./webrtc.js";
 import type { RtcConfig, Signal } from "./types.js";
 import { createRoster } from "./roster.js";
 
@@ -27,17 +29,10 @@ type Notice =
   | { type: "host"; id: string | null }
   | { type: "signal"; from: string; signal: Signal };
 
-// One codec pair for the module: constructing a TextEncoder/TextDecoder per
-// message is pure overhead on a path that runs at the snapshot rate.
-const textDecoder = new TextDecoder();
-const textEncoder = new TextEncoder();
-const decode = (bytes: Uint8Array): unknown => JSON.parse(textDecoder.decode(bytes));
-const encode = (obj: unknown): Uint8Array => textEncoder.encode(JSON.stringify(obj));
-
-interface Envelope {
-  f: string; // original sender
-  d: unknown; // payload
-}
+// The wire format lives in ./frame.ts because a server-backed room speaks the
+// very same one — see `socketRoom`.
+const decode = decodeJson;
+const encode = encodeJson;
 
 /** Options for `join`: the room to group into and how long to await the relay's
  *  welcome, plus the inherited `RtcConfig`. */
@@ -65,6 +60,30 @@ export interface RoomOptions extends RtcConfig {
   /** Resolve to a one-player local room if the initial relay join fails.
    *  Multiplayer code then remains the offline code path. */
   fallback?: "local";
+}
+
+/** Delivery mode for one send. A REQUIREMENT, not a transport detail: a
+ *  transport that is always reliable (a WebSocket) simply satisfies both. */
+export interface SendOptions {
+  /** `true` (the default for `send`) means the message must arrive, exactly
+   *  once, in order. Use it for facts — events, commands, pickups, chat.
+   *
+   *  `false` (the default for `sendBytes`) means a lost one is fine because a
+   *  newer one replaces it, and it must never delay anything queued behind
+   *  it. Use it for samples — snapshots. */
+  reliable?: boolean;
+}
+
+/** Wire traffic actually sent and received, counted where the bytes already
+ *  exist. Serializing a message a second time just to measure it is pure
+ *  overhead on a path that runs at the snapshot rate. */
+export interface RoomTraffic {
+  /** Frames handed to a data channel (a host relay counts each forward). */
+  sent: number;
+  /** Frames taken off a data channel. */
+  received: number;
+  sentBytes: number;
+  receivedBytes: number;
 }
 
 /** Where a room's relay link stands. `"reconnecting"` is the one worth
@@ -98,14 +117,23 @@ export interface Room<Msg = unknown> {
    *  so `room.id` may differ afterwards, and the other members see the old one
    *  leave and a new one join. */
   onStatus(fn: (status: RoomStatus) => void): () => void;
-  /** Send to every other member. */
-  send(msg: Msg): void;
+  /** Send to every other member. Reliable and ordered unless you say
+   *  otherwise — see `SendOptions`. */
+  send(msg: Msg, opts?: SendOptions): void;
   /** Hear from every other member. Returns unsubscribe. */
   onMessage(fn: (from: string, msg: Msg) => void): () => void;
+  /** Send raw bytes on a named binary lane, unreliable by default. The
+   *  low-level path behind `syncBody`; app code normally wants `send`. */
+  sendBytes(tag: string, bytes: Uint8Array, opts?: SendOptions): void;
+  /** Hear one binary lane. The `bytes` view is only valid for the duration of
+   *  the call — copy what you need to keep. Returns unsubscribe. */
+  onBytes(tag: string, fn: (from: string, bytes: Uint8Array) => void): () => void;
   /** Membership changes (relay-tracked). Return unsubscribe. */
   onJoin(fn: (id: string) => void): () => void;
   /** A member left. Returns unsubscribe. */
   onLeave(fn: (id: string) => void): () => void;
+  /** Live byte/message counters, when the transport can supply them for free. */
+  readonly traffic?: RoomTraffic;
   /** Tear the room down (channels + signaling socket). */
   close(): void;
 }
@@ -134,6 +162,8 @@ export function localRoom<Msg = unknown>(): Room<Msg> {
     },
     send() {},
     onMessage: () => () => {},
+    sendBytes() {},
+    onBytes: () => () => {},
     onJoin: () => () => {},
     onLeave: () => () => {},
     close() {
@@ -178,27 +208,55 @@ export function join<Msg = unknown>(url: string, opts: RoomOptions = {}): Promis
   const refreshPeers = (): void => {
     peerList = [...members];
   };
-  const channels = new Map<string, ReturnType<typeof createPeer>>();
+  const channels = new Map<string, RtcPeer>();
   const messageFns = new Set<(from: string, msg: Msg) => void>();
+  const byteFns = new Map<string, Set<(from: string, bytes: Uint8Array) => void>>();
   const joinFns = new Set<(id: string) => void>();
   const leaveFns = new Set<(id: string) => void>();
 
+  const traffic: RoomTraffic = { sent: 0, received: 0, sentBytes: 0, receivedBytes: 0 };
   const hosting = (): boolean => hostId !== null && hostId === myId;
 
-  function deliver(env: Envelope): void {
-    if (env.f === myId) return; // own broadcast echoed back
-    for (const fn of messageFns) fn(env.f, env.d as Msg);
-  }
-
-  /** Host duty: pass a guest's envelope on to every other guest. */
-  function relay(env: Envelope, exceptId: string): void {
-    const bytes = encode(env);
-    for (const [gid, peer] of channels) {
-      if (gid !== exceptId) peer.transport.trySend(bytes);
+  /** Put a finished frame on the star: as host, to every member but the one it
+   *  came from; as guest, to the host, who fans it out. */
+  function dispatch(bytes: Uint8Array, reliable: boolean, exceptId: string): void {
+    const put = (peer: RtcPeer): void => {
+      if ((reliable ? peer.reliable : peer.transport).trySend(bytes)) {
+        traffic.sent++;
+        traffic.sentBytes += bytes.length;
+      }
+    };
+    if (hosting()) {
+      for (const [gid, peer] of channels) if (gid !== exceptId) put(peer);
+    } else if (hostId) {
+      const peer = channels.get(hostId);
+      if (peer) put(peer);
     }
   }
 
-  function channelFor(peerId: string): ReturnType<typeof createPeer> {
+  /** One inbound frame: deliver it locally, then — as host — forward the SAME
+   *  bytes to the rest of the room on the lane they arrived on. No decode and
+   *  re-encode per recipient. */
+  function receive(bytes: Uint8Array, fromPeer: string, reliable: boolean): void {
+    traffic.received++;
+    traffic.receivedBytes += bytes.length;
+    const parsed = unframe(bytes);
+    if (!parsed || parsed.from === myId) return; // own broadcast echoed back
+    if (parsed.tag === "") {
+      try {
+        const msg = decode(parsed.payload) as Msg;
+        for (const fn of messageFns) fn(parsed.from, msg);
+      } catch {
+        /* malformed JSON from a peer must not take the room down */
+      }
+    } else {
+      const fns = byteFns.get(parsed.tag);
+      if (fns) for (const fn of fns) fn(parsed.from, parsed.payload);
+    }
+    if (hosting()) dispatch(bytes, reliable, fromPeer);
+  }
+
+  function channelFor(peerId: string): RtcPeer {
     let peer = channels.get(peerId);
     if (peer) return peer;
     peer = createPeer(opts);
@@ -212,27 +270,26 @@ export function join<Msg = unknown>(url: string, opts: RoomOptions = {}): Promis
         /* relay down — the post-welcome adopt() starts the handshake over */
       }
     };
-    peer.transport.onMessage = (bytes) => {
-      const env = decode(bytes) as Envelope;
-      deliver(env);
-      if (hosting()) relay(env, peerId);
-    };
+    peer.transport.onMessage = (bytes) => receive(bytes, peerId, false);
+    peer.reliable.onMessage = (bytes) => receive(bytes, peerId, true);
     peer.transport.onClose = () => {
-      channels.delete(peerId);
+      if (channels.get(peerId) === peer) channels.delete(peerId);
     };
     return peer;
+  }
+
+  /** Close a peer connection and forget it. */
+  function dropChannel(peerId: string): void {
+    channels.get(peerId)?.close();
+    channels.delete(peerId);
   }
 
   /** Adopt the current topology: as a guest, (re)offer one channel to the
    *  host; as the host, drop nothing and answer offers as they arrive. */
   function adopt(): void {
     if (hosting()) return; // guests offer to us
-    for (const [pid, peer] of channels) {
-      if (pid !== hostId) {
-        peer.transport.close();
-        channels.delete(pid);
-      }
-    }
+    // Snapshot the keys: dropChannel mutates the map we are walking.
+    for (const pid of Array.from(channels.keys())) if (pid !== hostId) dropChannel(pid);
     if (hostId) channelFor(hostId).connect();
   }
 
@@ -259,21 +316,26 @@ export function join<Msg = unknown>(url: string, opts: RoomOptions = {}): Promis
     get status() {
       return status;
     },
+    traffic,
     onStatus(fn) {
       statusFns.add(fn);
       return () => statusFns.delete(fn);
     },
-    send(msg) {
-      const env: Envelope = { f: myId, d: msg };
-      if (hosting()) {
-        relay(env, myId);
-      } else if (hostId) {
-        channels.get(hostId)?.transport.trySend(encode(env));
-      }
+    send(msg, sendOpts) {
+      dispatch(frame(myId, "", encode(msg)), sendOpts?.reliable ?? true, myId);
     },
     onMessage(fn) {
       messageFns.add(fn);
       return () => messageFns.delete(fn);
+    },
+    sendBytes(tag, bytes, sendOpts) {
+      dispatch(frame(myId, tag, bytes), sendOpts?.reliable ?? false, myId);
+    },
+    onBytes(tag, fn) {
+      let fns = byteFns.get(tag);
+      if (!fns) byteFns.set(tag, (fns = new Set()));
+      fns.add(fn);
+      return () => fns.delete(fn);
     },
     onJoin(fn) {
       joinFns.add(fn);
@@ -287,7 +349,7 @@ export function join<Msg = unknown>(url: string, opts: RoomOptions = {}): Promis
       closed = true;
       if (retryTimer !== null) clearTimeout(retryTimer);
       retryTimer = null;
-      for (const peer of channels.values()) peer.transport.close();
+      for (const peer of channels.values()) peer.close();
       channels.clear();
       ws.close();
       setStatus("closed");
@@ -315,8 +377,7 @@ export function join<Msg = unknown>(url: string, opts: RoomOptions = {}): Promis
       const arrived = [...next].filter((id) => !members.has(id));
       for (const id of gone) {
         members.delete(id);
-        channels.get(id)?.transport.close();
-        channels.delete(id);
+        dropChannel(id);
       }
       for (const id of arrived) members.add(id);
       refreshPeers();
@@ -384,7 +445,9 @@ export function join<Msg = unknown>(url: string, opts: RoomOptions = {}): Promis
       } else if (msg.type === "peer-leave") {
         if (members.delete(msg.id)) {
           refreshPeers();
-          channels.get(msg.id)?.transport.close();
+          // Close AND forget: relying on the channel's own onclose leaks the
+          // entry whenever the connection dies without firing it.
+          dropChannel(msg.id);
           for (const fn of leaveFns) fn(msg.id);
         }
       } else if (msg.type === "host") {
@@ -408,6 +471,10 @@ const SYNC_KEY = "__mm_sync";
 interface SyncEnvelope<T> {
   [SYNC_KEY]: 1;
   s: T;
+  /** The SENDER's clock when this snapshot was sampled. The receiver places
+   *  snapshots on its timeline by this, not by arrival — see
+   *  `Interpolator.push`. Optional so hand-rolled senders still work. */
+  t?: number;
 }
 
 /** Options for `sync`: broadcast rate, the local-state sampler, and the
@@ -431,6 +498,10 @@ export interface SyncOptions<T> {
   maxExtrapolationMs?: number;
   /** Millisecond clock — injectable for tests. */
   now?: () => number;
+  /** Pack snapshots into a binary lane instead of JSON. `syncBody` supplies one
+   *  for body state; without it, states travel as JSON, which is schema-free
+   *  and readable in devtools. */
+  codec?: SyncCodec<T>;
 }
 
 /** The other members' interpolated states — iterate it in draw. */
@@ -466,9 +537,16 @@ export function sync<T>(room: Room<unknown>, opts: SyncOptions<T>): PeerStates<T
   const isSync = (msg: unknown): msg is SyncEnvelope<T> =>
     typeof msg === "object" && msg !== null && (msg as Record<string, unknown>)[SYNC_KEY] === 1;
 
-  const unsubscribe = room.onMessage((from, msg) => {
-    if (isSync(msg)) roster.update(from, msg.s);
-  });
+  const clock = opts.now ?? (() => performance.now());
+  const codec = opts.codec;
+  const unsubscribe = codec
+    ? room.onBytes(codec.tag, (from, bytes) => {
+        const packet = codec.decode(bytes);
+        if (packet) roster.update(from, packet.state, clock(), packet.sentAt);
+      })
+    : room.onMessage((from, msg) => {
+        if (isSync(msg)) roster.update(from, msg.s, clock(), msg.t);
+      });
   const offLeave = room.onLeave((id) => roster.remove(id));
 
   /** One broadcast tick. Sampling is skipped outright when we're alone in the
@@ -480,33 +558,30 @@ export function sync<T>(room: Room<unknown>, opts: SyncOptions<T>): PeerStates<T
       return;
     }
     if (room.peerCount === 0) return;
-    (room as Room<SyncEnvelope<T>>).send({ [SYNC_KEY]: 1, s: opts.state() } as SyncEnvelope<T>);
+    // Unreliable: a snapshot that needs retransmitting has already been
+    // replaced by a newer one, and waiting for it would stall the whole lane.
+    const state = opts.state();
+    const sentAt = clock();
+    if (codec) room.sendBytes(codec.tag, codec.encode(state, sentAt), { reliable: false });
+    else {
+      (room as Room<SyncEnvelope<T>>).send(
+        { [SYNC_KEY]: 1, s: state, t: sentAt } as SyncEnvelope<T>,
+        {
+          reliable: false,
+        },
+      );
+    }
   }
 
-  // Drive off the fixed step when there's a running engine, so replication
-  // freezes with a paused game and throttles with a backgrounded tab like
-  // everything else. With no app (headless bots, tests) fall back to a
-  // wall-clock interval so `sync` still stands alone.
-  let acc = 0;
-  let offStep: (() => void) | null = null;
-  let interval: ReturnType<typeof setInterval> | null = null;
-  try {
-    offStep = Loop.onStep(() => {
-      acc += STEP_MS;
-      if (acc < intervalMs) return;
-      acc = 0;
-      broadcast();
-    });
-  } catch {
-    interval = setInterval(broadcast, intervalMs);
-  }
+  // Evenly spaced on a wall clock, independent of frame pacing and of whether
+  // the game is paused — see `everyMs`.
+  const offTick = everyMs(intervalMs, broadcast);
 
   let stopped = false;
   function stop(): void {
     if (stopped) return;
     stopped = true;
-    offStep?.();
-    if (interval !== null) clearInterval(interval);
+    offTick();
     unsubscribe();
     offLeave();
   }

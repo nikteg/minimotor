@@ -639,6 +639,8 @@ export interface MusicOptions {
   loop?: boolean;
   /** Track volume 0..1 (its own gain, under the music bus). Default 1. */
   volume?: number;
+  /** Output bus. Defaults to `Audio.buses.music`. */
+  bus?: BusHandle;
 }
 
 /** A decoded music track on the music bus; `play`/`stop`/`fade` control it. */
@@ -673,7 +675,8 @@ export function music(data: ArrayBuffer, opts: MusicOptions = {}): MusicHandle {
       if (!wantPlaying || source) return;
       gain = ctx.createGain();
       gain.gain.value = opts.volume ?? 1;
-      gain.connect(Mixer.bus("music").input);
+      const busName = (opts.bus ?? buses.music).name;
+      gain.connect(Mixer.bus(busName).input);
       source = ctx.createBufferSource();
       source.buffer = decoded;
       source.loop = opts.loop ?? false;
@@ -685,7 +688,7 @@ export function music(data: ArrayBuffer, opts: MusicOptions = {}): MusicHandle {
         }
       };
       source.start();
-      fireDucks("music");
+      fireDucks(busName);
     } catch {
       wantPlaying = false; // no WebAudio — stay silent, stay alive
     } finally {

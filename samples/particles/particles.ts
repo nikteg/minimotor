@@ -1,14 +1,20 @@
+import { createPerformanceMonitoring } from "minimotor/performance";
 // Particle system demo: firework sparks on the ECS with the standard Sprite
 // component + renderer.
 // Demonstrates: Sprites.Sprite (position + texture + alpha), Draw.sprites(ecs.dense(Sprite)) —
 // no hand-written blit loop — plus an update system that fades sprites out.
-import { Draw, ECS, Loop, Perf, Pointer, Sprites, App, UI } from "minimotor";
+import { createUI } from "minimotor/ui";
+import { ECS, Sprites, App } from "minimotor";
 
 const ecs = ECS.create();
 
 // The perf HUD shows this world's live entity count (`ents`).
 // The viewport is LIVE (mutated on resize); the engine owns clearing.
-const view = App.init("game", { background: "#000", plugins: [Perf.plugin({ world: ecs })] });
+const game = App.create("game", { background: "#000" });
+createPerformanceMonitoring(game, { world: ecs });
+const view = game.viewport;
+const { Draw, Loop, Pointer } = game;
+const UI = createUI(game);
 
 const NUM = 200;
 const SIZE = 8;

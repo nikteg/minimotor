@@ -217,6 +217,13 @@ describe("Net multiplayer utilities", () => {
     guest.stop();
   });
 
+  it("keeps stable source ids by default", () => {
+    const [room] = pair();
+    const items = sharedItems(room, [{ id: "gem-a", x: 5 }]);
+    expect(items.all[0].id).toBe("gem-a");
+    items.stop();
+  });
+
   it("reconciles predicted input and buffers authoritative input", () => {
     let x = 0;
     const prediction = createPrediction<number, number>({

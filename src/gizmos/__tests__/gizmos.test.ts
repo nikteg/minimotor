@@ -104,7 +104,7 @@ describe("Gizmos.flash", () => {
   it("jumps to 1 on hit and fades to 0 on its clock", () => {
     let steps = 0;
     const clock = createClockHandle(() => steps);
-    const f = flash(100, undefined, clock);
+    const f = flash(100, clock);
     expect(f.active).toBe(false);
     f.hit();
     expect(f.value).toBe(1);

@@ -20,7 +20,7 @@
 // calling `set` with the current state every step never restarts the loop
 // (the classic stuck-on-frame-0 bug can't be written).
 
-import { Clock, type ClockHandle } from "../clock.js";
+import type { ClockHandle } from "../clock.js";
 
 /** A rectangular region of the sheet image (px). Matches the `sx/sy/sw/sh`
  *  fields of the ECS `Sprite` component. */
@@ -33,6 +33,12 @@ export interface FrameRect {
   sw: number;
   /** Source height of the frame (px). */
   sh: number;
+  /** Original untrimmed frame size and packed-content offset. Present for
+   * trimmed atlases; Draw.sprite uses them to preserve alignment. */
+  sourceW?: number;
+  sourceH?: number;
+  offsetX?: number;
+  offsetY?: number;
 }
 
 /** One named state's frames within a sheet's grid (a row and its frame count). */
@@ -43,9 +49,6 @@ export interface SheetStateSpec {
   frames: number;
   /** Playback speed in frames/second. Default 12 (ignored for 1 frame). */
   fps?: number;
-  /** Loop at the end (default true); false holds the last frame and reports
-   *  `done`. */
-  loop?: boolean;
 }
 
 /** Config for `Anim.sheet` — the source frame size plus the named states packed
@@ -73,6 +76,12 @@ export interface SheetCursor<K extends string = string> {
   set(state: K): void;
   /** Restart the current state's timeline. */
   reset(): void;
+  /** Freeze on the current frame. */
+  pause(): void;
+  /** Continue from the frozen frame. */
+  resume(): void;
+  /** Whether playback is currently frozen. */
+  readonly paused: boolean;
   /** Current frame index within the state. */
   readonly frame: number;
   /** Source rect of the current frame (reused scratch — read, don't hold). */
@@ -81,14 +90,21 @@ export interface SheetCursor<K extends string = string> {
   readonly done: boolean;
 }
 
+export interface PlaybackOptions {
+  /** Playback clock. */
+  clock: ClockHandle;
+}
+
 /** A single-image, named-state sprite sheet; `play` starts a per-entity cursor. */
 export interface Sheet<K extends string = string> {
   /** The source image sliced by this sheet. */
   readonly image: SheetImage;
   /** Source frame size in the image, in px. */
   readonly frame: { w: number; h: number };
-  /** Start a playback cursor. `clock` defaults to `Clock.world`. */
-  play(initial: K, opts?: { clock?: ClockHandle }): SheetCursor<K>;
+  /** Start a playback cursor on the supplied clock. */
+  play(initial: K, opts: PlaybackOptions): SheetCursor<K>;
+  /** Play one state once, hold its final frame, and report `done`. */
+  once(initial: K, opts: PlaybackOptions): SheetCursor<K>;
   /** Source rect for an arbitrary state/frame (manual draws, HUD icons).
    *  Reused scratch — read, don't hold. */
   rect(state: K, frame: number): FrameRect;
@@ -112,53 +128,75 @@ export function sheet<K extends string>(image: SheetImage, opts: SheetOptions<K>
     return scratch;
   }
 
+  const makeCursor = (initial: K, playOpts: PlaybackOptions, loop: boolean): SheetCursor<K> => {
+    if (!states[initial]) throw new Error(`Anim.sheet: unknown state "${initial}"`);
+    const clock = playOpts.clock;
+    let state = initial;
+    let start = clock.now;
+    let pausedAt: number | undefined;
+    const now = () => pausedAt ?? clock.now;
+
+    const frameIndex = (): number => {
+      const spec = states[state];
+      const n = Math.max(1, spec.frames);
+      if (n === 1) return 0;
+      const fps = spec.fps ?? 12;
+      const idx = Math.floor(((now() - start) * fps) / 1000);
+      return loop ? idx % n : Math.min(idx, n - 1);
+    };
+
+    const cursor: SheetCursor<K> = {
+      sheet: self,
+      get state() {
+        return state;
+      },
+      set(next) {
+        if (next !== state) {
+          if (!states[next]) throw new Error(`Anim.sheet: unknown state "${next}"`);
+          state = next;
+          start = now();
+        }
+      },
+      reset() {
+        start = now();
+      },
+      pause() {
+        pausedAt ??= clock.now;
+      },
+      resume() {
+        if (pausedAt === undefined) return;
+        start += clock.now - pausedAt;
+        pausedAt = undefined;
+      },
+      get paused() {
+        return pausedAt !== undefined;
+      },
+      get frame() {
+        return frameIndex();
+      },
+      get rect() {
+        return rectFor(state, frameIndex());
+      },
+      get done() {
+        if (loop) return false;
+        const spec = states[state];
+        const n = Math.max(1, spec.frames);
+        const fps = spec.fps ?? 12;
+        return now() - start >= (n * 1000) / fps;
+      },
+    };
+    return cursor;
+  };
+
   const self: Sheet<K> = {
     image,
     frame: { w: fw, h: fh },
     rect: rectFor,
-    play(initial, playOpts = {}) {
-      if (!states[initial]) throw new Error(`Anim.sheet: unknown state "${initial}"`);
-      const clock = playOpts.clock ?? Clock.world;
-      let state = initial;
-      let start = clock.now;
-
-      const frameIndex = (): number => {
-        const spec = states[state];
-        const n = Math.max(1, spec.frames);
-        if (n === 1) return 0;
-        const fps = spec.fps ?? 12;
-        const idx = Math.floor(((clock.now - start) * fps) / 1000);
-        return (spec.loop ?? true) ? idx % n : Math.min(idx, n - 1);
-      };
-
-      return {
-        sheet: self,
-        get state() {
-          return state;
-        },
-        set(next) {
-          if (next === state) return; // the load-bearing no-op
-          if (!states[next]) throw new Error(`Anim.sheet: unknown state "${next}"`);
-          state = next;
-          start = clock.now;
-        },
-        reset() {
-          start = clock.now;
-        },
-        get frame() {
-          return frameIndex();
-        },
-        get rect() {
-          return rectFor(state, frameIndex());
-        },
-        get done() {
-          const spec = states[state];
-          if (spec.loop ?? true) return false;
-          const n = Math.max(1, spec.frames);
-          const fps = spec.fps ?? 12;
-          return clock.now - start >= (n * 1000) / fps;
-        },
-      };
+    once(initial, playOpts) {
+      return makeCursor(initial, playOpts, false);
+    },
+    play(initial, playOpts) {
+      return makeCursor(initial, playOpts, true);
     },
   };
   return self;

@@ -1,6 +1,9 @@
-import { App, Loop, Keys, Camera, ECS, Draw, Goodies } from "minimotor";
+import { createCamera } from "minimotor/camera";
+import { App, ECS, Goodies } from "minimotor";
 
-App.init("game", { background: "#12141c" });
+const game = App.create("game", { background: "#12141c" });
+const { Loop, Keys, Draw } = game;
+const Camera = createCamera(game);
 
 // A world bigger than the screen, dotted with drifting agents held in an ECS.
 const WORLD = { x: 0, y: 0, w: 1280, h: 720 };

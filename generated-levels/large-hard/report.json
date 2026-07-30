@@ -1,0 +1,796 @@
+{
+  "seed": "deep-cavern-v3",
+  "candidates": 24,
+  "levelsPerRound": 12,
+  "rounds": [
+    {
+      "round": 0,
+      "difficulty": 0.58,
+      "successRate": 0.25925925925925924
+    },
+    {
+      "round": 1,
+      "difficulty": 0.48,
+      "successRate": 0.2523148148148148
+    }
+  ],
+  "bots": 12,
+  "attempts": 3,
+  "passed": 21,
+  "best": {
+    "seed": "deep-cavern-v3:r0:10",
+    "layout": "tunnel",
+    "difficulty": 0.58,
+    "fitness": 0.8001039927803942,
+    "heuristicScore": 0.7593848500549831,
+    "botScore": 0.8220296850171541,
+    "metrics": {
+      "successRate": 0.3333333333333333,
+      "expertSuccessRate": 1,
+      "intermediateSuccessRate": 0.1111111111111111,
+      "beginnerSuccessRate": 0,
+      "completionistSuccessRate": 0.2222222222222222,
+      "medianCompletionSteps": 307,
+      "medianDeaths": 0,
+      "meanProgress": 0.7742149941314551,
+      "stuckRate": 0,
+      "gemCoverage": 0.6111111111111112,
+      "pathDiversity": 0.7777777777777778,
+      "meanInputComplexity": 0.1984319600883506,
+      "observedDashRate": 1,
+      "observedDoubleJumpRate": 1,
+      "observedWallJumpRate": 0.75
+    },
+    "planner": {
+      "completed": true,
+      "expanded": 14356,
+      "commands": 39
+    }
+  },
+  "results": [
+    {
+      "seed": "deep-cavern-v3:r0:10",
+      "layout": "tunnel",
+      "difficulty": 0.58,
+      "passed": true,
+      "fitness": 0.8001039927803942,
+      "heuristicScore": 0.7593848500549831,
+      "botScore": 0.8220296850171541,
+      "metrics": {
+        "successRate": 0.3333333333333333,
+        "expertSuccessRate": 1,
+        "intermediateSuccessRate": 0.1111111111111111,
+        "beginnerSuccessRate": 0,
+        "completionistSuccessRate": 0.2222222222222222,
+        "medianCompletionSteps": 307,
+        "medianDeaths": 0,
+        "meanProgress": 0.7742149941314551,
+        "stuckRate": 0,
+        "gemCoverage": 0.6111111111111112,
+        "pathDiversity": 0.7777777777777778,
+        "meanInputComplexity": 0.1984319600883506,
+        "observedDashRate": 1,
+        "observedDoubleJumpRate": 1,
+        "observedWallJumpRate": 0.75
+      },
+      "planner": {
+        "completed": true,
+        "progress": 1,
+        "expanded": 14356
+      }
+    },
+    {
+      "seed": "deep-cavern-v3:r1:4",
+      "layout": "tunnel",
+      "difficulty": 0.48,
+      "passed": true,
+      "fitness": 0.7974611604206288,
+      "heuristicScore": 0.797010203062963,
+      "botScore": 0.7977039836132178,
+      "metrics": {
+        "successRate": 0.25,
+        "expertSuccessRate": 1,
+        "intermediateSuccessRate": 0,
+        "beginnerSuccessRate": 0,
+        "completionistSuccessRate": 0,
+        "medianCompletionSteps": 338,
+        "medianDeaths": 0,
+        "meanProgress": 0.7118727112676058,
+        "stuckRate": 0,
+        "gemCoverage": 0.7444444444444449,
+        "pathDiversity": 0.7777777777777778,
+        "meanInputComplexity": 0.19125157046213598,
+        "observedDashRate": 1,
+        "observedDoubleJumpRate": 1,
+        "observedWallJumpRate": 0.75
+      },
+      "planner": {
+        "completed": true,
+        "progress": 1,
+        "expanded": 15948
+      }
+    },
+    {
+      "seed": "deep-cavern-v3:r1:2",
+      "layout": "tunnel",
+      "difficulty": 0.48,
+      "passed": true,
+      "fitness": 0.7853685971723767,
+      "heuristicScore": 0.7354498990909473,
+      "botScore": 0.8122478961393003,
+      "metrics": {
+        "successRate": 0.25,
+        "expertSuccessRate": 1,
+        "intermediateSuccessRate": 0,
+        "beginnerSuccessRate": 0,
+        "completionistSuccessRate": 0,
+        "medianCompletionSteps": 342,
+        "medianDeaths": 0,
+        "meanProgress": 0.8034000293427234,
+        "stuckRate": 0,
+        "gemCoverage": 0.7546296296296297,
+        "pathDiversity": 0.7777777777777778,
+        "meanInputComplexity": 0.19206580649409086,
+        "observedDashRate": 1,
+        "observedDoubleJumpRate": 1,
+        "observedWallJumpRate": 0.75
+      },
+      "planner": {
+        "completed": true,
+        "progress": 1,
+        "expanded": 16006
+      }
+    },
+    {
+      "seed": "deep-cavern-v3:r1:1",
+      "layout": "tunnel",
+      "difficulty": 0.48,
+      "passed": true,
+      "fitness": 0.7846895528616828,
+      "heuristicScore": 0.7539134818050466,
+      "botScore": 0.8012612834306408,
+      "metrics": {
+        "successRate": 0.25,
+        "expertSuccessRate": 1,
+        "intermediateSuccessRate": 0,
+        "beginnerSuccessRate": 0,
+        "completionistSuccessRate": 0,
+        "medianCompletionSteps": 287,
+        "medianDeaths": 0,
+        "meanProgress": 0.7425016236306731,
+        "stuckRate": 0,
+        "gemCoverage": 0.7314814814814814,
+        "pathDiversity": 0.7777777777777778,
+        "meanInputComplexity": 0.19740969875880884,
+        "observedDashRate": 1,
+        "observedDoubleJumpRate": 1,
+        "observedWallJumpRate": 0.75
+      },
+      "planner": {
+        "completed": true,
+        "progress": 1,
+        "expanded": 13828
+      }
+    },
+    {
+      "seed": "deep-cavern-v3:r1:9",
+      "layout": "tunnel",
+      "difficulty": 0.48,
+      "passed": true,
+      "fitness": 0.7813900260323681,
+      "heuristicScore": 0.7286174387961839,
+      "botScore": 0.8098060345441596,
+      "metrics": {
+        "successRate": 0.2777777777777778,
+        "expertSuccessRate": 1,
+        "intermediateSuccessRate": 0,
+        "beginnerSuccessRate": 0,
+        "completionistSuccessRate": 0.1111111111111111,
+        "medianCompletionSteps": 255,
+        "medianDeaths": 0,
+        "meanProgress": 0.7406347222222223,
+        "stuckRate": 0,
+        "gemCoverage": 0.7592592592592593,
+        "pathDiversity": 0.75,
+        "meanInputComplexity": 0.2002357087159758,
+        "observedDashRate": 1,
+        "observedDoubleJumpRate": 1,
+        "observedWallJumpRate": 0.75
+      },
+      "planner": {
+        "completed": true,
+        "progress": 1,
+        "expanded": 11980
+      }
+    },
+    {
+      "seed": "deep-cavern-v3:r0:2",
+      "layout": "tunnel",
+      "difficulty": 0.58,
+      "passed": true,
+      "fitness": 0.7793249941462688,
+      "heuristicScore": 0.7409459211243714,
+      "botScore": 0.7999906488503672,
+      "metrics": {
+        "successRate": 0.2777777777777778,
+        "expertSuccessRate": 1,
+        "intermediateSuccessRate": 0.1111111111111111,
+        "beginnerSuccessRate": 0,
+        "completionistSuccessRate": 0,
+        "medianCompletionSteps": 328,
+        "medianDeaths": 0,
+        "meanProgress": 0.7234704225352112,
+        "stuckRate": 0,
+        "gemCoverage": 0.6444444444444447,
+        "pathDiversity": 0.7777777777777778,
+        "meanInputComplexity": 0.18923844617327046,
+        "observedDashRate": 1,
+        "observedDoubleJumpRate": 1,
+        "observedWallJumpRate": 0.75
+      },
+      "planner": {
+        "completed": true,
+        "progress": 1,
+        "expanded": 15544
+      }
+    },
+    {
+      "seed": "deep-cavern-v3:r0:0",
+      "layout": "tunnel",
+      "difficulty": 0.58,
+      "passed": true,
+      "fitness": 0.7758421234646078,
+      "heuristicScore": 0.7443805782234099,
+      "botScore": 0.7927829555175605,
+      "metrics": {
+        "successRate": 0.25,
+        "expertSuccessRate": 1,
+        "intermediateSuccessRate": 0,
+        "beginnerSuccessRate": 0,
+        "completionistSuccessRate": 0,
+        "medianCompletionSteps": 318,
+        "medianDeaths": 0,
+        "meanProgress": 0.7323991906298905,
+        "stuckRate": 0,
+        "gemCoverage": 0.6444444444444446,
+        "pathDiversity": 0.7777777777777778,
+        "meanInputComplexity": 0.19880001100992614,
+        "observedDashRate": 1,
+        "observedDoubleJumpRate": 1,
+        "observedWallJumpRate": 0.75
+      },
+      "planner": {
+        "completed": true,
+        "progress": 1,
+        "expanded": 14881
+      }
+    },
+    {
+      "seed": "deep-cavern-v3:r1:10",
+      "layout": "tunnel",
+      "difficulty": 0.48,
+      "passed": true,
+      "fitness": 0.7743116889092646,
+      "heuristicScore": 0.8065411544184053,
+      "botScore": 0.7569573613274195,
+      "metrics": {
+        "successRate": 0.25,
+        "expertSuccessRate": 1,
+        "intermediateSuccessRate": 0,
+        "beginnerSuccessRate": 0,
+        "completionistSuccessRate": 0,
+        "medianCompletionSteps": 303,
+        "medianDeaths": 1,
+        "meanProgress": 0.5446730071400625,
+        "stuckRate": 0.027777777777777776,
+        "gemCoverage": 0.5833333333333333,
+        "pathDiversity": 0.7777777777777778,
+        "meanInputComplexity": 0.19241548838466993,
+        "observedDashRate": 1,
+        "observedDoubleJumpRate": 1,
+        "observedWallJumpRate": 0.75
+      },
+      "planner": {
+        "completed": true,
+        "progress": 1,
+        "expanded": 14356
+      }
+    },
+    {
+      "seed": "deep-cavern-v3:r0:3",
+      "layout": "tunnel",
+      "difficulty": 0.58,
+      "passed": true,
+      "fitness": 0.774018421453125,
+      "heuristicScore": 0.7593848500549831,
+      "botScore": 0.7818980368213554,
+      "metrics": {
+        "successRate": 0.25,
+        "expertSuccessRate": 1,
+        "intermediateSuccessRate": 0,
+        "beginnerSuccessRate": 0,
+        "completionistSuccessRate": 0,
+        "medianCompletionSteps": 339,
+        "medianDeaths": 0,
+        "meanProgress": 0.7027960289514866,
+        "stuckRate": 0.05555555555555555,
+        "gemCoverage": 0.6333333333333334,
+        "pathDiversity": 0.7777777777777778,
+        "meanInputComplexity": 0.19288221851495432,
+        "observedDashRate": 1,
+        "observedDoubleJumpRate": 1,
+        "observedWallJumpRate": 0.75
+      },
+      "planner": {
+        "completed": true,
+        "progress": 1,
+        "expanded": 15940
+      }
+    },
+    {
+      "seed": "deep-cavern-v3:r0:7",
+      "layout": "tunnel",
+      "difficulty": 0.58,
+      "passed": true,
+      "fitness": 0.7724229082601868,
+      "heuristicScore": 0.7443805782234099,
+      "botScore": 0.7875226244338359,
+      "metrics": {
+        "successRate": 0.25,
+        "expertSuccessRate": 1,
+        "intermediateSuccessRate": 0,
+        "beginnerSuccessRate": 0,
+        "completionistSuccessRate": 0,
+        "medianCompletionSteps": 325,
+        "medianDeaths": 0,
+        "meanProgress": 0.677700687108764,
+        "stuckRate": 0,
+        "gemCoverage": 0.7055555555555557,
+        "pathDiversity": 0.75,
+        "meanInputComplexity": 0.1886762697574828,
+        "observedDashRate": 1,
+        "observedDoubleJumpRate": 1,
+        "observedWallJumpRate": 0.75
+      },
+      "planner": {
+        "completed": true,
+        "progress": 1,
+        "expanded": 15156
+      }
+    },
+    {
+      "seed": "deep-cavern-v3:r1:0",
+      "layout": "tunnel",
+      "difficulty": 0.48,
+      "passed": true,
+      "fitness": 0.7719951406826047,
+      "heuristicScore": 0.7409459211243714,
+      "botScore": 0.7887139512139612,
+      "metrics": {
+        "successRate": 0.25,
+        "expertSuccessRate": 1,
+        "intermediateSuccessRate": 0,
+        "beginnerSuccessRate": 0,
+        "completionistSuccessRate": 0,
+        "medianCompletionSteps": 333,
+        "medianDeaths": 0,
+        "meanProgress": 0.7082354582355245,
+        "stuckRate": 0,
+        "gemCoverage": 0.6388888888888891,
+        "pathDiversity": 0.7777777777777778,
+        "meanInputComplexity": 0.18804336719303222,
+        "observedDashRate": 1,
+        "observedDoubleJumpRate": 1,
+        "observedWallJumpRate": 0.75
+      },
+      "planner": {
+        "completed": true,
+        "progress": 1,
+        "expanded": 15544
+      }
+    },
+    {
+      "seed": "deep-cavern-v3:r0:5",
+      "layout": "tunnel",
+      "difficulty": 0.58,
+      "passed": true,
+      "fitness": 0.7685418291253601,
+      "heuristicScore": 0.7306648609942564,
+      "botScore": 0.7889371196574927,
+      "metrics": {
+        "successRate": 0.25,
+        "expertSuccessRate": 1,
+        "intermediateSuccessRate": 0,
+        "beginnerSuccessRate": 0,
+        "completionistSuccessRate": 0,
+        "medianCompletionSteps": 345,
+        "medianDeaths": 0,
+        "meanProgress": 0.7368837416862283,
+        "stuckRate": 0,
+        "gemCoverage": 0.587962962962963,
+        "pathDiversity": 0.7777777777777778,
+        "meanInputComplexity": 0.19300517178362953,
+        "observedDashRate": 1,
+        "observedDoubleJumpRate": 1,
+        "observedWallJumpRate": 0.75
+      },
+      "planner": {
+        "completed": true,
+        "progress": 1,
+        "expanded": 16611
+      }
+    },
+    {
+      "seed": "deep-cavern-v3:r1:8",
+      "layout": "tunnel",
+      "difficulty": 0.48,
+      "passed": true,
+      "fitness": 0.7600480254994919,
+      "heuristicScore": 0.7377599408309037,
+      "botScore": 0.7720493018595009,
+      "metrics": {
+        "successRate": 0.25,
+        "expertSuccessRate": 1,
+        "intermediateSuccessRate": 0,
+        "beginnerSuccessRate": 0,
+        "completionistSuccessRate": 0,
+        "medianCompletionSteps": 296,
+        "medianDeaths": 0,
+        "meanProgress": 0.6026933514280124,
+        "stuckRate": 0,
+        "gemCoverage": 0.6527777777777777,
+        "pathDiversity": 0.75,
+        "meanInputComplexity": 0.1981090664324823,
+        "observedDashRate": 1,
+        "observedDoubleJumpRate": 1,
+        "observedWallJumpRate": 0.75
+      },
+      "planner": {
+        "completed": true,
+        "progress": 1,
+        "expanded": 13828
+      }
+    },
+    {
+      "seed": "deep-cavern-v3:r0:6",
+      "layout": "tunnel",
+      "difficulty": 0.58,
+      "passed": true,
+      "fitness": 0.7571012378216868,
+      "heuristicScore": 0.726270989492909,
+      "botScore": 0.7737021407679517,
+      "metrics": {
+        "successRate": 0.25,
+        "expertSuccessRate": 1,
+        "intermediateSuccessRate": 0,
+        "beginnerSuccessRate": 0,
+        "completionistSuccessRate": 0,
+        "medianCompletionSteps": 302,
+        "medianDeaths": 0,
+        "meanProgress": 0.7003789441510173,
+        "stuckRate": 0.08333333333333333,
+        "gemCoverage": 0.5944444444444446,
+        "pathDiversity": 0.75,
+        "meanInputComplexity": 0.19471856389667258,
+        "observedDashRate": 1,
+        "observedDoubleJumpRate": 1,
+        "observedWallJumpRate": 0.75
+      },
+      "planner": {
+        "completed": true,
+        "progress": 1,
+        "expanded": 13960
+      }
+    },
+    {
+      "seed": "deep-cavern-v3:r1:11",
+      "layout": "tunnel",
+      "difficulty": 0.48,
+      "passed": true,
+      "fitness": 0.7559124288875296,
+      "heuristicScore": 0.7264078336536168,
+      "botScore": 0.7717995186288672,
+      "metrics": {
+        "successRate": 0.25,
+        "expertSuccessRate": 1,
+        "intermediateSuccessRate": 0,
+        "beginnerSuccessRate": 0,
+        "completionistSuccessRate": 0,
+        "medianCompletionSteps": 377,
+        "medianDeaths": 0,
+        "meanProgress": 0.5954725743348985,
+        "stuckRate": 0,
+        "gemCoverage": 0.638888888888889,
+        "pathDiversity": 0.7777777777777778,
+        "meanInputComplexity": 0.1877416747588245,
+        "observedDashRate": 1,
+        "observedDoubleJumpRate": 1,
+        "observedWallJumpRate": 1
+      },
+      "planner": {
+        "completed": true,
+        "progress": 1,
+        "expanded": 17986
+      }
+    },
+    {
+      "seed": "deep-cavern-v3:r0:9",
+      "layout": "tunnel",
+      "difficulty": 0.58,
+      "passed": true,
+      "fitness": 0.7554326168168564,
+      "heuristicScore": 0.7290592007490891,
+      "botScore": 0.7696336870071927,
+      "metrics": {
+        "successRate": 0.25,
+        "expertSuccessRate": 1,
+        "intermediateSuccessRate": 0,
+        "beginnerSuccessRate": 0,
+        "completionistSuccessRate": 0,
+        "medianCompletionSteps": 281,
+        "medianDeaths": 0,
+        "meanProgress": 0.5928855487089202,
+        "stuckRate": 0,
+        "gemCoverage": 0.6166666666666667,
+        "pathDiversity": 0.7777777777777778,
+        "meanInputComplexity": 0.19694610118699457,
+        "observedDashRate": 1,
+        "observedDoubleJumpRate": 1,
+        "observedWallJumpRate": 0.75
+      },
+      "planner": {
+        "completed": true,
+        "progress": 1,
+        "expanded": 13168
+      }
+    },
+    {
+      "seed": "deep-cavern-v3:r1:3",
+      "layout": "tunnel",
+      "difficulty": 0.48,
+      "passed": true,
+      "fitness": 0.7459988128154752,
+      "heuristicScore": 0.698034128065966,
+      "botScore": 0.7718259507575187,
+      "metrics": {
+        "successRate": 0.25,
+        "expertSuccessRate": 1,
+        "intermediateSuccessRate": 0,
+        "beginnerSuccessRate": 0,
+        "completionistSuccessRate": 0,
+        "medianCompletionSteps": 1216,
+        "medianDeaths": 0,
+        "meanProgress": 0.6795994058098591,
+        "stuckRate": 0,
+        "gemCoverage": 0.48148148148148145,
+        "pathDiversity": 0.7777777777777778,
+        "meanInputComplexity": 0.1668256297584024,
+        "observedDashRate": 1,
+        "observedDoubleJumpRate": 1,
+        "observedWallJumpRate": 0.75
+      },
+      "planner": {
+        "completed": true,
+        "progress": 1,
+        "expanded": 60091
+      }
+    },
+    {
+      "seed": "deep-cavern-v3:r1:5",
+      "layout": "tunnel",
+      "difficulty": 0.48,
+      "passed": true,
+      "fitness": 0.7448155944548951,
+      "heuristicScore": 0.7306648609942564,
+      "botScore": 0.7524352201644697,
+      "metrics": {
+        "successRate": 0.25,
+        "expertSuccessRate": 1,
+        "intermediateSuccessRate": 0,
+        "beginnerSuccessRate": 0,
+        "completionistSuccessRate": 0,
+        "medianCompletionSteps": 313,
+        "medianDeaths": 0,
+        "meanProgress": 0.607117991979656,
+        "stuckRate": 0.16666666666666666,
+        "gemCoverage": 0.5833333333333333,
+        "pathDiversity": 0.7777777777777778,
+        "meanInputComplexity": 0.1987831263452165,
+        "observedDashRate": 1,
+        "observedDoubleJumpRate": 1,
+        "observedWallJumpRate": 0.75
+      },
+      "planner": {
+        "completed": true,
+        "progress": 1,
+        "expanded": 15137
+      }
+    },
+    {
+      "seed": "deep-cavern-v3:r0:8",
+      "layout": "tunnel",
+      "difficulty": 0.58,
+      "passed": true,
+      "fitness": 0.7433405335928049,
+      "heuristicScore": 0.7195549145610712,
+      "botScore": 0.7561481746098923,
+      "metrics": {
+        "successRate": 0.25,
+        "expertSuccessRate": 1,
+        "intermediateSuccessRate": 0,
+        "beginnerSuccessRate": 0,
+        "completionistSuccessRate": 0,
+        "medianCompletionSteps": 372,
+        "medianDeaths": 0,
+        "meanProgress": 0.5874265771713613,
+        "stuckRate": 0.05555555555555555,
+        "gemCoverage": 0.5277777777777779,
+        "pathDiversity": 0.7777777777777778,
+        "meanInputComplexity": 0.19044400169748937,
+        "observedDashRate": 1,
+        "observedDoubleJumpRate": 1,
+        "observedWallJumpRate": 0.75
+      },
+      "planner": {
+        "completed": true,
+        "progress": 1,
+        "expanded": 17565
+      }
+    },
+    {
+      "seed": "deep-cavern-v3:r0:4",
+      "layout": "tunnel",
+      "difficulty": 0.58,
+      "passed": true,
+      "fitness": 0.7389687749992466,
+      "heuristicScore": 0.7079594289139367,
+      "botScore": 0.7556661151990289,
+      "metrics": {
+        "successRate": 0.25,
+        "expertSuccessRate": 1,
+        "intermediateSuccessRate": 0,
+        "beginnerSuccessRate": 0,
+        "completionistSuccessRate": 0,
+        "medianCompletionSteps": 364,
+        "medianDeaths": 0,
+        "meanProgress": 0.5755708724569638,
+        "stuckRate": 0.027777777777777776,
+        "gemCoverage": 0.5092592592592592,
+        "pathDiversity": 0.7777777777777778,
+        "meanInputComplexity": 0.19523123105792364,
+        "observedDashRate": 1,
+        "observedDoubleJumpRate": 1,
+        "observedWallJumpRate": 1
+      },
+      "planner": {
+        "completed": true,
+        "progress": 1,
+        "expanded": 17436
+      }
+    },
+    {
+      "seed": "deep-cavern-v3:r1:7",
+      "layout": "tunnel",
+      "difficulty": 0.48,
+      "passed": true,
+      "fitness": 0.7352015891478115,
+      "heuristicScore": 0.6902156278904145,
+      "botScore": 0.7594247990556408,
+      "metrics": {
+        "successRate": 0.25,
+        "expertSuccessRate": 1,
+        "intermediateSuccessRate": 0,
+        "beginnerSuccessRate": 0,
+        "completionistSuccessRate": 0,
+        "medianCompletionSteps": 344,
+        "medianDeaths": 0,
+        "meanProgress": 0.5969250611306729,
+        "stuckRate": 0,
+        "gemCoverage": 0.48148148148148157,
+        "pathDiversity": 0.7777777777777778,
+        "meanInputComplexity": 0.19237908593793387,
+        "observedDashRate": 1,
+        "observedDoubleJumpRate": 1,
+        "observedWallJumpRate": 0.75
+      },
+      "planner": {
+        "completed": true,
+        "progress": 1,
+        "expanded": 16377
+      }
+    },
+    {
+      "seed": "deep-cavern-v3:r0:11",
+      "layout": "tunnel",
+      "difficulty": 0.58,
+      "passed": false,
+      "fitness": 0.7440058815332173,
+      "heuristicScore": 0.7535537972405586,
+      "botScore": 0.7388646961523414,
+      "metrics": {
+        "successRate": 0.25,
+        "expertSuccessRate": 1,
+        "intermediateSuccessRate": 0,
+        "beginnerSuccessRate": 0,
+        "completionistSuccessRate": 0,
+        "medianCompletionSteps": 320,
+        "medianDeaths": 0,
+        "meanProgress": 0.48701820226917053,
+        "stuckRate": 0.05555555555555555,
+        "gemCoverage": 0.4999999999999999,
+        "pathDiversity": 0.7777777777777778,
+        "meanInputComplexity": 0.19389126159736558,
+        "observedDashRate": 1,
+        "observedDoubleJumpRate": 1,
+        "observedWallJumpRate": 0.75
+      },
+      "planner": {
+        "completed": true,
+        "progress": 1,
+        "expanded": 15148
+      }
+    },
+    {
+      "seed": "deep-cavern-v3:r1:6",
+      "layout": "tunnel",
+      "difficulty": 0.48,
+      "passed": false,
+      "fitness": 0.7016548898598542,
+      "heuristicScore": 0.7443805782234099,
+      "botScore": 0.6786487499717858,
+      "metrics": {
+        "successRate": 0.25,
+        "expertSuccessRate": 1,
+        "intermediateSuccessRate": 0,
+        "beginnerSuccessRate": 0,
+        "completionistSuccessRate": 0,
+        "medianCompletionSteps": 336,
+        "medianDeaths": 1,
+        "meanProgress": 0.43817115365805914,
+        "stuckRate": 0.5,
+        "gemCoverage": 0.3944444444444443,
+        "pathDiversity": 0.7777777777777778,
+        "meanInputComplexity": 0.18966362020650662,
+        "observedDashRate": 1,
+        "observedDoubleJumpRate": 1,
+        "observedWallJumpRate": 0.75
+      },
+      "planner": {
+        "completed": true,
+        "progress": 1,
+        "expanded": 15544
+      }
+    },
+    {
+      "seed": "deep-cavern-v3:r0:1",
+      "layout": "tunnel",
+      "difficulty": 0.58,
+      "passed": false,
+      "fitness": 0.6955615448981839,
+      "heuristicScore": 0.69905488898014,
+      "botScore": 0.6936805134694384,
+      "metrics": {
+        "successRate": 0.25,
+        "expertSuccessRate": 1,
+        "intermediateSuccessRate": 0,
+        "beginnerSuccessRate": 0,
+        "completionistSuccessRate": 0,
+        "medianCompletionSteps": 311,
+        "medianDeaths": 0,
+        "meanProgress": 0.4672717991979655,
+        "stuckRate": 0.4444444444444444,
+        "gemCoverage": 0.4583333333333333,
+        "pathDiversity": 0.7777777777777778,
+        "meanInputComplexity": 0.1996782285079965,
+        "observedDashRate": 1,
+        "observedDoubleJumpRate": 1,
+        "observedWallJumpRate": 0.75
+      },
+      "planner": {
+        "completed": true,
+        "progress": 1,
+        "expanded": 14433
+      }
+    }
+  ]
+}

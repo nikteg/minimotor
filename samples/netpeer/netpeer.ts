@@ -1,3 +1,4 @@
+import { createPerformanceMonitoring, createNetMeter } from "minimotor/performance";
 // Peer-to-peer demo: a real WebRTC data channel, both ends in one page.
 // Demonstrates: Net.createPeer — onSignal / applySignal handshake,
 // transport.sendJson / onMessage, and transport.state.
@@ -8,7 +9,9 @@
 // other's applySignal — so the handshake, the ICE and the data channel are all
 // genuine, no server required. Move your mouse on the LEFT pane; the dot on the
 // RIGHT is drawn only from bytes that traveled peer→peer over the channel.
-import { Draw, Keys, Loop, Net, Perf, Pointer, App, UI } from "minimotor";
+import { createNet } from "minimotor/net";
+import { createUI } from "minimotor/ui";
+import { App } from "minimotor";
 
 interface Vec {
   x: number;
@@ -17,12 +20,16 @@ interface Vec {
 
 // Host-side network meter, shown in the Perf HUD (top-right): message and byte
 // rates for the cursor stream going out and the acks coming back.
-const meter = Perf.createNetMeter();
+const meter = createNetMeter();
 // The viewport is LIVE (mutated on resize) — both panes lay out from it.
-const vp = App.init("game", {
+const game = App.create("game", {
   background: "#0e1116",
-  plugins: [Perf.plugin({ net: meter })],
 });
+createPerformanceMonitoring(game, { net: meter });
+const vp = game.viewport;
+const { Draw, Keys, Loop, Pointer } = game;
+const Net = createNet(game);
+const UI = createUI(game);
 
 const dec = new TextDecoder();
 

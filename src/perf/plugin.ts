@@ -7,7 +7,7 @@ import { createPerfTracker } from "./tracker.js";
 
 // ---------- Plugin ----------
 
-/** Options for the Perf plugin. */
+/** Options for the performance monitor. */
 export interface PerfOptions {
   /** Corner to draw in. Default `"top-right"`. */
   anchor?: "top-left" | "top-right";
@@ -16,8 +16,8 @@ export interface PerfOptions {
   layout?: "vertical" | "horizontal";
   /** A `NetMeter` to display network throughput alongside the frame stats. */
   net?: NetMeter;
-  /** An ECS world (anything with a numeric `size`) to show its live entity
-   *  count — e.g. `plugin({ world: Minimotor.World })`. */
+  /** An ECS world (anything with a numeric `size`) whose live entity count
+   *  should be shown. */
   world?: { readonly size: number };
   /** Draw history sparklines (frame time; up/down traffic with `net`).
    *  Default true. */
@@ -32,13 +32,12 @@ function usedHeapMB(): number | undefined {
   return typeof used === "number" ? used / (1024 * 1024) : undefined;
 }
 
-/** Create a Perf HUD engine plugin. Each call owns its own tracker state. Draws in
- *  the top-right corner by default; pass a `NetMeter` to also show throughput.
- *  Click the HUD to dim it out of the way (and click again to restore):
+/** Internal engine adapter used by `createPerformanceMonitoring`. Each call owns
+ *  its tracker state. The HUD draws in the top-right corner by default; pass a
+ *  `NetMeter` to also show throughput. Click it to toggle its dim state:
  *
- *    const net = Minimotor.Perf.createNetMeter();
- *    Minimotor.App.init("game", { plugins: [Minimotor.Perf.plugin({ net })] });
- *    Minimotor.Loop.run({ update, draw }); */
+ *    const Performance = createPerformanceMonitoring(game, { net: room.meter });
+ *    Performance.hide(); */
 export function plugin(opts: PerfOptions = {}): EnginePlugin {
   const tick = createPerfTracker();
   const wantGraphs = opts.graphs ?? true;

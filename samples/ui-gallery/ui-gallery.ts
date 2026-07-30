@@ -6,13 +6,14 @@
 // region with an explicit scrollbar, the overlays (popover / modal / dialog /
 // confirm), and a UI-scale knob (UI.scaled) that zooms the whole board live.
 //
-// The engine calls UI.begin() for us each frame; every widget is drawn inside
+// createUI(game) binds every widget to this game; every widget is drawn inside
 // draw(). Interactive state lives in module-level `let`s: each widget takes the
 // current value in and returns the (possibly changed) value, which we store
 // straight back — the immediate-mode round-trip.
-import { App, Draw, Loop, Pointer, UI } from "minimotor";
+import { createUI } from "minimotor/ui";
+import { App } from "minimotor";
 import type { TableSort, Theme } from "minimotor";
-import "../shared/layout-probe.ts"; // e2e layout-invariant hook (window.__uiProbe)
+import { installLayoutProbe } from "../shared/layout-probe.ts";
 
 // No letterbox `resolution`: rendering at native scale keeps text crisp on
 // high-DPI (Retina) screens — a fractional letterbox factor softens glyphs.
@@ -20,7 +21,11 @@ import "../shared/layout-probe.ts"; // e2e layout-invariant hook (window.__uiPro
 // so the column layout can REFLOW to the window width instead of scaling. The
 // board's OWN zoom is opt-in: the header's "UI Scale" slider drives `UI.scaled`
 // (below), which scales the board's draw + pointer while it still reflows.
-const view = App.init("game", { background: "#12141c" });
+const game = App.create("game", { background: "#12141c" });
+const view = game.viewport;
+const { Draw, Loop, Pointer } = game;
+const UI = createUI(game);
+installLayoutProbe(UI);
 
 // ---- interactive state (the round-trip target for each widget) ----
 let tab = 0; // UI.tabs active index
