@@ -13,6 +13,7 @@ import {
   ringFormation,
   rollDice,
   scoreRank,
+  scrollColumns,
   timingGrade,
   transferStack,
   waveScale,
@@ -53,6 +54,46 @@ describe("Goodies toroidal geometry", () => {
 
   it("measures the shortest 2D wrapped distance", () => {
     expect(wrappedDistance(98, 49, 2, 1, 100, 50)).toBeCloseTo(Math.hypot(4, 2));
+  });
+});
+
+describe("Goodies.scrollColumns", () => {
+  const walk = (scroll: number, pad?: number) => {
+    const out: Array<[number, number, number]> = [];
+    scrollColumns(scroll, 10, 30, (x, seed, i) => out.push([x, seed, i]), pad);
+    return out;
+  };
+
+  it("covers the strip plus one padding column on each side", () => {
+    expect(walk(0).map(([x]) => x)).toEqual([-10, 0, 10, 20, 30]);
+  });
+
+  it("slides columns left as the world scrolls, without growing the work", () => {
+    expect(walk(4).map(([x]) => x)).toEqual([-14, -4, 6, 16, 26]);
+    // A far-scrolled world visits exactly as many columns as a fresh one.
+    expect(walk(1_000_000)).toHaveLength(walk(0).length);
+  });
+
+  it("keeps worldSeed tied to the world column across a wrap", () => {
+    // Scrolling by exactly one spacing shifts every seed by one spacing, so a
+    // shape seeded from it stays with its column instead of shimmering when the
+    // screen offset resets.
+    const before = walk(0).map(([, seed]) => seed);
+    const after = walk(10).map(([, seed]) => seed);
+    expect(after).toEqual(before.map((s) => s + 10));
+  });
+
+  it("indexes columns by seed / spacing", () => {
+    expect(walk(0).map(([, , i]) => i)).toEqual([-1, 0, 1, 2, 3]);
+  });
+
+  it("takes pad 0 for props no wider than the spacing", () => {
+    expect(walk(0, 0).map(([x]) => x)).toEqual([0, 10, 20]);
+  });
+
+  it("rejects a spacing that would not terminate", () => {
+    expect(() => scrollColumns(0, 0, 30, () => {})).toThrow(RangeError);
+    expect(() => scrollColumns(0, Infinity, 30, () => {})).toThrow(RangeError);
   });
 });
 
