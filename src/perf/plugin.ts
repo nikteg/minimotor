@@ -1,4 +1,4 @@
-import type { EnginePlugin } from "../engine/index.js";
+import type { App } from "../engine/index.js";
 import { pointInRect } from "../collision.js";
 import { drawPerfHud } from "./hud.js";
 import type { NetMeter } from "./net-meter.js";
@@ -8,6 +8,12 @@ import { createPerfTracker } from "./tracker.js";
 // ---------- Plugin ----------
 
 /** Options for the performance monitor. */
+/** A per-frame overlay: given the app, draw on top of the finished frame.
+ *  Subscribed with `app.onFrame` by the feature that owns it. */
+export interface PerfOverlay {
+  frame(app: App): void;
+}
+
 export interface PerfOptions {
   /** Corner to draw in. Default `"top-right"`. */
   anchor?: "top-left" | "top-right";
@@ -38,7 +44,7 @@ function usedHeapMB(): number | undefined {
  *
  *    const Performance = createPerformanceMonitoring(app, { net: room.meter });
  *    Performance.hide(); */
-export function plugin(opts: PerfOptions = {}): EnginePlugin {
+export function plugin(opts: PerfOptions = {}): PerfOverlay {
   const tick = createPerfTracker();
   const wantGraphs = opts.graphs ?? true;
   const frameSpark = wantGraphs ? createSparkline() : undefined;
@@ -48,8 +54,7 @@ export function plugin(opts: PerfOptions = {}): EnginePlugin {
   let dimmed = false;
   let box: { x: number; y: number; w: number; h: number } | null = null;
   return {
-    name: "perf",
-    afterDraw(app) {
+    frame(app) {
       const now = performance.now();
       const stats = tick(now);
       const net = opts.net ? opts.net.sample(now) : undefined;
@@ -59,7 +64,7 @@ export function plugin(opts: PerfOptions = {}): EnginePlugin {
         downSpark?.push(net.downBps);
       }
       // Click the HUD (its rect from the previous frame) to toggle it dim.
-      const p = app.pointer;
+      const p = app.Pointer;
       if (box && p.frameReleased && pointInRect(p.x, p.y, box)) dimmed = !dimmed;
       const vp = app.viewport;
       const ctx = app.ctx;

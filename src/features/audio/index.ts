@@ -119,6 +119,6 @@ export function createAudio(app: App): AudioApi {
     },
     destroy,
   };
-  app.use({ name: "Audio", onDestroy: destroy });
+  app.onDestroy(destroy);
   return api;
 }

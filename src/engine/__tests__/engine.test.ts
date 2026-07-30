@@ -75,14 +75,17 @@ describe("createApp", () => {
   // that behavior is pinned by e2e/select-menu.spec.ts against real computed
   // style instead of here.
 
-  it("accepts plugins via options and registers late ones via game.use()", () => {
+  it("runs onDestroy handlers on destroy, and honors unsubscribe", () => {
     const canvas = document.createElement("canvas");
-    const early = vi.fn();
-    const late = vi.fn();
-    const game = createRuntime({ canvas, plugins: [{ name: "early", onInit: early }] });
-    expect(early).toHaveBeenCalledTimes(1);
-    game.use({ name: "late", onInit: late });
-    expect(late).toHaveBeenCalledTimes(1);
+    const kept = vi.fn();
+    const dropped = vi.fn();
+    const game = createRuntime({ canvas });
+    game.onDestroy(kept);
+    const unsubscribe = game.onDestroy(dropped);
+    unsubscribe();
+    game.destroy();
+    expect(kept).toHaveBeenCalledTimes(1);
+    expect(dropped).not.toHaveBeenCalled();
   });
 });
 
@@ -582,31 +585,45 @@ describe("live viewport & background", () => {
 });
 
 describe("plugins", () => {
-  it("invokes lifecycle hooks around update and draw", () => {
+  it("orders step subscriptions around update, and frame subscriptions after draw", () => {
     const canvas = document.createElement("canvas");
     const calls: string[] = [];
-    const hook = (name: string) => () => calls.push(name);
-    const game = createRuntime({
-      canvas,
-      plugins: [
-        {
-          name: "spy",
-          onInit: hook("init"),
-          beforeUpdate: hook("beforeUpdate"),
-          afterUpdate: hook("afterUpdate"),
-          beforeDraw: hook("beforeDraw"),
-          afterDraw: hook("afterDraw"),
-        },
-      ],
-    });
-    game.run({ update: vi.fn(), draw: vi.fn() });
+    const game = createRuntime({ canvas });
+    game.onStepStart(() => calls.push("stepStart"));
+    game.onStep(() => calls.push("step"));
+    game.onFrame(() => calls.push("frame"));
+    game.run({ update: () => calls.push("update"), draw: () => calls.push("draw") });
     tick(16);
     tick(48); // enough for one update step
 
-    expect(calls[0]).toBe("init");
-    expect(calls).toContain("beforeUpdate");
-    expect(calls.indexOf("beforeUpdate")).toBeLessThan(calls.indexOf("beforeDraw"));
-    expect(calls.indexOf("beforeDraw")).toBeLessThan(calls.indexOf("afterDraw"));
+    // The opening frame is IDLE — 16ms hasn't reached a full 16.67ms step — and
+    // it still draws, which is the property that lets paused/idle frames render.
+    expect(calls.slice(0, 2)).toEqual(["draw", "frame"]);
+    // Every simulated step is bracketed stepStart → update → step...
+    for (let i = 0; i < calls.length; i += 1) {
+      if (calls[i] !== "update") continue;
+      expect(calls[i - 1]).toBe("stepStart");
+      expect(calls[i + 1]).toBe("step");
+    }
+    // ...and the frame's draw lands after all of them, with onFrame last.
+    expect(calls.at(-2)).toBe("draw");
+    expect(calls.at(-1)).toBe("frame");
+    expect(calls.lastIndexOf("step")).toBeLessThan(calls.lastIndexOf("draw"));
+  });
+
+  it("ticks step subscriptions once per FIXED STEP, not once per frame", () => {
+    const canvas = document.createElement("canvas");
+    let steps = 0;
+    let frames = 0;
+    const game = createRuntime({ canvas });
+    game.onStep(() => (steps += 1));
+    game.onFrame(() => (frames += 1));
+    game.run({ update: vi.fn(), draw: vi.fn() });
+    tick(16);
+    tick(64); // one long frame — several fixed steps have to catch up inside it
+
+    expect(steps).toBeGreaterThan(1);
+    expect(frames).toBe(2); // exactly one per rendered frame
   });
 });
 

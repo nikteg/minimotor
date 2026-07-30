@@ -275,6 +275,6 @@ export function createAssetStore(): AssetStore {
 /** Create an asset cache owned and cleared by one app. */
 export function createAssets(app: App): AssetStore {
   const store = createAssetStore();
-  app.use({ name: "Assets", onDestroy: () => store.clear() });
+  app.onDestroy(() => store.clear());
   return store;
 }

@@ -56,7 +56,7 @@ export function createNet(app: App): NetApi {
     },
     simulation(options) {
       const simulation = createNetworkSimulation(options);
-      app.use({ name: "NetSimulation", onDestroy: simulation.destroy });
+      app.onDestroy(simulation.destroy);
       return simulation;
     },
     replicate: createReplication,
@@ -68,6 +68,6 @@ export function createNet(app: App): NetApi {
     for (const net of games) net.close();
     games.clear();
   };
-  app.use({ name: "Networking", onDestroy: destroy });
+  app.onDestroy(destroy);
   return api;
 }

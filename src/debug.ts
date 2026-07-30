@@ -4,7 +4,7 @@
 
 import type { LadderSource, MoverBody, Solid, SolidSource } from "./collision.js";
 import type { CameraLens } from "./camera/index.js";
-import type { App, EnginePlugin, Rect } from "./engine/index.js";
+import type { App, Rect } from "./engine/index.js";
 import { createInspector, type Inspection } from "./features/inspector.js";
 import { plugin as perfPlugin, type PerfOptions } from "./perf/index.js";
 
@@ -27,9 +27,12 @@ export interface DebugOptions {
   onModeChange?(mode: DebugMode): void;
 }
 
-export interface DebugPlugin extends EnginePlugin {
+export interface DebugPlugin {
   readonly mode: DebugMode;
   cycle(): DebugMode;
+  /** Run once per rendered frame, after `draw`: poll the shortcut and paint the
+   *  overlay. `createDebug` subscribes this with `app.onFrame`. */
+  frame(app: App): void;
 }
 
 export interface DebugApi {
@@ -107,17 +110,17 @@ function debugPlugin(opts: DebugOptions): DebugPlugin {
     return mode;
   };
   return {
-    name: "debug",
     get mode() {
       return modes[index];
     },
     cycle,
-    beforeDraw(app) {
-      const down = app.keys.keyDown("?");
+    frame(app) {
+      // The shortcut is edge-detected here rather than in a fixed step so it
+      // still works while the loop is paused — `onFrame` runs on paused frames.
+      const down = app.Keys.keyDown("?");
       if (down && !shortcutDown) cycle();
       shortcutDown = down;
-    },
-    afterDraw(app) {
+
       if (modes[index] === "collision" && opts.world && camera) {
         const world = typeof opts.world === "function" ? opts.world() : opts.world;
         const view = camera.rect;
@@ -128,7 +131,7 @@ function debugPlugin(opts: DebugOptions): DebugPlugin {
         });
         app.ctx.restore();
       }
-      if (modes[index] !== "off") perf?.afterDraw?.(app);
+      if (modes[index] !== "off") perf?.frame(app);
     },
   };
 }
@@ -137,7 +140,7 @@ function debugPlugin(opts: DebugOptions): DebugPlugin {
 export function createDebug(app: App, opts: DebugOptions = {}): DebugApi {
   const plugin = debugPlugin(opts);
   const inspector = createInspector();
-  app.use(plugin);
+  app.onFrame(() => plugin.frame(app));
   return {
     get mode() {
       return plugin.mode;

@@ -27,17 +27,10 @@ export function createPerformanceMonitoring(
 ): PerformanceMonitoringApi {
   const monitor = plugin(options);
   let visible = true;
-  app.use({
-    name: "PerformanceMonitoring",
-    onInit: monitor.onInit,
-    beforeUpdate: monitor.beforeUpdate,
-    afterUpdate: monitor.afterUpdate,
-    beforeDraw: monitor.beforeDraw,
-    afterDraw(app) {
-      if (visible) monitor.afterDraw?.(app);
-    },
-    onResize: monitor.onResize,
-    onDestroy: monitor.onDestroy,
+  // The HUD paints on top of the finished frame, so it runs on `onFrame` —
+  // which also fires on paused frames, keeping the readout live while paused.
+  app.onFrame(() => {
+    if (visible) monitor.frame(app);
   });
   return {
     get visible() {

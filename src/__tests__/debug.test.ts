@@ -1,33 +1,49 @@
 import { describe, expect, it } from "vitest";
 import { createDebug } from "../debug.js";
-import type { App, EnginePlugin } from "../engine/index.js";
+import type { App } from "../engine/index.js";
 
 describe("createDebug", () => {
   it("cycles off → performance → collision → off from layout-aware key state", () => {
     let down = false;
-    let plugin: EnginePlugin | undefined;
-    const app = {
-      keys: { keyDown: (key: string) => key === "?" && down },
-    };
+    // createDebug subscribes its overlay with app.onFrame; capture the handler
+    // so the test can drive frames itself.
+    let frame: (() => void) | undefined;
     const game = {
-      use(value: EnginePlugin) {
-        plugin = value;
+      Keys: { keyDown: (key: string) => key === "?" && down },
+      onFrame(handler: () => void) {
+        frame = handler;
+        return () => {};
       },
-    } as App;
+    } as unknown as App;
+
     const debug = createDebug(game, { perf: false });
     expect(debug.mode).toBe("off");
 
+    // Edge-detected: holding the key past one frame must not keep cycling.
     down = true;
-    plugin?.beforeDraw?.(app as never);
+    frame?.();
     expect(debug.mode).toBe("performance");
-    plugin?.beforeDraw?.(app as never);
+    frame?.();
     expect(debug.mode).toBe("performance");
 
     down = false;
-    plugin?.beforeDraw?.(app as never);
+    frame?.();
     down = true;
-    plugin?.beforeDraw?.(app as never);
+    frame?.();
     expect(debug.mode).toBe("collision");
     expect(debug.cycle()).toBe("off");
+  });
+
+  it("unsubscribes nothing on its own — the app owns the handler's lifetime", () => {
+    const handlers: Array<() => void> = [];
+    const game = {
+      Keys: { keyDown: () => false },
+      onFrame(handler: () => void) {
+        handlers.push(handler);
+        return () => {};
+      },
+    } as unknown as App;
+    createDebug(game, { perf: false });
+    expect(handlers).toHaveLength(1);
   });
 });

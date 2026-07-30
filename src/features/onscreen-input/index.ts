@@ -52,7 +52,7 @@ export function createOnscreenInput(app: App, input: InputApi): OnscreenInputApi
     visible,
     destroy,
   };
-  app.use({ name: "OnscreenInput", onDestroy: destroy });
+  app.onDestroy(destroy);
   return api;
 }
 

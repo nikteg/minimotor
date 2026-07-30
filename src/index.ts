@@ -117,7 +117,6 @@ export type {
   Keys,
   Pointer,
   LoopApi,
-  EnginePlugin,
   FrameTimings,
   AppCallbacks,
   AppOptions,
@@ -399,3 +398,9 @@ export type {
 } from "./features/ui/api.js";
 
 export { Vec2 } from "./vec2.js";
+
+/** Page-level styling and gesture guards. `createApp` applies `applyFullscreen`
+ *  for you unless you pass `fullscreen: false`; these are the manual handles for
+ *  pages that opt out and want to apply the rules themselves, later, or merge
+ *  `fullscreenCSS` into their own stylesheet. */
+export { applyFullscreen, fullscreenCSS, preventNavigation } from "./fullscreen.js";

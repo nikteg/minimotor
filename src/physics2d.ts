@@ -1055,14 +1055,11 @@ export function createPhysics2D(app: App): Physics2DApi {
       return physics;
     },
   };
-  app.use({
-    name: "Physics2D",
-    onDestroy() {
-      unsubscribe();
-      for (const physics of worlds) physics.destroy();
-      worlds.clear();
-      automatic.clear();
-    },
+  app.onDestroy(() => {
+    unsubscribe();
+    for (const physics of worlds) physics.destroy();
+    worlds.clear();
+    automatic.clear();
   });
   return api;
 }

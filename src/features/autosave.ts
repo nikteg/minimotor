@@ -38,6 +38,6 @@ export function createAutosave<N extends string>(
   const unsubscribe = app.Loop.onStep(() => {
     if (app.Loop.steps % every === 0) void save();
   });
-  app.use({ name: "Autosave", onDestroy: unsubscribe });
+  app.onDestroy(unsubscribe);
   return api;
 }

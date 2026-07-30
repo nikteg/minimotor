@@ -93,7 +93,7 @@ export interface PortalOptions<A extends string, S extends string, B extends Por
    * Snap the camera or swap area-owned systems here. */
   onTravel?(travel: PortalTravel<A>): void;
   /** Runtime owner injected by the Portals feature. */
-  app?: Pick<App, "use">;
+  app?: Pick<App, "onStep" | "onDestroy">;
 }
 
 export interface PortalRouter<A extends string> {
@@ -230,15 +230,10 @@ export function createPortalRouter<A extends string, S extends string, B extends
     if (!options.app) {
       throw new Error("Portals: automatic routing requires createPortals(app)");
     }
-    options.app.use({
-      name: "portals",
-      onInit(app) {
-        unsubscribe = app.onStep(() => router.update());
-      },
-      onDestroy() {
-        router.dispose();
-      },
-    });
+    // `onStep`, not a per-frame hook: the router must advance exactly once per
+    // fixed step, so a catch-up frame routes every step it simulates.
+    unsubscribe = options.app.onStep(() => router.update());
+    options.app.onDestroy(() => router.dispose());
   }
   return router;
 }

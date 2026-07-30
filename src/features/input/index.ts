@@ -87,6 +87,6 @@ export function createInput(app: App): InputApi {
     },
     destroy,
   };
-  app.use({ name: "Input", onDestroy: destroy });
+  app.onDestroy(destroy);
   return api;
 }

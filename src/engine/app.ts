@@ -57,27 +57,6 @@ export interface Viewport {
   offsetY: number;
 }
 
-/** Plugins hook into the app lifecycle; each hook receives its app.
- *  Register with that app's `use()`. */
-export interface EnginePlugin {
-  /** Plugin name, for identification/debugging. */
-  name: string;
-  /** Called once after the canvas is ready, before the first frame. */
-  onInit?: (app: Runtime) => void;
-  /** Called once per frame, before the user's update step(s). */
-  beforeUpdate?: (app: Runtime) => void;
-  /** Called once per frame, after the user's update step(s). */
-  afterUpdate?: (app: Runtime) => void;
-  /** Called before the user's draw. */
-  beforeDraw?: (app: Runtime) => void;
-  /** Called after the user's draw. */
-  afterDraw?: (app: Runtime) => void;
-  /** Called after a viewport resize. */
-  onResize?: (app: Runtime) => void;
-  /** Called when the app is destroyed. Remove global listeners here. */
-  onDestroy?: (app: Runtime) => void;
-}
-
 /** The per-frame callbacks. Input is read from the app's polled services. */
 export interface AppCallbacks {
   /** Fixed-timestep simulation. May run 0..N times per rendered frame; every
@@ -151,8 +130,9 @@ export interface Runtime {
    *  Screen-space UI calls this to escape a camera block back to the letterbox
    *  base (not raw device space). */
   resetTransform(): void;
-  /** Register a plugin after build (calls its `onInit` immediately). */
-  use(plugin: EnginePlugin): void;
+  /** Register a teardown to run on `destroy()`. Returns an unsubscribe, so a
+   *  capability that is torn down early doesn't leave a stale handler behind. */
+  onDestroy(handler: () => void): () => void;
   /** Register callbacks and start the loop (idempotent restart of callbacks). */
   run(callbacks: AppCallbacks): Runtime;
   /** Freeze updates; `draw` keeps running so overlays can render. */
@@ -167,8 +147,8 @@ export interface Runtime {
   destroy(): void;
 }
 
-/** Config for building an app instance — canvas, resolution, plugins, and
- *  input/clear behavior. */
+/** Config for building an app instance — canvas, resolution, and input/clear
+ *  behavior. */
 export interface RuntimeOptions {
   /** Canvas element id (without `#`) or the element itself. */
   canvas: string | HTMLCanvasElement;
@@ -189,8 +169,6 @@ export interface RuntimeOptions {
   resolution?: { w: number; h: number };
   /** Letterbox bar color (only with `resolution`). Default "#000". */
   barColor?: string;
-  /** Low-level lifecycle plugins used by app-bound capability factories. */
-  plugins?: EnginePlugin[];
   /** Auto-pause while a coarse-pointer device is held in portrait. Default
    *  false. */
   pauseOnPortrait?: boolean;
@@ -233,7 +211,6 @@ function resolveCanvas(canvas: string | HTMLCanvasElement): HTMLCanvasElement {
 }
 
 function buildRuntime(options: RuntimeOptions): Runtime {
-  const plugins = [...(options.plugins ?? [])];
   const pauseOnPortrait = options.pauseOnPortrait ?? false;
   const canvas = resolveCanvas(options.canvas);
   // The viewport is a LIVE object: same identity forever, fields mutated in
@@ -569,6 +546,7 @@ function buildRuntime(options: RuntimeOptions): Runtime {
   const stepHandlers = new Set<() => void>();
   const stepStartHandlers = new Set<() => void>();
   const frameHandlers = new Set<() => void>();
+  const destroyHandlers = new Set<() => void>();
   const resizeHandlers = new Set<(vp: Viewport) => void>();
 
   // Per-frame cursor request (setCursor): applied at frame end, then reset —
@@ -599,7 +577,6 @@ function buildRuntime(options: RuntimeOptions): Runtime {
     resizeDirty = false;
     Object.assign(viewport, readViewport(canvas, options.resolution)); // live: mutate in place
     canvasRect = null;
-    for (const p of plugins) p.onResize?.(app);
     for (const h of resizeHandlers) h(viewport);
   };
   const handleResize = () => {
@@ -647,9 +624,7 @@ function buildRuntime(options: RuntimeOptions): Runtime {
       // mid-pause doesn't fire pressed() on the first step after resume().
       consumeEdges();
       clearFrame();
-      for (const p of plugins) p.beforeDraw?.(app);
       drawClipped();
-      for (const p of plugins) p.afterDraw?.(app);
       endFrame(); // pause menus hit-test and scroll in draw too
       return;
     }
@@ -660,7 +635,6 @@ function buildRuntime(options: RuntimeOptions): Runtime {
     frameDelta = elapsed;
     accumulator += elapsed;
 
-    for (const p of plugins) p.beforeUpdate?.(app);
     let steps = 0;
     const updStart = performance.now();
     while (accumulator >= STEP_MS) {
@@ -681,14 +655,11 @@ function buildRuntime(options: RuntimeOptions): Runtime {
     }
     timings.updateMs = performance.now() - updStart;
     timings.steps = Math.min(steps, MAX_CATCHUP_STEPS);
-    for (const p of plugins) p.afterUpdate?.(app);
 
     clearFrame();
-    for (const p of plugins) p.beforeDraw?.(app);
     const drawStart = performance.now();
     drawClipped();
     timings.drawMs = performance.now() - drawStart;
-    for (const p of plugins) p.afterDraw?.(app);
     endFrame();
   }
 
@@ -736,9 +707,9 @@ function buildRuntime(options: RuntimeOptions): Runtime {
       }
     },
     resetTransform,
-    use(plugin) {
-      plugins.push(plugin);
-      plugin.onInit?.(app);
+    onDestroy(handler) {
+      destroyHandlers.add(handler);
+      return () => destroyHandlers.delete(handler);
     },
     run(cb) {
       if (destroyed) throw new Error("Minimotor: this app was destroyed — build a new one");
@@ -794,17 +765,17 @@ function buildRuntime(options: RuntimeOptions): Runtime {
       canvas.removeEventListener("touchend", onTouchEnd);
       canvas.removeEventListener("selectstart", stopGesture);
       if (portraitMq && portraitApply) portraitMq.removeEventListener?.("change", portraitApply);
-      for (const p of plugins) p.onDestroy?.(app);
+      for (const h of destroyHandlers) h();
       stepHandlers.clear();
       stepStartHandlers.clear();
       frameHandlers.clear();
       resizeHandlers.clear();
+      destroyHandlers.clear();
       if (appsByCanvas.get(canvas) === app) appsByCanvas.delete(canvas);
     },
   };
 
   appsByCanvas.set(canvas, app);
-  for (const p of plugins) p.onInit?.(app);
   return app;
 }
 
@@ -910,15 +881,49 @@ export interface App {
   readonly Mouse: Pointer;
   readonly visible: boolean;
   readonly focused: boolean;
+  /** Last frame's update/draw cost. Same object mutated each frame — read,
+   *  don't hold. */
+  readonly timings: FrameTimings;
   resetTransform(): void;
   setCursor(cursor: string, priority?: number): void;
   onResize(handler: Parameters<Runtime["onResize"]>[0]): () => void;
-  use(plugin: EnginePlugin): void;
+  /** Subscribe to each fixed update step (after the game's `update`, before edge
+   *  input is cleared) — the hook for anything that must advance exactly once
+   *  per simulated step, so a catch-up frame ticks it for every step it runs. */
+  onStep(handler: () => void): () => void;
+  /** Subscribe to the START of each fixed step, before the game's `update`. For
+   *  sampling poll-only inputs so the same step sees fresh state. */
+  onStepStart(handler: () => void): () => void;
+  /** Subscribe to the end of each rendered frame, after `draw` and while the
+   *  frame-scoped input flags are still readable. Runs on paused frames too —
+   *  the hook for debug overlays and immediate-mode UI housekeeping. */
+  onFrame(handler: () => void): () => void;
+  onDestroy(handler: () => void): () => void;
   destroy(): void;
 }
 
 export interface AppOptions extends Omit<RuntimeOptions, "canvas"> {
+  /** Let the engine own the page's styling so the canvas is a clean full-window
+   *  surface: zero margin/padding, no scrollbars or overscroll, no text
+   *  selection or iOS zoom/loupe gestures stealing touches, and the safe-area
+   *  insets published as the `--sai-*` custom properties the letterbox reads.
+   *  Default **true**.
+   *
+   *  It has to be on by default to be correct: a page that doesn't do this keeps
+   *  the browser's 8px body margin around the canvas (so the canvas, sized to
+   *  `innerWidth`/`innerHeight`, overflows into scrollbars), and
+   *  `viewport.safeLeft`/`safeTop` read 0 forever because nothing defines the
+   *  properties they come from.
+   *
+   *  Pass `false` when the page already owns its layout — a game with DOM
+   *  overlays and its own stylesheet, or a canvas embedded in a larger page.
+   *  The rules are injected into `<head>` at construction, i.e. after a linked
+   *  stylesheet, so at equal specificity they would win. `applyFullscreen()` is
+   *  exported for applying them yourself, later or conditionally. */
   fullscreen?: boolean;
+  /** Swallow the browser navigation the OS fires on a two-finger trackpad swipe
+   *  or a touch overscroll, so a stray gesture can't drop the player out of the
+   *  game. Default false. */
   preventNavigation?: boolean;
   /** Auto-pause while the page is hidden (tab switch, minimize), and resume
    *  when it comes back. Only the pause it owns is lifted — if game code paused
@@ -931,7 +936,7 @@ export interface AppOptions extends Omit<RuntimeOptions, "canvas"> {
 
 /** Create one isolated app. */
 export function createApp(canvas: string | HTMLCanvasElement, options: AppOptions = {}): App {
-  if (options.fullscreen) applyFullscreen();
+  if (options.fullscreen !== false) applyFullscreen();
   if (options.preventNavigation) preventNavigation(true);
   const {
     fullscreen: _fullscreen,
@@ -952,6 +957,9 @@ export function createApp(canvas: string | HTMLCanvasElement, options: AppOption
     Clock: createClockApi(runtime),
     Keys: runtime.keys,
     Pointer: runtime.pointer,
+    get timings() {
+      return runtime.timings;
+    },
     Mouse: runtime.pointer,
     get visible() {
       return visible;
@@ -962,7 +970,10 @@ export function createApp(canvas: string | HTMLCanvasElement, options: AppOption
     resetTransform: () => runtime.resetTransform(),
     setCursor: (cursor: string, priority?: number) => runtime.setCursor(cursor, priority),
     onResize: (handler: Parameters<Runtime["onResize"]>[0]) => runtime.onResize(handler),
-    use: (plugin: EnginePlugin) => runtime.use(plugin),
+    onStep: (handler: () => void) => runtime.onStep(handler),
+    onStepStart: (handler: () => void) => runtime.onStepStart(handler),
+    onFrame: (handler: () => void) => runtime.onFrame(handler),
+    onDestroy: (handler: () => void) => runtime.onDestroy(handler),
     destroy: () => runtime.destroy(),
   } satisfies App;
 
@@ -991,13 +1002,10 @@ export function createApp(canvas: string | HTMLCanvasElement, options: AppOption
     document.addEventListener("visibilitychange", syncLifecycle);
     window.addEventListener("focus", syncLifecycle);
     window.addEventListener("blur", syncLifecycle);
-    runtime.use({
-      name: "Lifecycle",
-      onDestroy() {
-        document.removeEventListener("visibilitychange", syncLifecycle);
-        window.removeEventListener("focus", syncLifecycle);
-        window.removeEventListener("blur", syncLifecycle);
-      },
+    runtime.onDestroy(() => {
+      document.removeEventListener("visibilitychange", syncLifecycle);
+      window.removeEventListener("focus", syncLifecycle);
+      window.removeEventListener("blur", syncLifecycle);
     });
   }
 
