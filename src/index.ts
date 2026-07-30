@@ -111,6 +111,12 @@ export type {
   Rect,
   Viewport,
   KeyCode,
+  // The per-app services an `App` hands out. A game that wires its app up in
+  // one module and re-exports the bound services needs to NAME these, or the
+  // re-export infers a type that can't be written down outside node_modules.
+  Keys,
+  Pointer,
+  LoopApi,
   EnginePlugin,
   FrameTimings,
   AppCallbacks,
@@ -138,7 +144,7 @@ export type {
   PortalTravel,
 } from "./portals.js";
 export type { Component, ComponentInit, Entity, Ecs, System, RenderSystem } from "./ecs/index.js";
-export type { ClockHandle, Cancel } from "./clock.js";
+export type { ClockApi, ClockHandle, Cancel } from "./clock.js";
 export type { SignalBus } from "./signals.js";
 export { createSignals } from "./signals.js";
 export type {
