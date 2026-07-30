@@ -47,6 +47,22 @@ function clampRect(v: Vec2, xOrRect: number | Rect, y?: number, w?: number, h?: 
  *  `len`, `dot`, `dist`, `angle`, `lerp`, …). Producers write into `out` when
  *  given, else mutate the first argument — hot paths stay allocation-free. */
 export const Vec2 = {
+  /** Write components into `v` — the in-place counterpart of an `{x, y}`
+   *  literal, for hot paths and for resetting a vector you already own
+   *  (`Vec2.set(body.vel, 0, 0)`). There is deliberately no `Vec2.of`: an object
+   *  literal already IS a Vec2, and is shorter than a call. */
+  set(v: Vec2, x: number, y: number): Vec2 {
+    v.x = x;
+    v.y = y;
+    return v;
+  },
+  /** a ← b. Mutates the FIRST argument, like `add`/`sub`: the destination reads
+   *  on the left, as in an assignment. */
+  copy(a: Vec2, b: Vec2): Vec2 {
+    a.x = b.x;
+    a.y = b.y;
+    return a;
+  },
   /** a + b, into `out` (default: mutates `a`). */
   add(a: Vec2, b: Vec2, out?: Vec2): Vec2 {
     const o = target(a, out);

@@ -84,3 +84,25 @@ describe("Vec2", () => {
     expect(player.w).toBe(32); // untouched fields survive
   });
 });
+
+describe("set / copy", () => {
+  it("set writes components in place and returns the same object", () => {
+    const v = { x: 1, y: 2 };
+    expect(Vec2.set(v, -3, 4)).toBe(v);
+    expect(v).toEqual({ x: -3, y: 4 });
+  });
+
+  it("copy writes b into a, leaving b alone", () => {
+    const a = { x: 1, y: 2 };
+    const b = { x: 9, y: 8 };
+    expect(Vec2.copy(a, b)).toBe(a);
+    expect(a).toEqual({ x: 9, y: 8 });
+    expect(b).toEqual({ x: 9, y: 8 });
+  });
+
+  it("copy takes a structural source, not just another Vec2", () => {
+    const vel = { x: 0, y: 0 };
+    Vec2.copy(vel, { x: 1.5, y: -2.5, w: 10, h: 10 });
+    expect(vel).toEqual({ x: 1.5, y: -2.5 });
+  });
+});

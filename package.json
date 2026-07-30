@@ -2,15 +2,12 @@
   "name": "minimotor",
   "version": "0.2.0",
   "description": "Minimal 2D canvas framework — fixed-step loop, drawing, input, collision, audio — for small games and playful apps",
+  "homepage": "https://github.com/nikteg/minimotor#readme",
+  "bugs": "https://github.com/nikteg/minimotor/issues",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nikteg/minimotor.git"
-  },
-  "homepage": "https://github.com/nikteg/minimotor#readme",
-  "bugs": "https://github.com/nikteg/minimotor/issues",
-  "engines": {
-    "node": ">=20"
   },
   "bin": {
     "mm": "./build/cli/index.js"
@@ -18,7 +15,8 @@
   "files": [
     "build",
     "src/cli/__examples",
-    "README.md"
+    "README.md",
+    "tsconfig.web.json"
   ],
   "type": "module",
   "sideEffects": false,
@@ -172,6 +170,21 @@
   "dependencies": {
     "ws": "^8.21.1"
   },
+  "devDependencies": {
+    "@playwright/test": "^1.50.0",
+    "@types/node": "^26.1.1",
+    "@types/ws": "^8.18.1",
+    "@vitest/coverage-v8": "^4.1.10",
+    "jsdom": "^29.1.1",
+    "minimotor": "link:.",
+    "oxfmt": "^0.59.0",
+    "oxlint": "^1.36.0",
+    "planck": "^1.5.0",
+    "shiki": "^4.3.1",
+    "typescript": "^5.9.0",
+    "vite": "^8.1.5",
+    "vitest": "^4.1.10"
+  },
   "peerDependencies": {
     "planck": "^1.5.0"
   },
@@ -180,18 +193,7 @@
       "optional": true
     }
   },
-  "devDependencies": {
-    "@playwright/test": "^1.50.0",
-    "@types/node": "^26.1.1",
-    "planck": "^1.5.0",
-    "@types/ws": "^8.18.1",
-    "@vitest/coverage-v8": "^4.1.10",
-    "jsdom": "^29.1.1",
-    "oxfmt": "^0.59.0",
-    "oxlint": "^1.36.0",
-    "shiki": "^4.3.1",
-    "typescript": "^5.9.0",
-    "vite": "^8.1.5",
-    "vitest": "^4.1.10"
+  "engines": {
+    "node": ">=20"
   }
 }

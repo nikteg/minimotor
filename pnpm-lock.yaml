@@ -27,6 +27,9 @@ importers:
       jsdom:
         specifier: ^29.1.1
         version: 29.1.1
+      minimotor:
+        specifier: link:.
+        version: 'link:'
       oxfmt:
         specifier: ^0.59.0
         version: 0.59.0

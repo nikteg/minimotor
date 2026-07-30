@@ -656,7 +656,13 @@ export function slide(
  *  the blocked velocity components (land/bonk clears `vel.y`, walls clear
  *  `vel.x`), sets `body.grounded`, honors `oneWay`. Still returns the
  *  contacts (wall jumps read `left`/`right`; shake reads `impact`).
- *  Takes an `out` for the same reason `slide` does. */
+ *  Takes an `out` for the same reason `slide` does.
+ *
+ *  NOT the right call for a top-down game: `grounded`, slopes and `oneWay` are
+ *  all gravity-facing policy, and there is no floor to land on. Use `slide`
+ *  directly there — it moves and resolves without interpreting a contact:
+ *
+ *      Collision.slide(player, player.vel, level, contacts); */
 export function moveAndSlide(
   body: MoverBody,
   solids: Solids,

@@ -46,8 +46,8 @@ FROM node:22-alpine AS ws
 WORKDIR /app
 RUN apk add --no-cache curl && npm install -g pnpm@11
 # package.json is needed at runtime too: it marks the dir "type": "module" so
-# node runs the ESM in server-dist/. `ws` is the only runtime dependency (`ws` is
-# a real dependency; planck comes too but is unused here). --ignore-scripts skips
+# node runs the ESM in server-dist/. `ws` is the only runtime dependency (planck
+# is an OPTIONAL PEER dep now, so it never lands in this image). --ignore-scripts skips
 # the `prepare` (tsc) lifecycle, which has no source to compile in this stage.
 # tsc output (server-dist/) is plain ESM; static files are served by nginx.
 COPY package.json ./

@@ -1,0 +1,30 @@
+{
+  // The browser subset, for games that compile the engine straight into their
+  // web root instead of bundling it (see the "no build step in production"
+  // recipe in README). Same output layout as the default build — `rootDir: src`
+  // is preserved, so `minimotor/audio` still lands at `<outDir>/audio/index.js`
+  // — it just drops the parts a browser can never run:
+  //
+  //   src/cli        the `mm` tool (imports `ws`, node:fs, node:child_process)
+  //   src/net/server the authoritative-server primitives (imports `ws`)
+  //   src/server.ts  the `minimotor/server` entry, which re-exports the above
+  //
+  // Nothing under src/ that a browser reaches imports any of them (src/server.ts
+  // is the single bridge), so excluding them from the root file set really does
+  // keep them out of the emit rather than having tsc pull them back in through
+  // an import.
+  //
+  // Consumers point tsc here and redirect the output:
+  //   tsc -p ../minimotor/tsconfig.web.json --outDir public/minimotor
+  //
+  // This compiles src/, so it is for consumers that have the source: a sibling
+  // checkout (`link:../minimotor`) or a git/submodule dep. An npm-installed
+  // minimotor ships only build/, and such consumers should copy that instead of
+  // compiling.
+  "extends": "./tsconfig.json",
+  // Nothing type-checks against this output — consumers resolve `minimotor`
+  // types from the package's own build/ — so emitting declarations here is pure
+  // weight in someone's web root.
+  "compilerOptions": { "declaration": false },
+  "exclude": ["node_modules", "src/**/*.test.ts", "src/cli", "src/net/server", "src/server.ts"]
+}
