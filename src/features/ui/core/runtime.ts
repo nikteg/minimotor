@@ -1,7 +1,7 @@
 // ---------- UI runtime ----------
 // All mutable UI state — focus, layout stacks, scroll offsets, open editors,
 // gesture tracking — lives on a UiRuntime rather than at module scope, so two
-// independent games on one page (`App.create` twice) each get a
+// independent games on one page (`createApp` twice) each get a
 // fully isolated UI. The unbound runtime supports headless state and tests;
 // `UI.begin(ctx)` switches to the runtime for that explicit context. Widget
 // modules never see the runtime directly: they hold their state in a

@@ -7,11 +7,11 @@ import { createPerformanceMonitoring } from "minimotor/performance";
 // procedurally so the sample needs no asset files — an 8-frame
 // pulsing/rotating star.
 import { createUI } from "minimotor/ui";
-import { ECS, Goodies, Mathf, Sprites, App } from "minimotor";
+import { ECS, Goodies, Mathf, Sprites, createApp } from "minimotor";
 
 const ecs = ECS.create();
 
-const game = App.create("game", { background: "#12141c" });
+const game = createApp("game", { background: "#12141c" });
 const Anim = createAnimation(game);
 createPerformanceMonitoring(game, { world: ecs });
 const view = game.viewport;

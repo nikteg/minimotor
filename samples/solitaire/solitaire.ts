@@ -1,7 +1,7 @@
 import { createAnimation } from "minimotor/animation";
 import { createPerformanceMonitoring } from "minimotor/performance";
 // SOLITAIRE: classic Klondike built with a broad sweep of Minimotor primitives.
-// Demonstrates: App / Loop / Pointer / Draw, Scenes.create + Transitions,
+// Demonstrates: createApp / Loop / Pointer / Draw, Scenes.create + Transitions,
 // UI immediate-mode widgets + drag/drop, Input.map, Audio.Sfx, Storage,
 // Timers, Clock.world timers, Anim motions (the AI's card glide + win cascade),
 // Signals, Fsm, Particles.create, Collision, Mathf, a fixed-`resolution`
@@ -22,7 +22,7 @@ import {
   Goodies,
   Mathf,
   Sprites,
-  App,
+  createApp,
   Transitions,
 } from "minimotor";
 import { installLayoutProbe } from "../shared/layout-probe.ts";
@@ -111,7 +111,7 @@ function isRed(suit: string) {
 // The stage runs at a FIXED logical resolution, letterboxed into the window by
 // the engine: `vp.w`/`vp.h` ARE `LOGICAL_W`/`LOGICAL_H`, the pointer arrives in
 // logical coordinates, and all drawing is scaled — no manual letterbox math.
-const game = App.create("game", {
+const game = createApp("game", {
   fullscreen: true,
   resolution: { w: LOGICAL_W, h: LOGICAL_H },
   background: "#0b3d2e",

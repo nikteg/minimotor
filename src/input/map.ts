@@ -128,11 +128,11 @@ interface KeysLike {
 
 /** Options for `map()`: injectable key, pad and step sources (mainly for tests). */
 export interface InputMapOptions {
-  /** Key source. Game-bound `Input.map` injects `game.Keys`. */
+  /** Key source. App-bound `Input.map` injects `app.Keys`. */
   keys: KeysLike;
-  /** Pad source. Game-bound `Input.map` injects gamepad 0. */
+  /** Pad source. App-bound `Input.map` injects gamepad 0. */
   pad?: GamepadState | null;
-  /** Fixed-step source. Game-bound `Input.map` injects `game.Loop.steps`. */
+  /** Fixed-step source. App-bound `Input.map` injects `app.Loop.steps`. */
   steps: () => number;
 }
 

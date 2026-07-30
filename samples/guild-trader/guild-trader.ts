@@ -1,7 +1,7 @@
 import { createPerformanceMonitoring } from "minimotor/performance";
 // GUILD TRADER: RPG inventory drag/drop, stack merging, dialogue and loot recipes.
 import { createUI } from "minimotor/ui";
-import { Gizmos, Goodies, App } from "minimotor";
+import { Gizmos, Goodies, createApp } from "minimotor";
 import { Flow } from "minimotor";
 import { installLayoutProbe } from "../shared/layout-probe.ts";
 
@@ -20,7 +20,7 @@ interface DragPayload {
 }
 
 // Live viewport; the engine owns the background clear.
-const game = App.create("game", {
+const game = createApp("game", {
   background: "#101722",
   preventNavigation: true,
 });

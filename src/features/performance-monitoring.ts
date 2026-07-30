@@ -1,4 +1,9 @@
-import type { Game } from "../engine/app.js";
+// ---------- Performance monitoring ----------
+// FPS / frame-time monitoring. `createPerformanceMonitoring(app)` owns the HUD
+// lifecycle; the standalone tracker/meter factories stay available for custom
+// displays.
+
+import type { App } from "../engine/app.js";
 import { plugin, type PerfOptions } from "../perf/plugin.js";
 
 export { createNetMeter } from "../perf/net-meter.js";
@@ -17,12 +22,12 @@ export interface PerformanceMonitoringApi {
 }
 
 export function createPerformanceMonitoring(
-  game: Game,
+  app: App,
   options: PerfOptions = {},
 ): PerformanceMonitoringApi {
   const monitor = plugin(options);
   let visible = true;
-  game.use({
+  app.use({
     name: "PerformanceMonitoring",
     onInit: monitor.onInit,
     beforeUpdate: monitor.beforeUpdate,

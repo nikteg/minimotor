@@ -1,5 +1,12 @@
+// ---------- Timers ----------
+// Polled timing latches read as booleans, derived from a `Clock` — they default
+// to the app's world clock, so pause and slow-mo affect them. `Timers.window`
+// (coyote grace), `Timers.buffer` (early press buffering), `Timers.cooldown`
+// (reuse gate), and `Timers.jumpGate` (the first two composed into
+// forgiving-jump timing).
+
 import * as TimersModule from "../../timers.js";
-import type { Game } from "../../engine/app.js";
+import type { App } from "../../engine/app.js";
 
 export type TimersApi = Omit<typeof TimersModule, "window" | "buffer" | "cooldown" | "jumpGate"> & {
   window(ms: number, clock?: Parameters<typeof TimersModule.window>[1]): TimersModule.Window;
@@ -12,21 +19,21 @@ export type TimersApi = Omit<typeof TimersModule, "window" | "buffer" | "cooldow
   ): TimersModule.JumpGate;
 };
 
-/** Timer helpers defaulting to one game's world clock. */
-export function createTimers(game: Game): TimersApi {
+/** Timer helpers defaulting to one app's world clock. */
+export function createTimers(app: App): TimersApi {
   return {
     ...TimersModule,
-    window(ms, clock = game.Clock.world) {
+    window(ms, clock = app.Clock.world) {
       return TimersModule.window(ms, clock);
     },
-    buffer(ms, clock = game.Clock.world) {
+    buffer(ms, clock = app.Clock.world) {
       return TimersModule.buffer(ms, clock);
     },
-    cooldown(ms, clock = game.Clock.world) {
+    cooldown(ms, clock = app.Clock.world) {
       return TimersModule.cooldown(ms, clock);
     },
     jumpGate(options = {}) {
-      return TimersModule.jumpGate({ clock: game.Clock.world, ...options });
+      return TimersModule.jumpGate({ clock: app.Clock.world, ...options });
     },
   };
 }

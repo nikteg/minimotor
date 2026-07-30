@@ -252,7 +252,7 @@ const dragScratch = { ...DEAD_POINTER };
 function hostViewport(): { w: number; h: number } {
   const vp = uiApp()?.viewport;
   if (!vp) {
-    throw new Error("Minimotor.UI: no game — use createUI(game) first");
+    throw new Error("Minimotor.UI: no app — use createUI(app) first");
   }
   return vp;
 }

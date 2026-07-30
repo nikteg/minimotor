@@ -6,7 +6,7 @@ import { createAssets } from "minimotor/assets";
 import { createAudio } from "minimotor/audio";
 import { createParticles } from "minimotor/particles";
 import { createUI } from "minimotor/ui";
-import { Collision, App } from "minimotor";
+import { Collision, createApp } from "minimotor";
 import { SheetCursor } from "minimotor";
 import { createSfx } from "../shared/sfx.ts";
 
@@ -22,7 +22,7 @@ interface Relic {
 }
 
 // The viewport is LIVE (mutated on resize); the engine clears to `background`.
-const game = App.create("game", {
+const game = createApp("game", {
   background: "#111827",
   preventNavigation: true,
 });

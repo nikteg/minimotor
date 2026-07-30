@@ -1,7 +1,7 @@
 import { currentRuntime, runtimeFor, switchRuntime } from "./runtime.js";
 
 // ---------- Implicit context ----------
-// Widgets draw to the current UI runtime's host context. `createUI(game)`
+// Widgets draw to the current UI runtime's host context. `createUI(app)`
 // binds this automatically; low-level `begin(ctx)` selects an explicit
 // standalone context. Switching contexts switches the whole runtime.
 

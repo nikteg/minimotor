@@ -220,7 +220,7 @@ fps }, run: {...}, jump: {...} })` returns a shared kit; `kit.play(initial)`
   `Camera.follow`/`Camera.render`; `Audio.tone` synth SFX; `Particles.create`;
   `Stage.init({ resolution })` (no manual letterbox).
 - **Retire `Game.letterbox`/`drawLetterbox`/`letterboxView`** — DONE. Superseded
-  by `App.create(canvas, { resolution })`, which does the fit, the bars, the pointer
+  by `createApp(canvas, { resolution })`, which does the fit, the bars, the pointer
   mapping and the base transform in one place. All samples (pixel-adventure,
   solitaire, pocket) are on `resolution`; the three functions are deleted.
 
@@ -237,9 +237,12 @@ fps }, run: {...}, jump: {...} })` returns a shared kit; `kit.play(initial)`
   catalog rather than a grab bag, and neither is gated on the Pixel Adventure
   extraction rules. Admission rules and the growth backlog live in
   ROADMAP § "`Goodies` & `Gizmos` — the lego catalog".
-- **`game.ts` rehoming** (partly settled): `letterbox`/`drawLetterbox`/
-  `letterboxView` are retired (see above). `createScoreTracker` and
-  `formatClock` stay for now.
+- **`game.ts` rehoming — DONE.** `letterbox`/`drawLetterbox`/`letterboxView` are
+  retired (see above). `createScoreTracker` became `Gizmos.scoreTracker` (taking
+  an injected `ScoreStore` instead of reaching for `localStorage`) and
+  `formatClock` became `Goodies.formatClock`, per the taxonomy above; `game.ts`
+  is gone. The object returned by `createApp` is exported as `App`, matching
+  `AppOptions`.
 - Spatial-nav implementation details; `Perf.netMeter` learns rooms.
 
 ## Breaking changes register

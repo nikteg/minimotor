@@ -126,7 +126,7 @@ export interface NetGame<P = unknown> {
   readonly now: number;
   /** Relay-link state, for a "reconnecting…" indicator. */
   readonly status: RoomStatus;
-  /** Traffic meter — pass to `createPerformanceMonitoring(game, { net: meter })`. */
+  /** Traffic meter — pass to `createPerformanceMonitoring(app, { net: meter })`. */
   readonly meter: NetMeter;
   /** The underlying room, for anything this high-level session does not cover. */
   readonly room: Room<unknown>;

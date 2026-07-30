@@ -1,9 +1,11 @@
-// ---------- Combo: a decaying hit streak ----------
-// The stateful member of the scoring family. (The pure raters — timingGrade,
-// scoreRank, beatClock — stay in Goodies.scoring.) Clock-derived: the streak
-// decays as `Clock.world` advances — no tick(), just `hit()` and read.
+// ---------- Scoring: the stateful members ----------
+// `combo` is a decaying hit streak, clock-derived: it decays as `Clock.world`
+// advances — no tick(), just `hit()` and read. `scoreTracker` carries a
+// score/best pair and persists `best`. (The pure raters — timingGrade,
+// scoreRank, beatClock — and `formatClock` stay in Goodies.scoring.)
 
 import type { ClockHandle } from "../clock.js";
+import * as Storage from "../storage.js";
 
 /** A decaying hit-streak multiplier returned by `combo()`. */
 export interface Combo {
@@ -65,6 +67,61 @@ export function combo(options: {
     },
     get active() {
       return live() > 0;
+    },
+  };
+}
+
+/** Where a `scoreTracker` keeps its best score. Synchronous by design: `best`
+ *  is read in `draw` every frame, so an async round-trip has nowhere to go.
+ *  Defaults to plain `localStorage`; pass your own to scope or redirect it
+ *  (e.g. prefix per save slot, or keep it in memory for tests). */
+export interface ScoreStore {
+  load(key: string, fallback: number): number;
+  save(key: string, value: number): void;
+}
+
+/** Score + best-score tracker returned by `scoreTracker()`. */
+export interface ScoreTracker {
+  readonly score: number;
+  readonly best: number;
+  /** Add points; auto-saves best if exceeded */
+  add(points: number): void;
+  /** Reset the current score to 0 (keeps `best`) — call on restart. */
+  reset(): void;
+  /** Force-save current best (e.g. on game over) */
+  save(): void;
+}
+
+/** A score paired with a persistent best: `best` is loaded under `storageKey`
+ *  now and re-saved whenever the score passes it. The default store is
+ *  crash-safe, so private browsing or a full quota degrades to an in-memory
+ *  best rather than throwing. Like every Gizmo it takes its collaborators
+ *  directly, not the app — pass `store` to scope the key to a game or slot.
+ *
+ *    const scores = Minimotor.Gizmos.scoreTracker("snake_best");
+ *    scores.add(10);   // score 10, best follows if exceeded */
+export function scoreTracker(storageKey: string, store: ScoreStore = Storage): ScoreTracker {
+  let _score = 0;
+  let _best = store.load(storageKey, 0);
+  return {
+    get score() {
+      return _score;
+    },
+    get best() {
+      return _best;
+    },
+    add(points: number) {
+      _score += points;
+      if (_score > _best) {
+        _best = _score;
+        store.save(storageKey, _best);
+      }
+    },
+    reset() {
+      _score = 0;
+    },
+    save() {
+      store.save(storageKey, _best);
     },
   };
 }

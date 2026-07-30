@@ -12,10 +12,10 @@ import { createCamera } from "minimotor/camera";
 import { createInput } from "minimotor/input";
 import { createBrowserStorage } from "minimotor/storage";
 import { createUI } from "minimotor/ui";
-import { Collision, Gizmos, Mathf, App } from "minimotor";
+import { Collision, Gizmos, Mathf, createApp } from "minimotor";
 import { createPhysics2D } from "minimotor/physics2d";
 
-const game = App.create("game", {
+const game = createApp("game", {
   background: "#12161f",
   preventNavigation: true,
 });

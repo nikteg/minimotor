@@ -2,9 +2,9 @@ import { createPerformanceMonitoring } from "minimotor/performance";
 import { createInput } from "minimotor/input";
 import { createOnscreenInput } from "minimotor/onscreen-input";
 import { createUI } from "minimotor/ui";
-import { App, Goodies, Gizmos } from "minimotor";
+import { createApp, Goodies, Gizmos } from "minimotor";
 
-const game = App.create("game", { background: "#0f141a" });
+const game = createApp("game", { background: "#0f141a" });
 createPerformanceMonitoring(game);
 const view = game.viewport;
 const { Loop, Draw } = game;

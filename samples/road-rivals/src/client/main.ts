@@ -8,7 +8,7 @@ import { createUI } from "minimotor/ui";
 // Road Rivals — top-down shooter + enterable car + WebSocket multiplayer.
 // Local movement/vehicle simulation is authoritative. Remote actors are drawn
 // 100 ms in the past from Net.createInterpolator snapshot buffers.
-import { Collision, ECS, Gizmos, Goodies, Mathf, App, Transitions } from "minimotor";
+import { Collision, ECS, Gizmos, Goodies, Mathf, createApp, Transitions } from "minimotor";
 import { Car, Entity, Flash, Interpolator, Skidmarks, Transition, TransitionRun } from "minimotor";
 import { createPhysics2D } from "minimotor/physics2d";
 import type { Body2D } from "minimotor/physics2d";
@@ -234,7 +234,7 @@ interface RosterRow {
 
 const meter = createNetMeter();
 // The viewport is LIVE (mutated on resize); the engine clears to `background`.
-const game = App.create("game", {
+const game = createApp("game", {
   background: "#101719",
   // Fixed 16:9 logical stage, letterboxed INSIDE the safe area — so on a notched
   // phone the play field never draws under the notch/home-indicator (the bars

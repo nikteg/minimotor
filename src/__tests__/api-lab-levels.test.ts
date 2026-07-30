@@ -4,6 +4,9 @@ import { LEVELS, buildProject, serializeProject } from "../../tools/api-lab-leve
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { rectsOverlap } from "../collision.js";
+import { world as createLDtkWorld } from "../ldtk/index.js";
+import { createPortalRouter } from "../portals.js";
 
 describe("API Lab level design", () => {
   const projectPath = resolve("samples/api-lab/assets/api-lab.ldtk");
@@ -48,5 +51,40 @@ describe("API Lab level design", () => {
   it("keeps the checked-in LDtk project reproducible", () => {
     const current = readFileSync(projectPath, "utf8");
     expect(serializeProject(buildProject(JSON.parse(current)))).toBe(current);
+  });
+
+  it("places portal arrivals clear of the destination ground", () => {
+    const project = JSON.parse(readFileSync(projectPath, "utf8"));
+    const world = createLDtkWorld(project, { image: {} as CanvasImageSource });
+
+    for (const area of world.areas) {
+      for (const portal of world.portals(area)) {
+        const body = {
+          x: portal.x,
+          y: portal.y,
+          w: 12,
+          h: 24,
+          grounded: true,
+          area,
+        };
+        const router = createPortalRouter({
+          body,
+          scenes: { go() {}, active: "game" },
+          world,
+          scene: "game",
+          auto: false,
+        });
+
+        router.travel(portal.to);
+
+        const nearby: { x: number; y: number; w: number; h: number }[] = [];
+        world
+          .level(body.area)
+          .solidsNear({ x: body.x, y: body.y, w: body.w, h: body.h + 2 }, nearby);
+        expect(nearby.some((solid) => rectsOverlap(body, solid))).toBe(false);
+        expect(body.grounded).toBe(false);
+        expect(nearby.some((solid) => solid.y === body.y + body.h + 1)).toBe(true);
+      }
+    }
   });
 });

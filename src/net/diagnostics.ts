@@ -25,7 +25,7 @@ export interface RoomStats {
 
 export type MonitoredRoom<M> = Room<M> & {
   readonly stats: Readonly<RoomStats>;
-  /** Pass directly to `createPerformanceMonitoring(game, { net: room.meter })`. */
+  /** Pass directly to `createPerformanceMonitoring(app, { net: room.meter })`. */
   readonly meter: NetMeter;
 };
 

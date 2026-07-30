@@ -154,7 +154,7 @@ export interface EntityBinding<T> {
 }
 
 /** Bind synchronized states to live render objects or kinematic physics
- * proxies. Call `update` from the game loop, or use game-bound `Net.bindEntities`
+ * proxies. Call `update` from the game loop, or use app-bound `Net.bindEntities`
  * to have it scheduled automatically. */
 export function bindEntities<S extends object, T>(
   states: EntityStates<S>,

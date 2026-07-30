@@ -85,7 +85,7 @@ export function navigation(
 const DEADZONE = 0.15;
 
 /** Create a gamepad tracker fed by `read` (injectable for tests). Call `poll()`
- * once per fixed step; game-bound `Input.gamepad()` wires this to that game's
+ * once per fixed step; app-bound `Input.gamepad()` wires this to that app's
  * `Loop.onStepStart` for you. */
 export function createGamepadTracker(
   read: () => Gamepad | null | undefined,

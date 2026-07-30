@@ -13,7 +13,7 @@
 // promotes the oldest guest; the survivors re-negotiate to it automatically.
 import { createNet } from "minimotor/net";
 import { createUI } from "minimotor/ui";
-import { App } from "minimotor";
+import { createApp } from "minimotor";
 import type { GuestSession, HostSession } from "minimotor";
 
 interface Vec {
@@ -23,7 +23,7 @@ interface Vec {
 type CursorState = Record<string, Vec>;
 
 // The viewport is LIVE (mutated on resize) — layout reads it fresh each frame.
-const game = App.create("game", { background: "#0e1116" });
+const game = createApp("game", { background: "#0e1116" });
 const vp = game.viewport;
 const { Draw, Loop, Pointer } = game;
 const Net = createNet(game);

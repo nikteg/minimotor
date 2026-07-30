@@ -1,6 +1,6 @@
 // ---------- Timers ----------
 // Polled timing latches read as booleans. They DERIVE from a clock
-// (injected by `createTimers(game)`) — nothing to tick, nothing to register: you call
+// (injected by `createTimers(app)`) — nothing to tick, nothing to register: you call
 // the event method (`charge`/`trigger`/`use`) and read the state. A held clock
 // (pause) freezes them; slow-mo stretches them. Not platformer-specific —
 // grace windows, buffered inputs and cooldowns recur across genres.

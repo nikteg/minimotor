@@ -6,7 +6,7 @@ import { createDraw, type DrawApi } from "./draw.js";
 import { createLoop, type LoopApi } from "./loop.js";
 
 // ---------- Runtime ----------
-// One private canvas runtime backs each public app. Game code receives the
+// One private canvas runtime backs each public app. App code receives the
 // PascalCase services assembled by `createApp()` at the bottom of this file.
 //
 // Convention: read input (`Keys`/`Pointer`) in `update`, draw (`Draw.ctx`) in
@@ -78,7 +78,7 @@ export interface EnginePlugin {
   onDestroy?: (app: Runtime) => void;
 }
 
-/** The per-frame callbacks. Input is read from the game's polled services. */
+/** The per-frame callbacks. Input is read from the app's polled services. */
 export interface AppCallbacks {
   /** Fixed-timestep simulation. May run 0..N times per rendered frame; every
    *  call represents exactly one fixed step (1000/60 ms), so THE STEP IS THE
@@ -163,7 +163,7 @@ export interface Runtime {
   stop(): void;
   /** Tear the app down: stop the loop and remove every window/canvas listener
    *  it registered. The instance is unusable afterwards. Needed for tests,
-   *  hot-reload, and replacing a game instance. */
+   *  hot-reload, and replacing an app instance. */
   destroy(): void;
 }
 
@@ -189,7 +189,7 @@ export interface RuntimeOptions {
   resolution?: { w: number; h: number };
   /** Letterbox bar color (only with `resolution`). Default "#000". */
   barColor?: string;
-  /** Low-level lifecycle plugins used by game-bound capability factories. */
+  /** Low-level lifecycle plugins used by app-bound capability factories. */
   plugins?: EnginePlugin[];
   /** Auto-pause while a coarse-pointer device is held in portrait. Default
    *  false. */
@@ -216,7 +216,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
   return buildRuntime(options);
 }
 
-// Canvas → runtime registry. A game-bound UI uses its rendering context to
+// Canvas → runtime registry. An app-bound UI uses its rendering context to
 // reach the right pointer/viewport/cursor, so two apps remain isolated.
 const appsByCanvas = new WeakMap<HTMLCanvasElement, Runtime>();
 
@@ -896,9 +896,9 @@ function readViewport(canvas: HTMLCanvasElement, resolution?: { w: number; h: nu
 
 // ---------- Public app ----------
 
-/** One completely isolated game application. Optional systems bind directly
- * to this object through their own factories. */
-export interface Game {
+/** One completely isolated app. Optional systems bind directly to this object
+ * through their own factories. */
+export interface App {
   readonly canvas: HTMLCanvasElement;
   readonly ctx: CanvasRenderingContext2D;
   readonly viewport: Viewport;
@@ -920,12 +920,17 @@ export interface Game {
 export interface AppOptions extends Omit<RuntimeOptions, "canvas"> {
   fullscreen?: boolean;
   preventNavigation?: boolean;
+  /** Auto-pause while the page is hidden (tab switch, minimize), and resume
+   *  when it comes back. Only the pause it owns is lifted — if game code paused
+   *  for its own menu, returning to the tab leaves that pause alone. */
   pauseWhenHidden?: boolean;
+  /** Auto-pause while the window is unfocused, and resume on refocus. Same
+   *  ownership rule as `pauseWhenHidden`. */
   pauseWhenBlurred?: boolean;
 }
 
-/** Create one isolated game application. */
-export function createApp(canvas: string | HTMLCanvasElement, options: AppOptions = {}): Game {
+/** Create one isolated app. */
+export function createApp(canvas: string | HTMLCanvasElement, options: AppOptions = {}): App {
   if (options.fullscreen) applyFullscreen();
   if (options.preventNavigation) preventNavigation(true);
   const {
@@ -938,7 +943,7 @@ export function createApp(canvas: string | HTMLCanvasElement, options: AppOption
   const runtime = createRuntime({ canvas, ...runtimeOptions });
   let visible = typeof document === "undefined" || document.visibilityState !== "hidden";
   let focused = typeof document === "undefined" || document.hasFocus();
-  const game = {
+  const app = {
     canvas: runtime.canvas,
     ctx: runtime.ctx,
     viewport: runtime.viewport,
@@ -958,14 +963,30 @@ export function createApp(canvas: string | HTMLCanvasElement, options: AppOption
     setCursor: (cursor: string, priority?: number) => runtime.setCursor(cursor, priority),
     onResize: (handler: Parameters<Runtime["onResize"]>[0]) => runtime.onResize(handler),
     use: (plugin: EnginePlugin) => runtime.use(plugin),
-    destroy: () => {},
-  } satisfies Game;
+    destroy: () => runtime.destroy(),
+  } satisfies App;
 
   if (typeof document !== "undefined" && typeof window !== "undefined") {
+    // Auto-pause has to be able to UNDO itself, or tabbing away freezes the app
+    // for good. It also must not lift a pause it didn't cause, so it tracks
+    // ownership: it resumes only the pause it took, and declines to take one
+    // when the app is already paused by game code (a pause menu survives a tab
+    // switch). The one ambiguity a single flag can't resolve — game code pausing
+    // *while* auto-paused — resolves in favor of resuming.
+    let pausedByLifecycle = false;
     const syncLifecycle = () => {
       visible = document.visibilityState !== "hidden";
       focused = document.hasFocus();
-      if ((pauseWhenHidden && !visible) || (pauseWhenBlurred && !focused)) game.Loop.pause();
+      const shouldPause = (pauseWhenHidden && !visible) || (pauseWhenBlurred && !focused);
+      if (shouldPause) {
+        if (!app.Loop.paused) {
+          app.Loop.pause();
+          pausedByLifecycle = true;
+        }
+      } else if (pausedByLifecycle) {
+        pausedByLifecycle = false;
+        app.Loop.resume();
+      }
     };
     document.addEventListener("visibilitychange", syncLifecycle);
     window.addEventListener("focus", syncLifecycle);
@@ -980,13 +1001,5 @@ export function createApp(canvas: string | HTMLCanvasElement, options: AppOption
     });
   }
 
-  game.destroy = () => runtime.destroy();
-  return game;
+  return app;
 }
-
-/** App creation plus page-level presentation helpers. */
-export const App = {
-  create: createApp,
-  fullscreen: applyFullscreen,
-  preventNavigation,
-};

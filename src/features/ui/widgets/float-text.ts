@@ -54,7 +54,7 @@ export interface FloatText {
 }
 
 /** A pool of rising, fading texts. Pure — drive `advance(dt)` yourself
- * (game-bound UI wires its shared manager to the fixed step). */
+ * (app-bound UI wires its shared manager to the fixed step). */
 export interface FloatTextManager {
   /** Spawn a rising text at `(x, y)`; `opts` tunes drift/lifetime/color/font. */
   spawn(text: string, x: number, y: number, opts?: FloatTextOptions): void;
@@ -68,7 +68,7 @@ export interface FloatTextManager {
   readonly size: number;
 }
 
-/** Create a fresh, empty `FloatTextManager` pool. Game-bound `UI` keeps a
+/** Create a fresh, empty `FloatTextManager` pool. App-bound `UI` keeps a
  *  shared one (`UI.floatText`); make your own for an isolated set of texts. */
 export function createFloatText(): FloatTextManager {
   const texts: FloatText[] = [];

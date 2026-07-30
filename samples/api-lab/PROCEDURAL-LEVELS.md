@@ -146,6 +146,34 @@ with the existing interpretable heuristic score. Bot results are feasibility
 and difficulty evidence—not a replacement for human ratings. Keep unseen seeds
 and human-rated levels as a holdout set to detect bot-specific overfitting.
 
+## Evolution tournaments
+
+Compare a larger population head-to-head and evolve the winners:
+
+```sh
+mm level evolve \
+  --seed cave-evolution \
+  --population 32 \
+  --generations 5 \
+  --mutation 0.2 \
+  --objective complex \
+  --bots 8 --attempts 2 --max-steps 1800 \
+  --tree evolution.txt \
+  --report evolution.json \
+  --archive evolved-levels --keep 24 \
+  -o champion.json
+```
+
+Population size must be a power of two. Each generation runs a complete
+single-elimination bracket. First-round winners become parents for reseeded
+offspring; layout and difficulty are inherited or mutated. One exact elite is
+carried forward, so generation-best fitness cannot regress. The ASCII artifact
+contains the full ancestry tree, parent-relative score deltas, generation
+improvement, and all bracket results. `--objective complex` additionally
+rewards richer traversal and actual observed ability use, while bot completion
+remains a hard match advantage. `--archive` retains the top distinct neutral
+designs with matching ASCII previews instead of saving only the champion.
+
 ## Training a preference model
 
 Each JSONL row contains `rating: null`. Replace it with a normalized `0..1`

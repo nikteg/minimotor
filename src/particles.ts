@@ -18,7 +18,7 @@
 
 import { lruCache } from "./cache.js";
 import type { ClockHandle } from "./clock.js";
-import type { Game } from "./engine/index.js";
+import type { App } from "./engine/index.js";
 
 interface Particle {
   x: number;
@@ -148,7 +148,7 @@ const DEFAULT_COLOR = "#fff";
 
 /** Create a standalone particle system. Its simulation is pull-derived from
  * `options.clock`; pass `options.rng` to make emission deterministic in tests.
- * Game code normally uses `createParticles(game).createSystem()`. */
+ * App code normally uses `createParticles(app).createSystem()`. */
 export function createParticleSystem(options: ParticleOptions): ParticleSystem {
   const rng = options.rng ?? Math.random;
   const clock = options.clock;
@@ -250,11 +250,11 @@ export function createParticleSystem(options: ParticleOptions): ParticleSystem {
   };
 }
 
-/** Create particle systems that default to one game's world clock. */
-export function createParticles(game: Game) {
+/** Create particle systems that default to one app's world clock. */
+export function createParticles(app: App) {
   return {
     createSystem(options: Omit<ParticleOptions, "clock"> & { clock?: ClockHandle } = {}) {
-      return createParticleSystem({ clock: game.Clock.world, ...options });
+      return createParticleSystem({ clock: app.Clock.world, ...options });
     },
   };
 }

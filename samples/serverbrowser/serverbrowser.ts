@@ -7,7 +7,7 @@ import { createPerformanceMonitoring } from "minimotor/performance";
 // disabled) / float, plus Clock.ui.after driving a fake refresh and join.
 // The server list is mock data — swap fetchServers() for a real request.
 import { createUI } from "minimotor/ui";
-import { Mathf, App } from "minimotor";
+import { Mathf, createApp } from "minimotor";
 import { TableSort, Theme } from "minimotor";
 import { installLayoutProbe } from "../shared/layout-probe.ts";
 
@@ -28,7 +28,7 @@ interface Rect {
 
 // The stage viewport is LIVE (mutated on resize); the UI.panel self-centers in it
 // via anchor:"center", so no viewport handle is needed here.
-const game = App.create("game", {
+const game = createApp("game", {
   background: "#0b0e14",
   preventNavigation: true,
 });

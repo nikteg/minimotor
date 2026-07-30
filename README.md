@@ -2,17 +2,17 @@
 
 A minimal 2D canvas framework for small games and playful apps: a fixed-step
 loop, drawing, input, collision, audio, and multiplayer building blocks. Every
-game owns its runtime state explicitly, with no framework or build magic.
+app owns its runtime state explicitly, with no framework or build magic.
 
 ```ts
 // Colored square that moves with arrow keys — a complete game.
-import { App, Mathf } from "minimotor";
+import { createApp, Mathf } from "minimotor";
 
-const game = App.create("game", { background: "#222" });
-const { Draw, Keys, Loop, viewport: view } = game;
+const app = createApp("game", { background: "#222" });
+const { Draw, Keys, Loop, viewport } = app;
 
-let x = view.w / 2 - 25;
-let y = view.h / 2 - 25;
+let x = viewport.w / 2 - 25;
+let y = viewport.h / 2 - 25;
 
 Loop.run({
   update() {
@@ -20,8 +20,8 @@ Loop.run({
     if (Keys.down("ArrowRight")) x += 3;
     if (Keys.down("ArrowUp")) y -= 3;
     if (Keys.down("ArrowDown")) y += 3;
-    x = Mathf.clamp(x, 0, view.w - 50);
-    y = Mathf.clamp(y, 0, view.h - 50);
+    x = Mathf.clamp(x, 0, viewport.w - 50);
+    y = Mathf.clamp(y, 0, viewport.h - 50);
   },
   draw() {
     Draw.rect(x, y, 50, 50, "#4ecdc4");
@@ -29,10 +29,10 @@ Loop.run({
 });
 ```
 
-`App.create` binds a `<canvas>` (by id or element), owns resizing and clearing,
-and returns one isolated game. Its `viewport` is **live**:
-`view.w`/`view.h` update on resize without rebinding. Everything else is
-imported and created only when the game uses it.
+`createApp` binds a `<canvas>` (by id or element), owns resizing and clearing,
+and returns one isolated app. Its `viewport` is **live**:
+`viewport.w`/`viewport.h` update on resize without rebinding. Everything else
+is imported and created only when the app uses it.
 
 ## Design
 
@@ -48,52 +48,68 @@ imported and created only when the game uses it.
 
 ## Entry points
 
-| Import                     | What you get                                                                                                 |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `minimotor`                | `App` plus lightweight, stateless helpers such as `Collision`, `Mathf`, `Tiles`, and `ECS`.                  |
-| `minimotor/animation`      | `createAnimation(game)` — sheets, states, effects, and motions on the game clock.                            |
-| `minimotor/aseprite`       | Standalone Aseprite JSON atlas parsing and typed clip metadata.                                              |
-| `minimotor/assets`         | `createAssets(game)` or standalone `createAssetStore()` — typed manifests, cache, progress, and composition. |
-| `minimotor/audio`          | `createAudio(game)` — an isolated mixer owned by the game lifecycle.                                         |
-| `minimotor/camera`         | `createCamera(game)` or standalone `createLens(options)`.                                                    |
-| `minimotor/input`          | `createInput(game)` — action maps, contexts, and gamepad polling.                                            |
-| `minimotor/ldtk`           | Standalone LDtk project, tile, entity, and world adapters.                                                   |
-| `minimotor/onscreen-input` | `createOnscreenInput(game, Input)` — virtual pads registered with the same input service.                    |
-| `minimotor/ui`             | `createUI(game, Input?)` — immediate-mode UI isolated to one canvas, with optional all-pad navigation.       |
-| `minimotor/net`            | `createNet(game)` — multiplayer sessions and game-owned sync utilities.                                      |
-| `minimotor/physics2d`      | `createPhysics2D(game)` — rigid-body physics over planck/Box2D.                                              |
-| `minimotor/performance`    | `createPerformanceMonitoring(game)` plus standalone measurement utilities.                                   |
-| `minimotor/scenes`         | `createScenes(game)` — typed scene stacks bound to the game clocks and viewport.                             |
-| `minimotor/particles`      | `createParticles(game)` — clock-bound particle-system factory.                                               |
-| `minimotor/portals`        | `createPortals(game)` — automatic level travel owned by the game loop.                                       |
-| `minimotor/storage`        | `createStorage(game, options)` and `createBrowserStorage(game)`.                                             |
-| `minimotor/timers`         | `createTimers(game)` — pause-aware windows, buffers, cooldowns, and jump gates.                              |
-| `minimotor/server`         | Node-side rooms, fixed-rate ticks, WebRTC signaling, presence, and matchmaking.                              |
-| `minimotor/cli`            | Node-only `mm` developer tools.                                                                              |
+| Import                     | What you get                                                                                                |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `minimotor`                | `createApp` plus lightweight, stateless helpers such as `Collision`, `Mathf`, `Tiles`, and `ECS`.           |
+| `minimotor/accessibility`  | `createAccessibility()` — reduced-motion, high-contrast, and text-scale preferences.                        |
+| `minimotor/animation`      | `createAnimation(app)` — sheets, states, effects, and motions on the app's world clock.                     |
+| `minimotor/aseprite`       | Standalone Aseprite JSON atlas parsing and typed clip metadata.                                             |
+| `minimotor/assets`         | `createAssets(app)` or standalone `createAssetStore()` — typed manifests, cache, progress, and composition. |
+| `minimotor/audio`          | `createAudio(app)` — an isolated mixer owned by the app lifecycle.                                          |
+| `minimotor/autosave`       | `createAutosave(app, Snapshots, Storage)` — periodic save/restore of bound state.                           |
+| `minimotor/camera`         | `createCamera(app)` or standalone `createLens(options)`.                                                    |
+| `minimotor/capture`        | `createCapture(app)` — canvas screenshots and frame grabs.                                                  |
+| `minimotor/debug`          | `createDebug(app)` — collision/shape overlays, value watches, and inspection snapshots.                     |
+| `minimotor/determinism`    | `createDeterminism(seed)` — a seeded RNG plus drift checks for lockstep play.                               |
+| `minimotor/input`          | `createInput(app)` — action maps, contexts, and gamepad polling.                                            |
+| `minimotor/ldtk`           | Standalone LDtk project, tile, entity, and world adapters.                                                  |
+| `minimotor/onscreen-input` | `createOnscreenInput(app, Input)` — virtual pads registered with the same input service.                    |
+| `minimotor/ui`             | `createUI(app, Input?)` — immediate-mode UI isolated to one canvas, with optional all-pad navigation.       |
+| `minimotor/net`            | `createNet(app)` — multiplayer sessions and app-owned sync utilities.                                       |
+| `minimotor/physics2d`      | `createPhysics2D(app)` — rigid-body physics over planck/Box2D.                                              |
+| `minimotor/performance`    | `createPerformanceMonitoring(app)` plus standalone measurement utilities.                                   |
+| `minimotor/platformer`     | Standalone platformer animation-state helpers (idle/run/jump/fall from a body).                             |
+| `minimotor/replay`         | `createReplay()` — record and play back input timelines.                                                    |
+| `minimotor/scenes`         | `createScenes(app)` — typed scene stacks bound to the app clocks and viewport.                              |
+| `minimotor/particles`      | `createParticles(app)` — clock-bound particle-system factory.                                               |
+| `minimotor/portals`        | `createPortals(app)` — automatic level travel owned by the app loop.                                        |
+| `minimotor/snapshots`      | `createSnapshots()` — bind state, then save/restore whole-game snapshots.                                   |
+| `minimotor/storage`        | `createStorage(app, options)` and `createBrowserStorage(app)`.                                              |
+| `minimotor/timers`         | `createTimers(app)` — pause-aware windows, buffers, cooldowns, and jump gates.                              |
+| `minimotor/server`         | Node-side rooms, fixed-rate ticks, WebRTC signaling, presence, and matchmaking.                             |
+| `minimotor/cli`            | Node-only `mm` developer tools.                                                                             |
 
 Stateful modules follow one rule:
 
 ```ts
-import { App } from "minimotor";
+import { createApp } from "minimotor";
 import { createAudio } from "minimotor/audio";
 import { createInput } from "minimotor/input";
 
-const game = App.create("game");
-const Audio = createAudio(game);
-const Input = createInput(game);
+const app = createApp("game");
+const Audio = createAudio(app);
+const Input = createInput(app);
 ```
 
-Every lifecycle-owned factory requires the same game returned by `createApp`
-or `App.create`. Dependencies
-between optional modules stay explicit, for example
-`createOnscreenInput(game, Input)`. Ownerless lower-level constructors have
+Every lifecycle-owned factory requires the same app returned by `createApp`.
+Dependencies between optional modules stay explicit, for example
+`createOnscreenInput(app, Input)`. Ownerless lower-level constructors have
 different names, such as `createAssetStore()` and `createLens()`.
+
+That object's type is `App`, exported from `minimotor` — annotate your own
+helpers with it when you pass the app around:
+
+```ts
+import type { App } from "minimotor";
+
+function spawnHud(app: App) { ... }
+```
 
 ## What's in the box
 
-**Engine runtime** — a game returned by `App.create` owns `Loop` (fixed-step
+**App runtime** — the app returned by `createApp` owns `Loop` (fixed-step
 update), `Draw` (rects, text, sprites, tiles, gradients), `Keys`, `Pointer`,
-`Mouse`, and `Clock`. `createCamera(game)` adds follow, shake, and lenses.
+`Mouse`, and `Clock`. `createCamera(app)` adds follow, shake, and lenses.
 
 **Input** — `Input.map` binds keys/gamepad buttons to named actions with edge
 state; `OnscreenInput` renders an opt-in touch gamepad that shares the same
@@ -136,10 +152,16 @@ presence, and matchmaking.
 rewritten (usually slightly wrong) in every project, for any kind of game.
 `Goodies` holds the **pure recipes** — call one, get a value: steering and target
 leading, flood fill, line of sight, distance fields, weighted random and dice,
-inventory stacking, world wrapping. `Gizmos` holds the **stateful gadgets** —
-create one, then tick it: combos, patrols, trails, ability charges, checkpoint
-routes, seeded RNG and shuffle bags, undo stacks, arcade car handling and
-skidmarks. Both surfaces are flat: `Goodies.floodFill`, `Gizmos.combo`.
+inventory stacking, world wrapping, clock formatting. `Gizmos` holds the
+**stateful gadgets** — create one, then tick it: combos, score trackers,
+patrols, trails, ability charges, checkpoint routes, seeded RNG and shuffle
+bags, undo stacks, arcade car handling and skidmarks. Both surfaces are flat:
+`Goodies.floodFill`, `Gizmos.combo`.
+
+A Gizmo takes its collaborators by injection rather than taking the app — a
+clock, a physics body, a store — so it stays usable without a canvas and
+testable without a game. `Gizmos.scoreTracker("best")` persists to
+`localStorage` by default; pass your own `ScoreStore` to scope or redirect it.
 
 ### Aseprite sprites and animations
 
@@ -151,8 +173,8 @@ import { createAnimation } from "minimotor/animation";
 import * as Aseprite from "minimotor/aseprite";
 import { createAssets } from "minimotor/assets";
 
-const Anim = createAnimation(game);
-const Assets = createAssets(game);
+const Anim = createAnimation(app);
+const Assets = createAssets(app);
 const direct = Aseprite.sheet(image, json);
 
 const { hero } = await Assets.load({
@@ -311,7 +333,7 @@ mm ldtk types assets/world.ldtk -o src/world.generated.ts
 import { createAssets } from "minimotor/assets";
 import { levelAssets, loadWorld, type LevelId } from "./world.generated.js";
 
-const Assets = createAssets(game);
+const Assets = createAssets(app);
 const world = loadWorld(await Assets.load(levelAssets));
 let area: LevelId = world.first;
 ```
@@ -352,6 +374,7 @@ mm ldtk check assets/world.ldtk
 mm ldtk watch assets/world.ldtk -o src/world.generated.ts
 mm level test
 mm level simulate --levels 20 --rounds 4 --bots 12 --attempts 4 --layout varied
+mm level evolve --population 32 --generations 5 --tree evolution.txt
 mm assets check . --tile-size 16
 mm net doctor --latency 40 --jitter 12 --loss 2
 mm test
@@ -366,6 +389,12 @@ generator varies between open surface routes, enclosed tunnel/chamber routes,
 and mixed routes that descend underground and return outside. Use `--layout`
 to constrain that grammar, and `--dataset`, `--report`, `--replay`, and `-o`
 to retain the complete result.
+
+`mm level evolve` runs single-elimination tournaments over complete
+populations. Match winners produce reseeded offspring that inherit or mutate
+layout and difficulty; an unchanged elite prevents the best known result from
+regressing. Its ASCII output shows ancestry, fitness deltas, generation
+champions, and every bracket match.
 
 ### The same world without an editor
 
@@ -482,7 +511,7 @@ input, and `simulateNetwork` adds latency, jitter, and loss during development.
 `syncBody`/`syncBodies` use bounded position-derived extrapolation on stable
 links and automatically restore a jitter buffer when arrivals become uneven;
 velocity units can be per-step or per-second. `room.meter` plugs directly into
-`createPerformanceMonitoring(game, { net: room.meter })`.
+`createPerformanceMonitoring(app, { net: room.meter })`.
 
 With `fallback: "local"`, an unreachable relay becomes a one-player room:
 events, requests, authority, sync, and game logic keep the same code path.
@@ -524,8 +553,9 @@ const room = serveProtocol<Game>(wss, {
 checked from that shared file. This is compile-time safety; validate untrusted
 network data at runtime when security matters.
 
-**Odds and ends** — `Game` (score tracking, clock formatting), `Storage`
-(crash-safe localStorage), `Perf` (FPS HUD and net meter).
+**Odds and ends** — `Storage` (crash-safe, game-namespaced persistence), `Perf`
+(FPS HUD and net meter). Score tracking and clock formatting live with the rest
+of the legos, as `Gizmos.scoreTracker` and `Goodies.formatClock`.
 
 ## Samples
 

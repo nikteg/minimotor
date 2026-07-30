@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import levelFeature, { generateLevel, type GeneratedLevel } from "../level.feature.js";
 import { evaluateLevelWithBots, planLevel } from "../../level-tester/bots.js";
 import { createPlatformerSimulation } from "../../level-tester/simulation.js";
+import { evolveLevels } from "../../level-tester/tournament.js";
 
 function flatLevel(): GeneratedLevel {
   const width = 24;
@@ -102,6 +103,35 @@ describe("headless level bots", () => {
     });
     const plan = planLevel(level, { maxSteps: 1_800 });
     expect(plan.completed).toBe(true);
+  });
+
+  it("evolves tournament winners and renders their ancestry", () => {
+    const result = evolveLevels({
+      seed: "test-tournament",
+      population: 4,
+      generations: 3,
+      bots: 4,
+      attempts: 1,
+      maxSteps: 1_200,
+      width: 40,
+      height: 20,
+      objective: "complex",
+      features: ["gaps", "platforms", "tunnels", "exit"],
+    });
+    expect(result.candidates).toHaveLength(12);
+    expect(result.matches).toHaveLength(9);
+    expect(result.generationChampions).toHaveLength(3);
+    expect(result.generationChampions[1].fitness).toBeGreaterThanOrEqual(
+      result.generationChampions[0].fitness,
+    );
+    expect(result.generationChampions[2].fitness).toBeGreaterThanOrEqual(
+      result.generationChampions[1].fitness,
+    );
+    expect(result.tree).toContain("EVOLUTION ANCESTRY");
+    expect(result.tree).toContain("TOURNAMENT BRACKETS");
+    expect(result.tree).toContain("delta=");
+    expect(result.options.objective).toBe("complex");
+    expect(result.candidates.every((candidate) => candidate.complexity >= 0)).toBe(true);
   });
 
   it("runs multi-candidate bot evaluation through the CLI feature", async () => {

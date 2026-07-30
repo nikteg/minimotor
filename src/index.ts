@@ -1,8 +1,8 @@
 // Minimotor — a minimal 2D canvas framework for small games and playful apps.
-// App creates isolated games. Optional stateful capabilities live at explicit
+// createApp creates isolated apps. Optional stateful capabilities live at explicit
 // subpaths (`minimotor/audio`, `minimotor/net`, `minimotor/ui`, ...).
 
-import { App, createApp } from "./engine/index.js";
+import { createApp } from "./engine/index.js";
 import {
   rectsOverlap,
   circleHit,
@@ -20,17 +20,6 @@ import {
   grid,
   contacts,
 } from "./collision.js";
-/** Immediate-mode UI: buttons, panels, lists, tables, dialogs, drag-and-drop.
- *  Widgets are drawn and polled every frame from their options — no retained
- *  widget tree, no event handlers to wire up.
- *
- *    if (UI.button("Play", { x: 300, y: 200 })) start();
- *    UI.panel({ x: 20, y: 20, w: 200, h: 120, title: "Inventory" });
- */
-/** Area-to-area travel over the scene stack. `Portals.create` automatically
- * detects trigger overlap after fixed gameplay steps, places the body at a
- * destination marker, and navigates to that area's scene. Shared bodies carry
- * `area`, so multiplayer teleports snap. */
 /** Tiny archetype-free entity-component-system. `ECS.component` declares a
  *  component and `ECS.create` builds a world; then `world.spawn`,
  *  `world.query`/`world.dense` and `world.system` handle iteration and per-step
@@ -42,86 +31,32 @@ import {
  *    for (const [id, p] of world.query(Pos)) p.x += 1;
  */
 import * as ECS from "./ecs/index.js";
-/** Frame-based sprite animation: `Anim.sheet` (regular grid), `Anim.states`
- *  (one image per state), motion behaviors, and composable value tweens (`Anim.animate`,
- *  `Anim.sequence`, `Anim.parallel`). Cursors here are `Draw.sprite`-ready.
- *
- *    const hero = Anim.sheet(img, {
- *      frame: { w: 32, h: 32 },
- *      states: { idle: { row: 0, frames: 4 }, run: { row: 1, frames: 6, fps: 12 } },
- *    });
- *    const anim = hero.play("idle");   // per-entity cursor
- *    Draw.sprite(anim, player);
- */
-/** Aseprite sprite-sheet JSON: static atlas frames, tagged animation,
- * per-frame timing, trim placement, layers, slices, pivots, and nine-slice
- * centers. `Aseprite.sheet(image, json)` is also what `Assets.load({ aseprite })`
- * composes automatically. */
 /** General finite state machine: `Fsm.create(states, initial)` builds a machine
  *  of named states with `enter`/`update`/`exit`. `machine.update()` runs the
  *  active state and transitions on the name it returns; `machine.go(name)`
  *  forces one. Drives per-entity behavior (idle/run/jump, AI) and anim states. */
 import * as Fsm from "./fsm.js";
-/** Polled timing latches read as booleans, derived from a `Clock` (so pause and
- *  slow-mo affect them). `Timers.window` (coyote grace), `Timers.buffer` (early
- *  press buffering), `Timers.cooldown` (reuse gate), and `Timers.jumpGate` (the
- *  first two composed into forgiving-jump timing). */
-/** WebAudio helpers that own the `AudioContext`, timing and volume. `Audio.sfx`
- *  builds crash-safe sound effects, `Audio.music` schedules a song,
- *  `Audio.bus`/`Audio.master` mix, and `Audio.tone`/`Audio.engine` synthesize.
- *
- *    const sounds = Audio.sfx({
- *      jump: { freq: { from: 300, to: 600 }, ms: 120 },
- *      hit: { noise: true, ms: 80 },
- *    });
- *    sounds.jump.play();
- */
 /** Small math helpers (named à la Unity so it never shadows `Math`):
  *  interpolation (`Mathf.lerp`, `Mathf.damp`, `Mathf.approach`), ranges
  *  (`Mathf.clamp`, `Mathf.remap`), oscillators (`Mathf.pingPong`, `Mathf.wave`),
  *  plus randomness and 0..1 easing curves. */
 import * as Mathf from "./mathf.js";
-/** Keyboard/action mapping and device input. `Input.map` binds keys/pad buttons
- *  to named actions with edge state, `Input.gamepad` polls a pad, plus DOM
- *  helpers `Input.wireButton` and `Input.vibrate`.
- *
- *    const input = Input.map({ jump: ["Space", "pad:a"], left: ["ArrowLeft", "KeyA"] });
- *    if (input.jump.pressed) player.vel.y = -JUMP;
- */
-/** Crash-safe `localStorage` wrapper: `Storage.load(key, fallback)` and
- *  `Storage.save(key, value)` round-trip any JSON-serializable value and never
- *  throw — private browsing, quota, or corrupt data all fall back silently. */
 /** Offscreen pre-rendering and sprite-sheet baking. `Sprites.getSprite`/
  *  `Sprites.getLayer` cache expensive draws, `Sprites.tint` recolors, and
  *  `Sprites.atlas`/`Sprites.packAtlas` build sheets for `Anim.sheet`/`Tiles.grid`
  *  — plus the standard `Sprites.Sprite` ECS component. */
 import * as Sprites from "./sprites.js";
-/** Dependency-free multiplayer building blocks. `Net.join(url, { room })` opens
- *  a symmetric room; `Net.syncBody`/`syncBodies` handle lightweight or
- *  Physics2D bodies, `syncEntities` handles dynamic collections, and typed
- *  events, ownership, network time, prediction, and diagnostics cover the
- *  common multiplayer loop.
- *
- *    const room = await Net.join("wss://example.com/ws", { room: "demo" });
- *    const ghosts = Net.syncBody(room, player);
- *    for (const g of ghosts) Draw.rect(g.x, g.y, 16, 16, "#888");
- */
-/** FPS / frame-time monitoring lives at `minimotor/performance`, where
- * `createPerformanceMonitoring(game)` owns the HUD lifecycle and standalone
- * tracker/meter factories remain available for custom displays. */
-/** Neutral game building blocks: `Game.createScoreTracker` persists score/best
- *  and `Game.formatClock` renders `m:ss`. Fitting a fixed logical area into the
- *  viewport lives on `App.create(canvas, { resolution })`, not here. */
-import * as Game from "./game.js";
 /** Pure, dependency-free game recipes (call one, get a value) that recur across
  *  genres: `Goodies.leadTarget`/`Goodies.nearest` (steering), `Goodies.floodFill`/
  *  `Goodies.lineOfSight` (grid), `Goodies.weightedPick`/`Goodies.rollDice`
- *  (random), `Goodies.wrap` (toroidal). Stateful gadgets live in `Gizmos`. */
+ *  (random), `Goodies.wrap` (toroidal), `Goodies.formatClock` (HUD readout).
+ *  Stateful gadgets live in `Gizmos`. */
 import * as Goodies from "./goodies/index.js";
 /** Stateful game gadgets you create once then tick/mutate (the sibling of
- *  `Goodies`): `Gizmos.combo`, `Gizmos.patrol`, `Gizmos.trail`, `Gizmos.charges`,
- *  `Gizmos.checkpointRoute`, `Gizmos.seedRng`/`Gizmos.shuffleBag`,
- *  `Gizmos.undoStack`, and `Gizmos.car`/`Gizmos.skidmarks`. */
+ *  `Goodies`): `Gizmos.combo`, `Gizmos.scoreTracker`, `Gizmos.patrol`,
+ *  `Gizmos.trail`, `Gizmos.charges`, `Gizmos.checkpointRoute`,
+ *  `Gizmos.seedRng`/`Gizmos.shuffleBag`, `Gizmos.undoStack`, and
+ *  `Gizmos.car`/`Gizmos.skidmarks`. */
 import * as Gizmos from "./gizmos/index.js";
 /** ASCII and Tiled levels as pure data: `Tiles.grid` and `Tiles.Tiled.grid`
  *  build the same queryable `SolidSource` `Level` (feed
@@ -145,19 +80,19 @@ import * as Gizmos from "./gizmos/index.js";
  *    const start = level.spawnOne("P");
  */
 import * as Tiles from "./tiles/index.js";
-/** LDtk project adapter. `LDtk.grid` produces generic collision levels;
- * `LDtk.tiles` reads painted layers, and `LDtk.world` caches every level,
- * entity, visual layer, and portal behind one gameplay-facing object. */
 /** Cover → swap → reveal scene transitions passed to `Scenes.go`. `Transitions.fade`
  *  and `Transitions.wipe` are ready-made; a `Transition` is plain data, and the
  *  pure fixed-step runner `Transitions.run` fires the swap at full coverage. */
 import * as Transitions from "./transitions.js";
-/** Opt-in on-screen touch gamepad. `OnscreenInput.gamepad(config)` returns a
- *  `GamepadState` for `Input.map({ pad })` and `OnscreenInput.drawControls(pad)`
- *  renders it — touch and a hardware pad share one code path.
- *  `pad.buttonBounds("a")` locates a semantic canvas button for automation. */
 
-export { App, createApp, Sprites, Game, Goodies, Gizmos, Tiles, Transitions, Mathf, ECS, Fsm };
+export { createApp, Sprites, Goodies, Gizmos, Tiles, Transitions, Mathf, ECS, Fsm };
+/** One isolated app, as returned by `createApp`. This is the type every
+ *  lifecycle-owned factory takes: `createAudio(app)`, `createUI(app)`,
+ *  `createNet(app)` — so it's also the type to annotate your own helpers with.
+ *
+ *    function spawnHud(app: App) { ... }
+ */
+export type { App } from "./engine/index.js";
 export type {
   PlatformerAnimationState,
   PlatformerAnimationBody,
@@ -344,6 +279,8 @@ export type {
   Skidmarks,
   SkidmarksOptions,
   TraceInput,
+  ScoreTracker,
+  ScoreStore,
 } from "./gizmos/index.js";
 export type {
   Transport,

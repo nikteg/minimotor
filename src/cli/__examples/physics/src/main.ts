@@ -1,7 +1,7 @@
-import { App } from "minimotor";
+import { createApp } from "minimotor";
 import { createPhysics2D } from "minimotor/physics2d";
 
-const game = App.create("game", { background: "#161922" });
+const game = createApp("game", { background: "#161922" });
 const { Draw, Loop, viewport: view } = game;
 const Physics2D = createPhysics2D(game);
 const world = Physics2D.world();

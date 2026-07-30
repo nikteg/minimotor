@@ -16,11 +16,11 @@ import { createUI } from "minimotor/ui";
 //
 // Open this page in two tabs (or two machines on the same network) and move
 // with the arrow keys or WASD.
-import { App } from "minimotor";
+import { createApp } from "minimotor";
 
 // A fixed logical resolution: the engine letterboxes it into any window, so
 // every player sees the same world whatever their screen.
-const game = App.create("game", {
+const game = createApp("game", {
   background: "#0e1116",
   resolution: { w: 800, h: 450 },
 });

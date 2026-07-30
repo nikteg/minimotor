@@ -3,7 +3,7 @@
 // `load()` RETURNS the composed resources keyed by your manifest keys, so you
 // hold real references and never look anything up by string:
 //
-//   const Assets = createAssets(game);
+//   const Assets = createAssets(app);
 //   const { hero, terrain, level } = await Assets.load({
 //     hero: {
 //       src: "hero.png",
@@ -33,7 +33,7 @@ import {
   type State as AsepriteState,
 } from "./aseprite/index.js";
 import { tint as tintSprite, type SpriteCanvas } from "./sprites.js";
-import type { Game } from "./engine/app.js";
+import type { App } from "./engine/app.js";
 
 /** A manifest entry: a plain URL, or a `{ src }` spec that composes the loaded
  *  image into a higher-level resource. Extensions decide the loader:
@@ -170,7 +170,7 @@ async function loadSpec(spec: AssetSpec): Promise<{ raw: unknown; cached: unknow
   return { raw, cached: raw };
 }
 
-/** An isolated asset cache. Use `createAssets(game)` for lifecycle ownership,
+/** An isolated asset cache. Use `createAssets(app)` for lifecycle ownership,
  * or `createAssetStore()` for an ownerless cache. */
 export interface AssetStore {
   /** Load every entry in parallel; resolves with the composed resources keyed
@@ -194,7 +194,7 @@ export interface AssetStore {
   readonly loading: boolean;
 }
 
-/** Create a standalone cache when no game lifecycle should own it. */
+/** Create a standalone cache when no app lifecycle should own it. */
 export function createAssetStore(): AssetStore {
   const cache = new Map<string, unknown>();
   // Aggregate progress across concurrent/staged loads: reset once everything
@@ -272,9 +272,9 @@ export function createAssetStore(): AssetStore {
   return store;
 }
 
-/** Create an asset cache owned and cleared by one game. */
-export function createAssets(game: Game): AssetStore {
+/** Create an asset cache owned and cleared by one app. */
+export function createAssets(app: App): AssetStore {
   const store = createAssetStore();
-  game.use({ name: "Assets", onDestroy: () => store.clear() });
+  app.use({ name: "Assets", onDestroy: () => store.clear() });
   return store;
 }

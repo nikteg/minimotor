@@ -68,12 +68,12 @@ describe("net/server room", () => {
   });
 
   it("uses one protocol for inbound and outbound messages", () => {
-    type Game = Protocol<{
+    type App = Protocol<{
       client: { type: "move"; x: number };
       server: { type: "world"; x: number };
     }>;
     const srv = new MockServer();
-    const room = serveProtocol<Game>(srv, {
+    const room = serveProtocol<App>(srv, {
       onMessage(client, msg) {
         room.send(client, { type: "world", x: msg.x });
       },

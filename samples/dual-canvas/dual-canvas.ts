@@ -1,6 +1,6 @@
 // Two fully isolated games on one page. Each owns its canvas, loop, renderer,
 // input, clock, and optional UI feature.
-import { App } from "minimotor";
+import { createApp } from "minimotor";
 import { createUI } from "minimotor/ui";
 
 // Exposed for the e2e test: each button click bumps its own counter.
@@ -12,7 +12,7 @@ declare global {
 }
 window.__dual = counters;
 
-const main = App.create("game", { background: "#1a1a2e" });
+const main = createApp("game", { background: "#1a1a2e" });
 const { Draw: MainDraw, Loop: MainLoop } = main;
 const MainUI = createUI(main);
 
@@ -43,7 +43,7 @@ MainLoop.run({
 });
 
 // ---------- Game 2: an isolated game on its own canvas ----------
-const second = App.create("game2", { background: "#16321f" });
+const second = createApp("game2", { background: "#16321f" });
 const { Draw: SecondDraw, Loop: SecondLoop } = second;
 const SecondUI = createUI(second);
 

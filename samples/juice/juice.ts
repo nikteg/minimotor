@@ -9,9 +9,9 @@ import { createCamera } from "minimotor/camera";
 import { createInput } from "minimotor/input";
 import { createParticles } from "minimotor/particles";
 import { createUI } from "minimotor/ui";
-import { Mathf, App } from "minimotor";
+import { Mathf, createApp } from "minimotor";
 
-const game = App.create("game", { background: "#14141c" });
+const game = createApp("game", { background: "#14141c" });
 createPerformanceMonitoring(game);
 const view = game.viewport;
 const { Draw, Loop, Pointer } = game;

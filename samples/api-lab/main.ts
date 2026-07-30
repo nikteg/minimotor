@@ -1,6 +1,6 @@
 // API Lab — one small game exercising the public API. [#n] references
 // API-REVIEW.md.
-import { Collision, Mathf, Sprites, App, type BodyState, type Shared } from "minimotor";
+import { Collision, Mathf, Sprites, createApp, type BodyState, type Shared } from "minimotor";
 import { createAnimation } from "minimotor/animation";
 import { createAssets } from "minimotor/assets";
 import { createAudio } from "minimotor/audio";
@@ -20,7 +20,7 @@ import { levelAssets, loadWorld, type LevelId } from "./api-lab.generated.js";
 import type { GameProtocol } from "./protocol.js";
 
 // [#1]/[#3] One explicit game owns every stateful capability.
-export const game = App.create("game", {
+export const game = createApp("game", {
   background: "#222",
 });
 const { Clock, Draw, Loop } = game;

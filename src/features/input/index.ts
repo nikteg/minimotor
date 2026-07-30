@@ -1,6 +1,16 @@
+// ---------- Input ----------
+// Keyboard/action mapping and device input. `Input.map` binds keys/pad buttons
+// to named actions with edge state, `Input.gamepad` polls a pad, `Input.context`
+// swaps whole binding sets, plus DOM helpers `Input.wireButton`/`Input.vibrate`.
+// Pads are sampled at step start, so the same step's update sees fresh state.
+//
+//   const Input = createInput(app);
+//   const input = Input.map({ jump: ["Space", "pad:a"], left: ["ArrowLeft", "KeyA"] });
+//   if (input.jump.pressed) player.vel.y = -JUMP;
+
 import * as InputModule from "../../input/index.js";
 import type { GamepadState } from "../../input/gamepad.js";
-import type { Game } from "../../engine/app.js";
+import type { App } from "../../engine/app.js";
 
 export type InputApi = Omit<typeof InputModule, "map" | "createInputContext"> & {
   context(initial?: string): InputModule.InputContextApi;
@@ -14,8 +24,8 @@ export type InputApi = Omit<typeof InputModule, "map" | "createInputContext"> & 
   destroy(): void;
 };
 
-/** Create input maps and gamepad polling bound to one game. */
-export function createInput(game: Game): InputApi {
+/** Create input maps and gamepad polling bound to one app. */
+export function createInput(app: App): InputApi {
   const {
     map: _standaloneMap,
     createInputContext: _standaloneContext,
@@ -36,7 +46,7 @@ export function createInput(game: Game): InputApi {
     return pad;
   };
 
-  const unsubscribe = game.Loop.onStepStart(() => {
+  const unsubscribe = app.Loop.onStepStart(() => {
     for (const pad of hardware.values()) pad.poll();
   });
 
@@ -70,13 +80,13 @@ export function createInput(game: Game): InputApi {
     map(bindings, options = {}) {
       return InputModule.map(bindings, {
         ...options,
-        keys: options.keys ?? game.Keys,
-        steps: options.steps ?? (() => game.Loop.steps),
+        keys: options.keys ?? app.Keys,
+        steps: options.steps ?? (() => app.Loop.steps),
         pad: options.pad === undefined ? gamepad() : options.pad,
       });
     },
     destroy,
   };
-  game.use({ name: "Input", onDestroy: destroy });
+  app.use({ name: "Input", onDestroy: destroy });
   return api;
 }

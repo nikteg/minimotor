@@ -173,12 +173,12 @@ opposite-corner clients have deterministic viewport tracking. Calculate each
 shot from the final rendered actor-to-pointer screen vector at fire time, exclude
 the shooter's own nearby parked car from local blocking, and render a bright
 short projectile streak in addition to the bullet head. Use the engine's explicit
-game-bound `Mouse` service (normalized through the canvas client rect and tracked at window
+app-bound `Mouse` service (normalized through the canvas client rect and tracked at window
 scope), require `Mouse.inside` for mouse interactions, and draw a screen-space
 aim reticle as direct visual confirmation of the coordinates being consumed.
 Drive camera focus from the latest mouse position during the render frame before
 the world transform, and hide the native cursor while alive so only the in-game
-crosshair remains. Use the actual game-bound camera shake API (`Camera.shake(...)`,
+crosshair remains. Use the actual app-bound camera shake API (`Camera.shake(...)`,
 `Camera.shakeX()`, `Camera.shakeY()`): treating `shake` as an object yields
 `undefined`, turns world/aim coordinates into `NaN`, and makes canvas translation
 silently no-op.

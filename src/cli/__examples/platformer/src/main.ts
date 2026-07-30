@@ -1,7 +1,7 @@
-import { App, Collision, Tiles } from "minimotor";
+import { createApp, Collision, Tiles } from "minimotor";
 import { createInput } from "minimotor/input";
 
-const game = App.create("game", {
+const game = createApp("game", {
   background: "#8bd3dd",
   resolution: { w: 480, h: 270 },
 });

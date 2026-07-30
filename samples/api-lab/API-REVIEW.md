@@ -1,7 +1,7 @@
 # Minimotor API Review — running notes
 
 Dogfooding review: this sample exercises each capability through explicit,
-game-owned factories. After each increment, the API it touched is judged.
+app-owned factories. After each increment, the API it touched is judged.
 Verdicts: **keep** / **change** / **undecided**. Items marked "change" get an
 ideal-API sketch. These notes began as a design spec; accepted changes are now
 implemented directly in Minimotor and exercised by this sample.
@@ -480,9 +480,9 @@ scaled by fall speed (`impact` captured before `moveAndSlide` zeroes it),
 28. **Particles: explicit instances (no singleton), self-stepping sim,
     explicit draw.** `const fx = Particles.createSystem()` — Niklas questioned the
     original singleton proposal; discussion produced a taxonomy law:
-    - **Runtime services belong to one explicit game**:
-      `game.Loop`, `game.Draw`, `game.Keys`, `game.Pointer`, plus factories
-      such as `createUI(game)` and `createCamera(game)`.
+    - **Runtime services belong to one explicit app**:
+      `app.Loop`, `app.Draw`, `app.Keys`, `app.Pointer`, plus factories
+      such as `createUI(app)` and `createCamera(app)`.
     - **Game content is explicit instances** (plural by nature): `Input.map`,
       `ECS.create`, `Timers.jumpGate`, sheet cursors, motions,
       `createCamera`, and now `Particles.create` — particles want plurality
@@ -587,7 +587,7 @@ entire handoff.
     - `jumpGate.try()` — updates internal timers from elapsed on call.
       Nothing holds them → dropping the reference IS the teardown → scenes
       need zero lifecycle API for content, and #28's taxonomy gets its
-      enforcement mechanism for free. Game-bound services register against
+      enforcement mechanism for free. App-bound services register against
       their owner and are destroyed with it. "Zero wiring" is now stated as:
       **pull, don't push — derive from the clock, never register.**
 
@@ -695,7 +695,7 @@ whoosh`. Each returns a plain SfxSpec — inspect it, tweak it, learn
       juice, noted not specced: pitch-bending sfx by `Clock.world.scale`
       during slow-mo.)
     - `Audio.*` master (volume/mute, persisted via `Storage`) is the
-      game-owned mixer API; sfx maps and music instances are content (#28
+      app-owned mixer API; sfx maps and music instances are content (#28
       taxonomy holds).
     - Verdict: **change** (agreed)
 
@@ -1082,9 +1082,13 @@ Quick dispositions; each "flag" is a candidate for a round-2 review.
   `createApp(canvas, options)` directly.
 - **Fullscreen**: two exports orbiting `Stage` — fold into
   `Stage.init({ fullscreen: ... })` / `Stage.fullscreen()`. Flag.
-- **game.ts grab-bag** (`createScoreTracker`, `letterbox`, `formatClock`):
+- ~~**game.ts grab-bag** (`createScoreTracker`, `letterbox`, `formatClock`):
   homeless helpers. scoreTracker is Storage sugar; letterbox is a camera
-  concern post-#19; formatClock is Mathf-ish. Flag: rehome or retire.
+  concern post-#19; formatClock is Mathf-ish. Flag: rehome or retire.~~
+  RESOLVED: rehomed by the Goodies/Gizmos taxonomy — `Gizmos.scoreTracker`
+  (injected `ScoreStore`, not global localStorage) and `Goodies.formatClock`.
+  `letterbox` was already retired into `createApp({ resolution })`. `game.ts` is
+  deleted; the object returned by `createApp` is now consistently typed `App`.
 - **Gizmos/Goodies**: two grab-bag namespaces with real gems (seedRng,
   shuffleBag, undoStack, steering, floodFill) — no API problems observed,
   but organization/naming deserves a deliberate pass (is `car` physics?

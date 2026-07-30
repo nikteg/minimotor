@@ -2,7 +2,7 @@ import { createPerformanceMonitoring } from "minimotor/performance";
 // LEAD DEFENDER: predictive aiming, angle steering, wave scaling and radial spawns.
 import { createParticles } from "minimotor/particles";
 import { createUI } from "minimotor/ui";
-import { Collision, Goodies, App } from "minimotor";
+import { Collision, Goodies, createApp } from "minimotor";
 
 interface Enemy {
   x: number;
@@ -21,7 +21,7 @@ interface Bullet {
 }
 
 // Live viewport; the engine owns the background clear.
-const game = App.create("game", {
+const game = createApp("game", {
   background: "#080d18",
   preventNavigation: true,
 });

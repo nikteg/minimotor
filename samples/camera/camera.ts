@@ -7,11 +7,11 @@ import { createCamera } from "minimotor/camera";
 import { createInput } from "minimotor/input";
 import { createParticles } from "minimotor/particles";
 import { createUI } from "minimotor/ui";
-import { Mathf, App } from "minimotor";
+import { Mathf, createApp } from "minimotor";
 import { createSfx } from "../shared/sfx.ts";
 
 // The viewport is LIVE (mutated on resize); the engine owns clearing.
-const game = App.create("game", { background: "#080b18" });
+const game = createApp("game", { background: "#080b18" });
 createPerformanceMonitoring(game);
 const view = game.viewport;
 const { Draw, Keys, Loop, Pointer } = game;

@@ -4,13 +4,13 @@ import { createPerformanceMonitoring } from "minimotor/performance";
 // Demonstrates: Sprites.Sprite (position + texture + alpha), Draw.sprites(ecs.dense(Sprite)) —
 // no hand-written blit loop — plus an update system that fades sprites out.
 import { createUI } from "minimotor/ui";
-import { ECS, Sprites, App } from "minimotor";
+import { ECS, Sprites, createApp } from "minimotor";
 
 const ecs = ECS.create();
 
 // The perf HUD shows this world's live entity count (`ents`).
 // The viewport is LIVE (mutated on resize); the engine owns clearing.
-const game = App.create("game", { background: "#000" });
+const game = createApp("game", { background: "#000" });
 createPerformanceMonitoring(game, { world: ecs });
 const view = game.viewport;
 const { Draw, Loop, Pointer } = game;

@@ -11,12 +11,12 @@ import { createPerformanceMonitoring } from "minimotor/performance";
 // pick and start a backing groove from the on-screen Music controls.
 import { createAudio } from "minimotor/audio";
 import { createUI } from "minimotor/ui";
-import { Mathf, App } from "minimotor";
+import { Mathf, createApp } from "minimotor";
 import { KeyCode } from "minimotor";
 import { installLayoutProbe } from "../shared/layout-probe.ts";
 
 // The viewport is LIVE (mutated on resize) — piano + bars lay out from it.
-const game = App.create("game", { background: "#12141c" });
+const game = createApp("game", { background: "#12141c" });
 createPerformanceMonitoring(game);
 const vp = game.viewport;
 const { Draw, Keys, Loop, Pointer } = game;

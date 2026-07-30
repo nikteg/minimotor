@@ -22,7 +22,7 @@
 
 import type { ClockHandle } from "./clock.js";
 import { run as runTransition, type Transition, type TransitionRun } from "./transitions.js";
-import type { Game } from "./engine/index.js";
+import type { App } from "./engine/index.js";
 
 /** One scene. Every hook is optional; hooks capture game state via closure. */
 export interface SceneSpec {
@@ -181,14 +181,14 @@ export function createSceneStack<K extends string>(
   return self;
 }
 
-/** Scene factory bound to one game's clocks and viewport. */
-export function createScenes(game: Game) {
+/** Scene factory bound to one app's clocks and viewport. */
+export function createScenes(app: App) {
   return {
     create<K extends string>(map: Record<K, SceneSpec>, options: Partial<SceneStackOptions> = {}) {
       return createSceneStack(map, {
-        clock: game.Clock.world,
-        uiClock: game.Clock.ui,
-        view: game.viewport,
+        clock: app.Clock.world,
+        uiClock: app.Clock.ui,
+        view: app.viewport,
         ...options,
       });
     },

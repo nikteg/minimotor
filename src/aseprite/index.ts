@@ -1,3 +1,9 @@
+// ---------- Aseprite ----------
+// Aseprite sprite-sheet JSON: static atlas frames, tagged animation, per-frame
+// timing, trim placement, layers, slices, pivots, and nine-slice centers.
+// `Aseprite.sheet(image, json)` is also what `Assets.load({ aseprite })`
+// composes automatically.
+
 import { type FrameRect, type PlaybackOptions, type SheetImage } from "../anim/sheet.js";
 
 export interface AsepriteFrame {

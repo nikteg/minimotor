@@ -183,11 +183,11 @@ describe("Net", () => {
       expect(JSON.parse(got)).toEqual({ hi: 1 });
     });
     it("sends and receives a shared JSON protocol", () => {
-      type Game = Protocol<{
+      type App = Protocol<{
         client: { type: "move"; x: number };
         server: { type: "world"; x: number };
       }>;
-      const game = connectProtocol<Game>({ url: "ws://x" });
+      const game = connectProtocol<App>({ url: "ws://x" });
       const ws = MockWS.instances[0];
       ws._open();
       game.send({ type: "move", x: 2 });

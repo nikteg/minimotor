@@ -4,9 +4,9 @@ import type { KeyCode } from "./keycodes.js";
  *  `released` are edge-triggered and true for exactly one update step per
  *  physical transition — that's why no `onKeyDown` callback is needed.
  *
- *    if (game.Keys.down("ArrowLeft")) move();   // held
- *    if (game.Keys.pressed("Space"))  jump();   // this step only
- *    if (game.Keys.released("KeyR"))  letGo(); */
+ *    if (app.Keys.down("ArrowLeft")) move();   // held
+ *    if (app.Keys.pressed("Space"))  jump();   // this step only
+ *    if (app.Keys.released("KeyR"))  letGo(); */
 export interface Keys {
   /** True while the key is held. */
   down(code: KeyCode): boolean;

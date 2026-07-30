@@ -12,7 +12,7 @@ import { createAudio } from "minimotor/audio";
 import { createCamera } from "minimotor/camera";
 import { createScenes } from "minimotor/scenes";
 import { createUI } from "minimotor/ui";
-import { Collision, ECS, Game, Mathf, App, Vec2 } from "minimotor";
+import { Collision, ECS, Gizmos, Mathf, createApp, Vec2 } from "minimotor";
 import { createOverlays } from "../shared/overlays.ts";
 
 const GW = 400;
@@ -32,7 +32,7 @@ const ecs = ECS.create();
 
 // Fixed-resolution stage: the engine fits GW×GH into the window (play area
 // "#151515", letterbox bars "#0a0a0a"). The perf HUD shows live entity count.
-const game = App.create("game", {
+const game = createApp("game", {
   resolution: { w: GW, h: GH },
   background: "#151515",
   barColor: "#0a0a0a",
@@ -63,7 +63,7 @@ const ROW_COLORS = ["#ff6b6b", "#ffa94d", "#ffd43b", "#69db7c", "#4ecdc4"];
 // ---- plain-object state (single instances) ----
 const paddle = { x: GW / 2 - PADDLE_W / 2, y: GH - 60, w: PADDLE_W, h: PADDLE_H };
 const ball = { x: GW / 2, y: GH - 80, r: BALL_R, vel: { x: 2.5, y: -2.5 } };
-const scores = Game.createScoreTracker("breakout_best");
+const scores = Gizmos.scoreTracker("breakout_best");
 let lives = 3;
 let waiting = true; // ball sits on the paddle until launched
 

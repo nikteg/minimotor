@@ -1,0 +1,959 @@
+EVOLUTION ANCESTRY
+|-- G0-00 [mixed] d=1.00 fit=0.809 bot=0.806 complexity=0.92 PASS rooms=2 gaps=8
+|-- G0-01 [mixed] d=0.44 fit=0.833 bot=0.864 complexity=0.86 PASS rooms=2 gaps=3
+|   |-- G1-02 [mixed] d=0.32 fit=0.826 bot=0.804 complexity=0.95 PASS rooms=2 gaps=5 delta=-0.007
+|   |   |-- G2-03 [mixed] d=0.41 fit=0.768 bot=0.794 complexity=0.79 PASS rooms=2 gaps=1 delta=-0.058
+|   |   `-- G2-35 [mixed] d=0.32 fit=0.788 bot=0.803 complexity=0.88 PASS rooms=2 gaps=4 delta=-0.038
+|   `-- G1-34 [mixed] d=0.72 fit=0.819 bot=0.815 complexity=0.93 PASS rooms=2 gaps=5 delta=-0.014
+|-- G0-02 [mixed] d=0.81 fit=0.834 bot=0.820 complexity=0.93 PASS rooms=2 gaps=5
+|   |-- G1-03 [mixed] d=0.84 fit=0.789 bot=0.755 complexity=0.94 PASS rooms=2 gaps=7 delta=-0.045
+|   `-- G1-35 [mixed] d=0.97 fit=0.881 bot=0.882 complexity=0.93 PASS rooms=2 gaps=7 delta=+0.047 <CHAMPION>
+|       |-- G2-00 [mixed] d=0.97 fit=0.881 bot=0.882 complexity=0.93 PASS rooms=2 gaps=7 delta=+0.000 <generation winner>
+|       |   |-- G3-01 [tunnel] d=1.00 fit=0.824 bot=0.837 complexity=0.90 PASS rooms=2 gaps=6 delta=-0.058
+|       |   `-- G3-33 [mixed] d=1.00 fit=0.805 bot=0.791 complexity=0.94 PASS rooms=2 gaps=6 delta=-0.076
+|       |       |-- G4-17 [mixed] d=0.85 fit=0.817 bot=0.802 complexity=0.95 PASS rooms=2 gaps=6 delta=+0.012
+|       |       |   |-- G5-09 [mixed] d=0.74 fit=0.761 bot=0.752 complexity=0.88 PASS rooms=2 gaps=4 delta=-0.056
+|       |       |   `-- G5-41 [mixed] d=1.00 fit=0.782 bot=0.738 complexity=0.94 PASS rooms=2 gaps=7 delta=-0.036
+|       |       `-- G4-49 [mixed] d=1.00 fit=0.824 bot=0.790 complexity=0.95 PASS rooms=2 gaps=7 delta=+0.019
+|       |-- G2-01 [mixed] d=0.75 fit=0.798 bot=0.788 complexity=0.93 PASS rooms=2 gaps=5 delta=-0.084
+|       |-- G2-33 [mixed] d=1.00 fit=0.804 bot=0.790 complexity=0.95 PASS rooms=2 gaps=6 delta=-0.077
+|       |   |-- G3-17 [tunnel] d=0.98 fit=0.833 bot=0.842 complexity=0.94 PASS rooms=2 gaps=6 delta=+0.029
+|       |   |   |-- G4-09 [tunnel] d=0.73 fit=0.789 bot=0.773 complexity=0.95 PASS rooms=2 gaps=6 delta=-0.044
+|       |   |   `-- G4-41 [tunnel] d=1.00 fit=0.799 bot=0.791 complexity=0.93 PASS rooms=2 gaps=5 delta=-0.034
+|       |   `-- G3-49 [mixed] d=1.00 fit=0.843 bot=0.856 complexity=0.94 PASS rooms=2 gaps=7 delta=+0.038
+|       |       |-- G4-25 [mixed] d=0.84 fit=0.777 bot=0.751 complexity=0.90 PASS rooms=2 gaps=4 delta=-0.066
+|       |       `-- G4-57 [mixed] d=1.00 fit=0.816 bot=0.806 complexity=0.90 PASS rooms=2 gaps=4 delta=-0.026
+|       |           |-- G5-29 [mixed] d=0.80 fit=0.782 bot=0.799 complexity=0.83 PASS rooms=2 gaps=2 delta=-0.035
+|       |           |   |-- G6-15 [mixed] d=0.73 fit=0.826 bot=0.820 complexity=0.95 PASS rooms=2 gaps=5 delta=+0.044
+|       |           |   `-- G6-47 [mixed] d=0.54 fit=0.828 bot=0.815 complexity=0.90 PASS rooms=2 gaps=4 delta=+0.046
+|       |           `-- G5-61 [mixed] d=0.93 fit=0.809 bot=0.796 complexity=0.94 PASS rooms=2 gaps=6 delta=-0.008
+|       |               |-- G6-31 [mixed] d=1.00 fit=0.814 bot=0.817 complexity=0.89 PASS rooms=2 gaps=4 delta=+0.006
+|       |               `-- G6-63 [mixed] d=0.69 fit=0.798 bot=0.785 complexity=0.91 PASS rooms=2 gaps=4 delta=-0.010
+|       |-- G3-00 [mixed] d=0.97 fit=0.881 bot=0.882 complexity=0.93 PASS rooms=2 gaps=7 delta=+0.000 <generation winner>
+|       |   |-- G4-01 [mixed] d=0.79 fit=0.787 bot=0.760 complexity=0.93 PASS rooms=2 gaps=7 delta=-0.094
+|       |   `-- G4-33 [mixed] d=0.74 fit=0.807 bot=0.807 complexity=0.91 PASS rooms=2 gaps=4 delta=-0.075
+|       |-- G4-00 [mixed] d=0.97 fit=0.881 bot=0.882 complexity=0.93 PASS rooms=2 gaps=7 delta=+0.000 <generation winner>
+|       |   |-- G5-01 [mixed] d=0.71 fit=0.806 bot=0.769 complexity=0.94 PASS rooms=2 gaps=5 delta=-0.076
+|       |   `-- G5-33 [surface] d=1.00 fit=0.776 bot=0.788 complexity=0.65 PASS rooms=0 gaps=4 delta=-0.105
+|       |-- G5-00 [mixed] d=0.97 fit=0.881 bot=0.882 complexity=0.93 PASS rooms=2 gaps=7 delta=+0.000 <generation winner>
+|       |   |-- G6-01 [surface] d=1.00 fit=0.743 bot=0.778 complexity=0.70 PASS rooms=0 gaps=6 delta=-0.138
+|       |   `-- G6-33 [mixed] d=1.00 fit=0.812 bot=0.773 complexity=0.94 PASS rooms=2 gaps=6 delta=-0.069
+|       `-- G6-00 [mixed] d=0.97 fit=0.881 bot=0.882 complexity=0.93 PASS rooms=2 gaps=7 delta=+0.000 <generation winner>
+|-- G0-03 [mixed] d=0.85 fit=0.820 bot=0.806 complexity=0.94 PASS rooms=2 gaps=6
+|-- G0-04 [tunnel] d=0.99 fit=0.801 bot=0.797 complexity=0.93 PASS rooms=2 gaps=6
+|   |-- G1-04 [tunnel] d=0.90 fit=0.826 bot=0.838 complexity=0.91 PASS rooms=2 gaps=4 delta=+0.025
+|   |   |-- G2-04 [tunnel] d=0.71 fit=0.808 bot=0.822 complexity=0.90 PASS rooms=2 gaps=4 delta=-0.018
+|   |   |   |-- G3-03 [tunnel] d=0.66 fit=0.786 bot=0.745 complexity=0.95 PASS rooms=2 gaps=7 delta=-0.022
+|   |   |   `-- G3-35 [tunnel] d=0.56 fit=0.823 bot=0.821 complexity=0.94 PASS rooms=2 gaps=5 delta=+0.016
+|   |   `-- G2-36 [mixed] d=1.00 fit=0.827 bot=0.828 complexity=0.95 PASS rooms=2 gaps=7 delta=+0.001
+|   |       |-- G3-19 [surface] d=0.94 fit=0.756 bot=0.789 complexity=0.69 PASS rooms=0 gaps=5 delta=-0.071
+|   |       `-- G3-51 [tunnel] d=1.00 fit=0.773 bot=0.764 complexity=0.90 PASS rooms=2 gaps=7 delta=-0.054
+|   `-- G1-36 [tunnel] d=0.94 fit=0.818 bot=0.829 complexity=0.93 PASS rooms=2 gaps=5 delta=+0.016
+|       |-- G2-19 [tunnel] d=1.00 fit=0.803 bot=0.805 complexity=0.93 PASS rooms=2 gaps=7 delta=-0.015
+|       `-- G2-51 [tunnel] d=1.00 fit=0.820 bot=0.827 complexity=0.95 PASS rooms=2 gaps=7 delta=+0.002
+|           |-- G3-26 [tunnel] d=1.00 fit=0.796 bot=0.785 complexity=0.94 PASS rooms=2 gaps=5 delta=-0.024
+|           |   |-- G4-14 [tunnel] d=1.00 fit=0.798 bot=0.786 complexity=0.94 PASS rooms=2 gaps=6 delta=+0.003
+|           |   |   |-- G5-08 [tunnel] d=0.77 fit=0.771 bot=0.762 complexity=0.86 PASS rooms=2 gaps=3 delta=-0.027
+|           |   |   |   |-- G6-05 [tunnel] d=0.98 fit=0.786 bot=0.771 complexity=0.94 PASS rooms=2 gaps=6 delta=+0.015
+|           |   |   |   `-- G6-37 [tunnel] d=0.84 fit=0.796 bot=0.775 complexity=0.94 PASS rooms=2 gaps=6 delta=+0.025
+|           |   |   `-- G5-40 [tunnel] d=1.00 fit=0.788 bot=0.771 complexity=0.95 PASS rooms=2 gaps=5 delta=-0.010
+|           |   |       |-- G6-21 [mixed] d=0.87 fit=0.795 bot=0.781 complexity=0.94 PASS rooms=2 gaps=6 delta=+0.007
+|           |   |       `-- G6-53 [mixed] d=0.85 fit=0.794 bot=0.764 complexity=0.95 PASS rooms=2 gaps=5 delta=+0.006
+|           |   `-- G4-46 [mixed] d=1.00 fit=0.752 bot=0.730 complexity=0.84 PASS rooms=2 gaps=3 delta=-0.044
+|           `-- G3-58 [tunnel] d=1.00 fit=0.819 bot=0.828 complexity=0.94 PASS rooms=2 gaps=7 delta=-0.001
+|               |-- G4-30 [mixed] d=1.00 fit=0.807 bot=0.784 complexity=0.93 PASS rooms=2 gaps=5 delta=-0.012
+|               `-- G4-62 [tunnel] d=0.74 fit=0.808 bot=0.848 complexity=0.81 PASS rooms=2 gaps=2 delta=-0.011
+|-- G0-05 [tunnel] d=0.76 fit=0.791 bot=0.765 complexity=0.95 PASS rooms=2 gaps=7
+|-- G0-06 [mixed] d=0.85 fit=0.826 bot=0.808 complexity=0.95 PASS rooms=2 gaps=6
+|   |-- G1-05 [surface] d=0.65 fit=0.735 bot=0.778 complexity=0.55 PASS rooms=0 gaps=2 delta=-0.091
+|   `-- G1-37 [mixed] d=0.90 fit=0.817 bot=0.807 complexity=0.94 PASS rooms=2 gaps=6 delta=-0.009
+|-- G0-07 [mixed] d=0.94 fit=0.776 bot=0.727 complexity=0.93 PASS rooms=2 gaps=7
+|-- G0-08 [tunnel] d=0.49 fit=0.792 bot=0.792 complexity=0.86 PASS rooms=2 gaps=3
+|-- G0-09 [tunnel] d=0.91 fit=0.801 bot=0.780 complexity=0.95 PASS rooms=2 gaps=7
+|   |-- G1-06 [tunnel] d=1.00 fit=0.800 bot=0.811 complexity=0.89 PASS rooms=2 gaps=4 delta=-0.001
+|   |   |-- G2-05 [tunnel] d=0.91 fit=0.793 bot=0.771 complexity=0.95 PASS rooms=2 gaps=7 delta=-0.007
+|   |   `-- G2-37 [tunnel] d=1.00 fit=0.792 bot=0.788 complexity=0.91 PASS rooms=2 gaps=4 delta=-0.008
+|   `-- G1-38 [mixed] d=0.85 fit=0.801 bot=0.786 complexity=0.95 PASS rooms=2 gaps=6 delta=+0.000
+|       |-- G2-20 [surface] d=0.73 fit=0.737 bot=0.732 complexity=0.70 PASS rooms=0 gaps=6 delta=-0.064
+|       `-- G2-52 [mixed] d=0.69 fit=0.828 bot=0.810 complexity=0.95 PASS rooms=2 gaps=6 delta=+0.026
+|-- G0-10 [mixed] d=0.88 fit=0.818 bot=0.814 complexity=0.94 PASS rooms=2 gaps=7
+|   |-- G1-07 [mixed] d=0.71 fit=0.793 bot=0.770 complexity=0.90 PASS rooms=2 gaps=4 delta=-0.024
+|   `-- G1-39 [mixed] d=0.94 fit=0.799 bot=0.769 complexity=0.94 PASS rooms=2 gaps=6 delta=-0.018
+|-- G0-11 [mixed] d=0.59 fit=0.804 bot=0.799 complexity=0.93 PASS rooms=2 gaps=5
+|-- G0-12 [mixed] d=0.73 fit=0.821 bot=0.828 complexity=0.91 PASS rooms=2 gaps=4
+|   |-- G1-08 [mixed] d=0.88 fit=0.831 bot=0.813 complexity=0.94 PASS rooms=2 gaps=6 delta=+0.010
+|   |   |-- G2-06 [mixed] d=1.00 fit=0.822 bot=0.816 complexity=0.95 PASS rooms=2 gaps=7 delta=-0.009
+|   |   |   |-- G3-04 [mixed] d=0.79 fit=0.793 bot=0.793 complexity=0.85 PASS rooms=2 gaps=3 delta=-0.029
+|   |   |   `-- G3-36 [mixed] d=0.77 fit=0.827 bot=0.821 complexity=0.93 PASS rooms=2 gaps=6 delta=+0.005
+|   |   |       |-- G4-19 [mixed] d=1.00 fit=0.820 bot=0.823 complexity=0.93 PASS rooms=2 gaps=8 delta=-0.007
+|   |   |       |   |-- G5-10 [mixed] d=1.00 fit=0.780 bot=0.742 complexity=0.95 PASS rooms=2 gaps=5 delta=-0.040
+|   |   |       |   |   |-- G6-06 [mixed] d=0.93 fit=0.778 bot=0.749 complexity=0.95 PASS rooms=2 gaps=5 delta=-0.002
+|   |   |       |   |   `-- G6-38 [mixed] d=0.77 fit=0.797 bot=0.810 complexity=0.86 PASS rooms=2 gaps=3 delta=+0.017
+|   |   |       |   `-- G5-42 [mixed] d=0.90 fit=0.823 bot=0.811 complexity=0.93 PASS rooms=2 gaps=6 delta=+0.003
+|   |   |       |       |-- G6-22 [mixed] d=0.82 fit=0.833 bot=0.809 complexity=0.94 PASS rooms=2 gaps=6 delta=+0.010
+|   |   |       |       `-- G6-54 [mixed] d=1.00 fit=0.796 bot=0.782 complexity=0.92 PASS rooms=2 gaps=6 delta=-0.028
+|   |   |       `-- G4-51 [mixed] d=0.79 fit=0.787 bot=0.765 complexity=0.94 PASS rooms=2 gaps=5 delta=-0.040
+|   |   |           |-- G5-26 [mixed] d=0.62 fit=0.766 bot=0.746 complexity=0.89 PASS rooms=2 gaps=4 delta=-0.021
+|   |   |           |   |-- G6-14 [mixed] d=0.37 fit=0.812 bot=0.814 complexity=0.90 PASS rooms=2 gaps=4 delta=+0.047
+|   |   |           |   `-- G6-46 [mixed] d=0.69 fit=0.825 bot=0.814 complexity=0.95 PASS rooms=2 gaps=6 delta=+0.060
+|   |   |           `-- G5-58 [tunnel] d=0.97 fit=0.801 bot=0.795 complexity=0.94 PASS rooms=2 gaps=7 delta=+0.014
+|   |   |               |-- G6-30 [tunnel] d=1.00 fit=0.794 bot=0.774 complexity=0.95 PASS rooms=2 gaps=5 delta=-0.007
+|   |   |               `-- G6-62 [tunnel] d=1.00 fit=0.790 bot=0.779 complexity=0.91 PASS rooms=2 gaps=5 delta=-0.010
+|   |   `-- G2-38 [mixed] d=0.97 fit=0.799 bot=0.776 complexity=0.94 PASS rooms=2 gaps=5 delta=-0.033
+|   `-- G1-40 [mixed] d=0.91 fit=0.804 bot=0.771 complexity=0.94 PASS rooms=2 gaps=7 delta=-0.017
+|       |-- G2-21 [mixed] d=1.00 fit=0.825 bot=0.825 complexity=0.95 PASS rooms=2 gaps=6 delta=+0.021
+|       |   |-- G3-11 [mixed] d=0.96 fit=0.812 bot=0.801 complexity=0.94 PASS rooms=2 gaps=7 delta=-0.013
+|       |   |   |-- G4-06 [mixed] d=1.00 fit=0.777 bot=0.725 complexity=0.93 PASS rooms=2 gaps=7 delta=-0.035
+|       |   |   `-- G4-38 [mixed] d=0.68 fit=0.815 bot=0.830 complexity=0.86 PASS rooms=2 gaps=3 delta=+0.003
+|       |   `-- G3-43 [mixed] d=1.00 fit=0.840 bot=0.848 complexity=0.94 PASS rooms=2 gaps=6 delta=+0.015
+|       |       |-- G4-22 [tunnel] d=1.00 fit=0.816 bot=0.812 complexity=0.95 PASS rooms=2 gaps=6 delta=-0.024
+|       |       |   |-- G5-12 [surface] d=0.87 fit=0.732 bot=0.774 complexity=0.70 PASS rooms=0 gaps=6 delta=-0.084
+|       |       |   `-- G5-44 [tunnel] d=0.72 fit=0.778 bot=0.778 complexity=0.89 PASS rooms=2 gaps=4 delta=-0.037
+|       |       `-- G4-54 [surface] d=0.98 fit=0.759 bot=0.779 complexity=0.70 PASS rooms=0 gaps=7 delta=-0.081
+|       `-- G2-53 [mixed] d=0.80 fit=0.836 bot=0.846 complexity=0.95 PASS rooms=2 gaps=5 delta=+0.032
+|           |-- G3-27 [tunnel] d=0.56 fit=0.792 bot=0.776 complexity=0.94 PASS rooms=2 gaps=6 delta=-0.044
+|           `-- G3-59 [mixed] d=0.89 fit=0.809 bot=0.801 complexity=0.95 PASS rooms=2 gaps=5 delta=-0.027
+|-- G0-13 [surface] d=0.66 fit=0.754 bot=0.811 complexity=0.63 PASS rooms=0 gaps=4
+|-- G0-14 [tunnel] d=0.77 fit=0.807 bot=0.803 complexity=0.91 PASS rooms=2 gaps=5
+|   |-- G1-09 [tunnel] d=0.91 fit=0.829 bot=0.846 complexity=0.93 PASS rooms=2 gaps=5 delta=+0.022
+|   `-- G1-41 [tunnel] d=0.57 fit=0.798 bot=0.784 complexity=0.95 PASS rooms=2 gaps=5 delta=-0.009
+|-- G0-15 [surface] d=0.49 fit=0.780 bot=0.791 complexity=0.66 PASS rooms=0 gaps=4
+|-- G0-16 [surface] d=0.81 fit=0.791 bot=0.793 complexity=0.68 PASS rooms=0 gaps=5
+|   |-- G1-10 [surface] d=0.89 fit=0.781 bot=0.826 complexity=0.67 PASS rooms=0 gaps=5 delta=-0.010
+|   `-- G1-42 [surface] d=0.79 fit=0.765 bot=0.778 complexity=0.62 PASS rooms=0 gaps=3 delta=-0.026
+|-- G0-17 [mixed] d=0.40 fit=0.785 bot=0.780 complexity=0.87 PASS rooms=2 gaps=3
+|-- G0-18 [tunnel] d=0.75 fit=0.806 bot=0.804 complexity=0.91 PASS rooms=2 gaps=6
+|-- G0-19 [tunnel] d=0.80 fit=0.806 bot=0.808 complexity=0.90 PASS rooms=2 gaps=4
+|   |-- G1-11 [tunnel] d=0.77 fit=0.784 bot=0.755 complexity=0.94 PASS rooms=2 gaps=5 delta=-0.022
+|   |   |-- G2-07 [tunnel] d=1.00 fit=0.787 bot=0.768 complexity=0.94 PASS rooms=2 gaps=5 delta=+0.003
+|   |   `-- G2-39 [mixed] d=0.74 fit=0.802 bot=0.838 complexity=0.82 PASS rooms=2 gaps=2 delta=+0.017
+|   |       |-- G3-20 [mixed] d=0.74 fit=0.840 bot=0.822 complexity=0.95 PASS rooms=2 gaps=5 delta=+0.039
+|   |       |   |-- G4-11 [mixed] d=0.70 fit=0.834 bot=0.836 complexity=0.93 PASS rooms=2 gaps=5 delta=-0.006
+|   |       |   |   |-- G5-06 [mixed] d=0.97 fit=0.789 bot=0.771 complexity=0.94 PASS rooms=2 gaps=7 delta=-0.045
+|   |       |   |   `-- G5-38 [mixed] d=0.57 fit=0.766 bot=0.748 complexity=0.90 PASS rooms=2 gaps=4 delta=-0.068
+|   |       |   `-- G4-43 [mixed] d=0.81 fit=0.806 bot=0.781 complexity=0.94 PASS rooms=2 gaps=6 delta=-0.034
+|   |       `-- G3-52 [mixed] d=0.62 fit=0.816 bot=0.854 complexity=0.82 PASS rooms=2 gaps=2 delta=+0.014
+|   |           |-- G4-27 [surface] d=0.54 fit=0.766 bot=0.784 complexity=0.70 PASS rooms=0 gaps=6 delta=-0.050
+|   |           `-- G4-59 [mixed] d=0.35 fit=0.784 bot=0.772 complexity=0.87 PASS rooms=2 gaps=3 delta=-0.032
+|   |               |-- G5-30 [mixed] d=0.36 fit=0.821 bot=0.864 complexity=0.83 PASS rooms=2 gaps=2 delta=+0.037
+|   |               |   |-- G6-16 [mixed] d=0.46 fit=0.817 bot=0.786 complexity=0.93 PASS rooms=2 gaps=6 delta=-0.004
+|   |               |   `-- G6-48 [mixed] d=0.55 fit=0.845 bot=0.871 complexity=0.89 PASS rooms=2 gaps=4 delta=+0.024
+|   |               `-- G5-62 [surface] d=0.07 fit=0.782 bot=0.877 complexity=0.59 PASS rooms=0 gaps=3 delta=-0.001
+|   `-- G1-43 [surface] d=0.84 fit=0.770 bot=0.770 complexity=0.70 PASS rooms=0 gaps=6 delta=-0.036
+|       |-- G2-22 [tunnel] d=0.69 fit=0.826 bot=0.837 complexity=0.93 PASS rooms=2 gaps=6 delta=+0.056
+|       |   |-- G3-12 [tunnel] d=0.61 fit=0.772 bot=0.760 complexity=0.91 PASS rooms=2 gaps=4 delta=-0.054
+|       |   |   |-- G4-07 [tunnel] d=0.86 fit=0.827 bot=0.883 complexity=0.82 PASS rooms=2 gaps=3 delta=+0.055
+|       |   |   |   |-- G5-04 [tunnel] d=0.63 fit=0.799 bot=0.809 complexity=0.88 PASS rooms=2 gaps=6 delta=-0.028
+|       |   |   |   |   |-- G6-03 [mixed] d=0.48 fit=0.825 bot=0.847 complexity=0.87 PASS rooms=2 gaps=3 delta=+0.025
+|       |   |   |   |   `-- G6-35 [tunnel] d=0.71 fit=0.792 bot=0.780 complexity=0.94 PASS rooms=2 gaps=6 delta=-0.008
+|       |   |   |   `-- G5-36 [tunnel] d=0.96 fit=0.786 bot=0.782 complexity=0.91 PASS rooms=2 gaps=6 delta=-0.041
+|       |   |   `-- G4-39 [mixed] d=0.84 fit=0.854 bot=0.854 complexity=0.94 PASS rooms=2 gaps=8 delta=+0.082
+|       |   |       |-- G5-20 [mixed] d=0.56 fit=0.823 bot=0.852 complexity=0.90 PASS rooms=2 gaps=4 delta=-0.031
+|       |   |       |   |-- G6-11 [mixed] d=0.50 fit=0.836 bot=0.865 complexity=0.90 PASS rooms=2 gaps=4 delta=+0.013
+|       |   |       |   `-- G6-43 [mixed] d=0.49 fit=0.820 bot=0.824 complexity=0.90 PASS rooms=2 gaps=4 delta=-0.003
+|       |   |       `-- G5-52 [mixed] d=0.60 fit=0.873 bot=0.895 complexity=0.95 PASS rooms=2 gaps=5 delta=+0.019
+|       |   |           |-- G6-27 [surface] d=0.52 fit=0.745 bot=0.782 complexity=0.69 PASS rooms=0 gaps=6 delta=-0.127
+|       |   |           `-- G6-59 [tunnel] d=0.54 fit=0.805 bot=0.799 complexity=0.94 PASS rooms=2 gaps=6 delta=-0.068
+|       |   `-- G3-44 [tunnel] d=0.76 fit=0.815 bot=0.814 complexity=0.93 PASS rooms=2 gaps=5 delta=-0.011
+|       |       |-- G4-23 [mixed] d=0.73 fit=0.800 bot=0.799 complexity=0.90 PASS rooms=2 gaps=4 delta=-0.015
+|       |       `-- G4-55 [surface] d=0.64 fit=0.769 bot=0.808 complexity=0.69 PASS rooms=0 gaps=6 delta=-0.046
+|       |           |-- G5-28 [surface] d=0.37 fit=0.770 bot=0.804 complexity=0.60 PASS rooms=0 gaps=3 delta=+0.000
+|       |           `-- G5-60 [surface] d=0.63 fit=0.796 bot=0.845 complexity=0.68 PASS rooms=0 gaps=5 delta=+0.026
+|       `-- G2-54 [surface] d=0.91 fit=0.801 bot=0.820 complexity=0.69 PASS rooms=0 gaps=5 delta=+0.031
+|-- G0-20 [mixed] d=0.41 fit=0.774 bot=0.776 complexity=0.85 PASS rooms=2 gaps=3
+|   |-- G1-12 [mixed] d=0.25 fit=0.807 bot=0.835 complexity=0.83 PASS rooms=2 gaps=2 delta=+0.032
+|   `-- G1-44 [mixed] d=0.67 fit=0.812 bot=0.793 complexity=0.93 PASS rooms=2 gaps=6 delta=+0.038
+|-- G0-21 [surface] d=0.85 fit=0.760 bot=0.796 complexity=0.69 PASS rooms=0 gaps=7
+|-- G0-22 [mixed] d=0.85 fit=0.797 bot=0.780 complexity=0.95 PASS rooms=2 gaps=6
+|-- G0-23 [mixed] d=0.46 fit=0.802 bot=0.793 complexity=0.90 PASS rooms=2 gaps=4
+|   |-- G1-13 [mixed] d=0.30 fit=0.810 bot=0.811 complexity=0.87 PASS rooms=2 gaps=3 delta=+0.007
+|   |   |-- G2-08 [mixed] d=0.10 fit=0.811 bot=0.821 complexity=0.86 PASS rooms=2 gaps=3 delta=+0.001
+|   |   |   |-- G3-05 [mixed] d=0.01 fit=0.838 bot=0.866 complexity=0.81 PASS rooms=2 gaps=2 delta=+0.027
+|   |   |   |   |-- G4-03 [mixed] d=0.19 fit=0.832 bot=0.886 complexity=0.81 PASS rooms=2 gaps=2 delta=-0.006
+|   |   |   |   |   |-- G5-02 [surface] d=0.21 fit=0.749 bot=0.793 complexity=0.51 PASS rooms=0 gaps=1 delta=-0.083
+|   |   |   |   |   `-- G5-34 [mixed] d=0.00 fit=0.775 bot=0.771 complexity=0.84 PASS rooms=2 gaps=3 delta=-0.057
+|   |   |   |   `-- G4-35 [mixed] d=0.00 fit=0.763 bot=0.765 complexity=0.86 PASS rooms=2 gaps=3 delta=-0.075
+|   |   |   `-- G3-37 [mixed] d=0.00 fit=0.783 bot=0.811 complexity=0.78 PASS rooms=2 gaps=1 delta=-0.028
+|   |   `-- G2-40 [mixed] d=0.56 fit=0.814 bot=0.824 complexity=0.90 PASS rooms=2 gaps=4 delta=+0.004
+|   |       |-- G3-21 [mixed] d=0.59 fit=0.821 bot=0.820 complexity=0.94 PASS rooms=2 gaps=6 delta=+0.008
+|   |       `-- G3-53 [tunnel] d=0.32 fit=0.786 bot=0.797 complexity=0.86 PASS rooms=2 gaps=3 delta=-0.028
+|   `-- G1-45 [mixed] d=0.44 fit=0.832 bot=0.838 complexity=0.90 PASS rooms=2 gaps=4 delta=+0.030
+|       |-- G2-23 [surface] d=0.41 fit=0.743 bot=0.806 complexity=0.57 PASS rooms=0 gaps=3 delta=-0.090
+|       `-- G2-55 [mixed] d=0.38 fit=0.852 bot=0.892 complexity=0.85 PASS rooms=2 gaps=3 delta=+0.020
+|           |-- G3-28 [mixed] d=0.54 fit=0.800 bot=0.775 complexity=0.94 PASS rooms=2 gaps=6 delta=-0.053
+|           `-- G3-60 [mixed] d=0.31 fit=0.807 bot=0.825 complexity=0.82 PASS rooms=2 gaps=2 delta=-0.046
+|               |-- G4-31 [mixed] d=0.05 fit=0.823 bot=0.887 complexity=0.77 PASS rooms=2 gaps=1 delta=+0.017
+|               |   |-- G5-16 [mixed] d=0.00 fit=0.853 bot=0.845 complexity=0.94 PASS rooms=2 gaps=5 delta=+0.030
+|               |   |   |-- G6-09 [mixed] d=0.16 fit=0.759 bot=0.784 complexity=0.79 PASS rooms=2 gaps=1 delta=-0.094
+|               |   |   `-- G6-41 [surface] d=0.00 fit=0.744 bot=0.770 complexity=0.56 PASS rooms=0 gaps=2 delta=-0.109
+|               |   `-- G5-48 [mixed] d=0.32 fit=0.798 bot=0.820 complexity=0.83 PASS rooms=2 gaps=2 delta=-0.025
+|               `-- G4-63 [mixed] d=0.55 fit=0.830 bot=0.882 complexity=0.79 PASS rooms=2 gaps=1 delta=+0.023
+|                   `-- G5-32 [mixed] d=0.36 fit=0.827 bot=0.883 complexity=0.82 PASS rooms=2 gaps=2 delta=-0.002
+|                       |-- G6-17 [surface] d=0.55 fit=0.760 bot=0.803 complexity=0.69 PASS rooms=0 gaps=6 delta=-0.067
+|                       `-- G6-49 [mixed] d=0.22 fit=0.819 bot=0.839 complexity=0.81 PASS rooms=2 gaps=2 delta=-0.009
+|-- G0-24 [surface] d=0.95 fit=0.767 bot=0.789 complexity=0.70 PASS rooms=0 gaps=8
+|-- G0-25 [mixed] d=0.48 fit=0.816 bot=0.818 complexity=0.94 PASS rooms=2 gaps=5
+|   |-- G1-14 [tunnel] d=0.38 fit=0.787 bot=0.829 complexity=0.76 PASS rooms=2 gaps=1 delta=-0.030
+|   `-- G1-46 [mixed] d=0.60 fit=0.818 bot=0.827 complexity=0.92 PASS rooms=2 gaps=6 delta=+0.002
+|       |-- G2-24 [mixed] d=0.54 fit=0.780 bot=0.785 complexity=0.86 PASS rooms=2 gaps=3 delta=-0.038
+|       `-- G2-56 [mixed] d=0.83 fit=0.827 bot=0.826 complexity=0.92 PASS rooms=2 gaps=6 delta=+0.009
+|           |-- G3-29 [mixed] d=0.58 fit=0.811 bot=0.786 complexity=0.95 PASS rooms=2 gaps=6 delta=-0.017
+|           |   |-- G4-15 [mixed] d=0.71 fit=0.791 bot=0.766 complexity=0.93 PASS rooms=2 gaps=6 delta=-0.020
+|           |   `-- G4-47 [surface] d=0.52 fit=0.798 bot=0.842 complexity=0.65 PASS rooms=0 gaps=5 delta=-0.012
+|           |       |-- G5-24 [surface] d=0.28 fit=0.745 bot=0.803 complexity=0.55 PASS rooms=0 gaps=2 delta=-0.053
+|           |       `-- G5-56 [tunnel] d=0.67 fit=0.801 bot=0.778 complexity=0.95 PASS rooms=2 gaps=8 delta=+0.002
+|           |           |-- G6-29 [tunnel] d=0.84 fit=0.791 bot=0.770 complexity=0.94 PASS rooms=2 gaps=6 delta=-0.009
+|           |           `-- G6-61 [tunnel] d=0.87 fit=0.809 bot=0.799 complexity=0.93 PASS rooms=2 gaps=7 delta=+0.009
+|           `-- G3-61 [mixed] d=0.83 fit=0.792 bot=0.786 complexity=0.90 PASS rooms=2 gaps=4 delta=-0.036
+|-- G0-26 [tunnel] d=0.72 fit=0.788 bot=0.781 complexity=0.90 PASS rooms=2 gaps=4
+|   |-- G1-15 [tunnel] d=0.71 fit=0.789 bot=0.791 complexity=0.90 PASS rooms=2 gaps=4 delta=+0.001
+|   |   |-- G2-09 [tunnel] d=0.91 fit=0.793 bot=0.797 complexity=0.89 PASS rooms=2 gaps=4 delta=+0.004
+|   |   `-- G2-41 [tunnel] d=0.78 fit=0.795 bot=0.778 complexity=0.95 PASS rooms=2 gaps=6 delta=+0.006
+|   `-- G1-47 [tunnel] d=0.76 fit=0.797 bot=0.773 complexity=0.95 PASS rooms=2 gaps=6 delta=+0.009
+|-- G0-27 [surface] d=0.79 fit=0.747 bot=0.783 complexity=0.69 PASS rooms=0 gaps=7
+|-- G0-28 [surface] d=0.69 fit=0.791 bot=0.792 complexity=0.70 PASS rooms=0 gaps=5
+|   |-- G1-16 [mixed] d=0.82 fit=0.840 bot=0.837 complexity=0.94 PASS rooms=2 gaps=6 delta=+0.049
+|   |   |-- G2-10 [mixed] d=1.00 fit=0.802 bot=0.776 complexity=0.94 PASS rooms=2 gaps=6 delta=-0.038
+|   |   |   |-- G3-06 [mixed] d=1.00 fit=0.844 bot=0.831 complexity=0.94 PASS rooms=2 gaps=5 delta=+0.041
+|   |   |   |   |-- G4-04 [surface] d=0.85 fit=0.769 bot=0.812 complexity=0.69 PASS rooms=0 gaps=7 delta=-0.075
+|   |   |   |   `-- G4-36 [mixed] d=1.00 fit=0.812 bot=0.806 complexity=0.93 PASS rooms=2 gaps=5 delta=-0.032
+|   |   |   `-- G3-38 [mixed] d=1.00 fit=0.844 bot=0.842 complexity=0.92 PASS rooms=2 gaps=7 delta=+0.042
+|   |   |       |-- G4-20 [mixed] d=1.00 fit=0.799 bot=0.785 complexity=0.94 PASS rooms=2 gaps=7 delta=-0.045
+|   |   |       |   |-- G5-11 [surface] d=1.00 fit=0.756 bot=0.783 complexity=0.68 PASS rooms=0 gaps=6 delta=-0.043
+|   |   |       |   `-- G5-43 [mixed] d=0.97 fit=0.545 bot=0.332 complexity=0.96 FAIL rooms=2 gaps=7 delta=-0.254
+|   |   |       `-- G4-52 [mixed] d=0.91 fit=0.807 bot=0.790 complexity=0.94 PASS rooms=2 gaps=7 delta=-0.037
+|   |   `-- G2-42 [mixed] d=0.91 fit=0.830 bot=0.830 complexity=0.95 PASS rooms=2 gaps=7 delta=-0.010
+|   |       |-- G3-22 [mixed] d=0.68 fit=0.813 bot=0.801 complexity=0.93 PASS rooms=2 gaps=8 delta=-0.017
+|   |       |   |-- G4-12 [tunnel] d=0.61 fit=0.765 bot=0.793 complexity=0.79 PASS rooms=2 gaps=2 delta=-0.049
+|   |       |   `-- G4-44 [mixed] d=0.92 fit=0.844 bot=0.869 complexity=0.90 PASS rooms=2 gaps=4 delta=+0.031
+|   |       `-- G3-54 [mixed] d=0.87 fit=0.809 bot=0.768 complexity=0.94 PASS rooms=2 gaps=7 delta=-0.022
+|   |           |-- G4-28 [mixed] d=0.84 fit=0.836 bot=0.826 complexity=0.95 PASS rooms=2 gaps=8 delta=+0.027
+|   |           |   |-- G5-15 [mixed] d=0.93 fit=0.810 bot=0.797 complexity=0.95 PASS rooms=2 gaps=8 delta=-0.026
+|   |           |   `-- G5-47 [mixed] d=1.00 fit=0.841 bot=0.849 complexity=0.94 PASS rooms=2 gaps=6 delta=+0.005
+|   |           `-- G4-60 [mixed] d=0.71 fit=0.787 bot=0.761 complexity=0.93 PASS rooms=2 gaps=5 delta=-0.022
+|   `-- G1-48 [surface] d=0.86 fit=0.740 bot=0.762 complexity=0.70 PASS rooms=0 gaps=6 delta=-0.051
+|       |-- G2-25 [surface] d=0.91 fit=0.831 bot=0.869 complexity=0.70 PASS rooms=0 gaps=5 delta=+0.090
+|       |   |-- G3-13 [surface] d=0.73 fit=0.763 bot=0.782 complexity=0.68 PASS rooms=0 gaps=6 delta=-0.068
+|       |   `-- G3-45 [surface] d=0.95 fit=0.792 bot=0.830 complexity=0.68 PASS rooms=0 gaps=5 delta=-0.038
+|       `-- G2-57 [surface] d=0.58 fit=0.731 bot=0.792 complexity=0.55 PASS rooms=0 gaps=2 delta=-0.009
+|-- G0-29 [surface] d=0.56 fit=0.755 bot=0.792 complexity=0.60 PASS rooms=0 gaps=3
+|-- G0-30 [tunnel] d=0.48 fit=0.763 bot=0.778 complexity=0.81 PASS rooms=2 gaps=2
+|-- G0-31 [mixed] d=0.93 fit=0.781 bot=0.750 complexity=0.95 PASS rooms=2 gaps=5
+|   |-- G1-17 [mixed] d=0.68 fit=0.828 bot=0.827 complexity=0.95 PASS rooms=2 gaps=5 delta=+0.046
+|   `-- G1-49 [surface] d=1.00 fit=0.736 bot=0.789 complexity=0.68 PASS rooms=0 gaps=6 delta=-0.045
+|-- G0-32 [surface] d=1.00 fit=0.766 bot=0.796 complexity=0.69 PASS rooms=0 gaps=7
+|-- G0-33 [surface] d=0.54 fit=0.786 bot=0.874 complexity=0.60 PASS rooms=0 gaps=3
+|   |-- G1-18 [surface] d=0.36 fit=0.779 bot=0.791 complexity=0.66 PASS rooms=0 gaps=4 delta=-0.007
+|   `-- G1-50 [surface] d=0.34 fit=0.780 bot=0.801 complexity=0.62 PASS rooms=0 gaps=3 delta=-0.006
+|-- G0-34 [mixed] d=0.87 fit=0.831 bot=0.877 complexity=0.84 PASS rooms=2 gaps=3
+|   |-- G1-19 [mixed] d=1.00 fit=0.780 bot=0.733 complexity=0.94 PASS rooms=2 gaps=7 delta=-0.052
+|   |   |-- G2-11 [mixed] d=1.00 fit=0.798 bot=0.779 complexity=0.94 PASS rooms=2 gaps=7 delta=+0.018
+|   |   `-- G2-43 [mixed] d=1.00 fit=0.825 bot=0.819 complexity=0.94 PASS rooms=2 gaps=5 delta=+0.045
+|   `-- G1-51 [mixed] d=0.98 fit=0.791 bot=0.772 complexity=0.93 PASS rooms=2 gaps=5 delta=-0.041
+|       |-- G2-26 [mixed] d=0.82 fit=0.799 bot=0.760 complexity=0.95 PASS rooms=2 gaps=5 delta=+0.008
+|       |   |-- G3-14 [mixed] d=0.58 fit=0.834 bot=0.826 complexity=0.94 PASS rooms=2 gaps=6 delta=+0.036
+|       |   |   |-- G4-08 [mixed] d=0.50 fit=0.850 bot=0.850 complexity=0.95 PASS rooms=2 gaps=7 delta=+0.016
+|       |   |   |   |-- G5-05 [mixed] d=0.60 fit=0.774 bot=0.742 complexity=0.94 PASS rooms=2 gaps=5 delta=-0.077
+|       |   |   |   `-- G5-37 [mixed] d=0.59 fit=0.831 bot=0.831 complexity=0.95 PASS rooms=2 gaps=5 delta=-0.020
+|       |   |   |       |-- G6-19 [mixed] d=0.86 fit=0.814 bot=0.804 complexity=0.93 PASS rooms=2 gaps=7 delta=-0.017
+|       |   |   |       `-- G6-51 [mixed] d=0.68 fit=0.812 bot=0.796 complexity=0.94 PASS rooms=2 gaps=5 delta=-0.019
+|       |   |   `-- G4-40 [mixed] d=0.80 fit=0.813 bot=0.783 complexity=0.94 PASS rooms=2 gaps=7 delta=-0.022
+|       |   |       |-- G5-21 [mixed] d=0.58 fit=0.783 bot=0.780 complexity=0.89 PASS rooms=2 gaps=4 delta=-0.029
+|       |   |       `-- G5-53 [mixed] d=0.90 fit=0.799 bot=0.803 complexity=0.89 PASS rooms=2 gaps=4 delta=-0.013
+|       |   `-- G3-46 [mixed] d=0.63 fit=0.787 bot=0.769 complexity=0.89 PASS rooms=2 gaps=4 delta=-0.012
+|       `-- G2-58 [mixed] d=0.90 fit=0.813 bot=0.800 complexity=0.94 PASS rooms=2 gaps=5 delta=+0.023
+|-- G0-35 [mixed] d=0.72 fit=0.810 bot=0.785 complexity=0.95 PASS rooms=2 gaps=8
+|-- G0-36 [mixed] d=0.74 fit=0.771 bot=0.765 complexity=0.87 PASS rooms=2 gaps=3
+|   |-- G1-20 [mixed] d=0.47 fit=0.781 bot=0.760 complexity=0.94 PASS rooms=2 gaps=6 delta=+0.010
+|   `-- G1-52 [mixed] d=0.64 fit=0.785 bot=0.765 complexity=0.89 PASS rooms=2 gaps=4 delta=+0.014
+|-- G0-37 [surface] d=0.92 fit=0.724 bot=0.758 complexity=0.70 PASS rooms=0 gaps=8
+|-- G0-38 [surface] d=0.69 fit=0.797 bot=0.830 complexity=0.64 PASS rooms=0 gaps=4
+|-- G0-39 [mixed] d=0.82 fit=0.828 bot=0.847 complexity=0.86 PASS rooms=2 gaps=3
+|   |-- G1-21 [mixed] d=0.95 fit=0.815 bot=0.797 complexity=0.90 PASS rooms=2 gaps=4 delta=-0.013
+|   |   |-- G2-12 [mixed] d=1.00 fit=0.786 bot=0.763 complexity=0.95 PASS rooms=2 gaps=6 delta=-0.029
+|   |   `-- G2-44 [mixed] d=0.97 fit=0.787 bot=0.751 complexity=0.94 PASS rooms=2 gaps=7 delta=-0.028
+|   `-- G1-53 [mixed] d=0.54 fit=0.820 bot=0.802 complexity=0.94 PASS rooms=2 gaps=5 delta=-0.007
+|       |-- G2-27 [mixed] d=0.47 fit=0.794 bot=0.786 complexity=0.94 PASS rooms=2 gaps=6 delta=-0.026
+|       `-- G2-59 [mixed] d=0.36 fit=0.843 bot=0.843 complexity=0.94 PASS rooms=2 gaps=5 delta=+0.023
+|           |-- G3-30 [mixed] d=0.61 fit=0.855 bot=0.860 complexity=0.95 PASS rooms=2 gaps=7 delta=+0.012
+|           |   |-- G4-16 [mixed] d=0.49 fit=0.811 bot=0.790 complexity=0.95 PASS rooms=2 gaps=5 delta=-0.044
+|           |   `-- G4-48 [mixed] d=0.44 fit=0.838 bot=0.882 complexity=0.87 PASS rooms=2 gaps=3 delta=-0.017
+|           |       |-- G5-25 [mixed] d=0.42 fit=0.812 bot=0.830 complexity=0.89 PASS rooms=2 gaps=4 delta=-0.026
+|           |       |   |-- G6-13 [surface] d=0.29 fit=0.737 bot=0.787 complexity=0.57 PASS rooms=0 gaps=3 delta=-0.075
+|           |       |   `-- G6-45 [mixed] d=0.54 fit=0.801 bot=0.790 complexity=0.93 PASS rooms=2 gaps=5 delta=-0.010
+|           |       `-- G5-57 [mixed] d=0.31 fit=0.773 bot=0.743 complexity=0.93 PASS rooms=2 gaps=5 delta=-0.065
+|           `-- G3-62 [mixed] d=0.37 fit=0.829 bot=0.856 complexity=0.87 PASS rooms=2 gaps=3 delta=-0.014
+|               `-- G4-32 [mixed] d=0.23 fit=0.809 bot=0.813 complexity=0.90 PASS rooms=2 gaps=4 delta=-0.020
+|                   |-- G5-17 [mixed] d=0.05 fit=0.769 bot=0.797 complexity=0.78 PASS rooms=2 gaps=1 delta=-0.040
+|                   `-- G5-49 [mixed] d=0.10 fit=0.832 bot=0.861 complexity=0.87 PASS rooms=2 gaps=3 delta=+0.023
+|                       |-- G6-25 [mixed] d=0.00 fit=0.758 bot=0.755 complexity=0.83 PASS rooms=2 gaps=2 delta=-0.073
+|                       `-- G6-57 [mixed] d=0.37 fit=0.757 bot=0.729 complexity=0.90 PASS rooms=2 gaps=4 delta=-0.075
+|-- G0-40 [surface] d=0.81 fit=0.744 bot=0.756 complexity=0.70 PASS rooms=0 gaps=6
+|-- G0-41 [mixed] d=1.00 fit=0.844 bot=0.851 complexity=0.95 PASS rooms=2 gaps=5 <generation winner>
+|   |-- G1-00 [mixed] d=1.00 fit=0.844 bot=0.851 complexity=0.95 PASS rooms=2 gaps=5 delta=+0.000
+|   |   |-- G2-02 [mixed] d=0.72 fit=0.809 bot=0.785 complexity=0.94 PASS rooms=2 gaps=6 delta=-0.035
+|   |   |   |-- G3-02 [mixed] d=0.69 fit=0.870 bot=0.891 complexity=0.93 PASS rooms=2 gaps=6 delta=+0.060
+|   |   |   |   |-- G4-02 [mixed] d=0.49 fit=0.824 bot=0.849 complexity=0.87 PASS rooms=2 gaps=3 delta=-0.046
+|   |   |   |   `-- G4-34 [tunnel] d=0.86 fit=0.808 bot=0.811 complexity=0.89 PASS rooms=2 gaps=4 delta=-0.061
+|   |   |   |       |-- G5-18 [tunnel] d=1.00 fit=0.789 bot=0.772 complexity=0.90 PASS rooms=2 gaps=4 delta=-0.020
+|   |   |   |       `-- G5-50 [tunnel] d=0.86 fit=0.805 bot=0.807 complexity=0.89 PASS rooms=2 gaps=4 delta=-0.003
+|   |   |   |           |-- G6-26 [tunnel] d=0.92 fit=0.778 bot=0.766 complexity=0.93 PASS rooms=2 gaps=7 delta=-0.027
+|   |   |   |           `-- G6-58 [tunnel] d=1.00 fit=0.785 bot=0.782 complexity=0.91 PASS rooms=2 gaps=6 delta=-0.020
+|   |   |   `-- G3-34 [mixed] d=0.53 fit=0.840 bot=0.847 complexity=0.95 PASS rooms=2 gaps=6 delta=+0.031
+|   |   |       |-- G4-18 [mixed] d=0.40 fit=0.805 bot=0.784 complexity=0.91 PASS rooms=2 gaps=4 delta=-0.036
+|   |   |       `-- G4-50 [mixed] d=0.60 fit=0.784 bot=0.805 complexity=0.82 PASS rooms=2 gaps=2 delta=-0.057
+|   |   `-- G2-34 [mixed] d=0.99 fit=0.844 bot=0.831 complexity=0.94 PASS rooms=2 gaps=6 delta=+0.000
+|   |       |-- G3-18 [mixed] d=0.98 fit=0.828 bot=0.806 complexity=0.95 PASS rooms=2 gaps=7 delta=-0.016
+|   |       |   |-- G4-10 [surface] d=1.00 fit=0.747 bot=0.774 complexity=0.70 PASS rooms=0 gaps=5 delta=-0.081
+|   |       |   `-- G4-42 [mixed] d=1.00 fit=0.838 bot=0.837 complexity=0.94 PASS rooms=2 gaps=7 delta=+0.010
+|   |       |       |-- G5-22 [tunnel] d=0.78 fit=0.813 bot=0.807 complexity=0.94 PASS rooms=2 gaps=5 delta=-0.025
+|   |       |       |   |-- G6-12 [tunnel] d=0.53 fit=0.780 bot=0.753 complexity=0.93 PASS rooms=2 gaps=5 delta=-0.033
+|   |       |       |   `-- G6-44 [mixed] d=0.74 fit=0.849 bot=0.839 complexity=0.90 PASS rooms=2 gaps=4 delta=+0.036
+|   |       |       `-- G5-54 [mixed] d=0.74 fit=0.795 bot=0.769 complexity=0.95 PASS rooms=2 gaps=5 delta=-0.044
+|   |       |           |-- G6-28 [mixed] d=0.61 fit=0.819 bot=0.836 complexity=0.85 PASS rooms=2 gaps=3 delta=+0.025
+|   |       |           `-- G6-60 [mixed] d=0.61 fit=0.813 bot=0.827 complexity=0.90 PASS rooms=2 gaps=4 delta=+0.018
+|   |       `-- G3-50 [tunnel] d=1.00 fit=0.799 bot=0.788 complexity=0.95 PASS rooms=2 gaps=6 delta=-0.045
+|   |           |-- G4-26 [mixed] d=0.92 fit=0.821 bot=0.819 complexity=0.93 PASS rooms=2 gaps=6 delta=+0.022
+|   |           |   |-- G5-14 [mixed] d=1.00 fit=0.827 bot=0.821 complexity=0.94 PASS rooms=2 gaps=5 delta=+0.006
+|   |           |   |   |-- G6-08 [mixed] d=0.80 fit=0.867 bot=0.875 complexity=0.94 PASS rooms=2 gaps=6 delta=+0.041
+|   |           |   |   `-- G6-40 [mixed] d=1.00 fit=0.790 bot=0.738 complexity=0.93 PASS rooms=2 gaps=5 delta=-0.036
+|   |           |   `-- G5-46 [mixed] d=1.00 fit=0.867 bot=0.877 complexity=0.95 PASS rooms=2 gaps=5 delta=+0.046
+|   |           |       |-- G6-24 [mixed] d=1.00 fit=0.840 bot=0.826 complexity=0.93 PASS rooms=2 gaps=6 delta=-0.027
+|   |           |       `-- G6-56 [mixed] d=0.79 fit=0.808 bot=0.787 complexity=0.95 PASS rooms=2 gaps=6 delta=-0.059
+|   |           `-- G4-58 [tunnel] d=0.94 fit=0.780 bot=0.757 complexity=0.91 PASS rooms=2 gaps=4 delta=-0.019
+|   |-- G1-01 [mixed] d=0.80 fit=0.819 bot=0.830 complexity=0.93 PASS rooms=2 gaps=6 delta=-0.024
+|   `-- G1-33 [mixed] d=0.96 fit=0.810 bot=0.810 complexity=0.90 PASS rooms=2 gaps=4 delta=-0.034
+|       |-- G2-18 [tunnel] d=1.00 fit=0.809 bot=0.810 complexity=0.91 PASS rooms=2 gaps=6 delta=-0.001
+|       |   |-- G3-10 [tunnel] d=1.00 fit=0.800 bot=0.801 complexity=0.88 PASS rooms=2 gaps=7 delta=-0.008
+|       |   `-- G3-42 [tunnel] d=0.76 fit=0.812 bot=0.810 complexity=0.95 PASS rooms=2 gaps=7 delta=+0.003
+|       `-- G2-50 [mixed] d=0.94 fit=0.794 bot=0.790 complexity=0.90 PASS rooms=2 gaps=4 delta=-0.016
+|-- G0-42 [surface] d=0.62 fit=0.764 bot=0.783 complexity=0.70 PASS rooms=0 gaps=5
+|-- G0-43 [tunnel] d=0.56 fit=0.801 bot=0.823 complexity=0.86 PASS rooms=2 gaps=3
+|   |-- G1-22 [tunnel] d=0.51 fit=0.801 bot=0.835 complexity=0.82 PASS rooms=2 gaps=2 delta=-0.000
+|   `-- G1-54 [tunnel] d=0.58 fit=0.806 bot=0.816 complexity=0.87 PASS rooms=2 gaps=3 delta=+0.005
+|       |-- G2-28 [tunnel] d=0.44 fit=0.806 bot=0.790 complexity=0.95 PASS rooms=2 gaps=5 delta=+0.000
+|       `-- G2-60 [mixed] d=0.34 fit=0.786 bot=0.796 complexity=0.83 PASS rooms=2 gaps=2 delta=-0.020
+|-- G0-44 [mixed] d=0.87 fit=0.809 bot=0.791 complexity=0.95 PASS rooms=2 gaps=8
+|   |-- G1-23 [mixed] d=0.72 fit=0.822 bot=0.828 complexity=0.89 PASS rooms=2 gaps=4 delta=+0.013
+|   |   |-- G2-13 [mixed] d=0.82 fit=0.814 bot=0.784 complexity=0.93 PASS rooms=2 gaps=6 delta=-0.008
+|   |   |   |-- G3-07 [mixed] d=0.95 fit=0.788 bot=0.758 complexity=0.94 PASS rooms=2 gaps=5 delta=-0.026
+|   |   |   `-- G3-39 [mixed] d=0.81 fit=0.835 bot=0.836 complexity=0.95 PASS rooms=2 gaps=5 delta=+0.022
+|   |   `-- G2-45 [mixed] d=0.71 fit=0.794 bot=0.778 complexity=0.90 PASS rooms=2 gaps=4 delta=-0.028
+|   |       |-- G3-23 [tunnel] d=0.47 fit=0.805 bot=0.784 complexity=0.94 PASS rooms=2 gaps=5 delta=+0.012
+|   |       `-- G3-55 [mixed] d=0.79 fit=0.793 bot=0.755 complexity=0.94 PASS rooms=2 gaps=6 delta=-0.001
+|   `-- G1-55 [mixed] d=0.68 fit=0.800 bot=0.774 complexity=0.94 PASS rooms=2 gaps=6 delta=-0.009
+|-- G0-45 [surface] d=0.79 fit=0.749 bot=0.749 complexity=0.69 PASS rooms=0 gaps=5
+|-- G0-46 [surface] d=1.00 fit=0.744 bot=0.765 complexity=0.66 PASS rooms=0 gaps=4
+|-- G0-47 [tunnel] d=0.52 fit=0.798 bot=0.793 complexity=0.90 PASS rooms=2 gaps=4
+|   |-- G1-24 [tunnel] d=0.69 fit=0.791 bot=0.770 complexity=0.95 PASS rooms=2 gaps=5 delta=-0.007
+|   `-- G1-56 [tunnel] d=0.60 fit=0.813 bot=0.806 complexity=0.94 PASS rooms=2 gaps=5 delta=+0.015
+|       |-- G2-29 [tunnel] d=0.78 fit=0.807 bot=0.790 complexity=0.92 PASS rooms=2 gaps=5 delta=-0.006
+|       |   |-- G3-15 [tunnel] d=0.75 fit=0.821 bot=0.819 complexity=0.93 PASS rooms=2 gaps=7 delta=+0.015
+|       |   `-- G3-47 [tunnel] d=0.82 fit=0.803 bot=0.776 complexity=0.95 PASS rooms=2 gaps=5 delta=-0.003
+|       |       |-- G4-24 [tunnel] d=0.55 fit=0.782 bot=0.802 complexity=0.80 PASS rooms=2 gaps=2 delta=-0.021
+|       |       |   |-- G5-13 [tunnel] d=0.64 fit=0.805 bot=0.788 complexity=0.95 PASS rooms=2 gaps=6 delta=+0.022
+|       |       |   |   |-- G6-07 [tunnel] d=0.65 fit=0.786 bot=0.780 complexity=0.91 PASS rooms=2 gaps=4 delta=-0.018
+|       |       |   |   `-- G6-39 [tunnel] d=0.57 fit=0.813 bot=0.856 complexity=0.83 PASS rooms=2 gaps=3 delta=+0.008
+|       |       |   `-- G5-45 [tunnel] d=0.51 fit=0.789 bot=0.782 complexity=0.91 PASS rooms=2 gaps=7 delta=+0.007
+|       |       |       |-- G6-23 [tunnel] d=0.33 fit=0.783 bot=0.804 complexity=0.82 PASS rooms=2 gaps=2 delta=-0.006
+|       |       |       `-- G6-55 [tunnel] d=0.78 fit=0.815 bot=0.804 complexity=0.94 PASS rooms=2 gaps=6 delta=+0.025
+|       |       `-- G4-56 [tunnel] d=0.87 fit=0.784 bot=0.800 complexity=0.85 PASS rooms=2 gaps=3 delta=-0.020
+|       `-- G2-61 [mixed] d=0.60 fit=0.802 bot=0.776 complexity=0.94 PASS rooms=2 gaps=7 delta=-0.011
+|           |-- G3-31 [mixed] d=0.66 fit=0.811 bot=0.813 complexity=0.94 PASS rooms=2 gaps=5 delta=+0.009
+|           `-- G3-63 [mixed] d=0.81 fit=0.827 bot=0.845 complexity=0.89 PASS rooms=2 gaps=4 delta=+0.025
+|-- G0-48 [tunnel] d=0.57 fit=0.831 bot=0.862 complexity=0.89 PASS rooms=2 gaps=4
+|   |-- G1-25 [tunnel] d=0.57 fit=0.796 bot=0.781 complexity=0.95 PASS rooms=2 gaps=5 delta=-0.034
+|   |   |-- G2-14 [surface] d=0.52 fit=0.747 bot=0.780 complexity=0.62 PASS rooms=0 gaps=5 delta=-0.050
+|   |   `-- G2-46 [mixed] d=0.35 fit=0.826 bot=0.829 complexity=0.90 PASS rooms=2 gaps=4 delta=+0.030
+|   |       |-- G3-24 [mixed] d=0.37 fit=0.752 bot=0.764 complexity=0.78 PASS rooms=2 gaps=1 delta=-0.074
+|   |       `-- G3-56 [mixed] d=0.44 fit=0.554 bot=0.336 complexity=1.00 FAIL rooms=2 gaps=6 delta=-0.273
+|   `-- G1-57 [tunnel] d=0.73 fit=0.803 bot=0.792 complexity=0.95 PASS rooms=2 gaps=5 delta=-0.028
+|-- G0-49 [tunnel] d=0.77 fit=0.822 bot=0.825 complexity=0.95 PASS rooms=2 gaps=7
+|-- G0-50 [tunnel] d=0.75 fit=0.810 bot=0.796 complexity=0.95 PASS rooms=2 gaps=6
+|   |-- G1-26 [tunnel] d=0.64 fit=0.783 bot=0.798 complexity=0.85 PASS rooms=2 gaps=3 delta=-0.028
+|   `-- G1-58 [tunnel] d=0.66 fit=0.798 bot=0.795 complexity=0.91 PASS rooms=2 gaps=4 delta=-0.013
+|       |-- G2-30 [tunnel] d=0.59 fit=0.816 bot=0.811 complexity=0.95 PASS rooms=2 gaps=5 delta=+0.018
+|       |   |-- G3-16 [tunnel] d=0.33 fit=0.797 bot=0.827 complexity=0.82 PASS rooms=2 gaps=2 delta=-0.018
+|       |   `-- G3-48 [tunnel] d=0.71 fit=0.821 bot=0.818 complexity=0.94 PASS rooms=2 gaps=6 delta=+0.005
+|       `-- G2-62 [tunnel] d=0.43 fit=0.777 bot=0.773 complexity=0.87 PASS rooms=2 gaps=3 delta=-0.020
+|-- G0-51 [mixed] d=0.79 fit=0.770 bot=0.740 complexity=0.93 PASS rooms=2 gaps=5
+|-- G0-52 [tunnel] d=1.00 fit=0.794 bot=0.774 complexity=0.93 PASS rooms=2 gaps=6
+|   |-- G1-27 [tunnel] d=0.95 fit=0.795 bot=0.792 complexity=0.91 PASS rooms=2 gaps=6 delta=+0.002
+|   |   |-- G2-15 [tunnel] d=1.00 fit=0.798 bot=0.784 complexity=0.94 PASS rooms=2 gaps=8 delta=+0.002
+|   |   |   |-- G3-08 [tunnel] d=1.00 fit=0.828 bot=0.834 complexity=0.95 PASS rooms=2 gaps=5 delta=+0.030
+|   |   |   |   |-- G4-05 [tunnel] d=0.87 fit=0.780 bot=0.769 complexity=0.93 PASS rooms=2 gaps=6 delta=-0.048
+|   |   |   |   |   |-- G5-03 [tunnel] d=0.94 fit=0.789 bot=0.776 complexity=0.90 PASS rooms=2 gaps=4 delta=+0.009
+|   |   |   |   |   |   |-- G6-02 [tunnel] d=0.78 fit=0.780 bot=0.773 complexity=0.90 PASS rooms=2 gaps=4 delta=-0.009
+|   |   |   |   |   |   `-- G6-34 [tunnel] d=0.77 fit=0.784 bot=0.767 complexity=0.93 PASS rooms=2 gaps=5 delta=-0.006
+|   |   |   |   |   `-- G5-35 [tunnel] d=1.00 fit=0.816 bot=0.812 complexity=0.95 PASS rooms=2 gaps=6 delta=+0.036
+|   |   |   |   |       |-- G6-18 [tunnel] d=1.00 fit=0.772 bot=0.749 complexity=0.95 PASS rooms=2 gaps=8 delta=-0.044
+|   |   |   |   |       `-- G6-50 [tunnel] d=0.92 fit=0.803 bot=0.793 complexity=0.95 PASS rooms=2 gaps=5 delta=-0.013
+|   |   |   |   `-- G4-37 [tunnel] d=0.80 fit=0.843 bot=0.845 complexity=0.95 PASS rooms=2 gaps=5 delta=+0.015
+|   |   |   |       |-- G5-19 [tunnel] d=0.83 fit=0.804 bot=0.807 complexity=0.94 PASS rooms=2 gaps=7 delta=-0.039
+|   |   |   |       |   |-- G6-10 [tunnel] d=0.59 fit=0.791 bot=0.791 complexity=0.86 PASS rooms=2 gaps=3 delta=-0.013
+|   |   |   |       |   `-- G6-42 [tunnel] d=0.58 fit=0.805 bot=0.807 complexity=0.90 PASS rooms=2 gaps=4 delta=+0.001
+|   |   |   |       `-- G5-51 [tunnel] d=0.75 fit=0.782 bot=0.760 complexity=0.95 PASS rooms=2 gaps=8 delta=-0.061
+|   |   |   `-- G3-40 [tunnel] d=1.00 fit=0.789 bot=0.780 complexity=0.94 PASS rooms=2 gaps=5 delta=-0.008
+|   |   |       |-- G4-21 [tunnel] d=0.81 fit=0.797 bot=0.771 complexity=0.93 PASS rooms=2 gaps=6 delta=+0.007
+|   |   |       `-- G4-53 [mixed] d=1.00 fit=0.839 bot=0.839 complexity=0.94 PASS rooms=2 gaps=5 delta=+0.049
+|   |   |           |-- G5-27 [surface] d=1.00 fit=0.753 bot=0.762 complexity=0.70 PASS rooms=0 gaps=8 delta=-0.086
+|   |   |           `-- G5-59 [mixed] d=0.92 fit=0.798 bot=0.791 complexity=0.91 PASS rooms=2 gaps=4 delta=-0.041
+|   |   `-- G2-47 [tunnel] d=1.00 fit=0.815 bot=0.824 complexity=0.94 PASS rooms=2 gaps=5 delta=+0.020
+|   `-- G1-59 [tunnel] d=0.93 fit=0.794 bot=0.766 complexity=0.95 PASS rooms=2 gaps=8 delta=+0.001
+|-- G0-53 [surface] d=0.75 fit=0.748 bot=0.759 complexity=0.70 PASS rooms=0 gaps=7
+|-- G0-54 [tunnel] d=0.55 fit=0.815 bot=0.813 complexity=0.94 PASS rooms=2 gaps=5
+|   |-- G1-28 [mixed] d=0.77 fit=0.777 bot=0.746 complexity=0.94 PASS rooms=2 gaps=6 delta=-0.038
+|   `-- G1-60 [tunnel] d=0.44 fit=0.812 bot=0.812 complexity=0.94 PASS rooms=2 gaps=6 delta=-0.003
+|       |-- G2-31 [tunnel] d=0.70 fit=0.774 bot=0.775 complexity=0.84 PASS rooms=2 gaps=4 delta=-0.038
+|       `-- G2-63 [tunnel] d=0.43 fit=0.803 bot=0.791 complexity=0.95 PASS rooms=2 gaps=5 delta=-0.009
+|           `-- G3-32 [tunnel] d=0.51 fit=0.803 bot=0.797 complexity=0.93 PASS rooms=2 gaps=5 delta=-0.000
+|-- G0-55 [surface] d=0.47 fit=0.792 bot=0.830 complexity=0.60 PASS rooms=0 gaps=3
+|-- G0-56 [surface] d=0.83 fit=0.732 bot=0.770 complexity=0.69 PASS rooms=0 gaps=7
+|-- G0-57 [mixed] d=0.98 fit=0.812 bot=0.785 complexity=0.95 PASS rooms=2 gaps=8
+|   |-- G1-29 [mixed] d=1.00 fit=0.825 bot=0.816 complexity=0.95 PASS rooms=2 gaps=7 delta=+0.014
+|   |   |-- G2-16 [mixed] d=0.95 fit=0.819 bot=0.794 complexity=0.94 PASS rooms=2 gaps=8 delta=-0.006
+|   |   `-- G2-48 [mixed] d=1.00 fit=0.874 bot=0.898 complexity=0.95 PASS rooms=2 gaps=5 delta=+0.049
+|   |       |-- G3-25 [mixed] d=0.72 fit=0.807 bot=0.785 complexity=0.95 PASS rooms=2 gaps=8 delta=-0.067
+|   |       |   |-- G4-13 [mixed] d=0.49 fit=0.796 bot=0.791 complexity=0.87 PASS rooms=2 gaps=3 delta=-0.012
+|   |       |   |   |-- G5-07 [mixed] d=0.72 fit=0.813 bot=0.779 complexity=0.94 PASS rooms=2 gaps=6 delta=+0.017
+|   |       |   |   |   |-- G6-04 [mixed] d=0.72 fit=0.805 bot=0.789 complexity=0.93 PASS rooms=2 gaps=5 delta=-0.008
+|   |       |   |   |   `-- G6-36 [surface] d=0.81 fit=0.751 bot=0.774 complexity=0.69 PASS rooms=0 gaps=7 delta=-0.061
+|   |       |   |   `-- G5-39 [mixed] d=0.50 fit=0.816 bot=0.802 complexity=0.92 PASS rooms=2 gaps=6 delta=+0.020
+|   |       |   |       |-- G6-20 [mixed] d=0.58 fit=0.819 bot=0.814 complexity=0.89 PASS rooms=2 gaps=4 delta=+0.003
+|   |       |   |       `-- G6-52 [mixed] d=0.62 fit=0.822 bot=0.864 complexity=0.83 PASS rooms=2 gaps=2 delta=+0.006
+|   |       |   `-- G4-45 [mixed] d=0.70 fit=0.854 bot=0.871 complexity=0.95 PASS rooms=2 gaps=5 delta=+0.046
+|   |       |       |-- G5-23 [mixed] d=0.79 fit=0.789 bot=0.766 complexity=0.89 PASS rooms=2 gaps=4 delta=-0.064
+|   |       |       `-- G5-55 [surface] d=0.62 fit=0.749 bot=0.801 complexity=0.57 PASS rooms=0 gaps=2 delta=-0.105
+|   |       `-- G3-57 [tunnel] d=1.00 fit=0.836 bot=0.837 complexity=0.94 PASS rooms=2 gaps=5 delta=-0.039
+|   |           |-- G4-29 [tunnel] d=0.81 fit=0.780 bot=0.754 complexity=0.95 PASS rooms=2 gaps=6 delta=-0.055
+|   |           `-- G4-61 [tunnel] d=1.00 fit=0.798 bot=0.771 complexity=0.95 PASS rooms=2 gaps=7 delta=-0.037
+|   |               |-- G5-31 [tunnel] d=1.00 fit=0.810 bot=0.807 complexity=0.95 PASS rooms=2 gaps=7 delta=+0.011
+|   |               `-- G5-63 [tunnel] d=0.89 fit=0.801 bot=0.787 complexity=0.93 PASS rooms=2 gaps=6 delta=+0.002
+|   |                   `-- G6-32 [tunnel] d=1.00 fit=0.794 bot=0.786 complexity=0.93 PASS rooms=2 gaps=5 delta=-0.007
+|   `-- G1-61 [mixed] d=0.99 fit=0.805 bot=0.787 complexity=0.94 PASS rooms=2 gaps=6 delta=-0.007
+|-- G0-58 [surface] d=1.00 fit=0.754 bot=0.830 complexity=0.54 PASS rooms=0 gaps=3
+|-- G0-59 [surface] d=0.83 fit=0.773 bot=0.814 complexity=0.69 PASS rooms=0 gaps=6
+|   |-- G1-30 [surface] d=0.91 fit=0.772 bot=0.796 complexity=0.70 PASS rooms=0 gaps=6 delta=-0.001
+|   |   |-- G2-17 [tunnel] d=1.00 fit=0.825 bot=0.843 complexity=0.94 PASS rooms=2 gaps=6 delta=+0.054
+|   |   |   |-- G3-09 [tunnel] d=1.00 fit=0.807 bot=0.806 complexity=0.95 PASS rooms=2 gaps=7 delta=-0.019
+|   |   |   `-- G3-41 [tunnel] d=0.95 fit=0.783 bot=0.759 complexity=0.95 PASS rooms=2 gaps=5 delta=-0.042
+|   |   `-- G2-49 [tunnel] d=0.96 fit=0.789 bot=0.774 complexity=0.95 PASS rooms=2 gaps=7 delta=+0.017
+|   `-- G1-62 [surface] d=0.97 fit=0.768 bot=0.791 complexity=0.69 PASS rooms=0 gaps=7 delta=-0.005
+|       `-- G2-32 [surface] d=0.89 fit=0.747 bot=0.778 complexity=0.69 PASS rooms=0 gaps=6 delta=-0.022
+|-- G0-60 [surface] d=0.67 fit=0.727 bot=0.803 complexity=0.51 PASS rooms=0 gaps=2
+|-- G0-61 [surface] d=0.87 fit=0.794 bot=0.845 complexity=0.69 PASS rooms=0 gaps=5
+|   |-- G1-31 [surface] d=1.00 fit=0.757 bot=0.784 complexity=0.67 PASS rooms=0 gaps=7 delta=-0.037
+|   `-- G1-63 [surface] d=0.80 fit=0.744 bot=0.766 complexity=0.70 PASS rooms=0 gaps=5 delta=-0.050
+|-- G0-62 [tunnel] d=0.80 fit=0.828 bot=0.854 complexity=0.91 PASS rooms=2 gaps=5
+|   `-- G1-32 [tunnel] d=0.91 fit=0.794 bot=0.780 complexity=0.95 PASS rooms=2 gaps=6 delta=-0.034
+`-- G0-63 [surface] d=0.96 fit=0.747 bot=0.793 complexity=0.66 PASS rooms=0 gaps=4
+
+GENERATION IMPROVEMENT
+G0: G0-41 [mixed] fit=0.844 baseline
+G1: G1-35 [mixed] fit=0.881 change=+0.038
+G2: G2-00 [mixed] fit=0.881 change=+0.000
+G3: G3-00 [mixed] fit=0.881 change=+0.000
+G4: G4-00 [mixed] fit=0.881 change=+0.000
+G5: G5-00 [mixed] fit=0.881 change=+0.000
+G6: G6-00 [mixed] fit=0.881 change=+0.000
+
+TOURNAMENT BRACKETS
+Generation 0
+  Round 1
+    G0-00 (0.809) vs G0-01 (0.833) -> G0-01
+    G0-02 (0.834) vs G0-03 (0.820) -> G0-02
+    G0-04 (0.801) vs G0-05 (0.791) -> G0-04
+    G0-06 (0.826) vs G0-07 (0.776) -> G0-06
+    G0-08 (0.792) vs G0-09 (0.801) -> G0-09
+    G0-10 (0.818) vs G0-11 (0.804) -> G0-10
+    G0-12 (0.821) vs G0-13 (0.754) -> G0-12
+    G0-14 (0.807) vs G0-15 (0.780) -> G0-14
+    G0-16 (0.791) vs G0-17 (0.785) -> G0-16
+    G0-18 (0.806) vs G0-19 (0.806) -> G0-19
+    G0-20 (0.774) vs G0-21 (0.760) -> G0-20
+    G0-22 (0.797) vs G0-23 (0.802) -> G0-23
+    G0-24 (0.767) vs G0-25 (0.816) -> G0-25
+    G0-26 (0.788) vs G0-27 (0.747) -> G0-26
+    G0-28 (0.791) vs G0-29 (0.755) -> G0-28
+    G0-30 (0.763) vs G0-31 (0.781) -> G0-31
+    G0-32 (0.766) vs G0-33 (0.786) -> G0-33
+    G0-34 (0.831) vs G0-35 (0.810) -> G0-34
+    G0-36 (0.771) vs G0-37 (0.724) -> G0-36
+    G0-38 (0.797) vs G0-39 (0.828) -> G0-39
+    G0-40 (0.744) vs G0-41 (0.844) -> G0-41
+    G0-42 (0.764) vs G0-43 (0.801) -> G0-43
+    G0-44 (0.809) vs G0-45 (0.749) -> G0-44
+    G0-46 (0.744) vs G0-47 (0.798) -> G0-47
+    G0-48 (0.831) vs G0-49 (0.822) -> G0-48
+    G0-50 (0.810) vs G0-51 (0.770) -> G0-50
+    G0-52 (0.794) vs G0-53 (0.748) -> G0-52
+    G0-54 (0.815) vs G0-55 (0.792) -> G0-54
+    G0-56 (0.732) vs G0-57 (0.812) -> G0-57
+    G0-58 (0.754) vs G0-59 (0.773) -> G0-59
+    G0-60 (0.727) vs G0-61 (0.794) -> G0-61
+    G0-62 (0.828) vs G0-63 (0.747) -> G0-62
+  Round 2
+    G0-01 (0.833) vs G0-02 (0.834) -> G0-02
+    G0-04 (0.801) vs G0-06 (0.826) -> G0-06
+    G0-09 (0.801) vs G0-10 (0.818) -> G0-10
+    G0-12 (0.821) vs G0-14 (0.807) -> G0-12
+    G0-16 (0.791) vs G0-19 (0.806) -> G0-19
+    G0-20 (0.774) vs G0-23 (0.802) -> G0-23
+    G0-25 (0.816) vs G0-26 (0.788) -> G0-25
+    G0-28 (0.791) vs G0-31 (0.781) -> G0-28
+    G0-33 (0.786) vs G0-34 (0.831) -> G0-34
+    G0-36 (0.771) vs G0-39 (0.828) -> G0-39
+    G0-41 (0.844) vs G0-43 (0.801) -> G0-41
+    G0-44 (0.809) vs G0-47 (0.798) -> G0-44
+    G0-48 (0.831) vs G0-50 (0.810) -> G0-48
+    G0-52 (0.794) vs G0-54 (0.815) -> G0-54
+    G0-57 (0.812) vs G0-59 (0.773) -> G0-57
+    G0-61 (0.794) vs G0-62 (0.828) -> G0-62
+  Round 3
+    G0-02 (0.834) vs G0-06 (0.826) -> G0-02
+    G0-10 (0.818) vs G0-12 (0.821) -> G0-12
+    G0-19 (0.806) vs G0-23 (0.802) -> G0-19
+    G0-25 (0.816) vs G0-28 (0.791) -> G0-25
+    G0-34 (0.831) vs G0-39 (0.828) -> G0-34
+    G0-41 (0.844) vs G0-44 (0.809) -> G0-41
+    G0-48 (0.831) vs G0-54 (0.815) -> G0-48
+    G0-57 (0.812) vs G0-62 (0.828) -> G0-62
+  Round 4
+    G0-02 (0.834) vs G0-12 (0.821) -> G0-02
+    G0-19 (0.806) vs G0-25 (0.816) -> G0-25
+    G0-34 (0.831) vs G0-41 (0.844) -> G0-41
+    G0-48 (0.831) vs G0-62 (0.828) -> G0-48
+  Round 5
+    G0-02 (0.834) vs G0-25 (0.816) -> G0-02
+    G0-41 (0.844) vs G0-48 (0.831) -> G0-41
+  Round 6
+    G0-02 (0.834) vs G0-41 (0.844) -> G0-41
+  Winner -> G0-41
+Generation 1
+  Round 1
+    G1-00 (0.844) vs G1-01 (0.819) -> G1-00
+    G1-02 (0.826) vs G1-03 (0.789) -> G1-02
+    G1-04 (0.826) vs G1-05 (0.735) -> G1-04
+    G1-06 (0.800) vs G1-07 (0.793) -> G1-06
+    G1-08 (0.831) vs G1-09 (0.829) -> G1-08
+    G1-10 (0.781) vs G1-11 (0.784) -> G1-11
+    G1-12 (0.807) vs G1-13 (0.810) -> G1-13
+    G1-14 (0.787) vs G1-15 (0.789) -> G1-15
+    G1-16 (0.840) vs G1-17 (0.828) -> G1-16
+    G1-18 (0.779) vs G1-19 (0.780) -> G1-19
+    G1-20 (0.781) vs G1-21 (0.815) -> G1-21
+    G1-22 (0.801) vs G1-23 (0.822) -> G1-23
+    G1-24 (0.791) vs G1-25 (0.796) -> G1-25
+    G1-26 (0.783) vs G1-27 (0.795) -> G1-27
+    G1-28 (0.777) vs G1-29 (0.825) -> G1-29
+    G1-30 (0.772) vs G1-31 (0.757) -> G1-30
+    G1-32 (0.794) vs G1-33 (0.810) -> G1-33
+    G1-34 (0.819) vs G1-35 (0.881) -> G1-35
+    G1-36 (0.818) vs G1-37 (0.817) -> G1-36
+    G1-38 (0.801) vs G1-39 (0.799) -> G1-38
+    G1-40 (0.804) vs G1-41 (0.798) -> G1-40
+    G1-42 (0.765) vs G1-43 (0.770) -> G1-43
+    G1-44 (0.812) vs G1-45 (0.832) -> G1-45
+    G1-46 (0.818) vs G1-47 (0.797) -> G1-46
+    G1-48 (0.740) vs G1-49 (0.736) -> G1-48
+    G1-50 (0.780) vs G1-51 (0.791) -> G1-51
+    G1-52 (0.785) vs G1-53 (0.820) -> G1-53
+    G1-54 (0.806) vs G1-55 (0.800) -> G1-54
+    G1-56 (0.813) vs G1-57 (0.803) -> G1-56
+    G1-58 (0.798) vs G1-59 (0.794) -> G1-58
+    G1-60 (0.812) vs G1-61 (0.805) -> G1-60
+    G1-62 (0.768) vs G1-63 (0.744) -> G1-62
+  Round 2
+    G1-00 (0.844) vs G1-02 (0.826) -> G1-00
+    G1-04 (0.826) vs G1-06 (0.800) -> G1-04
+    G1-08 (0.831) vs G1-11 (0.784) -> G1-08
+    G1-13 (0.810) vs G1-15 (0.789) -> G1-13
+    G1-16 (0.840) vs G1-19 (0.780) -> G1-16
+    G1-21 (0.815) vs G1-23 (0.822) -> G1-23
+    G1-25 (0.796) vs G1-27 (0.795) -> G1-25
+    G1-29 (0.825) vs G1-30 (0.772) -> G1-29
+    G1-33 (0.810) vs G1-35 (0.881) -> G1-35
+    G1-36 (0.818) vs G1-38 (0.801) -> G1-36
+    G1-40 (0.804) vs G1-43 (0.770) -> G1-40
+    G1-45 (0.832) vs G1-46 (0.818) -> G1-45
+    G1-48 (0.740) vs G1-51 (0.791) -> G1-51
+    G1-53 (0.820) vs G1-54 (0.806) -> G1-53
+    G1-56 (0.813) vs G1-58 (0.798) -> G1-56
+    G1-60 (0.812) vs G1-62 (0.768) -> G1-60
+  Round 3
+    G1-00 (0.844) vs G1-04 (0.826) -> G1-00
+    G1-08 (0.831) vs G1-13 (0.810) -> G1-08
+    G1-16 (0.840) vs G1-23 (0.822) -> G1-16
+    G1-25 (0.796) vs G1-29 (0.825) -> G1-29
+    G1-35 (0.881) vs G1-36 (0.818) -> G1-35
+    G1-40 (0.804) vs G1-45 (0.832) -> G1-45
+    G1-51 (0.791) vs G1-53 (0.820) -> G1-53
+    G1-56 (0.813) vs G1-60 (0.812) -> G1-56
+  Round 4
+    G1-00 (0.844) vs G1-08 (0.831) -> G1-00
+    G1-16 (0.840) vs G1-29 (0.825) -> G1-16
+    G1-35 (0.881) vs G1-45 (0.832) -> G1-35
+    G1-53 (0.820) vs G1-56 (0.813) -> G1-53
+  Round 5
+    G1-00 (0.844) vs G1-16 (0.840) -> G1-00
+    G1-35 (0.881) vs G1-53 (0.820) -> G1-35
+  Round 6
+    G1-00 (0.844) vs G1-35 (0.881) -> G1-35
+  Winner -> G1-35
+Generation 2
+  Round 1
+    G2-00 (0.881) vs G2-01 (0.798) -> G2-00
+    G2-02 (0.809) vs G2-03 (0.768) -> G2-02
+    G2-04 (0.808) vs G2-05 (0.793) -> G2-04
+    G2-06 (0.822) vs G2-07 (0.787) -> G2-06
+    G2-08 (0.811) vs G2-09 (0.793) -> G2-08
+    G2-10 (0.802) vs G2-11 (0.798) -> G2-10
+    G2-12 (0.786) vs G2-13 (0.814) -> G2-13
+    G2-14 (0.747) vs G2-15 (0.798) -> G2-15
+    G2-16 (0.819) vs G2-17 (0.825) -> G2-17
+    G2-18 (0.809) vs G2-19 (0.803) -> G2-18
+    G2-20 (0.737) vs G2-21 (0.825) -> G2-21
+    G2-22 (0.826) vs G2-23 (0.743) -> G2-22
+    G2-24 (0.780) vs G2-25 (0.831) -> G2-25
+    G2-26 (0.799) vs G2-27 (0.794) -> G2-26
+    G2-28 (0.806) vs G2-29 (0.807) -> G2-29
+    G2-30 (0.816) vs G2-31 (0.774) -> G2-30
+    G2-32 (0.747) vs G2-33 (0.804) -> G2-33
+    G2-34 (0.844) vs G2-35 (0.788) -> G2-34
+    G2-36 (0.827) vs G2-37 (0.792) -> G2-36
+    G2-38 (0.799) vs G2-39 (0.802) -> G2-39
+    G2-40 (0.814) vs G2-41 (0.795) -> G2-40
+    G2-42 (0.830) vs G2-43 (0.825) -> G2-42
+    G2-44 (0.787) vs G2-45 (0.794) -> G2-45
+    G2-46 (0.826) vs G2-47 (0.815) -> G2-46
+    G2-48 (0.874) vs G2-49 (0.789) -> G2-48
+    G2-50 (0.794) vs G2-51 (0.820) -> G2-51
+    G2-52 (0.828) vs G2-53 (0.836) -> G2-53
+    G2-54 (0.801) vs G2-55 (0.852) -> G2-55
+    G2-56 (0.827) vs G2-57 (0.731) -> G2-56
+    G2-58 (0.813) vs G2-59 (0.843) -> G2-59
+    G2-60 (0.786) vs G2-61 (0.802) -> G2-61
+    G2-62 (0.777) vs G2-63 (0.803) -> G2-63
+  Round 2
+    G2-00 (0.881) vs G2-02 (0.809) -> G2-00
+    G2-04 (0.808) vs G2-06 (0.822) -> G2-06
+    G2-08 (0.811) vs G2-10 (0.802) -> G2-08
+    G2-13 (0.814) vs G2-15 (0.798) -> G2-13
+    G2-17 (0.825) vs G2-18 (0.809) -> G2-17
+    G2-21 (0.825) vs G2-22 (0.826) -> G2-22
+    G2-25 (0.831) vs G2-26 (0.799) -> G2-25
+    G2-29 (0.807) vs G2-30 (0.816) -> G2-30
+    G2-33 (0.804) vs G2-34 (0.844) -> G2-34
+    G2-36 (0.827) vs G2-39 (0.802) -> G2-36
+    G2-40 (0.814) vs G2-42 (0.830) -> G2-42
+    G2-45 (0.794) vs G2-46 (0.826) -> G2-46
+    G2-48 (0.874) vs G2-51 (0.820) -> G2-48
+    G2-53 (0.836) vs G2-55 (0.852) -> G2-55
+    G2-56 (0.827) vs G2-59 (0.843) -> G2-59
+    G2-61 (0.802) vs G2-63 (0.803) -> G2-63
+  Round 3
+    G2-00 (0.881) vs G2-06 (0.822) -> G2-00
+    G2-08 (0.811) vs G2-13 (0.814) -> G2-13
+    G2-17 (0.825) vs G2-22 (0.826) -> G2-22
+    G2-25 (0.831) vs G2-30 (0.816) -> G2-25
+    G2-34 (0.844) vs G2-36 (0.827) -> G2-34
+    G2-42 (0.830) vs G2-46 (0.826) -> G2-42
+    G2-48 (0.874) vs G2-55 (0.852) -> G2-48
+    G2-59 (0.843) vs G2-63 (0.803) -> G2-59
+  Round 4
+    G2-00 (0.881) vs G2-13 (0.814) -> G2-00
+    G2-22 (0.826) vs G2-25 (0.831) -> G2-25
+    G2-34 (0.844) vs G2-42 (0.830) -> G2-34
+    G2-48 (0.874) vs G2-59 (0.843) -> G2-48
+  Round 5
+    G2-00 (0.881) vs G2-25 (0.831) -> G2-00
+    G2-34 (0.844) vs G2-48 (0.874) -> G2-48
+  Round 6
+    G2-00 (0.881) vs G2-48 (0.874) -> G2-00
+  Winner -> G2-00
+Generation 3
+  Round 1
+    G3-00 (0.881) vs G3-01 (0.824) -> G3-00
+    G3-02 (0.870) vs G3-03 (0.786) -> G3-02
+    G3-04 (0.793) vs G3-05 (0.838) -> G3-05
+    G3-06 (0.844) vs G3-07 (0.788) -> G3-06
+    G3-08 (0.828) vs G3-09 (0.807) -> G3-08
+    G3-10 (0.800) vs G3-11 (0.812) -> G3-11
+    G3-12 (0.772) vs G3-13 (0.763) -> G3-12
+    G3-14 (0.834) vs G3-15 (0.821) -> G3-14
+    G3-16 (0.797) vs G3-17 (0.833) -> G3-17
+    G3-18 (0.828) vs G3-19 (0.756) -> G3-18
+    G3-20 (0.840) vs G3-21 (0.821) -> G3-20
+    G3-22 (0.813) vs G3-23 (0.805) -> G3-22
+    G3-24 (0.752) vs G3-25 (0.807) -> G3-25
+    G3-26 (0.796) vs G3-27 (0.792) -> G3-26
+    G3-28 (0.800) vs G3-29 (0.811) -> G3-29
+    G3-30 (0.855) vs G3-31 (0.811) -> G3-30
+    G3-32 (0.803) vs G3-33 (0.805) -> G3-33
+    G3-34 (0.840) vs G3-35 (0.823) -> G3-34
+    G3-36 (0.827) vs G3-37 (0.783) -> G3-36
+    G3-38 (0.844) vs G3-39 (0.835) -> G3-38
+    G3-40 (0.789) vs G3-41 (0.783) -> G3-40
+    G3-42 (0.812) vs G3-43 (0.840) -> G3-43
+    G3-44 (0.815) vs G3-45 (0.792) -> G3-44
+    G3-46 (0.787) vs G3-47 (0.803) -> G3-47
+    G3-48 (0.821) vs G3-49 (0.843) -> G3-49
+    G3-50 (0.799) vs G3-51 (0.773) -> G3-50
+    G3-52 (0.816) vs G3-53 (0.786) -> G3-52
+    G3-54 (0.809) vs G3-55 (0.793) -> G3-54
+    G3-56 (0.554) vs G3-57 (0.836) -> G3-57
+    G3-58 (0.819) vs G3-59 (0.809) -> G3-58
+    G3-60 (0.807) vs G3-61 (0.792) -> G3-60
+    G3-62 (0.829) vs G3-63 (0.827) -> G3-62
+  Round 2
+    G3-00 (0.881) vs G3-02 (0.870) -> G3-00
+    G3-05 (0.838) vs G3-06 (0.844) -> G3-06
+    G3-08 (0.828) vs G3-11 (0.812) -> G3-08
+    G3-12 (0.772) vs G3-14 (0.834) -> G3-14
+    G3-17 (0.833) vs G3-18 (0.828) -> G3-17
+    G3-20 (0.840) vs G3-22 (0.813) -> G3-20
+    G3-25 (0.807) vs G3-26 (0.796) -> G3-25
+    G3-29 (0.811) vs G3-30 (0.855) -> G3-30
+    G3-33 (0.805) vs G3-34 (0.840) -> G3-34
+    G3-36 (0.827) vs G3-38 (0.844) -> G3-38
+    G3-40 (0.789) vs G3-43 (0.840) -> G3-43
+    G3-44 (0.815) vs G3-47 (0.803) -> G3-44
+    G3-49 (0.843) vs G3-50 (0.799) -> G3-49
+    G3-52 (0.816) vs G3-54 (0.809) -> G3-52
+    G3-57 (0.836) vs G3-58 (0.819) -> G3-57
+    G3-60 (0.807) vs G3-62 (0.829) -> G3-62
+  Round 3
+    G3-00 (0.881) vs G3-06 (0.844) -> G3-00
+    G3-08 (0.828) vs G3-14 (0.834) -> G3-14
+    G3-17 (0.833) vs G3-20 (0.840) -> G3-20
+    G3-25 (0.807) vs G3-30 (0.855) -> G3-30
+    G3-34 (0.840) vs G3-38 (0.844) -> G3-38
+    G3-43 (0.840) vs G3-44 (0.815) -> G3-43
+    G3-49 (0.843) vs G3-52 (0.816) -> G3-49
+    G3-57 (0.836) vs G3-62 (0.829) -> G3-57
+  Round 4
+    G3-00 (0.881) vs G3-14 (0.834) -> G3-00
+    G3-20 (0.840) vs G3-30 (0.855) -> G3-30
+    G3-38 (0.844) vs G3-43 (0.840) -> G3-38
+    G3-49 (0.843) vs G3-57 (0.836) -> G3-49
+  Round 5
+    G3-00 (0.881) vs G3-30 (0.855) -> G3-00
+    G3-38 (0.844) vs G3-49 (0.843) -> G3-38
+  Round 6
+    G3-00 (0.881) vs G3-38 (0.844) -> G3-00
+  Winner -> G3-00
+Generation 4
+  Round 1
+    G4-00 (0.881) vs G4-01 (0.787) -> G4-00
+    G4-02 (0.824) vs G4-03 (0.832) -> G4-03
+    G4-04 (0.769) vs G4-05 (0.780) -> G4-05
+    G4-06 (0.777) vs G4-07 (0.827) -> G4-07
+    G4-08 (0.850) vs G4-09 (0.789) -> G4-08
+    G4-10 (0.747) vs G4-11 (0.834) -> G4-11
+    G4-12 (0.765) vs G4-13 (0.796) -> G4-13
+    G4-14 (0.798) vs G4-15 (0.791) -> G4-14
+    G4-16 (0.811) vs G4-17 (0.817) -> G4-17
+    G4-18 (0.805) vs G4-19 (0.820) -> G4-19
+    G4-20 (0.799) vs G4-21 (0.797) -> G4-20
+    G4-22 (0.816) vs G4-23 (0.800) -> G4-22
+    G4-24 (0.782) vs G4-25 (0.777) -> G4-24
+    G4-26 (0.821) vs G4-27 (0.766) -> G4-26
+    G4-28 (0.836) vs G4-29 (0.780) -> G4-28
+    G4-30 (0.807) vs G4-31 (0.823) -> G4-31
+    G4-32 (0.809) vs G4-33 (0.807) -> G4-32
+    G4-34 (0.808) vs G4-35 (0.763) -> G4-34
+    G4-36 (0.812) vs G4-37 (0.843) -> G4-37
+    G4-38 (0.815) vs G4-39 (0.854) -> G4-39
+    G4-40 (0.813) vs G4-41 (0.799) -> G4-40
+    G4-42 (0.838) vs G4-43 (0.806) -> G4-42
+    G4-44 (0.844) vs G4-45 (0.854) -> G4-45
+    G4-46 (0.752) vs G4-47 (0.798) -> G4-47
+    G4-48 (0.838) vs G4-49 (0.824) -> G4-48
+    G4-50 (0.784) vs G4-51 (0.787) -> G4-51
+    G4-52 (0.807) vs G4-53 (0.839) -> G4-53
+    G4-54 (0.759) vs G4-55 (0.769) -> G4-55
+    G4-56 (0.784) vs G4-57 (0.816) -> G4-57
+    G4-58 (0.780) vs G4-59 (0.784) -> G4-59
+    G4-60 (0.787) vs G4-61 (0.798) -> G4-61
+    G4-62 (0.808) vs G4-63 (0.830) -> G4-63
+  Round 2
+    G4-00 (0.881) vs G4-03 (0.832) -> G4-00
+    G4-05 (0.780) vs G4-07 (0.827) -> G4-07
+    G4-08 (0.850) vs G4-11 (0.834) -> G4-08
+    G4-13 (0.796) vs G4-14 (0.798) -> G4-14
+    G4-17 (0.817) vs G4-19 (0.820) -> G4-19
+    G4-20 (0.799) vs G4-22 (0.816) -> G4-22
+    G4-24 (0.782) vs G4-26 (0.821) -> G4-26
+    G4-28 (0.836) vs G4-31 (0.823) -> G4-28
+    G4-32 (0.809) vs G4-34 (0.808) -> G4-32
+    G4-37 (0.843) vs G4-39 (0.854) -> G4-39
+    G4-40 (0.813) vs G4-42 (0.838) -> G4-42
+    G4-45 (0.854) vs G4-47 (0.798) -> G4-45
+    G4-48 (0.838) vs G4-51 (0.787) -> G4-48
+    G4-53 (0.839) vs G4-55 (0.769) -> G4-53
+    G4-57 (0.816) vs G4-59 (0.784) -> G4-57
+    G4-61 (0.798) vs G4-63 (0.830) -> G4-63
+  Round 3
+    G4-00 (0.881) vs G4-07 (0.827) -> G4-00
+    G4-08 (0.850) vs G4-14 (0.798) -> G4-08
+    G4-19 (0.820) vs G4-22 (0.816) -> G4-19
+    G4-26 (0.821) vs G4-28 (0.836) -> G4-28
+    G4-32 (0.809) vs G4-39 (0.854) -> G4-39
+    G4-42 (0.838) vs G4-45 (0.854) -> G4-45
+    G4-48 (0.838) vs G4-53 (0.839) -> G4-53
+    G4-57 (0.816) vs G4-63 (0.830) -> G4-63
+  Round 4
+    G4-00 (0.881) vs G4-08 (0.850) -> G4-00
+    G4-19 (0.820) vs G4-28 (0.836) -> G4-28
+    G4-39 (0.854) vs G4-45 (0.854) -> G4-39
+    G4-53 (0.839) vs G4-63 (0.830) -> G4-53
+  Round 5
+    G4-00 (0.881) vs G4-28 (0.836) -> G4-00
+    G4-39 (0.854) vs G4-53 (0.839) -> G4-39
+  Round 6
+    G4-00 (0.881) vs G4-39 (0.854) -> G4-00
+  Winner -> G4-00
+Generation 5
+  Round 1
+    G5-00 (0.881) vs G5-01 (0.806) -> G5-00
+    G5-02 (0.749) vs G5-03 (0.789) -> G5-03
+    G5-04 (0.799) vs G5-05 (0.774) -> G5-04
+    G5-06 (0.789) vs G5-07 (0.813) -> G5-07
+    G5-08 (0.771) vs G5-09 (0.761) -> G5-08
+    G5-10 (0.780) vs G5-11 (0.756) -> G5-10
+    G5-12 (0.732) vs G5-13 (0.805) -> G5-13
+    G5-14 (0.827) vs G5-15 (0.810) -> G5-14
+    G5-16 (0.853) vs G5-17 (0.769) -> G5-16
+    G5-18 (0.789) vs G5-19 (0.804) -> G5-19
+    G5-20 (0.823) vs G5-21 (0.783) -> G5-20
+    G5-22 (0.813) vs G5-23 (0.789) -> G5-22
+    G5-24 (0.745) vs G5-25 (0.812) -> G5-25
+    G5-26 (0.766) vs G5-27 (0.753) -> G5-26
+    G5-28 (0.770) vs G5-29 (0.782) -> G5-29
+    G5-30 (0.821) vs G5-31 (0.810) -> G5-30
+    G5-32 (0.827) vs G5-33 (0.776) -> G5-32
+    G5-34 (0.775) vs G5-35 (0.816) -> G5-35
+    G5-36 (0.786) vs G5-37 (0.831) -> G5-37
+    G5-38 (0.766) vs G5-39 (0.816) -> G5-39
+    G5-40 (0.788) vs G5-41 (0.782) -> G5-40
+    G5-42 (0.823) vs G5-43 (0.545) -> G5-42
+    G5-44 (0.778) vs G5-45 (0.789) -> G5-45
+    G5-46 (0.867) vs G5-47 (0.841) -> G5-46
+    G5-48 (0.798) vs G5-49 (0.832) -> G5-49
+    G5-50 (0.805) vs G5-51 (0.782) -> G5-50
+    G5-52 (0.873) vs G5-53 (0.799) -> G5-52
+    G5-54 (0.795) vs G5-55 (0.749) -> G5-54
+    G5-56 (0.801) vs G5-57 (0.773) -> G5-56
+    G5-58 (0.801) vs G5-59 (0.798) -> G5-58
+    G5-60 (0.796) vs G5-61 (0.809) -> G5-61
+    G5-62 (0.782) vs G5-63 (0.801) -> G5-63
+  Round 2
+    G5-00 (0.881) vs G5-03 (0.789) -> G5-00
+    G5-04 (0.799) vs G5-07 (0.813) -> G5-07
+    G5-08 (0.771) vs G5-10 (0.780) -> G5-10
+    G5-13 (0.805) vs G5-14 (0.827) -> G5-14
+    G5-16 (0.853) vs G5-19 (0.804) -> G5-16
+    G5-20 (0.823) vs G5-22 (0.813) -> G5-20
+    G5-25 (0.812) vs G5-26 (0.766) -> G5-25
+    G5-29 (0.782) vs G5-30 (0.821) -> G5-30
+    G5-32 (0.827) vs G5-35 (0.816) -> G5-32
+    G5-37 (0.831) vs G5-39 (0.816) -> G5-37
+    G5-40 (0.788) vs G5-42 (0.823) -> G5-42
+    G5-45 (0.789) vs G5-46 (0.867) -> G5-46
+    G5-49 (0.832) vs G5-50 (0.805) -> G5-49
+    G5-52 (0.873) vs G5-54 (0.795) -> G5-52
+    G5-56 (0.801) vs G5-58 (0.801) -> G5-56
+    G5-61 (0.809) vs G5-63 (0.801) -> G5-61
+  Round 3
+    G5-00 (0.881) vs G5-07 (0.813) -> G5-00
+    G5-10 (0.780) vs G5-14 (0.827) -> G5-14
+    G5-16 (0.853) vs G5-20 (0.823) -> G5-16
+    G5-25 (0.812) vs G5-30 (0.821) -> G5-30
+    G5-32 (0.827) vs G5-37 (0.831) -> G5-37
+    G5-42 (0.823) vs G5-46 (0.867) -> G5-46
+    G5-49 (0.832) vs G5-52 (0.873) -> G5-52
+    G5-56 (0.801) vs G5-61 (0.809) -> G5-61
+  Round 4
+    G5-00 (0.881) vs G5-14 (0.827) -> G5-00
+    G5-16 (0.853) vs G5-30 (0.821) -> G5-16
+    G5-37 (0.831) vs G5-46 (0.867) -> G5-46
+    G5-52 (0.873) vs G5-61 (0.809) -> G5-52
+  Round 5
+    G5-00 (0.881) vs G5-16 (0.853) -> G5-00
+    G5-46 (0.867) vs G5-52 (0.873) -> G5-52
+  Round 6
+    G5-00 (0.881) vs G5-52 (0.873) -> G5-00
+  Winner -> G5-00
+Generation 6
+  Round 1
+    G6-00 (0.881) vs G6-01 (0.743) -> G6-00
+    G6-02 (0.780) vs G6-03 (0.825) -> G6-03
+    G6-04 (0.805) vs G6-05 (0.786) -> G6-04
+    G6-06 (0.778) vs G6-07 (0.786) -> G6-07
+    G6-08 (0.867) vs G6-09 (0.759) -> G6-08
+    G6-10 (0.791) vs G6-11 (0.836) -> G6-11
+    G6-12 (0.780) vs G6-13 (0.737) -> G6-12
+    G6-14 (0.812) vs G6-15 (0.826) -> G6-15
+    G6-16 (0.817) vs G6-17 (0.760) -> G6-16
+    G6-18 (0.772) vs G6-19 (0.814) -> G6-19
+    G6-20 (0.819) vs G6-21 (0.795) -> G6-20
+    G6-22 (0.833) vs G6-23 (0.783) -> G6-22
+    G6-24 (0.840) vs G6-25 (0.758) -> G6-24
+    G6-26 (0.778) vs G6-27 (0.745) -> G6-26
+    G6-28 (0.819) vs G6-29 (0.791) -> G6-28
+    G6-30 (0.794) vs G6-31 (0.814) -> G6-31
+    G6-32 (0.794) vs G6-33 (0.812) -> G6-33
+    G6-34 (0.784) vs G6-35 (0.792) -> G6-35
+    G6-36 (0.751) vs G6-37 (0.796) -> G6-37
+    G6-38 (0.797) vs G6-39 (0.813) -> G6-39
+    G6-40 (0.790) vs G6-41 (0.744) -> G6-40
+    G6-42 (0.805) vs G6-43 (0.820) -> G6-43
+    G6-44 (0.849) vs G6-45 (0.801) -> G6-44
+    G6-46 (0.825) vs G6-47 (0.828) -> G6-47
+    G6-48 (0.845) vs G6-49 (0.819) -> G6-48
+    G6-50 (0.803) vs G6-51 (0.812) -> G6-51
+    G6-52 (0.822) vs G6-53 (0.794) -> G6-52
+    G6-54 (0.796) vs G6-55 (0.815) -> G6-55
+    G6-56 (0.808) vs G6-57 (0.757) -> G6-56
+    G6-58 (0.785) vs G6-59 (0.805) -> G6-59
+    G6-60 (0.813) vs G6-61 (0.809) -> G6-60
+    G6-62 (0.790) vs G6-63 (0.798) -> G6-63
+  Round 2
+    G6-00 (0.881) vs G6-03 (0.825) -> G6-00
+    G6-04 (0.805) vs G6-07 (0.786) -> G6-04
+    G6-08 (0.867) vs G6-11 (0.836) -> G6-08
+    G6-12 (0.780) vs G6-15 (0.826) -> G6-15
+    G6-16 (0.817) vs G6-19 (0.814) -> G6-16
+    G6-20 (0.819) vs G6-22 (0.833) -> G6-22
+    G6-24 (0.840) vs G6-26 (0.778) -> G6-24
+    G6-28 (0.819) vs G6-31 (0.814) -> G6-28
+    G6-33 (0.812) vs G6-35 (0.792) -> G6-33
+    G6-37 (0.796) vs G6-39 (0.813) -> G6-39
+    G6-40 (0.790) vs G6-43 (0.820) -> G6-43
+    G6-44 (0.849) vs G6-47 (0.828) -> G6-44
+    G6-48 (0.845) vs G6-51 (0.812) -> G6-48
+    G6-52 (0.822) vs G6-55 (0.815) -> G6-52
+    G6-56 (0.808) vs G6-59 (0.805) -> G6-56
+    G6-60 (0.813) vs G6-63 (0.798) -> G6-60
+  Round 3
+    G6-00 (0.881) vs G6-04 (0.805) -> G6-00
+    G6-08 (0.867) vs G6-15 (0.826) -> G6-08
+    G6-16 (0.817) vs G6-22 (0.833) -> G6-22
+    G6-24 (0.840) vs G6-28 (0.819) -> G6-24
+    G6-33 (0.812) vs G6-39 (0.813) -> G6-39
+    G6-43 (0.820) vs G6-44 (0.849) -> G6-44
+    G6-48 (0.845) vs G6-52 (0.822) -> G6-48
+    G6-56 (0.808) vs G6-60 (0.813) -> G6-60
+  Round 4
+    G6-00 (0.881) vs G6-08 (0.867) -> G6-00
+    G6-22 (0.833) vs G6-24 (0.840) -> G6-24
+    G6-39 (0.813) vs G6-44 (0.849) -> G6-44
+    G6-48 (0.845) vs G6-60 (0.813) -> G6-48
+  Round 5
+    G6-00 (0.881) vs G6-24 (0.840) -> G6-00
+    G6-44 (0.849) vs G6-48 (0.845) -> G6-44
+  Round 6
+    G6-00 (0.881) vs G6-44 (0.849) -> G6-00
+  Winner -> G6-00
+
+BEST EVOLVED LEVEL -> G1-35 [mixed] fitness=0.881

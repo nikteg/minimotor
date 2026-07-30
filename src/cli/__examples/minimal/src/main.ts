@@ -1,6 +1,6 @@
-import { App, Mathf } from "minimotor";
+import { createApp, Mathf } from "minimotor";
 
-const game = App.create("game", { background: "#20242c" });
+const game = createApp("game", { background: "#20242c" });
 const { Draw, Keys, Loop, viewport: view } = game;
 const player = { x: 40, y: 40, w: 32, h: 32 };
 

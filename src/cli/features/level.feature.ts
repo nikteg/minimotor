@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { defineFeature } from "../feature.js";
@@ -9,6 +9,7 @@ const help = `Generate, bot-test, score, or verify platformer greyboxes
 Usage:
   mm level test [options]
   mm level simulate [options]
+  mm level evolve [options]
   mm level generate [options]
   mm level score [options]
   mm level optimize [options]
@@ -32,6 +33,16 @@ Bot simulation options:
   --report <file>        Write the ranked simulation report as JSON.
   --replay <file>        Write the best planner's input proof as JSON.
   -o, --out <file>       Write the best passing neutral level spec.
+
+Evolution tournament options:
+  --population <n>       Power-of-two competitors. Default 16.
+  --generations <n>      Selection/mutation generations. Default 4.
+  --mutation <0..1>      Difficulty/layout mutation amount. Default 0.18.
+  --objective <name>     balanced or complex. Default balanced.
+  --tree <file>          Write the ASCII ancestry and bracket tree.
+  --report <file>        Write machine-readable ancestry and match results.
+  --archive <dir>        Save the top distinct levels and ASCII previews.
+  --keep <n>             Levels retained in the archive. Default 16.
 
 Generate options:
   --seed <text>          Reproducible seed. Default "minimotor"
@@ -1107,6 +1118,7 @@ export default defineFeature({
   usage: [
     "mm level test [--port <port>]",
     "mm level simulate [--levels <n>] [--rounds <n>] [--bots <n>] [--attempts <n>]",
+    "mm level evolve [--population <n>] [--generations <n>] [--tree <file>]",
     "mm level generate [--seed <text>] [--json] [--trace]",
     "mm level check <project.ldtk> [--portal-boundaries]",
   ],
@@ -1337,6 +1349,162 @@ export default defineFeature({
       }
       return;
     }
+    if (command === "evolve") {
+      const seed = takeOption(args, "--seed") ?? "evolution";
+      const population = numberOption(args, 16, "--population");
+      const generations = numberOption(args, 4, "--generations");
+      const mutation = numberOption(args, 0.18, "--mutation");
+      const objective = takeOption(args, "--objective") ?? "balanced";
+      const bots = numberOption(args, 8, "--bots");
+      const attempts = numberOption(args, 2, "--attempts");
+      const maxSteps = numberOption(args, 1_800, "--max-steps");
+      const width = numberOption(args, 48, "--width");
+      const height = numberOption(args, 22, "--height");
+      const difficulty = numberOption(args, 0.45, "--difficulty");
+      const profile = takeScoreProfile(args);
+      const abilities = takeGeneratedAbilities(args);
+      const layout = takeGeneratedLayout(args);
+      const features = takeGeneratedFeatures(args);
+      const output = takeOption(args, "-o", "--out");
+      const treePath = takeOption(args, "--tree");
+      const reportPath = takeOption(args, "--report");
+      const archivePath = takeOption(args, "--archive");
+      const keep = numberOption(args, 16, "--keep");
+      const json = takeFlag(args, "--json");
+      if (args.length) throw new Error(`unknown option "${args[0]}"`);
+      if (objective !== "balanced" && objective !== "complex") {
+        throw new Error('--objective must be "balanced" or "complex"');
+      }
+      if (!Number.isInteger(keep) || keep < 1 || keep > 256) {
+        throw new Error("--keep must be an integer from 1 to 256");
+      }
+      if (!features.includes("exit")) throw new Error("evolution requires the exit feature");
+      const { evolveLevels } = await import("../level-tester/tournament.js");
+      const result = evolveLevels({
+        seed,
+        population,
+        generations,
+        mutation,
+        bots,
+        attempts,
+        maxSteps,
+        width,
+        height,
+        difficulty,
+        profile,
+        abilities,
+        layout,
+        features,
+        objective,
+      });
+      const report = {
+        ...result.options,
+        champion: {
+          id: result.champion.id,
+          seed: result.champion.seed,
+          generation: result.champion.generation,
+          layout: result.champion.level.layout,
+          difficulty: result.champion.difficulty,
+          fitness: result.champion.fitness,
+          complexity: result.champion.complexity,
+          passed: result.champion.bot.passed,
+          heuristic: result.champion.heuristic,
+          botMetrics: result.champion.bot.metrics,
+        },
+        generationChampions: result.generationChampions.map((candidate) => ({
+          id: candidate.id,
+          seed: candidate.seed,
+          generation: candidate.generation,
+          parentId: candidate.parentId,
+          layout: candidate.level.layout,
+          difficulty: candidate.difficulty,
+          fitness: candidate.fitness,
+          complexity: candidate.complexity,
+          passed: candidate.bot.passed,
+        })),
+        candidates: result.candidates.map((candidate) => ({
+          id: candidate.id,
+          parentId: candidate.parentId,
+          seed: candidate.seed,
+          generation: candidate.generation,
+          layout: candidate.level.layout,
+          difficulty: candidate.difficulty,
+          fitness: candidate.fitness,
+          complexity: candidate.complexity,
+          heuristicScore: candidate.heuristic.total,
+          botScore: candidate.bot.score,
+          passed: candidate.bot.passed,
+          rooms: candidate.level.metrics.rooms,
+          gaps: candidate.level.metrics.gaps,
+        })),
+        matches: result.matches,
+      };
+      process.stdout.write(json ? `${JSON.stringify(report, null, 2)}\n` : result.tree);
+      if (treePath) writeFileSync(treePath, result.tree);
+      if (reportPath) writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+      if (archivePath) {
+        mkdirSync(archivePath, { recursive: true });
+        const seen = new Set<string>();
+        const distinct = [...result.candidates]
+          .sort(
+            (left, right) =>
+              Number(right.bot.passed) - Number(left.bot.passed) || right.fitness - left.fitness,
+          )
+          .filter((candidate) => {
+            if (seen.has(candidate.seed)) return false;
+            seen.add(candidate.seed);
+            return true;
+          });
+        const layoutQuota = Math.floor(keep / 3);
+        const retained = (["surface", "tunnel", "mixed"] as const).flatMap((layout) =>
+          distinct.filter((candidate) => candidate.level.layout === layout).slice(0, layoutQuota),
+        );
+        const retainedSeeds = new Set(retained.map((candidate) => candidate.seed));
+        retained.push(
+          ...distinct
+            .filter((candidate) => !retainedSeeds.has(candidate.seed))
+            .slice(0, keep - retained.length),
+        );
+        retained.sort(
+          (left, right) =>
+            Number(right.bot.passed) - Number(left.bot.passed) || right.fitness - left.fitness,
+        );
+        retained.forEach((candidate, index) => {
+          const name = `${String(index + 1).padStart(3, "0")}-${candidate.id}`;
+          writeFileSync(
+            resolve(archivePath, `${name}.json`),
+            `${JSON.stringify(generatedDesign(candidate.level, candidate.id), null, 2)}\n`,
+          );
+          writeFileSync(resolve(archivePath, `${name}.txt`), ascii(candidate.level, false));
+        });
+        writeFileSync(
+          resolve(archivePath, "manifest.json"),
+          `${JSON.stringify(
+            retained.map((candidate, index) => ({
+              rank: index + 1,
+              id: candidate.id,
+              parentId: candidate.parentId,
+              seed: candidate.seed,
+              layout: candidate.level.layout,
+              difficulty: candidate.difficulty,
+              fitness: candidate.fitness,
+              complexity: candidate.complexity,
+              passed: candidate.bot.passed,
+              botMetrics: candidate.bot.metrics,
+            })),
+            null,
+            2,
+          )}\n`,
+        );
+      }
+      if (output) {
+        if (!result.champion.bot.passed) {
+          throw new Error("no evolved candidate passed bot evaluation");
+        }
+        writeFileSync(output, `${JSON.stringify(result.design, null, 2)}\n`);
+      }
+      return;
+    }
     if (command === "train") {
       const datasetPath = args.shift();
       if (!datasetPath || datasetPath.startsWith("-")) {
@@ -1536,7 +1704,7 @@ export default defineFeature({
     }
     if (command !== "generate") {
       throw new Error(
-        "usage: mm level <test|simulate|generate|score|optimize|train|build|check> [options]",
+        "usage: mm level <test|simulate|evolve|generate|score|optimize|train|build|check> [options]",
       );
     }
     const seed = takeOption(args, "--seed") ?? "minimotor";

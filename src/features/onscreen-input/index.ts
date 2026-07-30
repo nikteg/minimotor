@@ -1,3 +1,9 @@
+// ---------- On-screen input ----------
+// Opt-in on-screen touch gamepad. `OnscreenInput.gamepad(config)` returns a
+// `GamepadState` for `Input.map({ pad })` and `OnscreenInput.drawControls(pad)`
+// renders it — touch and a hardware pad share one code path.
+// `pad.buttonBounds("a")` locates a semantic canvas button for automation.
+
 import {
   createOnscreenGamepad,
   destroyOnscreenGamepad,
@@ -7,7 +13,7 @@ import {
   type OnscreenPad,
 } from "../../onscreen.js";
 import type { InputApi } from "../input/index.js";
-import type { Game } from "../../engine/app.js";
+import type { App } from "../../engine/app.js";
 
 export interface OnscreenInputApi {
   gamepad(config?: OnscreenGamepadConfig): OnscreenPad;
@@ -16,8 +22,8 @@ export interface OnscreenInputApi {
   destroy(): void;
 }
 
-/** Create virtual controls bound explicitly to one game and input instance. */
-export function createOnscreenInput(game: Game, input: InputApi): OnscreenInputApi {
+/** Create virtual controls bound explicitly to one app and input instance. */
+export function createOnscreenInput(app: App, input: InputApi): OnscreenInputApi {
   const pads = new Set<OnscreenPad>();
   let destroyed = false;
   const destroy = () => {
@@ -30,11 +36,11 @@ export function createOnscreenInput(game: Game, input: InputApi): OnscreenInputA
     gamepad(config) {
       const pad = createOnscreenGamepad(
         {
-          canvas: game.canvas,
-          ctx: game.ctx,
-          viewport: game.viewport,
-          onStepStart: game.Loop.onStepStart,
-          onFrame: game.Loop.onFrame,
+          canvas: app.canvas,
+          ctx: app.ctx,
+          viewport: app.viewport,
+          onStepStart: app.Loop.onStepStart,
+          onFrame: app.Loop.onFrame,
           registerGamepad: input.registerGamepad,
         },
         config,
@@ -46,7 +52,7 @@ export function createOnscreenInput(game: Game, input: InputApi): OnscreenInputA
     visible,
     destroy,
   };
-  game.use({ name: "OnscreenInput", onDestroy: destroy });
+  app.use({ name: "OnscreenInput", onDestroy: destroy });
   return api;
 }
 

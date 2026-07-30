@@ -11,7 +11,7 @@
 // current value in and returns the (possibly changed) value, which we store
 // straight back — the immediate-mode round-trip.
 import { createUI } from "minimotor/ui";
-import { App } from "minimotor";
+import { createApp } from "minimotor";
 import type { TableSort, Theme } from "minimotor";
 import { installLayoutProbe } from "../shared/layout-probe.ts";
 
@@ -21,7 +21,7 @@ import { installLayoutProbe } from "../shared/layout-probe.ts";
 // so the column layout can REFLOW to the window width instead of scaling. The
 // board's OWN zoom is opt-in: the header's "UI Scale" slider drives `UI.scaled`
 // (below), which scales the board's draw + pointer while it still reflows.
-const game = App.create("game", { background: "#12141c" });
+const game = createApp("game", { background: "#12141c" });
 const view = game.viewport;
 const { Draw, Loop, Pointer } = game;
 const UI = createUI(game);

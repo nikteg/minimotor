@@ -3,9 +3,9 @@ import { createPerformanceMonitoring } from "minimotor/performance";
 // a distance-from-hero heatmap (distanceField), plus line-of-sight fog.
 import { createInput } from "minimotor/input";
 import { createUI } from "minimotor/ui";
-import { Gizmos, Goodies, Mathf, App } from "minimotor";
+import { Gizmos, Goodies, Mathf, createApp } from "minimotor";
 
-const game = App.create("game", {
+const game = createApp("game", {
   background: "#0d1118",
   preventNavigation: true,
 });

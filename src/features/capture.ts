@@ -1,4 +1,4 @@
-import type { Game } from "../engine/app.js";
+import type { App } from "../engine/app.js";
 
 export interface CaptureApi {
   dataUrl(type?: string, quality?: number): string;
@@ -6,10 +6,10 @@ export interface CaptureApi {
   download(filename?: string, type?: string, quality?: number): void;
 }
 
-export function createCapture(game: Game): CaptureApi {
+export function createCapture(app: App): CaptureApi {
   const blob = (type = "image/png", quality?: number) =>
     new Promise<Blob>((resolve, reject) =>
-      game.canvas.toBlob(
+      app.canvas.toBlob(
         (value) => (value ? resolve(value) : reject(new Error("Minimotor: canvas capture failed"))),
         type,
         quality,
@@ -17,7 +17,7 @@ export function createCapture(game: Game): CaptureApi {
     );
   return {
     dataUrl(type = "image/png", quality) {
-      return game.canvas.toDataURL(type, quality);
+      return app.canvas.toDataURL(type, quality);
     },
     blob,
     async download(filename = "capture.png", type = "image/png", quality) {

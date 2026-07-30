@@ -174,7 +174,7 @@ describe("Portals", () => {
     expect(body).toMatchObject({
       area: "cave",
       x: 11,
-      y: 1,
+      y: 0,
       vel: { x: 0, y: 0 },
     });
     expect(go).toHaveBeenCalledWith("game", {

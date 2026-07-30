@@ -5,7 +5,7 @@
 // widget tree, no layout engine. Floating texts and spinners age on the
 // fixed step (via Loop.onStep), so they pause with the loop like Clock/Tween.
 //
-// The canvas context is implicit inside a game-bound `createUI(game)` API.
+// The canvas context is implicit inside an app-bound `createUI(app)` API.
 // `begin(ctx)` remains an internal test harness for the raw widget layer:
 //
 //   begin(ctx);

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { App } from "../engine/index.js";
+import { createApp } from "../engine/index.js";
 
 let rafCallback: ((time: number) => void) | null = null;
 const originalGetContext = HTMLCanvasElement.prototype.getContext;
@@ -35,15 +35,15 @@ function tick(time: number): void {
 
 describe("explicit game lifecycles", () => {
   it("keeps clocks and handlers isolated between games", () => {
-    const a = App.create(document.createElement("canvas"));
-    const b = App.create(document.createElement("canvas"));
+    const a = createApp(document.createElement("canvas"));
+    const b = createApp(document.createElement("canvas"));
     expect(a.Clock.world).not.toBe(b.Clock.world);
     expect(a.Draw.ctx).not.toBe(b.Draw.ctx);
     expect(a.Keys).not.toBe(b.Keys);
   });
 
   it("destroy drops every handler set, including frame handlers", () => {
-    const game = App.create(document.createElement("canvas"));
+    const game = createApp(document.createElement("canvas"));
     let steps = 0;
     let frames = 0;
     let stepStarts = 0;

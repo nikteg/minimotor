@@ -1,7 +1,8 @@
-// ---------- Scoring: grades and ranks ----------
+// ---------- Scoring: grades, ranks and readouts ----------
 // The pure raters of the player's performance: `timingGrade` grades a rhythm
 // hit, `scoreRank` labels a final score, `beatClock` turns a clock into beat
-// timing. The stateful streak gadget lives in Gizmos as `Gizmos.combo`.
+// timing, `formatClock` renders a duration for the HUD. The stateful members
+// live in Gizmos as `Gizmos.combo` and `Gizmos.scoreTracker`.
 
 /** A rhythm-hit accuracy grade returned by `timingGrade()`, strictest to loosest. */
 export type TimingGrade = "perfect" | "great" | "good" | "miss";
@@ -61,4 +62,17 @@ export function beatClock(elapsedMs: number, periodMs: number): Beat {
   const offset = (phase < 0.5 ? phase : phase - 1) * periodMs;
   const pulse = 1 - Math.abs(phase * 2 - 1);
   return { beat, phase, offset, pulse };
+}
+
+/** Format milliseconds as `m:ss` (or `h:mm:ss` past an hour) — the timer/score
+ *  screen clock that otherwise gets re-derived, with the seconds always padded.
+ *  Negative input reads as `0:00`. */
+export function formatClock(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const ss = s.toString().padStart(2, "0");
+  if (h > 0) return `${h}:${m.toString().padStart(2, "0")}:${ss}`;
+  return `${m}:${ss}`;
 }

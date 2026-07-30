@@ -10,7 +10,7 @@
 // The kernel depends on nothing above it; widgets depend on the kernel. The
 // widgets barrel re-exports wholesale (select selectively, so its editor
 // internals stay private); core is re-exported selectively, keeping the public
-// `createUI(game)` surface while keeping every raw widget implementation private.
+// `createUI(app)` surface while keeping every raw widget implementation private.
 export * from "./widgets/index.js";
 
 export {

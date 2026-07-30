@@ -7,9 +7,9 @@
 //
 // Advancement is pull-based (API_PLAN law 4): follow damping and shake fold
 // forward by the number of fixed steps elapsed since the last read. Dropped
-// cameras cost nothing and GC away with their owning game or standalone lens.
+// cameras cost nothing and GC away with their owning app or standalone lens.
 
-import { type Game, type DrawApi, type Rect } from "../engine/index.js";
+import { type App, type DrawApi, type Rect } from "../engine/index.js";
 import type { Vec2 } from "../vec2.js";
 import { clamp } from "../mathf.js";
 
@@ -98,7 +98,7 @@ export interface CameraLens {
 }
 
 export interface CameraApi extends CameraLens {
-  /** Create another lens bound to the same game renderer, viewport, and clock. */
+  /** Create another lens bound to the same app renderer, viewport, and clock. */
   create(options?: Omit<CameraOptions, "view" | "steps" | "draw">): CameraLens;
 }
 
@@ -379,9 +379,9 @@ export function createLens(options: CameraOptions): CameraLens {
   return cam;
 }
 
-/** Create the primary camera namespace for one explicit game. */
-export function createCamera(game: Game): CameraApi {
-  const base = { view: game.viewport, steps: () => game.Loop.steps, draw: game.Draw };
+/** Create the primary camera namespace for one explicit app. */
+export function createCamera(app: App): CameraApi {
+  const base = { view: app.viewport, steps: () => app.Loop.steps, draw: app.Draw };
   const lens = createLens(base);
   return {
     follow: lens.follow.bind(lens),

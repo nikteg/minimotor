@@ -1,6 +1,19 @@
+// ---------- Animation ----------
+// Frame-based sprite animation on the app's world clock: `Anim.sheet` (regular grid),
+// `Anim.states` (one image per state), motion behaviors, and composable value
+// tweens (`Anim.animate`, `Anim.sequence`, `Anim.parallel`). Cursors here are
+// `Draw.sprite`-ready.
+//
+//   const Anim = createAnimation(app);
+//   const hero = Anim.sheet(img, {
+//     frame: { w: 32, h: 32 },
+//     states: { idle: { row: 0, frames: 4 }, run: { row: 1, frames: 6, fps: 12 } },
+//   });
+//   Draw.sprite(hero.play("idle"), player);   // per-entity cursor
+
 import * as AnimModule from "../../anim/index.js";
 import type { ClockHandle } from "../../clock.js";
-import type { Game } from "../../engine/app.js";
+import type { App } from "../../engine/app.js";
 
 type BoundPlaybackOptions = Omit<AnimModule.PlaybackOptions, "clock"> & {
   clock?: ClockHandle;
@@ -41,15 +54,15 @@ export type AnimationApi = Omit<
     specs: Omit<AnimModule.AnimateOptions, "clock">[],
     options?: { clock?: ClockHandle },
   ): AnimModule.Parallel;
-  /** Start any Anim/Aseprite-compatible source on this game's world clock. */
+  /** Start any Anim/Aseprite-compatible source on this app's world clock. */
   play<K, C>(source: PlaybackSource<K, C>, initial: K, options?: BoundPlaybackOptions): C;
-  /** Play one state once on this game's world clock. */
+  /** Play one state once on this app's world clock. */
   once<K, C>(source: PlaybackSource<K, C>, initial: K, options?: BoundPlaybackOptions): C;
 };
 
-/** Animation helpers bound to one game's world clock. */
-export function createAnimation(game: Game): AnimationApi {
-  const clock = game.Clock.world;
+/** Animation helpers bound to one app's world clock. */
+export function createAnimation(app: App): AnimationApi {
+  const clock = app.Clock.world;
   const api: AnimationApi = {
     ...AnimModule,
     sheet(image, options) {

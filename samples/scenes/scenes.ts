@@ -8,10 +8,10 @@ import { createPerformanceMonitoring } from "minimotor/performance";
 import { createAudio } from "minimotor/audio";
 import { createScenes } from "minimotor/scenes";
 import { createUI } from "minimotor/ui";
-import { Collision, Game, Mathf, App, Transitions } from "minimotor";
+import { Collision, Gizmos, Mathf, createApp, Transitions } from "minimotor";
 import { DrawTextOptions } from "minimotor";
 
-const game = App.create("game", { background: "#12141c" });
+const game = createApp("game", { background: "#12141c" });
 createPerformanceMonitoring(game);
 const view = game.viewport;
 const { Draw, Keys, Loop } = game;
@@ -26,7 +26,7 @@ const clear = (bg: string) => Draw.rect(0, 0, view.w, view.h, bg);
 // ---- shared play state (reset by play.enter) ----
 const player = { x: 0, y: 0, size: 34 };
 const target = { x: 0, y: 0, r: 16 };
-const scores = Game.createScoreTracker("scenes_best");
+const scores = Gizmos.scoreTracker("scenes_best");
 let timeLeft = 0; // in update steps (60/s)
 
 function placeTarget() {

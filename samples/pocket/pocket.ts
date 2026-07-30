@@ -1,12 +1,12 @@
 import { createPerformanceMonitoring } from "minimotor/performance";
 // POCKET ASTEROIDS: a complete vector arcade loop in a fixed 16:9 viewport.
-// Focus: App fullscreen + `resolution` letterbox, Goodies torus helpers,
+// Focus: createApp fullscreen + `resolution` letterbox, Goodies torus helpers,
 // Input.map with pad bindings.
 // Controls: left/right rotate, up thrusts, Space fires, H hyperspace.
 import { createInput } from "minimotor/input";
 import { createParticles } from "minimotor/particles";
 import { createUI } from "minimotor/ui";
-import { Game, Gizmos, Goodies, Mathf, App } from "minimotor";
+import { Gizmos, Goodies, Mathf, createApp } from "minimotor";
 import { createSfx } from "../shared/sfx.ts";
 
 // A roomier logical viewport keeps ships and rocks readable on large screens.
@@ -16,7 +16,7 @@ const W = 480,
 // (uniform scale + bars) at any window size, so the vector art never distorts.
 // All drawing is in logical W×H space — no manual save/translate/scale. The
 // engine owns clearing: `background` is the field, `barColor` the bars.
-const game = App.create("game", {
+const game = createApp("game", {
   fullscreen: true,
   resolution: { w: W, h: H },
   background: "#080d1b",
@@ -42,7 +42,7 @@ const THRUST = 0.031; // px/step² (was 110 px/s²)
 const BULLET_SPEED = 3.7; // px/step (was 220 px/s)
 const BULLET_TTL = 66; // steps (was 1.1 s)
 const FIRE_COOLDOWN = 11; // steps (was 0.18 s)
-const best = Game.createScoreTracker("pocket-asteroids-best");
+const best = Gizmos.scoreTracker("pocket-asteroids-best");
 const fx = Particles.createSystem();
 const ship = { x: W / 2, y: H / 2, vx: 0, vy: 0, angle: -Math.PI / 2, cooldown: 0, invuln: 0 };
 // One hyperspace jump that recharges over 4s (a Goodies charge meter). fraction

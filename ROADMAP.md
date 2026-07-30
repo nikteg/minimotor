@@ -377,8 +377,8 @@ spec?)` integration (swap fires behind full coverage). Proof: the `scenes`
   auto-identifies static callback forms; `ids(prefix)` builds stable keyed ids
   for conditional controls and dynamic collections. Typed `dragSource`/
   `dropTarget`/`draggedItem` provide immediate-mode inventory/card drag and drop. **Implicit ctx** — widgets draw to the default
-  game's `Draw.ctx`, no plumbing (`UI.begin(ctx)` overrides per frame for
-  isolated games; every widget also keeps a `(ctx, opts)` form). Overlays
+  app's `Draw.ctx`, no plumbing (`UI.begin(ctx)` overrides per frame for
+  isolated apps; every widget also keeps a `(ctx, opts)` form). Overlays
   (modal AND open popover) capture input: widgets drawn before them go dead,
   so clicks can't fall through. No retained widget tree — everything draws in
   your draw phase. Game-specific overlays (copy/layout)

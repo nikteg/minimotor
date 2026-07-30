@@ -9,11 +9,11 @@ import { createPerformanceMonitoring } from "minimotor/performance";
 // Controls:  Space = toggle method (swept ⇄ per-frame)   ↑/↓ = speed
 import { createAudio } from "minimotor/audio";
 import { createUI } from "minimotor/ui";
-import { Collision, Mathf, App } from "minimotor";
+import { Collision, Mathf, createApp } from "minimotor";
 
 // The viewport is LIVE (mutated on resize) — wall/reset derive from it; the
 // engine owns clearing via `background`.
-const game = App.create("game", {
+const game = createApp("game", {
   background: "#101418",
   preventNavigation: true,
 });

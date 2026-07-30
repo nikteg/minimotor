@@ -5,11 +5,11 @@ import { createAudio } from "minimotor/audio";
 import { createCamera } from "minimotor/camera";
 import { createParticles } from "minimotor/particles";
 import { createUI } from "minimotor/ui";
-import { Game, Goodies, App } from "minimotor";
+import { Gizmos, Goodies, createApp } from "minimotor";
 import { createOverlays } from "../shared/overlays.ts";
 
 // The viewport is LIVE (mutated on resize) — grid sizing reacts in onResize.
-const game = App.create("game", { preventNavigation: true });
+const game = createApp("game", { preventNavigation: true });
 createPerformanceMonitoring(game);
 const view = game.viewport;
 const { Draw, Keys, Loop } = game;
@@ -28,7 +28,7 @@ let snake = [{ x: Math.floor(COLS / 2), y: Math.floor(ROWS / 2) }];
 let dir = { x: 1, y: 0 };
 let nextDir = { x: 1, y: 0 };
 let food = spawnFood();
-const scores = Game.createScoreTracker("snake_best");
+const scores = Gizmos.scoreTracker("snake_best");
 const fx = Particles.createSystem();
 let tick = 0;
 let gameOver = false;

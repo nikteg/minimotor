@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { approach, damp, lerpAngle, pingPong } from "../mathf.js";
 import { circleRect, separateCircles, bounceInBounds } from "../collision.js";
-import { formatClock, createScoreTracker } from "../game.js";
+import { formatClock } from "../goodies/scoring.js";
+import { scoreTracker } from "../gizmos/scoring.js";
 import { randFreeCell, shuffle, addToInventory, beatClock, nearest } from "../goodies/index.js";
 import { patrol, trail, undoStack, seedRng } from "../gizmos/index.js";
 import { grid } from "../features/ui/api.js";
@@ -94,9 +95,9 @@ describe("Collision.bounceInBounds", () => {
   });
 });
 
-describe("Game.createScoreTracker.reset", () => {
+describe("Gizmos.scoreTracker.reset", () => {
   it("resets the score but keeps best", () => {
-    const t = createScoreTracker(`test_best_${Math.floor(seedRng(3)() * 1e6)}`);
+    const t = scoreTracker(`test_best_${Math.floor(seedRng(3)() * 1e6)}`);
     t.add(50);
     expect(t.score).toBe(50);
     expect(t.best).toBe(50);
@@ -106,7 +107,7 @@ describe("Game.createScoreTracker.reset", () => {
   });
 });
 
-describe("Game.formatClock", () => {
+describe("Goodies.formatClock", () => {
   it("pads seconds and adds hours past an hour", () => {
     expect(formatClock(0)).toBe("0:00");
     expect(formatClock(65_000)).toBe("1:05");

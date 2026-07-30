@@ -87,7 +87,7 @@ export function worldLabel(
 ): WorldLabelResult {
   const camera = options.camera;
   const app = uiApp();
-  if (!app) throw new Error("Minimotor.UI: call createUI(game) before worldLabel");
+  if (!app) throw new Error("Minimotor.UI: call createUI(app) before worldLabel");
   const view = app.viewport;
   const wx = target.x + (target.w ?? 0) / 2;
   const wy = target.y + (target.h ?? 0) / 2;

@@ -11,7 +11,7 @@ import { createPerformanceMonitoring, createNetMeter } from "minimotor/performan
 // RIGHT is drawn only from bytes that traveled peer→peer over the channel.
 import { createNet } from "minimotor/net";
 import { createUI } from "minimotor/ui";
-import { App } from "minimotor";
+import { createApp } from "minimotor";
 
 interface Vec {
   x: number;
@@ -22,7 +22,7 @@ interface Vec {
 // rates for the cursor stream going out and the acks coming back.
 const meter = createNetMeter();
 // The viewport is LIVE (mutated on resize) — both panes lay out from it.
-const game = App.create("game", {
+const game = createApp("game", {
   background: "#0e1116",
 });
 createPerformanceMonitoring(game, { net: meter });

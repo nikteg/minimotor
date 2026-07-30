@@ -5,7 +5,7 @@
 // a teleport boundary, so peers never interpolate through unloaded maps.
 
 import { rectsOverlap } from "./collision.js";
-import type { Game, Rect } from "./engine/index.js";
+import type { App, Rect } from "./engine/index.js";
 import type { GoOptions, SceneStack } from "./scenes.js";
 import { fade, wipe, type Transition } from "./transitions.js";
 import type { Vec2 } from "./vec2.js";
@@ -44,6 +44,7 @@ export interface PortalBody<A extends string> {
   vel?: { x: number; y: number };
   vx?: number;
   vy?: number;
+  grounded?: boolean;
 }
 
 export interface PortalArea<A extends string, S extends string> {
@@ -92,7 +93,7 @@ export interface PortalOptions<A extends string, S extends string, B extends Por
    * Snap the camera or swap area-owned systems here. */
   onTravel?(travel: PortalTravel<A>): void;
   /** Runtime owner injected by the Portals feature. */
-  app?: Pick<Game, "use">;
+  app?: Pick<App, "use">;
 }
 
 export interface PortalRouter<A extends string> {
@@ -118,7 +119,11 @@ function defaultPlace<A extends string, B extends PortalBody<A>>(
   destination: PortalDestination<A>,
 ): void {
   body.x = spawn.x - (body.w ?? 0) / 2;
-  body.y = spawn.y - (destination.anchor === "feet" ? (body.h ?? 0) : (body.h ?? 0) / 2);
+  // Feet markers describe the supporting surface. Leave one world pixel of
+  // clearance so the next collision step establishes contact instead of
+  // inheriting an edge-overlap from a teleport or replicated body.
+  body.y = spawn.y - (destination.anchor === "feet" ? (body.h ?? 0) + 1 : (body.h ?? 0) / 2);
+  if (typeof body.grounded === "boolean") body.grounded = false;
 }
 
 function stopBody<A extends string>(body: PortalBody<A>): void {
@@ -223,7 +228,7 @@ export function createPortalRouter<A extends string, S extends string, B extends
   };
   if (options.auto !== false) {
     if (!options.app) {
-      throw new Error("Portals: automatic routing requires createPortals(game)");
+      throw new Error("Portals: automatic routing requires createPortals(app)");
     }
     options.app.use({
       name: "portals",
@@ -238,13 +243,13 @@ export function createPortalRouter<A extends string, S extends string, B extends
   return router;
 }
 
-/** Portal factory whose automatic updates belong to one game lifecycle. */
-export function createPortals(game: Game) {
+/** Portal factory whose automatic updates belong to one app lifecycle. */
+export function createPortals(app: App) {
   return {
     create<A extends string, S extends string, B extends PortalBody<A>>(
       options: PortalOptions<A, S, B>,
     ) {
-      return createPortalRouter({ ...options, app: game });
+      return createPortalRouter({ ...options, app });
     },
   };
 }

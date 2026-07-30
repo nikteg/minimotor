@@ -36,7 +36,7 @@ function usedHeapMB(): number | undefined {
  *  its tracker state. The HUD draws in the top-right corner by default; pass a
  *  `NetMeter` to also show throughput. Click it to toggle its dim state:
  *
- *    const Performance = createPerformanceMonitoring(game, { net: room.meter });
+ *    const Performance = createPerformanceMonitoring(app, { net: room.meter });
  *    Performance.hide(); */
 export function plugin(opts: PerfOptions = {}): EnginePlugin {
   const tick = createPerfTracker();

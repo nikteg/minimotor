@@ -17,7 +17,7 @@ import { createOnscreenInput } from "minimotor/onscreen-input";
 import { createParticles } from "minimotor/particles";
 import { createTimers } from "minimotor/timers";
 import { createUI } from "minimotor/ui";
-import { Collision, Mathf, Sprites, App, Tiles } from "minimotor";
+import { Collision, Mathf, Sprites, createApp, Tiles } from "minimotor";
 import { Level, StateCursor, SheetCursor, MoverBody } from "minimotor";
 
 // A fixed 480×270 logical stage, letterboxed into the window by the engine —
@@ -26,7 +26,7 @@ const GAME_W = 480;
 const GAME_H = 270;
 const TILE = 48; // collision cell (world px)
 const FW = 32; // player frame size in its source strips
-const game = App.create("game", {
+const game = createApp("game", {
   resolution: { w: GAME_W, h: GAME_H },
   // Inject the engine's fullscreen handling: viewport-fit=cover + no user zoom
   // (kills the iOS long-press/double-tap zoom), safe-area insets, and the

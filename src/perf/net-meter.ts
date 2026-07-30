@@ -16,7 +16,7 @@ export interface NetStats {
 
 /** Counts network traffic and reports smoothed per-second rates. Feed it from
  *  your transport code — `meter.sent(bytes)` / `meter.recv(bytes)` — and pass it
- *  to `createPerformanceMonitoring(game, { net })` (or read `sample()` yourself). */
+ *  to `createPerformanceMonitoring(app, { net })` (or read `sample()` yourself). */
 export interface NetMeter {
   /** Record one outbound message of `bytes` (default 0 if size is unknown). */
   sent(bytes?: number): void;

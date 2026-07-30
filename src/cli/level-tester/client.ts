@@ -1,4 +1,4 @@
-import { App } from "../../index.js";
+import { createApp } from "../../index.js";
 import { createCamera } from "../../camera/index.js";
 import { createInput } from "../../features/input/index.js";
 import { createUI } from "../../features/ui/index.js";
@@ -34,7 +34,7 @@ interface Candidate {
   };
 }
 
-const game = App.create("game", { background: "#0b1020", resolution: { w: 960, h: 540 } });
+const game = createApp("game", { background: "#0b1020", resolution: { w: 960, h: 540 } });
 const { Draw, Loop } = game;
 const Camera = createCamera(game);
 const Input = createInput(game);

@@ -1,4 +1,4 @@
-import type { Game } from "../engine/app.js";
+import type { App } from "../engine/app.js";
 import type { SnapshotsApi } from "./snapshots.js";
 import type { StorageApi } from "./storage.js";
 
@@ -16,7 +16,7 @@ export interface AutosaveApi {
 
 /** Periodically persist explicit snapshots through an explicit storage service. */
 export function createAutosave<N extends string>(
-  game: Game,
+  app: App,
   snapshots: SnapshotsApi,
   storage: StorageApi<N>,
   options: AutosaveOptions<N> = {},
@@ -35,9 +35,9 @@ export function createAutosave<N extends string>(
     clear: () => selected.remove(key),
   };
   const every = Math.max(1, options.everySteps ?? 300);
-  const unsubscribe = game.Loop.onStep(() => {
-    if (game.Loop.steps % every === 0) void save();
+  const unsubscribe = app.Loop.onStep(() => {
+    if (app.Loop.steps % every === 0) void save();
   });
-  game.use({ name: "Autosave", onDestroy: unsubscribe });
+  app.use({ name: "Autosave", onDestroy: unsubscribe });
   return api;
 }

@@ -7,10 +7,10 @@ import { createAudio } from "minimotor/audio";
 import { createCamera } from "minimotor/camera";
 import { createParticles } from "minimotor/particles";
 import { createUI } from "minimotor/ui";
-import { Collision, Gizmos, Mathf, App, Vec2 } from "minimotor";
+import { Collision, Gizmos, Mathf, createApp, Vec2 } from "minimotor";
 
 // The viewport is LIVE (mutated on resize) — wall bounds read it directly.
-const game = App.create("game", { preventNavigation: true });
+const game = createApp("game", { preventNavigation: true });
 createPerformanceMonitoring(game);
 const view = game.viewport;
 const { Clock, Draw, Loop } = game;

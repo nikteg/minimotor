@@ -15,7 +15,7 @@ import { createPerformanceMonitoring, createNetMeter } from "minimotor/performan
 import { createAudio } from "minimotor/audio";
 import { createNet } from "minimotor/net";
 import { createUI } from "minimotor/ui";
-import { Mathf, App } from "minimotor";
+import { Mathf, createApp } from "minimotor";
 
 const dec = new TextDecoder();
 
@@ -34,7 +34,7 @@ interface NetMsg {
 
 const meter = createNetMeter();
 // The viewport is LIVE (mutated on resize) — movement clamps read it fresh.
-const game = App.create("game", {
+const game = createApp("game", {
   background: "#14141c",
 });
 createPerformanceMonitoring(game, { net: meter });

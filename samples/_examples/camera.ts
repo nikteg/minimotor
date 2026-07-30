@@ -1,11 +1,10 @@
 import { createCamera } from "minimotor/camera";
-import { App, ECS, Goodies } from "minimotor";
+import { createApp, ECS, Goodies } from "minimotor";
 
-const game = App.create("game", { background: "#12141c" });
-const { Loop, Keys, Draw } = game;
-const Camera = createCamera(game);
+const app = createApp("game", { background: "#12141c" });
+const { Loop, Keys, Draw } = app;
+const Camera = createCamera(app);
 
-// A world bigger than the screen, dotted with drifting agents held in an ECS.
 const WORLD = { x: 0, y: 0, w: 1280, h: 720 };
 const ecs = ECS.create();
 const Body = ECS.component<{ x: number; y: number; vx: number; vy: number }>("body");
@@ -17,7 +16,7 @@ for (let i = 0; i < 80; i++) {
 }
 
 const hero = { x: 640, y: 360, w: 24, h: 24 };
-Camera.follow(hero, { world: WORLD, damping: 0.1 }); // deadzone-free smooth follow
+Camera.follow(hero, { world: WORLD, damping: 0.1 });
 
 Loop.run({
   update() {
@@ -30,7 +29,6 @@ Loop.run({
   },
   draw() {
     Camera.render(() => {
-      // Data never draws itself — walk the packed store and blit each row.
       for (const b of ecs.dense(Body)) Draw.rect(b.x, b.y, 6, 6, "#3a3f4a");
       Draw.rect(hero, "#4ecdc4");
     });

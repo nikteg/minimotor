@@ -26,10 +26,10 @@ import { createParticles } from "minimotor/particles";
 import { createBrowserStorage } from "minimotor/storage";
 import { createTimers } from "minimotor/timers";
 import { createUI } from "minimotor/ui";
-import { ECS, Fsm, Gizmos, Mathf, Sprites, App } from "minimotor";
+import { ECS, Fsm, Gizmos, Mathf, Sprites, createApp } from "minimotor";
 import { SheetCursor, SpriteLike } from "minimotor";
 
-const game = App.create("game", { preventNavigation: true });
+const game = createApp("game", { preventNavigation: true });
 const Anim = createAnimation(game);
 createPerformanceMonitoring(game);
 const vp = game.viewport;

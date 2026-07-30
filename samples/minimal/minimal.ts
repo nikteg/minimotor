@@ -1,11 +1,11 @@
 import { createPerformanceMonitoring } from "minimotor/performance";
 // Absolute minimal game: colored square that moves with arrow keys
 import { createUI } from "minimotor/ui";
-import { Mathf, App } from "minimotor";
+import { Mathf, createApp } from "minimotor";
 
 // The viewport is LIVE (mutated on resize) — no rebinding needed; the engine
 // owns clearing via `background`.
-const game = App.create("game", { background: "#222" });
+const game = createApp("game", { background: "#222" });
 createPerformanceMonitoring(game);
 const view = game.viewport;
 const { Draw, Keys, Loop } = game;

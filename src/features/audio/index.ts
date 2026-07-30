@@ -1,3 +1,16 @@
+// ---------- Audio ----------
+// WebAudio helpers that own the `AudioContext`, timing and volume, with the
+// mixer's lifetime tied to one app. `Audio.sfx` builds crash-safe sound
+// effects, `Audio.music` schedules a song, `Audio.bus`/`Audio.master` mix, and
+// `Audio.tone`/`Audio.engine` synthesize.
+//
+//   const Audio = createAudio(app);
+//   const sounds = Audio.sfx({
+//     jump: { freq: { from: 300, to: 600 }, ms: 120 },
+//     hit: { noise: true, ms: 80 },
+//   });
+//   sounds.jump.play();
+
 import * as AudioModule from "../../audio/index.js";
 import type {
   BusHandle,
@@ -8,7 +21,7 @@ import type {
   SfxHandle,
   SfxSpec,
 } from "../../audio/api.js";
-import type { Game } from "../../engine/app.js";
+import type { App } from "../../engine/app.js";
 
 export interface AudioMaster {
   volume: number;
@@ -35,7 +48,7 @@ export type AudioApi = Omit<
 let nextAudioId = 1;
 
 /** Create one isolated mixer surface over the page's shared AudioContext. */
-export function createAudio(game: Game): AudioApi {
+export function createAudio(app: App): AudioApi {
   const prefix = `game-${nextAudioId++}:`;
   const sfxBus = AudioModule.bus(`${prefix}sfx`);
   const musicBus = AudioModule.bus(`${prefix}music`);
@@ -106,6 +119,6 @@ export function createAudio(game: Game): AudioApi {
     },
     destroy,
   };
-  game.use({ name: "Audio", onDestroy: destroy });
+  app.use({ name: "Audio", onDestroy: destroy });
   return api;
 }

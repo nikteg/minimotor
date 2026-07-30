@@ -1,4 +1,12 @@
-import type { Game } from "../engine/app.js";
+// ---------- Storage ----------
+// Crash-safe persistence, async-first so browser, IndexedDB, cloud, and server
+// backends share one honest contract. Keys are namespaced per game
+// (`minimotor:<canvas-id>:<store>:`), and every operation swallows its errors —
+// private browsing, quota, or corrupt data fall back to the supplied default
+// rather than throwing. `createBrowserStorage(app)` is the localStorage case;
+// `createStorage(app, { stores, default })` names several.
+
+import type { App } from "../engine/app.js";
 
 type Awaitable<T> = T | PromiseLike<T>;
 
@@ -49,11 +57,11 @@ export function browserStorage(backend: StorageBackend = browserBackend()): Stor
 }
 
 export function createStorage<const S extends Record<string, StorageBackend>>(
-  game: Game,
+  app: App,
   options: StorageOptions<S>,
 ): StorageApi<keyof S & string> {
   type Name = keyof S & string;
-  const prefix = options.prefix ?? `minimotor:${game.canvas.id || "game"}:`;
+  const prefix = options.prefix ?? `minimotor:${app.canvas.id || "game"}:`;
   const names = Object.keys(options.stores) as Name[];
   const areas = new Map<Name, StorageArea>();
 
@@ -102,8 +110,8 @@ export function createStorage<const S extends Record<string, StorageBackend>>(
 }
 
 export function createBrowserStorage(
-  game: Game,
+  app: App,
   backend: StorageBackend = browserStorage(),
 ): StorageApi<"browser"> {
-  return createStorage(game, { stores: { browser: backend }, default: "browser" });
+  return createStorage(app, { stores: { browser: backend }, default: "browser" });
 }

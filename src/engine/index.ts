@@ -1,6 +1,6 @@
 // ---------- Minimal 2D canvas framework ----------
-// Explicit game runtime. App.create builds one isolated game whose PascalCase
-// services are permanently bound to that game.
+// Explicit app runtime. createApp builds one isolated app whose PascalCase
+// services are permanently bound to that app.
 export * from "./app.js";
 export * from "./loop.js";
 export * from "./draw.js";

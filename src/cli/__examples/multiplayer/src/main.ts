@@ -1,8 +1,8 @@
-import { App } from "minimotor";
+import { createApp } from "minimotor";
 import { createInput } from "minimotor/input";
 import { createNet } from "minimotor/net";
 
-const game = App.create("game", {
+const game = createApp("game", {
   background: "#10141c",
   resolution: { w: 800, h: 450 },
 });

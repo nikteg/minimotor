@@ -1,4 +1,16 @@
-import type { Game } from "../../engine/app.js";
+// ---------- Networking ----------
+// Dependency-free multiplayer, with sessions owned by one app lifecycle (they
+// close on destroy). `Net.game({ room, body })` is the one-call path; `Net.join`
+// opens a symmetric room, `Net.syncBody`/`syncBodies` handle lightweight or
+// Physics2D bodies, `syncEntities` handles dynamic collections, and typed
+// events, ownership, network time, prediction, and diagnostics cover the rest.
+//
+//   const Net = createNet(app);
+//   const room = await Net.join("wss://example.com/ws", { room: "demo" });
+//   const ghosts = Net.syncBody(room, player);
+//   for (const g of ghosts) Draw.rect(g.x, g.y, 16, 16, "#888");
+
+import type { App } from "../../engine/app.js";
 import * as NetModule from "../../net/index.js";
 import type { GameOptions, NetGame, ProtocolShape } from "../../net/index.js";
 import {
@@ -22,8 +34,8 @@ export type NetApi = Omit<typeof NetModule, "game"> & {
   interest(): InterestManagementApi;
 };
 
-/** Networking API with sessions owned by one game lifecycle. */
-export function createNet(game: Game): NetApi {
+/** Networking API with sessions owned by one app lifecycle. */
+export function createNet(app: App): NetApi {
   const games = new Set<NetGame>();
   const api: NetApi = {
     ...NetModule,
@@ -34,7 +46,7 @@ export function createNet(game: Game): NetApi {
     },
     bindEntities(states, options) {
       const binding = NetModule.bindEntities(states, options);
-      const offStep = game.Loop.onStep(binding.update);
+      const offStep = app.Loop.onStep(binding.update);
       const stop = binding.stop.bind(binding);
       binding.stop = () => {
         offStep();
@@ -44,7 +56,7 @@ export function createNet(game: Game): NetApi {
     },
     simulation(options) {
       const simulation = createNetworkSimulation(options);
-      game.use({ name: "NetSimulation", onDestroy: simulation.destroy });
+      app.use({ name: "NetSimulation", onDestroy: simulation.destroy });
       return simulation;
     },
     replicate: createReplication,
@@ -56,6 +68,6 @@ export function createNet(game: Game): NetApi {
     for (const net of games) net.close();
     games.clear();
   };
-  game.use({ name: "Networking", onDestroy: destroy });
+  app.use({ name: "Networking", onDestroy: destroy });
   return api;
 }

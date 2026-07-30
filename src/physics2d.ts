@@ -47,7 +47,7 @@ import {
 } from "planck";
 import { component, type Ecs as EcsWorld } from "./ecs/index.js";
 import { Sprite } from "./sprites.js";
-import type { Game } from "./engine/app.js";
+import type { App } from "./engine/app.js";
 
 /** Options for `Physics2D.world()`. */
 export interface Physics2DOptions {
@@ -1028,7 +1028,7 @@ export function attach(ecs: EcsWorld, phys: Physics2DWorld, opts: AttachOptions 
 /** Namespace-style export, matching `Minimotor.*` ergonomics:
  *  `import { Physics2D } from "minimotor/physics2d"` → `Physics2D.world()`. */
 export interface Physics2DFeatureOptions extends Physics2DOptions {
-  /** Advance automatically on this game's fixed loop. Default true. */
+  /** Advance automatically on this app's fixed loop. Default true. */
   autoStep?: boolean;
 }
 
@@ -1038,11 +1038,11 @@ export interface Physics2DApi {
   attach: typeof attach;
 }
 
-export function createPhysics2D(game: Game): Physics2DApi {
+export function createPhysics2D(app: App): Physics2DApi {
   const worlds = new Set<Physics2DWorld>();
   const automatic = new Set<Physics2DWorld>();
-  const unsubscribe = game.Loop.onStep(() => {
-    for (const physics of automatic) physics.step(game.Loop.step);
+  const unsubscribe = app.Loop.onStep(() => {
+    for (const physics of automatic) physics.step(app.Loop.step);
   });
   const api: Physics2DApi = {
     Phys,
@@ -1055,7 +1055,7 @@ export function createPhysics2D(game: Game): Physics2DApi {
       return physics;
     },
   };
-  game.use({
+  app.use({
     name: "Physics2D",
     onDestroy() {
       unsubscribe();

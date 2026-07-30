@@ -13,10 +13,10 @@
 import { createInput } from "minimotor/input";
 import { createOnscreenInput } from "minimotor/onscreen-input";
 import { createUI } from "minimotor/ui";
-import { App } from "minimotor";
+import { createApp } from "minimotor";
 import { installLayoutProbe } from "../shared/layout-probe.ts";
 
-const game = App.create("game", {
+const game = createApp("game", {
   fullscreen: true,
   background: "#12141c",
   preventNavigation: true,

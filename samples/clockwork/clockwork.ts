@@ -4,10 +4,10 @@ import { createPerformanceMonitoring } from "minimotor/performance";
 // decoupled by engine services. Focus: Clock, Anim motions and Signals.
 import { createParticles } from "minimotor/particles";
 import { createUI } from "minimotor/ui";
-import { createSignals, Gizmos, Mathf, App } from "minimotor";
+import { createSignals, Gizmos, Mathf, createApp } from "minimotor";
 import { createSfx } from "../shared/sfx.ts";
 
-const game = App.create("game", { background: "#0b1020" });
+const game = createApp("game", { background: "#0b1020" });
 const Anim = createAnimation(game);
 const Signals = createSignals();
 createPerformanceMonitoring(game);

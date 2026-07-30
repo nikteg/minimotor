@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createDebug } from "../debug.js";
-import type { Game, EnginePlugin } from "../engine/index.js";
+import type { App, EnginePlugin } from "../engine/index.js";
 
 describe("createDebug", () => {
   it("cycles off → performance → collision → off from layout-aware key state", () => {
@@ -13,7 +13,7 @@ describe("createDebug", () => {
       use(value: EnginePlugin) {
         plugin = value;
       },
-    } as Game;
+    } as App;
     const debug = createDebug(game, { perf: false });
     expect(debug.mode).toBe("off");
 

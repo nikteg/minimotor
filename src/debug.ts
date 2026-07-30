@@ -4,7 +4,7 @@
 
 import type { LadderSource, MoverBody, Solid, SolidSource } from "./collision.js";
 import type { CameraLens } from "./camera/index.js";
-import type { Game, EnginePlugin, Rect } from "./engine/index.js";
+import type { App, EnginePlugin, Rect } from "./engine/index.js";
 import { createInspector, type Inspection } from "./features/inspector.js";
 import { plugin as perfPlugin, type PerfOptions } from "./perf/index.js";
 
@@ -67,7 +67,7 @@ function drawSolid(ctx: CanvasRenderingContext2D, solid: Solid): void {
 }
 
 /** Draw collision geometry for a queryable world and optional movers.
- * Usually `createDebug(game)` calls this for you. */
+ * Usually `createDebug(app)` calls this for you. */
 export function collision(
   ctx: CanvasRenderingContext2D,
   world: DebugWorld,
@@ -133,11 +133,11 @@ function debugPlugin(opts: DebugOptions): DebugPlugin {
   };
 }
 
-/** Game-owned debug overlays and runtime inspection. */
-export function createDebug(game: Game, opts: DebugOptions = {}): DebugApi {
+/** App-owned debug overlays and runtime inspection. */
+export function createDebug(app: App, opts: DebugOptions = {}): DebugApi {
   const plugin = debugPlugin(opts);
   const inspector = createInspector();
-  game.use(plugin);
+  app.use(plugin);
   return {
     get mode() {
       return plugin.mode;

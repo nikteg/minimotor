@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { createRuntime, App, type AppCallbacks, type Runtime } from "../index.js";
+import { createRuntime, createApp, type AppCallbacks, type Runtime } from "../index.js";
 
 // jsdom canvas support + a controllable requestAnimationFrame.
 let rafCallback: ((t: number) => void) | null = null;
@@ -60,7 +60,7 @@ describe("createApp", () => {
 
   it("creates an explicit game with bound core services", () => {
     const canvas = document.createElement("canvas");
-    const game = App.create(canvas);
+    const game = createApp(canvas);
     expect(game.canvas).toBe(canvas);
     expect(game.Draw.ctx.canvas).toBe(canvas);
     expect(game.Loop).toBeDefined();
@@ -629,5 +629,66 @@ describe("pauseOnPortrait", () => {
     const canvas = document.createElement("canvas");
     const game = createRuntime({ canvas, pauseOnPortrait: true });
     expect(game.paused).toBe(false);
+  });
+});
+
+describe("auto-pause lifecycle", () => {
+  /** Point document.hasFocus/visibilityState at controllable values. */
+  function stubLifecycle(): {
+    setFocused: (value: boolean) => void;
+    setHidden: (value: boolean) => void;
+  } {
+    let hidden = false;
+    let hasFocus = true;
+    vi.spyOn(document, "hasFocus").mockImplementation(() => hasFocus);
+    vi.spyOn(document, "visibilityState", "get").mockImplementation(() =>
+      hidden ? "hidden" : "visible",
+    );
+    return {
+      setFocused(value) {
+        hasFocus = value;
+        window.dispatchEvent(new Event(value ? "focus" : "blur"));
+      },
+      setHidden(value) {
+        hidden = value;
+        document.dispatchEvent(new Event("visibilitychange"));
+      },
+    };
+  }
+
+  it("pauses on blur and RESUMES on refocus", () => {
+    const { setFocused } = stubLifecycle();
+    const game = createApp(document.createElement("canvas"), { pauseWhenBlurred: true });
+    expect(game.Loop.paused).toBe(false);
+    setFocused(false);
+    expect(game.Loop.paused).toBe(true);
+    setFocused(true);
+    expect(game.Loop.paused).toBe(false);
+  });
+
+  it("pauses while hidden and resumes when visible again", () => {
+    const { setHidden } = stubLifecycle();
+    const game = createApp(document.createElement("canvas"), { pauseWhenHidden: true });
+    setHidden(true);
+    expect(game.Loop.paused).toBe(true);
+    setHidden(false);
+    expect(game.Loop.paused).toBe(false);
+  });
+
+  it("leaves a pause it did not take alone (a pause menu survives a tab switch)", () => {
+    const { setFocused } = stubLifecycle();
+    const game = createApp(document.createElement("canvas"), { pauseWhenBlurred: true });
+    game.Loop.pause(); // game code opens its own pause menu
+    setFocused(false);
+    setFocused(true);
+    expect(game.Loop.paused).toBe(true);
+  });
+
+  it("does not pause at all without the options", () => {
+    const { setFocused, setHidden } = stubLifecycle();
+    const game = createApp(document.createElement("canvas"));
+    setFocused(false);
+    setHidden(true);
+    expect(game.Loop.paused).toBe(false);
   });
 });
