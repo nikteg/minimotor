@@ -132,7 +132,7 @@ function landingExamples(): Plugin {
 // The samples live inside the engine package (packages/minimotor/samples) and
 // serve as the showcase for the public API. Vite's root is the samples folder,
 // so the gallery is at "/" and each game at "/<game>/". Game code imports the
-// engine by its package name — `import { Minimotor } from "minimotor"` — which
+// engine by its package name — `import { createApp } from "minimotor"` — which
 // resolves via the alias below to the compiled build output, exactly matching
 // what an external consumer writes.
 export default defineConfig({
@@ -151,7 +151,9 @@ export default defineConfig({
   server: { host: true, port: 8765, strictPort: true },
   preview: { host: true, port: 8765, strictPort: true },
   build: {
-    target: "es2020",
+    // Several samples intentionally use top-level await for startup resources.
+    // ES2022 is the first standard target that includes it.
+    target: "es2022",
     outDir: here("./samples-dist"),
     emptyOutDir: true,
     rollupOptions: {

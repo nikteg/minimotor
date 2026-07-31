@@ -475,7 +475,7 @@ parallel` (Motion) and `Clock`/`Tween` both answer "value over time".
 
 **What we built:** particle bursts on coin pickup and landing, camera shake
 scaled by fall speed (`impact` captured before `moveAndSlide` zeroes it),
-`Particles.draw()` placed explicitly in the world pass.
+`Draw.particles(fx)` placed explicitly in the world pass.
 
 28. **Particles: explicit instances (no singleton), self-stepping sim,
     explicit draw.** `const fx = Particles.createSystem()` — Niklas questioned the
@@ -485,7 +485,7 @@ scaled by fall speed (`impact` captured before `moveAndSlide` zeroes it),
       such as `createUI(app)` and `createCamera(app)`.
     - **Game content is explicit instances** (plural by nature): `Input.map`,
       `createEcs`, `Timers.jumpGate`, sheet cursors, motions,
-      `createCamera`, and now `Particles.create` — particles want plurality
+      `createCamera`, and now `Particles.createSystem` — particles want plurality
       (dust behind + sparks in front = two systems, two draw positions;
       confetti in screen space vs debris in world space = two blocks) and
       scene lifecycle (create per scene, drop on teardown).
@@ -494,7 +494,7 @@ scaled by fall speed (`impact` captured before `moveAndSlide` zeroes it),
       arrays), self-drawing bursts (placement unanswerable).
       `fx.burst({ at, count, speed, life, size, color })`: structural `at`,
       `[min, max]` tuple ranges. The stepping law stands: SIMULATION
-      self-steps, DRAWING is one explicit `fx.draw()` call — order and space
+      self-steps, DRAWING is one explicit `Draw.particles(fx)` call — order and space
       are the game's decisions. Both laws go in the docs.
     - Verdict: **change** (agreed)
 

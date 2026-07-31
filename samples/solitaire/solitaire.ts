@@ -4,7 +4,7 @@ import { createPerformanceMonitoring } from "minimotor/performance";
 // Demonstrates: createApp / Loop / Pointer / Draw, Scenes.create + Transitions,
 // UI immediate-mode widgets + drag/drop, Input.map, Audio.Sfx, Storage,
 // Timers, Clock.world timers, Anim motions (the AI's card glide + win cascade),
-// Signals, Fsm, Particles.create, Collision, Mathf, a fixed-`resolution`
+// Signals, Fsm, Particles.createSystem, Collision, Mathf, a fixed-`resolution`
 // letterboxed stage, Goodies.shuffle & gridFormation, performance monitoring,
 // Sprites.getSprite, and Anim.fromGrid for a win sparkle.
 import { createAudio } from "minimotor/audio";
