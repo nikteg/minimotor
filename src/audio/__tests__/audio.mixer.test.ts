@@ -6,29 +6,36 @@ import { Mixer, Sfx, tone } from "../index.js";
 // the last value set so ramp calls are observable.
 class MockParam {
   value = 0;
-  setValueAtTime(v: number) {
+  /** Every scheduled change, so tests can assert WHEN as well as what. */
+  calls: Array<{ op: "set" | "lin" | "exp" | "target"; v: number; t: number }> = [];
+  setValueAtTime(v: number, t = 0) {
     this.value = v;
+    this.calls.push({ op: "set", v, t });
     return this;
   }
-  setTargetAtTime(v: number) {
+  setTargetAtTime(v: number, t = 0) {
     this.value = v;
+    this.calls.push({ op: "target", v, t });
     return this;
   }
   cancelScheduledValues() {
     return this;
   }
-  linearRampToValueAtTime(v: number) {
+  linearRampToValueAtTime(v: number, t = 0) {
     this.value = v;
+    this.calls.push({ op: "lin", v, t });
     return this;
   }
-  exponentialRampToValueAtTime(v: number) {
+  exponentialRampToValueAtTime(v: number, t = 0) {
     this.value = v;
+    this.calls.push({ op: "exp", v, t });
     return this;
   }
 }
 
 let nodeId = 0;
 const connections: Array<{ from: number; to: number; toKind: string }> = [];
+const created: MockNode[] = [];
 type MockNode = {
   __id: number;
   kind: string;
@@ -46,8 +53,16 @@ const mockNode = (kind: string, extra: Record<string, unknown> = {}): MockNode =
     },
     disconnect() {},
   } as unknown as MockNode;
+  created.push(n);
   return n;
 };
+
+/** The most recently created node of a kind — the voice a `tone` call just built. */
+const lastNode = (kind: string) =>
+  [...created].reverse().find((n) => n.kind === kind) as unknown as {
+    frequency: MockParam;
+    gain: MockParam;
+  };
 
 class MockAudioContext {
   currentTime = 0;
@@ -103,6 +118,7 @@ class MockAudioContext {
 
 beforeEach(() => {
   connections.length = 0;
+  created.length = 0;
   (window as unknown as { AudioContext: unknown }).AudioContext = MockAudioContext;
 });
 
@@ -236,6 +252,30 @@ describe("Audio.tone", () => {
     connections.length = 0;
     tone({ wave: "square", freq: 440 });
     expect(connections.some((c) => c.toKind === "panner")).toBe(false);
+  });
+
+  it("sweeps over `time` when given, and over the release when not", () => {
+    tone({ wave: "square", freq: { from: 280, to: 620, time: 0.126 }, release: 0.18 });
+    expect(lastNode("osc").frequency.calls).toEqual([
+      { op: "set", v: 280, t: 0 },
+      { op: "exp", v: 620, t: 0.126 },
+    ]);
+
+    tone({ wave: "square", freq: { from: 320, to: 50 }, release: 0.4 });
+    expect(lastNode("osc").frequency.calls.at(-1)).toEqual({ op: "exp", v: 50, t: 0.4 });
+  });
+
+  it("jumps between keyframes by default and glides when asked", () => {
+    // One voice, one envelope — the two-note pickup that a second layer would
+    // otherwise re-attack.
+    tone({ wave: "sine", freq: [{ value: 660 }, { value: 990, at: 0.07 }], release: 0.18 });
+    expect(lastNode("osc").frequency.calls).toEqual([
+      { op: "set", v: 660, t: 0 },
+      { op: "set", v: 990, t: 0.07 },
+    ]);
+
+    tone({ wave: "sine", freq: [{ value: 200 }, { value: 400, at: 0.1, curve: "lin" }] });
+    expect(lastNode("osc").frequency.calls.at(-1)).toEqual({ op: "lin", v: 400, t: 0.1 });
   });
 
   it("supports a noise source without throwing", () => {

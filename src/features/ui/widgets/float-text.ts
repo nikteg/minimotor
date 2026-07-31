@@ -10,6 +10,7 @@ import {
   onStep,
   runtimeSlot,
   uiCtx,
+  uiFont,
   uiToScreen,
 } from "../core/index.js";
 import { STEP_MS } from "../../../engine/index.js";
@@ -18,11 +19,24 @@ import { STEP_MS } from "../../../engine/index.js";
 export interface FloatTextOptions {
   /** Rise speed in px/s (negative = up). Default -50. */
   vy?: number;
+  /** Sideways drift in px/s (negative = left). Default 0. This is how a pop
+   *  stays with the thing that spawned it in a side-scroller: pass the world's
+   *  scroll speed and the "+10" rides along instead of hanging in screen space. */
+  vx?: number;
   /** Lifetime in ms. Default 900. */
   life?: number;
   /** Fill color. Default "#fff". */
   color?: string;
-  /** Font. Default "bold 14px monospace". */
+  /** Outline color drawn behind the glyphs — the cheap way to stay legible over
+   *  busy art. Off by default. */
+  stroke?: string;
+  /** Outline thickness in px. Default 3 (ignored without `stroke`). */
+  strokeWidth?: number;
+  /** Font size in px. Default 14. */
+  size?: number;
+  /** Bold. Default true — a pop has to read in the half-second it exists. */
+  bold?: boolean;
+  /** Full font string — overrides `size`/`bold`/the theme font entirely. */
   font?: string;
   /** Uniform draw scale for the glyphs and the rise speed. Default 1.
    *  `UI.floatText` fills this in from the active `UI.scaled` factor so a text
@@ -41,12 +55,18 @@ export interface FloatText {
   y: number;
   /** Vertical drift in px/s (negative = up). */
   vy: number;
+  /** Horizontal drift in px/s (negative = left). */
+  vx: number;
   /** Total lifetime in ms; the text fades out over its last half. */
   life: number;
   /** Time left in ms; the text is removed when it reaches 0. */
   remaining: number;
   /** Fill color. */
   color: string;
+  /** Outline color, or "" for no outline. */
+  stroke: string;
+  /** Outline thickness in px. */
+  strokeWidth: number;
   /** Canvas font string. */
   font: string;
   /** Uniform draw scale for the glyphs (1 = unscaled). */
@@ -74,16 +94,20 @@ export function createFloatText(): FloatTextManager {
   const texts: FloatText[] = [];
   return {
     spawn(text, x, y, opts = {}) {
+      const scale = opts.scale ?? 1;
       texts.push({
         text,
         x,
         y,
-        vy: (opts.vy ?? -50) * (opts.scale ?? 1),
+        vy: (opts.vy ?? -50) * scale,
+        vx: (opts.vx ?? 0) * scale,
         life: opts.life ?? 900,
         remaining: opts.life ?? 900,
         color: opts.color ?? "#fff",
-        font: opts.font ?? "bold 14px monospace",
-        scale: opts.scale ?? 1,
+        stroke: opts.stroke ?? "",
+        strokeWidth: opts.strokeWidth ?? 3,
+        font: opts.font ?? uiFont(opts.size ?? 14, opts.bold ?? true),
+        scale,
       });
     },
 
@@ -96,6 +120,7 @@ export function createFloatText(): FloatTextManager {
           continue;
         }
         t.y += (t.vy * dt) / 1000;
+        t.x += (t.vx * dt) / 1000;
       }
     },
 
@@ -104,19 +129,27 @@ export function createFloatText(): FloatTextManager {
       ctx.save();
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
+      ctx.lineJoin = "round"; // no spikes off the corners of a thick outline
       for (const t of texts) {
         // Full strength, then fade out over the last half of the lifetime.
         ctx.globalAlpha = Math.min(1, (2 * t.remaining) / t.life);
         ctx.fillStyle = t.color;
         ctx.font = t.font;
+        if (t.stroke) {
+          ctx.strokeStyle = t.stroke;
+          ctx.lineWidth = t.strokeWidth;
+        }
         if (t.scale === 1) {
+          if (t.stroke) ctx.strokeText(t.text, t.x, t.y);
           ctx.fillText(t.text, t.x, t.y);
         } else {
           // Scale about the text's own position — the font string is opaque, so
-          // zoom the glyphs with the transform instead of rewriting it.
+          // zoom the glyphs with the transform instead of rewriting it (which
+          // takes the outline width along, as it should).
           ctx.save();
           ctx.translate(t.x, t.y);
           ctx.scale(t.scale, t.scale);
+          if (t.stroke) ctx.strokeText(t.text, 0, 0);
           ctx.fillText(t.text, 0, 0);
           ctx.restore();
         }

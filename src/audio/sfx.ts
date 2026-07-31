@@ -18,10 +18,26 @@ export function playSfx(build: SfxBuilder): void {
   }
 }
 
-/** A parameter value: a constant, or a `{ from, to }` sweep over `time` seconds
- *  (default the note's release). `curve` defaults to exponential — the musical
- *  choice for pitch and filter cutoffs (both stay > 0). */
-export type ToneSweep = number | { from: number; to: number; time?: number; curve?: "lin" | "exp" };
+/** One point on a `ToneSweep` timeline. */
+export interface ToneFrame {
+  /** The parameter's value here. */
+  value: number;
+  /** Seconds after the voice starts. Default 0; frames run in order. */
+  at?: number;
+  /** How the value ARRIVES from the previous frame: `"step"` (default) jumps to
+   *  it, `"lin"`/`"exp"` glides. The first frame is always set outright. */
+  curve?: "step" | "lin" | "exp";
+}
+
+/** A parameter value: a constant, a `{ from, to }` sweep over `time` seconds
+ *  (default the note's release), or a list of `ToneFrame` keyframes for stepped
+ *  or multi-stage moves. `curve` defaults to exponential — the musical choice
+ *  for pitch and filter cutoffs (both stay > 0) — except between keyframes,
+ *  where the default is a hard step (an arpeggio, not a glissando). */
+export type ToneSweep =
+  | number
+  | { from: number; to: number; time?: number; curve?: "lin" | "exp" }
+  | ToneFrame[];
 
 /** A one-shot synth voice: an oscillator (or noise) through an
  *  attack/hold/release envelope and an optional filter, routed to a mixer bus.
@@ -69,6 +85,18 @@ function scheduleSweep(
     param.setValueAtTime(spec, when);
     return;
   }
+  if (Array.isArray(spec)) {
+    let first = true;
+    for (const frame of spec) {
+      const at = when + (frame.at ?? 0);
+      const curve = first ? "step" : (frame.curve ?? "step");
+      if (curve === "step") param.setValueAtTime(frame.value, at);
+      else if (curve === "lin") param.linearRampToValueAtTime(frame.value, at);
+      else param.exponentialRampToValueAtTime(Math.max(0.0001, frame.value), at);
+      first = false;
+    }
+    return;
+  }
   param.setValueAtTime(spec.from, when);
   const at = when + (spec.time ?? fallbackTime);
   if (spec.curve === "lin") param.linearRampToValueAtTime(spec.to, at);
@@ -82,6 +110,7 @@ function scheduleSweep(
  *    Audio.tone({ wave: "square", freq: 880, release: 0.08 });        // blip
  *    Audio.tone({ wave: "triangle", freq: { from: 220, to: 660, time: 0.12 } }); // jump
  *    Audio.tone({ wave: "noise", release: 0.05, filter: { type: "highpass", freq: 8000 } }); // hat
+ *    Audio.tone({ wave: "sine", freq: [{ value: 660 }, { value: 990, at: 0.07 }] }); // coin
  *    Audio.tone({ wave: "sine", freq: 440, detune: [-5, 5],
  *                 filter: { type: "lowpass", freq: { from: 4000, to: 800 } } }); */
 export function tone(opts: ToneOptions): void {

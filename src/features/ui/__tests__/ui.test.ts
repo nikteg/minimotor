@@ -23,12 +23,16 @@ import {
 const mockCtx = () => {
   const calls: {
     fillText: [string, number, number][];
+    strokeText: [string, number, number][];
+    /** The font in force at each `fillText`, in the same order. */
+    fonts: string[];
     fillRect: [number, number, number, number][];
     // Rounded boxes trace a path (rect() then fill()); record the last
     // rect() so `drawBox` output is observable too.
     boxes: [number, number, number, number][];
-  } = { fillText: [], fillRect: [], boxes: [] };
+  } = { fillText: [], strokeText: [], fonts: [], fillRect: [], boxes: [] };
   let pending: [number, number, number, number] | null = null;
+  let font = "";
   const ctx = {
     save: vi.fn(),
     restore: vi.fn(),
@@ -38,7 +42,17 @@ const mockCtx = () => {
     arcTo: vi.fn(),
     clip: vi.fn(),
     stroke: vi.fn(),
-    fillText: (t: string, x: number, y: number) => calls.fillText.push([t, x, y]),
+    fillText: (t: string, x: number, y: number) => {
+      calls.fonts.push(font);
+      calls.fillText.push([t, x, y]);
+    },
+    strokeText: (t: string, x: number, y: number) => calls.strokeText.push([t, x, y]),
+    set font(v: string) {
+      font = v;
+    },
+    get font() {
+      return font;
+    },
     fillRect: (x: number, y: number, w: number, h: number) => calls.fillRect.push([x, y, w, h]),
     rect: (x: number, y: number, w: number, h: number) => {
       pending = [x, y, w, h];
@@ -72,6 +86,46 @@ describe("UI floatText", () => {
     const second = mockCtx();
     floats.draw(second.ctx);
     expect(second.calls.fillText).toEqual([]);
+  });
+
+  it("drifts sideways with vx, so a pop can ride a scrolling world", () => {
+    const floats = createFloatText();
+    floats.spawn("+10", 100, 200, { vx: -60, vy: 0, life: 500 });
+    floats.advance(250);
+    const { ctx, calls } = mockCtx();
+    floats.draw(ctx);
+    expect(calls.fillText).toEqual([["+10", 85, 200]]); // drifted 15px left
+  });
+
+  it("strokes an outline behind the fill when asked", () => {
+    const floats = createFloatText();
+    floats.spawn("+10", 10, 20, { stroke: "#000" });
+    const { ctx, calls } = mockCtx();
+    floats.draw(ctx);
+    expect(calls.strokeText).toEqual([["+10", 10, 20]]);
+    expect(calls.fillText).toEqual([["+10", 10, 20]]);
+
+    const plain = createFloatText();
+    plain.spawn("+10", 10, 20);
+    const bare = mockCtx();
+    plain.draw(bare.ctx);
+    expect(bare.calls.strokeText).toEqual([]);
+  });
+
+  it("takes its font from the theme unless given size/bold/font", () => {
+    setTheme({ font: "'Segoe UI', sans-serif" });
+    const floats = createFloatText();
+    floats.spawn("a", 0, 0);
+    floats.spawn("b", 0, 0, { size: 20, bold: false });
+    floats.spawn("c", 0, 0, { font: "9px serif" });
+    const { ctx, calls } = mockCtx();
+    floats.draw(ctx);
+    expect(calls.fonts).toEqual([
+      "bold 14px 'Segoe UI', sans-serif",
+      "20px 'Segoe UI', sans-serif",
+      "9px serif",
+    ]);
+    setTheme(defaultTheme);
   });
 
   it("clear() empties the pool", () => {

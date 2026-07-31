@@ -27,7 +27,11 @@ export type ButtonVariant = "default" | "primary" | "danger" | "ghost";
 
 /** Style knobs for `button()`. Every color defaults from the theme. */
 export interface ButtonStyle {
-  /** Full font string for the label. Default bold `theme.fontSize + 2`. */
+  /** Label size in px. Default `theme.fontSize + 2`. */
+  size?: number;
+  /** Bold label. Default true. */
+  bold?: boolean;
+  /** Full font string for the label — overrides `size`/`bold`/the theme font. */
   font?: string;
   /** Preset look — see `ButtonVariant`. Default `"default"`. */
   variant?: ButtonVariant;
@@ -127,7 +131,7 @@ export function button(
   const opts = optsOrLabel;
   const ctx = uiCtx();
   ctx.save();
-  ctx.font = opts.font ?? uiFont(theme.fontSize + 2, true);
+  ctx.font = opts.font ?? uiFont(opts.size ?? theme.fontSize + 2, opts.bold ?? true);
   // Auto width: the label plus comfortable padding.
   const w = opts.w ?? Math.ceil(measureWidth(ctx, opts.label)) + theme.buttonPadX;
   const rect = place(opts, w, opts.h ?? 30, "button");

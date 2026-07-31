@@ -155,6 +155,24 @@ export function raw(): AudioContext | null {
 
 // ---------- Sfx: typed maps of synth specs ----------
 
+/** One pitch keyframe in an `SfxFreq` timeline. */
+export interface SfxFreqStep {
+  /** Pitch in Hz from this point on. */
+  hz: number;
+  /** Milliseconds after the sound starts. Default 0; steps run in order. */
+  atMs?: number;
+  /** Glide into this pitch from the previous one instead of jumping to it. */
+  glide?: "lin" | "exp";
+}
+
+/** A sound's pitch: a constant, a `{ from, to }` sweep, or a list of keyframes.
+ *
+ *  A sweep runs over the whole note unless you give it its own `ms` — that is
+ *  the difference between a siren and a blip that bends early and then rings
+ *  out. Keyframes step by default, so a two-note pickup is one voice with one
+ *  envelope rather than two layers that each re-attack. */
+export type SfxFreq = number | { from: number; to: number; ms?: number } | SfxFreqStep[];
+
 /** A synth sound as plain, tweakable DATA. Directional values are
  *  `{ from, to }`; `[min, max]` tuples are reserved for per-play randomness
  *  (see `PlayOptions.pitch`). */
@@ -163,10 +181,12 @@ export interface SfxSpec {
   shape?: OscillatorType;
   /** Filtered noise instead of an oscillator (hits, whooshes). */
   noise?: boolean;
-  /** Pitch in Hz — constant or a `{ from, to }` sweep. */
-  freq?: number | { from: number; to: number };
+  /** Pitch in Hz — see `SfxFreq`. */
+  freq?: SfxFreq;
   /** Length in ms (the envelope's release). Default 250. */
   ms?: number;
+  /** Fade-in in ms. Default 5; 0 is an instant, percussive attack. */
+  attackMs?: number;
   /** Peak level 0..1. Default 0.3. */
   volume?: number;
   /** Optional filter; `freq` may sweep. */
@@ -182,6 +202,11 @@ export interface PlayOptions {
   /** Playback-rate style pitch multiplier; a `[min, max]` tuple rolls a
    *  fresh jitter per play (footsteps, coins). */
   pitch?: number | [number, number];
+  /** Time-scale multiplier for the WHOLE sound — envelope, sweeps, keyframes
+   *  and layer delays. `1.2` plays it 20 % longer; a `[min, max]` tuple rolls a
+   *  fresh stretch per play. Pair with `pitch` and a repeated sound (a jump, a
+   *  footstep) stops sounding like a sample. */
+  stretch?: number | [number, number];
   /** Override the spec's volume for this play. */
   volume?: number;
   /** Route to a different bus for this play. */
@@ -197,27 +222,49 @@ export interface SfxHandle {
   readonly spec: SfxSpec;
 }
 
-function scaleFreq(
-  freq: number | { from: number; to: number } | undefined,
-  k: number,
-): ToneSweep | undefined {
-  if (freq === undefined) return undefined;
-  if (typeof freq === "number") return freq * k;
-  return { from: freq.from * k, to: freq.to * k };
+/** Resolve a jitterable knob: a number is used as-is, a `[min, max]` tuple
+ *  rolls once. Rolled ONE level up from `playSpec` so every layer of a sound
+ *  shares the same roll — a chord that detuned per voice would be out of tune
+ *  with itself. */
+function roll(v: number | [number, number] | undefined): number {
+  if (typeof v === "number") return v;
+  if (Array.isArray(v)) return v[0] + Math.random() * (v[1] - v[0]);
+  return 1;
 }
 
-function playSpec(spec: SfxSpec, opts: PlayOptions, busName: string, delayS = 0): void {
-  const k =
-    typeof opts.pitch === "number"
-      ? opts.pitch
-      : Array.isArray(opts.pitch)
-        ? opts.pitch[0] + Math.random() * (opts.pitch[1] - opts.pitch[0])
-        : 1;
+function scaleFreq(freq: SfxFreq | undefined, k: number, stretch: number): ToneSweep | undefined {
+  if (freq === undefined) return undefined;
+  if (typeof freq === "number") return freq * k;
+  if (Array.isArray(freq)) {
+    return freq.map((step) => ({
+      value: step.hz * k,
+      at: ((step.atMs ?? 0) / 1000) * stretch,
+      curve: step.glide ?? ("step" as const),
+    }));
+  }
+  // An omitted sweep `ms` leaves `time` undefined, which `tone` reads as "over
+  // the whole note" — the sweep then stretches with the envelope for free.
+  return {
+    from: freq.from * k,
+    to: freq.to * k,
+    time: freq.ms === undefined ? undefined : (freq.ms / 1000) * stretch,
+  };
+}
+
+function playSpec(
+  spec: SfxSpec,
+  opts: PlayOptions,
+  busName: string,
+  k: number,
+  stretch: number,
+  delayS = 0,
+): void {
   const t: ToneOptions = {
     wave: spec.noise ? "noise" : (spec.shape ?? "sine"),
-    freq: scaleFreq(spec.freq, k),
+    freq: scaleFreq(spec.freq, k, stretch),
     gain: opts.volume ?? spec.volume ?? 0.3,
-    release: Math.max(0.01, (spec.ms ?? 250) / 1000),
+    attack: spec.attackMs === undefined ? undefined : (spec.attackMs / 1000) * stretch,
+    release: Math.max(0.01, ((spec.ms ?? 250) / 1000) * stretch),
     filter: spec.filter,
     detune: spec.detune,
     bus: busName,
@@ -229,7 +276,9 @@ function playSpec(spec: SfxSpec, opts: PlayOptions, busName: string, delayS = 0)
       layer,
       { ...opts, volume: opts.volume ?? layer.volume },
       busName,
-      (layer.delayMs ?? 0) / 1000,
+      k,
+      stretch,
+      delayS + ((layer.delayMs ?? 0) / 1000) * stretch,
     );
   }
 }
@@ -262,7 +311,7 @@ export function sfx<K extends string>(
           return;
         }
         const busName = (playOpts.bus ?? defaultBus).name;
-        playSpec(spec, playOpts, busName);
+        playSpec(spec, playOpts, busName, roll(playOpts.pitch), roll(playOpts.stretch));
         fireDucks(busName);
       },
     };
