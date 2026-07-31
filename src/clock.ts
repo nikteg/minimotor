@@ -17,8 +17,59 @@
 // loop's fixed step. A clock with no pending timers is referenced by nothing
 // and GCs away with its owner.
 
-import { STEP_MS, type Runtime } from "./engine/app.js";
+import type { Runtime } from "./engine/app.js";
 import { animate as animateValue, type AnimateOptions, type Motion } from "./anim/value.js";
+
+/** The fixed timestep every clock, loop and frame-paced helper counts in.
+ *  Lives with the clock rather than the app because it is a unit of time, not a
+ *  piece of app machinery — and because owning it here is what lets this module
+ *  depend on the app for TYPES only, breaking the clock ⇄ app runtime cycle. */
+export const STEP_MS = 1000 / 60;
+
+// ---------- The ambient clock ----------
+// Clock-driven primitives (`Anim.sheet`, `Anim.animate`, `Timers.window`) take
+// their clock from here when a call doesn't name one, and each app-bound
+// service sets it around the calls it hands out. That is what lets the pure
+// primitives keep app-free signatures while `Anim.animate({ ms: 300 })` still
+// lands on the right app's world clock — the alternative was every service
+// re-declaring every signature just to inject one argument.
+//
+// It is dynamic scope, not a global: `withClock` restores the previous value in
+// a `finally`, so nesting and two apps on one page both behave. Primitives must
+// CAPTURE it when the object is built, never read it at use time — a cursor is
+// read from inside `Draw`, long after the wrapper has restored.
+
+let ambient: ClockHandle | null = null;
+
+/** Run `fn` with `clock` as the ambient clock, restoring the previous one. */
+export function withClock<R>(clock: ClockHandle, fn: () => R): R {
+  const prev = ambient;
+  ambient = clock;
+  try {
+    return fn();
+  } finally {
+    ambient = prev;
+  }
+}
+
+/** The ambient clock if one is bound, else null — for primitives that want to
+ *  REMEMBER the binding at build time but have no use for a clock until later
+ *  (a sheet's `rect()` is pure geometry; only its cursors need time). */
+export function boundClock(): ClockHandle | null {
+  return ambient;
+}
+
+/** The ambient clock. Throws rather than silently returning a frozen clock: a
+ *  primitive built outside any binding would otherwise never advance, which is
+ *  a bug that looks like an animation that simply doesn't play. */
+export function activeClock(): ClockHandle {
+  if (!ambient) {
+    throw new Error(
+      "Minimotor: no ambient clock — pass one explicitly, or create this through an app-bound service (createAnimation(app), createTimers(app)).",
+    );
+  }
+  return ambient;
+}
 
 /** A running timer; call to cancel early. */
 export type Cancel = () => void;
@@ -85,6 +136,9 @@ export function _driveClocks(): void {
 export function createClockHandle(
   steps: () => number = () => 0,
   register: (fire: () => boolean) => void = registerStandalone,
+  /** Milliseconds per step of the clock driving `steps` — an app's
+   *  `Loop.step`. Defaults to the standard rate for standalone handles. */
+  stepMs: number = STEP_MS,
 ): ClockHandle {
   let anchorSteps = steps();
   let anchorMs = 0;
@@ -93,7 +147,7 @@ export function createClockHandle(
   const timers = new Set<TimerJob>();
 
   const nowMs = (): number =>
-    held ? anchorMs : anchorMs + (steps() - anchorSteps) * STEP_MS * scaleV;
+    held ? anchorMs : anchorMs + (steps() - anchorSteps) * stepMs * scaleV;
   const rebase = (): void => {
     anchorMs = nowMs();
     anchorSteps = steps();
@@ -178,18 +232,18 @@ export interface ClockApi {
 }
 
 /** Create world/UI/custom clocks permanently driven by one app. */
-export function createClockApi(app: Pick<Runtime, "steps" | "onStep">): ClockApi {
+export function createClockApi(app: Pick<Runtime, "steps" | "onStep" | "step">): ClockApi {
   const active = new Set<() => boolean>();
   const register = (fire: () => boolean) => active.add(fire);
   app.onStep(() => {
     for (const fire of active) if (!fire()) active.delete(fire);
   });
   const steps = () => app.steps;
-  const world = createClockHandle(steps, register);
-  const ui = createClockHandle(steps, register);
+  const world = createClockHandle(steps, register, app.step);
+  const ui = createClockHandle(steps, register, app.step);
   return {
     world,
     ui,
-    create: () => createClockHandle(steps, register),
+    create: () => createClockHandle(steps, register, app.step),
   };
 }

@@ -57,7 +57,7 @@ const isOwnMember = (sym: ts.Symbol): boolean =>
 
 const entries: [label: string, file: string][] = [
   ["index", join(root, "build/index.d.ts")],
-  ["physics2d", join(root, "build/physics2d.d.ts")],
+  ["physics2d", join(root, "build/physics2d/service.d.ts")],
   ["server", join(root, "build/server.d.ts")],
 ];
 

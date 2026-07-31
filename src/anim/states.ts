@@ -19,6 +19,7 @@
 // read, so nothing ticks, holding the clock freezes it, and calling `set` with
 // the current state every step never restarts the loop.
 
+import { activeClock, boundClock, type ClockHandle } from "../clock.js";
 import { type FrameRect, type PlaybackOptions, type SheetImage } from "./sheet.js";
 
 /** One state's clip: an image plus how to read frames out of it. */
@@ -66,10 +67,10 @@ export interface StateCursor<K extends string = string> {
 /** A shared, immutable multi-image state kit (one image per state); `play`
  *  starts a cheap per-entity `StateCursor`. */
 export interface StateKit<K extends string = string> {
-  /** Start a playback cursor on the supplied clock. */
-  play(initial: K, opts: PlaybackOptions): StateCursor<K>;
+  /** Start a playback cursor, on this kit's clock unless `opts` names one. */
+  play(initial: K, opts?: PlaybackOptions): StateCursor<K>;
   /** Play one state once, hold its final frame, and report `done`. */
-  once(initial: K, opts: PlaybackOptions): StateCursor<K>;
+  once(initial: K, opts?: PlaybackOptions): StateCursor<K>;
   /** Source rect for an arbitrary state/frame (manual draws, HUD icons).
    *  Reused scratch — read, don't hold. */
   rect(state: K, frame: number): FrameRect;
@@ -78,7 +79,12 @@ export interface StateKit<K extends string = string> {
 }
 
 /** Assemble named states, each from its own image, into a shared kit. */
-export function states<K extends string>(clips: Record<K, StateClip>): StateKit<K> {
+export function states<K extends string>(
+  clips: Record<K, StateClip>,
+  options: { clock?: ClockHandle } = {},
+): StateKit<K> {
+  // Captured while the binding wrapper is still on the stack — see `sheet`.
+  const kitClock = options.clock ?? boundClock();
   const scratch: FrameRect = { sx: 0, sy: 0, sw: 0, sh: 0 };
 
   const frameCount = (clip: StateClip): number => Math.max(1, clip.frames ?? 1);
@@ -99,7 +105,7 @@ export function states<K extends string>(clips: Record<K, StateClip>): StateKit<
 
   const makeCursor = (initial: K, playOpts: PlaybackOptions, loop: boolean): StateCursor<K> => {
     if (!clips[initial]) throw new Error(`Anim.states: unknown state "${initial}"`);
-    const clock = playOpts.clock;
+    const clock = playOpts.clock ?? kitClock ?? activeClock();
     let state = initial;
     let start = clock.now;
     let pausedAt: number | undefined;
@@ -168,10 +174,10 @@ export function states<K extends string>(clips: Record<K, StateClip>): StateKit<
     image(state) {
       return clips[state].image;
     },
-    once(initial, playOpts) {
+    once(initial, playOpts = {}) {
       return makeCursor(initial, playOpts, false);
     },
-    play(initial, playOpts) {
+    play(initial, playOpts = {}) {
       return makeCursor(initial, playOpts, true);
     },
   };

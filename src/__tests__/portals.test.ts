@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createPortalRouter } from "../portals.js";
+import { createPortalRouter } from "../portals/index.js";
 import { world } from "../tiles/index.js";
 
 const level = (spawns: Record<string, { x: number; y: number }>) => ({

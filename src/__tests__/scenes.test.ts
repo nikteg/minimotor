@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createSceneStack } from "../scenes.js";
+import { createSceneStack } from "../scenes/index.js";
 import { createClockHandle, type ClockHandle } from "../clock.js";
 
 function makeClock(): ClockHandle {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { create as ecsWorld } from "../ecs/index.js";
 import { Sprite } from "../sprites.js";
-import { attach, Phys, world } from "../physics2d.js";
+import { attach, Phys, world } from "../physics2d/index.js";
 
 const STEP = 1000 / 60;
 const run = (phys: ReturnType<typeof world>, steps: number) => {

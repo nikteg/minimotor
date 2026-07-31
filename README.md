@@ -110,6 +110,10 @@ function spawnHud(app: App) { ... }
 **App runtime** — the app returned by `createApp` owns `Loop` (fixed-step
 update), `Draw` (rects, text, sprites, tiles, gradients), `Keys`, `Pointer`,
 `Mouse`, and `Clock`. `createCamera(app)` adds follow, shake, and lenses.
+The simulation runs at 60 steps per second unless you say otherwise —
+`createApp("game", { fps: 120 })` — and everything that advances per step
+(clocks, timers, tweens, particles, UI ageing) follows the rate you pick.
+Read `Loop.step` rather than assuming 16.67ms.
 
 **Input** — `Input.map` binds keys/gamepad buttons to named actions with edge
 state; `OnscreenInput` renders an opt-in touch gamepad that shares the same
@@ -585,6 +589,28 @@ pnpm test           # vitest unit tests
 pnpm test:e2e       # playwright end-to-end tests
 pnpm verify         # typecheck (src + samples) + lint + format check
 ```
+
+### Source layout
+
+One folder per capability, and each entry in the table above points at exactly
+one file in it. Inside a folder, `service.ts` is the only file allowed to know
+about a running app:
+
+```
+src/anim/     sheet.ts states.ts value.ts pools.ts   pure — no app, no DOM
+              service.ts                             createAnimation(app)
+```
+
+Two rules follow, and `src/__tests__/layering.test.ts` enforces both:
+
+- Only `service.ts` imports the app at runtime. Everything else stays pure, so
+  it can be tested and reused without a canvas.
+- No `service.ts` imports another at runtime. Services that need a peer take it
+  as an argument — `createUI(app, input)`, `createAutosave(app, snapshots,
+storage)` — which keeps the wiring visible at the call site and the folders
+  independent.
+
+Naming a type across either line is fine; both rules are about runtime edges.
 
 ## License
 

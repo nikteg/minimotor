@@ -26,104 +26,104 @@
       "default": "./build/index.js"
     },
     "./audio": {
-      "types": "./build/features/audio/index.d.ts",
-      "default": "./build/features/audio/index.js"
+      "types": "./build/audio/service.d.ts",
+      "default": "./build/audio/service.js"
     },
     "./animation": {
-      "types": "./build/features/animation/index.d.ts",
-      "default": "./build/features/animation/index.js"
+      "types": "./build/anim/service.d.ts",
+      "default": "./build/anim/service.js"
     },
     "./aseprite": {
       "types": "./build/aseprite/index.d.ts",
       "default": "./build/aseprite/index.js"
     },
     "./assets": {
-      "types": "./build/assets.d.ts",
-      "default": "./build/assets.js"
+      "types": "./build/assets/service.d.ts",
+      "default": "./build/assets/service.js"
     },
     "./camera": {
-      "types": "./build/camera/index.d.ts",
-      "default": "./build/camera/index.js"
+      "types": "./build/camera/service.d.ts",
+      "default": "./build/camera/service.js"
     },
     "./debug": {
-      "types": "./build/debug.d.ts",
-      "default": "./build/debug.js"
+      "types": "./build/debug/service.d.ts",
+      "default": "./build/debug/service.js"
     },
     "./input": {
-      "types": "./build/features/input/index.d.ts",
-      "default": "./build/features/input/index.js"
+      "types": "./build/input/service.d.ts",
+      "default": "./build/input/service.js"
     },
     "./ldtk": {
       "types": "./build/ldtk/index.d.ts",
       "default": "./build/ldtk/index.js"
     },
     "./onscreen-input": {
-      "types": "./build/features/onscreen-input/index.d.ts",
-      "default": "./build/features/onscreen-input/index.js"
+      "types": "./build/onscreen/service.d.ts",
+      "default": "./build/onscreen/service.js"
     },
     "./net": {
-      "types": "./build/features/networking/index.d.ts",
-      "default": "./build/features/networking/index.js"
+      "types": "./build/net/service.d.ts",
+      "default": "./build/net/service.js"
     },
     "./particles": {
-      "types": "./build/particles.d.ts",
-      "default": "./build/particles.js"
+      "types": "./build/particles/service.d.ts",
+      "default": "./build/particles/service.js"
     },
     "./platformer": {
-      "types": "./build/features/platformer/index.d.ts",
-      "default": "./build/features/platformer/index.js"
+      "types": "./build/platformer/index.d.ts",
+      "default": "./build/platformer/index.js"
     },
     "./portals": {
-      "types": "./build/portals.d.ts",
-      "default": "./build/portals.js"
+      "types": "./build/portals/service.d.ts",
+      "default": "./build/portals/service.js"
     },
     "./scenes": {
-      "types": "./build/scenes.d.ts",
-      "default": "./build/scenes.js"
+      "types": "./build/scenes/service.d.ts",
+      "default": "./build/scenes/service.js"
     },
     "./storage": {
-      "types": "./build/features/storage.d.ts",
-      "default": "./build/features/storage.js"
+      "types": "./build/storage/service.d.ts",
+      "default": "./build/storage/service.js"
     },
     "./timers": {
-      "types": "./build/features/timers/index.d.ts",
-      "default": "./build/features/timers/index.js"
+      "types": "./build/timers/service.d.ts",
+      "default": "./build/timers/service.js"
     },
     "./ui": {
-      "types": "./build/features/ui/index.d.ts",
-      "default": "./build/features/ui/index.js"
+      "types": "./build/ui/service.d.ts",
+      "default": "./build/ui/service.js"
     },
     "./physics2d": {
-      "types": "./build/physics2d.d.ts",
-      "default": "./build/physics2d.js"
+      "types": "./build/physics2d/service.d.ts",
+      "default": "./build/physics2d/service.js"
     },
     "./performance": {
-      "types": "./build/features/performance-monitoring.d.ts",
-      "default": "./build/features/performance-monitoring.js"
+      "types": "./build/perf/service.d.ts",
+      "default": "./build/perf/service.js"
     },
     "./snapshots": {
-      "types": "./build/features/snapshots.d.ts",
-      "default": "./build/features/snapshots.js"
+      "types": "./build/snapshots.d.ts",
+      "default": "./build/snapshots.js"
     },
     "./autosave": {
-      "types": "./build/features/autosave.d.ts",
-      "default": "./build/features/autosave.js"
+      "types": "./build/autosave/service.d.ts",
+      "default": "./build/autosave/service.js"
     },
     "./capture": {
-      "types": "./build/features/capture.d.ts",
-      "default": "./build/features/capture.js"
+      "types": "./build/capture/service.d.ts",
+      "default": "./build/capture/service.js"
     },
     "./accessibility": {
-      "types": "./build/features/accessibility.d.ts",
-      "default": "./build/features/accessibility.js"
+      "types": "./build/accessibility.d.ts",
+      "default": "./build/accessibility.js"
     },
     "./replay": {
-      "types": "./build/features/replay.d.ts",
-      "default": "./build/features/replay.js"
+      "types": "./build/replay.d.ts",
+      "default": "./build/replay.js"
     },
     "./determinism": {
-      "types": "./build/features/determinism.d.ts",
-      "default": "./build/features/determinism.js"
+      "types": "./build/determinism.d.ts",
+      "default": "./build/determinism.js"
     },
     "./server": {
       "types": "./build/server.d.ts",

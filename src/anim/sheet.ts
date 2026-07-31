@@ -20,7 +20,7 @@
 // calling `set` with the current state every step never restarts the loop
 // (the classic stuck-on-frame-0 bug can't be written).
 
-import type { ClockHandle } from "../clock.js";
+import { activeClock, boundClock, type ClockHandle } from "../clock.js";
 
 /** A rectangular region of the sheet image (px). Matches the `sx/sy/sw/sh`
  *  fields of the ECS `Sprite` component. */
@@ -58,6 +58,9 @@ export interface SheetOptions<K extends string> {
   frame: { w: number; h: number };
   /** Named states — the keys become the cursor's typed vocabulary. */
   states: Record<K, SheetStateSpec>;
+  /** Clock every cursor from this sheet runs on. Defaults to the ambient
+   *  clock, which is what `createAnimation(app)` binds. */
+  clock?: ClockHandle;
 }
 
 /** An image source usable as a sheet: a `CanvasImageSource` with known
@@ -91,8 +94,10 @@ export interface SheetCursor<K extends string = string> {
 }
 
 export interface PlaybackOptions {
-  /** Playback clock. */
-  clock: ClockHandle;
+  /** Playback clock. Defaults to the clock the sheet captured when it was
+   *  built — an app-bound `Anim.sheet` captures that app's world clock, so
+   *  cursors pause and slow down with it without naming it here. */
+  clock?: ClockHandle;
 }
 
 /** A single-image, named-state sprite sheet; `play` starts a per-entity cursor. */
@@ -101,10 +106,10 @@ export interface Sheet<K extends string = string> {
   readonly image: SheetImage;
   /** Source frame size in the image, in px. */
   readonly frame: { w: number; h: number };
-  /** Start a playback cursor on the supplied clock. */
-  play(initial: K, opts: PlaybackOptions): SheetCursor<K>;
+  /** Start a playback cursor, on this sheet's clock unless `opts` names one. */
+  play(initial: K, opts?: PlaybackOptions): SheetCursor<K>;
   /** Play one state once, hold its final frame, and report `done`. */
-  once(initial: K, opts: PlaybackOptions): SheetCursor<K>;
+  once(initial: K, opts?: PlaybackOptions): SheetCursor<K>;
   /** Source rect for an arbitrary state/frame (manual draws, HUD icons).
    *  Reused scratch — read, don't hold. */
   rect(state: K, frame: number): FrameRect;
@@ -112,6 +117,9 @@ export interface Sheet<K extends string = string> {
 
 /** Slice an image into a named-state sprite sheet. */
 export function sheet<K extends string>(image: SheetImage, opts: SheetOptions<K>): Sheet<K> {
+  // Captured HERE, while the app-bound service's `withClock` is still on the
+  // stack: `play()` is called later from game code, where it has restored.
+  const sheetClock = opts.clock ?? boundClock();
   const fw = opts.frame.w;
   const fh = opts.frame.h;
   const states = opts.states;
@@ -130,7 +138,7 @@ export function sheet<K extends string>(image: SheetImage, opts: SheetOptions<K>
 
   const makeCursor = (initial: K, playOpts: PlaybackOptions, loop: boolean): SheetCursor<K> => {
     if (!states[initial]) throw new Error(`Anim.sheet: unknown state "${initial}"`);
-    const clock = playOpts.clock;
+    const clock = playOpts.clock ?? sheetClock ?? activeClock();
     let state = initial;
     let start = clock.now;
     let pausedAt: number | undefined;
@@ -192,10 +200,10 @@ export function sheet<K extends string>(image: SheetImage, opts: SheetOptions<K>
     image,
     frame: { w: fw, h: fh },
     rect: rectFor,
-    once(initial, playOpts) {
+    once(initial, playOpts = {}) {
       return makeCursor(initial, playOpts, false);
     },
-    play(initial, playOpts) {
+    play(initial, playOpts = {}) {
       return makeCursor(initial, playOpts, true);
     },
   };

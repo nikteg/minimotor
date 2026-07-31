@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buffer, cooldown, jumpGate, window } from "../timers.js";
+import { buffer, cooldown, jumpGate, window } from "../timers/index.js";
 import { createClockHandle } from "../clock.js";
 
 // A hand-cranked clock: advance by ms; timers derive from `now`.

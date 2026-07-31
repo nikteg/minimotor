@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { padButtonIndex, computeStick, fuseGamepad, type RawPad } from "../onscreen.js";
+import { padButtonIndex, computeStick, fuseGamepad, type RawPad } from "../onscreen/index.js";
 import { createGamepadTracker } from "../input/index.js";
 
 const btns = (...pressed: boolean[]): { pressed: boolean }[] =>

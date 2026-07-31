@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { createParticleSystem } from "../particles.js";
+import { createParticleSystem } from "../particles/index.js";
 import { createClockHandle } from "../clock.js";
 
 function stepper(): { steps: () => number; advanceMs: (ms: number) => void } {

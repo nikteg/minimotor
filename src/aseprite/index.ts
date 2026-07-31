@@ -4,6 +4,7 @@
 // `Aseprite.sheet(image, json)` is also what `Assets.load({ aseprite })`
 // composes automatically.
 
+import { activeClock, boundClock, type ClockHandle } from "../clock.js";
 import { type FrameRect, type PlaybackOptions, type SheetImage } from "../anim/sheet.js";
 
 export interface AsepriteFrame {
@@ -136,7 +137,10 @@ const tagOrder = (tag: AsepriteTag, count: number): number[] => {
 export function sheet<const D extends AsepriteJson>(
   image: SheetImage,
   data: D,
+  options: { clock?: ClockHandle } = {},
 ): AsepriteSheet<AsepriteState<D>> {
+  // Captured while the binding wrapper is still on the stack — see `Anim.sheet`.
+  const sheetClock = options.clock ?? boundClock();
   type K = AsepriteState<D>;
   const entries: [string, AsepriteFrame][] = Array.isArray(data.frames)
     ? data.frames.map((frame, index) => [frame.filename ?? String(index), frame])
@@ -259,7 +263,7 @@ export function sheet<const D extends AsepriteJson>(
       loop: boolean,
     ): AsepriteCursor<K> => {
       if (!clips.has(initial)) throw new Error(`Aseprite.sheet: unknown state "${initial}"`);
-      const clock = playOptions.clock;
+      const clock = playOptions.clock ?? sheetClock ?? activeClock();
       let state = initial;
       let start = clock.now;
       let pausedAt: number | undefined;

@@ -1,5 +1,5 @@
 import { describe, it, expect, expectTypeOf, vi, beforeEach, afterEach } from "vitest";
-import { createAssetStore as createAssets } from "../assets.js";
+import { createAssetStore as createAssets } from "../assets/service.js";
 import { createClockHandle } from "../clock.js";
 
 // Wrap real jsdom images so `instanceof HTMLImageElement` still holds, but make

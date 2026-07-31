@@ -5,7 +5,7 @@ import { formatClock } from "../goodies/scoring.js";
 import { scoreTracker } from "../gizmos/scoring.js";
 import { randFreeCell, shuffle, addToInventory, beatClock, nearest } from "../goodies/index.js";
 import { patrol, trail, undoStack, seedRng } from "../gizmos/index.js";
-import { grid } from "../features/ui/api.js";
+import { grid } from "../ui/api.js";
 import { createRoster } from "../net/index.js";
 
 describe("Mathf.approach", () => {

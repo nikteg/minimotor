@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { createRuntime, createApp, type AppCallbacks, type Runtime } from "../index.js";
+import { createApp, type App, type AppCallbacks } from "../index.js";
 
 // jsdom canvas support + a controllable requestAnimationFrame.
 let rafCallback: ((t: number) => void) | null = null;
@@ -29,11 +29,11 @@ beforeEach(() => {
   );
 });
 
-function build(canvasId = "game"): { game: Runtime; canvas: HTMLCanvasElement } {
+function build(canvasId = "game"): { game: App; canvas: HTMLCanvasElement } {
   const canvas = document.createElement("canvas");
   canvas.id = canvasId;
   document.body.appendChild(canvas);
-  const game = createRuntime({ canvas: canvasId });
+  const game = createApp(canvasId, { fullscreen: false });
   return { game, canvas };
 }
 
@@ -54,7 +54,7 @@ describe("createApp", () => {
 
   it("accepts a canvas element directly", () => {
     const canvas = document.createElement("canvas");
-    const game = createRuntime({ canvas });
+    const game = createApp(canvas, { fullscreen: false });
     expect(game.canvas).toBe(canvas);
   });
 
@@ -67,7 +67,7 @@ describe("createApp", () => {
   });
 
   it("throws for a missing canvas id", () => {
-    expect(() => createRuntime({ canvas: "nope" })).toThrow(/not found/);
+    expect(() => createApp("nope", { fullscreen: false })).toThrow(/not found/);
   });
 
   // NOTE: createApp also marks the canvas as a gesture surface (touch-action:
@@ -79,7 +79,7 @@ describe("createApp", () => {
     const canvas = document.createElement("canvas");
     const kept = vi.fn();
     const dropped = vi.fn();
-    const game = createRuntime({ canvas });
+    const game = createApp(canvas, { fullscreen: false });
     game.onDestroy(kept);
     const unsubscribe = game.onDestroy(dropped);
     unsubscribe();
@@ -133,14 +133,14 @@ describe("canvas gesture guards", () => {
 
 describe("run / loop", () => {
   function withCallbacks(cb: Partial<AppCallbacks> = {}): {
-    game: Runtime;
+    game: App;
     update: ReturnType<typeof vi.fn>;
     draw: ReturnType<typeof vi.fn>;
   } {
     const { game } = build();
     const update = vi.fn();
     const draw = vi.fn();
-    game.run({ update, draw, ...cb });
+    game.Loop.run({ update, draw, ...cb });
     return { game, update, draw };
   }
 
@@ -148,7 +148,7 @@ describe("run / loop", () => {
     const { game } = build();
     const update = vi.fn();
     const draw = vi.fn();
-    game.run({ update, draw });
+    game.Loop.run({ update, draw });
     tick(16);
     tick(36); // 20ms → one step
     expect(update).toHaveBeenCalledWith();
@@ -157,7 +157,7 @@ describe("run / loop", () => {
 
   it("measures per-frame update/draw cost in game.timings", () => {
     const { game } = build();
-    game.run({ update: () => {}, draw: () => {} });
+    game.Loop.run({ update: () => {}, draw: () => {} });
     tick(16);
     tick(36); // 20ms → one step
     expect(game.timings.steps).toBe(1);
@@ -168,7 +168,7 @@ describe("run / loop", () => {
   it("runs draw but not update while paused", () => {
     const { game, update, draw } = withCallbacks();
     tick(16); // primes lastTime
-    game.pause();
+    game.Loop.pause();
     tick(32);
     expect(draw).toHaveBeenCalledTimes(2);
     expect(update).not.toHaveBeenCalled();
@@ -210,7 +210,7 @@ describe("run / loop", () => {
   it("stop() halts the loop", () => {
     const { game, draw } = withCallbacks();
     tick(16);
-    game.stop();
+    game.Loop.stop();
     tick(32);
     expect(draw).toHaveBeenCalledTimes(1);
   });
@@ -218,8 +218,8 @@ describe("run / loop", () => {
   it("restarts with a fresh clock after stop() — no catch-up burst", () => {
     const { game, update, draw } = withCallbacks();
     tick(16);
-    game.stop();
-    game.run({ update, draw });
+    game.Loop.stop();
+    game.Loop.run({ update, draw });
     tick(5000); // long wall-clock gap while stopped: must only prime the clock
     expect(update).not.toHaveBeenCalled();
     tick(5017);
@@ -229,12 +229,12 @@ describe("run / loop", () => {
   it("drops edge input that arrives while paused", () => {
     const { game } = build();
     const seen: boolean[] = [];
-    game.run({ update: () => seen.push(game.keys.pressed("Space")), draw: vi.fn() });
+    game.Loop.run({ update: () => seen.push(game.Keys.pressed("Space")), draw: vi.fn() });
     tick(16);
-    game.pause();
+    game.Loop.pause();
     window.dispatchEvent(new KeyboardEvent("keydown", { code: "Space" }));
     tick(32); // paused frame clears the stale edge
-    game.resume();
+    game.Loop.resume();
     tick(64); // steps run again
     expect(seen.length).toBeGreaterThan(0);
     expect(seen).not.toContain(true);
@@ -245,7 +245,7 @@ describe("run / loop", () => {
     const order: string[] = [];
     game.onStepStart(() => order.push("start"));
     game.onStep(() => order.push("end"));
-    game.run({ update: () => order.push("update"), draw: vi.fn() });
+    game.Loop.run({ update: () => order.push("update"), draw: vi.fn() });
     tick(16);
     tick(66); // ~50ms → 3 steps in one frame
     expect(order.slice(0, 3)).toEqual(["start", "update", "end"]);
@@ -260,7 +260,7 @@ describe("run / loop", () => {
     tick(16);
     tick(40); // 24ms → one step consumed, ~7.33ms remains
     const step = 1000 / 60;
-    expect(game.interpolation).toBeCloseTo((24 - step) / step, 2);
+    expect(game.Loop.interpolation).toBeCloseTo((24 - step) / step, 2);
   });
 });
 
@@ -268,14 +268,14 @@ describe("destroy", () => {
   it("stops the loop, removes listeners and refuses to run again", () => {
     const { game } = build();
     const draw = vi.fn();
-    game.run({ update: vi.fn(), draw });
+    game.Loop.run({ update: vi.fn(), draw });
     tick(16);
     game.destroy();
     tick(32);
     expect(draw).toHaveBeenCalledTimes(1);
     window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyQ" }));
-    expect(game.keys.down("KeyQ")).toBe(false);
-    expect(() => game.run({ update: vi.fn(), draw })).toThrow(/destroyed/);
+    expect(game.Keys.down("KeyQ")).toBe(false);
+    expect(() => game.Loop.run({ update: vi.fn(), draw })).toThrow(/destroyed/);
   });
 });
 
@@ -283,30 +283,30 @@ describe("input", () => {
   it("tracks held keys via down()", () => {
     const { game } = build();
     window.dispatchEvent(new KeyboardEvent("keydown", { code: "ArrowLeft" }));
-    expect(game.keys.down("ArrowLeft")).toBe(true);
+    expect(game.Keys.down("ArrowLeft")).toBe(true);
     window.dispatchEvent(new KeyboardEvent("keyup", { code: "ArrowLeft" }));
-    expect(game.keys.down("ArrowLeft")).toBe(false);
-    expect(game.keys.released("ArrowLeft")).toBe(true);
+    expect(game.Keys.down("ArrowLeft")).toBe(false);
+    expect(game.Keys.released("ArrowLeft")).toBe(true);
   });
 
   it("tracks layout-aware key values independently of physical codes", () => {
     const { game } = build();
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "?", code: "Equal", shiftKey: true }));
-    expect(game.keys.down("Equal")).toBe(true);
-    expect(game.keys.keyDown("?")).toBe(true);
-    expect(game.keys.keyPressed("?")).toBe(true);
+    expect(game.Keys.down("Equal")).toBe(true);
+    expect(game.Keys.keyDown("?")).toBe(true);
+    expect(game.Keys.keyPressed("?")).toBe(true);
 
     // Releasing Shift first may change the keyup value to "+". The value
     // recorded on keydown must still be released.
     window.dispatchEvent(new KeyboardEvent("keyup", { key: "+", code: "Equal" }));
-    expect(game.keys.keyDown("?")).toBe(false);
-    expect(game.keys.keyReleased("?")).toBe(true);
+    expect(game.Keys.keyDown("?")).toBe(false);
+    expect(game.Keys.keyReleased("?")).toBe(true);
   });
 
   it("pressed() is edge-triggered and observed by update, then cleared", () => {
     const { game } = build();
     const seen: boolean[] = [];
-    game.run({ update: () => seen.push(game.keys.pressed("Space")), draw: vi.fn() });
+    game.Loop.run({ update: () => seen.push(game.Keys.pressed("Space")), draw: vi.fn() });
 
     tick(16); // prime lastTime
     window.dispatchEvent(new KeyboardEvent("keydown", { code: "Space" }));
@@ -316,25 +316,25 @@ describe("input", () => {
     // Auto-repeat keydown while held must not re-trigger pressed().
     window.dispatchEvent(new KeyboardEvent("keydown", { code: "Space" }));
     tick(52);
-    expect(game.keys.pressed("Space")).toBe(false);
+    expect(game.Keys.pressed("Space")).toBe(false);
   });
 
   it("does not clear edges on a render-only frame", () => {
     const { game } = build();
-    game.run({ update: vi.fn(), draw: vi.fn() });
+    game.Loop.run({ update: vi.fn(), draw: vi.fn() });
     tick(16);
     window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyR" }));
     tick(24); // <1 step: draw only, no update → press must survive
-    expect(game.keys.pressed("KeyR")).toBe(true);
+    expect(game.Keys.pressed("KeyR")).toBe(true);
   });
 
   it("frameReleased survives the steps into draw, then clears at frame end", () => {
     const { game, canvas } = build();
     const inDraw: boolean[] = [];
     const inUpdate: boolean[] = [];
-    game.run({
-      update: () => inUpdate.push(game.pointer.released),
-      draw: () => inDraw.push(game.pointer.frameReleased),
+    game.Loop.run({
+      update: () => inUpdate.push(game.Pointer.released),
+      draw: () => inDraw.push(game.Pointer.frameReleased),
     });
 
     tick(16); // prime lastTime
@@ -354,13 +354,13 @@ describe("input", () => {
     // but a canceled gesture is NOT a click — no release edge.
     const { game, canvas } = build("pointer-cancel");
     const releasedFrames: boolean[] = [];
-    game.run({ update: vi.fn(), draw: () => releasedFrames.push(game.pointer.frameReleased) });
+    game.Loop.run({ update: vi.fn(), draw: () => releasedFrames.push(game.Pointer.frameReleased) });
     tick(16);
     canvas.dispatchEvent(new MouseEvent("pointerdown", { clientX: 5, clientY: 5 }));
     tick(34);
-    expect(game.pointer.down).toBe(true);
+    expect(game.Pointer.down).toBe(true);
     window.dispatchEvent(new Event("pointercancel"));
-    expect(game.pointer.down).toBe(false);
+    expect(game.Pointer.down).toBe(false);
     tick(52);
     expect(releasedFrames).not.toContain(true);
   });
@@ -385,20 +385,20 @@ describe("input", () => {
         clientY: 20 + game.viewport.h / 4,
       }),
     );
-    expect(game.pointer.x).toBe(game.viewport.w / 2);
-    expect(game.pointer.y).toBe(game.viewport.h / 2);
-    expect(game.pointer.inside).toBe(true);
+    expect(game.Pointer.x).toBe(game.viewport.w / 2);
+    expect(game.Pointer.y).toBe(game.viewport.h / 2);
+    expect(game.Pointer.inside).toBe(true);
 
     window.dispatchEvent(new MouseEvent("pointermove", { clientX: 0, clientY: 0 }));
-    expect(game.pointer.inside).toBe(false);
+    expect(game.Pointer.inside).toBe(false);
   });
 
   it("framePressed and wheel are frame-scoped and cleared at frame end", () => {
     const { game } = build();
     const seen: { pressed: boolean; wheel: number }[] = [];
-    game.run({
+    game.Loop.run({
       update: () => {},
-      draw: () => seen.push({ pressed: game.pointer.framePressed, wheel: game.pointer.wheel }),
+      draw: () => seen.push({ pressed: game.Pointer.framePressed, wheel: game.Pointer.wheel }),
     });
 
     tick(16);
@@ -416,7 +416,7 @@ describe("input", () => {
     const { game } = build();
     let frames = 0;
     game.onFrame(() => frames++);
-    game.run({
+    game.Loop.run({
       update: () => {},
       draw: () => game.setCursor("pointer"),
     });
@@ -424,7 +424,7 @@ describe("input", () => {
     expect(frames).toBe(1);
     expect(game.canvas.style.cursor).toBe("pointer");
 
-    game.run({ update: () => {}, draw: () => {} }); // stop requesting
+    game.Loop.run({ update: () => {}, draw: () => {} }); // stop requesting
     tick(32);
     expect(frames).toBe(2);
     expect(game.canvas.style.cursor).toBe(""); // reset itself
@@ -433,9 +433,9 @@ describe("input", () => {
   it("pressed() fires for exactly one step even when a frame runs several", () => {
     const { game } = build();
     let firedInPressedState = 0;
-    game.run({
+    game.Loop.run({
       update: () => {
-        if (game.keys.pressed("Space")) firedInPressedState++;
+        if (game.Keys.pressed("Space")) firedInPressedState++;
       },
       draw: vi.fn(),
     });
@@ -466,8 +466,8 @@ describe("input", () => {
     const space = new KeyboardEvent("keydown", { code: "Space", bubbles: true, cancelable: true });
     input.dispatchEvent(space);
     expect(space.defaultPrevented).toBe(false);
-    expect(game.keys.down("Space")).toBe(false);
-    expect(game.keys.keyDown(" ")).toBe(false);
+    expect(game.Keys.down("Space")).toBe(false);
+    expect(game.Keys.keyDown(" ")).toBe(false);
 
     const select = document.createElement("select");
     document.body.appendChild(select);
@@ -478,13 +478,13 @@ describe("input", () => {
     });
     select.dispatchEvent(arrow);
     expect(arrow.defaultPrevented).toBe(false);
-    expect(game.keys.down("ArrowDown")).toBe(false);
-    expect(game.keys.keyDown("ArrowDown")).toBe(false);
+    expect(game.Keys.down("ArrowDown")).toBe(false);
+    expect(game.Keys.keyDown("ArrowDown")).toBe(false);
   });
 
   it("honors a custom preventKeys set", () => {
     const canvas = document.createElement("canvas");
-    const game = createRuntime({ canvas, preventKeys: ["KeyZ"] });
+    const game = createApp(canvas, { preventKeys: ["KeyZ"], fullscreen: false });
     const ez = new KeyboardEvent("keydown", { code: "KeyZ", cancelable: true });
     window.dispatchEvent(ez);
     expect(ez.defaultPrevented).toBe(true);
@@ -508,9 +508,9 @@ describe("live viewport & background", () => {
 
   it("fills the configured background at the start of every frame", () => {
     const canvas = document.createElement("canvas");
-    const game = createRuntime({ canvas, background: "#123456" });
+    const game = createApp(canvas, { background: "#123456", fullscreen: false });
     const ctx = game.ctx as unknown as { fillRect: ReturnType<typeof vi.fn>; fillStyle?: string };
-    game.run({ update: vi.fn(), draw: vi.fn() });
+    game.Loop.run({ update: vi.fn(), draw: vi.fn() });
     tick(16);
     expect(ctx.fillRect).toHaveBeenCalledWith(0, 0, game.viewport.w, game.viewport.h);
     expect(ctx.fillStyle).toBe("#123456");
@@ -520,7 +520,7 @@ describe("live viewport & background", () => {
     Object.defineProperty(window, "innerWidth", { value: 800, configurable: true });
     Object.defineProperty(window, "innerHeight", { value: 600, configurable: true });
     const canvas = document.createElement("canvas");
-    const game = createRuntime({ canvas, resolution: { w: 200, h: 200 } });
+    const game = createApp(canvas, { resolution: { w: 200, h: 200 }, fullscreen: false });
     const vp = game.viewport;
     expect(vp.w).toBe(200); // logical size, not the window
     expect(vp.h).toBe(200);
@@ -534,20 +534,20 @@ describe("live viewport & background", () => {
     Object.defineProperty(window, "innerHeight", { value: 600, configurable: true });
     const canvas = document.createElement("canvas");
     canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 800, height: 600 }) as DOMRect;
-    const game = createRuntime({ canvas, resolution: { w: 200, h: 200 } });
+    const game = createApp(canvas, { resolution: { w: 200, h: 200 }, fullscreen: false });
     // Window center (400,300) → logical center (100,100).
     window.dispatchEvent(new PointerEvent("pointermove", { clientX: 400, clientY: 300 }));
-    expect(game.pointer.x).toBeCloseTo(100);
-    expect(game.pointer.y).toBeCloseTo(100);
+    expect(game.Pointer.x).toBeCloseTo(100);
+    expect(game.Pointer.y).toBeCloseTo(100);
     // A point inside the left pillar bar is outside the logical area.
     window.dispatchEvent(new PointerEvent("pointermove", { clientX: 10, clientY: 300 }));
-    expect(game.pointer.inside).toBe(false);
+    expect(game.Pointer.inside).toBe(false);
   });
 
   it("does not clear when no background is configured", () => {
     const { game } = build();
     const ctx = game.ctx as unknown as { fillRect: ReturnType<typeof vi.fn> };
-    game.run({ update: vi.fn(), draw: vi.fn() });
+    game.Loop.run({ update: vi.fn(), draw: vi.fn() });
     tick(16);
     expect(ctx.fillRect).not.toHaveBeenCalled();
   });
@@ -570,8 +570,8 @@ describe("live viewport & background", () => {
       } as unknown as CanvasRenderingContext2D;
     };
     const canvas = document.createElement("canvas");
-    const game = createRuntime({ canvas, resolution: { w: 200, h: 200 } });
-    game.run({ update: vi.fn(), draw: () => log.push("draw") });
+    const game = createApp(canvas, { resolution: { w: 200, h: 200 }, fullscreen: false });
+    game.Loop.run({ update: vi.fn(), draw: () => log.push("draw") });
     tick(16);
     // The draw runs inside clip(rect 0,0,200,200), then the clip is restored.
     expect(log).toContain("rect 0,0,200,200");
@@ -588,11 +588,11 @@ describe("plugins", () => {
   it("orders step subscriptions around update, and frame subscriptions after draw", () => {
     const canvas = document.createElement("canvas");
     const calls: string[] = [];
-    const game = createRuntime({ canvas });
+    const game = createApp(canvas, { fullscreen: false });
     game.onStepStart(() => calls.push("stepStart"));
     game.onStep(() => calls.push("step"));
     game.onFrame(() => calls.push("frame"));
-    game.run({ update: () => calls.push("update"), draw: () => calls.push("draw") });
+    game.Loop.run({ update: () => calls.push("update"), draw: () => calls.push("draw") });
     tick(16);
     tick(48); // enough for one update step
 
@@ -615,10 +615,10 @@ describe("plugins", () => {
     const canvas = document.createElement("canvas");
     let steps = 0;
     let frames = 0;
-    const game = createRuntime({ canvas });
+    const game = createApp(canvas, { fullscreen: false });
     game.onStep(() => (steps += 1));
     game.onFrame(() => (frames += 1));
-    game.run({ update: vi.fn(), draw: vi.fn() });
+    game.Loop.run({ update: vi.fn(), draw: vi.fn() });
     tick(16);
     tick(64); // one long frame — several fixed steps have to catch up inside it
 
@@ -634,8 +634,8 @@ describe("pauseOnPortrait", () => {
       vi.fn(() => ({ matches: true, addEventListener: vi.fn() })),
     );
     const canvas = document.createElement("canvas");
-    const game = createRuntime({ canvas, pauseOnPortrait: true });
-    expect(game.paused).toBe(true);
+    const game = createApp(canvas, { pauseOnPortrait: true, fullscreen: false });
+    expect(game.Loop.paused).toBe(true);
   });
 
   it("does not pause when the media query does not match", () => {
@@ -644,8 +644,8 @@ describe("pauseOnPortrait", () => {
       vi.fn(() => ({ matches: false, addEventListener: vi.fn() })),
     );
     const canvas = document.createElement("canvas");
-    const game = createRuntime({ canvas, pauseOnPortrait: true });
-    expect(game.paused).toBe(false);
+    const game = createApp(canvas, { pauseOnPortrait: true, fullscreen: false });
+    expect(game.Loop.paused).toBe(false);
   });
 });
 
@@ -707,5 +707,40 @@ describe("auto-pause lifecycle", () => {
     setFocused(false);
     setHidden(true);
     expect(game.Loop.paused).toBe(false);
+  });
+});
+
+describe("fps", () => {
+  it("defaults to 60 steps per second", () => {
+    const { game } = build();
+    expect(game.Loop.step).toBeCloseTo(1000 / 60, 6);
+  });
+
+  it("runs the fixed step at the configured rate", () => {
+    const canvas = document.createElement("canvas");
+    document.body.appendChild(canvas);
+    // 20fps: a 50ms step, which divides the tick below exactly (1000/30 does
+    // not, and the loop would drop the third step to floating-point dust).
+    const game = createApp(canvas, { fps: 20, fullscreen: false });
+    let steps = 0;
+    game.Loop.run({ update: () => steps++, draw: () => {} });
+    tick(16); // primes the frame clock
+    // 100ms of wall clock is 2 steps at 20fps, where the default 60 runs 6.
+    tick(116);
+    expect(steps).toBe(2);
+    expect(game.Loop.step).toBe(50);
+  });
+
+  it("derives clock time from the configured rate, not from 60Hz", () => {
+    const canvas = document.createElement("canvas");
+    document.body.appendChild(canvas);
+    const app = createApp(canvas, { fps: 20 });
+    app.Loop.run({ update: () => {}, draw: () => {} });
+    tick(16); // primes the frame clock
+    tick(116);
+    // Two steps of 50ms must read as 100ms of clock time. Against the old
+    // hardcoded 60Hz they would have reported 33.3.
+    expect(app.Clock.world.now).toBe(100);
+    expect(app.Loop.step).toBe(50);
   });
 });

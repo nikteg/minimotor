@@ -2,7 +2,7 @@
   // The browser subset, for games that compile the engine straight into their
   // web root instead of bundling it (see the "no build step in production"
   // recipe in README). Same output layout as the default build — `rootDir: src`
-  // is preserved, so `minimotor/audio` still lands at `<outDir>/audio/index.js`
+  // is preserved, so `minimotor/audio` still lands at `<outDir>/audio/service.js`
   // — it just drops the parts a browser can never run:
   //
   //   src/cli        the `mm` tool (imports `ws`, node:fs, node:child_process)

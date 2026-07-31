@@ -5,7 +5,7 @@
 // scoreRank, beatClock — and `formatClock` stay in Goodies.scoring.)
 
 import type { ClockHandle } from "../clock.js";
-import * as Storage from "../storage.js";
+import * as Storage from "../storage/local.js";
 
 /** A decaying hit-streak multiplier returned by `combo()`. */
 export interface Combo {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createDebug } from "../debug.js";
+import { createDebug } from "../debug/service.js";
 import type { App } from "../engine/index.js";
 
 describe("createDebug", () => {

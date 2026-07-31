@@ -4,7 +4,7 @@
 
 import type { DrawSprite, Rect } from "../engine/index.js";
 import { blitPixelAligned } from "../engine/pixel-raster.js";
-import type { PortalTransition } from "../portals.js";
+import type { PortalTransition } from "../portals/index.js";
 import type { Vec2 } from "../vec2.js";
 import type { AnyComponentInit, Ecs, Entity } from "../ecs/index.js";
 import { grid as tileGrid, type Level, type SkinValue, type TileSpec } from "../tiles/index.js";

@@ -98,7 +98,7 @@ export type {
   PlatformerAnimationBody,
   PlatformerAnimationCursor,
   PlatformerAnimations,
-} from "./features/platformer/index.js";
+} from "./platformer/index.js";
 export type {
   Anchor,
   StickSpec,
@@ -106,7 +106,7 @@ export type {
   HapticsConfig,
   OnscreenGamepadConfig,
   OnscreenPad,
-} from "./onscreen.js";
+} from "./onscreen/index.js";
 export type {
   Rect,
   Viewport,
@@ -132,7 +132,7 @@ export type {
   Fill,
   GradientStops,
 } from "./engine/index.js";
-export type { SceneSpec, SceneStack, GoOptions, SceneStackOptions } from "./scenes.js";
+export type { SceneSpec, SceneStack, GoOptions, SceneStackOptions } from "./scenes/index.js";
 export type {
   Portal,
   PortalArea,
@@ -141,7 +141,7 @@ export type {
   PortalOptions,
   PortalRouter,
   PortalTravel,
-} from "./portals.js";
+} from "./portals/index.js";
 export type { Component, ComponentInit, Entity, Ecs, System, RenderSystem } from "./ecs/index.js";
 export type { ClockApi, ClockHandle, Cancel } from "./clock.js";
 export type { SignalBus } from "./signals.js";
@@ -153,7 +153,7 @@ export type {
   ProgressFn,
   Loaded,
   LoadedAsset,
-} from "./assets.js";
+} from "./assets/index.js";
 export type {
   Sheet,
   SheetCursor,
@@ -197,7 +197,7 @@ export type {
   EmitOptions,
   ParticleOptions,
   Range,
-} from "./particles.js";
+} from "./particles/index.js";
 export type {
   PerfStats,
   PerfTracker,
@@ -218,7 +218,7 @@ export type {
   InputMapOptions,
 } from "./input/index.js";
 export type { State, FsmOptions, Machine } from "./fsm.js";
-export type { Window, Buffer, Cooldown, JumpGate, JumpGateOptions } from "./timers.js";
+export type { Window, Buffer, Cooldown, JumpGate, JumpGateOptions } from "./timers/index.js";
 export type {
   Level,
   GridOptions as TileGridOptions,
@@ -395,7 +395,7 @@ export type {
   SelectResult,
   Theme,
   ToggleOptions,
-} from "./features/ui/api.js";
+} from "./ui/api.js";
 
 export { Vec2 } from "./vec2.js";
 

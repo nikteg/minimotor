@@ -1,4 +1,4 @@
-import { STEP_MS, type AppCallbacks, type Runtime, type FrameTimings } from "./app.js";
+import type { AppCallbacks, Runtime, FrameTimings } from "./app.js";
 
 export interface LoopApi {
   run(callbacks: AppCallbacks): void;
@@ -41,7 +41,7 @@ export function createLoop(app: Runtime): LoopApi {
       return app.onFrame(handler);
     },
     get step() {
-      return STEP_MS;
+      return app.step;
     },
     get steps() {
       return app.steps;

@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { rectsOverlap } from "../collision.js";
 import { world as createLDtkWorld } from "../ldtk/index.js";
-import { createPortalRouter } from "../portals.js";
+import { createPortalRouter } from "../portals/index.js";
 
 describe("API Lab level design", () => {
   const projectPath = resolve("samples/api-lab/assets/api-lab.ldtk");

@@ -24,7 +24,7 @@
 import type { DrawTilesOptions, Rect } from "../engine/index.js";
 import { blitPixelAligned, fillPixelAligned } from "../engine/pixel-raster.js";
 import type { LadderSource, SlopeDirection, Solid, SolidSource } from "../collision.js";
-import type { PortalTransition } from "../portals.js";
+import type { PortalTransition } from "../portals/index.js";
 import type { Vec2 } from "../vec2.js";
 import type { ClockHandle } from "../clock.js";
 

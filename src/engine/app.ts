@@ -1,5 +1,9 @@
 import { applyFullscreen, preventNavigation } from "../fullscreen.js";
-import { createClockApi, type ClockApi } from "../clock.js";
+import { STEP_MS, createClockApi, type ClockApi } from "../clock.js";
+
+// Re-exported so `STEP_MS` stays reachable from the engine surface it has
+// always been part of, even though the constant itself now lives with the clock.
+export { STEP_MS };
 import type { Keys, Pointer } from "./input.js";
 import type { KeyCode } from "./keycodes.js";
 import { createDraw, type DrawApi } from "./draw.js";
@@ -83,6 +87,9 @@ export interface FrameTimings {
 
 /** An isolated built app. Its state (`keys`, `ctx`, …) is read directly. */
 export interface Runtime {
+  /** Length of one fixed simulation step in ms — `1000 / fps`. Read this
+   *  rather than assuming 60Hz: anything advancing per step scales with it. */
+  readonly step: number;
   /** The backing canvas element. */
   readonly canvas: HTMLCanvasElement;
   /** The 2D drawing context (`draw` gets the same one as its argument). */
@@ -172,9 +179,13 @@ export interface RuntimeOptions {
   /** Auto-pause while a coarse-pointer device is held in portrait. Default
    *  false. */
   pauseOnPortrait?: boolean;
+  /** Fixed simulation rate in steps per second. Default 60. This sets the size
+   *  of one `update()` — everything that advances per step (clocks, timers,
+   *  tweens, particles, UI ageing) derives from it, so raising it makes the
+   *  whole simulation finer-grained rather than just calling `update` more
+   *  often. Rendering stays on the display's own rhythm either way. */
+  fps?: number;
 }
-
-export const STEP_MS = 1000 / 60;
 
 // Two fresh presses within this window count as a double-press / double-click;
 // the pointer variant also requires the second press to land within
@@ -182,26 +193,15 @@ export const STEP_MS = 1000 / 60;
 const DOUBLE_PRESS_MS = 300;
 const DOUBLE_CLICK_SLOP = 24;
 
-/** Spiral-of-death guard: at most this many catch-up steps per frame; any
- *  further backlog is dropped (better a one-off slow-motion hitch than a
- *  feedback loop of ever-longer frames). */
-const MAX_CATCHUP_STEPS = 5;
+/** Spiral-of-death guard: the most simulated time one frame may spend catching
+ *  up; any further backlog is dropped (better a one-off slow-motion hitch than
+ *  a feedback loop of ever-longer frames). Expressed in MILLISECONDS, not in
+ *  steps — the budget is about how long the loop is allowed to block, which
+ *  doesn't change just because a game runs a finer step. (This is 5 steps at
+ *  the default 60fps, which is where the number comes from.) */
+const MAX_CATCHUP_MS = (5 * 1000) / 60;
 
 const DEFAULT_PREVENT_KEYS = ["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"];
-
-/** Build the low-level canvas runtime used by `createApp()`. */
-export function createRuntime(options: RuntimeOptions): Runtime {
-  return buildRuntime(options);
-}
-
-// Canvas → runtime registry. An app-bound UI uses its rendering context to
-// reach the right pointer/viewport/cursor, so two apps remain isolated.
-const appsByCanvas = new WeakMap<HTMLCanvasElement, Runtime>();
-
-/** The app bound to `canvas`, or `null` — isolated instances included. */
-export function appForCanvas(canvas: HTMLCanvasElement): Runtime | null {
-  return appsByCanvas.get(canvas) ?? null;
-}
 
 function resolveCanvas(canvas: string | HTMLCanvasElement): HTMLCanvasElement {
   if (typeof canvas !== "string") return canvas;
@@ -212,6 +212,8 @@ function resolveCanvas(canvas: string | HTMLCanvasElement): HTMLCanvasElement {
 
 function buildRuntime(options: RuntimeOptions): Runtime {
   const pauseOnPortrait = options.pauseOnPortrait ?? false;
+  const stepMs = 1000 / (options.fps ?? 60);
+  const maxCatchupSteps = Math.max(1, Math.round(MAX_CATCHUP_MS / stepMs));
   const canvas = resolveCanvas(options.canvas);
   // The viewport is a LIVE object: same identity forever, fields mutated in
   // place on resize — holders never go stale.
@@ -375,7 +377,7 @@ function buildRuntime(options: RuntimeOptions): Runtime {
   };
 
   // ---- Frame state ----
-  let frameDelta = STEP_MS;
+  let frameDelta = stepMs;
   const timings: FrameTimings = { updateMs: 0, drawMs: 0, steps: 0 };
   let paused = false;
   let callbacks: AppCallbacks | null = null;
@@ -637,8 +639,8 @@ function buildRuntime(options: RuntimeOptions): Runtime {
 
     let steps = 0;
     const updStart = performance.now();
-    while (accumulator >= STEP_MS) {
-      if (++steps > MAX_CATCHUP_STEPS) {
+    while (accumulator >= stepMs) {
+      if (++steps > maxCatchupSteps) {
         // Already this far behind, more catch-up only digs the hole deeper —
         // drop the backlog and let the app run slow-motion for one frame.
         accumulator = 0;
@@ -651,10 +653,10 @@ function buildRuntime(options: RuntimeOptions): Runtime {
       // Each step observes the current press, then it's consumed — so pressed()
       // is true for exactly one step, even if this frame runs several.
       consumeEdges();
-      accumulator -= STEP_MS;
+      accumulator -= stepMs;
     }
     timings.updateMs = performance.now() - updStart;
-    timings.steps = Math.min(steps, MAX_CATCHUP_STEPS);
+    timings.steps = Math.min(steps, maxCatchupSteps);
 
     clearFrame();
     const drawStart = performance.now();
@@ -675,7 +677,10 @@ function buildRuntime(options: RuntimeOptions): Runtime {
       return frameDelta;
     },
     get interpolation() {
-      return accumulator / STEP_MS;
+      return accumulator / stepMs;
+    },
+    get step() {
+      return stepMs;
     },
     get steps() {
       return stepsElapsed;
@@ -771,11 +776,9 @@ function buildRuntime(options: RuntimeOptions): Runtime {
       frameHandlers.clear();
       resizeHandlers.clear();
       destroyHandlers.clear();
-      if (appsByCanvas.get(canvas) === app) appsByCanvas.delete(canvas);
     },
   };
 
-  appsByCanvas.set(canvas, app);
   return app;
 }
 
@@ -945,7 +948,7 @@ export function createApp(canvas: string | HTMLCanvasElement, options: AppOption
     pauseWhenBlurred,
     ...runtimeOptions
   } = options;
-  const runtime = createRuntime({ canvas, ...runtimeOptions });
+  const runtime = buildRuntime({ canvas, ...runtimeOptions });
   let visible = typeof document === "undefined" || document.visibilityState !== "hidden";
   let focused = typeof document === "undefined" || document.hasFocus();
   const app = {

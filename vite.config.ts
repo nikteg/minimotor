@@ -10,6 +10,28 @@ import { rooms } from "./src/net/server/rooms.js";
 
 const here = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
+// Game code imports the engine by its package name, exactly as an external
+// consumer writes it; these aliases point those names at the compiled build.
+// Read straight from `exports` so moving a module is a one-file change.
+function subpathAliases(): { find: string; replacement: string }[] {
+  const pkg = JSON.parse(readFileSync(here("./package.json"), "utf8")) as {
+    exports: Record<string, { default: string }>;
+  };
+  return (
+    Object.entries(pkg.exports)
+      // The `mm` tool is Node-only and `./cli/*` is a wildcard: neither is
+      // something a sample can import.
+      .filter(([subpath]) => !subpath.startsWith("./cli"))
+      .map(([subpath, entry]) => ({
+        find: "minimotor" + subpath.slice(1),
+        replacement: here(entry.default),
+      }))
+      // Most-specific first: the plain "minimotor" entry must not swallow the
+      // "/physics2d" subpath (string aliases also match "<find>/…" prefixes).
+      .sort((a, b) => b.find.length - a.find.length)
+  );
+}
+
 // Every `.html` under samples/ is a build entry — the gallery at the root plus
 // one (or two, for the net client/host pages) per sample. Auto-discovered so a
 // new sample is just a new folder: no hand-maintained input list to keep in
@@ -117,52 +139,11 @@ export default defineConfig({
   root: here("./samples"),
   plugins: [sampleSockets(), landingExamples()],
   resolve: {
-    // Most-specific first: the plain "minimotor" entry must not swallow the
-    // "/physics2d" subpath (string aliases also match "<find>/…" prefixes).
-    alias: [
-      { find: "minimotor/physics2d", replacement: here("./build/physics2d.js") },
-      {
-        find: "minimotor/animation",
-        replacement: here("./build/features/animation/index.js"),
-      },
-      { find: "minimotor/aseprite", replacement: here("./build/aseprite/index.js") },
-      { find: "minimotor/assets", replacement: here("./build/assets.js") },
-      { find: "minimotor/audio", replacement: here("./build/features/audio/index.js") },
-      { find: "minimotor/camera", replacement: here("./build/camera/index.js") },
-      { find: "minimotor/debug", replacement: here("./build/debug.js") },
-      { find: "minimotor/input", replacement: here("./build/features/input/index.js") },
-      { find: "minimotor/ldtk", replacement: here("./build/ldtk/index.js") },
-      {
-        find: "minimotor/onscreen-input",
-        replacement: here("./build/features/onscreen-input/index.js"),
-      },
-      { find: "minimotor/net", replacement: here("./build/features/networking/index.js") },
-      { find: "minimotor/particles", replacement: here("./build/particles.js") },
-      {
-        find: "minimotor/performance",
-        replacement: here("./build/features/performance-monitoring.js"),
-      },
-      {
-        find: "minimotor/platformer",
-        replacement: here("./build/features/platformer/index.js"),
-      },
-      { find: "minimotor/portals", replacement: here("./build/portals.js") },
-      { find: "minimotor/scenes", replacement: here("./build/scenes.js") },
-      { find: "minimotor/storage", replacement: here("./build/features/storage.js") },
-      { find: "minimotor/snapshots", replacement: here("./build/features/snapshots.js") },
-      { find: "minimotor/autosave", replacement: here("./build/features/autosave.js") },
-      { find: "minimotor/capture", replacement: here("./build/features/capture.js") },
-      {
-        find: "minimotor/accessibility",
-        replacement: here("./build/features/accessibility.js"),
-      },
-      { find: "minimotor/replay", replacement: here("./build/features/replay.js") },
-      { find: "minimotor/determinism", replacement: here("./build/features/determinism.js") },
-      { find: "minimotor/timers", replacement: here("./build/features/timers/index.js") },
-      { find: "minimotor/ui", replacement: here("./build/features/ui/index.js") },
-      { find: "minimotor/server", replacement: here("./build/server.js") },
-      { find: "minimotor", replacement: here("./build/index.js") },
-    ],
+    // Derived from the package's own `exports` map rather than restated here:
+    // a hand-kept copy is a third place every subpath has to be spelled (after
+    // package.json and samples/tsconfig.json) and the one nobody notices has
+    // gone stale, since a wrong alias still resolves — to yesterday's module.
+    alias: subpathAliases(),
   },
   // Don't pre-bundle the engine so edits to its build output show up without
   // clearing Vite's dep cache.
