@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createClockHandle } from "../../clock.js";
-import * as Aseprite from "../index.js";
+import { createClockHandle } from "@src/clock/index.js";
+import * as Aseprite from "@src/aseprite/index.js";
 
 const image = { width: 48, height: 16 } as HTMLImageElement;
 const data = {
@@ -30,7 +30,7 @@ const data = {
 describe("Aseprite.sheet", () => {
   it("honors tags, directions, and variable frame durations", () => {
     let steps = 0;
-    const clock = createClockHandle(() => steps);
+    const clock = createClockHandle(1000 / 60, () => steps);
     const sheet = Aseprite.sheet(image, data);
     const idle = sheet.play("idle", { clock });
     steps = 9; // 150 ms
@@ -47,7 +47,7 @@ describe("Aseprite.sheet", () => {
 
   it("supports one-shot playback", () => {
     let steps = 0;
-    const clock = createClockHandle(() => steps);
+    const clock = createClockHandle(1000 / 60, () => steps);
     const sheet = Aseprite.sheet(image, data);
     const death = sheet.once("die", { clock });
     steps = 60;
@@ -121,9 +121,9 @@ describe("Aseprite.sheet", () => {
     } as const;
     const sheet = Aseprite.sheet(image, hash);
     const tinted = { width: 48, height: 16 } as HTMLImageElement;
-    expect(sheet.withImage(tinted).play("run", { clock: createClockHandle() }).sheet.image).toBe(
-      tinted,
-    );
+    expect(
+      sheet.withImage(tinted).play("run", { clock: createClockHandle(1000 / 60) }).sheet.image,
+    ).toBe(tinted);
   });
 
   it("rejects unsupported or malformed exports", () => {

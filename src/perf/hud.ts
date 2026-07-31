@@ -1,4 +1,4 @@
-import type { FrameTimings } from "../engine/index.js";
+import type { FrameTimings } from "@src/engine/index.js";
 import { NetStats } from "./net-meter.js";
 import { Sparkline } from "./sparkline.js";
 import { PerfStats } from "./tracker.js";

@@ -16,8 +16,6 @@ export interface MusicConfig {
   /** Called for each step; book notes via `Music.note` / `Music.kick` /
    *  `Music.noiseHit`. `when` is the audio-clock time (seconds) the step plays. */
   schedule: (step: number, when: number) => void;
-  /** `localStorage` key to remember on/off between visits (optional). */
-  storageKey?: string;
 }
 
 const SCHED_AHEAD_S = 0.2;
@@ -88,28 +86,29 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
-/** The procedural music channel: a look-ahead Web Audio step scheduler with a
- *  persisted on/off toggle. Book notes from a `MusicConfig.schedule`. */
+/** The procedural music channel: a look-ahead Web Audio step scheduler.
+ * Book notes from a `MusicConfig.schedule`; persistence belongs to the
+ * optional Storage capability. */
+let musicOn = true;
+
 export const Music = {
   // On/off state is reflected in the music bus gain, so the scheduler can keep
   // running even when muted - switching is instant and click-free.
-  /** Read-only in practice — call `setOn()` to change it, or the gain node and
-   *  the persisted preference silently go out of sync with this flag. */
-  on: true,
+  get on(): boolean {
+    return musicOn;
+  },
+  /** Turn music on/off and update the bus. */
+  set on(on: boolean) {
+    musicOn = on;
+    musicBus?.setOn(on, 50);
+  },
 
   /** Start the music channel with a `MusicConfig`. Call on the first user
    *  gesture (browsers require one to unlock audio). Idempotent — safe to call
-   *  repeatedly. Restores on/off from `config.storageKey` when given. */
+   *  repeatedly. */
   start(config: MusicConfig): void {
     if (musicStarted) return;
     musicConfig = config;
-    if (config.storageKey) {
-      try {
-        Music.on = localStorage.getItem(config.storageKey) !== "off";
-      } catch {
-        /* private browsing etc. - default on */
-      }
-    }
     // Sound must NEVER block the app - swallow all errors.
     try {
       ensureAudio();
@@ -123,20 +122,6 @@ export const Music = {
     } catch {
       musicStarted = true; // don't try again every frame
     }
-  },
-
-  /** Turn music on/off — reflected in the music bus gain (click-free), so the
-   *  scheduler keeps running while muted. Persists to `storageKey`. */
-  setOn(on: boolean): void {
-    Music.on = on;
-    if (musicConfig?.storageKey) {
-      try {
-        localStorage.setItem(musicConfig.storageKey, on ? "on" : "off");
-      } catch {
-        /* see above */
-      }
-    }
-    musicBus?.setOn(on, 50);
   },
 
   /** Book a synth note at audio-clock time `when`: a `type` oscillator at `freq`

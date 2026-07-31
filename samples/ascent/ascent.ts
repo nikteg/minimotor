@@ -26,8 +26,10 @@ import { createParticles } from "minimotor/particles";
 import { createBrowserStorage } from "minimotor/storage";
 import { createTimers } from "minimotor/timers";
 import { createUI } from "minimotor/ui";
-import { ECS, Fsm, Gizmos, Mathf, Sprites, createApp } from "minimotor";
-import { SheetCursor, SpriteLike } from "minimotor";
+import { Fsm, Gizmos, Mathf, createApp } from "minimotor";
+import * as Sprites from "minimotor/sprites";
+import { component, createEcs, type Entity } from "minimotor/ecs";
+import { AnimationCursor, SpriteLike } from "minimotor";
 
 const game = createApp("game", { preventNavigation: true });
 const Anim = createAnimation(game);
@@ -42,7 +44,7 @@ const Particles = createParticles(game);
 const Storage = createBrowserStorage(game);
 const Timers = createTimers(game);
 const UI = createUI(game, Input);
-const OnscreenInput = createOnscreenInput(game, Input);
+const OnscreenInput = createOnscreenInput(game, Input, UI);
 
 // On-screen touch gamepad (hidden on desktop, shown on touch by default).
 const pad = OnscreenInput.gamepad({
@@ -375,7 +377,7 @@ const FEET_Y = 23; // frame-y of the character's feet (content ends ~here)
 
 type PlayerState = "idle" | "run" | "jump" | "fall" | "wall" | "dash" | "dead";
 
-let clips!: Record<PlayerState, SheetCursor<"s">>; // one 1:1 sheet cursor per state
+let clips!: Record<PlayerState, AnimationCursor<"s">>; // one 1:1 sheet cursor per state
 let sm!: Fsm.Machine<PlayerState>; // player Fsm
 const tex: Record<string, HTMLImageElement> = {}; // decoded tile / prop images by key
 const texBase: Record<string, number> = {}; // real opaque base fraction per prop/goal
@@ -387,14 +389,14 @@ const texBase: Record<string, number> = {}; // real opaque base fraction per pro
 const CRYSTAL_FR = 16; // rotation frames
 const CRYSTAL_FS = 40; // baked frame size (px, includes glow)
 let crystalSheet!: HTMLCanvasElement; // the cached canvas
-let crystalAnim!: SheetCursor<"spin">; // shared cursor over the "ready" row (drives sx)
-const orbWorld = ECS.create();
+let crystalAnim!: AnimationCursor<"spin">; // shared cursor over the "ready" row (drives sx)
+const orbWorld = createEcs();
 interface OrbData {
   cd: number;
   baseX: number;
   baseY: number;
 }
-const Orb = ECS.component<OrbData>("Orb");
+const Orb = component<OrbData>("Orb");
 
 // Draw a sheet cursor's current frame at (dx, dy) with an anchor fraction —
 // replicates the retired `anim.draw`.
@@ -495,7 +497,7 @@ function buildAnimations(): void {
   // Each state is a single-state cursor over its own strip. fall/dash/dead need
   // a specific jump frame, so bake a 1-frame strip of exactly that frame.
   const oneState = (sheet: HTMLCanvasElement, frames: number, fps: number) =>
-    Anim.sheet(sheet, {
+    Anim.fromGrid(sheet, {
       frame: { w: FRAME, h: FRAME },
       states: { s: { row: 0, frames, fps } },
     }).play("s");
@@ -526,7 +528,7 @@ function buildAnimations(): void {
 
   // Bake the crystal collectible once; the shared cursor advances the "ready" row.
   crystalSheet = bakeCrystalSheet();
-  crystalAnim = Anim.sheet(crystalSheet, {
+  crystalAnim = Anim.fromGrid(crystalSheet, {
     frame: { w: CRYSTAL_FS, h: CRYSTAL_FS },
     states: { spin: { row: 0, frames: CRYSTAL_FR, fps: 14 } },
   }).play("spin");
@@ -624,7 +626,7 @@ let fade = 1;
 function loadLevel(i: number): void {
   level = buildLevel(LEVELS[i]);
   // Reset the collectible world and spawn one Orb entity per dash orb.
-  const stale: ECS.Entity[] = [];
+  const stale: Entity[] = [];
   for (const [e] of orbWorld.query(Orb)) stale.push(e);
   for (const e of stale) orbWorld.despawn(e);
   for (const { x, y } of level.orbDefs) {

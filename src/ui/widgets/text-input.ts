@@ -9,7 +9,7 @@ import {
   activeClip,
   centeredText,
   claimPointerGesture,
-  currentRuntime,
+  currentUiApp,
   dragPointer,
   drawBox,
   drawFocusRing,
@@ -24,17 +24,17 @@ import {
   rawPointer,
   registerFocusable,
   requiredWidgetId,
-  runtimeSlot,
+  uiSlot,
   setCursor,
   theme,
   uiCtx,
   uiFont,
   uiPointer,
   uiToScreen,
-  withRuntime,
+  withUiApp,
   wrapLines,
-} from "../core/index.js";
-import { pointInRect } from "../../collision.js";
+} from "@src/ui/core/index.js";
+import { pointInRect } from "@src/collision/index.js";
 
 export interface TextEditor {
   id: string;
@@ -89,7 +89,7 @@ interface TextInputState {
    *  hidden editor synchronously. */
   pressTargets: Map<string, PressTarget>;
 }
-const st = runtimeSlot<TextInputState>(() => ({
+const st = uiSlot<TextInputState>(() => ({
   editor: null,
   seen: new Set(),
   drawnTargets: new Map(),
@@ -103,11 +103,11 @@ function ensureNativePress(ctx: CanvasRenderingContext2D): void {
   const canvas = ctx.canvas;
   if (pressWired.has(canvas)) return;
   pressWired.add(canvas);
-  const rt = currentRuntime();
+  const app = currentUiApp();
   // The engine's own pointerdown listener registered first (at game build), so
   // the pointer's screen-logical coords are already updated when this runs.
   canvas.addEventListener("pointerdown", () => {
-    withRuntime(rt, () => {
+    withUiApp(app, () => {
       const s = st();
       const p = rawPointer();
       for (const t of s.pressTargets.values()) {

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { _reset, measureWidth, text, textMetrics as metrics, textWidth } from "../api.js";
-import { createUiRuntime, switchRuntime } from "../core/runtime.js";
+import { _reset, measureWidth, text, textMetrics as metrics, textWidth } from "@src/ui/api.js";
+import { selectUiApp } from "@src/ui/core/state.js";
+import { createTestUiApp } from "./app-fixture.js";
 
 // Text measurement is memoized per (font, string) because immediate-mode UI
 // re-measures the same labels every frame and `measureText` is expensive. These
@@ -43,7 +44,7 @@ beforeEach(() => {
 describe("UI text measurement memo", () => {
   it("measures a given (font, string) once", () => {
     const { ctx, measured } = mockCtx();
-    switchRuntime(createUiRuntime(ctx));
+    selectUiApp(createTestUiApp(ctx));
     expect(measureWidth(ctx, "PLAY")).toBe(32);
     expect(measured).toHaveLength(1);
     measureWidth(ctx, "PLAY");
@@ -54,7 +55,7 @@ describe("UI text measurement memo", () => {
 
   it("re-measures when the font changes", () => {
     const { ctx, measured } = mockCtx();
-    switchRuntime(createUiRuntime(ctx));
+    selectUiApp(createTestUiApp(ctx));
     measureWidth(ctx, "PLAY");
     ctx.font = "bold 20px monospace";
     measureWidth(ctx, "PLAY");
@@ -68,7 +69,7 @@ describe("UI text measurement memo", () => {
 
   it("re-measures different strings", () => {
     const { ctx, measured } = mockCtx();
-    switchRuntime(createUiRuntime(ctx));
+    selectUiApp(createTestUiApp(ctx));
     measureWidth(ctx, "PLAY");
     measureWidth(ctx, "QUIT");
     expect(measured).toHaveLength(2);
@@ -76,7 +77,7 @@ describe("UI text measurement memo", () => {
 
   it("measures under a pinned alphabetic baseline and restores the caller's", () => {
     const { ctx, measured } = mockCtx();
-    switchRuntime(createUiRuntime(ctx));
+    selectUiApp(createTestUiApp(ctx));
     // actualBoundingBox* is reported relative to the ACTIVE baseline, so a
     // caller mid-draw with "middle" must not poison the cache.
     ctx.textBaseline = "middle";
@@ -87,13 +88,13 @@ describe("UI text measurement memo", () => {
 
   it("returns the real glyph metrics", () => {
     const { ctx } = mockCtx();
-    switchRuntime(createUiRuntime(ctx));
+    selectUiApp(createTestUiApp(ctx));
     expect(metrics(ctx, "hi")).toEqual({ width: 16, asc: 9, desc: 3 });
   });
 
   it("makes a repeated UI.text draw free of new measurements", () => {
     const { ctx, measured } = mockCtx();
-    switchRuntime(createUiRuntime(ctx));
+    selectUiApp(createTestUiApp(ctx));
     text("Score: 42", { x: 10, y: 10 });
     const afterFirst = measured.length;
     expect(afterFirst).toBeGreaterThan(0);
@@ -104,7 +105,7 @@ describe("UI text measurement memo", () => {
 
   it("backs textWidth and leaves the context font untouched", () => {
     const { ctx, measured } = mockCtx();
-    switchRuntime(createUiRuntime(ctx));
+    selectUiApp(createTestUiApp(ctx));
     ctx.font = "italic 11px serif";
     expect(textWidth("abc")).toBe(24);
     expect(ctx.font).toBe("italic 11px serif");

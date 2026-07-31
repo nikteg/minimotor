@@ -6,7 +6,7 @@ import {
   createInterpolator,
   type Protocol,
   type Signal,
-} from "../index.js";
+} from "@src/net/index.js";
 
 const flushMicrotasks = () => new Promise((r) => setTimeout(r, 0));
 

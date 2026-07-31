@@ -9,7 +9,7 @@
 //   if (landed) squash = Anim.animate({ from: 0.6, to: 1, ms: 150, ease: easeOut });
 //   Draw.sprite(anim, player, { scaleY: squash.value });
 
-import { activeClock, type ClockHandle } from "../clock.js";
+import type { ClockHandle } from "@src/clock/index.js";
 
 /** A live tween handle: `value` and `done` derive from the owning clock on read. */
 export interface Motion {
@@ -37,14 +37,14 @@ export interface AnimateOptions {
   loop?: boolean;
   /** Reverse each repeat (ping-pong); implies `loop`. Default false. */
   yoyo?: boolean;
-  /** The time this motion lives in. Defaults to the ambient clock, which is
-   *  what `createAnimation(app)` binds to that app's world clock. */
-  clock?: ClockHandle;
+  /** The time this motion lives in. `createAnimation(app)` supplies the app's
+   * world clock when this is omitted from the bound API. */
+  clock: ClockHandle;
 }
 
 /** A one-shot (or looping) tween from `from` to `to` over `ms`. */
 export function animate(opts: AnimateOptions): Motion {
-  const clock = opts.clock ?? activeClock();
+  const clock = opts.clock;
   const from = opts.from ?? 0;
   const to = opts.to ?? 1;
   const dur = Math.max(1, opts.ms);
@@ -86,9 +86,9 @@ export type SequenceStep = Omit<AnimateOptions, "clock" | "loop" | "yoyo">;
  *  follows the active step; `done` when the last finishes. */
 export function sequence(
   steps: SequenceStep[],
-  opts: { clock?: ClockHandle; loop?: boolean } = {},
+  opts: { clock: ClockHandle; loop?: boolean },
 ): Motion {
-  const clock = opts.clock ?? activeClock();
+  const clock = opts.clock;
   const segs = steps.map((s) => ({
     from: s.from ?? 0,
     to: s.to ?? 1,
@@ -137,9 +137,9 @@ export interface Parallel extends Motion {
  *  rest. Per-spec clocks are ignored (the group owns the clock). */
 export function parallel(
   specs: Omit<AnimateOptions, "clock">[],
-  opts: { clock?: ClockHandle } = {},
+  opts: { clock: ClockHandle },
 ): Parallel {
-  const clock = opts.clock ?? activeClock();
+  const clock = opts.clock;
   const tracks = specs.map((s) => animate({ ...s, clock }));
   return {
     get value() {

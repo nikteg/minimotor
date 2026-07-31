@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { game, playerColor } from "../game.js";
+import { game, playerColor } from "@src/net/game.js";
 
 afterEach(() => {
   vi.useRealTimers();

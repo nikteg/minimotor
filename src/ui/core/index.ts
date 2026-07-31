@@ -7,9 +7,9 @@
 //
 // The canvas context is implicit inside an app-bound `createUI(app)` API.
 // Driving the raw widget layer directly (what the tests do) means building a
-// runtime and selecting it — which is exactly what `createUI` does for you:
+// app and selecting it — which is exactly what `createUI` does for you:
 //
-//   switchRuntime(createUiRuntime(ctx));
+//   selectUiApp(app);
 //   button("PLAY");
 //
 // Colors and fonts come from the active theme — `UI.setTheme({...})` restyles
@@ -18,7 +18,7 @@
 // This is the kernel barrel: widgets and index.ts import from "./core/index.js".
 // Split: context / theme (+ draw helpers) / flow (the `flow` layout cursor +
 // container primitives) / identity / input (pointer + buttonState) / text / focus (the focusable
-// registry + keyboard/pad nav) / lifecycle (the per-frame runtime — overlay-pass
+// registry + keyboard/pad nav) / lifecycle (per-frame overlay-pass
 // flags, tooltip + float machinery, the ensureWired housekeeping, and the
 // frame-end/reset hooks widgets register into). Widgets live in ../widgets and
 // depend on this kernel, never the other way around.
@@ -27,7 +27,7 @@ export * from "./context.js";
 export * from "./frame-cache.js";
 export * from "./measure.js";
 export * from "./layout-capture.js";
-export * from "./runtime.js";
+export * from "./state.js";
 export * from "./theme.js";
 export * from "./flow.js";
 export * from "./identity.js";

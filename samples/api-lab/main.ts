@@ -1,6 +1,7 @@
 // API Lab — one small game exercising the public API. [#n] references
 // API-REVIEW.md.
-import { Collision, Mathf, Sprites, createApp, type BodyState, type Shared } from "minimotor";
+import { Collision, Mathf, createApp, type BodyState, type Shared } from "minimotor";
+import * as Sprites from "minimotor/sprites";
 import { createAnimation } from "minimotor/animation";
 import { createAssets } from "minimotor/assets";
 import { createAudio } from "minimotor/audio";
@@ -30,13 +31,13 @@ const Audio = createAudio(game);
 export const Camera = createCamera(game);
 const Input = createInput(game);
 const Net = createNet(game);
-const OnscreenInput = createOnscreenInput(game, Input);
+const UI = createUI(game, Input);
+const OnscreenInput = createOnscreenInput(game, Input, UI);
 const Particles = createParticles(game);
 const Portals = createPortals(game);
 const Scenes = createScenes(game);
 const Storage = createBrowserStorage(game);
 const Timers = createTimers(game);
-const UI = createUI(game, Input);
 
 // [#2]/[#25] Real CC0 sprite sheets, loaded once and then used synchronously.
 const art = await Assets.load({

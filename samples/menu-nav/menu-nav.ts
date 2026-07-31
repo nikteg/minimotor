@@ -25,7 +25,7 @@ const { Draw, Keys, Loop } = game;
 const Input = createInput(game);
 const UI = createUI(game, Input);
 installLayoutProbe(UI);
-const OnscreenInput = createOnscreenInput(game, Input);
+const OnscreenInput = createOnscreenInput(game, Input, UI);
 const uiId = UI.ids("menu-nav");
 
 const pad = OnscreenInput.gamepad({

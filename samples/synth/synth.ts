@@ -190,7 +190,6 @@ function ensureBacking() {
   Audio.Music.start({
     volume: 0.3,
     stepMs: 150,
-    storageKey: "synth_muted",
     schedule(step, when) {
       if (!backing || !Audio.Music.on) return;
       const g = GROOVES[grooveIdx];
@@ -329,8 +328,8 @@ Loop.run({
       });
       // The backing groove lives in its own group: pick the groove, and the
       // play/pause button starts/stops it. The Mute checkbox is bound to
-      // `Audio.Music.on` (persisted via `storageKey`), so a mute saved from a
-      // previous visit can be lifted here instead of silently killing Play.
+      // `Audio.Music.on`; persistence, when desired, belongs to
+      // `minimotor/storage` rather than the audio engine.
       UI.panel({ title: "Music" }, () => {
         UI.row({ h: 30, gap: 12 }, () => {
           const groove = UI.select({
@@ -346,7 +345,7 @@ Loop.run({
           }
         });
         const muteNow = UI.toggle({ id: "mx-mute", label: "Muted", on: !Audio.Music.on });
-        if (muteNow === Audio.Music.on) Audio.Music.setOn(!muteNow);
+        if (muteNow === Audio.Music.on) Audio.Music.on = !muteNow;
       });
       UI.row({ h: 26, gap: 18 }, () => {
         const rv = UI.toggle({ id: "mx-reverb", label: "Reverb", on: reverbOn });

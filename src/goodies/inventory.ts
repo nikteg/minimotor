@@ -1,4 +1,4 @@
-import { clamp } from "../mathf.js";
+import { clamp } from "../math/mathf.js";
 
 // ---------- Inventory and crafting ----------
 // Moving items between slots the way players expect: fill an empty slot, merge

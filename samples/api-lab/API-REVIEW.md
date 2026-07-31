@@ -405,9 +405,9 @@ block, score in the HUD. First contact with the ECS in the imaginary API.
     possible. Separate note: `ECS.world()` collides with the most natural
     name for level data (`world = { w, h }` since increment 5) — the sample
     had to name the instance `ents`. Candidates: rename the concept
-    (`ECS.create()`, `Entities`), or accept that consumers rename.
-    - Verdict: **change** (agreed) — `ECS.create()` replaces `ECS.world()`;
-      the blessed instance idiom is `const ecs = ECS.create()`. The `World`
+    (`createEcs()`, `Entities`), or accept that consumers rename.
+    - Verdict: **change** (agreed) — the optional `minimotor/ecs` module exports
+      `createEcs()`; the blessed instance idiom is `const ecs = createEcs()`. The `World`
       type (and `implicit world instance) get renamed accordingly
       in the change-plan. Break-even guidance (arrays vs ECS) goes in docs.
 
@@ -431,7 +431,7 @@ motion. Pulled `Assets` and the `Anim`/`Tween` seam into review.
 25. **Spritesheet: config + cursor split, typed states.**
 
     ```ts
-    const heroSheet = Anim.sheet(art.hero, {
+    const heroSheet = Anim.fromGrid(art.hero, {
       frame: { w: 32, h: 32 }, // structural (#9)
       states: {
         idle: { row: 0, frames: 4, fps: 6 },
@@ -484,7 +484,7 @@ scaled by fall speed (`impact` captured before `moveAndSlide` zeroes it),
       `app.Loop`, `app.Draw`, `app.Keys`, `app.Pointer`, plus factories
       such as `createUI(app)` and `createCamera(app)`.
     - **Game content is explicit instances** (plural by nature): `Input.map`,
-      `ECS.create`, `Timers.jumpGate`, sheet cursors, motions,
+      `createEcs`, `Timers.jumpGate`, sheet cursors, motions,
       `createCamera`, and now `Particles.create` — particles want plurality
       (dust behind + sparks in front = two systems, two draw positions;
       confetti in screen space vs debris in world space = two blocks) and
@@ -1105,7 +1105,7 @@ Quick dispositions; each "flag" is a candidate for a round-2 review.
   `serverTick`): deliberately NOT judged by this sample (P2P only touched
   signaling). Server-authoritative games are a different genre of consumer
   — round-2 review with its own sample (road-rivals is the corpus).
-  - `Tiles.set` is the space-indexed cousin of `Anim.sheet` (same family:
+  - `Tiles.set` is the space-indexed cousin of `Anim.fromGrid` (same family:
     image + grid → cells; sheet indexes by time, set by name). Source
     cell size scales to the map's world tile size — the two never need
     to agree.

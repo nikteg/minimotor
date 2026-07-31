@@ -16,7 +16,7 @@ parallelizable once Phase 0–1 land.
    - function namespaces, never classes. Anything with the fields IS the
      type. JSON-safe throughout. (#9)
 2. **Typed maps, property access.** Named-thing collections are inferred
-   maps: `Input.map`, `Scenes.create`, `Audio.sfx`, `Anim.sheet` states,
+   maps: `Input.map`, `Scenes.create`, `Audio.sfx`, `Anim.fromGrid` states,
    `Fsm.create`. No stringly lookups; literal unions + `(string & {})`
    escape hatches. (#4, #8, #31, #36, #51)
 3. **Tuples mean randomness; direction is `{from, to}`.** `[min, max]` is
@@ -118,14 +118,14 @@ mixed array`. (#13, #14, #29, #40)
 - `ECS.component<T>()` — string name optional (`{ label }`). (#21)
 - Despawn-in-iteration defers automatically; `flush()` leaves the public
   tier. (#22)
-- `ECS.world()` → `ECS.create()`; instance idiom `ecs`; `World` type
+- `ECS.world()` → optional-module `createEcs()`; instance idiom `ecs`; `World` type
   renamed. **Breaking.** (#23)
 
 ## Phase 7 — Content systems
 
 - `Assets.load(manifest)` → per-key typed record; loader by extension;
   top-level-await pattern documented; progress callback kept. (#24)
-- `Anim.sheet(img, { frame, states })` + `sheet.play(state)` cursors
+- `Anim.fromGrid(img, { frame, states })` + `sheet.play(state)` cursors
   (self-deriving, same-state `set` is a no-op, typed states). (#25)
 - `Particles.createSystem()` (no singleton); `burst({ at, count, speed, life,
 size, color })`; immediate-mode `emit({ at, chance, ... })` — the
@@ -188,14 +188,14 @@ send, onMessage, close()`; star topology + host-healing internal; room
 
 ## Post-port follow-ups (from the sample review round)
 
-- **Multi-image sprite states — DONE.** `Anim.states({ idle: { image, frames,
+- **Multi-image sprite states — DONE.** `Anim.fromImages({ idle: { image, frames,
 fps }, run: {...}, jump: {...} })` returns a shared kit; `kit.play(initial)`
   is a per-entity cursor with the SAME surface as a sheet cursor
   (`.set`/`.state`/`.frame`/`.rect`/`.done`) and satisfies `SpriteLike`, so it
   drops straight into `Draw.sprite` — `.sheet.image` returns the ACTIVE state's
-  image, switching on `set`. Clock-derived like `Anim.sheet` (no ticking).
+  image, switching on `set`. Clock-derived like `Anim.fromGrid` (no ticking).
   Lives in `src/anim/states.ts`; covers the one-image-per-state kit layout
-  (Pixel Frog / itch.io) that `Anim.sheet`'s single-atlas model couldn't.
+  (Pixel Frog / itch.io) that `Anim.fromGrid`'s single-atlas model couldn't.
 - **Sprites fully decoupled from the ECS — DONE.** Three ties cut, not just the
   renderer:
   1. **Renderer** → `Draw.sprites(list, opts)`, any iterable of sprite-shaped
@@ -211,7 +211,7 @@ fps }, run: {...}, jump: {...} })` returns a shared kit; `kit.play(initial)`
      `Draw.sprites(ecs.dense(Sprites.Sprite), { interpolation: Loop.interpolation, view })`. Draw
      owns rendering; the ECS owns generic data; neither imports the other.
 - **pixel-adventure rewritten — DONE.** Fully ported off the old API and back
-  in the TS gate (no longer excluded). It's now the showcase for `Anim.states`
+  in the TS gate (no longer excluded). It's now the showcase for `Anim.fromImages`
   (the player ships one PNG per state — idle/run/jump/fall/hit — with `frames`
   derived from each strip's width). Also: named imports; `Input.map`;
   numeric `level.json` → ASCII `Tiles.grid` + legend, with the autotiled
@@ -252,7 +252,7 @@ fps }, run: {...}, jump: {...} })` returns a shared kit; `kit.play(initial)`
 | `update()` loses `stepMs`                               | #5   | every sample using the param    |
 | Arcade `Physics` retires                                | #11  | samples using applyGravity/jump |
 | `vx/vy` → `vel: Vec2` (Body2D & friends)                | #12  | physics samples                 |
-| `ECS.world()` → `ECS.create()`, `World` type rename     | #23  | ECS consumers                   |
+| `ECS.world()` → `createEcs()`, `World` type rename      | #23  | ECS consumers                   |
 | `Text.*` leaves public tier                             | #6   | HUD code → `UI.text`            |
 | Screen-default draw space (world needs `Camera.render`) | #16  | every camera sample             |
 | `level.draw`/`fx.draw` → `Draw.tiles`/`Draw.particles`  | #42  | tiles/particle samples          |

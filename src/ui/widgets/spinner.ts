@@ -1,9 +1,9 @@
 // ---------- spinner ----------
-import { Flowable, ensureWired, onStep, place, runtimeSlot, theme, uiCtx } from "../core/index.js";
+import { Flowable, ensureWired, onStep, place, uiSlot, theme, uiCtx } from "@src/ui/core/index.js";
 
 // Rotation phase, advanced on the fixed step (via onStep) so it pauses with the
 // loop. ~7 rad/s at 60 steps.
-const spin = runtimeSlot<{ angle: number }>(() => ({ angle: 0 }));
+const spin = uiSlot<{ angle: number }>(() => ({ angle: 0 }));
 let hooksRegistered = false;
 function ensureSpinnerHooks(): void {
   if (hooksRegistered) return;

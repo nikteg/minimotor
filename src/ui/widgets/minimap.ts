@@ -1,6 +1,6 @@
-import type { Rect } from "../../engine/index.js";
-import type { Level, TileSpec } from "../../tiles/index.js";
-import { uiCtx } from "../core/index.js";
+import type { Rect } from "@src/engine/index.js";
+import type { Level, TileSpec } from "@src/tiles/index.js";
+import { uiCtx } from "@src/ui/core/index.js";
 
 export interface MinimapCell {
   col: number;

@@ -3,7 +3,7 @@ import { Flow, currentLayout, place } from "./flow.js";
 import { centeredText, theme, uiFont } from "./theme.js";
 import { currentUiTransform, uiHeight, uiWidth } from "./input.js";
 import { measureWidth } from "./measure.js";
-import { uiApp } from "./runtime.js";
+import { uiApp } from "./state.js";
 
 // ---------- Text ----------
 
@@ -51,24 +51,23 @@ export const ANCHOR_V: Record<TextAnchor, 0 | 0.5 | 1> = {
  *  reference coords must measure the space in those same coords. Safe-area
  *  insets are mapped in too (and clamped at 0 — a scaled box that starts past
  *  the notch owes it nothing). */
-export function anchorViewport(ctx: CanvasRenderingContext2D): {
+export function anchorViewport(): {
   w: number;
   h: number;
   safeLeft: number;
   safeTop: number;
 } {
-  const vp = uiApp()?.viewport;
+  const vp = uiApp().viewport;
   const t = currentUiTransform();
   if (t) {
     return {
       w: uiWidth(),
       h: uiHeight(),
-      safeLeft: Math.max(0, ((vp?.safeLeft ?? 0) - t.ox) / t.scale),
-      safeTop: Math.max(0, ((vp?.safeTop ?? 0) - t.oy) / t.scale),
+      safeLeft: Math.max(0, (vp.safeLeft - t.ox) / t.scale),
+      safeTop: Math.max(0, (vp.safeTop - t.oy) / t.scale),
     };
   }
-  if (vp) return vp;
-  return { w: ctx.canvas.width, h: ctx.canvas.height, safeLeft: 0, safeTop: 0 };
+  return vp;
 }
 
 /** A themed text label. */
@@ -164,7 +163,7 @@ export function text(str: string, rawOpts?: TextOptions): void {
   const ctx = uiCtx();
   let opts = rawOpts ?? {};
   if (opts.anchor) {
-    const view = anchorViewport(ctx);
+    const view = anchorViewport();
     const hx = ANCHOR_H[opts.anchor];
     const vy = ANCHOR_V[opts.anchor];
     const baseX = hx === 0 ? view.safeLeft : hx === 0.5 ? view.w / 2 : view.w;
@@ -188,7 +187,7 @@ export function text(str: string, rawOpts?: TextOptions): void {
   // the sibling widget boxes drew.
   if (typeof ctx.setTransform === "function") {
     const g = uiApp();
-    if (g && g.ctx === ctx) {
+    if (g.ctx === ctx) {
       g.resetTransform();
       const t = currentUiTransform();
       if (t) {

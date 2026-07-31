@@ -16,9 +16,9 @@ import {
   uiFont,
   uiPointer,
   widgetId,
-} from "../core/index.js";
+} from "@src/ui/core/index.js";
 import { tooltip } from "./tooltip.js";
-import { pointInRect } from "../../collision.js";
+import { pointInRect } from "@src/collision/index.js";
 
 /** Button look. `"default"` is the neutral filled button; `"primary"` fills
  *  with the theme accent (calls to action); `"danger"` fills red (destructive

@@ -1,15 +1,17 @@
 import { createAnimation } from "minimotor/animation";
 import { createPerformanceMonitoring } from "minimotor/performance";
 // Sprite-sheet animation on the ECS.
-// Demonstrates: Sprites.atlas (procedural sprite-sheet baking), Anim.sheet
+// Demonstrates: Sprites.atlas (procedural sprite-sheet baking), Anim.fromGrid
 // (frame slicing + clock-derived playback), the ECS Sprite source-rect
 // (sx/sy/sw/sh), Draw.sprites(ecs.dense(Sprites.Sprite)), and Goodies.wrap. The sheet is generated
 // procedurally so the sample needs no asset files — an 8-frame
 // pulsing/rotating star.
 import { createUI } from "minimotor/ui";
-import { ECS, Goodies, Mathf, Sprites, createApp } from "minimotor";
+import { Goodies, Mathf, createApp } from "minimotor";
+import * as Sprites from "minimotor/sprites";
+import { component, createEcs } from "minimotor/ecs";
 
-const ecs = ECS.create();
+const ecs = createEcs();
 
 const game = createApp("game", { background: "#12141c" });
 const Anim = createAnimation(game);
@@ -47,14 +49,14 @@ const sheetCanvas = Sprites.atlas(
 
 // One clock-derived playback cursor drives every star; per-entity frame
 // offsets desync the timelines.
-const starSheet = Anim.sheet(sheetCanvas, {
+const starSheet = Anim.fromGrid(sheetCanvas, {
   frame: { w: CELL, h: CELL },
   states: { spin: { row: 0, frames: FRAMES, fps: 12 } },
 });
 const spin = starSheet.play("spin");
 
-const Vel = ECS.component<{ x: number; y: number }>("Vel");
-const Animated = ECS.component<{ offset: number }>("Animated"); // holds the per-entity frame offset
+const Vel = component<{ x: number; y: number }>("Vel");
+const Animated = component<{ offset: number }>("Animated"); // holds the per-entity frame offset
 
 function spawnStar(x: number, y: number) {
   const offset = Mathf.randInt(0, FRAMES - 1); // desync the timelines

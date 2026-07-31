@@ -1,5 +1,5 @@
 import type { Room } from "./room.js";
-import { createNetMeter, type NetMeter } from "../perf/net-meter.js";
+import { createNetMeter, type NetMeter } from "@src/perf/net-meter.js";
 
 const encoder = new TextEncoder();
 

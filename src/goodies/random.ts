@@ -1,4 +1,4 @@
-import { clamp } from "../mathf.js";
+import { clamp } from "../math/mathf.js";
 
 // ---------- Randomness: chance, loot and dice ----------
 // The pure, one-shot members of the randomness family. Each takes an injectable

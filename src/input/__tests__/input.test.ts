@@ -6,7 +6,7 @@ import {
   map,
   createGamepadTracker,
   navigation,
-} from "../index.js";
+} from "@src/input/index.js";
 
 beforeEach(() => {
   document.body.innerHTML = "";

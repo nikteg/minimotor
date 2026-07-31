@@ -16,8 +16,8 @@
 // step-tracked by the engine) and the pad tracker, with pad edges folded
 // per step on read (API_PLAN law 4).
 
-import type { KeyCode } from "../engine/index.js";
-import type { Vec2 } from "../vec2.js";
+import type { KeyCode } from "@src/engine/index.js";
+import type { Vec2 } from "@src/math/vec2.js";
 import { Buttons, type GamepadState } from "./gamepad.js";
 
 /** Standard-mapping gamepad inputs by name (sticks as four directions). */
@@ -160,13 +160,13 @@ export function map<A extends string>(
   const store = {} as Record<A, Binding[]>;
   for (const name of Object.keys(bindings) as A[]) store[name] = [...bindings[name]];
 
-  interface Fold {
+  interface PadSample {
     sampledStep: number;
     prevActive: boolean;
     curActive: boolean;
     curValue: number;
   }
-  const folds = new Map<A, Fold>();
+  const padSamples = new Map<A, PadSample>();
   const consumed = new Set<A>();
   const consumedReleaseStep = new Map<A, number>();
 
@@ -191,13 +191,13 @@ export function map<A extends string>(
     return { active: value > 0, value };
   }
 
-  /** Per-step pad edge fold: on the first read of a new step, the previous
+  /** Per-step pad sampling: on the first read of a new step, the previous
    *  step's activity shifts into `prevActive`. */
-  function fold(name: A): Fold {
-    let f = folds.get(name);
+  function samplePad(name: A): PadSample {
+    let f = padSamples.get(name);
     if (!f) {
       f = { sampledStep: -1, prevActive: false, curActive: false, curValue: 0 };
-      folds.set(name, f);
+      padSamples.set(name, f);
     }
     const now = steps();
     if (f.sampledStep !== now) {
@@ -234,22 +234,22 @@ export function map<A extends string>(
     return {
       get down() {
         if (suppressed(name)) return false;
-        return anyKey(name, (c) => keySource.down(c)) || fold(name).curActive;
+        return anyKey(name, (c) => keySource.down(c)) || samplePad(name).curActive;
       },
       get pressed() {
         if (suppressed(name)) return false;
-        const f = fold(name);
+        const f = samplePad(name);
         return anyKey(name, (c) => keySource.pressed(c)) || (f.curActive && !f.prevActive);
       },
       get released() {
         if (suppressed(name)) return false;
-        const f = fold(name);
+        const f = samplePad(name);
         return anyKey(name, (c) => keySource.released(c)) || (!f.curActive && f.prevActive);
       },
       get value() {
         if (suppressed(name)) return 0;
         const key = anyKey(name, (c) => keySource.down(c)) ? 1 : 0;
-        return Math.max(key, fold(name).curValue);
+        return Math.max(key, samplePad(name).curValue);
       },
     };
   }

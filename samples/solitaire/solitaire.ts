@@ -6,7 +6,7 @@ import { createPerformanceMonitoring } from "minimotor/performance";
 // Timers, Clock.world timers, Anim motions (the AI's card glide + win cascade),
 // Signals, Fsm, Particles.create, Collision, Mathf, a fixed-`resolution`
 // letterboxed stage, Goodies.shuffle & gridFormation, performance monitoring,
-// Sprites.getSprite, and Anim.sheet for a win sparkle.
+// Sprites.getSprite, and Anim.fromGrid for a win sparkle.
 import { createAudio } from "minimotor/audio";
 import { createInput } from "minimotor/input";
 import { createParticles } from "minimotor/particles";
@@ -236,7 +236,7 @@ const sparkleAtlas = Sprites.atlas(
   },
   { origin: "center" },
 );
-const sparkleAnim = Anim.sheet(sparkleAtlas, {
+const sparkleAnim = Anim.fromGrid(sparkleAtlas, {
   frame: { w: SPARKLE_SIZE, h: SPARKLE_SIZE },
   states: { spin: { row: 0, frames: 8, fps: 16 } },
 }).play("spin");

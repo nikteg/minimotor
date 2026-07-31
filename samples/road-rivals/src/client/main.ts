@@ -8,8 +8,9 @@ import { createUI } from "minimotor/ui";
 // Road Rivals — top-down shooter + enterable car + WebSocket multiplayer.
 // Local movement/vehicle simulation is authoritative. Remote actors are drawn
 // 100 ms in the past from Net.createInterpolator snapshot buffers.
-import { Collision, ECS, Gizmos, Goodies, Mathf, createApp, Transitions } from "minimotor";
-import { Car, Entity, Flash, Interpolator, Skidmarks, Transition, TransitionRun } from "minimotor";
+import { Collision, Gizmos, Goodies, Mathf, createApp, Transitions } from "minimotor";
+import { component, createEcs, type Entity } from "minimotor/ecs";
+import { Car, Flash, Interpolator, Skidmarks, Transition, TransitionRun } from "minimotor";
 import { createPhysics2D } from "minimotor/physics2d";
 import type { Body2D } from "minimotor/physics2d";
 import {
@@ -260,7 +261,7 @@ const Input = createInput(game);
 const Net = createNet(game);
 const Physics2D = createPhysics2D(game);
 const UI = createUI(game, Input);
-const OnscreenInput = createOnscreenInput(game, Input);
+const OnscreenInput = createOnscreenInput(game, Input, UI);
 // aims + auto-fires, HANDBRAKE (hold) and a contextual ENTER/EXIT CAR button.
 // Autohide keeps it hidden on desktop and shown on touch (default), so keyboard
 // + mouse are unaffected. `tryToggleCar`/`nearestEnterableCar`/`player` are used
@@ -389,8 +390,8 @@ const actorCollisionCooldown = new Map<string, number>();
 const { buildings, cover, props, solids } = createRoadWorld();
 const enemies: Bot[] = [];
 const botById = new Map<string, Bot>();
-const Pickup = ECS.component<PickupData>("RoadRivalsPickup");
-const pickupWorld = ECS.create();
+const Pickup = component<PickupData>("RoadRivalsPickup");
+const pickupWorld = createEcs();
 const pickupEntities = new Map<string, Entity>();
 
 // Box2D/Planck owns rigid collision and impulse transfer. The driving model
@@ -697,9 +698,11 @@ const joinTransition: Transition = {
 function goToState(next: string, spec: Transition = Transitions.fade(420, "#071012")) {
   if (transition || gameState === next) return;
   gameState = "transition";
-  transition = Transitions.run(spec, () => {
-    gameState = next;
-    if (next === "alive") resetPlayer();
+  transition = Transitions.run(spec, {
+    swap() {
+      gameState = next;
+      if (next === "alive") resetPlayer();
+    },
   });
 }
 

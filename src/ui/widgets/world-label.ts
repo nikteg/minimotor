@@ -1,5 +1,5 @@
-import type { CameraLens } from "../../camera/index.js";
-import { clamp } from "../../mathf.js";
+import type { CameraLens } from "@src/camera/index.js";
+import { clamp } from "@src/math/mathf.js";
 import {
   currentUiTransform,
   resolveColor,
@@ -7,7 +7,7 @@ import {
   uiApp,
   uiCtx,
   type TextOptions,
-} from "../core/index.js";
+} from "@src/ui/core/index.js";
 
 export interface WorldLabelTarget {
   x: number;
@@ -51,7 +51,7 @@ function drawArrow(
   ctx.save();
   if (typeof ctx.setTransform === "function") {
     const app = uiApp();
-    if (app?.ctx === ctx) {
+    if (app.ctx === ctx) {
       app.resetTransform();
       const transform = currentUiTransform();
       if (transform) {
@@ -87,7 +87,6 @@ export function worldLabel(
 ): WorldLabelResult {
   const camera = options.camera;
   const app = uiApp();
-  if (!app) throw new Error("Minimotor.UI: call createUI(app) before worldLabel");
   const view = app.viewport;
   const wx = target.x + (target.w ?? 0) / 2;
   const wy = target.y + (target.h ?? 0) / 2;

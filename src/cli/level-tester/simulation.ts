@@ -1,8 +1,8 @@
-import * as Collision from "../../collision.js";
-import * as Mathf from "../../mathf.js";
-import type { LadderSource, Solid, SolidSource } from "../../collision.js";
-import type { Rect } from "../../engine/app.js";
-import type { GeneratedAbilities } from "../features/level.feature.js";
+import * as Collision from "@src/collision/index.js";
+import * as Mathf from "@src/math/mathf.js";
+import type { LadderSource, Solid, SolidSource } from "@src/collision/index.js";
+import type { Rect } from "@src/engine/app.js";
+import type { GeneratedAbilities } from "@src/cli/features/level.js";
 
 export const TILE = 16;
 export const PLAYER_W = 12;

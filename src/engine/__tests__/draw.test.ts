@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createApp, type DrawApi } from "../index.js";
-import { create } from "../../ecs/index.js";
-import { Sprite } from "../../sprites.js";
-import type { DrawSprite } from "../index.js";
+import { createApp, type DrawApi } from "@src/engine/index.js";
+import { createEcs } from "@src/ecs/index.js";
+import { Sprite } from "@src/sprites/index.js";
+import type { DrawSprite } from "@src/engine/index.js";
 
 // A fake 2d context recording the calls the Draw primitives make.
 function fakeGradient() {
@@ -284,7 +284,7 @@ describe("Draw.sprites", () => {
   });
 
   it("renders an ECS Sprite store handed in as ecs.dense(Sprite)", () => {
-    const ecs = create();
+    const ecs = createEcs();
     ecs.spawn(Sprite.with({ x: 100, y: 50, img }));
     Draw.sprites(ecs.dense(Sprite));
     expect(ctx.calls).toContain("draw 90,40 20x20 @1");

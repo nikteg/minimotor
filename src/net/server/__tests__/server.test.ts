@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { serve, serveProtocol, type ServerSocket } from "../room.js";
-import { signaling } from "../signaling.js";
-import type { Protocol } from "../../protocol.js";
+import { serve, serveProtocol, type ServerSocket } from "@src/net/server/room.js";
+import { signaling } from "@src/net/server/signaling.js";
+import type { Protocol } from "@src/net/protocol.js";
 
 // A WebSocket-like socket + server test double.
 class MockSocket implements ServerSocket {

@@ -2,8 +2,8 @@ import { createAnimation } from "minimotor/animation";
 import { createPerformanceMonitoring } from "minimotor/performance";
 // PIXEL ADVENTURE — a polished mini-platformer on Pixel Frog's CC0 itch.io kit.
 // The headline: the player ships as one PNG PER STATE (idle/run/jump/fall/hit),
-// so it's the poster child for `Anim.states` — the multi-image companion to
-// `Anim.sheet`. Also shows loaded JSON + images, a `Tiles.grid` built from the
+// so it's the poster child for `Anim.fromImages` — the multi-image companion to
+// `Anim.fromGrid`. Also shows loaded JSON + images, a `Tiles.grid` built from the
 // numeric level with autotiled terrain, `Collision.moveAndSlide` against it,
 // the follow camera, `Audio.tone` SFX, particles, float-text and a fixed-
 // resolution letterboxed stage.
@@ -17,8 +17,9 @@ import { createOnscreenInput } from "minimotor/onscreen-input";
 import { createParticles } from "minimotor/particles";
 import { createTimers } from "minimotor/timers";
 import { createUI } from "minimotor/ui";
-import { Collision, Mathf, Sprites, createApp, Tiles } from "minimotor";
-import { Level, StateCursor, SheetCursor, MoverBody } from "minimotor";
+import { Collision, Mathf, createApp, Tiles } from "minimotor";
+import * as Sprites from "minimotor/sprites";
+import { Level, ImageAnimationCursor, AnimationCursor, MoverBody } from "minimotor";
 
 // A fixed 480×270 logical stage, letterboxed into the window by the engine —
 // world and HUD both draw in this space (no manual letterbox math).
@@ -44,7 +45,7 @@ const Input = createInput(game);
 const Particles = createParticles(game);
 const Timers = createTimers(game);
 const UI = createUI(game, Input);
-const OnscreenInput = createOnscreenInput(game, Input);
+const OnscreenInput = createOnscreenInput(game, Input, UI);
 
 // On-screen touch gamepad — renders in the true window corners (outside the
 // letterbox bars), auto-hidden on desktop and shown on touch devices.
@@ -184,10 +185,10 @@ let level: Level;
 let terrainImg: HTMLImageElement;
 let skyLayer: HTMLCanvasElement;
 let terrainLayer: HTMLCanvasElement;
-let playerAnim: StateCursor<"idle" | "run" | "jump" | "fall" | "hit">;
-let enemyAnim: SheetCursor;
-let fruitAnim: SheetCursor;
-let goalAnim: SheetCursor;
+let playerAnim: ImageAnimationCursor<"idle" | "run" | "jump" | "fall" | "hit">;
+let enemyAnim: AnimationCursor;
+let fruitAnim: AnimationCursor;
+let goalAnim: AnimationCursor;
 
 // -- Play state ---------------------------------------------------------------
 let player: Player;
@@ -341,7 +342,7 @@ Assets.load(
       frames: Math.round(img.width / FW),
       fps,
     });
-    playerAnim = Anim.states({
+    playerAnim = Anim.fromImages({
       idle: strip(A.playerIdle, 8),
       run: strip(A.playerRun, 12),
       jump: strip(A.playerJump),
@@ -349,10 +350,10 @@ Assets.load(
       hit: strip(A.playerHit, 14),
     }).play("idle");
 
-    // Enemy / fruit / goal are single strips — one looping Anim.sheet cursor
+    // Enemy / fruit / goal are single strips — one looping Anim.fromGrid cursor
     // each, shared across every instance (they animate in lockstep).
     const loop = (img: HTMLImageElement, fw: number, fh: number, fps: number) =>
-      Anim.sheet(img, {
+      Anim.fromGrid(img, {
         frame: { w: fw, h: fh },
         states: { loop: { row: 0, frames: Math.round(img.width / fw), fps } },
       }).play("loop");

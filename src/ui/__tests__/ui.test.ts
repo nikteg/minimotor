@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { pointInRect } from "../../collision.js";
+import { pointInRect } from "@src/collision/index.js";
 import {
   _reset,
   bar,
@@ -17,8 +17,9 @@ import {
   flow,
   text,
   textWidth,
-} from "../api.js";
-import { createUiRuntime, switchRuntime } from "../core/runtime.js";
+} from "@src/ui/api.js";
+import { selectUiApp } from "@src/ui/core/state.js";
+import { createTestUiApp } from "./app-fixture.js";
 
 const mockCtx = () => {
   const calls: {
@@ -164,18 +165,18 @@ describe("UI buttonState", () => {
 describe("UI bar", () => {
   it("draws the track (box) plus a clamped fill", () => {
     const { ctx, calls } = mockCtx();
-    switchRuntime(createUiRuntime(ctx));
+    selectUiApp(createTestUiApp(ctx));
     bar({ x: 10, y: 20, w: 100, h: 8, value: 0.5 });
     expect(calls.boxes).toEqual([[10, 20, 100, 8]]); // track, via drawBox
     expect(calls.fillRect).toEqual([[10, 20, 50, 8]]); // half fill
 
     const over = mockCtx();
-    switchRuntime(createUiRuntime(over.ctx));
+    selectUiApp(createTestUiApp(over.ctx));
     bar({ x: 0, y: 0, w: 100, h: 8, value: 1.7 }); // clamped to full
     expect(over.calls.fillRect[0]).toEqual([0, 0, 100, 8]);
 
     const empty = mockCtx();
-    switchRuntime(createUiRuntime(empty.ctx));
+    selectUiApp(createTestUiApp(empty.ctx));
     bar({ x: 0, y: 0, w: 100, h: 8, value: -2 }); // clamped to none — track only, no fill
     expect(empty.calls.boxes).toEqual([[0, 0, 100, 8]]);
     expect(empty.calls.fillRect).toEqual([]);
@@ -212,6 +213,7 @@ describe("UI theme", () => {
 
 describe("UI widget identity", () => {
   it("builds stable keyed ids and returns scoped callback values", () => {
+    selectUiApp(createTestUiApp(mockCtx().ctx));
     const id = ids("inventory", "player");
     expect(id("slot", 3)).toBe("inventory:player:slot:3");
     expect(idScope("menu", () => 42)).toBe(42);
@@ -219,10 +221,10 @@ describe("UI widget identity", () => {
 });
 
 describe("UI implicit context", () => {
-  it("switchRuntime(createUiRuntime()) routes bar and textWidth to the given ctx", () => {
+  it("selectUiApp(createTestUiApp()) routes bar and textWidth to the given ctx", () => {
     const { ctx, calls } = mockCtx();
     (ctx as { measureText?: unknown }).measureText = (t: string) => ({ width: t.length * 10 });
-    switchRuntime(createUiRuntime(ctx));
+    selectUiApp(createTestUiApp(ctx));
 
     expect(textWidth("abcd")).toBe(40);
     bar({ x: 0, y: 0, w: 100, h: 8, value: 0.5 }); // draws to the begun ctx
@@ -236,7 +238,7 @@ describe("UI text", () => {
   const textCtx = () => {
     const { ctx, calls } = mockCtx();
     (ctx as { measureText?: unknown }).measureText = (t: string) => ({ width: t.length * 10 });
-    switchRuntime(createUiRuntime(ctx));
+    selectUiApp(createTestUiApp(ctx));
     return { calls };
   };
 
@@ -328,7 +330,7 @@ describe("UI closure containers", () => {
 
   it("auto-flows children left-to-right and bubbles the click out", () => {
     const { ctx, calls } = btnCtx();
-    switchRuntime(createUiRuntime(ctx));
+    selectUiApp(createTestUiApp(ctx));
     // A root row with an explicit rect; two auto-width buttons flow inside.
     const clickedB = row({ x: 0, y: 0, w: 400, h: 40, gap: 10 }, () => {
       button({ label: "AA" }); // width = 2*10 + padX(28) = 48
@@ -345,7 +347,7 @@ describe("UI closure containers", () => {
 
   it("nests a column inside a row and reserves declared sizes", () => {
     const { ctx } = btnCtx();
-    switchRuntime(createUiRuntime(ctx));
+    selectUiApp(createTestUiApp(ctx));
     const seen: { x: number; y: number; w: number; h: number }[] = [];
     row({ x: 0, y: 0, w: 300, h: 100, gap: 0 }, () => {
       col({ w: 120, gap: 4 }, (c) => {
@@ -361,7 +363,7 @@ describe("UI closure containers", () => {
 
   it("a root container without a rect throws", () => {
     const { ctx } = btnCtx();
-    switchRuntime(createUiRuntime(ctx));
+    selectUiApp(createTestUiApp(ctx));
     // A root needs a position; width/height now auto-size when omitted.
     expect(() => row(() => button({ label: "x" }))).toThrow(/explicit x\/y/);
     _reset();
@@ -371,7 +373,7 @@ describe("UI closure containers", () => {
     const { ctx } = btnCtx();
     // Two frames: the first seeds the content-size cache, the second uses it.
     for (let frame = 0; frame < 2; frame++) {
-      switchRuntime(createUiRuntime(ctx));
+      selectUiApp(createTestUiApp(ctx));
       expect(() => col({ x: 10, y: 10, gap: 4 }, () => button({ label: "Hello" }))).not.toThrow();
       _reset();
     }
@@ -381,7 +383,7 @@ describe("UI closure containers", () => {
 describe("UI.grid overflow", () => {
   it("windows fixed-height rows and lays cells out per row", () => {
     const { ctx } = mockCtx();
-    switchRuntime(createUiRuntime(ctx));
+    selectUiApp(createTestUiApp(ctx));
     const cells: { x: number; y: number; i: number; c: number; r: number }[] = [];
     // 3 cols × 30 items = 10 rows of rowH 20 → 200px of content in a 60px box: it
     // overflows, so only the visible window is drawn (built on `list`).

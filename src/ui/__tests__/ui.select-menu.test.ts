@@ -4,9 +4,9 @@
 // steal the wheel or the drag). Uses the real-app harness: real loop, real
 // pointer events, assertions on the option labels the menu actually drew.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createApp, type App } from "../../engine/index.js";
-import { createUiRuntime, switchRuntime } from "../core/runtime.js";
-import { _reset, col, scaled, select, spacer } from "../api.js";
+import { createApp, type App } from "@src/engine/index.js";
+import { selectUiApp } from "@src/ui/core/state.js";
+import { _reset, col, scaled, select, spacer } from "@src/ui/api.js";
 
 let rafCallback: ((t: number) => void) | null = null;
 const origGc = HTMLCanvasElement.prototype.getContext;
@@ -90,8 +90,7 @@ function build(draw: (game: App) => void): {
   document.body.appendChild(canvas);
   const game = createApp(canvas, { fullscreen: false });
   // Raw widget API instead of createUI, so this harness does what createUI
-  // does: build the runtime for this app and select it each frame.
-  const rt = createUiRuntime(game.ctx, game);
+  // does: select this app each frame.
   vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
     left: 0,
     top: 0,
@@ -107,7 +106,7 @@ function build(draw: (game: App) => void): {
   game.Loop.run({
     update: () => {},
     draw: () => {
-      switchRuntime(rt);
+      selectUiApp(game);
       draw(game);
     },
   });

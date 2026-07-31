@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { matchmake } from "../matchmaker.js";
-import type { ServerSocket } from "../room.js";
+import { matchmake } from "@src/net/server/matchmaker.js";
+import type { ServerSocket } from "@src/net/server/room.js";
 
 class MockSocket implements ServerSocket {
   sent: string[] = [];

@@ -1,4 +1,4 @@
-import { clamp } from "../mathf.js";
+import { clamp } from "../math/mathf.js";
 
 // ---------- Grid, puzzle and roguelike ----------
 // Tile-map reasoning: neighbours, connected regions, Bresenham lines, sight and

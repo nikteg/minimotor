@@ -32,11 +32,11 @@ import {
   uiPointer,
   uiToScreen,
   uiWidth,
-} from "../core/index.js";
+} from "@src/ui/core/index.js";
 import { dragScroll, scrollbar } from "./lists.js";
-import { anchorViewport } from "../core/index.js";
-import { pointInRect } from "../../collision.js";
-import { clamp } from "../../mathf.js";
+import { anchorViewport } from "@src/ui/core/index.js";
+import { pointInRect } from "@src/collision/index.js";
+import { clamp } from "@src/math/mathf.js";
 
 // Persisted scroll offset + a scrollbar fade alpha per scrolling container,
 // keyed by its scrollbar id. Swept, so position-keyed entries from containers
@@ -120,7 +120,7 @@ function scrollable<R>(
   const contentMain = horiz ? body?.w : body?.h;
   const contentCross = horiz ? body?.h : body?.w;
   const naturalMain = (horiz ? 0 : top + bottom) + (contentMain ?? 0);
-  const vp = anchorViewport(uiCtx());
+  const vp = anchorViewport();
   const avail = horiz
     ? Math.max(60, vp.w - (opts.x ?? 0) - 12)
     : Math.max(60, vp.h - (opts.y ?? 0) - 12);

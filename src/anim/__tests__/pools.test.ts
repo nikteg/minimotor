@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { effects, keyed } from "../pools.js";
+import { effects, keyed } from "@src/anim/pools.js";
 
 describe("animation pools", () => {
   it("lazily owns and retains keyed values", () => {

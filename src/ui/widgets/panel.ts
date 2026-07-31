@@ -3,7 +3,7 @@
 // container, in ./layout.ts), the overlays (popover / modal / dialog) and the
 // `select` drop menu all paint. Not part of the public `UI.*` surface — it's the
 // shared drawing primitive, not a widget.
-import { centeredText, drawBox, roundRectPath, theme, uiFont } from "../core/index.js";
+import { centeredText, drawBox, roundRectPath, theme, uiFont } from "@src/ui/core/index.js";
 
 /** Geometry + look of a panel frame. */
 export interface PanelFrame {

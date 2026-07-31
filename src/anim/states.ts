@@ -1,10 +1,10 @@
 // ---------- Multi-image state animations ----------
-// The companion to `Anim.sheet` for the OTHER common art layout: one image PER
+// The companion to `Anim.fromGrid` for the OTHER common art layout: one image PER
 // STATE (a sprite kit shipped as `idle.png`, `run.png`, `jump.png`, …), rather
 // than every state packed into one grid. Each state's image is a horizontal
 // strip of `frames` cells (or a single static frame).
 //
-//   const hero = Anim.states({
+//   const hero = Anim.fromImages({
 //     idle: { image: art.idle, frames: 4, fps: 6 },
 //     run:  { image: art.run,  frames: 6, fps: 12 },
 //     jump: { image: art.jump },                       // 1 static frame
@@ -14,13 +14,19 @@
 //   Draw.sprite(anim, player, { flipX });    // SpriteLike: the image switches
 //
 // A kit is shared, immutable config; a CURSOR (`hero.play("idle")`) is a cheap
-// per-entity playback head — a hundred goblins share one kit. Like `Anim.sheet`
+// per-entity playback head — a hundred goblins share one kit. Like `Anim.fromGrid`
 // the cursor is pull-derived (API_PLAN law 4): the frame comes from the clock on
 // read, so nothing ticks, holding the clock freezes it, and calling `set` with
 // the current state every step never restarts the loop.
 
-import { activeClock, boundClock, type ClockHandle } from "../clock.js";
-import { type FrameRect, type PlaybackOptions, type SheetImage } from "./sheet.js";
+import type { ClockHandle } from "@src/clock/index.js";
+import {
+  type AnimationCursor,
+  type AnimationSource,
+  type FrameRect,
+  type PlaybackOptions,
+  type SheetImage,
+} from "./sheet.js";
 
 /** One state's clip: an image plus how to read frames out of it. */
 export interface StateClip {
@@ -39,7 +45,7 @@ export interface StateClip {
 /** A per-entity playback head over a state kit. Everything derives from the
  *  cursor's clock at read time. Satisfies `SpriteLike`, so it drops straight
  *  into `Draw.sprite` — and `sheet.image` returns the ACTIVE state's image. */
-export interface StateCursor<K extends string = string> {
+export interface ImageAnimationCursor<K extends string = string> extends AnimationCursor<K> {
   /** The active state's image, exposed as `SpriteLike` expects. Switches with
    *  `set` — this is what makes multi-image kits work in `Draw.sprite`. */
   readonly sheet: { readonly image: SheetImage };
@@ -64,13 +70,15 @@ export interface StateCursor<K extends string = string> {
   readonly done: boolean;
 }
 
-/** A shared, immutable multi-image state kit (one image per state); `play`
- *  starts a cheap per-entity `StateCursor`. */
-export interface StateKit<K extends string = string> {
+/** A shared, immutable multi-image animation source (one image per state). */
+export interface ImageAnimationSource<K extends string = string> extends AnimationSource<
+  K,
+  ImageAnimationCursor<K>
+> {
   /** Start a playback cursor, on this kit's clock unless `opts` names one. */
-  play(initial: K, opts?: PlaybackOptions): StateCursor<K>;
+  play(initial: K, opts?: PlaybackOptions): ImageAnimationCursor<K>;
   /** Play one state once, hold its final frame, and report `done`. */
-  once(initial: K, opts?: PlaybackOptions): StateCursor<K>;
+  once(initial: K, opts?: PlaybackOptions): ImageAnimationCursor<K>;
   /** Source rect for an arbitrary state/frame (manual draws, HUD icons).
    *  Reused scratch — read, don't hold. */
   rect(state: K, frame: number): FrameRect;
@@ -79,12 +87,11 @@ export interface StateKit<K extends string = string> {
 }
 
 /** Assemble named states, each from its own image, into a shared kit. */
-export function states<K extends string>(
+export function fromImages<K extends string>(
   clips: Record<K, StateClip>,
   options: { clock?: ClockHandle } = {},
-): StateKit<K> {
-  // Captured while the binding wrapper is still on the stack — see `sheet`.
-  const kitClock = options.clock ?? boundClock();
+): ImageAnimationSource<K> {
+  const sourceClock = options.clock;
   const scratch: FrameRect = { sx: 0, sy: 0, sw: 0, sh: 0 };
 
   const frameCount = (clip: StateClip): number => Math.max(1, clip.frames ?? 1);
@@ -103,9 +110,18 @@ export function states<K extends string>(
     return scratch;
   }
 
-  const makeCursor = (initial: K, playOpts: PlaybackOptions, loop: boolean): StateCursor<K> => {
-    if (!clips[initial]) throw new Error(`Anim.states: unknown state "${initial}"`);
-    const clock = playOpts.clock ?? kitClock ?? activeClock();
+  const makeCursor = (
+    initial: K,
+    playOpts: PlaybackOptions,
+    loop: boolean,
+  ): ImageAnimationCursor<K> => {
+    if (!clips[initial]) throw new Error(`Anim.fromImages: unknown state "${initial}"`);
+    const clock = playOpts.clock ?? sourceClock;
+    if (!clock) {
+      throw new Error(
+        "Anim.fromImages: playback needs a clock; pass one explicitly or use createAnimation(app)",
+      );
+    }
     let state = initial;
     let start = clock.now;
     let pausedAt: number | undefined;
@@ -126,14 +142,14 @@ export function states<K extends string>(
       },
     };
 
-    const cursor: StateCursor<K> = {
+    const cursor: ImageAnimationCursor<K> = {
       sheet: sheetFacade,
       get state() {
         return state;
       },
       set(next) {
         if (next !== state) {
-          if (!clips[next]) throw new Error(`Anim.states: unknown state "${next}"`);
+          if (!clips[next]) throw new Error(`Anim.fromImages: unknown state "${next}"`);
           state = next;
           start = now();
         }
@@ -169,7 +185,7 @@ export function states<K extends string>(
     return cursor;
   };
 
-  const self: StateKit<K> = {
+  const self: ImageAnimationSource<K> = {
     rect: rectFor,
     image(state) {
       return clips[state].image;

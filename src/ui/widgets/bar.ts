@@ -1,6 +1,6 @@
 // ---------- bar ----------
-import { Flowable, drawBox, place, roundRectPath, theme, uiCtx } from "../core/index.js";
-import { clamp } from "../../mathf.js";
+import { Flowable, drawBox, place, roundRectPath, theme, uiCtx } from "@src/ui/core/index.js";
+import { clamp } from "@src/math/mathf.js";
 
 /** A horizontal meter (health, progress, charge): a track with `value` (0..1,
  *  clamped) of it filled from the left. Give an explicit rect, or omit `x`/`y`

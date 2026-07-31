@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Room, RoomStatus } from "../room.js";
-import { events } from "../events.js";
-import { bindEntities, syncEntities } from "../entities.js";
-import { hasAuthority, memberIndex, own, owns } from "../ownership.js";
-import { networkTime } from "../time.js";
-import { createInputBuffer, createPrediction } from "../prediction.js";
-import { monitorRoom, simulateNetwork } from "../diagnostics.js";
-import { hostState } from "../host-state.js";
-import { sharedItems } from "../shared-items.js";
+import type { Room, RoomStatus } from "@src/net/room.js";
+import { events } from "@src/net/events.js";
+import { bindEntities, syncEntities } from "@src/net/entities.js";
+import { hasAuthority, memberIndex, own, owns } from "@src/net/ownership.js";
+import { networkTime } from "@src/net/time.js";
+import { createInputBuffer, createPrediction } from "@src/net/prediction.js";
+import { monitorRoom, simulateNetwork } from "@src/net/diagnostics.js";
+import { hostState } from "@src/net/host-state.js";
+import { sharedItems } from "@src/net/shared-items.js";
 
 interface TestRoom extends Room<unknown> {
   emit(from: string, message: unknown): void;

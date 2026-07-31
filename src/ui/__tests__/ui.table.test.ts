@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach } from "vitest";
-import { _reset, table, type TableColumn } from "../api.js";
-import { createUiRuntime, switchRuntime } from "../core/runtime.js";
+import { _reset, table, type TableColumn } from "@src/ui/api.js";
+import { selectUiApp } from "@src/ui/core/state.js";
+import { createTestUiApp } from "./app-fixture.js";
 
 // A mock 2D context that records fillText and answers measureText, enough for
 // UI.text / list / listItem / scrollbar to run headless.
@@ -98,7 +99,7 @@ function renderOrder(opts: {
 describe("UI.table", () => {
   beforeEach(() => {
     _reset();
-    switchRuntime(createUiRuntime(mockCtx().ctx));
+    selectUiApp(createTestUiApp(mockCtx().ctx));
   });
 
   it("sorts rows by the active column ascending", () => {
@@ -140,7 +141,7 @@ describe("UI.table", () => {
 
   it("draws each header label with a sort arrow on the active column only", () => {
     const { ctx, fillText } = mockCtx();
-    switchRuntime(createUiRuntime(ctx));
+    selectUiApp(createTestUiApp(ctx));
     table<Server>({
       x: 0,
       y: 0,

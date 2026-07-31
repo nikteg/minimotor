@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { distanceField } from "../index.js";
+import { distanceField } from "@src/goodies/index.js";
 
 describe("Goodies.distanceField", () => {
   // A 5-wide corridor with a wall at x=2 (row 0 open, everything else wall).

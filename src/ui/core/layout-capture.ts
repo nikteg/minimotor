@@ -12,7 +12,7 @@
 
 import { currentUiScale, uiToScreen } from "./input.js";
 import { onFrameEnd, onReset } from "./lifecycle.js";
-import { runtimeSlot } from "./runtime.js";
+import { uiSlot } from "./state.js";
 
 /** One captured rect: a widget slot or a container box. */
 export interface LayoutEntry {
@@ -42,8 +42,8 @@ export interface LayoutEntry {
 }
 
 // Entries recorded so far THIS frame, and the last completed frame's tree.
-// Per runtime, like every other frame-scoped state.
-const st = runtimeSlot<{ frame: LayoutEntry[]; tree: LayoutEntry[] }>(() => ({
+// Per app, like every other frame-scoped state.
+const st = uiSlot<{ frame: LayoutEntry[]; tree: LayoutEntry[] }>(() => ({
   frame: [],
   tree: [],
 }));

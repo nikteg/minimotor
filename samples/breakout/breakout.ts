@@ -12,7 +12,8 @@ import { createAudio } from "minimotor/audio";
 import { createCamera } from "minimotor/camera";
 import { createScenes } from "minimotor/scenes";
 import { createUI } from "minimotor/ui";
-import { Collision, ECS, Gizmos, Mathf, createApp, Vec2 } from "minimotor";
+import { Collision, Gizmos, Mathf, createApp, Vec2 } from "minimotor";
+import { component, createEcs } from "minimotor/ecs";
 import { createOverlays } from "../shared/overlays.ts";
 
 const GW = 400;
@@ -27,8 +28,8 @@ interface BlockData {
   color: string;
   row: number;
 }
-const Block = ECS.component<BlockData>("Block");
-const ecs = ECS.create();
+const Block = component<BlockData>("Block");
+const ecs = createEcs();
 
 // Fixed-resolution stage: the engine fits GW×GH into the window (play area
 // "#151515", letterbox bars "#0a0a0a"). The perf HUD shows live entity count.
@@ -145,7 +146,7 @@ const scenes = Scenes.create({
         Audio.Sfx.blip(520, 0.05);
       }
 
-      // Blocks — query the ECS, bounce off the first hit and despawn it. Despawn
+      // Blocks — query the bounce off the first hit and despawn it. Despawn
       // during a query is safe: the world buffers it until iteration finishes.
       for (const [e, b] of ecs.query(Block)) {
         const c = Collision.circleRect(ball.x, ball.y, BALL_R, b);

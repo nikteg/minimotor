@@ -6,8 +6,8 @@
 // toward white for vector art, or draw a white silhouette over a sprite
 // (`Sprites.tint`).
 
-import { animate, type Motion } from "../anim/index.js";
-import type { ClockHandle } from "../clock.js";
+import { animate, type Motion } from "@src/anim/index.js";
+import type { ClockHandle } from "@src/clock/index.js";
 
 /** A hit-flash latch returned by `flash()`: `hit()` to trigger, read `value` (1 → 0). */
 export interface Flash {

@@ -65,7 +65,7 @@ Pure, data-agnostic helpers. No engine state.
 - ✅ `Camera` — `Camera.create` lens (lerp follow, deadzone, world clamp, zoom,
   `fit`), `layer` parallax, `shake` (decaying, pull-derived from the step counter)
 - ✅ `Sprites` — `getSprite` (square) + `getLayer` (arbitrary offscreen cache),
-  `tint`; sheet baking: `atlas` (procedural frames → grid sheet for `Anim.sheet`),
+  `tint`; sheet baking: `atlas` (procedural frames → grid sheet for `Anim.fromGrid`),
   `packAtlas` (pack frame images), `contentBounds` (opaque box / trim padding)
 
 ### `Goodies` & `Gizmos` — the lego catalog
@@ -307,7 +307,7 @@ The gap between "toy" and "full-fledged": loaded art and level data.
 
 ```ts
 await Minimotor.Assets.load({ hero: "hero.png", tiles: "tiles.png", jump: "jump.wav" });
-const run = Minimotor.Anim.sheet(Minimotor.Assets.get("hero"), { fw: 32, fh: 32, fps: 12 });
+const run = Minimotor.Anim.fromGrid(Minimotor.Assets.get("hero"), { fw: 32, fh: 32, fps: 12 });
 run.draw(ctx, x, y); // advances by loop dt
 
 const map = Minimotor.Tiles.grid(levelData, { tw: 16, atlas: Minimotor.Assets.get("tiles") });
@@ -318,9 +318,9 @@ map.solidAt(x, y);
 - ✅ `Assets` — `load(manifest, onProgress?)` preloads images + JSON (kind by
   extension), cached by name; `image`/`json`/`get`/`has`/`clear`. (Audio
   preloading deferred — the WebAudio path lives in `Audio`.)
-- ✅ `Anim` — `Anim.sheet(img, { fw, fh, fps, frames?, cols?, loop? })`: grid
+- ✅ `Anim` — `Anim.fromGrid(img, { fw, fh, fps, frames?, cols?, loop? })`: grid
   slicing + dt-advanced timeline (`update`/`rect`/`frame`/`done`/`reset`/`draw`).
-  `Anim.states({ idle, run, jump }, "idle")` combines clips behind a named
+  `Anim.fromImages({ idle, run, jump }, "idle")` combines clips behind a named
   state player without restarting the current clip every update. Feeds the ECS
   `Sprite` source-rect (`sx/sy/sw/sh`), so animated entities render through
   `world.drawSprites`. Proof: the `sprites` sample (procedural sheet) and Pixel
@@ -627,7 +627,7 @@ non-goal (it fuses policy — jump heights, impulse directions, gravity — that
 belongs to the game). The engine's job is the small, pure, reusable
 **mechanisms** those characters compose.
 
-**Shipped:** `Fsm` (general state machine + `Anim.states` bridge) and `Timers`
+**Shipped:** `Fsm` (general state machine + `Anim.fromImages` bridge) and `Timers`
 (`window`/`buffer`/`cooldown` latches + the composed `jumpGate`). Proven in
 two samples: `platformer` gained coyote time + buffering by feeding its jump
 edge through `Timers.jumpGate` (impulse + variable-height cut still game code);
@@ -657,8 +657,8 @@ sm.update(dtMs); // runs the active state; a returned name transitions
 sm.state; // active name;  sm.is("jump");  sm.go("hurt")
 ```
 
-**Maps to `Anim.states`:** they share the named-state shape but are different
-layers — `Fsm` is game logic (enter/exit/update), `Anim.states` is a clip
+**Maps to `Anim.fromImages`:** they share the named-state shape but are different
+layers — `Fsm` is game logic (enter/exit/update), `Anim.fromImages` is a clip
 timeline (`play`/`rect`/`done`). They are NOT merged. They pair in one line
 (`anim.play(sm.state)`), and `Fsm.create(states, initial, { anim })` will
 optionally auto-`play(newState)` on every transition when a clip of that name
@@ -714,7 +714,7 @@ Bundling the impulse magnitudes/direction into a `Platform.wallJump()` would be
 policy for one game. So there is **no wall-jump util and no `Platform`
 namespace**: `moveAABB` stays on `Tiles` (tile data lives there; top-down games
 use it too), and the platformer story is composition —
-`Tiles.moveAABB` + `Fsm` + `Timers` + `Anim.states` + `Camera` + `Particles`.
+`Tiles.moveAABB` + `Fsm` + `Timers` + `Anim.fromImages` + `Camera` + `Particles`.
 The **proof** is a Pixel Adventure / platformer sample gaining coyote time,
 jump buffering and wall jumps with no new "controller" object.
 
@@ -881,7 +881,7 @@ hoppspelet) as proof it actually simplifies code — the discipline used so far.
    4c. ✅ **Built-in Sprite renderer** — standard `ECS.Sprite` component +
    `world.drawSprites(ctx)` (z-sorted, anchor/rot/scale/alpha, source sub-rect for
    sheets/atlases). Particles sample dropped its hand-written blit loop.
-5. ✅ **Assets + Anim** — `Assets` preloader (images + JSON) and `Anim.sheet`
+5. ✅ **Assets + Anim** — `Assets` preloader (images + JSON) and `Anim.fromGrid`
    sprite-sheet playback wired into the Sprite source-rect. New **sprites** sample
    animates a procedurally-built sheet through the ECS. (Pure logic unit-tested
    with mocks; visual proof is browser-only — image decode doesn't run headless.)

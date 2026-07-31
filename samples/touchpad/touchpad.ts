@@ -10,7 +10,7 @@ const view = game.viewport;
 const { Loop, Draw } = game;
 const Input = createInput(game);
 const UI = createUI(game, Input);
-const OnscreenInput = createOnscreenInput(game, Input);
+const OnscreenInput = createOnscreenInput(game, Input, UI);
 
 // An on-screen gamepad: a left analog stick + two face buttons. `autohide:false`
 // keeps it on screen on desktop too — a mouse drives it while it's visible, and

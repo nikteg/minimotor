@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { Mixer, Sfx, tone } from "../index.js";
+import { Mixer, Sfx, tone } from "@src/audio/index.js";
 
 // ---- Minimal Web Audio mock ----
 // Records every connect() so we can assert graph wiring; AudioParams remember
@@ -287,10 +287,10 @@ describe("Audio.tone", () => {
 
 describe("Audio.Sfx delegates to the sfx bus", () => {
   it("on/volume flow through Mixer.bus('sfx')", () => {
-    Sfx.setVolume(0.6);
-    Sfx.setOn(false);
+    Sfx.volume = 0.6;
+    Sfx.on = false;
     expect(Sfx.on).toBe(false);
     expect(Mixer.bus("sfx").on).toBe(false);
-    Sfx.setOn(true);
+    Sfx.on = true;
   });
 });

@@ -4,9 +4,11 @@ import { createPerformanceMonitoring } from "minimotor/performance";
 // Demonstrates: Sprites.Sprite (position + texture + alpha), Draw.sprites(ecs.dense(Sprite)) —
 // no hand-written blit loop — plus an update system that fades sprites out.
 import { createUI } from "minimotor/ui";
-import { ECS, Sprites, createApp } from "minimotor";
+import { createApp } from "minimotor";
+import * as Sprites from "minimotor/sprites";
+import { component, createEcs } from "minimotor/ecs";
 
-const ecs = ECS.create();
+const ecs = createEcs();
 
 // The perf HUD shows this world's live entity count (`ents`).
 // The viewport is LIVE (mutated on resize); the engine owns clearing.
@@ -23,7 +25,7 @@ const SIZE = 8;
 // lives in the Sprites namespace, not the ECS — the ECS stays sprite-agnostic.
 // The spark's alpha doubles as its remaining life, so no separate Life component.
 const { Sprite } = Sprites;
-const Vel = ECS.component<{ x: number; y: number }>("Vel");
+const Vel = component<{ x: number; y: number }>("Vel");
 
 // Pre-render the spark texture once.
 const sparkCanvas = Sprites.getSprite("spark", SIZE * 3, view.dpr, (ctx) => {

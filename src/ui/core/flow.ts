@@ -13,8 +13,7 @@ import {
   recordLayout,
 } from "./layout-capture.js";
 import { ANCHOR_H, ANCHOR_V, anchorViewport, type TextAnchor } from "./text.js";
-import { uiCtx } from "./context.js";
-import { runtimeSlot } from "./runtime.js";
+import { uiSlot } from "./state.js";
 
 /** Options for `flow()` — a one-axis layout cursor. */
 export interface FlowOptions {
@@ -225,9 +224,9 @@ export interface Fillable extends Flowable {
 // can remember where the MOST RECENT widget landed — flowing or pinned alike.
 // Anchored floaters (popover, floatText) attach to it when the caller gives no
 // x/y, so `UI.button(...)` followed by `UI.popover({...})` just works inside an
-// auto-flowing layout. Per runtime; the rect is in the CURRENT UI space (the
+// auto-flowing layout. Per app; the rect is in the CURRENT UI space (the
 // same space the widget drew in).
-const lastRectSlot = runtimeSlot<{ rect: { x: number; y: number; w: number; h: number } | null }>(
+const lastRectSlot = uiSlot<{ rect: { x: number; y: number; w: number; h: number } | null }>(
   () => ({ rect: null }),
 );
 
@@ -491,7 +490,7 @@ export function containerRect(
   if (opts.anchor) {
     // Root placed in the VIEWPORT: `w`/`h` are the preferred size clamped to the
     // viewport minus `margin`; the anchor + any `x`/`y` offset position it.
-    const vp = anchorViewport(uiCtx());
+    const vp = anchorViewport();
     const m = opts.margin ?? 0;
     const cw = Math.min(w ?? 120, vp.w - m * 2);
     const ch = Math.min(h ?? (dir === "row" ? 34 : 40), vp.h - m * 2);

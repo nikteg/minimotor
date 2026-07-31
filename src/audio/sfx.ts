@@ -188,11 +188,14 @@ export const Sfx = {
     return Mixer.bus("sfx").on;
   },
   /** Mute/unmute all SFX (click-free). */
-  setOn(on: boolean): void {
+  set on(on: boolean) {
     Mixer.bus("sfx").setOn(on);
   },
   /** Master SFX volume 0..1 (click-free ramp). */
-  setVolume(v: number): void {
+  get volume(): number {
+    return Mixer.bus("sfx").volume;
+  },
+  set volume(v: number) {
     Mixer.bus("sfx").setVolume(v);
   },
 

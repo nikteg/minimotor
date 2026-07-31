@@ -8,7 +8,7 @@ import {
   type GeneratedFeature,
   type LevelScore,
   type PreferenceModel,
-} from "../features/level.feature.js";
+} from "@src/cli/features/level.js";
 
 export interface TesterConfig {
   ladders: boolean;

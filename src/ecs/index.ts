@@ -3,6 +3,7 @@
 // a world factory that owns spawn/query/systems. Content-agnostic — it knows
 // nothing about sprites or rendering (see `Sprites.Sprite` for the standard
 // sprite component and `Draw.sprites` for its renderer).
+// Optional public module: `import { component, createEcs } from "minimotor/ecs"`.
 // Split into types / component (the registry) / world (the factory).
 export * from "./types.js";
 export * from "./component.js";

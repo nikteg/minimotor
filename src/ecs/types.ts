@@ -3,10 +3,11 @@
 // handle; entities are generational ids (stale handles are detectable); queries
 // iterate the smallest matching set and yield typed tuples.
 //
-//   const Position = Minimotor.ECS.component<{ x: number; y: number }>("Position");
-//   const Velocity = Minimotor.ECS.component<{ x: number; y: number }>("Velocity");
+//   import { component, createEcs } from "minimotor/ecs";
 //
-//   const world = Minimotor.ECS.create();
+//   const Position = component<{ x: number; y: number }>("Position");
+//   const Velocity = component<{ x: number; y: number }>("Velocity");
+//   const world = createEcs();
 //   const e = world.spawn(Position.with({ x: 0, y: 0 }), Velocity.with({ x: 1, y: 0 }));
 //
 //   for (const [id, pos, vel] of world.query(Position, Velocity)) {
@@ -23,7 +24,7 @@
 export interface Component<T> {
   /** Dense numeric id, assigned on registration — the query bitset index. */
   readonly id: number;
-  /** Label passed to `ECS.component` (auto-generated when omitted) — for
+  /** Label passed to `component` (auto-generated when omitted) — for
    *  debugging and `Perf` overlays. */
   readonly name: string;
   /** Pair this component with data for `world.spawn(...)`. */
@@ -59,8 +60,8 @@ export type System = (world: Ecs) => void;
 export type RenderSystem = (world: Ecs, ctx: CanvasRenderingContext2D) => void;
 
 /** A container of entities, their components, and queries over them. Create
- *  with `ECS.create()` — the blessed instance idiom is `const ecs =
- *  ECS.create()`. ECS worlds are game CONTENT: make one per scene or per
+ *  with `createEcs()` — the blessed instance idiom is `const ecs =
+ *  createEcs()`. ECS worlds are game CONTENT: make one per scene or per
  *  game, drop it to tear it down. */
 export interface Ecs {
   /** Create an entity, optionally attaching components. Returns its id. */

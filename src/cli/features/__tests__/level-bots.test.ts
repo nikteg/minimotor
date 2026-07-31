@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import levelFeature, { generateLevel, type GeneratedLevel } from "../level.feature.js";
-import { evaluateLevelWithBots, planLevel } from "../../level-tester/bots.js";
-import { createPlatformerSimulation } from "../../level-tester/simulation.js";
-import { evolveLevels } from "../../level-tester/tournament.js";
+import levelFeature, { generateLevel, type GeneratedLevel } from "@src/cli/features/level.js";
+import { evaluateLevelWithBots, planLevel } from "@src/cli/level-tester/bots.js";
+import { createPlatformerSimulation } from "@src/cli/level-tester/simulation.js";
+import { evolveLevels } from "@src/cli/level-tester/tournament.js";
 
 function flatLevel(): GeneratedLevel {
   const width = 24;

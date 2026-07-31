@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { grid } from "../../tiles/index.js";
-import { minimap } from "../api.js";
-import { createUiRuntime, switchRuntime } from "../core/runtime.js";
+import { grid } from "@src/tiles/index.js";
+import { minimap } from "@src/ui/api.js";
+import { selectUiApp } from "@src/ui/core/state.js";
+import { createTestUiApp } from "./app-fixture.js";
 
 describe("UI.minimap", () => {
   it("projects semantic tiles, points, and a viewport into one rect", () => {
@@ -20,7 +21,7 @@ describe("UI.minimap", () => {
       fillRect,
       strokeRect,
     } as unknown as CanvasRenderingContext2D;
-    switchRuntime(createUiRuntime(ctx));
+    selectUiApp(createTestUiApp(ctx));
     const level = grid("#R", {
       size: 10,
       legend: { "#": { solid: true }, R: { slope: "up-right" } },

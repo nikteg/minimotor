@@ -1,5 +1,5 @@
 import type { Rect } from "./app.js";
-import { drawText, monoFont, type TextHAlign, type TextVAlign } from "../text.js";
+import { drawText, monoFont, type TextHAlign, type TextVAlign } from "@src/engine/text.js";
 import { blitPixelAligned } from "./pixel-raster.js";
 
 type Point = { x: number; y: number };
@@ -380,7 +380,7 @@ export interface DrawSpriteOptions {
 }
 
 /** Blit a single animated sprite: `spr` is anything `SpriteLike` (an
- *  `Anim.sheet`/`Anim.states` cursor), `at` is the destination `Rect`. Anchored
+ *  `Anim.fromGrid`/`Anim.fromImages` cursor), `at` is the destination `Rect`. Anchored
  *  bottom-center (feet planted). `opts`: `flipX`/`flipY`, `scaleX`/`scaleY`
  *  (squash & stretch), `rot`, `alpha`. For many ECS sprites at once use
  *  `Draw.sprites`. */

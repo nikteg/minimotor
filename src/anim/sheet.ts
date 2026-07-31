@@ -3,7 +3,7 @@
 // (one grid row per state). A CURSOR (`sheet.play("idle")`) is a cheap
 // per-entity playback head — a hundred goblins share one sheet.
 //
-//   const heroSheet = Anim.sheet(art.hero, {
+//   const heroSheet = Anim.fromGrid(art.hero, {
 //     frame: { w: 32, h: 32 },
 //     states: {
 //       idle: { row: 0, frames: 4, fps: 6 },
@@ -20,7 +20,7 @@
 // calling `set` with the current state every step never restarts the loop
 // (the classic stuck-on-frame-0 bug can't be written).
 
-import { activeClock, boundClock, type ClockHandle } from "../clock.js";
+import type { ClockHandle } from "@src/clock/index.js";
 
 /** A rectangular region of the sheet image (px). Matches the `sx/sy/sw/sh`
  *  fields of the ECS `Sprite` component. */
@@ -51,7 +51,7 @@ export interface SheetStateSpec {
   fps?: number;
 }
 
-/** Config for `Anim.sheet` — the source frame size plus the named states packed
+/** Config for `Anim.fromGrid` — the source frame size plus the named states packed
  *  into the grid. */
 export interface SheetOptions<K extends string> {
   /** Source frame size in the image, in px. */
@@ -67,11 +67,17 @@ export interface SheetOptions<K extends string> {
  *  `width`/`height`. */
 export type SheetImage = CanvasImageSource & { width: number; height: number };
 
+/** The image-bearing shape consumed by `Draw.sprite`. Multi-image animations
+ * expose the active state's image through the same protocol. */
+export interface AnimationImageSource {
+  readonly image: SheetImage;
+}
+
 /** A per-entity playback head over a sheet. Everything derives from the
  *  cursor's clock at read time. */
-export interface SheetCursor<K extends string = string> {
+export interface AnimationCursor<K extends string = string> {
   /** The sheet this cursor plays over. */
-  readonly sheet: Sheet<K>;
+  readonly sheet: AnimationImageSource;
   /** The active state name. */
   readonly state: K;
   /** Switch state. Same-state calls are no-ops (call it every step freely);
@@ -95,31 +101,37 @@ export interface SheetCursor<K extends string = string> {
 
 export interface PlaybackOptions {
   /** Playback clock. Defaults to the clock the sheet captured when it was
-   *  built — an app-bound `Anim.sheet` captures that app's world clock, so
+   *  built — an app-bound `Anim.fromGrid` captures that app's world clock, so
    *  cursors pause and slow down with it without naming it here. */
   clock?: ClockHandle;
 }
 
-/** A single-image, named-state sprite sheet; `play` starts a per-entity cursor. */
-export interface Sheet<K extends string = string> {
-  /** The source image sliced by this sheet. */
-  readonly image: SheetImage;
-  /** Source frame size in the image, in px. */
-  readonly frame: { w: number; h: number };
+/** Shared playback protocol implemented by every animation image layout. */
+export interface AnimationSource<
+  K extends string = string,
+  C extends AnimationCursor<K> = AnimationCursor<K>,
+> {
   /** Start a playback cursor, on this sheet's clock unless `opts` names one. */
-  play(initial: K, opts?: PlaybackOptions): SheetCursor<K>;
+  play(initial: K, opts?: PlaybackOptions): C;
   /** Play one state once, hold its final frame, and report `done`. */
-  once(initial: K, opts?: PlaybackOptions): SheetCursor<K>;
+  once(initial: K, opts?: PlaybackOptions): C;
   /** Source rect for an arbitrary state/frame (manual draws, HUD icons).
    *  Reused scratch — read, don't hold. */
   rect(state: K, frame: number): FrameRect;
 }
 
+/** A single-image grid source, including its shared image and cell size. */
+export interface GridAnimationSource<K extends string = string> extends AnimationSource<K> {
+  readonly image: SheetImage;
+  readonly frame: { w: number; h: number };
+}
+
 /** Slice an image into a named-state sprite sheet. */
-export function sheet<K extends string>(image: SheetImage, opts: SheetOptions<K>): Sheet<K> {
-  // Captured HERE, while the app-bound service's `withClock` is still on the
-  // stack: `play()` is called later from game code, where it has restored.
-  const sheetClock = opts.clock ?? boundClock();
+export function fromGrid<K extends string>(
+  image: SheetImage,
+  opts: SheetOptions<K>,
+): GridAnimationSource<K> {
+  const sourceClock = opts.clock;
   const fw = opts.frame.w;
   const fh = opts.frame.h;
   const states = opts.states;
@@ -136,9 +148,14 @@ export function sheet<K extends string>(image: SheetImage, opts: SheetOptions<K>
     return scratch;
   }
 
-  const makeCursor = (initial: K, playOpts: PlaybackOptions, loop: boolean): SheetCursor<K> => {
-    if (!states[initial]) throw new Error(`Anim.sheet: unknown state "${initial}"`);
-    const clock = playOpts.clock ?? sheetClock ?? activeClock();
+  const makeCursor = (initial: K, playOpts: PlaybackOptions, loop: boolean): AnimationCursor<K> => {
+    if (!states[initial]) throw new Error(`Anim.fromGrid: unknown state "${initial}"`);
+    const clock = playOpts.clock ?? sourceClock;
+    if (!clock) {
+      throw new Error(
+        "Anim.fromGrid: playback needs a clock; pass one explicitly or use createAnimation(app)",
+      );
+    }
     let state = initial;
     let start = clock.now;
     let pausedAt: number | undefined;
@@ -153,14 +170,14 @@ export function sheet<K extends string>(image: SheetImage, opts: SheetOptions<K>
       return loop ? idx % n : Math.min(idx, n - 1);
     };
 
-    const cursor: SheetCursor<K> = {
+    const cursor: AnimationCursor<K> = {
       sheet: self,
       get state() {
         return state;
       },
       set(next) {
         if (next !== state) {
-          if (!states[next]) throw new Error(`Anim.sheet: unknown state "${next}"`);
+          if (!states[next]) throw new Error(`Anim.fromGrid: unknown state "${next}"`);
           state = next;
           start = now();
         }
@@ -196,7 +213,7 @@ export function sheet<K extends string>(image: SheetImage, opts: SheetOptions<K>
     return cursor;
   };
 
-  const self: Sheet<K> = {
+  const self: GridAnimationSource<K> = {
     image,
     frame: { w: fw, h: fh },
     rect: rectFor,

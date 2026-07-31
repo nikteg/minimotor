@@ -143,7 +143,7 @@ export default defineConfig({
     // a hand-kept copy is a third place every subpath has to be spelled (after
     // package.json and samples/tsconfig.json) and the one nobody notices has
     // gone stale, since a wrong alias still resolves — to yesterday's module.
-    alias: subpathAliases(),
+    alias: [{ find: /^@src\/(.*)$/, replacement: `${here("./src")}/$1` }, ...subpathAliases()],
   },
   // Don't pre-bundle the engine so edits to its build output show up without
   // clearing Vite's dep cache.

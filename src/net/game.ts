@@ -21,7 +21,7 @@ import { socketRoom } from "./socket-room.js";
 import { monitorRoom, type MonitoredRoom } from "./diagnostics.js";
 import { networkTime } from "./time.js";
 import { sharedItems, type SharedItems, type SharedItemsOptions } from "./shared-items.js";
-import type { NetMeter } from "../perf/net-meter.js";
+import type { NetMeter } from "@src/perf/net-meter.js";
 
 /** One STUN or TURN server. A bare string is a STUN URL; TURN needs
  *  credentials, so give it the object form. Plain data — no WebRTC types

@@ -1,13 +1,10 @@
-import { applyFullscreen, preventNavigation } from "../fullscreen.js";
-import { STEP_MS, createClockApi, type ClockApi } from "../clock.js";
-
-// Re-exported so `STEP_MS` stays reachable from the engine surface it has
-// always been part of, even though the constant itself now lives with the clock.
-export { STEP_MS };
+import { applyFullscreen, preventNavigation } from "@src/engine/fullscreen.js";
+import { createClockApi, type ClockApi } from "@src/clock/index.js";
 import type { Keys, Pointer } from "./input.js";
 import type { KeyCode } from "./keycodes.js";
 import { createDraw, type DrawApi } from "./draw.js";
 import { createLoop, type LoopApi } from "./loop.js";
+import { isEditableTarget } from "./dom.js";
 
 // ---------- Runtime ----------
 // One private canvas runtime backs each public app. App code receives the
@@ -64,7 +61,7 @@ export interface Viewport {
 /** The per-frame callbacks. Input is read from the app's polled services. */
 export interface AppCallbacks {
   /** Fixed-timestep simulation. May run 0..N times per rendered frame; every
-   *  call represents exactly one fixed step (1000/60 ms), so THE STEP IS THE
+   *  call represents exactly one configured fixed step, so THE STEP IS THE
    *  TIME UNIT — write constants in px/step and px/step². Read `Loop.step`
    *  when real milliseconds are needed. */
   update: () => void;
@@ -212,7 +209,11 @@ function resolveCanvas(canvas: string | HTMLCanvasElement): HTMLCanvasElement {
 
 function buildRuntime(options: RuntimeOptions): Runtime {
   const pauseOnPortrait = options.pauseOnPortrait ?? false;
-  const stepMs = 1000 / (options.fps ?? 60);
+  const fps = options.fps ?? 60;
+  if (!Number.isFinite(fps) || fps <= 0) {
+    throw new RangeError("Minimotor: fps must be a finite number greater than 0");
+  }
+  const stepMs = 1000 / fps;
   const maxCatchupSteps = Math.max(1, Math.round(MAX_CATCHUP_MS / stepMs));
   const canvas = resolveCanvas(options.canvas);
   // The viewport is a LIVE object: same identity forever, fields mutated in
@@ -388,21 +389,10 @@ function buildRuntime(options: RuntimeOptions): Runtime {
   let stepsElapsed = 0;
 
   const preventKeys = new Set(options.preventKeys ?? DEFAULT_PREVENT_KEYS);
-  const editingText = (target: EventTarget | null) => {
-    const el = target as HTMLElement | null;
-    return (
-      !!el &&
-      (el.tagName === "INPUT" ||
-        el.tagName === "TEXTAREA" ||
-        el.tagName === "SELECT" ||
-        el.isContentEditable)
-    );
-  };
-
   const onKeyDown = (e: KeyboardEvent) => {
     // Native controls backing UI.textInput/UI.select own their keystrokes.
     // Do not prevent Space/arrows or leak typing into app actions.
-    if (editingText(e.target)) return;
+    if (isEditableTarget(e.target)) return;
     if (preventKeys.has(e.code)) e.preventDefault();
     if (!heldKeys.has(e.code)) {
       pressedKeys.add(e.code); // ignore auto-repeat
@@ -422,7 +412,7 @@ function buildRuntime(options: RuntimeOptions): Runtime {
     const key = keyValueByCode.get(e.code) ?? e.key;
     keyValueByCode.delete(e.code);
     heldKeyValues.delete(key);
-    if (editingText(e.target)) return;
+    if (isEditableTarget(e.target)) return;
     releasedKeys.add(e.code);
     releasedKeyValues.add(key);
   };
@@ -938,16 +928,18 @@ export interface AppOptions extends Omit<RuntimeOptions, "canvas"> {
 }
 
 /** Create one isolated app. */
-export function createApp(canvas: string | HTMLCanvasElement, options: AppOptions = {}): App {
-  if (options.fullscreen !== false) applyFullscreen();
-  if (options.preventNavigation) preventNavigation(true);
-  const {
-    fullscreen: _fullscreen,
-    preventNavigation: _navigation,
+export function createApp(
+  canvas: string | HTMLCanvasElement,
+  {
+    fullscreen = true,
+    preventNavigation: navigation = false,
     pauseWhenHidden,
     pauseWhenBlurred,
     ...runtimeOptions
-  } = options;
+  }: AppOptions = {},
+): App {
+  if (fullscreen) applyFullscreen();
+  if (navigation) preventNavigation(true);
   const runtime = buildRuntime({ canvas, ...runtimeOptions });
   let visible = typeof document === "undefined" || document.visibilityState !== "hidden";
   let focused = typeof document === "undefined" || document.hasFocus();

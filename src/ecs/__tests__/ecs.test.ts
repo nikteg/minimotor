@@ -1,17 +1,20 @@
 import { describe, it, expect, vi } from "vitest";
-import { component, create, type Entity } from "../index.js";
+import { component, createEcs, type Entity } from "@src/ecs/index.js";
 
 const Position = component<{ x: number; y: number }>("Position");
 const Velocity = component<{ x: number; y: number }>("Velocity");
 const Tag = component<true>("Tag");
 
-function ids(world: ReturnType<typeof world>, ...cs: Parameters<typeof world.query>): Entity[] {
+function ids(
+  world: ReturnType<typeof createEcs>,
+  ...cs: Parameters<ReturnType<typeof createEcs>["query"]>
+): Entity[] {
   return [...world.query(...cs)].map((row) => row[0]);
 }
 
 describe("ECS entities & components", () => {
   it("spawns with components and reads them back", () => {
-    const w = create();
+    const w = createEcs();
     const e = w.spawn(Position.with({ x: 1, y: 2 }), Velocity.with({ x: 3, y: 4 }));
     expect(w.alive(e)).toBe(true);
     expect(w.get(e, Position)).toEqual({ x: 1, y: 2 });
@@ -20,7 +23,7 @@ describe("ECS entities & components", () => {
   });
 
   it("add overwrites, remove detaches", () => {
-    const w = create();
+    const w = createEcs();
     const e = w.spawn();
     w.add(e, Position, { x: 0, y: 0 });
     w.add(e, Position, { x: 9, y: 9 });
@@ -31,7 +34,7 @@ describe("ECS entities & components", () => {
   });
 
   it("despawn removes the entity and all its components", () => {
-    const w = create();
+    const w = createEcs();
     const e = w.spawn(Position.with({ x: 0, y: 0 }), Velocity.with({ x: 0, y: 0 }));
     w.despawn(e);
     expect(w.alive(e)).toBe(false);
@@ -41,7 +44,7 @@ describe("ECS entities & components", () => {
   });
 
   it("size tracks live entities through spawn/despawn/clear", () => {
-    const w = create();
+    const w = createEcs();
     expect(w.size).toBe(0);
     const a = w.spawn(Position.with({ x: 0, y: 0 }));
     w.spawn();
@@ -57,7 +60,7 @@ describe("ECS entities & components", () => {
 
 describe("ECS generational ids", () => {
   it("a recycled slot invalidates the old handle", () => {
-    const w = create();
+    const w = createEcs();
     const a = w.spawn(Position.with({ x: 1, y: 1 }));
     w.despawn(a);
     const b = w.spawn(Position.with({ x: 2, y: 2 })); // reuses a's slot, new generation
@@ -69,7 +72,7 @@ describe("ECS generational ids", () => {
   });
 
   it("operations on a dead handle are no-ops", () => {
-    const w = create();
+    const w = createEcs();
     const e = w.spawn();
     w.despawn(e);
     expect(() => {
@@ -83,7 +86,7 @@ describe("ECS generational ids", () => {
 
 describe("ECS queries", () => {
   it("yields only entities holding every component, with typed tuples", () => {
-    const w = create();
+    const w = createEcs();
     const moving = w.spawn(Position.with({ x: 0, y: 0 }), Velocity.with({ x: 1, y: 2 }));
     w.spawn(Position.with({ x: 5, y: 5 })); // no Velocity — excluded
 
@@ -97,14 +100,14 @@ describe("ECS queries", () => {
   });
 
   it("empty when any component has no entities", () => {
-    const w = create();
+    const w = createEcs();
     w.spawn(Position.with({ x: 0, y: 0 }));
     expect([...w.query(Position, Velocity)]).toEqual([]);
     expect([...w.query(Tag)]).toEqual([]);
   });
 
   it("drives from the smallest set (correct regardless of arg order)", () => {
-    const w = create();
+    const w = createEcs();
     for (let i = 0; i < 100; i++) w.spawn(Position.with({ x: i, y: 0 }));
     const rare = w.spawn(Position.with({ x: -1, y: 0 }), Velocity.with({ x: 0, y: 0 }));
     expect(ids(w, Velocity, Position)).toEqual([rare]);
@@ -114,7 +117,7 @@ describe("ECS queries", () => {
 
 describe("ECS iteration safety (command buffer)", () => {
   it("despawns during a query apply after it finishes, not mid-walk", () => {
-    const w = create();
+    const w = createEcs();
     const spawned: Entity[] = [];
     for (let i = 0; i < 6; i++) spawned.push(w.spawn(Position.with({ x: i, y: 0 })));
 
@@ -131,7 +134,7 @@ describe("ECS iteration safety (command buffer)", () => {
   });
 
   it("entities spawned during a query are not visited until the next one", () => {
-    const w = create();
+    const w = createEcs();
     w.spawn(Position.with({ x: 0, y: 0 }));
     let visited = 0;
     for (const _row of w.query(Position)) {
@@ -145,7 +148,7 @@ describe("ECS iteration safety (command buffer)", () => {
   });
 
   it("nested queries flush only when the outer one completes", () => {
-    const w = create();
+    const w = createEcs();
     const a = w.spawn(Position.with({ x: 0, y: 0 }));
     const b = w.spawn(Position.with({ x: 1, y: 0 }));
     for (const [outer] of w.query(Position)) {
@@ -163,7 +166,7 @@ describe("ECS iteration safety (command buffer)", () => {
 
 describe("ECS systems", () => {
   it("runs update systems in order then flushes buffered changes", () => {
-    const w = create();
+    const w = createEcs();
     const order: string[] = [];
     w.spawn(Position.with({ x: 0, y: 0 }), Velocity.with({ x: 2, y: 3 }));
 
@@ -186,7 +189,7 @@ describe("ECS systems", () => {
   });
 
   it("render systems receive the ctx", () => {
-    const w = create();
+    const w = createEcs();
     w.spawn(Position.with({ x: 5, y: 7 }));
     const ctx = {} as CanvasRenderingContext2D;
     const drawn: Array<[number, number]> = [];
@@ -199,7 +202,7 @@ describe("ECS systems", () => {
   });
 
   it("system() replaces a system registered under the same name", () => {
-    const w = create();
+    const w = createEcs();
     const first = vi.fn();
     const second = vi.fn();
     w.system("s", first);
@@ -212,7 +215,7 @@ describe("ECS systems", () => {
 
 describe("ECS dense() — generic component-store accessor", () => {
   it("returns a component's live backing array, content-agnostic", () => {
-    const w = create();
+    const w = createEcs();
     expect(w.dense(Position)).toHaveLength(0); // empty before anything holds it
     w.spawn(Position.with({ x: 100, y: 50 }));
     w.spawn(Position.with({ x: 1, y: 2 }), Velocity.with({ x: 9, y: 9 }));
@@ -227,21 +230,21 @@ describe("ECS dense() — generic component-store accessor", () => {
   });
 
   it("hands out the store's own array — elements mutate through it", () => {
-    const w = create();
+    const w = createEcs();
     w.spawn(Position.with({ x: 0, y: 0 }));
     w.dense(Position)[0].x = 42;
     expect([...w.query(Position)][0][1].x).toBe(42);
   });
 
   it("shares one empty result for absent stores (no per-call alloc)", () => {
-    const w = create();
+    const w = createEcs();
     expect(w.dense(Tag)).toBe(w.dense(Position)); // both empty → same frozen array
   });
 });
 
 describe("ECS each (callback queries)", () => {
   it("visits matching entities with the same semantics as query", () => {
-    const w = create();
+    const w = createEcs();
     const e1 = w.spawn(Position.with({ x: 1, y: 2 }), Velocity.with({ x: 3, y: 4 }));
     w.spawn(Position.with({ x: 9, y: 9 })); // no Velocity → not visited
     const rows: [Entity, number, number][] = [];
@@ -250,7 +253,7 @@ describe("ECS each (callback queries)", () => {
   });
 
   it("defers structural changes issued during iteration", () => {
-    const w = create();
+    const w = createEcs();
     w.spawn(Position.with({ x: 0, y: 0 }));
     w.spawn(Position.with({ x: 1, y: 0 }));
     let visited = 0;

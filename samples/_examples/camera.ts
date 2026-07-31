@@ -1,13 +1,14 @@
 import { createCamera } from "minimotor/camera";
-import { createApp, ECS, Goodies } from "minimotor";
+import { createApp, Goodies } from "minimotor";
+import { component, createEcs } from "minimotor/ecs";
 
 const app = createApp("game", { background: "#12141c" });
 const { Loop, Keys, Draw } = app;
 const Camera = createCamera(app);
 
 const WORLD = { x: 0, y: 0, w: 1280, h: 720 };
-const ecs = ECS.create();
-const Body = ECS.component<{ x: number; y: number; vx: number; vy: number }>("body");
+const ecs = createEcs();
+const Body = component<{ x: number; y: number; vx: number; vy: number }>("body");
 for (let i = 0; i < 80; i++) {
   const a = i * 2.4;
   ecs.spawn(

@@ -1,5 +1,5 @@
 // ---------- Widget identity ----------
-import { runtimeSlot } from "./runtime.js";
+import { uiSlot } from "./state.js";
 
 /** One segment of a widget id — a `string` or `number` — as taken by `ids`. */
 export type IdPart = string | number;
@@ -21,8 +21,8 @@ export interface IdScopeState {
   next: number;
 }
 
-// Active idScope nesting — per UI runtime, like every other frame-scoped stack.
-const idScopes = runtimeSlot<IdScopeState[]>(() => []);
+// Active idScope nesting — per app, like every other frame-scoped stack.
+const idScopes = uiSlot<IdScopeState[]>(() => []);
 
 /** Give otherwise-unidentified interactive widgets automatic, frame-stable
  * ids in callback order. Best for static forms/toolbars. Dynamic or

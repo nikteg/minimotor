@@ -1,5 +1,5 @@
 import { sync, type PeerStates, type Room, type SyncOptions } from "./room.js";
-import { lerp, lerpAngle } from "../mathf.js";
+import { lerp, lerpAngle } from "@src/math/mathf.js";
 import { bodiesCodec, bodyCodec, type SyncCodec } from "./body-codec.js";
 import { syncEntities, type EntityStates, type SyncEntitiesOptions } from "./entities.js";
 

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { sync, type Room } from "../room.js";
+import { sync, type Room } from "@src/net/room.js";
 
 // A fake room: pure handler plumbing, captured sends.
 function fakeRoom() {

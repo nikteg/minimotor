@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createAssets } from "../../assets/service.js";
-import { createAnimation } from "../../anim/service.js";
-import { createAutosave } from "../../autosave/service.js";
-import { createInput } from "../../input/service.js";
-import { createNet } from "../../net/service.js";
-import { createSnapshots } from "../../snapshots.js";
-import { createStorage } from "../../storage/service.js";
-import { createApp } from "../app.js";
-import { sheet, type SheetImage } from "../../anim/index.js";
+import { createAssets } from "@src/assets/index.js";
+import { createAnimation } from "@src/anim/index.js";
+import { createAutosave } from "@src/autosave/index.js";
+import { createInput } from "@src/input/index.js";
+import { createNet } from "@src/net/index.js";
+import { createSnapshots } from "@src/snapshots/index.js";
+import { createStorage } from "@src/storage/index.js";
+import { createApp } from "@src/engine/app.js";
+import { fromGrid, type SheetImage } from "@src/anim/index.js";
 
 beforeEach(() => {
   HTMLCanvasElement.prototype.getContext = function () {
@@ -74,18 +74,16 @@ describe("explicit game services", () => {
   });
 
   it("keeps two games' animations on their own clocks", () => {
-    // The whole reason the primitives capture the ambient clock when they are
-    // BUILT rather than reading it when they are used: `play()` runs later,
-    // from game code, with no binding on the stack. If it read the ambient
-    // clock then, the second createAnimation would have stolen the first's.
+    // Each factory receives its owning clock explicitly, so another app can
+    // never steal or overwrite the binding.
     const a = createApp(document.createElement("canvas"));
     const b = createApp(document.createElement("canvas"));
     const AnimA = createAnimation(a);
     const AnimB = createAnimation(b);
-    const image = { width: 64, height: 32 } as unknown as Parameters<typeof AnimA.sheet>[0];
+    const image = { width: 64, height: 32 } as unknown as Parameters<typeof AnimA.fromGrid>[0];
     const options = { frame: { w: 32, h: 32 }, states: { idle: { row: 0, frames: 2 } } };
-    const sheetA = AnimA.sheet(image, options);
-    const sheetB = AnimB.sheet(image, options);
+    const sheetA = AnimA.fromGrid(image, options);
+    const sheetB = AnimB.fromGrid(image, options);
 
     a.Clock.world.hold(); // freeze A only
     const cursorA = sheetA.play("idle");
@@ -98,14 +96,14 @@ describe("explicit game services", () => {
 
   it("refuses to build a cursor with no clock anywhere", () => {
     const image = { width: 64, height: 32 } as unknown as SheetImage;
-    const unbound = sheet(image, {
+    const unbound = fromGrid(image, {
       frame: { w: 32, h: 32 },
       states: { idle: { row: 0, frames: 2 } },
     });
     // Geometry needs no time, so building and measuring is fine…
     expect(unbound.rect("idle", 0)).toEqual({ sx: 0, sy: 0, sw: 32, sh: 32 });
     // …but a cursor that would silently never advance is an error, not a shrug.
-    expect(() => unbound.play("idle")).toThrow(/no ambient clock/);
+    expect(() => unbound.play("idle")).toThrow(/playback needs a clock/);
   });
 
   it("gives each game an isolated asset cache", () => {

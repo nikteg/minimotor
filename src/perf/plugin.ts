@@ -1,5 +1,5 @@
-import type { App } from "../engine/index.js";
-import { pointInRect } from "../collision.js";
+import type { App } from "@src/engine/index.js";
+import { pointInRect } from "@src/collision/index.js";
 import { drawPerfHud } from "./hud.js";
 import type { NetMeter } from "./net-meter.js";
 import { createSparkline } from "./sparkline.js";

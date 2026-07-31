@@ -1,11 +1,12 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { Recipes, sfx, buses, master } from "../api.js";
-import { tone } from "../sfx.js";
+import { Recipes } from "@src/audio/recipes.js";
+import { sfx, buses, master } from "@src/audio/surface.js";
+import { tone } from "@src/audio/sfx.js";
 
 // The spec → voice mapping is the interesting part of `Audio.sfx`; stub the
 // synth itself so the assertions are about what was ASKED for, not WebAudio.
 vi.mock("../sfx.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../sfx.js")>()),
+  ...(await importOriginal<typeof import("@src/audio/sfx.js")>()),
   tone: vi.fn(),
 }));
 const toneCalls = () => vi.mocked(tone).mock.calls.map(([o]) => o);

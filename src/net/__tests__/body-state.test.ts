@@ -6,9 +6,9 @@ import {
   lerpBodyState,
   syncBodies,
   syncBody,
-} from "../body-state.js";
-import type { Room } from "../room.js";
-import { bodiesCodec, bodyCodec } from "../body-codec.js";
+} from "@src/net/body-state.js";
+import type { Room } from "@src/net/room.js";
+import { bodiesCodec, bodyCodec } from "@src/net/body-codec.js";
 
 afterEach(() => vi.useRealTimers());
 

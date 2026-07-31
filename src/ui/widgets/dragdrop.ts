@@ -4,11 +4,11 @@ import {
   onFrameEnd,
   onReset,
   rawPointer,
-  runtimeSlot,
+  uiSlot,
   setCursor,
   uiPointer,
-} from "../core/index.js";
-import { pointInRect } from "../../collision.js";
+} from "@src/ui/core/index.js";
+import { pointInRect } from "@src/collision/index.js";
 
 // ---------- Drag and drop ----------
 
@@ -21,7 +21,7 @@ interface ActiveDrag {
   offsetY: number;
 }
 
-const st = runtimeSlot<{ drag: ActiveDrag | null }>(() => ({ drag: null }));
+const st = uiSlot<{ drag: ActiveDrag | null }>(() => ({ drag: null }));
 
 let hooksRegistered = false;
 function ensureDragHooks(): void {

@@ -3,12 +3,12 @@
 // These tests run the SAME assertions against a real `rooms()` server, driven
 // through the real `socketRoom` client over a fake socket pair.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { socketRoom } from "../socket-room.js";
-import { rooms, type BinarySocket } from "../server/rooms.js";
-import { events } from "../events.js";
-import { sharedItems } from "../shared-items.js";
-import { syncBody } from "../body-state.js";
-import { hostState } from "../host-state.js";
+import { socketRoom } from "@src/net/socket-room.js";
+import { rooms, type BinarySocket } from "@src/net/server/rooms.js";
+import { events } from "@src/net/events.js";
+import { sharedItems } from "@src/net/shared-items.js";
+import { syncBody } from "@src/net/body-state.js";
+import { hostState } from "@src/net/host-state.js";
 
 /** A socket pair: what the client "sends" is delivered to the server half and
  *  vice versa, synchronously. */

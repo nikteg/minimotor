@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
-import { startStandaloneLevelTester } from "../../level-tester/standalone.js";
+import { startStandaloneLevelTester } from "@src/cli/level-tester/standalone.js";
 
 const temporaryDirectories: string[] = [];
 

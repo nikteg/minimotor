@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { blitPixelAligned, fillPixelAligned } from "../pixel-raster.js";
+import { blitPixelAligned, fillPixelAligned } from "@src/engine/pixel-raster.js";
 
 function context() {
   const images: number[][] = [];

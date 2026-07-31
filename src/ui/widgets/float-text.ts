@@ -8,13 +8,12 @@ import {
   lastWidgetRect,
   onReset,
   onStep,
-  runtimeSlot,
+  uiSlot,
   uiCtx,
   uiApp,
   uiFont,
   uiToScreen,
-} from "../core/index.js";
-import { STEP_MS } from "../../clock.js";
+} from "@src/ui/core/index.js";
 
 /** Options for a floating text. */
 export interface FloatTextOptions {
@@ -170,13 +169,16 @@ export function createFloatText(): FloatTextManager {
 
 // The per-runtime default pool behind `floatText`/`drawFloatText`, aged on the
 // fixed step (via `onStep`) so it pauses with the loop like Clock/Tween.
-const floats = runtimeSlot<FloatTextManager>(createFloatText);
+const floats = uiSlot<FloatTextManager>(createFloatText);
 
 let hooksRegistered = false;
 function ensureFloatTextHooks(): void {
   if (hooksRegistered) return;
   hooksRegistered = true;
-  onStep(() => floats().advance(uiApp()?.Loop.step ?? STEP_MS));
+  onStep(() => {
+    const app = uiApp();
+    floats().advance(app.Loop.step);
+  });
   onReset(() => {
     floats().clear();
   });

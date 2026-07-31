@@ -11,6 +11,9 @@
     "lib": ["es2020", "dom"],
     "strict": true,
     "skipLibCheck": true,
+    "paths": {
+      "@src/*": ["./src/*"]
+    },
     "declaration": false,
     "noUnusedLocals": false,
     "rootDir": ".",

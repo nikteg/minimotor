@@ -3,8 +3,8 @@
 // and a regenerating charge meter. (The pure curves — waveScale, dayCycle —
 // stay in Goodies.pacing.)
 
-import { clamp } from "../mathf.js";
-import type { ClockHandle } from "../clock.js";
+import { clamp } from "@src/math/mathf.js";
+import type { ClockHandle } from "@src/clock/index.js";
 
 /** An in-order checkpoint/lap tracker, returned by `checkpointRoute()`. */
 export interface CheckpointRoute {

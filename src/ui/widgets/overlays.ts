@@ -21,9 +21,9 @@ import {
   uiCtx,
   uiFont,
   uiToScreen,
-} from "../core/index.js";
-import { anchorViewport } from "../core/index.js";
-import { pointInRect } from "../../collision.js";
+} from "@src/ui/core/index.js";
+import { anchorViewport } from "@src/ui/core/index.js";
+import { pointInRect } from "@src/collision/index.js";
 
 // Scale is LEXICAL: an overlay is scaled by the `UI.scaled` block it's drawn
 // in, like any other widget — it just has to be drawn LATE (so it paints over
@@ -99,7 +99,7 @@ export function popover(opts: PopoverOptions, children?: () => void): boolean {
   let x = opts.x ?? 0;
   let y = opts.y ?? 0;
   if (anchor) {
-    const vp = anchorViewport(ctx);
+    const vp = anchorViewport();
     x = Math.max(4, Math.min(anchor.x, vp.w - opts.w - 4));
     y = anchor.y + anchor.h + 4;
     if (y + h > vp.h - 4) y = Math.max(4, anchor.y - h - 4);
@@ -207,7 +207,7 @@ export function modal<R>(
   ensureWired();
   if (opts.onDismiss && consumeDismissRequest()) opts.onDismiss();
   enterOverlay(opts.showFocus ?? hasActiveNavPad());
-  const vp = anchorViewport(ctx);
+  const vp = anchorViewport();
   ctx.save();
   ctx.fillStyle = theme.dim;
   ctx.fillRect(0, 0, vp.w, vp.h);
@@ -372,7 +372,7 @@ export interface DialogOptions {
  * ``` */
 export function dialog(opts: DialogOptions): string | null {
   const ctx = uiCtx();
-  const vp = anchorViewport(ctx);
+  const vp = anchorViewport();
   const choices = opts.choices ?? [];
   const portraitSize = opts.portrait ? (opts.portraitSize ?? 72) : 0;
   const lineH = theme.fontSize + 8;

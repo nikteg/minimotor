@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createLens, type CameraOptions } from "../index.js";
-import type { DrawApi } from "../../engine/index.js";
+import { createLens, type CameraOptions } from "@src/camera/index.js";
+import type { DrawApi } from "@src/engine/index.js";
 
 // A hand-cranked step source: cameras fold forward by elapsed steps on read.
 function stepper(): { steps: () => number; advance: (n: number) => void } {

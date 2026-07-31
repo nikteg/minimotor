@@ -18,7 +18,7 @@
 // apart but landed 1 ms apart look like 1 ms of motion, which the blend then
 // scales back up — the classic "remote players jitter and rubber-band" bug.
 
-import { lerp } from "../mathf.js";
+import { lerp } from "@src/math/mathf.js";
 
 /** How far past the newest snapshot pair the projection may reach, as a
  *  multiple of the pair's own span. Bounds the overshoot when a gap is much

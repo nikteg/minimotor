@@ -8,7 +8,7 @@ const { Loop, Keys, Draw } = app;
 const Assets = createAssets(app);
 
 const art = await Assets.load({ idle: "hero-idle.png", run: "hero-run.png" });
-const hero = Anim.states({
+const hero = Anim.fromImages({
   idle: { image: art.idle, frames: 4, fps: 6 },
   run: { image: art.run, frames: 6, fps: 12 },
 });

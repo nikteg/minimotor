@@ -3,49 +3,22 @@
 // subpaths (`minimotor/audio`, `minimotor/net`, `minimotor/ui`, ...).
 
 import { createApp } from "./engine/index.js";
-import {
-  rectsOverlap,
-  circleHit,
-  crossedDown,
-  pointInRect,
-  sweptAABB,
-  circleRect,
-  separateCircles,
-  bounceInBounds,
-  slide,
-  moveAndSlide,
-  dropThrough,
-  slopeY,
-  climbLadder,
-  grid,
-  contacts,
-} from "./collision.js";
-/** Tiny archetype-free entity-component-system. `ECS.component` declares a
- *  component and `ECS.create` builds a world; then `world.spawn`,
- *  `world.query`/`world.dense` and `world.system` handle iteration and per-step
- *  logic. Content-agnostic — render via `Sprites.Sprite` + `Draw.sprites`.
- *
- *    const Pos = ECS.component<{ x: number; y: number }>("Pos");
- *    const world = ECS.create();
- *    world.spawn(Pos.with({ x: 0, y: 0 }));
- *    for (const [id, p] of world.query(Pos)) p.x += 1;
- */
-import * as ECS from "./ecs/index.js";
+import * as Collision from "./collision/index.js";
 /** General finite state machine: `Fsm.create(states, initial)` builds a machine
  *  of named states with `enter`/`update`/`exit`. `machine.update()` runs the
  *  active state and transitions on the name it returns; `machine.go(name)`
  *  forces one. Drives per-entity behavior (idle/run/jump, AI) and anim states. */
-import * as Fsm from "./fsm.js";
+import * as Fsm from "./fsm/index.js";
 /** Small math helpers (named à la Unity so it never shadows `Math`):
  *  interpolation (`Mathf.lerp`, `Mathf.damp`, `Mathf.approach`), ranges
  *  (`Mathf.clamp`, `Mathf.remap`), oscillators (`Mathf.pingPong`, `Mathf.wave`),
  *  plus randomness and 0..1 easing curves. */
-import * as Mathf from "./mathf.js";
+import * as Mathf from "./math/mathf.js";
 /** Offscreen pre-rendering and sprite-sheet baking. `Sprites.getSprite`/
  *  `Sprites.getLayer` cache expensive draws, `Sprites.tint` recolors, and
- *  `Sprites.atlas`/`Sprites.packAtlas` build sheets for `Anim.sheet`/`Tiles.grid`
+ *  `Sprites.atlas`/`Sprites.packAtlas` build sheets for `Anim.fromGrid`/`Tiles.grid`
  *  — plus the standard `Sprites.Sprite` ECS component. */
-import * as Sprites from "./sprites.js";
+import * as Sprites from "./sprites/core.js";
 /** Pure, dependency-free game recipes (call one, get a value) that recur across
  *  genres: `Goodies.leadTarget`/`Goodies.nearest` (steering), `Goodies.floodFill`/
  *  `Goodies.lineOfSight` (grid), `Goodies.weightedPick`/`Goodies.rollDice`
@@ -83,9 +56,9 @@ import * as Tiles from "./tiles/index.js";
 /** Cover → swap → reveal scene transitions passed to `Scenes.go`. `Transitions.fade`
  *  and `Transitions.wipe` are ready-made; a `Transition` is plain data, and the
  *  pure fixed-step runner `Transitions.run` fires the swap at full coverage. */
-import * as Transitions from "./transitions.js";
+import * as Transitions from "./transitions/index.js";
 
-export { createApp, Sprites, Goodies, Gizmos, Tiles, Transitions, Mathf, ECS, Fsm };
+export { createApp, Sprites, Goodies, Gizmos, Tiles, Transitions, Mathf, Fsm };
 /** One isolated app, as returned by `createApp`. This is the type every
  *  lifecycle-owned factory takes: `createAudio(app)`, `createUI(app)`,
  *  `createNet(app)` — so it's also the type to annotate your own helpers with.
@@ -142,10 +115,9 @@ export type {
   PortalRouter,
   PortalTravel,
 } from "./portals/index.js";
-export type { Component, ComponentInit, Entity, Ecs, System, RenderSystem } from "./ecs/index.js";
-export type { ClockApi, ClockHandle, Cancel } from "./clock.js";
-export type { SignalBus } from "./signals.js";
-export { createSignals } from "./signals.js";
+export type { ClockApi, ClockHandle, Cancel } from "./clock/index.js";
+export type { SignalBus } from "./signals/index.js";
+export { createSignals } from "./signals/index.js";
 export type {
   AssetStore,
   AssetManifest,
@@ -155,14 +127,15 @@ export type {
   LoadedAsset,
 } from "./assets/index.js";
 export type {
-  Sheet,
-  SheetCursor,
+  GridAnimationSource,
+  AnimationSource,
+  AnimationCursor,
   SheetOptions,
   SheetStateSpec,
   SheetImage,
   FrameRect,
-  StateKit,
-  StateCursor,
+  ImageAnimationSource,
+  ImageAnimationCursor,
   StateClip,
   Motion,
   AnimateOptions,
@@ -183,7 +156,7 @@ export type {
   SolidGrid,
   Contacts,
   MoverBody,
-} from "./collision.js";
+} from "./collision/index.js";
 export type {
   CameraOptions,
   CameraLens,
@@ -217,7 +190,7 @@ export type {
   InputMap,
   InputMapOptions,
 } from "./input/index.js";
-export type { State, FsmOptions, Machine } from "./fsm.js";
+export type { State, FsmOptions, Machine } from "./fsm/index.js";
 export type { Window, Buffer, Cooldown, JumpGate, JumpGateOptions } from "./timers/index.js";
 export type {
   Level,
@@ -232,7 +205,12 @@ export type {
   TileSetEntry,
   TileSetOptions,
 } from "./tiles/index.js";
-export type { Transition, TransitionRender, TransitionRun } from "./transitions.js";
+export type {
+  Transition,
+  TransitionRender,
+  TransitionRun,
+  TransitionPhases,
+} from "./transitions/index.js";
 
 export type {
   SfxBuilder,
@@ -253,7 +231,7 @@ export type {
   ToneOptions,
   ToneSweep,
 } from "./audio/index.js";
-export type { SpriteCanvas, AtlasOptions, SpriteData } from "./sprites.js";
+export type { SpriteCanvas, AtlasOptions, SpriteData } from "./sprites/index.js";
 export type {
   Weighted,
   GridPoint,
@@ -329,28 +307,8 @@ export type {
  *    climbing = Collision.climbLadder(body, level, input.axis("up", "down"));
  *    if (body.grounded && input.jump.pressed) body.vel.y = -JUMP;
  */
-const Collision = {
-  rectsOverlap,
-  slide,
-  moveAndSlide,
-  dropThrough,
-  slopeY,
-  climbLadder,
-  grid,
-  contacts,
-  circleHit,
-  crossedDown,
-  pointInRect,
-  sweptAABB,
-  circleRect,
-  separateCircles,
-  bounceInBounds,
-};
-// One way in, not three: collision reaches users through the `Collision`
-// namespace only. The loose per-function re-exports that used to sit here were
-// a duplicate of it (and of the default export's `Collision`), so they bought
-// no capability — just more surface to keep honest.
 export { Collision };
+
 export type {
   BarOptions,
   ButtonOptions,
@@ -397,10 +355,10 @@ export type {
   ToggleOptions,
 } from "./ui/api.js";
 
-export { Vec2 } from "./vec2.js";
+export { Vec2 } from "./math/vec2.js";
 
 /** Page-level styling and gesture guards. `createApp` applies `applyFullscreen`
  *  for you unless you pass `fullscreen: false`; these are the manual handles for
  *  pages that opt out and want to apply the rules themselves, later, or merge
  *  `fullscreenCSS` into their own stylesheet. */
-export { applyFullscreen, fullscreenCSS, preventNavigation } from "./fullscreen.js";
+export { applyFullscreen, fullscreenCSS, preventNavigation } from "./engine/fullscreen.js";

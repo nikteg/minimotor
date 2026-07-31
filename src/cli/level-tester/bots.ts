@@ -1,4 +1,4 @@
-import type { GeneratedLevel } from "../features/level.feature.js";
+import type { GeneratedLevel } from "@src/cli/features/level.js";
 import {
   createPlatformerSimulation,
   type PlatformerSimulation,

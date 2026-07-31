@@ -8,8 +8,8 @@ import {
   seedRng,
   shuffleBag,
   skidmarks,
-} from "../index.js";
-import { createClockHandle } from "../../clock.js";
+} from "@src/gizmos/index.js";
+import { createClockHandle } from "@src/clock/index.js";
 
 describe("Gizmos.seedRng", () => {
   it("is deterministic per seed and stays in [0, 1)", () => {
@@ -47,7 +47,7 @@ describe("Gizmos.shuffleBag", () => {
 // Shared hand-cranked clock (1 unit = 1 ms of derived time).
 function clockMs() {
   let now = 0;
-  const clock = createClockHandle(() => now);
+  const clock = createClockHandle(1000 / 60, () => now);
   return { clock, advance: (ms) => (now += ms / (1000 / 60)) };
 }
 
@@ -103,7 +103,7 @@ describe("Gizmos.charges", () => {
 describe("Gizmos.flash", () => {
   it("jumps to 1 on hit and fades to 0 on its clock", () => {
     let steps = 0;
-    const clock = createClockHandle(() => steps);
+    const clock = createClockHandle(1000 / 60, () => steps);
     const f = flash(100, clock);
     expect(f.active).toBe(false);
     f.hit();

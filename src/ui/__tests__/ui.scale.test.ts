@@ -11,8 +11,8 @@
 // that draws at reference coords under a wiped transform (the "text doesn't
 // reposition" bug) is caught, not hidden.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createApp, type App } from "../../engine/index.js";
-import { createUiRuntime, switchRuntime, type UiRuntime } from "../core/runtime.js";
+import { createApp, type App } from "@src/engine/index.js";
+import { selectUiApp } from "@src/ui/core/state.js";
 import {
   _reset,
   bar,
@@ -41,7 +41,7 @@ import {
   vh,
   vw,
   width,
-} from "../api.js";
+} from "@src/ui/api.js";
 
 let rafCallback: ((t: number) => void) | null = null;
 const origGc = HTMLCanvasElement.prototype.getContext;
@@ -139,9 +139,8 @@ afterEach(() => {
   HTMLCanvasElement.prototype.getContext = origGc;
 });
 
-// The runtime build() made, so assertions outside the draw callback can select
-// the same one createUI would have bound.
-let rt: UiRuntime;
+// The app build() made, so assertions outside the draw callback can select it.
+let selectedApp: App;
 
 function build(draw: (game: App) => void): {
   game: App;
@@ -151,9 +150,8 @@ function build(draw: (game: App) => void): {
   canvas.id = "game";
   document.body.appendChild(canvas);
   const game = createApp(canvas, { fullscreen: false });
-  // Raw widget API instead of createUI, so this harness does what createUI
-  // does: build the runtime for this app and select it each frame.
-  rt = createUiRuntime(game.ctx, game);
+  // Raw widget API instead of createUI, so select the app each frame.
+  selectedApp = game;
   vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
     left: 0,
     top: 0,
@@ -169,7 +167,7 @@ function build(draw: (game: App) => void): {
   game.Loop.run({
     update: () => {},
     draw: () => {
-      switchRuntime(rt);
+      selectUiApp(selectedApp);
       draw(game);
     },
   });
@@ -507,7 +505,7 @@ describe("layoutIssues (the overlap detector)", () => {
       });
     });
     settle();
-    switchRuntime(rt);
+    selectUiApp(selectedApp);
     expect(layoutIssues()).toEqual([]);
   });
 
@@ -523,7 +521,7 @@ describe("layoutIssues (the overlap detector)", () => {
       });
     });
     settle();
-    switchRuntime(rt);
+    selectUiApp(selectedApp);
     const issues = layoutIssues();
     expect(issues.length).toBeGreaterThan(0);
     expect(issues.map((i) => i.child.id)).toContain("c");
@@ -546,7 +544,7 @@ describe("layoutIssues (the overlap detector)", () => {
       });
     });
     settle();
-    switchRuntime(rt);
+    selectUiApp(selectedApp);
     expect(layoutIssues()).toEqual([]);
   });
 });
@@ -569,7 +567,7 @@ describe("nested containers without an id", () => {
     });
     tick();
     tick(); // the auto-sized containers settle on last frame's measurement
-    switchRuntime(rt);
+    selectUiApp(selectedApp);
     const tree = layoutTree();
     const inner = tree.filter((e) => e.kind === "panel")[1]!;
     const a = tree.find((e) => e.id === "inner-a")!;
@@ -602,7 +600,7 @@ describe("keyboard focus in a scroll region", () => {
     };
     // Tab down past the visible window (100px tall ≈ 3 rows of 30 + gaps).
     for (let i = 0; i < 8; i++) tab();
-    switchRuntime(rt); // focus + layout live on the app's UI runtime
+    selectUiApp(selectedApp); // focus + layout live on the app's UI state
     expect(focusedId()).toBe("b7");
     const b7 = layoutTree().find((e) => e.id === "b7")!;
     // Before the fix the region never moved, so b7 drew far below the clip.
@@ -618,7 +616,7 @@ describe("layoutCapture", () => {
     });
     tick();
     tick();
-    switchRuntime(rt); // the tree lives on the app's UI runtime
+    selectUiApp(selectedApp); // the tree lives on the app's UI state
     expect(layoutTree()).toEqual([]);
   });
 
@@ -634,7 +632,7 @@ describe("layoutCapture", () => {
     });
     tick();
     tick(); // second frame: the auto-sized column has settled
-    switchRuntime(rt); // the tree lives on the app's UI runtime
+    selectUiApp(selectedApp); // the tree lives on the app's UI state
     const tree = layoutTree();
     const root = tree.find((e) => e.id === "root")!;
     const btn = tree.find((e) => e.id === "go")!;
@@ -680,7 +678,7 @@ describe("layoutCapture", () => {
       });
     });
     settle(4); // nested row, then column, settle their measured heights
-    switchRuntime(rt);
+    selectUiApp(selectedApp);
     const tree = layoutTree();
     const feature = tree.find((e) => e.id === "feature")!;
     const next = tree.find((e) => e.id === "next")!;
@@ -700,7 +698,7 @@ describe("layoutCapture", () => {
       button({ x: 10, y: 10, w: 80, h: 30, label: "T", id: "t" });
     });
     tick();
-    switchRuntime(rt); // the tree lives on the app's UI runtime
+    selectUiApp(selectedApp); // the tree lives on the app's UI state
     expect(layoutTree().length).toBeGreaterThan(0);
     layoutCapture(false);
     expect(layoutTree()).toEqual([]);
@@ -720,7 +718,7 @@ describe("the UI.scaled forms", () => {
       });
     });
     settle(2);
-    switchRuntime(rt);
+    selectUiApp(selectedApp);
     expect(space).toEqual({ w: 640, h: 360, halfW: 320, halfH: 150 });
     const go = layoutTree().find((e) => e.id === "go")!;
     expect(go.scale).toBe(1.6);
@@ -735,7 +733,7 @@ describe("the UI.scaled forms", () => {
       });
     });
     settle(2);
-    switchRuntime(rt);
+    selectUiApp(selectedApp);
     const go = layoutTree().find((e) => e.id === "go")!;
     expect(go.scale).toBeCloseTo(0.8, 5);
     expect(go.screenRect).toEqual({ x: 0, y: 0, w: 80, h: 32 });
@@ -751,7 +749,7 @@ describe("the UI.scaled forms", () => {
       });
     });
     settle(2);
-    switchRuntime(rt);
+    selectUiApp(selectedApp);
     const go = layoutTree().find((e) => e.id === "go")!;
     // fit 1.6 × the 0.5 setting = 0.8, centred: ox = (1024 - 512) / 2 = 256,
     // oy = (768 - 288) / 2 = 240.
@@ -770,7 +768,7 @@ describe("the UI.scaled forms", () => {
       });
     });
     settle(2);
-    switchRuntime(rt);
+    selectUiApp(selectedApp);
     // The scale zooms the whole UI, so the reference space HALVES.
     expect(space).toEqual({ w: 512, h: 384 });
     const go = layoutTree().find((e) => e.id === "go")!;
@@ -791,7 +789,7 @@ describe("the UI.scaled forms", () => {
       });
     });
     settle(2);
-    switchRuntime(rt);
+    selectUiApp(selectedApp);
     const n = layoutTree().find((e) => e.id === "n")!;
     expect(n.scale).toBe(6);
     expect(n.screenRect).toEqual({ x: 60, y: 60, w: 120, h: 60 });

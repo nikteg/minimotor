@@ -1,6 +1,5 @@
-import { pointInRect } from "../../collision.js";
-import { STEP_MS } from "../../clock.js";
-import { clamp } from "../../mathf.js";
+import { pointInRect } from "@src/collision/index.js";
+import { clamp } from "@src/math/mathf.js";
 import {
   Fillable,
   buttonState,
@@ -20,7 +19,7 @@ import {
   pointerGestureOwned,
   rawPointer,
   registerFocusable,
-  runtimeSlot,
+  uiSlot,
   suppressPointerEdges,
   sweptCache,
   uiApp,
@@ -28,7 +27,7 @@ import {
   uiCtx,
   uiPointer,
   widgetId,
-} from "../core/index.js";
+} from "@src/ui/core/index.js";
 import { tooltip } from "./tooltip.js";
 import { clip } from "./layout.js";
 
@@ -106,7 +105,7 @@ interface BodyScrollState {
    *  frame until it dies out, hits an extreme, or a press catches it. */
   momentum: Map<string, number>;
 }
-const bodyScrollSlot = runtimeSlot<BodyScrollState>(() => ({
+const bodyScrollSlot = uiSlot<BodyScrollState>(() => ({
   drag: null,
   endedThisFrame: false,
   momentum: new Map(),
@@ -205,10 +204,12 @@ export function dragScroll(
   const bs = bodyScrollSlot();
   const p = uiPointer();
   const pos = axis === "y" ? p.y : p.x;
-  // Real frames elapsed (in 60 Hz steps) — scales the fling advance/decay so
-  // momentum feels the same at any refresh rate.
-  const step = uiApp()?.Loop.step ?? STEP_MS;
-  const frames = (uiApp()?.Loop.frameDelta ?? step) / step;
+  // Real fixed-step frames elapsed — read only while a gesture/fling actually
+  // needs time, so headless layout and measurement remain app-independent.
+  const elapsedFrames = () => {
+    const app = uiApp();
+    return app.Loop.frameDelta / app.Loop.step;
+  };
 
   // A widget drag (slider knob, scrollbar thumb, drag-and-drop, text
   // selection) owns the pointer: body scroll neither starts nor continues.
@@ -226,6 +227,7 @@ export function dragScroll(
       bs.momentum.delete(key);
       suppressPointerEdges();
     } else {
+      const frames = elapsedFrames();
       const next = clamp(offset - fling * frames, 0, max);
       offset = next;
       const decayed = fling * Math.pow(FLING_DECAY, frames);
@@ -281,6 +283,7 @@ export function dragScroll(
       const d = pos - drag.start;
       if (!drag.active && Math.abs(d) > DRAG_THRESHOLD) drag.active = true;
       if (drag.active) {
+        const frames = elapsedFrames();
         const target = drag.startOffset - d;
         offset = clamp(target, 0, max);
         // Track finger speed for the release fling (smoothed, px/60Hz-frame).
@@ -533,7 +536,7 @@ export interface ScrollbarOptions {
 }
 
 // One drag at a time, tracked across frames by the scrollbar's id.
-const scrollDragSlot = runtimeSlot<{ drag: { id: string; grab: number } | null }>(() => ({
+const scrollDragSlot = uiSlot<{ drag: { id: string; grab: number } | null }>(() => ({
   drag: null,
 }));
 

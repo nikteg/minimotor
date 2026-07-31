@@ -1,13 +1,13 @@
 // ---------- Theme painting ----------
 // Drawing helpers that style from the shared `Theme` tokens. They need text
-// measurement (a UI-runtime concern), so they stay here; the tokens themselves
+// measurement (a UI-state concern), so they stay here; the tokens themselves
 // are core and re-exported below so `UI.setTheme` stays one import for callers.
 
 import { measureWidth, metrics } from "./measure.js";
-import { theme } from "../../theme.js";
+import { theme } from "@src/ui/theme.js";
 
-export { defaultTheme, getTheme, setTheme, theme } from "../../theme.js";
-export type { Theme } from "../../theme.js";
+export { defaultTheme, getTheme, setTheme, theme } from "@src/ui/theme.js";
+export type { Theme } from "@src/ui/theme.js";
 
 export const uiFont = (size = theme.fontSize, bold = false) =>
   `${bold ? "bold " : ""}${size}px ${theme.font}`;

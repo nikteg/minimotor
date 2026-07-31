@@ -44,24 +44,24 @@ beforeEach(() => {
 describe("Audio", () => {
   describe("ensureAudio", () => {
     it("creates context", async () => {
-      const { ensureAudio } = await import("../index.js");
+      const { ensureAudio } = await import("@src/audio/index.js");
       expect(ensureAudio()).toBeDefined();
     });
     it("reuses context", async () => {
-      const { ensureAudio } = await import("../index.js");
+      const { ensureAudio } = await import("@src/audio/index.js");
       expect(ensureAudio()).toBe(ensureAudio());
     });
   });
 
   describe("playSfx", () => {
     it("calls builder", async () => {
-      const { playSfx } = await import("../index.js");
+      const { playSfx } = await import("@src/audio/index.js");
       const b = vi.fn();
       playSfx(b);
       expect(b).toHaveBeenCalledOnce();
     });
     it("survives builder throw", async () => {
-      const { playSfx } = await import("../index.js");
+      const { playSfx } = await import("@src/audio/index.js");
       expect(() =>
         playSfx(() => {
           throw Error("x");
@@ -70,27 +70,27 @@ describe("Audio", () => {
     });
     it("survives missing AudioContext", async () => {
       vi.stubGlobal("AudioContext", undefined);
-      const { playSfx } = await import("../index.js");
+      const { playSfx } = await import("@src/audio/index.js");
       expect(() => playSfx(vi.fn())).not.toThrow();
     });
   });
 
   describe("Music", () => {
     it("Music.on defaults to true", async () => {
-      const mod = await import("../index.js");
+      const mod = await import("@src/audio/index.js");
       expect(mod.Music.on).toBe(true);
     });
 
-    it("Music.setOn toggles", async () => {
-      const mod = await import("../index.js");
-      mod.Music.setOn(true);
+    it("Music.on toggles", async () => {
+      const mod = await import("@src/audio/index.js");
+      mod.Music.on = true;
       expect(mod.Music.on).toBe(true);
-      mod.Music.setOn(false);
+      mod.Music.on = false;
       expect(mod.Music.on).toBe(false);
     });
 
     it("Music.start activates", async () => {
-      const mod = await import("../index.js");
+      const mod = await import("@src/audio/index.js");
       vi.stubGlobal("setInterval", vi.fn());
       mod.Music.start({ volume: 0.1, stepMs: 100, schedule: vi.fn() });
       expect(mod.Music.on).toBe(true);

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { animations, animationState } from "../index.js";
+import { animations, animationState } from "@src/platformer/index.js";
 
 function cursor() {
   let state: "idle" | "run" | "jump" | "climb" = "idle";

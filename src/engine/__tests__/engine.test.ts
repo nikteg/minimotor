@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { createApp, type App, type AppCallbacks } from "../index.js";
+import { createApp, type App, type AppCallbacks } from "@src/engine/index.js";
 
 // jsdom canvas support + a controllable requestAnimationFrame.
 let rafCallback: ((t: number) => void) | null = null;

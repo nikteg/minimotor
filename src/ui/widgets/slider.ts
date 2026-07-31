@@ -12,15 +12,15 @@ import {
   place,
   rawPointer,
   registerFocusable,
-  runtimeSlot,
+  uiSlot,
   theme,
   uiCtx,
   uiFont,
   uiPointer,
   widgetId,
-} from "../core/index.js";
-import { clamp } from "../../mathf.js";
-import { pointInRect } from "../../collision.js";
+} from "@src/ui/core/index.js";
+import { clamp } from "@src/math/mathf.js";
+import { pointInRect } from "@src/collision/index.js";
 
 /** A horizontal value slider. */
 export interface SliderOptions extends Flowable {
@@ -56,7 +56,7 @@ export interface SliderOptions extends Flowable {
 }
 
 // One slider drag at a time (per UI runtime), tracked across frames by id.
-const sliderDragSlot = runtimeSlot<{ id: string | null }>(() => ({ id: null }));
+const sliderDragSlot = uiSlot<{ id: string | null }>(() => ({ id: null }));
 
 /** Draw a slider and return the (possibly changed) new value — drag the knob
  *  or click anywhere on the track:

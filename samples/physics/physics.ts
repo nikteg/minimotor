@@ -11,11 +11,13 @@ import { createPerformanceMonitoring } from "minimotor/performance";
 import { createAudio } from "minimotor/audio";
 import { createCamera } from "minimotor/camera";
 import { createUI } from "minimotor/ui";
-import { ECS, Mathf, Sprites, createApp } from "minimotor";
+import { Mathf, createApp } from "minimotor";
+import * as Sprites from "minimotor/sprites";
+import { createEcs } from "minimotor/ecs";
 import { createPhysics2D } from "minimotor/physics2d";
 import type { Drag2D } from "minimotor/physics2d";
 
-const ecs = ECS.create();
+const ecs = createEcs();
 const game = createApp("game", {
   background: "#12141c",
 });

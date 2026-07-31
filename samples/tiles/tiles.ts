@@ -10,7 +10,8 @@ import { createAudio } from "minimotor/audio";
 import { createCamera } from "minimotor/camera";
 import { createInput } from "minimotor/input";
 import { createUI } from "minimotor/ui";
-import { Collision, Mathf, Sprites, createApp, Tiles } from "minimotor";
+import { Collision, Mathf, createApp, Tiles } from "minimotor";
+import * as Sprites from "minimotor/sprites";
 
 const game = createApp("game", { background: "#1b2432" });
 createPerformanceMonitoring(game);

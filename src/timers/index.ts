@@ -15,7 +15,8 @@
 //   if (coyote.active && jumpBuf.consume()) jump();
 //   if (dashCd.ready() && dashInput) { dash(); dashCd.use(); }
 
-import { activeClock, type ClockHandle } from "../clock.js";
+import type { ClockHandle } from "@src/clock/index.js";
+import type { App } from "@src/engine/app.js";
 
 /** A grace window: `active` for `ms` after the last `charge()`. Coyote time,
  *  "recently damaged" invulnerability, any "still counts for a moment" gate. */
@@ -32,7 +33,7 @@ export interface Window {
 
 /** Make a grace `Window` of `ms`, deriving from the explicit `clock`.
  *  Starts closed until the first `charge()`. */
-export function window(ms: number, clock: ClockHandle = activeClock()): Window {
+export function window(ms: number, clock: ClockHandle): Window {
   let until = -Infinity;
   return {
     charge() {
@@ -64,7 +65,7 @@ export interface Buffer {
 
 /** Make a `Buffer` with a `ms` window, deriving from the explicit `clock`.
  * Starts disarmed until the first `trigger()`. */
-export function buffer(ms: number, clock: ClockHandle = activeClock()): Buffer {
+export function buffer(ms: number, clock: ClockHandle): Buffer {
   let until = -Infinity;
   return {
     trigger() {
@@ -95,7 +96,7 @@ export interface Cooldown {
 
 /** Make a `Cooldown` of `ms`, deriving from the explicit `clock`.
  *  Starts `ready()` until the first `use()`. */
-export function cooldown(ms: number, clock: ClockHandle = activeClock()): Cooldown {
+export function cooldown(ms: number, clock: ClockHandle): Cooldown {
   let readyAt = -Infinity;
   return {
     use() {
@@ -118,9 +119,9 @@ export interface JumpGateOptions {
   coyoteMs?: number;
   /** Input buffer before landing, in ms. Default 120. */
   bufferMs?: number;
-  /** Clock the grace/buffer derive from. Defaults to the ambient clock, which
-   *  `createTimers(app)` binds to that app's world clock. */
-  clock?: ClockHandle;
+  /** Clock the grace/buffer derive from. `createTimers(app)` supplies the app's
+   * world clock when omitted from the bound API. */
+  clock: ClockHandle;
 }
 
 /** One `try` per step deciding when a jump fires. */
@@ -142,8 +143,8 @@ export interface JumpGate {
  *
  *    const gate = Minimotor.Timers.jumpGate({ coyoteMs: 100, bufferMs: 130 });
  *    if (gate.try(input.jump.pressed, player.grounded)) player.vel.y = JUMP; */
-export function jumpGate(opts: JumpGateOptions = {}): JumpGate {
-  const clock = opts.clock ?? activeClock();
+export function jumpGate(opts: JumpGateOptions): JumpGate {
+  const clock = opts.clock;
   const coyote = window(opts.coyoteMs ?? 100, clock);
   const buf = buffer(opts.bufferMs ?? 120, clock);
   return {
@@ -158,5 +159,24 @@ export function jumpGate(opts: JumpGateOptions = {}): JumpGate {
     },
     coyote,
     buffer: buf,
+  };
+}
+
+export interface TimersApi {
+  window(ms: number, clock?: ClockHandle): Window;
+  buffer(ms: number, clock?: ClockHandle): Buffer;
+  cooldown(ms: number, clock?: ClockHandle): Cooldown;
+  jumpGate(opts?: Omit<JumpGateOptions, "clock"> & { clock?: ClockHandle }): JumpGate;
+}
+
+/** Timer helpers defaulting explicitly to one app's world clock. */
+export function createTimers(app: App): TimersApi {
+  const clock = app.Clock.world;
+  return {
+    window: (ms, boundClock = clock) => window(ms, boundClock),
+    buffer: (ms, boundClock = clock) => buffer(ms, boundClock),
+    cooldown: (ms, boundClock = clock) => cooldown(ms, boundClock),
+    jumpGate: ({ clock: boundClock = clock, ...options } = {}) =>
+      jumpGate({ ...options, clock: boundClock }),
   };
 }

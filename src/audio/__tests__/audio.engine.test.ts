@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { engine } from "../index.js";
+import { engine } from "@src/audio/index.js";
 
 // ---- Minimal Web Audio mock (just what engine() touches) ----
 class MockParam {

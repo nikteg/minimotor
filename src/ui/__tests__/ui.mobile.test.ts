@@ -3,8 +3,8 @@
 // closing overlays, mid-gesture chaining to an enclosing region, and the
 // native press listener that opens the mobile keyboard synchronously.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createApp, type App } from "../../engine/index.js";
-import { createUiRuntime, switchRuntime } from "../core/runtime.js";
+import { createApp, type App } from "@src/engine/index.js";
+import { selectUiApp } from "@src/ui/core/state.js";
 import {
   _reset,
   button,
@@ -15,7 +15,7 @@ import {
   popover,
   slider,
   textInput,
-} from "../api.js";
+} from "@src/ui/api.js";
 
 // jsdom canvas support + a controllable requestAnimationFrame (same pattern as
 // the engine tests) — plus a fuller 2D mock so widgets can draw.
@@ -98,8 +98,7 @@ function build(draw: (game: App) => void): {
   document.body.appendChild(canvas);
   const game = createApp(canvas, { fullscreen: false });
   // Raw widget API instead of createUI, so this harness does what createUI
-  // does: build the runtime for this app and select it each frame.
-  const rt = createUiRuntime(game.ctx, game);
+  // does: select this app each frame.
   // jsdom reports a zero-sized rect, which maps every pointer event to (0,0) —
   // pretend the canvas fills the window so client coords pass through 1:1.
   vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
@@ -117,7 +116,7 @@ function build(draw: (game: App) => void): {
   game.Loop.run({
     update: () => {},
     draw: () => {
-      switchRuntime(rt);
+      selectUiApp(game);
       draw(game);
     },
   });

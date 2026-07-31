@@ -9,7 +9,7 @@ import {
   type LevelScore,
   type LevelScoreProfile,
   type NeutralLevelDesign,
-} from "../features/level.feature.js";
+} from "@src/cli/features/level.js";
 import { evaluateLevelWithBots, type BotEvaluation } from "./bots.js";
 
 export interface EvolutionOptions {

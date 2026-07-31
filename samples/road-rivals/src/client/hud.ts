@@ -1,5 +1,5 @@
 import { Mathf } from "minimotor";
-import type { Component, Ecs } from "minimotor";
+import type { Component, Ecs } from "minimotor/ecs";
 import type { UiApi } from "minimotor/ui";
 import {
   CAR_TYPES,

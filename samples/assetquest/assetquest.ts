@@ -1,13 +1,13 @@
 import { createAnimation } from "minimotor/animation";
 import { createPerformanceMonitoring } from "minimotor/performance";
 // ASSET QUEST: a tiny playable archive loaded from a manifest at runtime.
-// Focus: Assets.load/progress/json and Anim.sheet, with plain JSON level data.
+// Focus: Assets.load/progress/json and Anim.fromGrid, with plain JSON level data.
 import { createAssets } from "minimotor/assets";
 import { createAudio } from "minimotor/audio";
 import { createParticles } from "minimotor/particles";
 import { createUI } from "minimotor/ui";
 import { Collision, createApp } from "minimotor";
-import { SheetCursor } from "minimotor";
+import { AnimationCursor } from "minimotor";
 import { createSfx } from "../shared/sfx.ts";
 
 interface Level {
@@ -39,7 +39,7 @@ let progress = 0;
 let ready = false;
 let failed = ""; // non-empty once the manifest load rejects → show a failed screen
 let level: Level;
-let hero: SheetCursor<"walk">;
+let hero: AnimationCursor<"walk">;
 let relics: Relic[] = [];
 let score = 0;
 let state: "play" | "won" = "play";
@@ -99,7 +99,7 @@ Assets.load({ level: new URL("./level.json", import.meta.url).href }, (done, tot
   .then(() => {
     level = Assets.json<Level>("level");
     // A named-state sheet; the cursor derives its frame from the clock.
-    hero = Anim.sheet(makeHeroSheet(), {
+    hero = Anim.fromGrid(makeHeroSheet(), {
       frame: { w: 48, h: 48 },
       states: { walk: { row: 0, frames: 8, fps: 10 } },
     }).play("walk");

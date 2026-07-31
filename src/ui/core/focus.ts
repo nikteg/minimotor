@@ -2,22 +2,15 @@
 // The focusable-widget registry + tab order, :focus-visible tracking, the
 // keyboard (Tab / Enter / Arrows / Escape) and gamepad (d-pad / left-stick / A)
 // navigation that drive the SAME focus machine, and the focus ring. All state
-// is per UI runtime (two apps on one page each get their own focus machine);
-// the single window-level keyboard listener routes each event to the runtime
+// is per app (two apps on one page each get their own focus machine);
+// the single window-level keyboard listener routes each event to the app
 // whose canvas (or focused widget) it belongs to.
-import { navigation, type GamepadState } from "../../input/gamepad.js";
-import { STEP_MS } from "../../clock.js";
+import { navigation, type GamepadState } from "@src/input/gamepad.js";
+import type { App } from "@src/engine/index.js";
 import { roundRectPath, theme } from "./theme.js";
 import { isInOverlayPass } from "./lifecycle.js";
 import { uiToScreen } from "./input.js";
-import {
-  type UiRuntime,
-  allRuntimes,
-  currentRuntime,
-  runtimeSlot,
-  uiApp,
-  withRuntime,
-} from "./runtime.js";
+import { allUiApps, currentUiApp, uiGamepads, uiSlot, uiApp, withUiApp } from "./state.js";
 
 // Focusables register in draw order each frame. Keyboard events happen between
 // frames, so they operate on the last complete registry rather than a retained
@@ -69,7 +62,7 @@ interface NavRepeat {
 
 const navRepeat = (): NavRepeat => ({ key: null, elapsed: 0, next: 350, count: 0 });
 
-const fs = runtimeSlot<FocusState>(() => ({
+const fs = uiSlot<FocusState>(() => ({
   frame: [],
   registry: [],
   focused: null,
@@ -87,12 +80,12 @@ const fs = runtimeSlot<FocusState>(() => ({
   revealEpoch: 0,
 }));
 
-// Read another runtime's focus state (keyboard routing) without switching.
-const focusOf = (rt: UiRuntime): FocusState => withRuntime(rt, fs);
+// Read another app's focus state (keyboard routing) without switching.
+const focusOf = (app: App): FocusState => withUiApp(app, fs);
 
 /** Add an unregistered custom UI navigation pad. Hardware and engine-created
  * on-screen pads are discovered automatically, so most games never need this.
- * Pass `null` to remove the custom pad. Per UI runtime. */
+ * Pass `null` to remove the custom pad. Per app. */
 export function setNavPad(pad: GamepadState | null): void {
   fs().navPad = pad;
 }
@@ -102,7 +95,7 @@ export function setNavPad(pad: GamepadState | null): void {
  * controller should not make a newly opened modal paint a focus ring. */
 export function hasActiveNavPad(): boolean {
   const s = fs();
-  const registered = currentRuntime().gamepads();
+  const registered = uiGamepads();
   const pads = s.navPad ? [s.navPad, ...registered] : registered;
   return pads.some((pad) => {
     if (!pad.connected) return false;
@@ -116,8 +109,8 @@ let focusKeyboardWired = false;
 
 const focusCanvases = new WeakSet<HTMLCanvasElement>();
 
-// Which runtime owns a wired canvas — the keyboard listener routes by this.
-const runtimeByCanvas = new WeakMap<HTMLCanvasElement, UiRuntime>();
+// Which app owns a wired canvas — the keyboard listener routes by this.
+const appByCanvas = new WeakMap<HTMLCanvasElement, App>();
 
 export function focusCandidates(): FocusEntry[] {
   const s = fs();
@@ -184,11 +177,11 @@ export function moveWidgetFocus(direction: 1 | -1): void {
   setWidgetFocus(entries[next].id);
 }
 
-export function wireFocusCanvas(ctx: CanvasRenderingContext2D, rt: UiRuntime): void {
+export function wireFocusCanvas(ctx: CanvasRenderingContext2D, app: App): void {
   const canvas = ctx.canvas;
   if (focusCanvases.has(canvas)) return;
   focusCanvases.add(canvas);
-  runtimeByCanvas.set(canvas, rt);
+  appByCanvas.set(canvas, app);
   if (!canvas.hasAttribute("tabindex")) canvas.tabIndex = 0;
   // The canvas is only a browser focus surface; individual canvas widgets
   // paint their own focus-visible state.
@@ -200,7 +193,7 @@ export function wireFocusCanvas(ctx: CanvasRenderingContext2D, rt: UiRuntime): v
   // then no press preceded the focus event.
   let focusFromPress = false;
   canvas.addEventListener("pointerdown", () => {
-    focusOf(rt).visible = false;
+    focusOf(app).visible = false;
     focusFromPress = true;
     // The browser focuses the canvas within the same task as the press, so the
     // flag only has to survive until this task ends.
@@ -208,7 +201,7 @@ export function wireFocusCanvas(ctx: CanvasRenderingContext2D, rt: UiRuntime): v
   });
   canvas.addEventListener("focus", () => {
     if (focusFromPress) return;
-    withRuntime(rt, () => {
+    withUiApp(app, () => {
       if (!fs().focused) moveWidgetFocus(1);
     });
   });
@@ -230,7 +223,7 @@ export function registerFocusable(
 ): boolean {
   if (!opts.id) return false;
   const s = fs();
-  wireFocusCanvas(ctx, currentRuntime());
+  wireFocusCanvas(ctx, currentUiApp());
   const r = opts.rect;
   const tl = r ? uiToScreen(r.x, r.y) : null;
   const br = r ? uiToScreen(r.x + r.w, r.y + r.h) : null;
@@ -345,7 +338,8 @@ function repeatPulse(state: NavRepeat, key: string | null): boolean {
     state.next = 350;
     return true;
   }
-  state.elapsed += uiApp()?.Loop.step ?? STEP_MS;
+  const app = uiApp();
+  state.elapsed += app.Loop.step;
   if (state.elapsed < state.next) return false;
   state.count++;
   state.next += Math.max(50, 120 - state.count * 10);
@@ -355,10 +349,10 @@ function repeatPulse(state: NavRepeat, key: string | null): boolean {
 // Pad navigation drives the SAME focus machine as Tab/Enter (API_PLAN #46).
 // Directions fire immediately, then repeat after a short hold with an
 // accelerating cadence — sliders adjust smoothly without making menu taps
-// overshoot. A activates. Runs per runtime from its host loop's fixed step.
+// overshoot. A activates. Runs per app from its loop's fixed step.
 export function padNav(): void {
   const s = fs();
-  const registered = currentRuntime().gamepads();
+  const registered = uiGamepads();
   const pads = s.navPad ? [s.navPad, ...registered] : registered;
   let x = 0;
   let y = 0;
@@ -397,19 +391,19 @@ export function padNav(): void {
 // Window keyboard wiring: Tab/Shift+Tab traverse, Enter/Space activate, Arrows
 // feed the focused widget, Escape blurs — all keyed off the canvas focus
 // surfaces so page chrome keeps its own keyboard. ONE window listener for the
-// page; each event is routed to the runtime that owns the target canvas (or,
-// for native editors and pad-driven focus, whichever runtime holds a focused
+// page; each event is routed to the app that owns the target canvas (or,
+// for native editors and pad-driven focus, whichever app holds a focused
 // widget). Idempotent; called by `ensureWired`.
 export function wireFocusKeyboard(): void {
   if (focusKeyboardWired || typeof window === "undefined") return;
   focusKeyboardWired = true;
-  const routeTo = (target: HTMLElement | null): UiRuntime | null => {
+  const routeTo = (target: HTMLElement | null): App | null => {
     if (target instanceof HTMLCanvasElement) {
-      const rt = runtimeByCanvas.get(target);
-      if (rt) return rt;
+      const app = appByCanvas.get(target);
+      if (app) return app;
     }
-    for (const rt of allRuntimes) {
-      if (focusOf(rt).focused) return rt;
+    for (const app of allUiApps) {
+      if (focusOf(app).focused) return app;
     }
     return null;
   };
@@ -417,9 +411,9 @@ export function wireFocusKeyboard(): void {
     "keydown",
     (event) => {
       const target = event.target as HTMLElement | null;
-      const rt = routeTo(target);
-      if (!rt) return;
-      withRuntime(rt, () => {
+      const app = routeTo(target);
+      if (!app) return;
+      withUiApp(app, () => {
         const s = fs();
         if (event.key === "Tab") s.visible = true;
         const onFocusSurface =
@@ -455,8 +449,8 @@ export function wireFocusKeyboard(): void {
       !(target instanceof HTMLCanvasElement && focusCanvases.has(target))
     ) {
       // Browser focus left every UI surface — clear widget focus everywhere.
-      for (const rt of allRuntimes) {
-        withRuntime(rt, () => setWidgetFocus(null));
+      for (const app of allUiApps) {
+        withUiApp(app, () => setWidgetFocus(null));
       }
     }
   });
@@ -464,7 +458,7 @@ export function wireFocusKeyboard(): void {
 
 // Frame-end: promote this frame's registration to the live registry, then handle
 // the overlay focus trap (capture focus into an overlay while it's up, restore it
-// after). Called per runtime by the kernel's housekeeping; resets `trapSeen` for
+// after). Called per app by the kernel's housekeeping; resets `trapSeen` for
 // next frame.
 export function focusEndFrame(): void {
   const s = fs();

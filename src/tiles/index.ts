@@ -9,7 +9,7 @@
 //   server-side (no canvas anywhere).
 //
 //   TILESET = NAMED CELLS.  `Tiles.set(image, { size, names })` — the
-//   space-indexed cousin of `Anim.sheet`, plus cell SELECTORS: `pick`
+//   space-indexed cousin of `Anim.fromGrid`, plus cell SELECTORS: `pick`
 //   (coord-seeded variants), `anim` (clock-derived water), `auto9`/`auto16`
 //   (neighbor-aware autotiling).
 //
@@ -21,12 +21,12 @@
 // The level is a `SolidSource`: `Collision.moveAndSlide(player, level)` gets
 // grid broadphase for free.
 
-import type { DrawTilesOptions, Rect } from "../engine/index.js";
-import { blitPixelAligned, fillPixelAligned } from "../engine/pixel-raster.js";
-import type { LadderSource, SlopeDirection, Solid, SolidSource } from "../collision.js";
-import type { PortalTransition } from "../portals/index.js";
-import type { Vec2 } from "../vec2.js";
-import type { ClockHandle } from "../clock.js";
+import type { DrawTilesOptions, Rect } from "@src/engine/index.js";
+import { blitPixelAligned, fillPixelAligned } from "@src/engine/pixel-raster.js";
+import type { LadderSource, SlopeDirection, Solid, SolidSource } from "@src/collision/index.js";
+import type { PortalTransition } from "@src/portals/index.js";
+import type { Vec2 } from "@src/math/vec2.js";
+import type { ClockHandle } from "@src/clock/index.js";
 
 /** Semantics of one legend glyph — plain JSON facts, no presentation. */
 export interface TileSpec {
@@ -1113,7 +1113,7 @@ function tiledGrid<L extends Record<number, string>>(
 export const Tiled = Object.freeze({ set: tiledSet, grid: tiledGrid });
 
 /** Slice a tileset image into named cells + selector factories — the
- *  space-indexed cousin of `Anim.sheet`. Named cells are fixed `Cell`s; the
+ *  space-indexed cousin of `Anim.fromGrid`. Named cells are fixed `Cell`s; the
  *  `region` crops a multi-cell atlas stamp; `pick`/`anim`/`auto9`/`auto16`
  *  build `Selector`s that choose a cell per grid cell. All drop into a skin:
  *

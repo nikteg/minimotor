@@ -16,7 +16,7 @@ import {
   uiFont,
   uiPointer,
   widgetId,
-} from "../core/index.js";
+} from "@src/ui/core/index.js";
 
 /** A horizontal tab strip. */
 export interface TabsOptions extends Flowable {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { sheet } from "../sheet.js";
-import { states } from "../states.js";
-import { createClockHandle } from "../../clock.js";
+import { fromGrid } from "@src/anim/sheet.js";
+import { fromImages } from "@src/anim/states.js";
+import { createClockHandle } from "@src/clock/index.js";
 
 // A 4×3-state sheet over a 128×96 image of 32×32 cells.
 const img = { width: 128, height: 96 } as HTMLImageElement;
@@ -25,9 +25,9 @@ const OPTS = {
   },
 } as const;
 
-describe("Anim.sheet", () => {
+describe("Anim.fromGrid", () => {
   it("maps states/frames to source rects", () => {
-    const s = sheet(img, OPTS);
+    const s = fromGrid(img, OPTS);
     expect(s.rect("idle", 0)).toEqual({ sx: 0, sy: 0, sw: 32, sh: 32 });
     expect(s.rect("run", 1)).toEqual({ sx: 32, sy: 32, sw: 32, sh: 32 });
     expect(s.rect("hit", 99)).toEqual({ sx: 64, sy: 64, sw: 32, sh: 32 }); // clamped
@@ -35,8 +35,8 @@ describe("Anim.sheet", () => {
 
   it("cursors derive the frame from the clock — no ticking", () => {
     const t = stepper();
-    const clock = createClockHandle(t.steps);
-    const cur = sheet(img, OPTS).play("idle", { clock });
+    const clock = createClockHandle(1000 / 60, t.steps);
+    const cur = fromGrid(img, OPTS).play("idle", { clock });
     expect(cur.frame).toBe(0);
     t.advanceMs(150);
     expect(cur.frame).toBe(1);
@@ -47,8 +47,8 @@ describe("Anim.sheet", () => {
 
   it("set() to the SAME state is a no-op — calling it every step never restarts", () => {
     const t = stepper();
-    const clock = createClockHandle(t.steps);
-    const cur = sheet(img, OPTS).play("idle", { clock });
+    const clock = createClockHandle(1000 / 60, t.steps);
+    const cur = fromGrid(img, OPTS).play("idle", { clock });
     t.advanceMs(150);
     cur.set("idle"); // the classic bug: this must NOT reset to frame 0
     expect(cur.frame).toBe(1);
@@ -56,8 +56,8 @@ describe("Anim.sheet", () => {
 
   it("switching states restarts the new state's timeline", () => {
     const t = stepper();
-    const clock = createClockHandle(t.steps);
-    const cur = sheet(img, OPTS).play("idle", { clock });
+    const clock = createClockHandle(1000 / 60, t.steps);
+    const cur = fromGrid(img, OPTS).play("idle", { clock });
     t.advanceMs(250);
     cur.set("run");
     expect(cur.state).toBe("run");
@@ -69,8 +69,8 @@ describe("Anim.sheet", () => {
 
   it("non-looping states hold the last frame and report done", () => {
     const t = stepper();
-    const clock = createClockHandle(t.steps);
-    const cur = sheet(img, OPTS).once("hit", { clock });
+    const clock = createClockHandle(1000 / 60, t.steps);
+    const cur = fromGrid(img, OPTS).once("hit", { clock });
     t.advanceMs(1000);
     expect(cur.frame).toBe(2); // held at the last of 3 frames
     expect(cur.done).toBe(true);
@@ -78,8 +78,8 @@ describe("Anim.sheet", () => {
 
   it("cursors freeze with a held clock (pause for free)", () => {
     const t = stepper();
-    const clock = createClockHandle(t.steps);
-    const cur = sheet(img, OPTS).play("idle", { clock });
+    const clock = createClockHandle(1000 / 60, t.steps);
+    const cur = fromGrid(img, OPTS).play("idle", { clock });
     t.advanceMs(150);
     clock.hold();
     t.advanceMs(500);
@@ -88,8 +88,8 @@ describe("Anim.sheet", () => {
 
   it("pauses one cursor without holding its shared clock", () => {
     const t = stepper();
-    const clock = createClockHandle(t.steps);
-    const cur = sheet(img, OPTS).play("idle", { clock });
+    const clock = createClockHandle(1000 / 60, t.steps);
+    const cur = fromGrid(img, OPTS).play("idle", { clock });
     t.advanceMs(150);
     cur.pause();
     t.advanceMs(500);
@@ -102,10 +102,10 @@ describe("Anim.sheet", () => {
   });
 
   it("unknown states throw at play and set", () => {
-    const s = sheet(img, OPTS);
+    const s = fromGrid(img, OPTS);
     // @ts-expect-error — unknown state name
     expect(() => s.play("rnu")).toThrow(/unknown state/);
-    const cur = s.play("idle", { clock: createClockHandle() });
+    const cur = s.play("idle", { clock: createClockHandle(1000 / 60) });
     // @ts-expect-error — unknown state name
     expect(() => cur.set("rnu")).toThrow(/unknown state/);
   });
@@ -124,9 +124,9 @@ const KIT = {
   hit: { image: runImg, frames: 2, fps: 10 },
 } as const;
 
-describe("Anim.states (multi-image)", () => {
+describe("Anim.fromImages (multi-image)", () => {
   it("derives per-state cell size from each image and frame count", () => {
-    const kit = states(KIT);
+    const kit = fromImages(KIT);
     expect(kit.rect("idle", 0)).toEqual({ sx: 0, sy: 0, sw: 24, sh: 24 });
     expect(kit.rect("idle", 2)).toEqual({ sx: 48, sy: 0, sw: 24, sh: 24 });
     expect(kit.rect("run", 1)).toEqual({ sx: 16, sy: 0, sw: 16, sh: 16 });
@@ -135,7 +135,7 @@ describe("Anim.states (multi-image)", () => {
   });
 
   it("exposes the ACTIVE state's image as SpriteLike (switches with set)", () => {
-    const cur = states(KIT).play("idle", { clock: createClockHandle() });
+    const cur = fromImages(KIT).play("idle", { clock: createClockHandle(1000 / 60) });
     expect(cur.sheet.image).toBe(idleImg);
     cur.set("run");
     expect(cur.sheet.image).toBe(runImg);
@@ -144,8 +144,8 @@ describe("Anim.states (multi-image)", () => {
 
   it("cursors derive the frame from the clock — no ticking", () => {
     const t = stepper();
-    const clock = createClockHandle(t.steps);
-    const cur = states(KIT).play("idle", { clock });
+    const clock = createClockHandle(1000 / 60, t.steps);
+    const cur = fromImages(KIT).play("idle", { clock });
     expect(cur.frame).toBe(0);
     t.advanceMs(150);
     expect(cur.frame).toBe(1);
@@ -156,8 +156,8 @@ describe("Anim.states (multi-image)", () => {
 
   it("set() to the SAME state is a no-op", () => {
     const t = stepper();
-    const clock = createClockHandle(t.steps);
-    const cur = states(KIT).play("idle", { clock });
+    const clock = createClockHandle(1000 / 60, t.steps);
+    const cur = fromImages(KIT).play("idle", { clock });
     t.advanceMs(150);
     cur.set("idle");
     expect(cur.frame).toBe(1);
@@ -165,8 +165,8 @@ describe("Anim.states (multi-image)", () => {
 
   it("switching states restarts the new state's timeline", () => {
     const t = stepper();
-    const clock = createClockHandle(t.steps);
-    const cur = states(KIT).play("idle", { clock });
+    const clock = createClockHandle(1000 / 60, t.steps);
+    const cur = fromImages(KIT).play("idle", { clock });
     t.advanceMs(250);
     cur.set("run");
     expect(cur.state).toBe("run");
@@ -177,8 +177,8 @@ describe("Anim.states (multi-image)", () => {
 
   it("non-looping states hold the last frame and report done", () => {
     const t = stepper();
-    const clock = createClockHandle(t.steps);
-    const cur = states(KIT).once("hit", { clock });
+    const clock = createClockHandle(1000 / 60, t.steps);
+    const cur = fromImages(KIT).once("hit", { clock });
     t.advanceMs(1000);
     expect(cur.frame).toBe(1); // held at the last of 2 frames
     expect(cur.done).toBe(true);
@@ -186,16 +186,16 @@ describe("Anim.states (multi-image)", () => {
 
   it("a single-frame state never advances", () => {
     const t = stepper();
-    const clock = createClockHandle(t.steps);
-    const cur = states(KIT).play("jump", { clock });
+    const clock = createClockHandle(1000 / 60, t.steps);
+    const cur = fromImages(KIT).play("jump", { clock });
     t.advanceMs(1000);
     expect(cur.frame).toBe(0);
   });
 
   it("can pause and resume one cursor", () => {
     const t = stepper();
-    const clock = createClockHandle(t.steps);
-    const cur = states(KIT).play("idle", { clock });
+    const clock = createClockHandle(1000 / 60, t.steps);
+    const cur = fromImages(KIT).play("idle", { clock });
     t.advanceMs(150);
     cur.pause();
     t.advanceMs(500);
@@ -206,10 +206,10 @@ describe("Anim.states (multi-image)", () => {
   });
 
   it("unknown states throw at play and set", () => {
-    const kit = states(KIT);
+    const kit = fromImages(KIT);
     // @ts-expect-error — unknown state name
     expect(() => kit.play("nope")).toThrow(/unknown state/);
-    const cur = kit.play("idle", { clock: createClockHandle() });
+    const cur = kit.play("idle", { clock: createClockHandle(1000 / 60) });
     // @ts-expect-error — unknown state name
     expect(() => cur.set("nope")).toThrow(/unknown state/);
   });

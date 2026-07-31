@@ -5,10 +5,10 @@
 // not grow forever: a container animating its position mints a new key every
 // frame. A SweptCache stamps each entry with the frame it was last touched and
 // drops entries that go unseen for STALE_FRAMES (the kernel bumps the tick and
-// sweeps from its per-runtime frame-end housekeeping — see lifecycle.ts).
-// Storage is per UI runtime, so two apps' widgets can't collide on ids.
+// sweeps from its per-app frame-end housekeeping — see lifecycle.ts).
+// Storage is per app, so two apps' widgets can't collide on ids.
 
-import { runtimeSlot } from "./runtime.js";
+import { uiSlot } from "./state.js";
 
 /** Entries untouched for this many frames are dropped (~10 s at 60 fps). */
 const STALE_FRAMES = 600;
@@ -28,11 +28,11 @@ interface CacheState {
   maps: (Map<string, SweptEntry<unknown>> | undefined)[];
 }
 
-const state = runtimeSlot<CacheState>(() => ({ tick: 0, lastSweep: 0, maps: [] }));
+const state = uiSlot<CacheState>(() => ({ tick: 0, lastSweep: 0, maps: [] }));
 
 /** A string-keyed map whose entries expire when untouched (get OR set) for
  *  `STALE_FRAMES` frames. Drop-in for the widget-state Maps; reads and writes
- *  go to the CURRENT runtime's storage. */
+ *  go to the SELECTED app's storage. */
 export interface SweptCache<V> {
   get(key: string): V | undefined;
   set(key: string, value: V): void;
@@ -75,8 +75,8 @@ export function sweptCache<V>(): SweptCache<V> {
   };
 }
 
-/** Advance the current runtime's frame tick and periodically drop its stale
- *  entries — called from the kernel's per-runtime frame-end housekeeping. */
+/** Advance the current app's frame tick and periodically drop its stale
+ *  entries — called from the kernel's per-app frame-end housekeeping. */
 export function sweepCaches(): void {
   const s = state();
   s.tick++;

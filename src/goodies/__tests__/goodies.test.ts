@@ -21,7 +21,7 @@ import {
   wrap,
   wrappedDelta,
   wrappedDistance,
-} from "../index.js";
+} from "@src/goodies/index.js";
 
 describe("Goodies.wrap", () => {
   it("wraps positive, negative and multi-span values into zero-based bounds", () => {

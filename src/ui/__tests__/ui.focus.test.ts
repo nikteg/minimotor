@@ -4,8 +4,8 @@
 // when it closes. All of it is per-frame state rebuilt from the draw calls, so
 // it can only be verified by actually running frames.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createApp, type App } from "../../engine/index.js";
-import { createUiRuntime, switchRuntime, type UiRuntime } from "../core/runtime.js";
+import { createApp, type App } from "@src/engine/index.js";
+import { selectUiApp } from "@src/ui/core/state.js";
 import {
   _reset,
   button,
@@ -16,8 +16,8 @@ import {
   setNavPad,
   slider,
   text,
-} from "../api.js";
-import { Buttons, type GamepadState } from "../../input/gamepad.js";
+} from "@src/ui/api.js";
+import { Buttons, type GamepadState } from "@src/input/gamepad.js";
 
 let rafCallback: ((t: number) => void) | null = null;
 const origGc = HTMLCanvasElement.prototype.getContext;
@@ -57,9 +57,6 @@ function makeCtx(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
 }
 
 const games: App[] = [];
-// Several apps are alive at once here; each has its own UI runtime.
-const runtimes = new Map<App, UiRuntime>();
-
 beforeEach(() => {
   HTMLCanvasElement.prototype.getContext = function (type: string) {
     if (type !== "2d") return origGc.call(this, type);
@@ -80,7 +77,6 @@ beforeEach(() => {
 
 afterEach(() => {
   for (const g of games.splice(0)) g.destroy();
-  runtimes.clear();
   _reset();
   document.body.innerHTML = "";
   vi.unstubAllGlobals();
@@ -92,15 +88,12 @@ function build(draw: () => void): { game: App; canvas: HTMLCanvasElement } {
   canvas.id = "game";
   document.body.appendChild(canvas);
   const game = createApp(canvas, { fullscreen: false });
-  // Raw widget API instead of createUI, so this harness does what createUI
-  // does: build the runtime for this app and select it each frame.
-  const rt = createUiRuntime(game.ctx, game);
-  runtimes.set(game, rt);
+  // Raw widget API instead of createUI, so select the app each frame.
   games.push(game);
   game.Loop.run({
     update: () => {},
     draw: () => {
-      switchRuntime(rt);
+      selectUiApp(game);
       draw();
     },
   });
@@ -115,9 +108,9 @@ function tick(ms = 16): void {
   cb?.(now);
 }
 
-// Focus lives on the app's UI runtime — select it before a read.
+// Focus lives in state keyed by the app — select it before a read.
 function focused(game: App): string | null {
-  switchRuntime(runtimes.get(game)!);
+  selectUiApp(game);
   return focusedId();
 }
 
@@ -243,7 +236,7 @@ describe("the overlay focus trap", () => {
         button({ label: "Resume", id: "resume" });
       });
     });
-    switchRuntime(runtimes.get(game)!);
+    selectUiApp(game);
     setNavPad(pad);
     tick();
     vi.mocked(game.ctx.setLineDash).mockClear();
@@ -315,7 +308,7 @@ describe("gamepad navigation", () => {
     });
     tick();
     tick();
-    switchRuntime(runtimes.get(game)!);
+    selectUiApp(game);
     setNavPad(pad);
     pressedB = true;
     tick();
@@ -337,7 +330,7 @@ describe("gamepad navigation", () => {
     });
     tick(20);
     tick(20);
-    switchRuntime(runtimes.get(game)!);
+    selectUiApp(game);
     setNavPad(pad);
     focusWidget("volume");
 

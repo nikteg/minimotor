@@ -1,6 +1,6 @@
 import { ensureWired, isInOverlayPass, isOverlayActive, onFrameEnd } from "./lifecycle.js";
-import { runtimeSlot, uiApp } from "./runtime.js";
-import { pointInRect } from "../../collision.js";
+import { uiSlot, uiApp } from "./state.js";
+import { pointInRect } from "@src/collision/index.js";
 
 export const DEAD_POINTER = {
   x: -1e9,
@@ -12,10 +12,10 @@ export const DEAD_POINTER = {
   wheel: 0,
 };
 
-// ---------- Per-runtime input state ---------------------------------------
+// ---------- Per-app input state ---------------------------------------
 // Everything the pointer pipeline tracks across a frame: edge suppression, the
 // wheel claim, the UI transform stack, pointer clips and the memoized pointer.
-// One instance per UI runtime, so two apps' UIs can't leak gestures into each
+// One instance per app, so two apps' UIs can't leak gestures into each
 // other.
 interface UiTransform {
   scale: number;
@@ -51,7 +51,7 @@ interface InputState {
   pointerCache: PointerCache | null;
 }
 
-const st = runtimeSlot<InputState>(() => ({
+const st = uiSlot<InputState>(() => ({
   edgesSuppressed: false,
   gestureOwned: false,
   wheelTaken: false,
@@ -128,25 +128,19 @@ export function claimWheel(over: boolean, wheel: number, atMin: boolean, atMax: 
 // Read, don't hold.
 const rawScratch = { ...DEAD_POINTER };
 
-/** The pointer, raw, from the current runtime's host app — overlays
+/** The pointer, raw, from the current app's host app — overlays
  *  themselves read this (their close logic must see clicks even while they
  *  block everyone else). Reused scratch object: read, don't hold. */
 export function rawPointer() {
-  try {
-    const p = uiApp()?.Pointer;
-    if (!p) return DEAD_POINTER;
-    rawScratch.x = p.x;
-    rawScratch.y = p.y;
-    rawScratch.down = p.down;
-    rawScratch.released = p.frameReleased;
-    rawScratch.pressed = p.framePressed;
-    rawScratch.doublePressed = p.frameDoublePressed;
-    rawScratch.wheel = p.wheel;
-    return rawScratch;
-  } catch {
-    // No app yet (headless/tests) — stay inert like `uiPointer`.
-    return DEAD_POINTER;
-  }
+  const p = uiApp().Pointer;
+  rawScratch.x = p.x;
+  rawScratch.y = p.y;
+  rawScratch.down = p.down;
+  rawScratch.released = p.frameReleased;
+  rawScratch.pressed = p.framePressed;
+  rawScratch.doublePressed = p.frameDoublePressed;
+  rawScratch.wheel = p.wheel;
+  return rawScratch;
 }
 
 // ---------- UI transform (scale / reference-size fit) -----------------------
@@ -250,11 +244,7 @@ export function dragPointer() {
 const dragScratch = { ...DEAD_POINTER };
 
 function hostViewport(): { w: number; h: number } {
-  const vp = uiApp()?.viewport;
-  if (!vp) {
-    throw new Error("Minimotor.UI: no app — use createUI(app) first");
-  }
-  return vp;
+  return uiApp().viewport;
 }
 
 /** The width UI code lays out against — the reference size inside a `UI.scaled`
@@ -293,7 +283,7 @@ export function vh(percent: number, options: RelativeSizeOptions = {}): number {
 
 // Global UI-scale defaults that the no-arg `UI.scaled(body)` reads: a reference
 // size the UI is laid out against, and a multiplier on top. Set once (or never).
-// Deliberately shared by every runtime — it's app configuration, not UI state.
+// Deliberately shared by every app — it's app configuration, not UI state.
 let baseSize: { w: number; h: number } | null = null;
 let uiScaleSetting = 1;
 
@@ -321,7 +311,7 @@ export function getUiScaleSetting(): number {
 }
 
 /** Reset the global UI-scale settings — for tests (see lifecycle `_reset`;
- *  per-runtime transform state is dropped with the runtime slots). */
+ *  per-app transform state is dropped with the per-app slots). */
 export function resetUiScale(): void {
   baseSize = null;
   uiScaleSetting = 1;
@@ -437,7 +427,7 @@ function computeUiPointer(
  *  Reset every frame, so call it each frame the state holds; higher `priority`
  *  (default 0) wins when several are requested. Re-exported as `UI.setCursor`. */
 export function setCursor(cursor: string, priority?: number): void {
-  uiApp()?.setCursor(cursor, priority);
+  uiApp().setCursor(cursor, priority);
 }
 
 /** Hovering an interactive widget asks for the hand cursor; the engine

@@ -13,7 +13,7 @@ const featureDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "featu
 
 async function features(): Promise<CliFeature[]> {
   const files = readdirSync(featureDirectory)
-    .filter((file) => file.endsWith(".feature.js"))
+    .filter((file) => file.endsWith(".js"))
     .sort();
   return Promise.all(
     files.map(async (file) => {

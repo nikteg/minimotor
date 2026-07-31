@@ -3,7 +3,7 @@
 // Every test keeps US as the host so `adopt()` never opens an RTCPeerConnection
 // (jsdom has none); the relay link is what's under test here, not the mesh.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { join, type RoomStatus } from "../room.js";
+import { join, type RoomStatus } from "@src/net/room.js";
 
 interface FakeSocket {
   url: string;

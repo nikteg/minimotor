@@ -1,5 +1,5 @@
 import { listItem } from "./lists.js";
-import { Fillable, fillRect, text } from "../core/index.js";
+import { Fillable, fillRect, text } from "@src/ui/core/index.js";
 import { list } from "./lists.js";
 
 // Last sorted copy per input array (weak — dropped with the data). Re-sorts

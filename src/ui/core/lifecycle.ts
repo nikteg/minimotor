@@ -2,26 +2,26 @@ import { focusEndFrame, markFocusTrap, padNav, wireFocusKeyboard } from "./focus
 import { sweepCaches } from "./frame-cache.js";
 import { clearPointerCache, resetUiScale } from "./input.js";
 import {
-  type UiRuntime,
-  allRuntimes,
-  currentRuntime,
-  defaultUiRuntime,
-  resetRuntimes,
-  runtimeSlot,
-  switchRuntime,
+  allUiApps,
+  clearUiApp,
+  markUiAppWired,
+  resetUiApps,
   uiApp,
-  withRuntime,
-} from "./runtime.js";
+  uiAppWired,
+  uiSlot,
+  withUiApp,
+} from "./state.js";
+import type { App } from "@src/engine/index.js";
 import { setTheme } from "./theme.js";
 
-// ---------- Per-frame runtime ----------
+// ---------- Per-frame lifecycle ----------
 // The immediate-mode kernel's frame loop: overlay-capture flags, the `ensureWired`
 // housekeeping that drives the fixed step + frame end, and the hook registries
 // that let widgets built on top hang their own step/frame-end/reset work off the
 // loop WITHOUT the kernel importing them (a core→widget cycle). Widgets register;
 // this file owns the ordering. Nothing widget-specific lives here.
 //
-// Wiring is PER RUNTIME: each runtime hooks the loop of its own host app (the
+// Wiring is PER APP: each app hooks the loop of its own host app (the
 // app behind the current context, so two games on
 // one page each run their own overlay pass, focus close and cleanup — against
 // their own state.
@@ -35,7 +35,7 @@ interface OverlayState {
   inPass: boolean; // the rest of the frame belongs to the overlay
 }
 
-const overlay = runtimeSlot<OverlayState>(() => ({
+const overlay = uiSlot<OverlayState>(() => ({
   seen: false,
   active: false,
   inPass: false,
@@ -64,8 +64,8 @@ export function enterOverlay(focusVisible = false): void {
 // The kernel owns the frame loop; widgets built on top hang their per-step aging,
 // deferred overlay draws, frame-end cleanup and test-reset off these registries
 // rather than the kernel importing them. The registries are GLOBAL (module
-// wiring); every registered function operates on the CURRENT runtime's state,
-// and the kernel invokes them once per runtime.
+// wiring); every registered function operates on the SELECTED app's state,
+// and the kernel invokes them once per app.
 type LifecycleHook = () => void;
 const stepHooks: LifecycleHook[] = [];
 const overlayPassHooks: LifecycleHook[] = [];
@@ -89,15 +89,15 @@ export function onFrameEnd(fn: LifecycleHook): void {
   if (!frameEndHooks.includes(fn)) frameEndHooks.push(fn);
 }
 
-/** Register test-reset cleanup, run by `_reset` (once per runtime — release
+/** Register test-reset cleanup, run by `_reset` (once per app — release
  *  DOM nodes here; plain slot state is dropped wholesale). */
 export function onReset(fn: LifecycleHook): void {
   if (!resetHooks.includes(fn)) resetHooks.push(fn);
 }
 
-// One runtime's frame-end housekeeping, run from its host loop's onFrame.
-function runtimeFrameEnd(rt: UiRuntime): void {
-  withRuntime(rt, () => {
+// One app's frame-end housekeeping, run from its host loop's onFrame.
+function appFrameEnd(app: App): void {
+  withUiApp(app, () => {
     // Deferred overlays render above every ordinary widget in the user's
     // draw callback (and still see frame-scoped pointer release edges).
     for (const hook of overlayPassHooks) hook();
@@ -115,44 +115,40 @@ function runtimeFrameEnd(rt: UiRuntime): void {
     clearPointerCache();
     sweepCaches();
   });
-  // The frame is over — a begun runtime stops being ambient so state can't
-  // leak into the next frame (each frame re-selects its runtime).
-  if (currentRuntime() === rt) switchRuntime(defaultUiRuntime());
+  // The frame is over — an active app stops being ambient so state can't
+  // leak into the next frame (each frame re-selects its app).
+  clearUiApp(app);
 }
 
 export function ensureWired(): void {
   wireFocusKeyboard();
-  const rt = currentRuntime();
-  // Wiring needs the runtime's host app; without one (headless/tests) stay
-  // unwired and retry next call.
   const app = uiApp();
-  if (!app) return;
   // Compare the APP, not a "wired once" flag: replacing a game destroys
   // the app these hooks live on and takes them with it. Re-attaching to the
   // new app here is what keeps the UI kernel alive across a re-init (without
   // it the pointer cache, overlay capture and focus registry all go dead).
-  if (rt.wiredTo === app) return;
-  rt.wiredTo = app;
+  if (uiAppWired(app)) return;
+  markUiAppWired(app);
   app.onStep(() => {
-    withRuntime(rt, () => {
+    withUiApp(app, () => {
       padNav();
       for (const hook of stepHooks) hook();
     });
   });
   // Frame-end housekeeping for the immediate-mode state machines.
-  app.onFrame(() => runtimeFrameEnd(rt));
+  app.onFrame(() => appFrameEnd(app));
 }
 
-/** Reset the theme, global UI-scale settings, every runtime's widget state
- *  (running each runtime's registered resets first — they release DOM nodes)
- *  and the runtime wiring — for tests. */
+/** Reset the theme, global UI-scale settings, every app's widget state
+ *  (running each app's registered resets first — they release DOM nodes)
+ *  and the app wiring — for tests. */
 export function _reset(): void {
   setTheme({});
-  for (const rt of allRuntimes) {
-    withRuntime(rt, () => {
+  for (const app of allUiApps) {
+    withUiApp(app, () => {
       for (const hook of resetHooks) hook();
     });
   }
   resetUiScale();
-  resetRuntimes();
+  resetUiApps();
 }

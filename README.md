@@ -50,8 +50,7 @@ is imported and created only when the app uses it.
 
 | Import                     | What you get                                                                                                |
 | -------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `minimotor`                | `createApp` plus lightweight, stateless helpers such as `Collision`, `Mathf`, `Tiles`, and `ECS`.           |
-| `minimotor/accessibility`  | `createAccessibility()` — reduced-motion, high-contrast, and text-scale preferences.                        |
+| `minimotor`                | `createApp` plus lightweight, stateless helpers such as `Collision`, `Mathf`, and `Tiles`.                  |
 | `minimotor/animation`      | `createAnimation(app)` — sheets, states, effects, and motions on the app's world clock.                     |
 | `minimotor/aseprite`       | Standalone Aseprite JSON atlas parsing and typed clip metadata.                                             |
 | `minimotor/assets`         | `createAssets(app)` or standalone `createAssetStore()` — typed manifests, cache, progress, and composition. |
@@ -60,17 +59,18 @@ is imported and created only when the app uses it.
 | `minimotor/camera`         | `createCamera(app)` or standalone `createLens(options)`.                                                    |
 | `minimotor/capture`        | `createCapture(app)` — canvas screenshots and frame grabs.                                                  |
 | `minimotor/debug`          | `createDebug(app)` — collision/shape overlays, value watches, and inspection snapshots.                     |
-| `minimotor/determinism`    | `createDeterminism(seed)` — a seeded RNG plus drift checks for lockstep play.                               |
+| `minimotor/ecs`            | `createEcs()` and `component()` — optional archetype-free entity/component storage and systems.             |
 | `minimotor/input`          | `createInput(app)` — action maps, contexts, and gamepad polling.                                            |
 | `minimotor/ldtk`           | Standalone LDtk project, tile, entity, and world adapters.                                                  |
-| `minimotor/onscreen-input` | `createOnscreenInput(app, Input)` — virtual pads registered with the same input service.                    |
+| `minimotor/onscreen-input` | `createOnscreenInput(app, Input, UI)` — UI-themed virtual pads registered with Input.                       |
 | `minimotor/ui`             | `createUI(app, Input?)` — immediate-mode UI isolated to one canvas, with optional all-pad navigation.       |
 | `minimotor/net`            | `createNet(app)` — multiplayer sessions and app-owned sync utilities.                                       |
 | `minimotor/physics2d`      | `createPhysics2D(app)` — rigid-body physics over planck/Box2D.                                              |
 | `minimotor/performance`    | `createPerformanceMonitoring(app)` plus standalone measurement utilities.                                   |
 | `minimotor/platformer`     | Standalone platformer animation-state helpers (idle/run/jump/fall from a body).                             |
-| `minimotor/replay`         | `createReplay()` — record and play back input timelines.                                                    |
+| `minimotor/rng`            | `createRng(seed)` — a stateful seeded random stream with integer and choice helpers.                        |
 | `minimotor/scenes`         | `createScenes(app)` — typed scene stacks bound to the app clocks and viewport.                              |
+| `minimotor/sprites`        | Sprite raster/atlas helpers plus the optional ECS sprite-rendering adapter.                                 |
 | `minimotor/particles`      | `createParticles(app)` — clock-bound particle-system factory.                                               |
 | `minimotor/portals`        | `createPortals(app)` — automatic level travel owned by the app loop.                                        |
 | `minimotor/snapshots`      | `createSnapshots()` — bind state, then save/restore whole-game snapshots.                                   |
@@ -93,7 +93,7 @@ const Input = createInput(app);
 
 Every lifecycle-owned factory requires the same app returned by `createApp`.
 Dependencies between optional modules stay explicit, for example
-`createOnscreenInput(app, Input)`. Ownerless lower-level constructors have
+`createOnscreenInput(app, Input, UI)`. Ownerless lower-level constructors have
 different names, such as `createAssetStore()` and `createLens()`.
 
 That object's type is `App`, exported from `minimotor` — annotate your own
@@ -123,7 +123,8 @@ semantically for canvas automation.
 **Game structure** — `Scenes` (scene stack with `Transitions` for fade/wipe),
 `Portals` (area/level travel through scene transitions, with multiplayer-safe
 teleport snapshots),
-`ECS` (tiny entity-component-system), `Fsm` (finite state machines), `Clock` /
+the optional `minimotor/ecs` module (tiny entity-component-system), `Fsm`
+(finite state machines), `Clock` /
 `Timers` (pause-aware timing, coyote time, input buffering), `Signals`
 (event bus), `Assets` (manifest loading with progress).
 
@@ -592,25 +593,21 @@ pnpm verify         # typecheck (src + samples) + lint + format check
 
 ### Source layout
 
-One folder per capability, and each entry in the table above points at exactly
-one file in it. Inside a folder, `service.ts` is the only file allowed to know
-about a running app:
+One folder per optional capability. Its small public `index.ts` exports both
+factories and types; cohesive implementation files sit beside it:
 
 ```
 src/anim/     sheet.ts states.ts value.ts pools.ts   pure — no app, no DOM
-              service.ts                             createAnimation(app)
+              index.ts                               types + createAnimation(app)
 ```
 
-Two rules follow, and `src/__tests__/layering.test.ts` enforces both:
+Two rules follow, and `src/__tests__/layering.test.ts` enforces them:
 
-- Only `service.ts` imports the app at runtime. Everything else stays pure, so
-  it can be tested and reused without a canvas.
-- No `service.ts` imports another at runtime. Services that need a peer take it
-  as an argument — `createUI(app, input)`, `createAutosave(app, snapshots,
-storage)` — which keeps the wiring visible at the call site and the folders
-  independent.
-
-Naming a type across either line is fine; both rules are about runtime edges.
+- Optional capabilities do not import the app runtime as a value. Factories
+  receive `App` explicitly and implementation modules remain reusable.
+- Capabilities that need peers take them as arguments — `createUI(app, input)`,
+  `createOnscreenInput(app, input, ui)`, and `createAutosave(app, snapshots,
+storage)` keep wiring visible and capability dependencies honest.
 
 ## License
 

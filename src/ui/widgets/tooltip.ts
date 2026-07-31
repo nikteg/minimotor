@@ -12,18 +12,18 @@ import {
   onFrameEnd,
   onReset,
   rawPointer,
-  runtimeSlot,
+  uiSlot,
   theme,
   uiCtx,
   uiFont,
-} from "../core/index.js";
+} from "@src/ui/core/index.js";
 
 interface TipState {
   request: string | null; // asked for this frame
   scale: number; // the UI scale the requesting widget drew under
   shown: { text: string; since: number; scale: number } | null; // hover-stable
 }
-const st = runtimeSlot<TipState>(() => ({ request: null, scale: 1, shown: null }));
+const st = uiSlot<TipState>(() => ({ request: null, scale: 1, shown: null }));
 
 /** Request a tooltip for this frame (call while your hit-area is hovered —
  *  widgets with a `tooltip` option do this for you). Drawn by `drawTips`
@@ -44,7 +44,7 @@ export function drawTips(): void {
   const shown = st().shown;
   if (!shown || performance.now() - shown.since < 350) return;
   const msg = shown.text;
-  const vp = anchorViewport(ctx);
+  const vp = anchorViewport();
   const p = rawPointer();
   ctx.save();
   ctx.font = uiFont(theme.fontSize - 1);

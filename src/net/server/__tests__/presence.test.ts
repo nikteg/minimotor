@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createPresence } from "../presence.js";
+import { createPresence } from "@src/net/server/presence.js";
 
 describe("net/server presence", () => {
   it("stores, reads, and removes state", () => {

@@ -28,7 +28,7 @@ import {
   pushUiTransform,
   registerFocusable,
   requiredWidgetId,
-  runtimeSlot,
+  uiSlot,
   anchorViewport,
   theme,
   uiCtx,
@@ -36,12 +36,12 @@ import {
   uiHeight,
   uiPointer,
   uiWidth,
-} from "../core/index.js";
+} from "@src/ui/core/index.js";
 import { button } from "./button.js";
 import { list, scrollGestureActive } from "./lists.js";
 import { paintFrame } from "./panel.js";
-import { pointInRect } from "../../collision.js";
-import { clamp } from "../../mathf.js";
+import { pointInRect } from "@src/collision/index.js";
+import { clamp } from "@src/math/mathf.js";
 
 export interface SelectEditor {
   id: string;
@@ -81,7 +81,7 @@ interface SelectState {
   commit: { id: string; index: number } | null;
 }
 
-const st = runtimeSlot<SelectState>(() => ({
+const st = uiSlot<SelectState>(() => ({
   editor: null,
   seen: new Set(),
   request: null,
@@ -428,7 +428,7 @@ function drawSelectMenu(
   const pad = 2;
   const listH = visible * itemH; // the visible window; the list scrolls the rest
   const menuH = listH + pad * 2;
-  const vp = anchorViewport(ctx);
+  const vp = anchorViewport();
   const menuY = rect.y + rect.h + menuH <= vp.h - 4 ? rect.y + rect.h + 2 : rect.y - menuH - 2;
   const menu = { x: rect.x, y: menuY, w: rect.w, h: menuH };
 

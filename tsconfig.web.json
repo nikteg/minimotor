@@ -2,7 +2,7 @@
   // The browser subset, for games that compile the engine straight into their
   // web root instead of bundling it (see the "no build step in production"
   // recipe in README). Same output layout as the default build — `rootDir: src`
-  // is preserved, so `minimotor/audio` still lands at `<outDir>/audio/service.js`
+  // is preserved, so `minimotor/audio` still lands at `<outDir>/audio/index.js`
   // — it just drops the parts a browser can never run:
   //
   //   src/cli        the `mm` tool (imports `ws`, node:fs, node:child_process)
@@ -16,6 +16,9 @@
   //
   // Consumers point tsc here and redirect the output:
   //   tsc -p ../minimotor/tsconfig.web.json --outDir public/minimotor
+  // Run `tsc-alias -p ../minimotor/tsconfig.web.json --outDir
+  // public/minimotor` after this compile so internal `@src/` imports become
+  // browser-native relative paths.
   //
   // This compiles src/, so it is for consumers that have the source: a sibling
   // checkout (`link:../minimotor`) or a git/submodule dep. An npm-installed

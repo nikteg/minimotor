@@ -26,127 +26,127 @@
       "default": "./build/index.js"
     },
     "./audio": {
-      "types": "./build/audio/service.d.ts",
-      "default": "./build/audio/service.js"
+      "types": "./build/audio/index.d.ts",
+      "default": "./build/audio/index.js"
     },
     "./animation": {
-      "types": "./build/anim/service.d.ts",
-      "default": "./build/anim/service.js"
+      "types": "./build/anim/index.d.ts",
+      "default": "./build/anim/index.js"
     },
     "./aseprite": {
       "types": "./build/aseprite/index.d.ts",
       "default": "./build/aseprite/index.js"
     },
     "./assets": {
-      "types": "./build/assets/service.d.ts",
-      "default": "./build/assets/service.js"
+      "types": "./build/assets/index.d.ts",
+      "default": "./build/assets/index.js"
+    },
+    "./ecs": {
+      "types": "./build/ecs/index.d.ts",
+      "default": "./build/ecs/index.js"
+    },
+    "./sprites": {
+      "types": "./build/sprites/index.d.ts",
+      "default": "./build/sprites/index.js"
     },
     "./camera": {
-      "types": "./build/camera/service.d.ts",
-      "default": "./build/camera/service.js"
+      "types": "./build/camera/index.d.ts",
+      "default": "./build/camera/index.js"
     },
     "./debug": {
-      "types": "./build/debug/service.d.ts",
-      "default": "./build/debug/service.js"
+      "types": "./build/debug/index.d.ts",
+      "default": "./build/debug/index.js"
     },
     "./input": {
-      "types": "./build/input/service.d.ts",
-      "default": "./build/input/service.js"
+      "types": "./build/input/index.d.ts",
+      "default": "./build/input/index.js"
     },
     "./ldtk": {
       "types": "./build/ldtk/index.d.ts",
       "default": "./build/ldtk/index.js"
     },
     "./onscreen-input": {
-      "types": "./build/onscreen/service.d.ts",
-      "default": "./build/onscreen/service.js"
+      "types": "./build/onscreen/index.d.ts",
+      "default": "./build/onscreen/index.js"
     },
     "./net": {
-      "types": "./build/net/service.d.ts",
-      "default": "./build/net/service.js"
+      "types": "./build/net/index.d.ts",
+      "default": "./build/net/index.js"
     },
     "./particles": {
-      "types": "./build/particles/service.d.ts",
-      "default": "./build/particles/service.js"
+      "types": "./build/particles/index.d.ts",
+      "default": "./build/particles/index.js"
     },
     "./platformer": {
       "types": "./build/platformer/index.d.ts",
       "default": "./build/platformer/index.js"
     },
     "./portals": {
-      "types": "./build/portals/service.d.ts",
-      "default": "./build/portals/service.js"
+      "types": "./build/portals/index.d.ts",
+      "default": "./build/portals/index.js"
     },
     "./scenes": {
-      "types": "./build/scenes/service.d.ts",
-      "default": "./build/scenes/service.js"
+      "types": "./build/scenes/index.d.ts",
+      "default": "./build/scenes/index.js"
     },
     "./storage": {
-      "types": "./build/storage/service.d.ts",
-      "default": "./build/storage/service.js"
+      "types": "./build/storage/index.d.ts",
+      "default": "./build/storage/index.js"
     },
     "./timers": {
-      "types": "./build/timers/service.d.ts",
-      "default": "./build/timers/service.js"
+      "types": "./build/timers/index.d.ts",
+      "default": "./build/timers/index.js"
     },
     "./ui": {
-      "types": "./build/ui/service.d.ts",
-      "default": "./build/ui/service.js"
+      "types": "./build/ui/index.d.ts",
+      "default": "./build/ui/index.js"
     },
     "./physics2d": {
-      "types": "./build/physics2d/service.d.ts",
-      "default": "./build/physics2d/service.js"
+      "types": "./build/physics2d/index.d.ts",
+      "default": "./build/physics2d/index.js"
     },
     "./performance": {
-      "types": "./build/perf/service.d.ts",
-      "default": "./build/perf/service.js"
+      "types": "./build/perf/index.d.ts",
+      "default": "./build/perf/index.js"
     },
     "./snapshots": {
-      "types": "./build/snapshots.d.ts",
-      "default": "./build/snapshots.js"
+      "types": "./build/snapshots/index.d.ts",
+      "default": "./build/snapshots/index.js"
     },
     "./autosave": {
-      "types": "./build/autosave/service.d.ts",
-      "default": "./build/autosave/service.js"
+      "types": "./build/autosave/index.d.ts",
+      "default": "./build/autosave/index.js"
     },
     "./capture": {
-      "types": "./build/capture/service.d.ts",
-      "default": "./build/capture/service.js"
+      "types": "./build/capture/index.d.ts",
+      "default": "./build/capture/index.js"
     },
-    "./accessibility": {
-      "types": "./build/accessibility.d.ts",
-      "default": "./build/accessibility.js"
-    },
-    "./replay": {
-      "types": "./build/replay.d.ts",
-      "default": "./build/replay.js"
-    },
-    "./determinism": {
-      "types": "./build/determinism.d.ts",
-      "default": "./build/determinism.js"
+    "./rng": {
+      "types": "./build/rng/index.d.ts",
+      "default": "./build/rng/index.js"
     },
     "./server": {
-      "types": "./build/server.d.ts",
-      "default": "./build/server.js"
+      "types": "./build/net/server/index.d.ts",
+      "default": "./build/net/server/index.js"
     },
     "./cli": {
       "types": "./build/cli/index.d.ts",
       "default": "./build/cli/index.js"
     },
     "./cli/*": {
-      "types": "./build/cli/features/*.feature.d.ts",
-      "default": "./build/cli/features/*.feature.js"
+      "types": "./build/cli/features/*.d.ts",
+      "default": "./build/cli/features/*.js"
     }
   },
   "scripts": {
     "clean": "rm -rf build",
-    "build": "rm -rf build && tsc",
-    "dev": "tsc --watch",
-    "prepare": "rm -rf build && tsc",
+    "build": "rm -rf build && tsc && tsc-alias && cp -r src/cli/schemas build/cli/schemas",
+    "dev": "concurrently --kill-others \"tsc --watch\" \"tsc-alias --watch\"",
+    "prepare": "rm -rf build && tsc && tsc-alias && cp -r src/cli/schemas build/cli/schemas",
     "samples": "mm dev",
     "samples:build": "vite build",
     "samples:preview": "vite preview",
-    "server:build": "tsc -p tsconfig.server.json",
+    "server:build": "tsc -p tsconfig.server.json && tsc-alias -p tsconfig.server.json",
     "docs:api": "node tools/gen-api-docs.ts",
     "api-lab:levels": "mm level build tools/api-lab-levels.mjs --skin tools/api-lab-levels.mjs --template samples/api-lab/assets/api-lab.ldtk -o samples/api-lab/assets/api-lab.ldtk",
     "ldtk:types": "mm ldtk types samples/api-lab/assets/api-lab.ldtk -o samples/api-lab/api-lab.generated.ts",
@@ -168,6 +168,7 @@
     "verify": "pnpm build && pnpm run --parallel \"/^verify:.+$/\""
   },
   "dependencies": {
+    "ajv": "^8.20.0",
     "ws": "^8.21.1"
   },
   "devDependencies": {
@@ -175,12 +176,14 @@
     "@types/node": "^26.1.1",
     "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^4.1.10",
+    "concurrently": "^10.0.4",
     "jsdom": "^29.1.1",
     "minimotor": "link:.",
     "oxfmt": "^0.59.0",
     "oxlint": "^1.36.0",
     "planck": "^1.5.0",
     "shiki": "^4.3.1",
+    "tsc-alias": "^1.9.1",
     "typescript": "^5.9.0",
     "vite": "^8.1.5",
     "vitest": "^4.1.10"

@@ -1,7 +1,7 @@
-import { createApp } from "../../index.js";
-import { createCamera } from "../../camera/service.js";
-import { createInput } from "../../input/service.js";
-import { createUI } from "../../ui/service.js";
+import { createApp } from "@src/index.js";
+import { createCamera } from "@src/camera/index.js";
+import { createInput } from "@src/input/index.js";
+import { createUI } from "@src/ui/index.js";
 import { createPlatformerSimulation, TILE, type PlatformerSimulation } from "./simulation.js";
 
 interface TesterConfig {

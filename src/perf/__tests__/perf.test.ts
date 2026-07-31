@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
-import { createPerfTracker, createNetMeter, createSparkline, drawPerfHud } from "../index.js";
+import {
+  createPerfTracker,
+  createNetMeter,
+  createSparkline,
+  drawPerfHud,
+} from "@src/perf/index.js";
 
 describe("createPerfTracker", () => {
   it("primes on the first call, then reports fps from frame deltas", () => {

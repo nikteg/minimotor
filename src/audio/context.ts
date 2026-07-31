@@ -4,7 +4,7 @@
 // manages AudioContext, timing, volume and pause on hidden tab.
 
 /** Builds one sound effect. Route nodes into `out` (the master SFX bus, so
- *  `Sfx.setOn`/`setVolume` apply); older builders that connect straight to
+ *  `Sfx.on`/`volume` apply); older builders that connect straight to
  *  `ctx.destination` keep working but bypass the bus. */
 export type SfxBuilder = (ctx: AudioContext, now: number, out: AudioNode) => void;
 

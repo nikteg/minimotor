@@ -3,7 +3,7 @@
 // keep and draw from, and a without-replacement bag. The pure one-shot helpers
 // (chance, weightedPick, shuffle, rollDice, damageRoll) live in Goodies.random.
 
-import { clamp } from "../mathf.js";
+import { clamp } from "@src/math/mathf.js";
 
 /** A tiny deterministic PRNG (mulberry32). Returns a function producing floats
  *  in `[0, 1)`, so it drops straight into the `rng` argument of `chance`,

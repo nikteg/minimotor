@@ -1,4 +1,4 @@
-import { lerp } from "../mathf.js";
+import { lerp } from "@src/math/mathf.js";
 
 // ---------- Network throughput meter ----------
 

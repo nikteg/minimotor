@@ -16,7 +16,7 @@ import {
   uiFont,
   uiPointer,
   widgetId,
-} from "../core/index.js";
+} from "@src/ui/core/index.js";
 import { tooltip } from "./tooltip.js";
 
 /** A labeled checkbox. */
