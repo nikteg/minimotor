@@ -8,9 +8,11 @@ import { widgetId } from "./identity.js";
 import type { IdPart } from "./identity.js";
 import {
   layoutCaptureActive,
+  noteContainerSize,
   popLayoutParent,
   pushLayoutParent,
   recordLayout,
+  refreshLayoutRect,
 } from "./layout-capture.js";
 import { ANCHOR_H, ANCHOR_V, anchorViewport, type TextAnchor } from "./text.js";
 import { uiSlot } from "./state.js";
@@ -58,6 +60,23 @@ export interface FlowOptions {
   wrap?: boolean;
 }
 
+/** A slot handed out before its size is known — the mechanism that lets an
+ *  auto-sized container measure itself IN the frame it is drawn rather than
+ *  reading last frame's measurement.
+ *
+ *  `rect` starts at the cursor with a provisional main-axis size and is MUTATED
+ *  IN PLACE by `commit`, so anything already holding it (the layout capture,
+ *  the child's own body flow) sees the corrected size. The parent's cursor does
+ *  not move until `commit`, so the next sibling lands in the right place first
+ *  time. Committing twice is a no-op. */
+export interface DeferredSlot {
+  /** The slot, at its final position and provisional size. Mutated by `commit`. */
+  readonly rect: { x: number; y: number; w: number; h: number };
+  /** Write the measured main-axis size in and advance the parent's cursor past
+   *  it. Pass the width for a row, the height for a column. */
+  commit(w?: number, h?: number): void;
+}
+
 /** A layout cursor from `flow()`: hands out rects along one axis. */
 export interface Flow {
   /** Main axis. */
@@ -76,6 +95,12 @@ export interface Flow {
    *  defaults from the flow); for columns pass the height as the second
    *  argument (width defaults from the flow). */
   next(w?: number, h?: number): { x: number; y: number; w: number; h: number };
+  /** Reserve the next slot WITHOUT advancing, for a child whose main-axis size
+   *  is only known once its own children have run — see `DeferredSlot`. Returns
+   *  null when this flow can't hold its cursor (it wraps, or it lays out
+   *  backwards from a far edge), in which case the caller must size the slot up
+   *  front from its cache. */
+  reserve(w?: number, h?: number): DeferredSlot | null;
   /** Reserve a slot that fills the remaining main-axis space, minus `reserve`
    *  (leave room for later fixed slots — e.g. a footer's height + gap). Needs
    *  `length` set on the flow; the closure containers set it for you. */
@@ -111,7 +136,11 @@ export function flow(opts: FlowOptions): Flow {
   const wrapping = (opts.wrap ?? false) && !back && opts.length !== undefined;
   let lineCross = 0; // tallest (row) / widest (col) slot in the current line
 
-  const advance = (w?: number, h?: number) => {
+  // Placing a slot is two steps, kept apart so a container whose size is only
+  // known after its children have run can take step 1 now and step 2 later
+  // (`reserve`). `slotRect` picks the position; `settle` moves the cursor past
+  // the slot and folds it into `last`/`extent`. `next` is both, back to back.
+  const slotRect = (w?: number, h?: number) => {
     const W = w ?? (dir === "col" ? (opts.w ?? 120) : 100);
     const H = h ?? opts.h ?? theme.buttonH;
     if (wrapping) {
@@ -132,12 +161,16 @@ export function flow(opts: FlowOptions): Flow {
       }
       lineCross = Math.max(lineCross, dir === "row" ? H : W);
     }
-    const rect =
-      dir === "row"
-        ? { x: back ? cx - W : cx, y: cy, w: W, h: H }
-        : { x: cx, y: back ? cy - H : cy, w: W, h: H };
-    if (dir === "row") cx += (back ? -1 : 1) * (W + gapPx);
-    else cy += (back ? -1 : 1) * (H + gapPx);
+    return dir === "row"
+      ? { x: back ? cx - W : cx, y: cy, w: W, h: H }
+      : { x: cx, y: back ? cy - H : cy, w: W, h: H };
+  };
+
+  // Reads the rect's CURRENT size, so a deferred slot settles against its
+  // committed size rather than the provisional one it was handed out with.
+  const settle = (rect: { x: number; y: number; w: number; h: number }) => {
+    if (dir === "row") cx += (back ? -1 : 1) * (rect.w + gapPx);
+    else cy += (back ? -1 : 1) * (rect.h + gapPx);
     last = rect;
     if (!ext) ext = { ...rect };
     else {
@@ -148,6 +181,11 @@ export function flow(opts: FlowOptions): Flow {
       ext.w = x2 - ext.x;
       ext.h = y2 - ext.y;
     }
+  };
+
+  const advance = (w?: number, h?: number) => {
+    const rect = slotRect(w, h);
+    settle(rect);
     return rect;
   };
 
@@ -166,6 +204,24 @@ export function flow(opts: FlowOptions): Flow {
     fitCross: opts.fitCross ?? false,
     wrap: wrapping,
     next: advance,
+    reserve(w, h) {
+      // Wrapping needs the main size to decide the line break, and an
+      // end-aligned flow grows backwards from a far edge, so the slot's own
+      // POSITION depends on its size. Neither can hold a cursor open.
+      if (wrapping || back) return null;
+      const rect = slotRect(w, h);
+      let committed = false;
+      return {
+        rect,
+        commit(cw, ch) {
+          if (committed) return;
+          committed = true;
+          if (cw !== undefined) rect.w = cw;
+          if (ch !== undefined) rect.h = ch;
+          settle(rect);
+        },
+      };
+    },
     fill(reserve = 0) {
       const avail = Math.max(0, remaining() - reserve);
       return dir === "row" ? advance(avail) : advance(undefined, avail);
@@ -605,6 +661,7 @@ export function runAutoSized<R>(
   children: LayoutChildren<R>,
   wrap = false,
   contentMain?: number,
+  slot?: DeferredSlot | null,
 ): R {
   return runContainer(
     dir,
@@ -620,9 +677,23 @@ export function runAutoSized<R>(
       pushLayoutParent();
       try {
         const r = children(st);
-        storeContentSize(key, measuredContainerSize(st, outer.x, outer.y, pad));
+        const measured = measuredContainerSize(st, outer.x, outer.y, pad);
+        storeContentSize(key, measured);
+        // The children are placed and drawn; their extent is this container's
+        // true size. A deferred slot writes it back into the rect the parent is
+        // still holding open, so the next sibling starts from the right place
+        // THIS frame instead of the next one.
+        slot?.commit(
+          dir === "row" ? measured.w : undefined,
+          dir === "col" ? measured.h : undefined,
+        );
         return r;
       } finally {
+        // A children callback that threw must not leave the parent's cursor
+        // held open — the rest of the frame would pile up on this slot. Commit
+        // at the provisional size instead; `commit` is idempotent, so the
+        // measured commit above wins whenever it ran.
+        slot?.commit();
         popLayoutParent();
         popContainerKey();
       }
@@ -656,11 +727,57 @@ export interface AutoContainerConfig {
   box?: (rect: { x: number; y: number; w: number; h: number }) => void;
 }
 
-/** The single auto-sizing container: resolve the rect from `opts` (auto-sizing
- *  any omitted axis from last frame's cached content), paint the optional
- *  backdrop, lay the children out and cache their size for next frame. `row`,
- *  `col`, `group` (and, via `runAutoSized`, `popover`) are thin wrappers over
- *  this — the auto-size machinery lives here, not in each widget. */
+// ---------- Deferred placement (measuring in-frame instead of next frame) ----
+// An auto-sized container's main-axis size is only known once its children have
+// run, and the cache exists because the container has to hand the parent a slot
+// BEFORE that. It doesn't, always: if the parent can hold its cursor open
+// (`Flow.reserve`), the container takes its slot at the right position, runs its
+// children, and writes the measured size back. Nothing is a frame behind and
+// nesting no longer costs a frame per level.
+//
+// The conditions below are what makes that legal — read them as "the children's
+// own rects must not depend on the size we don't know yet":
+//
+//   NO BACKDROP. `cfg.box` paints under the children, so it has to run first,
+//     at a size we would not have. `row`/`col` have no box; `panel`/`group`/
+//     `popover` do, and keep the cache. (This is Dear ImGui's split exactly: a
+//     window auto-resizes a frame late, a layout group never does.)
+//   SAME AXIS AS THE PARENT. When `parent.dir === dir`, the size we're deferring
+//     is the container's MAIN axis, and children stack along it from a fixed
+//     origin — their rects don't move. Crossing axes (a row inside a column)
+//     would defer the row's HEIGHT, which its children fill, and that is
+//     genuinely circular.
+//   START-JUSTIFIED, FORWARD. `justify: "end"` and `reverse` position the
+//     content block FROM the size, so they need it up front.
+//   NO WRAP, NO EXPLICIT SIZE. Wrapping needs the size to break lines; an
+//     explicit size was never a guess in the first place.
+function tryReserve(
+  dir: "row" | "col",
+  opts: LayoutOptions,
+  cfg: AutoContainerConfig,
+  cached: ContentSize | undefined,
+): DeferredSlot | null {
+  if (cfg.box || cfg.wrap || cfg.reverse || cfg.justify === "end") return null;
+  // Roots (anchored, or pinned x/y) don't take a slot from anyone.
+  if (opts.anchor !== undefined || (opts.x !== undefined && opts.y !== undefined)) return null;
+  const main = dir === "row" ? opts.w : opts.h;
+  if (main !== undefined) return null;
+  const parent = currentLayout();
+  if (!parent || parent.dir !== dir) return null;
+  // Provisional size: last frame's measurement when we have one, so a container
+  // that never settles is no worse off than before, and the flow's own default
+  // otherwise. Only `fill()`/`remaining()` inside the container read it.
+  return dir === "row"
+    ? parent.reserve(cached?.w, opts.h ?? opts.minH)
+    : parent.reserve(opts.w, Math.max(cached?.h ?? 0, opts.minH ?? 0) || undefined);
+}
+
+/** The single auto-sizing container: resolve the rect from `opts` (measuring
+ *  the children in-frame where possible — see `tryReserve` — and otherwise
+ *  auto-sizing any omitted axis from last frame's cached content), paint the
+ *  optional backdrop, lay the children out and cache their size for next frame.
+ *  `row`, `col`, `group` (and, via `runAutoSized`, `popover`) are thin wrappers
+ *  over this — the auto-size machinery lives here, not in each widget. */
 export function autoContainer<R>(
   kind: string,
   dir: "row" | "col",
@@ -670,8 +787,9 @@ export function autoContainer<R>(
 ): R {
   const key = containerKey(opts, kind);
   const cached = cachedContentSize(key);
-  const rect = containerRect(dir, opts, cached);
-  if (layoutCaptureActive) recordLayout(kind, opts.id, rect);
+  const slot = tryReserve(dir, opts, cfg, cached);
+  const rect = slot ? slot.rect : containerRect(dir, opts, cached);
+  const recorded = layoutCaptureActive ? recordLayout(kind, opts.id, rect) : -1;
   cfg.box?.(rect);
   const top = cfg.top ?? 0;
   const bottom = cfg.bottom ?? 0;
@@ -682,7 +800,7 @@ export function autoContainer<R>(
   // edge, so it stays stable as the block moves (a span would oscillate).
   // Undefined on the first frame (positions settle next frame).
   const contentMain = cached ? (dir === "row" ? cached.ew : cached.eh) : undefined;
-  return runAutoSized(
+  const result = runAutoSized(
     key,
     rect,
     body,
@@ -695,5 +813,21 @@ export function autoContainer<R>(
     children,
     cfg.wrap ?? false,
     contentMain,
+    slot,
   );
+  if (recorded >= 0) {
+    // `slot.commit` resized `rect` after the entry above was recorded from it.
+    if (slot) refreshLayoutRect(recorded, rect);
+    // What the box was worth against what it turned out to hold. A deferred
+    // container is measured in-frame and is 0 by construction; the ones that
+    // fell back to the cache are where a pop can still come from, and this is
+    // what names them. Only the axes the caller left auto count — a container
+    // given an explicit size was told to be that size.
+    const measured = cachedContentSize(key);
+    noteContainerSize(recorded, key, {
+      w: measured && opts.w === undefined ? rect.w - measured.w : 0,
+      h: measured && opts.h === undefined ? rect.h - measured.h : 0,
+    });
+  }
+  return result;
 }

@@ -39,13 +39,27 @@ export interface LayoutEntry {
   /** The rect came from explicit `x`/`y` rather than a layout slot — it was
    *  positioned by hand, so it is not expected to sit inside its container. */
   pinned?: boolean;
+  /** How far this container's drawn box was off its own content, per axis —
+   *  set only for a container that could not be measured in-frame and so drew
+   *  at last frame's size. See `layoutLag`. */
+  lag?: { w: number; h: number };
+  /** The auto-size cache key another container ALSO used this frame. Two
+   *  containers sharing one key are reading each other's measurements. */
+  sharedKey?: string;
 }
 
 // Entries recorded so far THIS frame, and the last completed frame's tree.
 // Per app, like every other frame-scoped state.
-const st = uiSlot<{ frame: LayoutEntry[]; tree: LayoutEntry[] }>(() => ({
+const st = uiSlot<{
+  frame: LayoutEntry[];
+  tree: LayoutEntry[];
+  /** Auto-size cache keys used this frame → the entry that used them first.
+   *  A second user of the same key is a collision, not a coincidence. */
+  keys: Map<string, number>;
+}>(() => ({
   frame: [],
   tree: [],
+  keys: new Map(),
 }));
 
 /** The zero-cost-when-off guard: record sites check this boolean and skip the
@@ -63,6 +77,7 @@ function ensureCaptureHook(): void {
     const s = st();
     s.tree = s.frame;
     s.frame = [];
+    s.keys.clear();
   });
   onReset(() => {
     layoutCaptureActive = false;
@@ -80,6 +95,7 @@ export function layoutCapture(on: boolean): void {
     const s = st();
     s.frame.length = 0;
     s.tree.length = 0;
+    s.keys.clear();
   }
 }
 
@@ -106,19 +122,39 @@ export function recordLayout(
   id: string | number | undefined,
   rect: { x: number; y: number; w: number; h: number },
   flags?: { clips?: boolean; pinned?: boolean },
-): void {
+): number {
   const tl = uiToScreen(rect.x, rect.y);
   const br = uiToScreen(rect.x + rect.w, rect.y + rect.h);
-  st().frame.push({
-    kind,
-    id: id === undefined ? undefined : String(id),
-    rect: { x: rect.x, y: rect.y, w: rect.w, h: rect.h },
-    screenRect: { x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y },
-    scale: currentUiScale(),
-    parent: parents[parents.length - 1],
-    clips: flags?.clips,
-    pinned: flags?.pinned,
-  });
+  return (
+    st().frame.push({
+      kind,
+      id: id === undefined ? undefined : String(id),
+      rect: { x: rect.x, y: rect.y, w: rect.w, h: rect.h },
+      screenRect: { x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y },
+      scale: currentUiScale(),
+      parent: parents[parents.length - 1],
+      clips: flags?.clips,
+      pinned: flags?.pinned,
+    }) - 1
+  );
+}
+
+/** Rewrite an entry's geometry after the fact. A container placed into a
+ *  deferred slot records itself BEFORE its children (so the tree keeps draw
+ *  order and the children hang off it) but only learns its true size after
+ *  them — this is how the recorded rect catches up, instead of the tree
+ *  reporting the provisional size the container was never drawn at.
+ *  `index` is what `recordLayout` returned; -1 is ignored. */
+export function refreshLayoutRect(
+  index: number,
+  rect: { x: number; y: number; w: number; h: number },
+): void {
+  const entry = st().frame[index];
+  if (!entry) return;
+  const tl = uiToScreen(rect.x, rect.y);
+  const br = uiToScreen(rect.x + rect.w, rect.y + rect.h);
+  entry.rect = { x: rect.x, y: rect.y, w: rect.w, h: rect.h };
+  entry.screenRect = { x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y };
 }
 
 /** Open the container that recorded the MOST RECENT entry: everything recorded
@@ -133,6 +169,81 @@ export function pushLayoutParent(): void {
 export function popLayoutParent(): void {
   if (!layoutCaptureActive) return;
   parents.pop();
+}
+
+/** Record what an auto-sized container's box was actually worth, once its
+ *  children have been measured. Called only from `autoContainer`, only while
+ *  capture is on.
+ *
+ *  `off` is how far the drawn box missed the content it turned out to hold —
+ *  nonzero means the container drew at last frame's size, which is the
+ *  one-frame pop. `key` is its auto-size cache key; the SECOND container to
+ *  claim a key in one frame marks both as sharing it. */
+export function noteContainerSize(
+  index: number,
+  key: string | undefined,
+  off: { w: number; h: number },
+): void {
+  const s = st();
+  const entry = s.frame[index];
+  if (!entry) return;
+  if (off.w !== 0 || off.h !== 0) entry.lag = off;
+  if (key === undefined) return;
+  const first = s.keys.get(key);
+  if (first === undefined) {
+    s.keys.set(key, index);
+    return;
+  }
+  entry.sharedKey = key;
+  const other = s.frame[first];
+  if (other) other.sharedKey = key;
+}
+
+/** A container that drew at the wrong size, and why — what `layoutLag`
+ *  reports. */
+export interface LayoutLag {
+  /** The container whose box missed its content. */
+  entry: LayoutEntry;
+  /** Px the drawn box was off its measured content, per axis. Positive means
+   *  the box was too big, negative too small. */
+  off: { w: number; h: number };
+  /** Set when a second container used the same auto-size cache key in the same
+   *  frame — then the wrong size isn't lag, it's another container's
+   *  measurement. Give the containers distinct `id`s, or wrap each screen in
+   *  its own `UI.idScope`. */
+  sharedKey?: string;
+}
+
+/** Containers whose drawn box did not match their own content in the captured
+ *  frame — the direct, named form of the "one-frame layout pop".
+ *
+ *  Most containers are measured IN the frame they draw (see `Flow.reserve`) and
+ *  never appear here. The ones that can't be — a `panel`/`group` whose backdrop
+ *  has to paint under its children, a wrapping or end-justified container —
+ *  fall back to last frame's measurement, and this is where that shows up
+ *  instead of as a visual glitch you have to catch by eye.
+ *
+ *  A `sharedKey` on the finding changes the diagnosis: the size wasn't stale,
+ *  it belonged to a DIFFERENT container that hashed to the same structural
+ *  cache key. That is the two-screens-of-the-same-shape bug, and no amount of
+ *  waiting fixes it.
+ *
+ *      UI.layoutCapture(true);
+ *      // ...a frame renders...
+ *      expect(UI.layoutLag()).toEqual([]); */
+export function layoutLag(tolerance = 0.5): LayoutLag[] {
+  const found: LayoutLag[] = [];
+  for (const entry of layoutTree()) {
+    if (entry.sharedKey !== undefined) {
+      found.push({ entry, off: entry.lag ?? { w: 0, h: 0 }, sharedKey: entry.sharedKey });
+      continue;
+    }
+    const off = entry.lag;
+    if (off && (Math.abs(off.w) > tolerance || Math.abs(off.h) > tolerance)) {
+      found.push({ entry, off });
+    }
+  }
+  return found;
 }
 
 /** A child that escaped its container's box — what `layoutIssues` reports. */
