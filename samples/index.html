@@ -363,16 +363,15 @@
       .ns-data {
         --h: 90;
       }
-      /* `base` is the debug/perf overlay: on nearly every sample, so a hue of
-         its own would be 37 cards' worth of noise. Grey and DASHED — the dash
-         says "ambient, not a feature this sample is about" at a glance, and a
-         mid-grey stroke gives the chip a real edge instead of the almost
-         invisible `--border` the coloured tags can get away with. */
+      /* `base` is the debug/perf overlay: on nearly every sample, so it is
+         pushed as far down the page's contrast range as it can go while still
+         being readable. Dashed, because the dash says "ambient, not a feature
+         this sample is about" without needing any colour at all. */
       .ns-base,
       .tag.ns-none {
         background: transparent;
-        color: var(--dim);
-        border: 1px dashed #454c58;
+        color: #4d545e;
+        border: 1px dashed #33393f;
       }
 
       /* ---------- namespace filter ---------- */
@@ -758,7 +757,6 @@
           "Goodies",
           "Gizmos",
           "Fsm",
-          "Flow",
           "Signals",
           "Hot",
         ],
@@ -1147,7 +1145,7 @@
           "guild-trader",
           "Guild Trader",
           "",
-          ["Goodies", "Gizmos", "Flow", "UI", "Performance"],
+          ["Goodies", "Gizmos", "UI", "Performance"],
           "Trade with Mara using draggable stack inventories, weighted loot and fair encounter bags.",
         ],
         [
