@@ -241,11 +241,11 @@ function pageTinting() {
 function pageOutline() {
   // Scale and backdrop belong to THIS page, so their controls live on it
   // rather than in a global key legend for options four pages away.
-  // The row states the same height its buttons do. Not a guessed layout
-  // number: without it the row is auto-sized, and the band below would move
-  // once the first frame's measurement came back.
+  // The row takes its height from the controls in it — an auto-sized container
+  // is measured in the frame it draws, so the band below sits right from the
+  // first one.
   const CTRL = 26;
-  UI.row({ gap: 8, h: CTRL }, () => {
+  UI.row({ gap: 8 }, () => {
     if (UI.button("−", { w: 30, h: CTRL, disabled: scale <= 1 })) scale -= 1;
     if (UI.button("+", { w: 30, h: CTRL, disabled: scale >= 8 })) scale += 1;
     UI.text(`scale ${scale}x`, { size: 13, h: CTRL });
@@ -290,10 +290,12 @@ function pageOutline() {
 }
 
 function pageLayout() {
-  // Flat on purpose: one column of siblings, no nested groups. An auto-sized
-  // container learns its size from the previous frame, so a group inside a
-  // group needs two frames to settle and everything after it slides on the
-  // way. Every other page here is one level deep; this one now matches.
+  // Flat on purpose: one column of siblings, no nested groups. Nesting plain
+  // `row`/`col` is free — they are measured in the frame they draw — but a
+  // `group` paints a backdrop under its children, so it has to size itself
+  // from the previous frame, and a group inside a group takes two frames to
+  // settle with everything after it sliding on the way. Every other page here
+  // is one level deep; this one matches.
   columns(() => {
     UI.col({ gap: 14, w: COL }, () => {
       label("align, around the marked x");

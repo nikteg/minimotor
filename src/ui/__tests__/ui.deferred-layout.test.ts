@@ -9,7 +9,18 @@
 // backdrop that paints under the children, an axis crossing, end-justification
 // — must still fall back to the cache rather than lay out wrong.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { _reset, button, col, layoutCapture, layoutTree, panel, row } from "@src/ui/api.js";
+import {
+  _reset,
+  button,
+  col,
+  idScope,
+  layoutCapture,
+  layoutLag,
+  layoutTree,
+  panel,
+  setTheme,
+  row,
+} from "@src/ui/api.js";
 import { registerUiApp, selectUiApp } from "@src/ui/core/state.js";
 import type { App } from "@src/engine/index.js";
 
@@ -162,6 +173,26 @@ describe("in-frame container measurement", () => {
     expect(inner!.h).toBeCloseTo(2 * layoutTree().find((e) => e.id === "a")!.rect.h + 8, 0);
   });
 
+  // Crossing axes defer the container's CROSS size — the children still take
+  // the provisional one, but the parent's cursor advances by the real one. This
+  // is `samples/fonts` pageOutline: a control row of 26px buttons inside the
+  // page column, which used to have to state `h: 26` or the band under it
+  // dropped from y=130 to y=126 on the second frame.
+  it("advances past a row that is shorter than the default row rhythm", () => {
+    const build = () =>
+      col({ x: 0, y: 0, w: 300, id: "page" }, () => {
+        row({ gap: 8, id: "controls" }, () => {
+          button({ id: "minus", label: "-", w: 30, h: 26 });
+          button({ id: "plus", label: "+", w: 30, h: 26 });
+        });
+        button({ id: "band", label: "BAND", h: 100 });
+      });
+    const first = frame(build);
+    const second = frame(build);
+    expect(first.band.y).toBe(second.band.y);
+    expect(containerRectOf("row", "controls")!.h).toBe(26);
+  });
+
   it("is unaffected by a same-shaped sibling drawn before it (no key collision)", () => {
     // Two anonymous columns of DIFFERENT length at the same structural position
     // in successive frames. Under the old cache this is the AGENTS.md screen-
@@ -199,20 +230,24 @@ describe("what still falls back to the cache", () => {
     expect(containerRectOf("panel", "p")!.h).toBe(h1);
   });
 
-  it("a crossing axis (row inside a column) still lays out and settles", () => {
+  // A col inside a row has its WIDTH deferred, and a child that fills that
+  // width draws at the provisional one for a frame. The container's own slot is
+  // right immediately; the fill isn't. This is why `samples/fonts` still pins
+  // its `COL` width, and the boundary is worth pinning so it doesn't drift.
+  it("a child filling a deferred cross axis is still a frame behind", () => {
     const build = () =>
-      col({ x: 0, y: 0, w: 300, id: "c" }, () => {
-        row({ id: "r" }, () => {
-          button({ id: "l", label: "L" });
-          button({ id: "m", label: "M" });
+      row({ x: 0, y: 0, w: 600, id: "r" }, () => {
+        col({ id: "left" }, () => {
+          button({ id: "wide", label: "W", w: 400 }); // sets the column's width
+          button({ id: "fills", label: "F" }); // takes it as its cross axis
         });
-        button({ id: "under", label: "U" });
       });
-    frame(build);
-    const a = frame(build);
-    const b = frame(build);
-    expect(a).toEqual(b);
-    expect(a.under.y).toBeGreaterThanOrEqual(a.l.y + a.l.h);
+    const first = frame(build);
+    const second = frame(build);
+    expect(first.fills.w).not.toBe(second.fills.w);
+    // ...but the column's own slot was measured correctly the first time.
+    expect(second.fills.w).toBe(400);
+    expect(containerRectOf("col", "left")!.w).toBe(400);
   });
 
   it("end-justified content is unchanged", () => {
@@ -227,5 +262,122 @@ describe("what still falls back to the cache", () => {
     expect(a).toEqual(b);
     // Pinned to the far edge, not the near one.
     expect(a.two.y + a.two.h).toBeCloseTo(400, 0);
+  });
+
+  it("reports the containers it could not measure in-frame, by name", () => {
+    // Growing the panel's content means its cached box is a frame behind. That
+    // is the remaining, deliberate lag — and it is now a named finding rather
+    // than something you have to spot by eye.
+    const build = (n: number) =>
+      panel({ x: 0, y: 0, w: 300, id: "inventory" }, () => {
+        for (let i = 0; i < n; i++) button({ id: `b${i}`, label: `B${i}` });
+      });
+    frame(() => build(1));
+    frame(() => build(6));
+    const lag = layoutLag();
+    expect(lag.map((l) => l.entry.id)).toContain("inventory");
+    // The box was too SHORT for what it ended up holding.
+    expect(lag.find((l) => l.entry.id === "inventory")!.off.h).toBeLessThan(0);
+  });
+
+  it("stays quiet once a lagging container has settled", () => {
+    const build = () =>
+      panel({ x: 0, y: 0, w: 300, id: "settled" }, () => {
+        button({ id: "only", label: "ONLY" });
+      });
+    frame(build);
+    frame(build);
+    frame(build);
+    expect(layoutLag()).toEqual([]);
+  });
+});
+
+describe("cache-key collisions", () => {
+  // Two screens of the same shape at the same structural position share one
+  // auto-size cache entry — the bug `UI.idScope` exists to prevent. Prevention
+  // needs something to tell them apart and a bare row/col carries nothing, so
+  // the collision is REPORTED instead of guessed at.
+  it("names two containers that claimed the same key in one frame", () => {
+    frame(() =>
+      col({ x: 0, y: 0, w: 300, id: "screen" }, () => {
+        panel({ id: "shared", w: 200 }, () => button({ id: "p", label: "P" }));
+        panel({ id: "shared", w: 200 }, () => button({ id: "q", label: "Q" }));
+      }),
+    );
+    const collisions = layoutLag().filter((l) => l.sharedKey !== undefined);
+    expect(collisions).toHaveLength(2);
+    expect(collisions.every((c) => c.entry.id === "shared")).toBe(true);
+  });
+
+  it("distinct idScopes keep same-shaped screens apart", () => {
+    const screen = (name: string, n: number) =>
+      idScope(name, () =>
+        col({ x: 0, y: 0, w: 300 }, () => {
+          panel({ w: 200 }, () => {
+            for (let i = 0; i < n; i++) button({ id: `${name}${i}`, label: "X" });
+          });
+        }),
+      );
+    // Settle each screen on its own, then alternate: with separate scopes
+    // neither hands the other its measurement.
+    frame(() => screen("a", 2));
+    frame(() => screen("a", 2));
+    frame(() => screen("b", 5));
+    frame(() => screen("b", 5));
+    frame(() => screen("a", 2));
+    expect(layoutLag()).toEqual([]);
+  });
+});
+
+// A skin whose frame art needs more room than `pad` gives it used to leave each
+// SCREEN hand-tuning a y offset per panel — which then only suited that one
+// skin. `panelInset` is where the theme states it once.
+describe("theme.panelInset", () => {
+  const build = () =>
+    panel({ x: 0, y: 0, w: 300, h: 200, id: "p" }, () => button({ id: "b", label: "B" }));
+
+  function settledButton() {
+    frame(build);
+    return frame(build).b;
+  }
+
+  it("pushes a panel's body down by the y inset", () => {
+    const plain = settledButton();
+    setTheme({ panelInset: { y: 10 } });
+    const inset = settledButton();
+    expect(inset.y).toBe(plain.y + 10);
+    expect(inset.x).toBe(plain.x);
+    _reset();
+  });
+
+  it("insets both sides on x, so the body narrows by twice the value", () => {
+    const plain = settledButton();
+    setTheme({ panelInset: { x: 6 } });
+    const inset = settledButton();
+    expect(inset.x).toBe(plain.x + 6);
+    expect(inset.w).toBe(plain.w - 12);
+    _reset();
+  });
+
+  it("stacks with the title band rather than replacing it", () => {
+    const titled = (extra: number) => {
+      setTheme(extra ? { panelInset: { y: extra } } : {});
+      const run = () =>
+        panel({ x: 0, y: 0, w: 300, h: 200, id: "t", title: "T" }, () =>
+          button({ id: "b", label: "B" }),
+        );
+      frame(run);
+      return frame(run).b.y;
+    };
+    const plain = titled(0);
+    expect(titled(12)).toBe(plain + 12);
+    _reset();
+  });
+
+  it("defaults to no change at all", () => {
+    const plain = settledButton();
+    setTheme({ panelInset: {} });
+    expect(settledButton()).toEqual(plain);
+    _reset();
   });
 });

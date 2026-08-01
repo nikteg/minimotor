@@ -45,6 +45,8 @@ interface InputState {
   gestureOwned: boolean;
   /** Wheel claiming for nested scroll regions — see `claimWheel`. */
   wheelTaken: boolean;
+  /** A drag-and-drop payload is in flight — see `holdDragPayload`. */
+  dragHeld: boolean;
   transform: UiTransform | null;
   transformStack: (UiTransform | null)[];
   /** Active clip rects (innermost last), in SCREEN-logical coords. */
@@ -56,6 +58,7 @@ const st = uiSlot<InputState>(() => ({
   edgesSuppressed: false,
   gestureOwned: false,
   wheelTaken: false,
+  dragHeld: false,
   transform: null,
   transformStack: [],
   clips: [],
@@ -77,6 +80,23 @@ export function clearPointerEdges(): void {
 /** Clear the per-frame wheel claim — called from a frame-end hook. */
 export function clearWheelClaim(): void {
   st().wheelTaken = false;
+}
+
+/** `dragSource` raises this every frame its payload is in flight. It lives here
+ *  rather than in `dragdrop` because `buttonState` is core and must not import a
+ *  widget; the widget pushes the fact down instead. Cleared at frame end. */
+export function holdDragPayload(): void {
+  st().dragHeld = true;
+}
+
+/** Whether a drag-and-drop payload is currently being carried. */
+export function dragPayloadHeld(): boolean {
+  return st().dragHeld;
+}
+
+/** Frame-end housekeeping for `holdDragPayload`. */
+export function clearDragPayload(): void {
+  st().dragHeld = false;
 }
 
 /** A widget that DRAGS with the pointer (slider knob, scrollbar thumb, a

@@ -220,6 +220,7 @@ describe("UI theme", () => {
     expect(defaultTheme.tabH).toBe(30);
     expect(defaultTheme.panelTitleH).toBe(32);
     expect(defaultTheme.panelTitleOverhang).toEqual({ x: 0, y: 0 });
+    expect(defaultTheme.panelInset).toEqual({ x: 0, y: 0 });
     expect(defaultTheme.pad).toEqual({ x: 8, y: 8 });
     expect(defaultTheme.textPad).toBe(0);
     expect(defaultTheme.primary).toBe(defaultTheme.accent);

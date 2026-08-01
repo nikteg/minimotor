@@ -3,7 +3,7 @@
 // container, in ./layout.ts), the overlays (popover / modal / dialog) and the
 // `select` drop menu all paint. Not part of the public `UI.*` surface — it's the
 // shared drawing primitive, not a widget.
-import { centeredText, drawBox, theme, uiFont } from "@src/ui/core/index.js";
+import { centeredText, drawBox, roundRectPath, theme, uiFont } from "@src/ui/core/index.js";
 
 /** Geometry + look of a panel frame. */
 export interface PanelFrame {
@@ -25,6 +25,11 @@ export interface PanelFrame {
   titleColor?: string;
   /** Title font. Default a bold `theme.fontSize + 1` UI font. */
   font?: string;
+  /** Ring stroked OVER the finished frame — a live drop target, a validation
+   *  error, a selected card. Unlike `border` this survives a pixel skin, whose
+   *  nine-slice art replaces the frame's own stroke, so a container can still
+   *  answer the pointer under every theme. Omit for none. */
+  highlight?: string;
 }
 
 interface FrameInsets {
@@ -101,6 +106,24 @@ export function paintFrame(ctx: CanvasRenderingContext2D, opts: PanelFrame): voi
       titleRect.y + titleH / 2 + titleTextPad.y,
       Math.max(1, titleRect.w - titleInsetX * 2),
     );
+  }
+  if (opts.highlight) {
+    // Last, so it rides over the title strip's overhanging caps too, and inset
+    // by half its width so the ring lands inside the rect rather than straddling
+    // its edge.
+    const width = Math.max(2, theme.borderWidth);
+    const half = width / 2;
+    ctx.strokeStyle = opts.highlight;
+    ctx.lineWidth = width;
+    roundRectPath(
+      ctx,
+      opts.x + half,
+      opts.y + half,
+      Math.max(0, opts.w - width),
+      Math.max(0, opts.h - width),
+      Math.max(0, theme.radius - half),
+    );
+    ctx.stroke();
   }
   ctx.restore();
 }

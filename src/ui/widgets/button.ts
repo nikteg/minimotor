@@ -4,6 +4,7 @@ import {
   buttonState,
   centeredText,
   consumeKeyboardActivation,
+  dragPayloadHeld,
   drawBox,
   drawFocusRing,
   focusFromPointer,
@@ -102,6 +103,24 @@ function variantColors(opts: ButtonStyle): {
   };
 }
 
+/** The width `button` would choose for this label under the active theme.
+ *
+ *  For laying out AROUND a button before it is placed — a `spacer` that pushes
+ *  one flush right has to know how much room to leave, and a hardcoded number
+ *  is wrong the moment a skin changes `buttonPadX`, `buttonMinW` or the font.
+ *  Pass the same `font`/`size`/`bold` the button will get. */
+export function buttonWidth(
+  label: string,
+  opts?: Pick<ButtonOptions, "font" | "size" | "bold">,
+): number {
+  const ctx = uiCtx();
+  const prev = ctx.font;
+  ctx.font = opts?.font ?? uiFont(opts?.size ?? theme.fontSize + 2, opts?.bold ?? true);
+  const autoW = Math.ceil(measureWidth(ctx, label)) + theme.buttonPadX;
+  ctx.font = prev;
+  return theme.buttonW > 0 ? theme.buttonW : Math.max(autoW, theme.buttonMinW);
+}
+
 /** Draw an immediate-mode button and report whether it was clicked this
  *  frame. Call it every frame from `draw` — there is no retained widget:
  *
@@ -122,7 +141,8 @@ export function button(
   const ctx = uiCtx();
   ctx.save();
   ctx.font = opts.font ?? uiFont(opts.size ?? theme.fontSize + 2, opts.bold ?? true);
-  // Auto width: the label plus comfortable padding.
+  // Auto width: the label plus comfortable padding. `buttonWidth` restates
+  // this so a caller can reserve the same space before the button is placed.
   const autoW = Math.ceil(measureWidth(ctx, opts.label)) + theme.buttonPadX;
   const w = opts.w ?? (theme.buttonW > 0 ? theme.buttonW : Math.max(autoW, theme.buttonMinW));
   const rect = place(opts, w, opts.h ?? theme.buttonH, "button");
@@ -140,7 +160,14 @@ export function button(
   const state = opts.disabled
     ? { hover: false, active: false, clicked: false }
     : buttonState(rect, p);
-  const { hover, active } = state;
+  // While a drag-and-drop payload is in flight the pointer is CARRYING it, not
+  // pointing at controls: every button it crosses would otherwise light up and
+  // compete with the drop target for the eye. Only the LOOK is suppressed —
+  // `clicked` below is untouched, so a button that is also a drag source still
+  // clicks when the pointer is released on it without a drag starting.
+  const carrying = dragPayloadHeld();
+  const hover = state.hover && !carrying;
+  const active = state.active && !carrying;
   const clicked = state.clicked || (!opts.disabled && consumeKeyboardActivation(id));
   if (state.clicked) focusFromPointer(ctx, id);
   hoverCursor(hover);

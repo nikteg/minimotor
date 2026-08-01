@@ -73,19 +73,21 @@ recorder names the offending container directly.
 
 Exported from `createUI(...)`, implemented in `src/ui/core/layout-capture.ts`:
 
-| Call                     | What it gives you                                                                                                               |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| `UI.layoutCapture(true)` | Start recording. Off by default; while off the cost is one module-level boolean check per placement.                            |
-| `UI.layoutTree()`        | The last **completed** frame's entries, in draw order (containers before their children).                                       |
-| `UI.layoutIssues()`      | Children that spilled outside the container that placed them — the signature of a container that failed to size to its content. |
-| `UI.lastRect()`          | The rect the most recent widget got. Useful for flowing non-UI drawing (e.g. bitmap text) through the layout.                   |
+| Call                     | What it gives you                                                                                                                                                                           |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `UI.layoutCapture(true)` | Start recording. Off by default; while off the cost is one module-level boolean check per placement.                                                                                        |
+| `UI.layoutTree()`        | The last **completed** frame's entries, in draw order (containers before their children).                                                                                                   |
+| `UI.layoutIssues()`      | Children that spilled outside the container that placed them — the signature of a container that failed to size to its content.                                                             |
+| `UI.layoutLag()`         | Containers that drew at a size other than their own content's — the one-frame pop, named. A `sharedKey` on the finding means it isn't lag at all: two containers are using one cache entry. |
+| `UI.lastRect()`          | The rect the most recent widget got. Useful for flowing non-UI drawing (e.g. bitmap text) through the layout.                                                                               |
 
 Each `LayoutEntry` carries `kind` (`"row"`, `"col"`, `"panel"`, `"button"`,
 `"text"`, …), the optional `id`, `rect` (layout coords), `screenRect` (after
-`UI.scaled`), `scale`, `parent` (index into the same array), and the `clips` /
-`pinned` flags. `layoutIssues()` stays quiet about the two legitimate ways a
-rect leaves its box: a clipping/scrolling container, and a hand-positioned
-`x`/`y` rect.
+`UI.scaled`), `scale`, `parent` (index into the same array), the `clips` /
+`pinned` flags, and — for a container that missed its content — `lag` /
+`sharedKey`. `layoutIssues()` stays quiet about the two legitimate ways a rect
+leaves its box: a clipping/scrolling container, and a hand-positioned `x`/`y`
+rect.
 
 ### In a test
 
@@ -93,6 +95,7 @@ rect leaves its box: a clipping/scrolling container, and a hand-positioned
 UI.layoutCapture(true);
 // ...render one frame...
 expect(UI.layoutIssues()).toEqual([]);
+expect(UI.layoutLag()).toEqual([]); // nothing drew at a stale size
 const buttons = UI.layoutTree().filter((e) => e.kind === "button");
 ```
 
@@ -115,30 +118,71 @@ over-report if you diff the whole tree. Use a **fresh browser context per
 page** — navigating within one tab carries cached sizes across and contaminates
 the measurement.
 
-### The three causes a pop almost always has
+### Which containers can still pop, and why
 
-1. **Auto-sizing is one frame behind, by design.** `UI.row`/`UI.col` without an
-   explicit size resolve their rect from `cachedContentSize(key)` — _last_
-   frame's measurement. An unmeasured container reports a default height of
-   `30`. Convergence costs one frame **per nesting level**, so a deep tree
-   settles slowly. Flattening the tree is the fix; explicit sizes only hide it.
+**Ask `UI.layoutLag()` first.** It answers this directly for the frame you
+captured; the rest of this section is what its findings mean.
 
-2. **Without an explicit `id`, the container's cache key is its structural
-   position.** `containerKey` (`src/ui/core/flow.ts`) falls back to
-   `` `${parent.key}>${kind}#${parent.children++}` ``. Two screens that build
-   the same shape at the same position **share one cache entry**, so switching
-   between them hands the incoming screen the outgoing screen's size. Wrap each
-   screen in `UI.idScope("screen-name", …)` to give it its own namespace.
+Most containers are measured **in the frame they draw**. `autoContainer` asks
+the parent flow for a _deferred_ slot (`Flow.reserve`, `src/ui/core/flow.ts`):
+the parent holds its cursor at the right position, the children run, and the
+measured size is written back into the slot before the next sibling is placed.
+Nesting costs nothing — a five-deep column is correct on frame one, and a row
+of controls shorter than the theme's row rhythm no longer shifts the band
+underneath it.
 
-3. **A stale container size is only visible to siblings placed _after_ it.**
-   Layout positions are assigned in order, so a container that is 288px too
-   short shifts everything following it and nothing before it. This is why a
-   pop can disappear on one page and persist on another with the same structure
-   — the difference is whether anything trails the auto container. Moving the
-   trailing element is often the whole fix.
+What is deferred is always the **parent's** main axis, which may be the
+container's own main axis (a col in a col — an exact measurement) or its cross
+axis (a row in a col — the children still take the provisional size, but the
+parent's cursor advances by the real one).
 
-Worked example: `samples/fonts/fonts.ts`, whose five tabbed pages hit all three
-at once.
+`tryReserve` lists the cases that cannot work at all, and they are the only
+ones that can still pop:
+
+1. **A container with a backdrop** — `panel`, `group`, `popover`. `cfg.box`
+   paints _under_ the children, so it has to run before them, at a size that
+   isn't known yet. These keep last frame's measurement, deliberately. It is
+   Dear ImGui's split exactly: a window auto-resizes a frame late, a layout
+   group never does. `UI.layoutLag()` reports them with a nonzero `off`.
+
+2. **`justify: "end"`, `reverse`, `wrap`** — all three position content _from_
+   the size, so they need it up front.
+
+3. **Children that FILL a deferred cross axis.** A col inside a row has its
+   width deferred; a button inside it fills that width, so it draws at the
+   provisional width for one frame even though the col's own slot is right.
+   Two ways out, and which one you want depends on the intent: `fitCross: true`
+   if the container should HUG its children (they then take their natural cross
+   size and nothing fills), or an explicit cross size if the children should
+   share one. `samples/fonts` pins `COL` for the second reason;
+   `samples/netroom`'s roster line uses the first.
+
+Related, and the reason a compact line used to need a magic height:
+`alignCross` (`"start"` / `"center"` / `"end"`) is flexbox's `align-items`, and
+only moves a child that has a cross size of its own — a child that fills the
+cross axis has no slack. `fitCross` + `alignCross: "center"` is the flexbox
+default shape: a row as tall as its tallest child, everything centred on one
+line.
+
+**A `sharedKey` in the report is a different bug.** Without an explicit `id`,
+`containerKey` falls back to `` `${parent.key}>${kind}#${parent.children++}` ``
+— structural position. Two screens that build the same shape at the same
+position share one cache entry, so switching hands the incoming screen the
+outgoing screen's size, and no amount of waiting fixes it. Wrap each screen in
+`UI.idScope("screen-name", …)`, or give the containers explicit `id`s. Deferral
+does **not** rescue this: measured 3 above, and a page swap in
+`samples/fonts` without its `idScope` still throws the page footer 240px down
+for a frame.
+
+**A stale size is only visible to siblings placed _after_ it.** Layout
+positions are assigned in order, so a container 288px too short shifts
+everything following it and nothing before it. This is why the same structure
+pops on one page and not another — the difference is whether anything trails
+the container.
+
+Worked example: `samples/fonts/fonts.ts`, whose five tabbed pages still need
+the `idScope` and the explicit `COL` width, and no longer need a pinned height
+on the control row.
 
 ### Unrelated: the pre-script canvas pop
 

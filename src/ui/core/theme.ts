@@ -83,6 +83,7 @@ export function roundRectPath(
 export type ThemeBoxRole =
   | "panel"
   | "panelTitle"
+  | "menuGroup"
   | "button"
   | "input"
   | "tab"
@@ -165,6 +166,7 @@ export function drawThemeSprite(
 function frameRole(role: ThemeBoxRole, state: ThemeBoxState): TilesetFrameRole {
   if (role === "panel") return "panel";
   if (role === "panelTitle") return "panelTitle";
+  if (role === "menuGroup") return "menuGroup";
   if (role === "barTrack") return "barTrack";
   if (role === "barFill") return "barFill";
   if (role === "sliderTrack") return "sliderTrack";

@@ -183,7 +183,11 @@ Loop.run({
     // Who is here — the same roster, in both topologies.
     UI.panel({ x: view.w - 268, y: 132, w: 260, title: `PLAYERS · ${net.count}` }, () => {
       const seat = (id: string, color: string, label: string, mine: boolean) =>
-        UI.row({ id, gap: 8, h: 14 }, () => {
+        // A compact roster line: `fitCross` hugs the label's own height instead
+        // of stretching the row to the standard control height, and
+        // `alignCross` puts the 8px swatch on the label's centre line rather
+        // than at the top of the row.
+        UI.row({ id, gap: 8, fitCross: true, alignCross: "center" }, () => {
           UI.bar({ value: 1, w: 8, h: 8, fill: color, bg: color });
           UI.text(label, { size: 11, bold: mine, color: mine ? "accent" : "dim" });
         });

@@ -612,12 +612,22 @@ function drawSelectMenu(
   const padX = Math.min(Math.max(0, requestedPad.x), Math.max(0, (rect.w - 1) / 2));
   const padY = Math.max(0, requestedPad.y);
   const lineH = theme.fontSize + 8;
+  // A skinned group header is a decorative STRIP, and strips are usually fixed-
+  // height plates: their whole height is the nine-slice's repeating band (top
+  // and bottom insets of 0), so a row taller than the art tiles a second copy
+  // of the plate under the first — Tiny RPG's 24px alt title strip in a 32px
+  // row shows 8px of a second plate, complete with its end caps. Give the row
+  // the art's own height, floored at the text height so a short strip still
+  // clears its label. Without a skin the header is plain text and keeps the
+  // roomier `lineH + 8`.
+  const groupArtH = theme.skin?.frames.menuGroup?.sh;
+  const groupH = groupArtH === undefined ? lineH + 8 : Math.max(lineH, groupArtH);
   const itemHeights = (() => {
     ctx.save();
     ctx.font = uiFont(theme.fontSize + 2, true);
     const maxW = Math.max(1, rect.w - padX * 2 - 26);
     const heights = entries.map((entry) => {
-      if (entry.kind === "group") return lineH + 8;
+      if (entry.kind === "group") return groupH;
       if (!opts.wrapItems) return lineH + 8;
       return Math.max(lineH + 8, wrapLines(ctx, entry.option.label, maxW).length * lineH + 8);
     });
@@ -688,6 +698,11 @@ function drawSelectMenu(
     (i, r) => {
       const entry = entries[i];
       if (entry.kind === "group") {
+        // A skin that names `menuGroup` gets its strip drawn behind the label;
+        // without one the header stays plain text, as it always was.
+        if (theme.skin?.frames.menuGroup) {
+          drawBox(ctx, r.x, r.y, r.w, r.h, { role: "menuGroup" });
+        }
         ctx.save();
         ctx.font = uiFont(theme.fontSize, true);
         ctx.fillStyle = theme.select.groupLabel;

@@ -130,12 +130,12 @@ Loop.run({
         });
       });
 
-      UI.row({ h: 166, gap: 12 }, () => {
+      UI.row({ gap: 12 }, () => {
         UI.panel({ w: half, h: 166, title: "ADVENTURER INVENTORY", gap: 8 }, (body) => {
           drawInventory(ctx, body);
         });
         UI.panel({ w: half, h: 166, title: "MARA'S COUNTER", gap: 7 }, () => {
-          UI.row({ h: 32, gap: 10 }, (actions) => {
+          UI.row({ gap: 10 }, (actions) => {
             if (UI.button({ at: actions, w: (half - 26) / 2, label: "ROLL LOOT" })) rollLoot();
             if (UI.button({ at: actions, w: (half - 26) / 2, label: "NEXT ENCOUNTER" }))
               encounter = encounterBag.next() ?? "—";
@@ -146,7 +146,7 @@ Loop.run({
         });
       });
 
-      UI.row({ h: 36 }, () => {
+      UI.row(() => {
         UI.spacer((frame.w - 150) / 2);
         if (UI.button({ w: 150, h: 36, label: "TALK TO MARA", variant: "primary" }))
           dialogue = true;

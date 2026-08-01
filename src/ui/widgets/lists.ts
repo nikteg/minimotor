@@ -60,7 +60,8 @@ export interface ListOptions extends Fillable {
   offset: number;
   /** Vertical gap between rows. Default 0. */
   gap?: number;
-  /** Scrollbar width when one is needed. Default 10. */
+  /** Scrollbar width when one is needed. Defaults to the theme's
+   *  `scrollbarW`. */
   scrollW?: number;
   /** Stable prefix for the scrollbar's widget id. */
   id?: string;
@@ -381,8 +382,8 @@ export function list(
   const metrics = listMetrics(opts.count, opts.rowH, gap);
   const { heights, tops, content } = metrics;
   const needsBar = content > h;
-  const scrollW = needsBar ? (opts.scrollW ?? 10) : 0;
-  const listW = w - (scrollW ? scrollW + 4 : 0);
+  const scrollW = needsBar ? (opts.scrollW ?? theme.scrollbarW) : 0;
+  const listW = w - (scrollW ? scrollW + theme.scrollbarGap : 0);
   const max = Math.max(0, content - h);
   let offset = clamp(opts.offset, 0, max);
   const key = opts.id ?? `list:${x}:${y}`;
@@ -469,7 +470,8 @@ export interface GridOptions extends Fillable {
   /** Scroll offset (px), for the overflow case — pass state in, assign the
    *  return back. Ignored by the fill-to-fit matrix (which never scrolls). */
   offset?: number;
-  /** Scrollbar width when the rows overflow. Default 10. */
+  /** Scrollbar width when the rows overflow. Defaults to the theme's
+   *  `scrollbarW`. */
   scrollW?: number;
   /** Stable prefix for the scrollbar widget id. */
   id?: string;
@@ -546,8 +548,9 @@ export interface ScrollbarOptions {
   /** Track height in logical px — the bar's LENGTH when vertical (`axis: "y"`),
    *  its THICKNESS when horizontal. */
   h: number;
-  /** Track width — the bar's THICKNESS when vertical (default 10), its LENGTH
-   *  when horizontal (`axis: "x"`, required then). */
+  /** Track width — the bar's THICKNESS when vertical (defaults to the
+   *  theme's `scrollbarW`), its LENGTH when horizontal (`axis: "x"`, required
+   *  then). */
   w?: number;
   /** Orientation. `"y"` (default) scrolls vertically; `"x"` horizontally. */
   axis?: "x" | "y";
@@ -612,7 +615,7 @@ export function scrollbar(opts: ScrollbarOptions): number {
   // thickness=h; the pointer coordinate and thumb travel switch to x.
   const horiz = opts.axis === "x";
   const id = opts.id ?? `${opts.x}:${opts.y}`;
-  const thickness = horiz ? opts.h : (opts.w ?? 10);
+  const thickness = horiz ? opts.h : (opts.w ?? theme.scrollbarW);
   const length = horiz ? (opts.w ?? 0) : opts.h;
   const alongStart = horiz ? opts.x : opts.y;
   const thumbLen = Math.max(24, (opts.view / opts.content) * length);

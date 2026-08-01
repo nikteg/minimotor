@@ -134,8 +134,8 @@ function scrollable<R>(
     contentMain === undefined ? avail : clipOnly ? naturalMain : Math.min(naturalMain, avail);
   const estMain = explicitMain ?? (horiz ? cachedBox?.w : cachedBox?.h) ?? fitMain;
   const estView = horiz ? estMain : estMain - top - bottom;
-  const barThick = !clipOnly && (contentMain ?? estView) - estView > 0.5 ? 10 : 0;
-  const gutter = barThick ? barThick + 4 : 0; // room reserved for the bar
+  const barThick = !clipOnly && (contentMain ?? estView) - estView > 0.5 ? theme.scrollbarW : 0;
+  const gutter = barThick ? barThick + theme.scrollbarGap : 0; // room reserved for the bar
 
   // Cross box size = intrinsic content cross + title band + gutter. Explicit
   // `w` (vertical) / `h` (horizontal) wins, so a vertical column keeps its
@@ -264,14 +264,15 @@ export function row<R>(
   return withTheme(opts.theme, () => {
     const wrap = opts.wrap ?? false;
     // a row's cross is height; wrapping children take their natural height so lines
-    // measure correctly.
-    const fitCross = wrap || (isRootContainer(opts) && opts.h === undefined);
+    // measure correctly, and `fitCross` asks for that explicitly.
+    const fitCross = opts.fitCross ?? (wrap || (isRootContainer(opts) && opts.h === undefined));
     const cfg = {
       pad: opts.pad ?? 0,
       gap: opts.gap ?? theme.spacing.md,
       justify: opts.justify ?? "start",
       reverse: opts.reverse ?? false,
       fitCross,
+      alignCross: opts.alignCross,
       wrap,
     };
     if (opts.overflow && opts.overflow !== "visible")
@@ -290,14 +291,16 @@ export function col<R>(
   const [opts, children] = layoutArgs(optsOrChildren, maybeChildren);
   return withTheme(opts.theme, () => {
     const wrap = opts.wrap ?? false;
-    // a col's cross is width; wrapping children take their natural width.
-    const fitCross = wrap || (isRootContainer(opts) && opts.w === undefined);
+    // a col's cross is width; wrapping children take their natural width, and
+    // `fitCross` asks for that explicitly.
+    const fitCross = opts.fitCross ?? (wrap || (isRootContainer(opts) && opts.w === undefined));
     const cfg = {
       pad: opts.pad ?? 0,
       gap: opts.gap ?? theme.spacing.md,
       justify: opts.justify ?? "start",
       reverse: opts.reverse ?? false,
       fitCross,
+      alignCross: opts.alignCross,
       wrap,
     };
     if (opts.overflow && opts.overflow !== "visible")
@@ -317,6 +320,10 @@ export interface PanelOptions extends LayoutOptions {
   bg?: string;
   /** Frame border color. Default `theme.border`. */
   border?: string;
+  /** Ring stroked over the finished frame — the way to mark a container live
+   *  (a drop target, a validation error) under a pixel skin, whose nine-slice
+   *  art replaces `border`. Omit for none. */
+  highlight?: string;
 }
 
 /** Keep an explicitly sized titled pixel panel from placing its first standard
@@ -326,10 +333,22 @@ function panelWithSafeMinimumHeight(opts: PanelOptions): PanelOptions {
   const frameBottom = theme.skin?.frames.panel?.insets.bottom ?? 0;
   if (!opts.title || !frameBottom) return opts;
   const padY = typeof opts.pad === "number" ? opts.pad : theme.pad.y;
-  // Panel top inset + title band + 2px title border + padded default control
-  // + frame edge.
-  const minimum = panelTitleBodyOffset() + 2 + padY + theme.buttonH + frameBottom;
+  // Panel top inset + title band + 2px title border + the theme's own body
+  // inset on both edges + padded default control + frame edge.
+  const minimum =
+    panelTitleBodyOffset() + 2 + theme.panelInset.y * 2 + padY + theme.buttonH + frameBottom;
   return { ...opts, minH: Math.max(opts.minH ?? 0, minimum) };
+}
+
+/** The panel's own padding: the caller's (or the theme's) `pad`, plus the
+ *  theme's `panelInset` on the x axis. The y axis is spent on `cfg.top` /
+ *  `cfg.bottom` instead, so it stacks with the title band rather than being
+ *  mirrored around the whole body. */
+function panelPadding(opts: PanelOptions): { x: number; y: number } {
+  const base = opts.pad ?? theme.pad;
+  const padX = typeof base === "number" ? base : base.x;
+  const padY = typeof base === "number" ? base : base.y;
+  return { x: padX + theme.panelInset.x, y: padY };
 }
 
 /** A framed, optionally-titled box that lays its children out — the workhorse
@@ -347,18 +366,22 @@ export function panel<R>(opts: PanelOptions, children: LayoutChildren<R>): R {
     const safeOpts = panelWithSafeMinimumHeight(opts);
     const dir = safeOpts.dir ?? "col";
     const fitCross =
-      isRootContainer(safeOpts) &&
-      (dir === "col" ? safeOpts.w === undefined : safeOpts.h === undefined);
+      safeOpts.fitCross ??
+      (isRootContainer(safeOpts) &&
+        (dir === "col" ? safeOpts.w === undefined : safeOpts.h === undefined));
     // The title area includes the panel's top frame inset plus the theme's
     // title band. Reserve a matching 2px below for the bottom border.
+    // `panelInset.y` rides on both ends: it is the gap a skin needs between its
+    // frame art and any content, and it applies with or without a title.
     const cfg: AutoContainerConfig = {
-      pad: safeOpts.pad ?? theme.pad,
+      pad: panelPadding(safeOpts),
       gap: safeOpts.gap ?? theme.spacing.md,
       justify: safeOpts.justify ?? "start",
       reverse: safeOpts.reverse ?? false,
       fitCross,
-      top: safeOpts.title ? panelTitleBodyOffset() : 0,
-      bottom: safeOpts.title ? 2 : 0,
+      alignCross: safeOpts.alignCross,
+      top: (safeOpts.title ? panelTitleBodyOffset() : 0) + theme.panelInset.y,
+      bottom: (safeOpts.title ? 2 : 0) + theme.panelInset.y,
       box: (rect) =>
         paintFrame(uiCtx(), {
           x: rect.x,
@@ -368,6 +391,7 @@ export function panel<R>(opts: PanelOptions, children: LayoutChildren<R>): R {
           title: safeOpts.title,
           bg: safeOpts.bg,
           border: safeOpts.border,
+          highlight: safeOpts.highlight,
         }),
     };
     // With overflow the frame + title stay fixed and only the body scrolls.

@@ -36,6 +36,10 @@ export interface NineSliceRegion extends TileRegion {
 export type TilesetFrameRole =
   | "panel"
   | "panelTitle"
+  /** Backdrop for a group header inside a select menu. A pack that ships two
+   *  title strips can spend the alternate one here so a section header reads
+   *  as a header without being mistaken for the panel's own title. */
+  | "menuGroup"
   | "button"
   | "buttonHover"
   | "buttonActive"
@@ -585,6 +589,14 @@ export interface Theme {
   barH: number;
   /** Default interactive slider track height in px. Default 4. */
   sliderH: number;
+  /** Thickness of a scrollbar — the width of a vertical one, the height of a
+   *  horizontal one. Default 10. A pixel skin whose `scrollTrack` art is a
+   *  fixed-width rail sets this to that width so the rail is not stretched. */
+  scrollbarW: number;
+  /** Space between a scrollable body and the scrollbar beside it. Reserved on
+   *  top of `scrollbarW`, so the gutter a scrolling container takes out of its
+   *  own width is `scrollbarW + scrollbarGap`. Default 4. */
+  scrollbarGap: number;
   /** Default button width in px. 0 keeps content auto-sizing; explicit `w`
    *  still wins. Pixel skins can set this to their native frame width. */
   buttonW: number;
@@ -603,6 +615,13 @@ export interface Theme {
    *  consuming its fixed insets. Values are non-negative. Default `{ x: 0,
    *  y: 0 }`. */
   panelTitleOverhang: ThemePadding;
+  /** Extra space between a panel's frame and its children, added on top of
+   *  `pad`. `y` is the one that earns its keep: a skin whose title strip is
+   *  taller than `panelTitleH`, or whose frame carries a decorative inner rail,
+   *  spends it here so EVERY panel in the theme clears the art — instead of
+   *  each screen hand-tuning a y offset that only suits one skin. `x` insets
+   *  both sides the same way. Default `{ x: 0, y: 0 }`. */
+  panelInset: ThemePadding;
   /** Default inner padding (px) for bordered content containers — the `group`
    *  body inset. Override per call with `pad`. Structural flow containers
    *  (`row`/`col`) intentionally stay flush (pad 0) so widgets align to their
@@ -622,13 +641,14 @@ export interface Theme {
 /** Partial theme update with independently overridable spacing tokens. */
 export type ThemeOverrides = Omit<
   Partial<Theme>,
-  "spacing" | "buttonText" | "select" | "panelTitleOverhang" | "panelTitlePad"
+  "spacing" | "buttonText" | "select" | "panelTitleOverhang" | "panelTitlePad" | "panelInset"
 > & {
   spacing?: Partial<ThemeSpacing>;
   buttonText?: Partial<ThemeButtonText>;
   select?: Partial<ThemeSelect>;
   panelTitleOverhang?: Partial<ThemePadding>;
   panelTitlePad?: Partial<ThemePadding>;
+  panelInset?: Partial<ThemePadding>;
 };
 
 const themeObjectIds = new WeakMap<object, number>();
@@ -700,12 +720,15 @@ const baseDefaults = {
   inputH: 32,
   barH: 12,
   sliderH: 4,
+  scrollbarW: 10,
+  scrollbarGap: 4,
   buttonW: 0,
   buttonMinW: 0,
   tabH: 30,
   panelTitleH: 32,
   panelTitlePad: { x: 0, y: 0 },
   panelTitleOverhang: { x: 0, y: 0 },
+  panelInset: { x: 0, y: 0 },
   pad: { x: 8, y: 8 },
   textPad: 0,
 };
@@ -734,6 +757,7 @@ export function setTheme(overrides: ThemeOverrides): void {
       ...overrides.panelTitleOverhang,
     },
     panelTitlePad: { ...defaultTheme.panelTitlePad, ...overrides.panelTitlePad },
+    panelInset: { ...defaultTheme.panelInset, ...overrides.panelInset },
   };
   // Resolved LAST, so the unset tokens fall back to the tokens THIS theme ended
   // up with rather than the built-in ones.
@@ -760,6 +784,7 @@ export function withTheme<R>(overrides: ThemeOverrides | undefined, children: ()
     select: { ...theme.select, ...overrides.select },
     panelTitleOverhang: { ...theme.panelTitleOverhang, ...overrides.panelTitleOverhang },
     panelTitlePad: { ...theme.panelTitlePad, ...overrides.panelTitlePad },
+    panelInset: { ...theme.panelInset, ...overrides.panelInset },
   };
   themeKey = `${previousKey}:scope:${themeValueSignature(theme)}`;
   try {

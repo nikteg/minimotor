@@ -365,7 +365,7 @@ Loop.run({
                 })),
                 ariaLabel: "Server region",
               }).value;
-              UI.row({ h: 30, gap: 24 }, () => {
+              UI.row({ gap: 24 }, () => {
                 hideFull = UI.toggle({
                   tabIndex: 30,
                   label: "Hide full",

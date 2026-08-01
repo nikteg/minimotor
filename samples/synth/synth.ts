@@ -331,7 +331,7 @@ Loop.run({
       // `Audio.Music.muted`; persistence, when desired, belongs to
       // `minimotor/storage` rather than the audio engine.
       UI.panel({ title: "Music" }, () => {
-        UI.row({ h: 30, gap: 12 }, () => {
+        UI.row({ gap: 12 }, () => {
           const groove = UI.select({
             id: "mx-groove",
             value: grooveIdx,
@@ -347,7 +347,7 @@ Loop.run({
         const muteNow = UI.toggle({ id: "mx-mute", label: "Muted", on: Audio.Music.muted });
         if (muteNow !== Audio.Music.muted) Audio.Music.muted = muteNow;
       });
-      UI.row({ h: 26, gap: 18 }, () => {
+      UI.row({ gap: 18 }, () => {
         const rv = UI.toggle({ id: "mx-reverb", label: "Reverb", on: reverbOn });
         if (rv !== reverbOn) {
           reverbOn = rv;

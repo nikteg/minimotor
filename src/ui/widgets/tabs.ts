@@ -93,6 +93,10 @@ export function tabs(opts: TabsOptions): number {
         stroke: theme.border,
         role: "tab",
         state: isActive ? "active" : hover ? "hover" : "default",
+        // The tab band runs along x. A frame the pack authored vertically
+        // (`orientation: "y"`) is rotated into it, which is how a plate whose
+        // open edge is on one END becomes a tab whose open edge is its BOTTOM.
+        axis: "x",
       });
     } else {
       ctx.fillStyle = isActive ? theme.bg : hover ? theme.bgHover : theme.bgActive;

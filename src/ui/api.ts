@@ -53,6 +53,7 @@ export {
   lastWidgetRect as lastRect,
   layoutCapture,
   layoutIssues,
+  layoutLag,
   layoutTree,
   measureWidth,
   metrics as textMetrics,

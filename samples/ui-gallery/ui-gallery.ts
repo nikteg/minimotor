@@ -656,12 +656,12 @@ Loop.run({
                     format: (v) => `${Math.round(v * 100)}%`,
                   });
                   // bar() is a raw draw call — reserve a slot from the layout for geometry.
-                  UI.row({ h: th.barH }, (st) => {
+                  UI.row((st) => {
                     const r = st.next(220, th.barH);
                     UI.bar({ x: r.x, y: r.y, w: 220, h: th.barH, value: progress });
                   });
                   busy = UI.toggle({ id: uiId("tg-busy"), label: "Working…", on: busy });
-                  UI.row({ h: 24 }, (st) => {
+                  UI.row((st) => {
                     const r = st.next(20, 20);
                     if (busy) UI.spinner({ x: r.x + 10, y: r.y + 10 });
                   });
@@ -794,15 +794,19 @@ Loop.run({
               UI.col({ w: colW, gap: 16, id: uiId("col4") }, (st) => {
                 const ddBox = st.next(colW, 300);
                 UI.panel({ ...ddBox, title: "Drag & drop" }, () => {
+                  // Flowed, not hand-positioned: a skin whose title strip is
+                  // taller than `panelTitleH` (or inset from the panel's top
+                  // rail, as Tiny RPG's is) would otherwise have the caption
+                  // land on top of it. The bins then hang off where the caption
+                  // actually ended.
                   UI.text("Drag items between the two bins", {
-                    x: ddBox.x + 12,
-                    y: ddBox.y + 38,
                     color: "dim",
                     size: 12,
                   });
+                  const caption = UI.lastRect();
                   const binW = (ddBox.w - 36) / 2;
-                  const binTop = ddBox.y + 62;
-                  const binH = ddBox.h - 74;
+                  const binTop = (caption ? caption.y + caption.h : ddBox.y + 50) + 12;
+                  const binH = ddBox.h - (binTop - ddBox.y) - 12;
                   const bins: { id: string; title: string; items: string[] }[] = [
                     { id: "loadout", title: "LOADOUT", items: binLoadout },
                     { id: "stash", title: "STASH", items: binStash },
@@ -826,7 +830,17 @@ Loop.run({
                         title: bin.title,
                         pad: 6,
                         gap: 4,
-                        border: target.canDrop ? th.accent : undefined,
+                        // `highlight` rather than `border`: a pixel skin's
+                        // nine-slice replaces the frame's own stroke, so a
+                        // border here would answer the pointer under the flat
+                        // themes and stay silent under the tileset ones. The
+                        // ring says which bin a release would land in, and says
+                        // "not this one" when `accepts` has already refused.
+                        highlight: target.canDrop
+                          ? th.accent
+                          : target.hovered
+                            ? th.danger
+                            : undefined,
                       },
                       () => {
                         bin.items.forEach((item) => {
@@ -917,12 +931,16 @@ Loop.run({
                 // the row cursor's `remaining` space, it pushes the button flush to
                 // the right edge (a manual alternative to a flex spacer).
                 UI.panel({ w: colW, title: "Spacer (align right)" }, () => {
-                  UI.row({ h: 30 }, (rst) => {
-                    UI.text("v1.4.2", { color: "dim", h: 30 });
-                    UI.spacer(Math.max(0, rst.remaining - 76));
-                    if (
-                      UI.button({ id: uiId("sp-save"), label: "Save", w: 76, variant: "primary" })
-                    )
+                  UI.row((rst) => {
+                    UI.text("v1.4.2", { color: "dim" });
+                    // The spacer has to know the button's width before the
+                    // button exists, and `76` was a guess that only suited the
+                    // default theme — a skin with wide decorative end caps got
+                    // its label squeezed between them. `buttonWidth` asks the
+                    // theme what this label will actually measure.
+                    const saveW = UI.buttonWidth("Save");
+                    UI.spacer(Math.max(0, rst.remaining - saveW));
+                    if (UI.button({ id: uiId("sp-save"), label: "Save", variant: "primary" }))
                       UI.floatText("saved", UI.lastRect()?.x ?? 0, UI.lastRect()?.y ?? 0);
                   });
                 });
@@ -932,13 +950,20 @@ Loop.run({
                 // the content/view extents drives that offset (thumb, track and
                 // wheel). Distinct from the implicit overflow:"auto" columns above.
                 const clipBox = st.next(colW, 168);
-                UI.panel({ ...clipBox, title: "Clip + scrollbar" }, () => {
-                  const vpRect: Rect = {
-                    x: clipBox.x + 12,
-                    y: clipBox.y + 40,
-                    w: clipBox.w - 34,
-                    h: clipBox.h - 52,
-                  };
+                UI.panel({ ...clipBox, title: "Clip + scrollbar" }, (body) => {
+                  // The viewport is the panel's own body slot, minus a gutter
+                  // for the scrollbar beside it. Hand-positioning it from
+                  // `clipBox.y + 40` put the first credit line under any skin
+                  // whose title strip reaches further down than the default
+                  // theme's — how far that is belongs to the theme (frame
+                  // inset + `panelTitleH`), not to this sample.
+                  const area = body.fill();
+                  // Same gutter the implicit `overflow: "auto"` containers take
+                  // out of their own width, from the same theme tokens — a skin
+                  // with a wide scrollbar rail widens both together.
+                  const th = UI.getTheme();
+                  const gutter = th.scrollbarW + th.scrollbarGap;
+                  const vpRect: Rect = { ...area, w: area.w - gutter };
                   const lineH = 22;
                   const content = creditLines.length * lineH;
                   UI.clip(vpRect, () => {
@@ -952,7 +977,7 @@ Loop.run({
                       });
                   });
                   clipOffset = UI.scrollbar({
-                    x: vpRect.x + vpRect.w + 6,
+                    x: vpRect.x + vpRect.w + th.scrollbarGap,
                     y: vpRect.y,
                     h: vpRect.h,
                     view: vpRect.h,

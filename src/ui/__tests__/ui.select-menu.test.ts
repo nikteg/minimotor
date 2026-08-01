@@ -6,7 +6,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp, type App } from "@src/engine/index.js";
 import { selectUiApp } from "@src/ui/core/state.js";
-import { _reset, button, col, scaled, select, spacer } from "@src/ui/api.js";
+import {
+  _reset,
+  button,
+  col,
+  defaultTheme,
+  scaled,
+  select,
+  setTheme,
+  spacer,
+} from "@src/ui/api.js";
+import type { TilesetSkin } from "@src/ui/theme.js";
 
 let rafCallback: ((t: number) => void) | null = null;
 const origGc = HTMLCanvasElement.prototype.getContext;
@@ -38,6 +48,7 @@ function makeCtx(canvas: HTMLCanvasElement): CanvasRenderingContext2D & { _calls
     scale: vi.fn(),
     strokeRect: vi.fn(),
     createLinearGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
+    drawImage: vi.fn(),
     rect: (x: number, y: number, w: number, h: number) => calls.rects.push([x, y, w, h]),
     fillRect: (x: number, y: number, w: number, h: number) => calls.rects.push([x, y, w, h]),
     fillText: (t: string, x: number, y: number) => calls.fillText.push([t, x, y]),
@@ -293,4 +304,72 @@ describe("select drop-menu scrolling", () => {
       expect(labels.length).toBeGreaterThan(0); // the menu is still open
     });
   }
+});
+
+// A skinned group header is a fixed-height decorative plate: its whole height
+// is the nine-slice's repeating band, so a row taller than the art tiles a
+// second copy of the plate (end caps and all) under the first. The row must
+// take the ART's height, not the text-derived one.
+describe("grouped menu headers", () => {
+  const GROUPS = [
+    {
+      label: "Section",
+      options: [
+        { label: "Alpha", value: "a" },
+        { label: "Beta", value: "b" },
+      ],
+    },
+  ];
+  const STRIP_H = 24;
+
+  /** The y a menu option's label is drawn at, with and without a skin that
+   *  names `menuGroup`. Everything above that label is the menu padding plus
+   *  the one group header, so the difference IS the header-height difference. */
+  function firstOptionY(skinned: boolean): number {
+    if (skinned) {
+      const image = { width: 96, height: STRIP_H } as unknown as CanvasImageSource;
+      const skin: TilesetSkin = {
+        image,
+        tileSize: { w: 16, h: 16 },
+        frames: {
+          menuGroup: {
+            image,
+            sx: 0,
+            sy: 0,
+            sw: 96,
+            sh: STRIP_H,
+            insets: { left: 32, top: 0, right: 32, bottom: 0 },
+          },
+        },
+        buttonVariants: {},
+        sprites: {},
+      };
+      setTheme({ skin });
+    }
+    let value = "a";
+    const { game, canvas } = build(() => {
+      value = select({ id: "grouped", value, groups: GROUPS, x: 20, y: 20, w: 180, h: 32 }).value;
+    });
+    tick();
+    downAt(canvas, 60, 36);
+    tick();
+    upAt(60, 36);
+    tick();
+    const calls = (game.ctx as unknown as { _calls: CtxCalls })._calls;
+    calls.fillText.length = 0;
+    tick();
+    const row = calls.fillText.find(([t, , y]) => t === "Alpha" && y > 56);
+    expect(row).toBeDefined();
+    return row![2];
+  }
+
+  it("draws the header at the strip's own height, not the text height", () => {
+    const plain = firstOptionY(false);
+    _reset();
+    setTheme(defaultTheme);
+    const skinned = firstOptionY(true);
+    // Plain text headers keep the roomier `fontSize + 16`; a skinned one is
+    // exactly the art. Anything else means the plate is being tiled or cropped.
+    expect(skinned - plain).toBe(STRIP_H - (defaultTheme.fontSize + 16));
+  });
 });

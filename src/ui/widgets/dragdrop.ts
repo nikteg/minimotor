@@ -1,6 +1,8 @@
 import {
   claimPointerGesture,
+  clearDragPayload,
   ensureWired,
+  holdDragPayload,
   lifecycleOnce,
   onFrameEnd,
   onReset,
@@ -39,6 +41,12 @@ const ensureDragHooks = lifecycleOnce(() => {
     if (s.drag && rawPointer().released) s.drag = null;
     const gesture = gestureSt();
     if (gesture.drag && rawPointer().released) gesture.drag = null;
+    // Publish for the NEXT frame rather than this one: every widget has to see
+    // the same answer, and `dragSource` runs somewhere in the middle of a frame
+    // — so setting it there would suppress hover for the widgets drawn after
+    // the source and not for the ones before it.
+    if (s.drag) holdDragPayload();
+    else clearDragPayload();
   });
   onReset(() => {
     st().drag = null;
