@@ -17,7 +17,10 @@ describe("Gizmos.seedRng", () => {
     const b = seedRng(1234);
     const seq = Array.from({ length: 6 }, () => a());
     expect(Array.from({ length: 6 }, () => b())).toEqual(seq); // same seed → same stream
-    for (const v of seq) (expect(v).toBeGreaterThanOrEqual(0), expect(v).toBeLessThan(1));
+    for (const v of seq) {
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThan(1);
+    }
     expect(new Set(seq).size).toBeGreaterThan(1); // not a constant
   });
 

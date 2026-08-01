@@ -18,7 +18,7 @@ export function listMetrics(
     const value = typeof rowH === "function" ? rowH(index) : rowH;
     return Number.isFinite(value) ? Math.max(1, value) : 1;
   });
-  const tops = new Array<number>(count + 1).fill(0);
+  const tops: number[] = Array.from({ length: count + 1 }, () => 0);
   for (let index = 0; index < count; index++) {
     tops[index + 1] = tops[index] + heights[index] + (index < count - 1 ? gap : 0);
   }

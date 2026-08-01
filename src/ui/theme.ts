@@ -433,11 +433,11 @@ export function createTilesetSkin(
 ): TilesetSkin {
   assertFinitePositive(options.tileSize.w, "tileSize.w");
   assertFinitePositive(options.tileSize.h, "tileSize.h");
-  const frames = { ...(options.frames ?? {}) };
+  const frames = { ...options.frames };
   for (const [role, region] of Object.entries(frames)) {
     if (region) validateRegion(region.image ?? image, region, `frames.${role}`, region.insets);
   }
-  const buttonVariants = { ...(options.buttonVariants ?? {}) } as TilesetButtonVariants;
+  const buttonVariants = { ...options.buttonVariants } as TilesetButtonVariants;
   for (const [variant, states] of Object.entries(buttonVariants)) {
     for (const [state, region] of Object.entries(states ?? {})) {
       if (region)

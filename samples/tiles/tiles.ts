@@ -27,7 +27,7 @@ const ROWS = 20;
 
 // ---- Level: ground with gaps, platforms, brick pillars ----
 // Same procedural shape as ever, emitted as the ASCII grid Tiles.grid parses.
-const cells = Array.from({ length: ROWS }, () => new Array(COLS).fill("."));
+const cells = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => "."));
 for (let cx = 0; cx < COLS; cx++) {
   if (cx % 19 === 17 || cx % 19 === 18) continue; // gaps to jump
   cells[ROWS - 2][cx] = "g"; // grass

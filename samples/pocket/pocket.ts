@@ -273,7 +273,8 @@ Loop.run({
       a.verts.forEach((v, i: number) => {
         const x = Math.cos(v.a) * v.r,
           y = Math.sin(v.a) * v.r;
-        i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+        if (i) ctx.lineTo(x, y);
+        else ctx.moveTo(x, y);
       });
       ctx.closePath();
       ctx.fillStyle = a.size === 3 ? "#293b5d" : a.size === 2 ? "#33496d" : "#496488";

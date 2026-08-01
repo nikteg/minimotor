@@ -563,7 +563,7 @@ describe("select menu under UI.scaled", () => {
 describe("layoutIssues (the overlap detector)", () => {
   it("is empty for a layout whose containers all fit their content", () => {
     layoutCapture(true);
-    const { game } = build(() => {
+    build(() => {
       panel({ x: 10, y: 10, w: 300, title: "OUTER" }, () => {
         panel({ title: "INNER" }, () => {
           button({ label: "A", id: "a", h: 30 });
@@ -584,7 +584,7 @@ describe("layoutIssues (the overlap detector)", () => {
     // A container pinned SHORTER than its content: the children run past the
     // bottom edge and would paint over whatever is drawn under it.
     layoutCapture(true);
-    const { game } = build(() => {
+    build(() => {
       col({ x: 10, y: 10, w: 200, h: 40, id: "squeezed" }, () => {
         button({ label: "A", id: "a", h: 30 });
         button({ label: "B", id: "b", h: 30 });
@@ -602,7 +602,7 @@ describe("layoutIssues (the overlap detector)", () => {
 
   it("stays quiet about clipped content and hand-positioned rects", () => {
     layoutCapture(true);
-    const { game } = build(() => {
+    build(() => {
       // A scroll region whose content is taller than its box — overflowing is
       // exactly what it is for.
       col({ x: 10, y: 10, w: 200, h: 60, overflow: "auto", id: "scroll" }, () => {
@@ -627,7 +627,7 @@ describe("nested containers without an id", () => {
     // it could not measure its content, kept the fallback height, and its
     // children painted straight over the widgets that flowed after it.
     layoutCapture(true);
-    const { game } = build(() => {
+    build(() => {
       panel({ x: 10, y: 10, w: 300, title: "OUTER" }, () => {
         panel({ title: "INNER" }, () => {
           button({ label: "A", id: "inner-a", h: 30 });
@@ -691,7 +691,7 @@ describe("keyboard focus in a scroll region", () => {
     // Tab can reach a widget scrolled past the clip — a focus ring nobody can
     // see is a dead end, so the region follows the focus.
     layoutCapture(true);
-    const { game, canvas } = build(() => {
+    const { canvas } = build(() => {
       col({ x: 0, y: 0, w: 200, h: 100, overflow: "auto", id: "scroller" }, () => {
         for (let i = 0; i < 12; i++) button({ label: `B${i}`, id: `b${i}`, h: 30 });
       });
@@ -716,7 +716,7 @@ describe("keyboard focus in a scroll region", () => {
 
 describe("layoutCapture", () => {
   it("records nothing while disabled", () => {
-    const { game } = build(() => {
+    build(() => {
       button({ x: 10, y: 10, w: 80, h: 30, label: "T", id: "t" });
     });
     tick();
@@ -727,7 +727,7 @@ describe("layoutCapture", () => {
 
   it("captures kind/id, reference rect, screen rect and scale under UI.scaled", () => {
     layoutCapture(true);
-    const { game } = build(() => {
+    build(() => {
       scaled(2, () => {
         col({ x: 10, y: 10, w: 120, gap: 8, id: "root" }, () => {
           button({ label: "GO", id: "go" });
@@ -773,7 +773,7 @@ describe("layoutCapture", () => {
 
   it("auto-sizes wrapped text through row and column gaps", () => {
     layoutCapture(true);
-    const { game } = build(() => {
+    build(() => {
       col({ x: 10, y: 10, w: 160, gap: 6, id: "features" }, () => {
         row({ gap: 4, id: "feature" }, () => {
           text("HEAD");
@@ -799,7 +799,7 @@ describe("layoutCapture", () => {
 
   it("turning capture off clears the tree", () => {
     layoutCapture(true);
-    const { game } = build(() => {
+    build(() => {
       button({ x: 10, y: 10, w: 80, h: 30, label: "T", id: "t" });
     });
     tick();
@@ -816,7 +816,7 @@ describe("the UI.scaled forms", () => {
     // letterboxed vertically: ox = 0, oy = (768 - 576) / 2 = 96.
     layoutCapture(true);
     let space = { w: 0, h: 0, halfW: 0, halfH: 0 };
-    const { game } = build(() => {
+    build(() => {
       scaled({ w: 640, h: 360 }, () => {
         space = { w: width(), h: height(), halfW: vw(50), halfH: vh(50, { max: 150 }) };
         button({ x: 0, y: 0, w: 100, h: 40, label: "GO", id: "go" });
@@ -832,7 +832,7 @@ describe("the UI.scaled forms", () => {
 
   it("honours the fit form's scale multiplier and top-left align", () => {
     layoutCapture(true);
-    const { game } = build(() => {
+    build(() => {
       scaled({ w: 640, h: 360, scale: 0.5, align: "top-left" }, () => {
         button({ x: 0, y: 0, w: 100, h: 40, label: "GO", id: "go" });
       });
@@ -846,7 +846,7 @@ describe("the UI.scaled forms", () => {
 
   it("the no-arg form fits UI.setBaseSize times UI.setScale", () => {
     layoutCapture(true);
-    const { game } = build(() => {
+    build(() => {
       setBaseSize({ w: 640, h: 360 });
       setScale(0.5);
       scaled(() => {
@@ -865,7 +865,7 @@ describe("the UI.scaled forms", () => {
   it("with no base size, the no-arg form is just the UI.setScale factor", () => {
     layoutCapture(true);
     let space = { w: 0, h: 0 };
-    const { game } = build(() => {
+    build(() => {
       setScale(2);
       scaled(() => {
         space = { w: width(), h: height() };
@@ -884,7 +884,7 @@ describe("the UI.scaled forms", () => {
   it("nests: the inner block composes with the outer one, pointer mapping too", () => {
     layoutCapture(true);
     let round = { x: 0, y: 0 };
-    const { game } = build(() => {
+    build(() => {
       scaled(2, () => {
         scaled(3, () => {
           button({ x: 10, y: 10, w: 20, h: 10, label: "N", id: "n" });
