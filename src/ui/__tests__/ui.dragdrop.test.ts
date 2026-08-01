@@ -7,7 +7,7 @@
 // only when it considers itself hovered, so the recorded cursor requests are a
 // faithful read of a state the widget otherwise only paints.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { _reset, button, dragSource, dropTarget } from "@src/ui/api.js";
+import { _reset, button, dragSource, dropIndicator, dropTarget } from "@src/ui/api.js";
 import { registerUiApp, selectUiApp } from "@src/ui/core/state.js";
 import type { App } from "@src/engine/index.js";
 
@@ -93,6 +93,7 @@ function testApp(ctx: CanvasRenderingContext2D) {
   } as unknown as App;
   return {
     app: registerUiApp(app),
+    ctx,
     pointer,
     cursors,
     endFrame: () => frameHooks.forEach((fn) => fn()),
@@ -203,5 +204,112 @@ describe("the drop target reports what a release would do", () => {
     expect(target.hovered).toBe(false);
     expect(target.canDrop).toBe(false);
     expect(target.dropped).toBeNull();
+  });
+});
+
+// ---------- dropIndicator ----------
+// The caret's index is pure geometry — nearest insertion SEGMENT to the
+// pointer — so these assert it directly rather than through what was painted.
+// `moveTo` is the paint observable: nothing else in these frames strokes.
+
+/** A column of three 100×30 rows stacked from the origin. */
+const COLUMN = [
+  { x: 0, y: 0, w: 100, h: 30 },
+  { x: 0, y: 30, w: 100, h: 30 },
+  { x: 0, y: 60, w: 100, h: 30 },
+];
+
+/** A row-major 4×2 of 40×40 cells — indices 0..3 on the top row, 4..7 below. */
+const GRID = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => ({
+  x: (i % 4) * 40,
+  y: Math.floor(i / 4) * 40,
+  w: 40,
+  h: 40,
+}));
+
+/** Close the frame and open the next one. `uiPointer` caches its answer for
+ *  the frame, so two reads either side of a `idle()` in ONE frame would both
+ *  see the first position. */
+function newFrame(): void {
+  fixture.endFrame();
+  selectUiApp(fixture.app);
+}
+
+function strokes(): number {
+  return (fixture.ctx.moveTo as unknown as ReturnType<typeof vi.fn>).mock.calls.length;
+}
+
+/** Grab SOURCE and carry the payload to (x, y), leaving it in flight. */
+function carryTo(x: number, y: number): void {
+  press(50, 15);
+  dragSource({ id: "item:sword", ...SOURCE, payload: { item: "Sword" } });
+  newFrame();
+  move(x, y);
+}
+
+describe("dropIndicator picks the insertion point nearest the pointer", () => {
+  it("reads a column from the leading edge of the row under the pointer", () => {
+    idle(50, 2);
+    expect(dropIndicator({ items: COLUMN, axis: "y" })).toBe(0);
+    newFrame();
+    idle(50, 34);
+    expect(dropIndicator({ items: COLUMN, axis: "y" })).toBe(1);
+  });
+
+  it("offers the index PAST the last row at the bottom of the list", () => {
+    idle(50, 88);
+    expect(dropIndicator({ items: COLUMN, axis: "y" })).toBe(COLUMN.length);
+  });
+
+  it("does not confuse the end of a grid row with the start of the next", () => {
+    // Right edge of cell 3 — the last cell of the top row. Comparing x alone
+    // would put this at index 0 of the row below; the nearest SEGMENT is cell
+    // 3's trailing edge, which is index 4.
+    idle(158, 20);
+    expect(dropIndicator({ items: GRID, axis: "x" })).toBe(4);
+    // ...and the left edge of cell 4, one row down, is the same insertion
+    // point reached from the other side of the wrap.
+    newFrame();
+    idle(2, 60);
+    expect(dropIndicator({ items: GRID, axis: "x" })).toBe(4);
+  });
+
+  it("falls back to the `empty` box when there is nothing to sit between", () => {
+    idle(50, 50);
+    expect(dropIndicator({ items: [], empty: { x: 0, y: 0, w: 100, h: 0 } })).toBe(0);
+    expect(dropIndicator({ items: [] })).toBe(0);
+  });
+});
+
+describe("dropIndicator draws only while a payload is in flight", () => {
+  it("stays invisible when nothing is being dragged", () => {
+    idle(50, 34);
+    dropIndicator({ items: COLUMN, axis: "y" });
+    expect(strokes()).toBe(0);
+  });
+
+  it("draws the caret once a payload is carried over the list", () => {
+    carryTo(50, 34);
+    dropIndicator({ items: COLUMN, axis: "y" });
+    expect(strokes()).toBe(1);
+  });
+
+  it("honours `silent` so only the hovered list of several shows a caret", () => {
+    carryTo(50, 34);
+    dropIndicator({ items: COLUMN, axis: "y", silent: true });
+    expect(strokes()).toBe(0);
+  });
+
+  it("still reports the index on the release frame, after the drop cleared the drag", () => {
+    // This is the whole reason the index is not gated on the drag: `dropTarget`
+    // nulls the payload when it consumes the release, and the caller reads the
+    // position from the SAME frame that hands it `dropped`.
+    carryTo(50, 34);
+    dropIndicator({ items: COLUMN, axis: "y" });
+    newFrame();
+    release(50, 34);
+    const target = dropTarget({ id: "list", x: 0, y: 0, w: 100, h: 90 });
+    expect(target.dropped).not.toBeNull();
+    expect(dropIndicator({ items: COLUMN, axis: "y" })).toBe(1);
   });
 });

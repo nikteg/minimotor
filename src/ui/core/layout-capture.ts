@@ -10,6 +10,7 @@
 // Disabled (the default) the whole thing is one module-level boolean check at
 // each record site — nothing is allocated, mapped or stored.
 
+import { uiCtx } from "./context.js";
 import { currentUiScale, uiToScreen } from "./input.js";
 import { onFrameEnd, onReset } from "./lifecycle.js";
 import { uiSlot } from "./state.js";
@@ -244,6 +245,91 @@ export function layoutLag(tolerance = 0.5): LayoutLag[] {
     }
   }
   return found;
+}
+
+/** Knobs for `drawLayoutOverlay`. */
+export interface LayoutOverlayOptions {
+  /** Draw only these kinds (`["panel", "col", "row"]` to see containers
+   *  alone). Default: everything captured. */
+  kinds?: readonly string[];
+  /** Label the boxes. `"containers"` (the default) names only the
+   *  panels/rows/cols that carry an explicit `id` — the ones whose edges you
+   *  are trying to place. `"all"` adds every named widget, which is legible
+   *  only on a sparse screen; `"none"` draws boxes alone. */
+  labels?: "containers" | "all" | "none";
+  /** Wash the canvas with this much black (0–1) first, so the boxes read over
+   *  a busy screen. Default 0. */
+  dim?: number;
+}
+
+const BACKDROP_CONTAINERS = new Set(["panel", "group", "popover", "modal"]);
+const FLOW_CONTAINERS = new Set(["row", "col", "grid", "flow", "clip"]);
+
+/** Containers get a warmer, heavier box than the widgets inside them — the
+ *  point of the overlay is to see where a container's edge sits relative to
+ *  its content, which is what padding IS. */
+function overlayColor(kind: string): { stroke: string; width: number } {
+  if (BACKDROP_CONTAINERS.has(kind)) return { stroke: "#ff4ecb", width: 1.5 };
+  if (FLOW_CONTAINERS.has(kind)) return { stroke: "#35d9ff", width: 1 };
+  return { stroke: "rgba(167,245,66,0.65)", width: 1 };
+}
+
+/** Draw every captured layout box over the finished frame — the visual form of
+ *  `layoutTree()`, for eyeballing padding, gaps and alignment against the art.
+ *
+ *  Needs `layoutCapture(true)`; it draws the last COMPLETED frame, so with
+ *  capture left on it trails the live UI by one frame (invisible in practice,
+ *  and the reason a toggle should enable capture and the overlay together).
+ *
+ *  Boxes are drawn from `screenRect`, which is already screen-logical — call
+ *  it at the ROOT of the draw, OUTSIDE any `UI.scaled` block, or the scale is
+ *  applied twice. Findings win over kind: a child that escaped its container
+ *  (`layoutIssues`) is red, a container that drew at a stale size
+ *  (`layoutLag`) is orange.
+ *
+ *      UI.layoutCapture(debugOn);
+ *      UI.scaled(() => buildTheWholeUI());
+ *      if (debugOn) UI.drawLayoutOverlay({ dim: 0.15 }); */
+export function drawLayoutOverlay(opts: LayoutOverlayOptions = {}): void {
+  const tree = layoutTree();
+  if (tree.length === 0) return;
+  const ctx = uiCtx();
+  const escaped = new Set(layoutIssues().map((issue) => issue.child));
+  const stale = new Set(layoutLag().map((finding) => finding.entry));
+  const wanted = opts.kinds ? new Set(opts.kinds) : undefined;
+  const labels = opts.labels ?? "containers";
+  ctx.save();
+  if (opts.dim) {
+    ctx.fillStyle = `rgba(0,0,0,${opts.dim})`;
+    ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  }
+  // A fixed font, not the theme's: a broken or highly decorative skin must not
+  // be able to make its own debugger unreadable.
+  ctx.font = "10px monospace";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  for (const entry of tree) {
+    if (wanted && !wanted.has(entry.kind)) continue;
+    const r = entry.screenRect;
+    if (r.w <= 0 || r.h <= 0) continue;
+    const look = escaped.has(entry)
+      ? { stroke: "#ff4b4b", width: 2 }
+      : stale.has(entry)
+        ? { stroke: "#ffad42", width: 2 }
+        : overlayColor(entry.kind);
+    ctx.strokeStyle = look.stroke;
+    ctx.lineWidth = look.width;
+    // The half-pixel offset is what keeps a 1px stroke on the pixel rather
+    // than smeared across two of them.
+    const half = look.width / 2;
+    ctx.strokeRect(r.x + half, r.y + half, Math.max(0, r.w - look.width), Math.max(0, r.h - half * 2));
+    if (labels === "none" || entry.id === undefined) continue;
+    const container = BACKDROP_CONTAINERS.has(entry.kind) || FLOW_CONTAINERS.has(entry.kind);
+    if (labels === "containers" && !container) continue;
+    ctx.fillStyle = look.stroke;
+    ctx.fillText(`${entry.kind}:${entry.id}`, r.x + 2, r.y + 2);
+  }
+  ctx.restore();
 }
 
 /** A child that escaped its container's box — what `layoutIssues` reports. */

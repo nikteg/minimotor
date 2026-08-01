@@ -427,11 +427,11 @@ export interface LayoutOptions {
   pad?: number;
   /** Where the content block sits on the main axis when the container is wider
    *  (a row) / taller (a col) than its children — POSITION, not order (this is
-   *  flexbox's `justify-content`). `"end"` pins it to the far edge (a
-   *  right-aligned toolbar), children keeping their natural order. Default
-   *  `"start"`. Orthogonal to `reverse`. (Not to be confused with `anchor` on
-   *  `panel`/`text`, which is VIEWPORT placement.) */
-  justify?: "start" | "end";
+   *  flexbox's `justify-content`). `"center"` shares the slack on both sides;
+   *  `"end"` pins it to the far edge. Default `"start"`. Orthogonal to
+   *  `reverse`. (Not to be confused with `anchor` on `panel`/`text`, which is
+   *  VIEWPORT placement.) */
+  justify?: "start" | "center" | "end";
   /** Where children sit ACROSS the flow — a row's vertical placement, a
    *  column's horizontal one. This is flexbox's `align-items`, and `justify`
    *  above is its `justify-content`.
@@ -496,7 +496,7 @@ export function runContainer<R>(
   rect: { x: number; y: number; w: number; h: number },
   gap: number,
   pad: Padding,
-  justify: "start" | "end",
+  justify: "start" | "center" | "end",
   reverse: boolean,
   children: (layout: Flow) => R,
   fitCross = false,
@@ -519,7 +519,10 @@ export function runContainer<R>(
   // decides growth direction: forward from the block's near edge, or backward
   // from its far edge (so the first child lands at the far end).
   const slack =
-    justify === "end" && contentMain !== undefined ? Math.max(0, innerMain - contentMain) : 0;
+    contentMain === undefined
+      ? 0
+      : Math.max(0, innerMain - contentMain) *
+        (justify === "center" ? 0.5 : justify === "end" ? 1 : 0);
   const blockNear = innerNear + slack;
   const blockFar = contentMain !== undefined ? blockNear + contentMain : innerNear + innerMain;
   const mainStart = reverse ? blockFar : blockNear;
@@ -722,7 +725,7 @@ export function runAutoSized<R>(
   dir: "row" | "col",
   gap: number,
   pad: Padding,
-  justify: "start" | "end",
+  justify: "start" | "center" | "end",
   reverse: boolean,
   fitCross: boolean,
   children: LayoutChildren<R>,
@@ -781,7 +784,7 @@ export interface AutoContainerConfig {
   /** Gap between children in px. */
   gap: number;
   /** Where the content block sits on the main axis (see `LayoutOptions.justify`). */
-  justify: "start" | "end";
+  justify: "start" | "center" | "end";
   /** Lay children in reverse order (see `LayoutOptions.reverse`). */
   reverse: boolean;
   /** Shrink-wrap the cross axis (a root container along its free axis, or an
@@ -845,7 +848,7 @@ function tryReserve(
   cfg: AutoContainerConfig,
   cached: ContentSize | undefined,
 ): Reservation | null {
-  if (cfg.box || cfg.wrap || cfg.reverse || cfg.justify === "end") return null;
+  if (cfg.box || cfg.wrap || cfg.reverse || cfg.justify !== "start") return null;
   // Roots (anchored, or pinned x/y) don't take a slot from anyone.
   if (opts.anchor !== undefined || (opts.x !== undefined && opts.y !== undefined)) return null;
   const parent = currentLayout();

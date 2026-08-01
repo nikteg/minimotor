@@ -43,6 +43,7 @@ export {
   blur,
   buttonState,
   defaultTheme,
+  drawLayoutOverlay,
   focus,
   focusedId,
   focusNext,
@@ -94,5 +95,6 @@ export type {
   ThemeTextPadding,
   ThemeButtonText,
   ThemeSelect,
+  ThemeFocusStyle,
   ThemeTextOutline,
 } from "./core/index.js";

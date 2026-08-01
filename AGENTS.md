@@ -80,6 +80,14 @@ Exported from `createUI(...)`, implemented in `src/ui/core/layout-capture.ts`:
 | `UI.layoutIssues()`      | Children that spilled outside the container that placed them — the signature of a container that failed to size to its content.                                                             |
 | `UI.layoutLag()`         | Containers that drew at a size other than their own content's — the one-frame pop, named. A `sharedKey` on the finding means it isn't lag at all: two containers are using one cache entry. |
 | `UI.lastRect()`          | The rect the most recent widget got. Useful for flowing non-UI drawing (e.g. bitmap text) through the layout.                                                                               |
+| `UI.drawLayoutOverlay()` | The tree drawn ON the frame — every box stroked, containers heavier than widgets, `layoutIssues` red and `layoutLag` orange. For eyeballing padding against the art when the numbers alone don't tell you which edge is wrong. |
+
+`drawLayoutOverlay` strokes `screenRect`, which already has the UI scale baked
+in, so call it at the ROOT of the draw — **outside** any `UI.scaled` block, or
+every box lands at scale². It draws the last completed frame, so it trails the
+live UI by one frame. `labels` defaults to `"containers"`: naming every widget
+too (`"all"`) is legible only on a sparse screen. `samples/ui-gallery` wires
+it to a header checkbox that drives `layoutCapture` at the same time.
 
 Each `LayoutEntry` carries `kind` (`"row"`, `"col"`, `"panel"`, `"button"`,
 `"text"`, …), the optional `id`, `rect` (layout coords), `screenRect` (after

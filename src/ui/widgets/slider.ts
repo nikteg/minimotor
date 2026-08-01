@@ -127,9 +127,11 @@ export function slider(
     tabIndex: opts.tabIndex,
     rect: slot,
   });
-  const hover = !opts.disabled && pointInRect(p.x, p.y, hit);
+  const pointerHover = !opts.disabled && pointInRect(p.x, p.y, hit);
+  const focusHover = keyboardFocused && theme.focusStyle === "hover";
+  const hover = pointerHover || focusHover;
   const sd = sliderDragSlot();
-  hoverCursor(hover || sd.id === id);
+  hoverCursor(pointerHover || sd.id === id);
 
   // Release the drag on the REAL pointer-up, not the clip/overlay-gated one:
   // the drag slot is SHARED by every slider, and a slider sitting inside a
@@ -137,7 +139,7 @@ export function slider(
   // is outside ITS clip — it must not cancel another slider's live drag (nor
   // its own when the finger wanders out of the clip mid-drag).
   if (!rawPointer().down) sd.id = null;
-  if (p.pressed && hover && !sd.id) {
+  if (p.pressed && pointerHover && !sd.id) {
     sd.id = id;
     focusFromPointer(ctx, id);
   }
@@ -212,6 +214,6 @@ export function slider(
   ctx.textAlign = "right";
   centeredText(ctx, fmt(value), slot.x + slot.w, sy);
   ctx.restore();
-  if (keyboardFocused) drawFocusRing(ctx, hit);
+  if (keyboardFocused && !focusHover) drawFocusRing(ctx, hit);
   return value;
 }

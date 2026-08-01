@@ -106,8 +106,10 @@ interface GalleryHmrState {
   tableSel: Player | null;
   binLoadout: string[];
   binStash: string[];
+  invSlots: string[];
   invSel: number;
   clipOffset: number;
+  layoutDebug: boolean;
   currentFont: string;
   currentTheme: string;
 }
@@ -163,8 +165,13 @@ let tableSel: Player | null = null;
 let binLoadout: string[] = ["Sword", "Shield"];
 let binStash: string[] = ["Potion", "Torch", "Rope", "Key"];
 
-// UI.grid — an inventory grid; clicking a cell selects it
+// UI.grid — an inventory grid; clicking a cell selects it, dragging one
+// reorders the grid. `invItems` is the pack's fixed list, so the live order
+// is its own array.
+let invSlots: string[] = [...invItems];
 let invSel = 0;
+// The layout-box overlay, toggled from the header.
+let layoutDebug = false;
 // UI.clip + UI.scrollbar — offset into a clipped, explicitly-scrolled region
 let clipOffset = 0;
 
@@ -276,8 +283,11 @@ if (previousGalleryState) {
   tableSel = previousGalleryState.tableSel ? { ...previousGalleryState.tableSel } : null;
   binLoadout = [...previousGalleryState.binLoadout];
   binStash = [...previousGalleryState.binStash];
+  invSlots = [...previousGalleryState.invSlots];
   invSel = previousGalleryState.invSel;
   clipOffset = previousGalleryState.clipOffset;
+  layoutDebug = previousGalleryState.layoutDebug;
+  UI.layoutCapture(layoutDebug);
 }
 
 /** Resolve the theme scope a gallery panel should inherit. Panel call sites
@@ -353,8 +363,10 @@ galleryHot.persist("ui-gallery", () => ({
   tableSel: tableSel ? { ...tableSel } : null,
   binLoadout: [...binLoadout],
   binStash: [...binStash],
+  invSlots: [...invSlots],
   invSel,
   clipOffset,
+  layoutDebug,
   currentFont,
   currentTheme,
 }));
@@ -366,38 +378,58 @@ Loop.run({
   },
 
   draw() {
-    // Header (Draw.* draws in ambient/screen space, above the panels).
-    const headerFont = UI.getTheme().font;
-    Draw.text("UI GALLERY", {
-      x: 24,
-      y: 16,
-      size: 22,
-      color: "#e7ecf0",
-      font: `bold 22px ${headerFont}`,
-    });
-    Draw.text("every immediate-mode primitive on one screen", {
-      x: 24,
-      y: 44,
-      size: 12,
-      color: "#8b94a0",
-      font: `12px ${headerFont}`,
-    });
+    // The header stays outside UI.scaled, so its controls remain native-size
+    // and reachable while the board below zooms. Keep the whole chrome in one
+    // centered row and use the built-in theme so it doesn't change appearance
+    // as the gallery's selected theme changes.
+    const HEADER_H = 64;
+    UI.row(
+      {
+        x: 0,
+        y: 0,
+        w: view.w,
+        h: HEADER_H,
+        gap: 16,
+        justify: "center",
+        alignCross: "center",
+        fitCross: true,
+        theme: UI.defaultTheme,
+      },
+      () => {
+        UI.col({ gap: 0, fitCross: true, alignCross: "center" }, () => {
+          UI.text("UI GALLERY", { size: 22, bold: true });
+          UI.text("every immediate-mode primitive on one screen", {
+            color: "dim",
+            size: 12,
+          });
+        });
 
-    // UI-scale knob — drawn in NATIVE screen space (pinned top-right, outside the
-    // UI.scaled block below) so it's always the same size and reachable no matter
-    // how far the board is zoomed. It's the one control that must not scale itself.
-    uiScale = UI.slider({
-      id: uiId("ui-scale"),
-      x: Math.max(232, view.w - 236),
-      y: 20,
-      w: 212,
-      label: "UI Scale",
-      value: uiScale,
-      min: 0.75,
-      max: 2,
-      step: 0.25,
-      format: (v) => `${v.toFixed(2)}x`,
-    });
+        // Layout-box overlay toggle. It drives `layoutCapture` rather than
+        // just a draw flag: the recorder is off by default and costs nothing
+        // until something asks for it.
+        const debugOn = UI.toggle({
+          id: uiId("layout-debug"),
+          label: "Layout",
+          on: layoutDebug,
+          tooltip: "Overlay every layout box — containers, padding and gaps",
+        });
+        if (debugOn !== layoutDebug) {
+          layoutDebug = debugOn;
+          UI.layoutCapture(layoutDebug);
+        }
+
+        uiScale = UI.slider({
+          id: uiId("ui-scale"),
+          w: 212,
+          label: "UI Scale",
+          value: uiScale,
+          min: 0.75,
+          max: 2,
+          step: 0.25,
+          format: (v) => `${v.toFixed(2)}x`,
+        });
+      },
+    );
     // Publish the knob as the GLOBAL UI scale — the DEFAULT FACTOR the no-arg
     // `UI.scaled(() => …)` block below applies. The setting is only a
     // preference; the BLOCK is what applies it, so the boundary between what
@@ -412,7 +444,7 @@ Loop.run({
     // nothing overlaps), and each column AUTO-SIZES its height from its children.
     // `idScope` gives the nested containers stable cache ids.
     const th = UI.getTheme(); // drag & drop bins/preview paint from the live theme
-    const HEADER_H = 64; // header chrome (screen px); the board sits just below it
+    // Header chrome (screen px); the board sits just below it.
     // The popover's anchor, in the board's REFERENCE coords — it's drawn inside
     // the same block, so it carries over without mapping.
     let popoverAt = { x: 24, y: HEADER_H };
@@ -813,15 +845,17 @@ Loop.run({
                   ];
                   bins.forEach((bin, bi) => {
                     const bx = ddBox.x + 12 + bi * (binW + 12);
+                    // No `accepts` predicate: a bin takes its OWN items back, so
+                    // the same gesture that moves an item across also reorders
+                    // one in place.
                     const target = UI.dropTarget<{ item: string; from: string }>({
                       id: `bin:${bin.id}`,
                       x: bx,
                       y: binTop,
                       w: binW,
                       h: binH,
-                      accepts: (payload) => payload.from !== bin.id,
                     });
-                    UI.panel(
+                    const insertAt = UI.panel(
                       {
                         x: bx,
                         y: binTop,
@@ -842,7 +876,8 @@ Loop.run({
                             ? th.danger
                             : undefined,
                       },
-                      () => {
+                      (body) => {
+                        const slots: { x: number; y: number; w: number; h: number }[] = [];
                         bin.items.forEach((item) => {
                           UI.button({
                             id: `drag-button:${bin.id}:${item}`,
@@ -853,6 +888,7 @@ Loop.run({
                           });
                           const itemRect = UI.lastRect();
                           if (itemRect) {
+                            slots.push(itemRect);
                             UI.dragSource({
                               id: `item:${bin.id}:${item}`,
                               ...itemRect,
@@ -860,15 +896,34 @@ Loop.run({
                             });
                           }
                         });
+                        // Drawn AFTER the items so the caret sits over them,
+                        // and `silent` on every bin but the hovered one — a
+                        // payload is in flight for both. An empty bin has no
+                        // slot to sit against, so it offers the body origin
+                        // (`extent` with nothing placed) instead.
+                        return UI.dropIndicator({
+                          items: slots,
+                          axis: "y",
+                          empty: { ...body.extent, w: binW - 12, h: 0 },
+                          silent: !target.hovered,
+                        });
                       },
                     );
-                    // Apply a completed drop: move the item across.
+                    // Apply a completed drop: move the item across, or reorder
+                    // it inside its own bin. Removing first shifts everything
+                    // after the item down one, so an insertion point past it
+                    // has to come back by one to stay where the caret was.
                     if (target.dropped) {
                       const { item, from } = target.dropped.payload;
+                      const sameBin = from === bin.id;
                       if (from === "loadout") binLoadout = binLoadout.filter((x) => x !== item);
                       else binStash = binStash.filter((x) => x !== item);
-                      if (bin.id === "loadout") binLoadout = [...binLoadout, item];
-                      else binStash = [...binStash, item];
+                      const removedBefore = sameBin && bin.items.indexOf(item) < insertAt;
+                      const at = insertAt - (removedBefore ? 1 : 0);
+                      const dest = bin.id === "loadout" ? [...binLoadout] : [...binStash];
+                      dest.splice(at, 0, item);
+                      if (bin.id === "loadout") binLoadout = dest;
+                      else binStash = dest;
                     }
                   });
                 });
@@ -880,7 +935,8 @@ Loop.run({
               // panels, so their height comes from their children.
               UI.col({ w: colW, gap: 16, id: uiId("col5") }, (st) => {
                 // UI.grid — even 2-D cells; here a 4×2 emoji inventory. listItem
-                // paints each cell's hover/selected state; a click selects it.
+                // paints each cell's hover/selected state; a click selects it,
+                // and a drag reorders the grid.
                 const gridBox = st.next(colW, 150);
                 UI.panel(
                   {
@@ -889,22 +945,50 @@ Loop.run({
                     theme: getTheme("panel-alt"),
                   },
                   () => {
+                    const cells = {
+                      x: gridBox.x + 12,
+                      y: gridBox.y + 42,
+                      w: gridBox.w - 24,
+                      h: gridBox.h - 54,
+                    };
+                    // ONE drop target over the whole grid, not one per cell: a
+                    // reorder lands BETWEEN cells, and which gap it lands in is
+                    // `dropIndicator`'s job, not the hit test's.
+                    const slot = UI.dropTarget<{ item: string; index: number }>({
+                      id: uiId("inv-grid"),
+                      ...cells,
+                    });
+                    const cellRects: Rect[] = [];
                     UI.grid(
-                      {
-                        x: gridBox.x + 12,
-                        y: gridBox.y + 42,
-                        w: gridBox.w - 24,
-                        h: gridBox.h - 54,
-                        cols: 4,
-                        count: 8,
-                        gap: 6,
-                      },
+                      { ...cells, cols: 4, count: invSlots.length, gap: 6 },
                       (cell, i) => {
+                        cellRects.push(cell);
                         if (UI.listItem({ id: uiId(`slot-${i}`), ...cell, selected: i === invSel }))
                           invSel = i;
-                        UI.text(invItems[i] ?? "", { ...cell, align: "center", size: 22 });
+                        UI.text(invSlots[i] ?? "", { ...cell, align: "center", size: 22 });
+                        UI.dragSource({
+                          id: uiId(`inv-drag-${i}`),
+                          ...cell,
+                          payload: { item: invSlots[i] ?? "", index: i },
+                        });
                       },
                     );
+                    // `axis: "x"` in a row-major grid: the caret is a vertical
+                    // rule between two cells, and because the nearest INSERTION
+                    // SEGMENT wins (not the nearest cell centre on one axis),
+                    // the end of a row and the start of the next stay distinct.
+                    const at = UI.dropIndicator({
+                      items: cellRects,
+                      axis: "x",
+                      silent: !slot.hovered,
+                    });
+                    if (slot.dropped) {
+                      const { item, index } = slot.dropped.payload;
+                      const next = invSlots.filter((_, i) => i !== index);
+                      next.splice(index < at ? at - 1 : at, 0, item);
+                      invSlots = next;
+                      invSel = next.indexOf(item);
+                    }
                   },
                 );
 
@@ -1403,5 +1487,10 @@ Loop.run({
     // scale it was created at. Inside the block they'd be scaled twice.
     UI.drawFloatText();
     UI.drawTips();
+
+    // The layout-box overlay, last and also outside the block: it draws from
+    // each entry's `screenRect`, which already has the scale baked in, so
+    // inside the block every box would land at scale².
+    if (layoutDebug) UI.drawLayoutOverlay({ dim: 0.12 });
   },
 });

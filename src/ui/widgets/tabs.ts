@@ -82,6 +82,11 @@ export function tabs(opts: TabsOptions): number {
       focusFromPointer(ctx, id);
     }
     const isActive = i === active;
+    // Tabs have a useful, local focus treatment already: the same lit state
+    // that pointer hover uses. The strip is one focusable widget, so the
+    // selected tab is the tab keyboard focus is currently acting on.
+    const focused = keyboardFocused && isActive && theme.focusStyle === "hover";
+    const visuallyHovered = hover || focused;
     const hasTabSkin = !!(
       theme.skin?.frames.tab ||
       theme.skin?.frames.tabHover ||
@@ -89,17 +94,17 @@ export function tabs(opts: TabsOptions): number {
     );
     if (hasTabSkin) {
       drawBox(ctx, x, rect.y, cellW - 2, rect.h, {
-        fill: isActive ? theme.bg : hover ? theme.bgHover : theme.bgActive,
+        fill: visuallyHovered ? theme.bgHover : isActive ? theme.bg : theme.bgActive,
         stroke: theme.border,
         role: "tab",
-        state: isActive ? "active" : hover ? "hover" : "default",
+        state: visuallyHovered ? "hover" : isActive ? "active" : "default",
         // The tab band runs along x. A frame the pack authored vertically
         // (`orientation: "y"`) is rotated into it, which is how a plate whose
         // open edge is on one END becomes a tab whose open edge is its BOTTOM.
         axis: "x",
       });
     } else {
-      ctx.fillStyle = isActive ? theme.bg : hover ? theme.bgHover : theme.bgActive;
+      ctx.fillStyle = visuallyHovered ? theme.bgHover : isActive ? theme.bg : theme.bgActive;
       ctx.fillRect(x, rect.y, cellW - 2, rect.h);
       if (isActive) {
         ctx.fillStyle = theme.accent;
@@ -112,6 +117,6 @@ export function tabs(opts: TabsOptions): number {
   });
   ctx.restore();
   ctx.restore();
-  if (keyboardFocused) drawFocusRing(ctx, rect);
+  if (keyboardFocused && theme.focusStyle !== "hover") drawFocusRing(ctx, rect);
   return active;
 }

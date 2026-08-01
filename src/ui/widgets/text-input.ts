@@ -463,6 +463,7 @@ export function textInput(opts: TextInputOptions): TextInputResult {
   }
   const value = active?.value ?? opts.value;
   const focused = !!active && document.activeElement === active.input;
+  const focusHover = keyboardFocused && theme.focusStyle === "hover";
   const shown = value
     ? opts.type === "password"
       ? "•".repeat(value.length)
@@ -545,10 +546,24 @@ export function textInput(opts: TextInputOptions): TextInputResult {
 
   ctx.save();
   drawBox(ctx, rect.x, rect.y, rect.w, rect.h, {
-    fill: opts.disabled ? theme.bgActive : theme.bg,
-    stroke: focused ? theme.accent : hovered ? theme.accentSoft : theme.border,
+    fill: opts.disabled ? theme.bgActive : focusHover ? theme.bgHover : theme.bg,
+    stroke: focusHover
+      ? theme.accentSoft
+      : focused
+        ? theme.accent
+        : hovered
+          ? theme.accentSoft
+          : theme.border,
     role: "input",
-    state: opts.disabled ? "disabled" : focused ? "active" : hovered ? "hover" : "default",
+    state: opts.disabled
+      ? "disabled"
+      : focusHover
+        ? "hover"
+        : focused
+          ? "active"
+          : hovered
+            ? "hover"
+            : "default",
   });
   ctx.beginPath();
   ctx.rect(
@@ -645,7 +660,7 @@ export function textInput(opts: TextInputOptions): TextInputResult {
     }
   }
   ctx.restore();
-  if (keyboardFocused) drawFocusRing(ctx, rect);
+  if (keyboardFocused && !focusHover) drawFocusRing(ctx, rect);
 
   const changed = active?.changed ?? false;
   const submitted = active?.submitted ?? false;

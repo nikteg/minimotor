@@ -166,11 +166,13 @@ export function button(
   // `clicked` below is untouched, so a button that is also a drag source still
   // clicks when the pointer is released on it without a drag starting.
   const carrying = dragPayloadHeld();
-  const hover = state.hover && !carrying;
+  const pointerHover = state.hover && !carrying;
+  const focusHover = keyboardFocused && theme.focusStyle === "hover";
+  const hover = pointerHover || focusHover;
   const active = state.active && !carrying;
   const clicked = state.clicked || (!opts.disabled && consumeKeyboardActivation(id));
   if (state.clicked) focusFromPointer(ctx, id);
-  hoverCursor(hover);
+  hoverCursor(pointerHover);
 
   const c = variantColors(opts);
   const fill = opts.disabled ? theme.bgActive : active ? c.bgActive : hover ? c.bgHover : c.bg;
@@ -197,7 +199,7 @@ export function button(
     rect.w - 12, // labels squeeze rather than spill
   );
   ctx.restore();
-  if (keyboardFocused) drawFocusRing(ctx, rect);
+  if (keyboardFocused && !focusHover) drawFocusRing(ctx, rect);
 
   return clicked;
 }

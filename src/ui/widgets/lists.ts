@@ -7,6 +7,7 @@ import {
   clearPointerEdges,
   clearWheelClaim,
   consumeKeyboardActivation,
+  dragPayloadHeld,
   dragPointer,
   drawBox,
   drawFocusRing,
@@ -678,9 +679,13 @@ export function scrollbar(opts: ScrollbarOptions): number {
   // gets the same fade the `list`/`grid`/`table` and `overflow` bars use
   // without computing it. An explicit `opacity` still wins; a bar with neither
   // has no region to hover and stays solid.
-  const opacity =
-    opts.opacity ??
-    (opts.wheelArea ? scrollbarFade(id, pointInRect(p.x, p.y, opts.wheelArea), true) : 1);
+  // Once the thumb is grabbed it must remain fully visible even if the
+  // pointer leaves the scroll region or its parent clip while dragging.
+  const dragging = sd.drag?.id === id;
+  const opacity = dragging
+    ? 1
+    : (opts.opacity ??
+      (opts.wheelArea ? scrollbarFade(id, pointInRect(p.x, p.y, opts.wheelArea), true) : 1));
   if (opacity > 0.01) {
     ctx.save();
     ctx.globalAlpha *= opacity;
@@ -747,9 +752,15 @@ export function listItem(opts: ListItemOptions): boolean {
   const state = opts.disabled ? { hover: false, clicked: false } : buttonState(opts, uiPointer());
   const clicked = state.clicked || (!opts.disabled && consumeKeyboardActivation(id));
   if (state.clicked) focusFromPointer(ctx, id);
-  const { hover } = state;
-  hoverCursor(hover);
-  if (hover && opts.tooltip) tooltip(opts.tooltip);
+  // A carried drag payload owns the pointer, so a row it passes over must stop
+  // LOOKING interactive and stop competing with the drop target for the eye —
+  // same rule `button` follows, and the reason a reorderable grid does not
+  // light a cell up under the caret. `clicked` above is untouched.
+  const pointerHover = state.hover && !dragPayloadHeld();
+  const focusHover = keyboardFocused && theme.focusStyle === "hover";
+  const hover = pointerHover || focusHover;
+  hoverCursor(pointerHover);
+  if (pointerHover && opts.tooltip) tooltip(opts.tooltip);
   ctx.save();
   // Decide the fill as a VALUE. Reading it back off the context can't work:
   // canvas normalizes fillStyle, so an assigned "transparent" reads as
@@ -769,6 +780,6 @@ export function listItem(opts: ListItemOptions): boolean {
     ctx.fillRect(opts.x, opts.y, 3, opts.h);
   }
   ctx.restore();
-  if (keyboardFocused) drawFocusRing(ctx, opts);
+  if (keyboardFocused && !focusHover) drawFocusRing(ctx, opts);
   return clicked;
 }

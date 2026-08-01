@@ -9,6 +9,8 @@ import {
   rawPointer,
   uiSlot,
   setCursor,
+  theme,
+  uiCtx,
   uiPointer,
 } from "@src/ui/core/index.js";
 import { pointInRect } from "@src/collision/index.js";
@@ -257,4 +259,126 @@ export function draggedItem<T>(): DraggedItem<T> | null {
 /** Cancel the active drag (scene change, inventory close, Escape). */
 export function cancelDrag(): void {
   st().drag = null;
+}
+
+// ---------- Drop position ----------
+
+/** A laid-out slot the caret can sit against — an item's rect in the list. */
+interface SlotRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** Inputs to `dropIndicator`: the slots a reorder would insert between. */
+export interface DropIndicatorOptions {
+  /** The items' laid-out rects, in the order the list holds them. */
+  items: readonly SlotRect[];
+  /** Which way the items run: `"y"` for a column (the caret is a horizontal
+   *  line between rows), `"x"` for a row or a row-major grid (a vertical line
+   *  between cells). Default `"y"`. */
+  axis?: "x" | "y";
+  /** Where to draw the caret when `items` is empty — normally the container's
+   *  padded box. Without it an empty list draws nothing. */
+  empty?: SlotRect;
+  /** Caret color. Default `theme.accent`. */
+  color?: string;
+  /** Caret thickness in px. Default `max(2, theme.borderWidth)`. */
+  width?: number;
+  /** Px the caret runs past each end of the slot it sits against. Default 2. */
+  overhang?: number;
+  /** Compute the index without drawing anything. */
+  silent?: boolean;
+}
+
+type Caret = readonly [ax: number, ay: number, bx: number, by: number];
+
+/** Shortest distance from a point to a line SEGMENT (not the infinite line —
+ *  the ends matter, or a grid row's caret would attract the pointer from the
+ *  row above it). */
+function distanceToSegment(px: number, py: number, seg: Caret): number {
+  const [ax, ay, bx, by] = seg;
+  const dx = bx - ax;
+  const dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+function paintCaret(seg: Caret, opts: DropIndicatorOptions): void {
+  const ctx = uiCtx();
+  const over = opts.overhang ?? 2;
+  const [ax, ay, bx, by] = seg;
+  const horizontal = ay === by;
+  ctx.save();
+  ctx.strokeStyle = opts.color ?? theme.accent;
+  ctx.lineWidth = opts.width ?? Math.max(2, theme.borderWidth);
+  ctx.beginPath();
+  if (horizontal) {
+    ctx.moveTo(ax - over, ay);
+    ctx.lineTo(bx + over, by);
+  } else {
+    ctx.moveTo(ax, ay - over);
+    ctx.lineTo(bx, by + over);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** Where in a list a release would insert the dragged payload, drawn as a
+ *  caret between two items and returned as the index to splice at.
+ *
+ *  Every insertion point is a line SEGMENT — one edge of one slot — and the
+ *  nearest segment to the pointer wins. That single rule covers columns, rows
+ *  AND row-major grids: a grid's cells offer their left and right edges, so
+ *  the pointer at the end of a row picks that row's trailing edge rather than
+ *  the far-left edge of the row below, which is what comparing coordinates on
+ *  one axis would give.
+ *
+ *  The index is computed from the pointer WHENEVER this is called; only the
+ *  caret is conditional on a payload being in flight. That is deliberate —
+ *  `dropTarget` clears the drag on the release frame, so an indicator that
+ *  went quiet without one would have nothing to report at exactly the moment
+ *  the caller needs the position:
+ *
+ *      const t = UI.dropTarget<Item>({ id: "bag", ...box });
+ *      const at = UI.dropIndicator({ items: slotRects, axis: "x" });
+ *      if (t.dropped) items.splice(at, 0, t.dropped.payload); */
+export function dropIndicator(opts: DropIndicatorOptions): number {
+  const axis = opts.axis ?? "y";
+  const p = uiPointer();
+  // Both edges of every slot: the leading edge inserts BEFORE it, the trailing
+  // edge AFTER. The two are duplicates in a plain list (item i's leading edge
+  // and item i-1's trailing edge both mean "index i") and distinct in a grid,
+  // where they sit on different rows.
+  const candidates: { index: number; seg: Caret }[] = [];
+  for (const [i, r] of opts.items.entries()) {
+    if (axis === "y") {
+      candidates.push({ index: i, seg: [r.x, r.y, r.x + r.w, r.y] });
+      candidates.push({ index: i + 1, seg: [r.x, r.y + r.h, r.x + r.w, r.y + r.h] });
+    } else {
+      candidates.push({ index: i, seg: [r.x, r.y, r.x, r.y + r.h] });
+      candidates.push({ index: i + 1, seg: [r.x + r.w, r.y, r.x + r.w, r.y + r.h] });
+    }
+  }
+  if (candidates.length === 0) {
+    const e = opts.empty;
+    if (!e) return 0;
+    candidates.push({
+      index: 0,
+      seg: axis === "y" ? [e.x, e.y, e.x + e.w, e.y] : [e.x, e.y, e.x, e.y + e.h],
+    });
+  }
+  let best = candidates[0]!;
+  let bestDistance = distanceToSegment(p.x, p.y, best.seg);
+  for (const candidate of candidates) {
+    const distance = distanceToSegment(p.x, p.y, candidate.seg);
+    if (distance < bestDistance) {
+      best = candidate;
+      bestDistance = distance;
+    }
+  }
+  if (!opts.silent && st().drag) paintCaret(best.seg, opts);
+  return best.index;
 }

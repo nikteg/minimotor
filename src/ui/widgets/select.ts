@@ -356,6 +356,7 @@ export function select<T>(opts: SelectOptions<T>): SelectResult<T> {
   // UI scale — clicking the control then couldn't close its own menu.)
   const p = s.editor?.id === id ? dragPointer() : uiPointer();
   const hovered = !opts.disabled && pointInRect(p.x, p.y, rect);
+  const focusHover = keyboardFocused && theme.focusStyle === "hover";
   if (hovered) hoverCursor(true);
 
   // Toggle on release — but never on the release that merely ENDS a scroll
@@ -397,12 +398,26 @@ export function select<T>(opts: SelectOptions<T>): SelectResult<T> {
 
   ctx.save();
   drawBox(ctx, rect.x, rect.y, rect.w, rect.h, {
-    fill: opts.disabled ? theme.bgActive : theme.bg,
-    stroke: editor ? theme.accent : hovered ? theme.accentSoft : theme.border,
+    fill: opts.disabled ? theme.bgActive : focusHover ? theme.bgHover : theme.bg,
+    stroke: focusHover
+      ? theme.accentSoft
+      : editor
+        ? theme.accent
+        : hovered
+          ? theme.accentSoft
+          : theme.border,
     // A select is an input control, not a button: themed skins often provide
     // different nine-slice art and native dimensions for the two surfaces.
     role: "input",
-    state: opts.disabled ? "disabled" : editor ? "active" : hovered ? "hover" : "default",
+    state: opts.disabled
+      ? "disabled"
+      : focusHover
+        ? "hover"
+        : editor
+          ? "active"
+          : hovered
+            ? "hover"
+            : "default",
   });
   ctx.font = uiFont();
   ctx.fillStyle = selected ? theme.text : theme.textDim;
@@ -439,7 +454,7 @@ export function select<T>(opts: SelectOptions<T>): SelectResult<T> {
     ctx.fill();
   }
   ctx.restore();
-  if (keyboardFocused) drawFocusRing(ctx, rect);
+  if (keyboardFocused && !focusHover) drawFocusRing(ctx, rect);
 
   if (editor?.open) {
     markFocusableOverlay(id);

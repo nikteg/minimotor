@@ -313,12 +313,8 @@ export function createTinyRpgThemes(atlas: CanvasImageSource): TinyRpgThemes {
         },
       },
       sprites: {
-        // The first cursor frame occupies a 42×20 cell, but its opaque art is
-        // 40×19. Trim the transparent trailing edge so the slider anchor and
-        // endpoint line up with the visible sprite.
-        cursor: { image: atlas, region: { sx: 336, sy: 352, sw: 40, sh: 19 } },
-        // The whole comet is the knob, but its HEAD is the handle — the tail
-        // trails off to the right. Anchor on the head's center (source x 0–17,
+        // The whole comet is the slider knob, but its HEAD is the handle — the
+        // tail trails off to the right. Anchor on the head's center (source x 0–17,
         // y 1–18) so the value sits under the ball rather than under the middle
         // of the tail.
         sliderKnob: {
@@ -332,6 +328,7 @@ export function createTinyRpgThemes(atlas: CanvasImageSource): TinyRpgThemes {
     // Micro5 is the closest bundled fallback when Adobe Fonts is unavailable.
     font: '"VT323", monospace',
     fontSize: 16,
+    focusStyle: "hover",
     textOutline: { color: "#1a143e", width: 3 },
     buttonW: 0,
     buttonMinW: 96,

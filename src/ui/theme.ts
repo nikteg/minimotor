@@ -61,6 +61,8 @@ export type TilesetFrameRole =
   | "tabActive";
 export type TilesetButtonVariant = "primary" | "danger" | "ghost";
 export type TilesetButtonState = "default" | "hover" | "active" | "disabled";
+/** How keyboard/gamepad focus is painted by interactive widgets. */
+export type ThemeFocusStyle = "ring" | "hover";
 export type TilesetButtonVariants = Partial<
   Record<TilesetButtonVariant, Partial<Record<TilesetButtonState, NineSliceRegion>>>
 >;
@@ -634,6 +636,9 @@ export interface Theme {
   textPad: ThemeTextPadding;
   /** Optional outline painted behind UI text. */
   textOutline?: ThemeTextOutline;
+  /** Keyboard/gamepad focus treatment. `ring` is the default; `hover` makes
+   *  focused controls reuse their ordinary hover appearance. */
+  focusStyle: ThemeFocusStyle;
   /** Optional pixel-art skin. When absent, widgets use the color painter. */
   skin?: TilesetSkin;
 }
@@ -731,6 +736,7 @@ const baseDefaults = {
   panelInset: { x: 0, y: 0 },
   pad: { x: 8, y: 8 },
   textPad: 0,
+  focusStyle: "ring" as ThemeFocusStyle,
 };
 
 // `select` is derived, not authored: it restates the tokens the drop-menu used

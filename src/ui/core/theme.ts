@@ -49,6 +49,7 @@ export {
   type ThemeTextOutline,
   type ThemeButtonText,
   type ThemeSelect,
+  type ThemeFocusStyle,
   shade,
 } from "@src/ui/theme.js";
 export type { Theme } from "@src/ui/theme.js";

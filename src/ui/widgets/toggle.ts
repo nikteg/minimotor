@@ -83,6 +83,8 @@ export function toggle(
   const state = opts.disabled ? { hover: false, clicked: false } : buttonState(rect, uiPointer());
   const clicked = state.clicked || (!opts.disabled && consumeKeyboardActivation(id));
   if (state.clicked) focusFromPointer(ctx, id);
+  const focusHover = keyboardFocused && theme.focusStyle === "hover";
+  const hover = state.hover || focusHover;
   hoverCursor(state.hover);
   if (state.hover && opts.tooltip) tooltip(opts.tooltip);
   const on = clicked ? !opts.on : opts.on;
@@ -99,7 +101,7 @@ export function toggle(
   if (!drawThemeSprite(ctx, spriteName, rect.x, rect.y, size, size)) {
     drawBox(ctx, rect.x, rect.y, size, size, {
       fill: theme.bgActive,
-      stroke: state.hover ? theme.accent : theme.border,
+      stroke: hover ? theme.accent : theme.border,
       radius: radio ? size / 2 : boxR,
     });
     if (on) {
@@ -120,6 +122,6 @@ export function toggle(
   ctx.textAlign = "left";
   centeredText(ctx, opts.label, rect.x + size + theme.spacing.md, rect.y + size / 2);
   ctx.restore();
-  if (keyboardFocused) drawFocusRing(ctx, rect);
+  if (keyboardFocused && !focusHover) drawFocusRing(ctx, rect);
   return on;
 }
