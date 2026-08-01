@@ -279,14 +279,15 @@ function drawOrientedNineSlice(
 
 const tintedAtlasCache = new WeakMap<object, Map<string, CanvasImageSource>>();
 
-/** Create a cached, detail-preserving RECOLOR of an atlas. Keeping the tint on
+/** Create a cached, detail-preserving tint of an atlas. Keeping the tint on
  *  the source image means nine-slice borders, corners, and repeated pixels
  *  all receive the same treatment without tinting the surface behind them.
  *
- *  The art keeps its own LUMINOSITY and only takes the tint's hue/saturation,
- *  so a tinted button is the same button in another color — highlights, shading
- *  and outlines all survive. (A multiply would instead darken every pixel
- *  toward the tint, which turns a blue button brown rather than orange.) */
+ *  This MULTIPLIES, so it can only darken toward the tint — the right tool for
+ *  shading light art (a parchment frame going amber), not for restating a hue.
+ *  To swap specific colors — a blue button plate becoming orange while its gold
+ *  caps stay gold — palette-swap the atlas with `Tiles.recolor` and point the
+ *  frame at the returned image via `NineSliceRegion.image`. */
 function tintedAtlas(image: CanvasImageSource, color: string): CanvasImageSource {
   if (!color) return image;
   const source = image as CanvasImageSource & {

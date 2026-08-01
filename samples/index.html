@@ -205,8 +205,8 @@
       figure.snippet figcaption {
         display: flex;
         align-items: center;
-        flex-wrap: wrap;
-        gap: 8px 12px;
+        justify-content: space-between;
+        gap: 12px;
         padding: 10px 12px 10px 16px;
         border-bottom: 1px solid var(--border);
         font-size: 0.9rem;
@@ -216,16 +216,6 @@
       figure.snippet figcaption b {
         color: var(--text);
         font-weight: 600;
-      }
-      /* Derived from the snippet's own source, in the same chips the showcase
-         uses — so the two sections describe the engine with one vocabulary. */
-      .snippet-tags {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 5px;
-      }
-      figure.snippet figcaption .spacer {
-        flex: 1;
       }
       button.copy {
         flex: 0 0 auto;
@@ -668,8 +658,6 @@
           <figure class="snippet">
             <figcaption>
               <span><b>Move a square</b> — the whole engine, minus everything</span>
-              <span class="snippet-tags" data-for="square"></span>
-              <span class="spacer"></span>
               <button class="copy" type="button">Copy</button>
             </figcaption>
             <pre><code data-example="square"></code></pre>
@@ -678,8 +666,6 @@
           <figure class="snippet">
             <figcaption>
               <span><b>Tiles &amp; collision</b> — the level is the source</span>
-              <span class="snippet-tags" data-for="tiles"></span>
-              <span class="spacer"></span>
               <button class="copy" type="button">Copy</button>
             </figcaption>
             <pre><code data-example="tiles"></code></pre>
@@ -688,8 +674,6 @@
           <figure class="snippet">
             <figcaption>
               <span><b>Animate a sprite</b> — one image per state</span>
-              <span class="snippet-tags" data-for="anim"></span>
-              <span class="spacer"></span>
               <button class="copy" type="button">Copy</button>
             </figcaption>
             <pre><code data-example="anim"></code></pre>
@@ -698,8 +682,6 @@
           <figure class="snippet">
             <figcaption>
               <span><b>Follow camera + ECS</b> — data never draws itself</span>
-              <span class="snippet-tags" data-for="camera"></span>
-              <span class="spacer"></span>
               <button class="copy" type="button">Copy</button>
             </figcaption>
             <pre><code data-example="camera"></code></pre>
@@ -1394,23 +1376,6 @@
           "afterbegin",
           `<span class="gutter" aria-hidden="true">${Array.from({ length: lines }, (_, i) => i + 1).join("\n")}</span>`,
         );
-      }
-
-      // ---- snippet tags ----
-      // Read off the snippet's own source rather than written by hand, so a
-      // caption cannot claim an API the code below it stopped using. A
-      // namespace shows up as `Name.` at a call site; the few that samples bind
-      // in lower case (`const ecs = createEcs()`) are found by their factory.
-      const FACTORY = { createEcs: "ECS", createAssets: "Assets", createApp: "Draw" };
-      const VOCAB = Object.values(NS).flat();
-      for (const slot of document.querySelectorAll(".snippet-tags")) {
-        const src = document.querySelector(`code[data-example="${slot.dataset.for}"]`)?.textContent;
-        if (!src) continue;
-        const found = new Set(VOCAB.filter((n) => new RegExp(`\\b${n}\\.`).test(src)));
-        for (const [fn, ns] of Object.entries(FACTORY)) if (src.includes(fn)) found.add(ns);
-        slot.innerHTML = VOCAB.filter((n) => found.has(n))
-          .map((n) => chip(n))
-          .join("");
       }
 
       // ---- copy-code buttons ----
