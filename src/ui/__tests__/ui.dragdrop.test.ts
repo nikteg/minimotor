@@ -235,6 +235,8 @@ function newFrame(): void {
   selectUiApp(fixture.app);
 }
 
+/** Sub-paths started this frame. The caret is an I-beam — a rule plus a tick
+ *  at each end — so "drawn" is >0, not any particular count. */
 function strokes(): number {
   return (fixture.ctx.moveTo as unknown as ReturnType<typeof vi.fn>).mock.calls.length;
 }
@@ -291,7 +293,7 @@ describe("dropIndicator draws only while a payload is in flight", () => {
   it("draws the caret once a payload is carried over the list", () => {
     carryTo(50, 34);
     dropIndicator({ items: COLUMN, axis: "y" });
-    expect(strokes()).toBe(1);
+    expect(strokes()).toBeGreaterThan(0);
   });
 
   it("honours `silent` so only the hovered list of several shows a caret", () => {

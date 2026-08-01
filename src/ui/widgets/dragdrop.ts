@@ -306,21 +306,35 @@ function distanceToSegment(px: number, py: number, seg: Caret): number {
   return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
 }
 
+/** The caret is an I-beam, not a plain rule: a bare line is the same shape as
+ *  `listItem`'s selected-row rail (3px of `theme.accent`), which in a GRID
+ *  cell stands vertically right next to where the caret goes. The end ticks
+ *  are what keep "insert here" from reading as "this one is selected". */
 function paintCaret(seg: Caret, opts: DropIndicatorOptions): void {
   const ctx = uiCtx();
+  const width = opts.width ?? Math.max(2, theme.borderWidth);
   const over = opts.overhang ?? 2;
+  const tick = Math.max(3, width * 1.5);
   const [ax, ay, bx, by] = seg;
   const horizontal = ay === by;
   ctx.save();
   ctx.strokeStyle = opts.color ?? theme.accent;
-  ctx.lineWidth = opts.width ?? Math.max(2, theme.borderWidth);
+  ctx.lineWidth = width;
   ctx.beginPath();
   if (horizontal) {
     ctx.moveTo(ax - over, ay);
     ctx.lineTo(bx + over, by);
+    ctx.moveTo(ax - over, ay - tick);
+    ctx.lineTo(ax - over, ay + tick);
+    ctx.moveTo(bx + over, by - tick);
+    ctx.lineTo(bx + over, by + tick);
   } else {
     ctx.moveTo(ax, ay - over);
     ctx.lineTo(bx, by + over);
+    ctx.moveTo(ax - tick, ay - over);
+    ctx.lineTo(ax + tick, ay - over);
+    ctx.moveTo(bx - tick, by + over);
+    ctx.lineTo(bx + tick, by + over);
   }
   ctx.stroke();
   ctx.restore();
