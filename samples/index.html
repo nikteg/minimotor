@@ -443,6 +443,15 @@
          number in one vertical rule. `auto-fill` down to 140px keeps the
          widest chip intact and reflows to fewer columns on a narrow window. */
       .filter-tags {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      /* Every band is the same grid template at the same width, so the columns
+         line up across bands — the picker reads as one table, just with each
+         colour on its own rows. The gap between bands is wider than the gap
+         within one, which is what makes the grouping visible without a label. */
+      .filter-band {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
         gap: 6px;
@@ -1257,12 +1266,19 @@
       // Filter chips follow the same family order as the card tags, and each
       // sub-namespace sits right after its parent — so a chip and the tag it
       // matches occupy the same place in both rows.
-      const USED = Object.values(NS)
-        .flat()
-        .flatMap((n) => [
-          ...(counts.has(n) ? [n] : []),
-          ...[...counts.keys()].filter((k) => k.startsWith(`${n}.`)).sort(),
-        ]);
+      // One entry per family, in NS order, each holding the namespaces from
+      // that family that any sample actually uses — with sub-namespaces right
+      // after their parent.
+      const BANDS = Object.entries(NS)
+        .map(([family, names]) => [
+          family,
+          names.flatMap((n) => [
+            ...(counts.has(n) ? [n] : []),
+            ...[...counts.keys()].filter((k) => k.startsWith(`${n}.`)).sort(),
+          ]),
+        ])
+        .filter(([, names]) => names.length > 0);
+      const USED = BANDS.flatMap(([, names]) => names);
 
       const picked = new Set(
         (new URL(location.href).searchParams.get("ns") ?? "")
@@ -1272,8 +1288,15 @@
       const tagBar = document.getElementById("filter-tags");
       const summary = document.getElementById("filter-summary");
       const clear = document.getElementById("filter-clear");
-      tagBar.innerHTML = USED.map((n) =>
-        chip(n, ` role="button" tabindex="0" aria-pressed="false"`),
+      // Each family gets its OWN grid, so a family never shares a row with the
+      // next one and each colour reads as a horizontal band. The grids are
+      // identical templates at identical widths, so their columns still line up
+      // with each other — the bands look like one table with gaps in it.
+      tagBar.innerHTML = BANDS.map(
+        ([family, names]) =>
+          `<div class="filter-band" data-family="${family}">${names
+            .map((n) => chip(n, ` role="button" tabindex="0" aria-pressed="false"`))
+            .join("")}</div>`,
       ).join("");
       // Counts are appended after the fact so `chip` stays the one place a tag
       // is built — the card rows and the filter row cannot drift apart.
