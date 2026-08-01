@@ -302,13 +302,48 @@
         gap: 5px;
         margin-bottom: 10px;
       }
+      /* Every tag is a minimotor namespace, coloured by the subsystem family it
+         belongs to — so scanning the grid for "which samples touch the net" is
+         a colour match rather than a read. One hue per family, expressed once
+         as `--h` and reused for text, fill and border. */
       a.card .tag {
-        background: var(--panel-2);
-        color: var(--accent);
+        background: hsl(var(--h) 55% 62% / 0.14);
+        color: hsl(var(--h) 70% 72%);
         font-size: 0.72rem;
+        font-family: ui-monospace, monospace;
         padding: 2px 8px;
         border-radius: 5px;
-        border: 1px solid var(--border);
+        border: 1px solid hsl(var(--h) 55% 62% / 0.32);
+      }
+      .ns-core {
+        --h: 215;
+      }
+      .ns-render {
+        --h: 280;
+      }
+      .ns-world {
+        --h: 150;
+      }
+      .ns-input {
+        --h: 35;
+      }
+      .ns-ui {
+        --h: 190;
+      }
+      .ns-audio {
+        --h: 10;
+      }
+      .ns-net {
+        --h: 325;
+      }
+      .ns-data {
+        --h: 90;
+      }
+      /* Namespaces with no family — greyed rather than given a meaningless hue. */
+      a.card .tag.ns-none {
+        background: var(--panel-2);
+        color: var(--dim);
+        border-color: var(--border);
       }
       a.card p {
         color: var(--dim);
@@ -530,7 +565,45 @@
     </footer>
 
     <script>
+      // ---- namespace vocabulary ----
+      // Card tags are minimotor NAMESPACES, not free text: every tag below is
+      // something you can actually import and call. That makes the grid
+      // searchable ("what uses Physics2D?") and keeps the catalog honest — a
+      // tag that stops matching the code is a tag that fails the check below.
+      //
+      // The colour is the subsystem FAMILY, so a glance sorts the grid by what
+      // part of the engine a sample exercises rather than by its title.
+      const NS = {
+        core: [
+          "createApp",
+          "Loop",
+          "Draw",
+          "Collision",
+          "Mathf",
+          "Vec2",
+          "Goodies",
+          "Gizmos",
+          "Fsm",
+          "Flow",
+          "Signals",
+          "Hot",
+        ],
+        render: ["Sprites", "Anim", "Aseprite", "Font", "Particles", "Camera", "Transitions"],
+        world: ["Tiles", "LDtk", "Procgen", "Platformer", "Portals", "Physics2D"],
+        input: ["Input", "Keys", "Pointer", "OnscreenInput"],
+        ui: ["UI", "Scenes", "Debug"],
+        audio: ["Audio"],
+        net: ["Net", "Snapshots"],
+        data: ["Assets", "Storage", "Autosave", "Timers", "Clock", "RNG", "ECS", "Capture"],
+      };
+      const FAMILY = Object.fromEntries(
+        Object.entries(NS).flatMap(([family, names]) => names.map((n) => [n, family])),
+      );
+
       // ---- sample catalog (single source of truth for the showcase) ----
+      // FUNDAMENTALS put one capability front and center; GAMES compose many
+      // into a playable loop. A sample that demonstrates an API rather than
+      // being something you play belongs above the line, however elaborate.
       const FUNDAMENTALS = [
         [
           "minimal",
@@ -543,7 +616,7 @@
           "touchpad",
           "Touch Gamepad",
           "",
-          ["OnscreenInput", "Input.map", "touch"],
+          ["OnscreenInput", "Input", "Gizmos"],
           "An on-screen analog stick + buttons that feed the same Input.map bindings as a keyboard or hardware pad. Drive a rover — on a phone, a mouse, or the keyboard.",
         ],
         [
@@ -557,15 +630,29 @@
           "ui-gallery",
           "UI Gallery",
           "",
-          ["UI", "immediate-mode", "auto-size"],
+          ["UI", "Draw"],
           "Every UI primitive on one screen — buttons, toggles, sliders, selects, text input, tabs, lists, tables, progress bars, popovers, dialogs and drag & drop.",
+        ],
+        [
+          "fonts",
+          "Fonts",
+          "",
+          ["Font", "Draw", "Sprites"],
+          "Text every way: canvas type against a hand-drawn bitmap font, tinted from one white atlas, with outlines, drop shadows, wrapping and an icon font.",
         ],
         [
           "sprites",
           "Sprites",
           "",
-          ["Sprites.atlas", "Anim", "ECS"],
+          ["Sprites", "Anim", "ECS"],
           "A procedural sheet baked with Sprites.atlas, animated with Anim.fromGrid and blitted via Draw.sprites(ecs.dense(...)).",
+        ],
+        [
+          "procgen",
+          "Procgen",
+          "",
+          ["Procgen", "Tiles", "RNG"],
+          "Four generators on one screen: dungeon topology, caves, adjacency synthesis and a gradient-steered variant — with dual-grid autotiling and merged collision overlays.",
         ],
         [
           "bounce",
@@ -585,7 +672,7 @@
           "particles",
           "Particles",
           "",
-          ["ECS", "Sprites", "Pointer"],
+          ["Particles", "ECS", "Sprites"],
           "A firework spark effect on the ECS. Click to spawn; gravity pulls the sparks down.",
         ],
         [
@@ -599,14 +686,14 @@
           "tiles",
           "Tiles",
           "",
-          ["Tiles", "Camera", "Input.gamepad"],
+          ["Tiles", "Camera", "Input"],
           "A scrolling tile platformer culled to the camera, on keyboard or gamepad.",
         ],
         [
           "juice",
           "Juice",
           "",
-          ["Particles", "Camera.shake", "Input.vibrate"],
+          ["Particles", "Camera", "Input"],
           "Impact feedback: particle bursts, screen shake and haptics on every hit.",
         ],
         [
@@ -620,56 +707,56 @@
           "serverbrowser",
           "Server Browser",
           "",
-          ["UI.table", "Pointer.wheel"],
+          ["UI", "Pointer"],
           "A full immediate-mode GUI screen: tabs, toggles, a sortable scrollable table and a mock join flow. No DOM.",
         ],
         [
           "menu-nav",
           "Menu Nav",
           "",
-          ["UI.focus", "setNavPad", "OnscreenInput"],
+          ["UI", "Input", "OnscreenInput"],
           "Keyboard + gamepad focus navigation across UI widgets — Tab / D-pad to move, Enter / A to activate. The on-screen D-pad drives the menu too.",
         ],
         [
           "dual-canvas",
           "Dual Canvas",
           "",
-          ["createApp", "createUI", "multi-game"],
+          ["createApp", "UI"],
           "Two independent apps on one page, each driving its own explicitly bound immediate-mode UI.",
         ],
         [
           "swept",
           "Swept Collision",
           "",
-          ["Collision", "sweptAABB"],
+          ["Collision", "Mathf"],
           "A projectile into a thin wall — toggle swept vs per-frame overlap and watch fast movers tunnel.",
         ],
         [
           "netroom",
           "Net Room",
           "",
-          ["Net.game", "share", "multiplayer"],
+          ["Net", "Camera", "Input"],
           "The smallest real multiplayer game: join a room, share a blob, grab shared coins. Add ?server to route the identical code through a dedicated server instead of peer-to-peer.",
         ],
         [
           "netpeer",
           "P2P Data Channel",
           "",
-          ["Net", "WebRTC"],
+          ["Net", "UI"],
           "A real WebRTC data channel, both peers in one page. The right dot is drawn only from bytes that crossed the wire.",
         ],
         [
           "netrtc",
           "WebRTC Host / Join",
           "",
-          ["Net", "WebRTC", "multiplayer"],
+          ["Net", "UI"],
           "Pure peer-to-peer multiplayer in a star topology via Net.host / Net.join over a signaling relay.",
         ],
         [
           "netws",
           "WebSocket Console",
           "",
-          ["Net", "WebSocket"],
+          ["Net"],
           "Connect to any WebSocket server and echo messages both ways, running outside the game loop.",
         ],
         [
@@ -699,21 +786,21 @@
           "api-lab",
           "API Lab",
           "✨",
-          ["everything", "platformer", "net"],
+          ["LDtk", "Platformer", "Portals", "Net"],
           "The flagship multiplayer platformer that designed the current API: three LDtk levels, portals, slopes, ladders, gems, animation, audio, UI and synchronized players in one terse sample.",
         ],
         [
           "pixel-adventure",
           "Pixel Adventure",
           "",
-          ["Anim.fromImages", "Tiles", "Collision", "Camera"],
+          ["Anim", "Tiles", "Collision", "Camera"],
           "A complete platformer on Pixel Frog CC0 art: autotiled terrain, a multi-image Anim.fromImages player, moveAndSlide collision, stomp combat and synth SFX.",
         ],
         [
           "ascent",
           "Ascent",
           "",
-          ["Fsm", "Timers", "ECS", "Sprites.atlas"],
+          ["Fsm", "Timers", "ECS", "Sprites"],
           "A Celeste-style precision platformer: forced dash-crystal chains over spike voids, wall jumps and coyote time.",
         ],
         [
@@ -727,75 +814,67 @@
           "road-rivals",
           "Road Rivals",
           "",
-          ["Net", "Physics2D", "Interpolator"],
+          ["Net", "Physics2D", "Snapshots"],
           "Two live clients in one page: fight on foot, drive a drifting car, and see remote players smoothed by snapshot interpolation.",
         ],
         [
           "netgame",
           "Multiplayer Blobs",
           "",
-          ["Net.connect", "Interpolator"],
+          ["Net", "Snapshots"],
           "Every open tab is a player, relayed by the dev server. Sends at 20 Hz — remotes glide via interpolation.",
         ],
         [
           "pocket",
           "Pocket Asteroids",
           "",
-          ["Game", "Input.gamepad", "Particles"],
+          ["Input", "Particles", "Goodies"],
           "A full Asteroids loop: rotate, thrust, wrap, fire, split rocks, clear waves and hyperspace.",
         ],
         [
           "guild-trader",
           "Guild Trader",
           "",
-          ["UI.dialog", "drag & drop", "loot"],
+          ["UI", "Goodies", "Flow"],
           "Trade with Mara using draggable stack inventories, weighted loot and fair encounter bags.",
-        ],
-        [
-          "fonts",
-          "Fonts",
-          "",
-          ["bitmap fonts", "outline", "tinting"],
-          "Text every way: canvas type against a hand-drawn bitmap font, tinted from one white atlas, with outlines, drop shadows, wrapping and an icon font.",
-        ],
-        [
-          "procgen",
-          "Procgen",
-          "",
-          ["WFC", "MAP-Elites", "gradient steering"],
-          "Four generators on one screen: dungeon topology, caves, adjacency synthesis and a gradient-steered variant \u2014 with dual-grid autotiling and merged collision overlays.",
         ],
         [
           "dungeon-scout",
           "Dungeon Scout",
           "",
-          ["flood fill", "line of sight", "grid"],
+          ["Goodies", "Gizmos", "Mathf"],
           "Explore generated rooms with reachable-region, grid-line and field-of-view recipes.",
         ],
         [
           "lead-defender",
           "Lead Defender",
           "",
-          ["target leading", "waves", "particles"],
+          ["Goodies", "Collision", "Particles"],
           "An automated turret predicts moving targets through escalating radial enemy waves.",
         ],
         [
           "checkpoint-rally",
           "Checkpoint Rally",
           "",
-          ["Physics2D", "Gizmos.car", "Audio.engine"],
+          ["Physics2D", "Gizmos", "Audio"],
           "Drive a circuit hitting gates in order; a dead-zone camera, a corner minimap and your best lap time.",
         ],
         [
           "solitaire",
           "Solitaire",
           "",
-          ["Scenes", "UI", "drag & drop"],
+          ["Scenes", "UI", "Storage"],
           "Klondike solitaire: drag-and-drop, undo, hints, a win celebration and persisted stats.",
         ],
       ];
       const card = ([slug, title, flag, tags, desc]) => {
-        const t = tags.map((x) => `<span class="tag">${x}</span>`).join("");
+        const t = tags
+          .map((x) => {
+            const family = FAMILY[x];
+            if (!family) console.warn(`sample "${slug}": "${x}" is not a minimotor namespace`);
+            return `<span class="tag ns-${family ?? "none"}">${x}</span>`;
+          })
+          .join("");
         const f = flag ? `<span class="flag">${flag}</span>` : "";
         return `<a class="card" href="./${slug}/"><h3>${title}${f}</h3><div class="tags">${t}</div><p>${desc}</p></a>`;
       };
