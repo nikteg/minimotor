@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp, type App } from "@src/engine/index.js";
 import { selectUiApp } from "@src/ui/core/state.js";
-import { _reset, col, scaled, select, spacer } from "@src/ui/api.js";
+import { _reset, button, col, scaled, select, spacer } from "@src/ui/api.js";
 
 let rafCallback: ((t: number) => void) | null = null;
 const origGc = HTMLCanvasElement.prototype.getContext;
@@ -210,6 +210,34 @@ describe("select drop-menu scrolling", () => {
     tick();
     const labels = visibleLabels(game);
     expect(labels).toContain("Bangkok");
+  });
+
+  it("captures background clicks while the deferred menu is open", () => {
+    let behindClicks = 0;
+    let city = "Auckland";
+    const { canvas } = build(() => {
+      city = select({
+        id: "city",
+        value: city,
+        options: CITIES.map((c) => ({ label: c, value: c })),
+        x: 20,
+        y: 20,
+        w: 180,
+        h: 32,
+      }).value;
+      if (button({ id: "behind", x: 20, y: 130, w: 180, h: 32, label: "Behind" })) behindClicks++;
+    });
+    tick();
+    downAt(canvas, 60, 36);
+    tick();
+    upAt(60, 36);
+    tick();
+    // This point is inside the open menu and the background button at once.
+    downAt(canvas, 60, 150);
+    tick();
+    upAt(60, 150);
+    tick();
+    expect(behindClicks).toBe(0);
   });
 
   for (const nested of [false, true]) {

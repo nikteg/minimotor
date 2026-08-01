@@ -1,0 +1,4 @@
+Paper Pixels - 8x8 Asset Pack is released under CC0 1.0 by VEXED.
+Source: https://v3x3d.itch.io/paper-pixels
+
+The gallery uses the first 24x24 panel tile from UI.png as a nine-slice frame.

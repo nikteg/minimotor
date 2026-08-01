@@ -14,7 +14,7 @@
 //   lists      — list / grid / scrollbar / listItem
 //   table      — sortable data table
 //   overlays   — popover / modal / confirm / dialog
-//   dragdrop   — drag & drop
+//   dragdrop   — drag & drop and direct pointer drag gestures
 //   float-text — rising score/damage numbers
 //   tooltip    — hover tooltip
 //   select     — native-backed dropdown
@@ -37,6 +37,6 @@ export * from "./tooltip.js";
 export * from "./world-label.js";
 export * from "./minimap.js";
 export { select } from "./select.js";
-export type { SelectOption, SelectOptions, SelectResult } from "./select.js";
+export type { SelectGroup, SelectOption, SelectOptions, SelectResult } from "./select.js";
 export { textInput } from "./text-input.js";
 export type { TextInputOptions, TextInputResult } from "./text-input.js";

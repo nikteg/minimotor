@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <title>Fonts - Minimotor</title>
+    <!--
+      `createApp` runs with `fullscreen: true` (the default), which injects
+      `fullscreenCSS` and sets the canvas to the window size. Both happen from
+      JS, so between first paint and module execution a bare <canvas> sits at
+      its default 300x150 and then pops to full-window.
+
+      These rules are that same end state, written statically, so the first
+      paint already matches: the engine's stylesheet lands on top and agrees.
+      The viewport meta above is likewise what `ensureViewportMeta` would
+      patch in — declaring it here means no reflow when it does.
+    -->
+    <style>
+      *,
+      *::before,
+      *::after {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #12141c;
+      }
+      canvas {
+        display: block;
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        touch-action: none;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="game"></canvas>
+    <script type="module" src="./fonts.ts"></script>
+  </body>
+</html>

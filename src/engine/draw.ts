@@ -9,6 +9,33 @@ interface DrawTarget {
   readonly spriteScratch: DrawSprite[];
 }
 
+/** Anything `Draw.text` can draw glyphs from that is not a CSS font string —
+ *  in practice a `Font.atlas` bitmap font. Declared structurally here for the
+ *  same reason `TilesLike` is: the renderer must not import the capability. */
+export interface FontLike {
+  /** Draw `str` at (x, y). The `Draw.text` options are passed straight
+   *  through, minus the ones only a CSS font understands. */
+  render(
+    ctx: CanvasRenderingContext2D,
+    str: string,
+    x: number,
+    y: number,
+    style: {
+      color?: string;
+      scale?: number;
+      align?: TextHAlign;
+      baseline?: TextVAlign;
+      tracking?: number;
+      lineHeight?: number;
+      outline?: string;
+      outlineWidth?: number;
+      outlineStyle?: "round" | "cross";
+      shadow?: { x: number; y: number };
+      shadowColor?: string;
+    },
+  ): void;
+}
+
 /** Options for `Draw.text` — plain ambient-space text (world-anchored damage
  *  numbers, name tags). For themed, screen-space HUD text use `UI.text`. */
 export interface DrawTextOptions {
@@ -16,16 +43,38 @@ export interface DrawTextOptions {
   x: number;
   /** Ambient-space y of the text, anchored by `baseline`. */
   y: number;
-  /** Font size in px (monospace). Default 16. */
+  /** Font size in px (monospace). Default 16. Ignored by a bitmap font, which
+   *  has one true size — use `scale` instead. */
   size?: number;
-  /** Full CSS font string — overrides `size`. */
-  font?: string;
-  /** Fill. A CSS color, or a gradient from `Draw.linear`/`Draw.radial`. Default "#fff". */
+  /** Full CSS font string — overrides `size` — or a bitmap font from
+   *  `Font.atlas`/`Font.glyphs`. */
+  font?: string | FontLike;
+  /** Fill. A CSS color, or a gradient from `Draw.linear`/`Draw.radial`. Default "#fff".
+   *  A bitmap font tints, so it takes colors but not gradients. */
   color?: Fill;
   /** Horizontal anchor of `x`. Default "left". */
   align?: TextHAlign;
   /** Vertical anchor of `y`. Default "top". */
   baseline?: TextVAlign;
+  /** Bitmap fonts only: integer upscale factor. Default 1. */
+  scale?: number;
+  /** Bitmap fonts only: extra pixels between glyphs, overriding the font's own
+   *  tracking. */
+  tracking?: number;
+  /** Bitmap fonts only: line spacing in pixels, for text containing "\n". */
+  lineHeight?: number;
+  /** Bitmap fonts only: halo colour behind the glyphs, for legibility over
+   *  busy backgrounds. Grows outward, so it does not change the text width. */
+  outline?: string;
+  /** Bitmap fonts only: outline thickness in font pixels. Default 1. */
+  outlineWidth?: number;
+  /** Bitmap fonts only: "round" haloes all eight neighbours, "cross" only the
+   *  four orthogonal. Default "round". */
+  outlineStyle?: "round" | "cross";
+  /** Bitmap fonts only: drop-shadow offset in font pixels. */
+  shadow?: { x: number; y: number };
+  /** Bitmap fonts only: shadow colour. Default: `outline`, else black. */
+  shadowColor?: string;
 }
 
 // ---------- Ambient-space drawing primitives ----------
@@ -680,6 +729,24 @@ function particles(this: DrawTarget, sys: ParticleLike): void {
  *  themed, screen-space HUD text use `UI.text`. */
 function text(this: DrawTarget, str: string, opts: DrawTextOptions): void {
   const ctx = this.ctx;
+  if (opts.font !== undefined && typeof opts.font !== "string") {
+    // A gradient means nothing to a tinted blit, so it is dropped rather than
+    // stringified into a nonsense CSS color.
+    opts.font.render(ctx, str, opts.x, opts.y, {
+      ...(typeof opts.color === "string" ? { color: opts.color } : {}),
+      ...(opts.scale !== undefined ? { scale: opts.scale } : {}),
+      ...(opts.align !== undefined ? { align: opts.align } : {}),
+      ...(opts.baseline !== undefined ? { baseline: opts.baseline } : {}),
+      ...(opts.tracking !== undefined ? { tracking: opts.tracking } : {}),
+      ...(opts.lineHeight !== undefined ? { lineHeight: opts.lineHeight } : {}),
+      ...(opts.outline !== undefined ? { outline: opts.outline } : {}),
+      ...(opts.outlineWidth !== undefined ? { outlineWidth: opts.outlineWidth } : {}),
+      ...(opts.outlineStyle !== undefined ? { outlineStyle: opts.outlineStyle } : {}),
+      ...(opts.shadow !== undefined ? { shadow: opts.shadow } : {}),
+      ...(opts.shadowColor !== undefined ? { shadowColor: opts.shadowColor } : {}),
+    });
+    return;
+  }
   drawText(ctx, str, opts.x, opts.y, {
     font: opts.font ?? (opts.size !== undefined ? monoFont(opts.size) : undefined),
     color: opts.color,

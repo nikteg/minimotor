@@ -12,6 +12,32 @@
 // internals stay private); core is re-exported selectively, keeping the public
 // `createUI(app)` surface while keeping every raw widget implementation private.
 export * from "./widgets/index.js";
+export {
+  createTilesetSkin,
+  createTilesetSkinFromManifest,
+  drawThemeSprite,
+  frameFromCell,
+  inspectTilesetSkin,
+} from "./core/index.js";
+export type {
+  NineSliceRegion,
+  TileRegion,
+  TilesetButtonState,
+  TilesetButtonVariant,
+  TilesetButtonVariants,
+  TilesetFrameRole,
+  TilesetSkin,
+  TilesetSkinOptions,
+  TilesetSprite,
+  TilesetCellSource,
+  TilesetManifestRegion,
+  TilesetManifestSprite,
+  TilesetSkinManifest,
+  TilesetMapping,
+  TilesetButtonVariantsManifest,
+  TilesetDebugEntry,
+  TilesetDebugInfo,
+} from "./core/index.js";
 
 export {
   blur,
@@ -35,6 +61,7 @@ export {
   setNavPad,
   setScale,
   setTheme,
+  withTheme,
   flow,
   text,
   textWidth,
@@ -60,4 +87,10 @@ export type {
   FlowOptions,
   TextOptions,
   Theme,
+  ThemeOverrides,
+  ThemePadding,
+  ThemeSpacing,
+  ThemeTextPadding,
+  ThemeButtonText,
+  ThemeTextOutline,
 } from "./core/index.js";

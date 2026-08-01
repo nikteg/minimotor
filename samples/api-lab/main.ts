@@ -1,6 +1,6 @@
 // API Lab — one small game exercising the public API. [#n] references
 // API-REVIEW.md.
-import { Collision, Mathf, createApp, type BodyState, type Shared } from "minimotor";
+import { Collision, Mathf, Tiles, createApp, type BodyState, type Shared } from "minimotor";
 import * as Sprites from "minimotor/sprites";
 import { createAnimation } from "minimotor/animation";
 import { createAssets } from "minimotor/assets";
@@ -347,15 +347,16 @@ function updateWorld(): void {
   const run = input.axis("left", "right"); // [#8]
   const climbAxis = input.axis("up", "down");
 
-  // [#14] The level itself is the ladder source. One helper handles entering,
-  // staying attached, centering, and vertical velocity.
+  // [#14] `Tiles.climbable` presents the level's "ladder"-tagged regions as a
+  // collision LadderSource. One helper handles entering, staying attached,
+  // centering, and vertical velocity.
   const ladderJump = climbing && input.jump.pressed && !input.up.down;
   if (ladderJump) {
     climbing = false;
     player.vel.y = JUMP * 0.85;
     sfx.jump.play({ pitch: 1.15 });
   } else {
-    climbing = Collision.climbLadder(player, level, climbAxis, {
+    climbing = Collision.climbLadder(player, Tiles.climbable(level), climbAxis, {
       active: climbing,
       autoGrab: true,
       speed: CLIMB_SPEED,
@@ -648,7 +649,7 @@ function drawMinimap(remotes: readonly RemotePlayer[]): void {
         at: layout.next(232, 88),
         view: Camera.rect,
         tile: ({ row, spec }) =>
-          spec.ladder
+          spec.tags?.includes(Tiles.LADDER)
             ? "#e8b56a"
             : spec.oneWay
               ? "#d59b63"

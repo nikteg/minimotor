@@ -11,9 +11,22 @@
 // current value in and returns the (possibly changed) value, which we store
 // straight back — the immediate-mode round-trip.
 import { createUI } from "minimotor/ui";
-import { createApp } from "minimotor";
-import type { TableSort, Theme } from "minimotor";
+import { createApp, Hot } from "minimotor";
+import { createAssets } from "minimotor/assets";
+import { createBrowserStorage } from "minimotor/storage";
+import type { SelectGroup } from "minimotor/ui";
+import type { HotModuleContext, TableSort, Theme } from "minimotor";
 import { installLayoutProbe } from "../shared/layout-probe.ts";
+import { createGalleryThemeCatalog } from "./gallery-themes.ts";
+import {
+  creditLines,
+  invItems,
+  listItems,
+  players,
+  tabPages,
+  type Player,
+  type Rect,
+} from "./gallery-data.ts";
 
 // No letterbox `resolution`: rendering at native scale keeps text crisp on
 // high-DPI (Retina) screens — a fractional letterbox factor softens glyphs.
@@ -24,8 +37,81 @@ import { installLayoutProbe } from "../shared/layout-probe.ts";
 const game = createApp("game", { background: "#12141c" });
 const view = game.viewport;
 const { Draw, Loop, Pointer } = game;
+const Assets = createAssets(game);
+const Storage = createBrowserStorage(game);
 const UI = createUI(game);
 installLayoutProbe(UI);
+
+// Canvas text measurement must happen after the @font-face has resolved, or
+// the first layout pass would measure fallback monospace and then jump when
+// Any selected pixel font must be ready before the first layout pass.
+await Promise.all([
+  document.fonts.load('12px "Silkscreen"'),
+  document.fonts.load('bold 12px "Silkscreen"'),
+  document.fonts.load('12px "Press Start 2P"'),
+  document.fonts.load('12px "Pixelify Sans"'),
+  document.fonts.load('12px "DotGothic16"'),
+  document.fonts.load('12px "VT323"'),
+  document.fonts.load('12px "Tiny5"'),
+  document.fonts.load('12px "lores-28-narrow"'),
+  document.fonts.load('12px "Micro5"'),
+  document.fonts.load('12px "Jersey 10"'),
+  document.fonts.load('12px "Jersey 15"'),
+  document.fonts.load('12px "m5x7"'),
+  document.fonts.load('12px "Monogram"'),
+  document.fonts.load('12px "DePixel Schmal"'),
+]);
+
+const {
+  presets: themePresets,
+  alternatives: themeAlternatives,
+  atlasDebug,
+} = await createGalleryThemeCatalog(Assets, {
+  defineAlternatives: ({ tiny }) => ({
+    "tiny-rpg-mana-soul": [{ key: "panel-alt", label: "Panel alt", theme: tiny.panelAlt }],
+  }),
+});
+
+interface GalleryHmrState {
+  tab: number;
+  sound: boolean;
+  reducedMotion: boolean;
+  disabledToggle: boolean;
+  volume: number;
+  zoom: number;
+  uiScale: number;
+  name: string;
+  notes: string;
+  chatDraft: string;
+  chatLog: string[];
+  quality: string;
+  city: string;
+  selectedItem: number;
+  listOffset: number;
+  progress: number;
+  busy: boolean;
+  radio: boolean;
+  popoverOpen: boolean;
+  modalOpen: boolean;
+  confirmOpen: boolean;
+  dialogOpen: boolean;
+  atlasDebugOpen: boolean;
+  atlasZoom: number;
+  atlasVariant: number;
+  atlasPan: { x: number; y: number };
+  tableSort: TableSort;
+  tableOffset: number;
+  tableSel: Player | null;
+  binLoadout: string[];
+  binStash: string[];
+  invSel: number;
+  clipOffset: number;
+  currentFont: string;
+  currentTheme: string;
+}
+
+const galleryHot = Hot.create((import.meta as ImportMeta & { hot?: HotModuleContext }).hot);
+const previousGalleryState = galleryHot.restore<GalleryHmrState>("ui-gallery");
 
 // ---- interactive state (the round-trip target for each widget) ----
 let tab = 0; // UI.tabs active index
@@ -45,12 +131,26 @@ let selectedItem = 1; // UI.list selection
 let listOffset = 0; // UI.list scroll offset
 let progress = 0.4; // UI.bar fill fraction (also driven by a slider)
 let busy = true; // show the spinner
+let radio = true; // UI.toggle appearance: radio
 
 // overlays — which one is open
 let popoverOpen = false;
 let modalOpen = false;
 let confirmOpen = false;
 let dialogOpen = false;
+let atlasDebugOpen = false;
+let atlasZoom = 1;
+let atlasVariant = 0;
+let atlasPan = { x: 0, y: 0 };
+let atlasDragStart = { panX: 0, panY: 0 };
+let atlasWasDragging = false;
+
+function resetAtlasView(): void {
+  // atlasZoom is a multiplier over the automatically calculated fit scale.
+  atlasZoom = 1;
+  atlasPan = { x: 0, y: 0 };
+  atlasWasDragging = false;
+}
 
 // table state
 let tableSort: TableSort = { key: "score", dir: -1 };
@@ -73,91 +173,118 @@ let clipOffset = 0;
 // flips the whole palette bright.
 // Presets vary more than accent color: each also tweaks corner radius, border
 // weight, and font family/size so the whole UI feels different, not just tinted.
-const themePresets: { label: string; value: string; preset: Partial<Theme> }[] = [
-  // Classic terminal: monospace, square corners (the engine default).
-  { label: "Teal", value: "teal", preset: { radius: 0, borderWidth: 2, font: "monospace" } },
+const themeGroups: SelectGroup<string>[] = [
   {
-    // Soft & rounded, thin borders, humanist sans.
-    label: "Amber",
-    value: "amber",
-    preset: {
-      accent: "#ffb454",
-      accentSoft: "#a9772f",
-      primary: "#ffb454",
-      radius: 12,
-      borderWidth: 1,
-      font: "system-ui, sans-serif",
-      fontSize: 14,
-    },
+    label: "Tileset themes",
+    options: themePresets
+      .filter((themePreset) => themePreset.preset.skin !== undefined)
+      .map(({ label, value }) => ({ label, value })),
   },
   {
-    // Bold & blocky: square corners, heavy borders.
-    label: "Crimson",
-    value: "crimson",
-    preset: {
-      accent: "#ff6b6b",
-      accentSoft: "#a24444",
-      primary: "#ff6b6b",
-      radius: 0,
-      borderWidth: 3,
-      font: "'Courier New', monospace",
-    },
-  },
-  {
-    // Friendly rounded sans.
-    label: "Emerald",
-    value: "emerald",
-    preset: {
-      accent: "#4ade80",
-      accentSoft: "#2f8f57",
-      primary: "#4ade80",
-      radius: 8,
-      borderWidth: 2,
-      font: "'Trebuchet MS', system-ui, sans-serif",
-      fontSize: 14,
-    },
-  },
-  {
-    // Pill-shaped, serif — an editorial look.
-    label: "Violet",
-    value: "violet",
-    preset: {
-      accent: "#a78bfa",
-      accentSoft: "#6f5ab0",
-      primary: "#a78bfa",
-      radius: 16,
-      borderWidth: 2,
-      font: "Georgia, 'Times New Roman', serif",
-      fontSize: 15,
-    },
-  },
-  {
-    // Light mode, rounded, sans.
-    label: "Slate Light",
-    value: "slate-light",
-    preset: {
-      accent: "#2563eb",
-      accentSoft: "#7aa2e8",
-      primary: "#2563eb",
-      text: "#1b2330",
-      textDim: "#5a6675",
-      textDisabled: "#9aa5b1",
-      bg: "#e6ebf1",
-      bgHover: "#dce3ec",
-      bgActive: "#cdd6e2",
-      border: "#b3bfce",
-      panelBg: "rgba(244,247,250,0.96)",
-      track: "rgba(0,0,0,0.12)",
-      dim: "rgba(30,40,60,0.35)",
-      danger: "#e5484d",
-      radius: 8,
-      borderWidth: 1,
-      font: "system-ui, sans-serif",
-      fontSize: 14,
-    },
+    label: "Font / color themes",
+    options: themePresets
+      .filter((themePreset) => themePreset.preset.skin === undefined)
+      .map(({ label, value }) => ({ label, value })),
   },
 ];
-let currentTheme = "teal"; // drives the Theme select; re-applied on change
+const THEME_STORAGE_KEY = "ui-gallery:theme";
+const FONT_STORAGE_KEY = "ui-gallery:font";
+const storedTheme = await Storage.load(THEME_STORAGE_KEY, "visuals");
+const fontOptions = [
+  { label: "Theme default", value: "theme", font: undefined },
+  { label: "Micro5 — ultra narrow", value: "micro5", font: '"Micro5", monospace' },
+  { label: "Jersey 10 — narrow", value: "jersey10", font: '"Jersey 10", monospace' },
+  { label: "Jersey 15 — compact", value: "jersey15", font: '"Jersey 15", monospace' },
+  { label: "m5x7 — narrow bitmap", value: "m5x7", font: '"m5x7", monospace' },
+  { label: "Monogram — bitmap", value: "monogram", font: '"Monogram", monospace' },
+  {
+    label: "DePixel Schmal — narrow bitmap",
+    value: "depixel-schmal",
+    font: '"DePixel Schmal", monospace',
+  },
+  { label: "Tiny5", value: "tiny5", font: '"Tiny5", monospace' },
+  { label: "Silkscreen", value: "silkscreen", font: '"Silkscreen", monospace' },
+  { label: "VT323", value: "vt323", font: '"VT323", monospace' },
+];
+const storedFont = await Storage.load(FONT_STORAGE_KEY, "theme");
+let currentFont = fontOptions.some((font) => font.value === storedFont) ? storedFont : "theme";
+let currentTheme = themePresets.some((themePreset) => themePreset.value === storedTheme)
+  ? storedTheme
+  : "visuals"; // drives the Theme select; restored from MiniMotor.Storage
+
+if (previousGalleryState) {
+  if (fontOptions.some((font) => font.value === previousGalleryState.currentFont))
+    currentFont = previousGalleryState.currentFont;
+  if (themePresets.some((themePreset) => themePreset.value === previousGalleryState.currentTheme))
+    currentTheme = previousGalleryState.currentTheme;
+}
+
+function applyTheme(value: string): void {
+  currentTheme = themePresets.some((themePreset) => themePreset.value === value)
+    ? value
+    : "visuals";
+  const chosen = themePresets.find((themePreset) => themePreset.value === currentTheme);
+  const selectedFont = fontOptions.find((font) => font.value === currentFont);
+  UI.setTheme({
+    ...(chosen?.preset ?? themePresets[0].preset),
+    ...(selectedFont?.font ? { font: selectedFont.font } : {}),
+  });
+  resetAtlasView();
+  atlasVariant = 0;
+  void Storage.save(THEME_STORAGE_KEY, currentTheme);
+}
+
+function applyFont(value: string): void {
+  currentFont = fontOptions.some((font) => font.value === value) ? value : "theme";
+  applyTheme(currentTheme);
+  void Storage.save(FONT_STORAGE_KEY, currentFont);
+}
+
+applyTheme(currentTheme);
+
+if (previousGalleryState) {
+  tab = previousGalleryState.tab;
+  sound = previousGalleryState.sound;
+  reducedMotion = previousGalleryState.reducedMotion;
+  disabledToggle = previousGalleryState.disabledToggle;
+  volume = previousGalleryState.volume;
+  zoom = previousGalleryState.zoom;
+  uiScale = previousGalleryState.uiScale;
+  name = previousGalleryState.name;
+  notes = previousGalleryState.notes;
+  chatDraft = previousGalleryState.chatDraft;
+  chatLog = [...previousGalleryState.chatLog];
+  quality = previousGalleryState.quality;
+  city = previousGalleryState.city;
+  selectedItem = previousGalleryState.selectedItem;
+  listOffset = previousGalleryState.listOffset;
+  progress = previousGalleryState.progress;
+  busy = previousGalleryState.busy;
+  radio = previousGalleryState.radio;
+  popoverOpen = previousGalleryState.popoverOpen;
+  modalOpen = previousGalleryState.modalOpen;
+  confirmOpen = previousGalleryState.confirmOpen;
+  dialogOpen = previousGalleryState.dialogOpen;
+  atlasDebugOpen = previousGalleryState.atlasDebugOpen;
+  atlasZoom = previousGalleryState.atlasZoom;
+  atlasVariant = previousGalleryState.atlasVariant;
+  atlasPan = { ...previousGalleryState.atlasPan };
+  tableSort = { ...previousGalleryState.tableSort };
+  tableOffset = previousGalleryState.tableOffset;
+  tableSel = previousGalleryState.tableSel ? { ...previousGalleryState.tableSel } : null;
+  binLoadout = [...previousGalleryState.binLoadout];
+  binStash = [...previousGalleryState.binStash];
+  invSel = previousGalleryState.invSel;
+  clipOffset = previousGalleryState.clipOffset;
+}
+
+/** Resolve the theme scope a gallery panel should inherit. Panel call sites
+ *  ask for a semantic treatment; they do not know which preset supplies its
+ *  art or whether the current global theme supports it. */
+function getTheme(scope: "default" | "panel-alt" = "default"): Partial<Theme> | undefined {
+  if (scope === "default") return undefined;
+  return themeAlternatives[currentTheme]?.find((alternative) => alternative.key === scope)?.theme;
+}
 
 const uiId = UI.ids("ui-gallery");
 
@@ -169,6 +296,7 @@ declare global {
   interface Window {
     __uiGallery?: {
       setScale(s: number): void;
+      setTheme(value: string): void;
       getState(): { uiScale: number; volume: number; city: string };
       layoutCapture(on: boolean): void;
       layoutTree(): ReturnType<typeof UI.layoutTree>;
@@ -179,53 +307,52 @@ window.__uiGallery = {
   setScale: (s) => {
     uiScale = s;
   },
+  setTheme: (value) => {
+    applyTheme(value);
+  },
   getState: () => ({ uiScale, volume, city }),
   layoutCapture: UI.layoutCapture,
   layoutTree: UI.layoutTree,
 };
 
-// ---- static demo data ----
-const listItems = ["Fireball", "Ice Shard", "Lightning", "Heal", "Shield", "Teleport", "Meteor"];
-const tabPages = ["Overview", "Stats", "Log"];
-// 4×2 inventory for UI.grid.
-const invItems = ["⚔️", "🛡️", "🧪", "🔥", "❄️", "⚡", "💎", "🗝️"];
-// Tall content for the clipped, explicitly-scrolled region (UI.clip + scrollbar).
-const creditLines = [
-  "— CREDITS —",
-  "Engine .......... minimotor",
-  "Design .......... you",
-  "Code ............ you",
-  "Art ............. also you",
-  "Audio ........... Web Audio",
-  "Playtesting ..... the cat",
-  "Coffee .......... a lot",
-  "Bugs ............ a few",
-  "Fixes ........... eventually",
-  "Special thanks .. immediate mode",
-  "— fin —",
-];
-
-interface Player {
-  name: string;
-  score: number;
-  kd: number;
-}
-const players: Player[] = [
-  { name: "Nova", score: 2480, kd: 2.4 },
-  { name: "Pixel", score: 1930, kd: 1.8 },
-  { name: "Ghost", score: 3110, kd: 3.1 },
-  { name: "Ember", score: 870, kd: 0.9 },
-  { name: "Quartz", score: 2050, kd: 1.5 },
-  { name: "Vortex", score: 1420, kd: 1.2 },
-];
-
-// A tidy rect type for the panels we position by hand.
-interface Rect {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
+galleryHot.persist("ui-gallery", () => ({
+  tab,
+  sound,
+  reducedMotion,
+  disabledToggle,
+  volume,
+  zoom,
+  uiScale,
+  name,
+  notes,
+  chatDraft,
+  chatLog: [...chatLog],
+  quality,
+  city,
+  selectedItem,
+  listOffset,
+  progress,
+  busy,
+  radio,
+  popoverOpen,
+  modalOpen,
+  confirmOpen,
+  dialogOpen,
+  atlasDebugOpen,
+  atlasZoom,
+  atlasVariant,
+  atlasPan: { ...atlasPan },
+  tableSort: { ...tableSort },
+  tableOffset,
+  tableSel: tableSel ? { ...tableSel } : null,
+  binLoadout: [...binLoadout],
+  binStash: [...binStash],
+  invSel,
+  clipOffset,
+  currentFont,
+  currentTheme,
+}));
+galleryHot.onDispose(() => game.destroy());
 
 Loop.run({
   update() {
@@ -234,18 +361,20 @@ Loop.run({
 
   draw() {
     // Header (Draw.* draws in ambient/screen space, above the panels).
+    const headerFont = UI.getTheme().font;
     Draw.text("UI GALLERY", {
       x: 24,
       y: 16,
       size: 22,
       color: "#e7ecf0",
-      font: "bold 22px monospace",
+      font: `bold 22px ${headerFont}`,
     });
     Draw.text("every immediate-mode primitive on one screen", {
       x: 24,
       y: 44,
       size: 12,
       color: "#8b94a0",
+      font: `12px ${headerFont}`,
     });
 
     // UI-scale knob — drawn in NATIVE screen space (pinned top-right, outside the
@@ -318,13 +447,27 @@ Loop.run({
                   const themeSel = UI.select({
                     id: uiId("theme"),
                     value: currentTheme,
-                    options: themePresets.map((t) => ({ label: t.label, value: t.value })),
+                    groups: themeGroups,
+                    wrapItems: true,
                     ariaLabel: "Theme",
                   });
                   if (themeSel.changed) {
-                    currentTheme = themeSel.value;
-                    const chosen = themePresets.find((t) => t.value === currentTheme);
-                    UI.setTheme(chosen ? chosen.preset : {});
+                    applyTheme(themeSel.value);
+                  }
+                  const fontSel = UI.select({
+                    id: uiId("font"),
+                    value: currentFont,
+                    options: fontOptions.map(({ label, value }) => ({ label, value })),
+                    wrapItems: true,
+                    ariaLabel: "Pixel font",
+                  });
+                  if (fontSel.changed) applyFont(fontSel.value);
+                  if (
+                    atlasDebug[currentTheme] &&
+                    UI.button({ id: uiId("atlas-debug"), label: "Inspect atlas" })
+                  ) {
+                    atlasDebugOpen = true;
+                    resetAtlasView();
                   }
                 });
 
@@ -363,6 +506,12 @@ Loop.run({
                     id: uiId("tg-motion"),
                     label: "Reduced motion",
                     on: reducedMotion,
+                  });
+                  radio = UI.toggle({
+                    id: uiId("tg-radio"),
+                    label: "Radio appearance",
+                    appearance: "radio",
+                    on: radio,
                   });
                   disabledToggle = UI.toggle({
                     id: uiId("tg-disabled"),
@@ -465,24 +614,31 @@ Loop.run({
 
               // ================= COLUMN 2 =================
               UI.col({ w: colW, gap: 16, id: uiId("col2") }, () => {
-                UI.panel({ title: "Tabs", gap: 10 }, () => {
-                  tab = UI.tabs({ id: uiId("tabs"), items: tabPages, active: tab, w: 256 });
-                  if (tab === 0)
-                    UI.text("A neutral summary of the current session.", {
-                      wrap: true,
-                      h: 40,
-                      w: 256,
-                    });
-                  else if (tab === 1)
-                    UI.text("Kills 42 · Deaths 17 · Assists 9", { color: "accent" });
-                  else
-                    UI.text("12:04 joined · 12:07 first blood · 12:31 win", {
-                      color: "dim",
-                      wrap: true,
-                      h: 40,
-                      w: 256,
-                    });
-                });
+                UI.panel(
+                  {
+                    title: "Tabs",
+                    gap: 10,
+                    theme: getTheme("panel-alt"),
+                  },
+                  () => {
+                    tab = UI.tabs({ id: uiId("tabs"), items: tabPages, active: tab, w: 256 });
+                    if (tab === 0)
+                      UI.text("A neutral summary of the current session.", {
+                        wrap: true,
+                        h: 40,
+                        w: 256,
+                      });
+                    else if (tab === 1)
+                      UI.text("Kills 42 · Deaths 17 · Assists 9", { color: "accent" });
+                    else
+                      UI.text("12:04 joined · 12:07 first blood · 12:31 win", {
+                        color: "dim",
+                        wrap: true,
+                        h: 40,
+                        w: 256,
+                      });
+                  },
+                );
 
                 UI.panel({ title: "Progress bar (UI.bar)", gap: 10 }, () => {
                   progress = UI.slider({
@@ -494,9 +650,9 @@ Loop.run({
                     format: (v) => `${Math.round(v * 100)}%`,
                   });
                   // bar() is a raw draw call — reserve a slot from the layout for geometry.
-                  UI.row({ h: 16 }, (st) => {
-                    const r = st.next(220, 12);
-                    UI.bar({ x: r.x, y: r.y, w: 220, h: 12, value: progress });
+                  UI.row({ h: th.barH }, (st) => {
+                    const r = st.next(220, th.barH);
+                    UI.bar({ x: r.x, y: r.y, w: 220, h: th.barH, value: progress });
                   });
                   busy = UI.toggle({ id: uiId("tg-busy"), label: "Working…", on: busy });
                   UI.row({ h: 24 }, (st) => {
@@ -592,6 +748,8 @@ Loop.run({
                     w: tableBox.w - 20,
                     h: tableBox.h - 50,
                     rowH: 26,
+                    cellPadX: 8,
+                    cellPadY: 2,
                     id: uiId("table"),
                     rows: players,
                     sort: tableSort,
@@ -602,14 +760,14 @@ Loop.run({
                       {
                         key: "score",
                         label: "SCORE",
-                        width: 60,
+                        width: 72,
                         align: "right",
                         value: (p) => p.score,
                       },
                       {
                         key: "kd",
                         label: "K/D",
-                        width: 48,
+                        width: 58,
                         align: "right",
                         value: (p) => p.kd,
                         cell: (p, r) =>
@@ -628,8 +786,9 @@ Loop.run({
               });
 
               // ================= COLUMN 4 : Drag & drop =================
-              // Bins/items are raw Draw.rect fills painted from the live theme (a
-              // light theme would otherwise show hardcoded dark boxes).
+              // DragSource/dropTarget provide interaction state only; the
+              // consumer owns the visual surface. Use normal themed panels and
+              // buttons here so the example follows the active skin.
               UI.col({ w: colW, gap: 16, id: uiId("col4") }, (st) => {
                 const ddBox = st.next(colW, 300);
                 UI.panel({ ...ddBox, title: "Drag & drop" }, () => {
@@ -656,34 +815,37 @@ Loop.run({
                       h: binH,
                       accepts: (payload) => payload.from !== bin.id,
                     });
-                    Draw.rect(bx, binTop, binW, binH, target.canDrop ? th.bgHover : th.bgActive);
-                    UI.text(bin.title, {
-                      x: bx + 8,
-                      y: binTop + 6,
-                      size: 11,
-                      bold: true,
-                      color: "accent",
-                    });
-                    bin.items.forEach((item, ii) => {
-                      const iy = binTop + 26 + ii * 30;
-                      const src = UI.dragSource({
-                        id: `item:${bin.id}:${item}`,
-                        x: bx + 6,
-                        y: iy,
-                        w: binW - 12,
-                        h: 26,
-                        payload: { item, from: bin.id },
-                      });
-                      // The dragged item follows the pointer; draw its origin dimmed.
-                      const dragging = src.dragging;
-                      Draw.rect(bx + 6, iy, binW - 12, 26, dragging ? th.bgActive : th.bg);
-                      UI.text(item, {
-                        x: bx + 14,
-                        y: iy,
-                        h: 26,
-                        color: dragging ? "dim" : undefined,
-                      });
-                    });
+                    UI.panel(
+                      {
+                        x: bx,
+                        y: binTop,
+                        w: binW,
+                        h: binH,
+                        title: bin.title,
+                        pad: 6,
+                        gap: 4,
+                        border: target.canDrop ? th.accent : undefined,
+                      },
+                      () => {
+                        bin.items.forEach((item) => {
+                          UI.button({
+                            id: `drag-button:${bin.id}:${item}`,
+                            label: item,
+                            w: binW - 12,
+                            h: th.buttonH,
+                            variant: "ghost",
+                          });
+                          const itemRect = UI.lastRect();
+                          if (itemRect) {
+                            UI.dragSource({
+                              id: `item:${bin.id}:${item}`,
+                              ...itemRect,
+                              payload: { item, from: bin.id },
+                            });
+                          }
+                        });
+                      },
+                    );
                     // Apply a completed drop: move the item across.
                     if (target.dropped) {
                       const { item, from } = target.dropped.payload;
@@ -697,63 +859,69 @@ Loop.run({
               });
 
               // ================= COLUMN 5 : Layout & regions =================
-              // Grid, an explicit stack cursor, spacer alignment, and a clipped
-              // region driven by an explicit scrollbar — all raw-rect widgets, so
-              // reserve fixed slots from the flowing column and hand each its rect.
+              // Grid and the clipped scrollbar viewport intentionally use fixed
+              // regions. The flow-cursor and spacer demos are ordinary auto-flowing
+              // panels, so their height comes from their children.
               UI.col({ w: colW, gap: 16, id: uiId("col5") }, (st) => {
                 // UI.grid — even 2-D cells; here a 4×2 emoji inventory. listItem
                 // paints each cell's hover/selected state; a click selects it.
                 const gridBox = st.next(colW, 150);
-                UI.panel({ ...gridBox, title: "Grid (inventory)" }, () => {
-                  UI.grid(
-                    {
-                      x: gridBox.x + 12,
-                      y: gridBox.y + 42,
-                      w: gridBox.w - 24,
-                      h: gridBox.h - 54,
-                      cols: 4,
-                      count: 8,
-                      gap: 6,
-                    },
-                    (cell, i) => {
-                      if (UI.listItem({ id: uiId(`slot-${i}`), ...cell, selected: i === invSel }))
-                        invSel = i;
-                      UI.text(invItems[i] ?? "", { ...cell, align: "center", size: 22 });
-                    },
-                  );
-                });
+                UI.panel(
+                  {
+                    ...gridBox,
+                    title: "Grid (inventory)",
+                    theme: getTheme("panel-alt"),
+                  },
+                  () => {
+                    UI.grid(
+                      {
+                        x: gridBox.x + 12,
+                        y: gridBox.y + 42,
+                        w: gridBox.w - 24,
+                        h: gridBox.h - 54,
+                        cols: 4,
+                        count: 8,
+                        gap: 6,
+                      },
+                      (cell, i) => {
+                        if (UI.listItem({ id: uiId(`slot-${i}`), ...cell, selected: i === invSel }))
+                          invSel = i;
+                        UI.text(invItems[i] ?? "", { ...cell, align: "center", size: 22 });
+                      },
+                    );
+                  },
+                );
 
                 // UI.flow — the low-level layout cursor (what row/col use inside).
                 // Here an `align: "end"` cursor lays two auto-width buttons out
                 // right-to-left for a right-anchored toolbar.
-                const barBox = st.next(colW, 80);
-                UI.panel({ ...barBox, title: "Flow cursor (toolbar)" }, () => {
-                  UI.text("History", { x: barBox.x + 12, y: barBox.y + 40, h: 30, color: "dim" });
+                UI.panel({ w: colW, title: "Flow cursor (toolbar)" }, (body) => {
+                  const row = body.next(undefined, 30);
+                  UI.text("History", { x: row.x, y: row.y, h: row.h, color: "dim" });
                   const bar = UI.flow({
-                    x: barBox.x + barBox.w - 12,
-                    y: barBox.y + 40,
+                    x: row.x + row.w - 12,
+                    y: row.y,
                     dir: "row",
                     align: "end",
                     gap: 8,
                   });
                   if (UI.button({ at: bar, id: uiId("st-redo"), label: "Redo" }))
-                    UI.floatText("redo", barBox.x + barBox.w - 40, barBox.y + 40);
+                    UI.floatText("redo", row.x + row.w - 40, row.y);
                   if (UI.button({ at: bar, id: uiId("st-undo"), label: "Undo" }))
-                    UI.floatText("undo", barBox.x + barBox.w - 100, barBox.y + 40);
+                    UI.floatText("undo", row.x + row.w - 100, row.y);
                 });
 
                 // UI.spacer — a fixed gap inserted before the next child; sized from
                 // the row cursor's `remaining` space, it pushes the button flush to
                 // the right edge (a manual alternative to a flex spacer).
-                const spBox = st.next(colW, 80);
-                UI.panel({ ...spBox, title: "Spacer (align right)" }, () => {
-                  UI.row({ x: spBox.x + 12, y: spBox.y + 40, w: spBox.w - 24, h: 30 }, (rst) => {
+                UI.panel({ w: colW, title: "Spacer (align right)" }, () => {
+                  UI.row({ h: 30 }, (rst) => {
                     UI.text("v1.4.2", { color: "dim", h: 30 });
                     UI.spacer(Math.max(0, rst.remaining - 76));
                     if (
                       UI.button({ id: uiId("sp-save"), label: "Save", w: 76, variant: "primary" })
                     )
-                      UI.floatText("saved", spBox.x + spBox.w - 40, spBox.y + 40);
+                      UI.floatText("saved", UI.lastRect()?.x ?? 0, UI.lastRect()?.y ?? 0);
                   });
                 });
 
@@ -868,6 +1036,337 @@ Loop.run({
             choices: ["Neat", "Close"],
           });
           if (answer) dialogOpen = false;
+        }
+
+        // Atlas inspector — a deliberately gallery-only diagnostic overlay.
+        // It reads the same semantic regions used by the theme factory, draws
+        // the atlas at nearest-neighbour scale, and marks each frame's 3×3/3×1
+        // source split so a tileset definition can be checked visually.
+        const atlas = atlasDebug[currentTheme];
+        if (atlasDebugOpen && atlas) {
+          // The inspector is tooling, not part of the themed showcase. Use
+          // the engine default chrome/font so a broken or highly decorative
+          // theme cannot make its own debugger unreadable. The atlas art and
+          // mapping overlays remain the selected theme's data.
+          UI.withTheme({ ...UI.defaultTheme, skin: undefined }, () => {
+            const modal = UI.modal({
+              w: Math.round(UI.width() * 0.95),
+              h: Math.round(UI.height() * 0.95),
+              title: `${currentTheme} atlas`,
+              id: uiId("atlas-modal"),
+            });
+            const views = [atlas, ...(atlas.variants ?? [])];
+            atlasVariant = Math.max(0, Math.min(atlasVariant, views.length - 1));
+            const view = views[atlasVariant];
+            const overlayColors = ["#ff4ecb", "#35d9ff", "#a7f542", "#ffad42"];
+            const overlayFills = [
+              "rgba(255,78,203,0.18)",
+              "rgba(53,217,255,0.18)",
+              "rgba(167,245,66,0.18)",
+              "rgba(255,173,66,0.18)",
+            ];
+            const overlayColor = overlayColors[atlasVariant % overlayColors.length];
+            const overlayFill = overlayFills[atlasVariant % overlayFills.length];
+            const source = view.image as {
+              width?: number;
+              height?: number;
+              naturalWidth?: number;
+              naturalHeight?: number;
+            };
+            const sourceW = source.naturalWidth ?? source.width ?? 1;
+            const sourceH = source.naturalHeight ?? source.height ?? 1;
+            const legendW = Math.min(330, Math.max(240, modal.w * 0.3));
+            const viewport = {
+              x: modal.x + 14,
+              y: modal.y + 38,
+              w: modal.w - legendW - 28,
+              h: modal.h - 78,
+            };
+            const fitScale = Math.min(1, viewport.w / sourceW, viewport.h / sourceH);
+            const scale = fitScale * atlasZoom;
+            const imageW = sourceW * scale;
+            const imageH = sourceH * scale;
+            const centeredImageX = viewport.x + (viewport.w - imageW) / 2;
+            const centeredImageY = viewport.y + (viewport.h - imageH) / 2;
+            const atlasDrag = UI.dragGesture({
+              id: uiId("atlas-pan"),
+              x: viewport.x,
+              y: viewport.y,
+              w: viewport.w,
+              h: viewport.h,
+            });
+            if (atlasDrag.dragging) {
+              if (!atlasWasDragging) {
+                atlasDragStart = {
+                  panX: atlasPan.x,
+                  panY: atlasPan.y,
+                };
+                atlasWasDragging = true;
+              }
+              atlasPan = {
+                x: atlasDragStart.panX + atlasDrag.dx,
+                y: atlasDragStart.panY + atlasDrag.dy,
+              };
+            } else {
+              atlasWasDragging = false;
+            }
+            const imageX = centeredImageX + atlasPan.x;
+            const imageY = centeredImageY + atlasPan.y;
+            const pointer = UI.fromScreen(Pointer.x, Pointer.y);
+            let hoveredCell: {
+              entry: (typeof view.entries)[number];
+              index: number;
+              col: number;
+              row: number;
+              cols: number;
+              rows: number;
+              sourceX: number;
+              sourceY: number;
+              sourceW: number;
+              sourceH: number;
+            } | null = null;
+            const ctx = Draw.ctx;
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(viewport.x, viewport.y, viewport.w, viewport.h);
+            ctx.clip();
+            Draw.image(view.image, imageX, imageY, imageW, imageH);
+            view.entries.forEach((entry, index) => {
+              const r = entry.region;
+              const x = imageX + r.sx * scale;
+              const y = imageY + r.sy * scale;
+              const w = r.sw * scale;
+              const h = r.sh * scale;
+              const nineSlice = entry.mapping === "nine-slice" && entry.insets;
+              const cols = nineSlice ? 3 : (entry.split?.cols ?? 1);
+              const rows = nineSlice ? 3 : (entry.split?.rows ?? 1);
+              const sourceXs = nineSlice
+                ? [0, entry.insets!.left, r.sw - entry.insets!.right, r.sw]
+                : Array.from({ length: cols + 1 }, (_, edge) => (r.sw / cols) * edge);
+              const sourceYs = nineSlice
+                ? [0, entry.insets!.top, r.sh - entry.insets!.bottom, r.sh]
+                : Array.from({ length: rows + 1 }, (_, edge) => (r.sh / rows) * edge);
+              for (let row = 0; row < rows; row++) {
+                for (let col = 0; col < cols; col++) {
+                  const sourceX = sourceXs[col];
+                  const sourceY = sourceYs[row];
+                  const sourceW = sourceXs[col + 1] - sourceX;
+                  const sourceH = sourceYs[row + 1] - sourceY;
+                  const cellX = imageX + (r.sx + sourceX) * scale;
+                  const cellY = imageY + (r.sy + sourceY) * scale;
+                  const cellW = sourceW * scale;
+                  const cellH = sourceH * scale;
+                  if (sourceW <= 0 || sourceH <= 0) continue;
+                  Draw.rect(cellX, cellY, cellW, cellH, overlayFill);
+                  if (
+                    !hoveredCell &&
+                    pointer.x >= cellX &&
+                    pointer.x <= cellX + cellW &&
+                    pointer.y >= cellY &&
+                    pointer.y <= cellY + cellH
+                  ) {
+                    hoveredCell = {
+                      entry,
+                      index,
+                      col,
+                      row,
+                      cols,
+                      rows,
+                      sourceX: r.sx + sourceX,
+                      sourceY: r.sy + sourceY,
+                      sourceW,
+                      sourceH,
+                    };
+                    Draw.rect(cellX, cellY, cellW, cellH, "rgba(255,255,255,0.20)");
+                  }
+                  const cellName =
+                    entry.mapping === "auto9" || entry.mapping === "nine-slice"
+                      ? ["TL", "T", "TR", "L", "C", "R", "BL", "B", "BR"][row * cols + col]
+                      : `${row * cols + col}`;
+                  if (cellW >= 12 && cellH >= 10)
+                    Draw.text(cellName, {
+                      x: cellX + 2,
+                      y: cellY + 2,
+                      size: Math.max(7, Math.min(11, cellH * 0.35)),
+                      color: overlayColor,
+                    });
+                }
+              }
+              ctx.save();
+              ctx.globalCompositeOperation = "difference";
+              Draw.rectStroke(x, y, w, h, "#fff", Math.max(1, 2 * scale));
+              for (let col = 1; col < sourceXs.length - 1; col++)
+                if (sourceXs[col] > 0 && sourceXs[col] < r.sw)
+                  Draw.line(
+                    x + sourceXs[col] * scale,
+                    y,
+                    x + sourceXs[col] * scale,
+                    y + h,
+                    "#fff",
+                    1,
+                  );
+              for (let row = 1; row < sourceYs.length - 1; row++)
+                if (sourceYs[row] > 0 && sourceYs[row] < r.sh)
+                  Draw.line(
+                    x,
+                    y + sourceYs[row] * scale,
+                    x + w,
+                    y + sourceYs[row] * scale,
+                    "#fff",
+                    1,
+                  );
+              ctx.restore();
+              Draw.text(String(index + 1), { x: x + 2, y: y + 2, size: 8, color: overlayColor });
+            });
+            ctx.restore();
+            const legendX = viewport.x + viewport.w + 10;
+            const legendCols = view.entries.length > 42 ? 2 : 1;
+            const legendColW = (modal.x + modal.w - legendX - 10) / legendCols;
+            const legendLineH = 14;
+            const rowsPerCol = Math.ceil(view.entries.length / legendCols);
+            view.entries.forEach((entry, index) => {
+              const col = Math.floor(index / rowsPerCol);
+              const row = index % rowsPerCol;
+              Draw.text(`${index + 1}. ${entry.label} · ${entry.mapping}`, {
+                x: legendX + col * legendColW,
+                y: viewport.y + row * legendLineH,
+                size: 9,
+                color: overlayColor,
+              });
+            });
+
+            const hovered = hoveredCell as {
+              entry: (typeof view.entries)[number];
+              index: number;
+              col: number;
+              row: number;
+              cols: number;
+              rows: number;
+              sourceX: number;
+              sourceY: number;
+              sourceW: number;
+              sourceH: number;
+            } | null;
+            if (hovered) {
+              const { entry, col, row, cols } = hovered;
+              const cellIndex = row * cols + col;
+              const cellName =
+                entry.mapping === "auto9" || entry.mapping === "nine-slice"
+                  ? [
+                      "top-left",
+                      "top",
+                      "top-right",
+                      "left",
+                      "center",
+                      "right",
+                      "bottom-left",
+                      "bottom",
+                      "bottom-right",
+                    ][cellIndex]
+                  : `cell ${cellIndex}`;
+              const lines = [
+                entry.label,
+                `mapping: ${entry.mapping}`,
+                `${cellName} (${col}, ${row})`,
+                `source: ${hovered.sourceX}, ${hovered.sourceY} (${hovered.sourceW}×${hovered.sourceH})`,
+              ];
+              const tipW = 278;
+              const tipH = 12 + lines.length * 15;
+              let tipX = pointer.x + 14;
+              let tipY = pointer.y + 14;
+              if (tipX + tipW > viewport.x + viewport.w) tipX = pointer.x - tipW - 14;
+              if (tipY + tipH > viewport.y + viewport.h) tipY = pointer.y - tipH - 14;
+              tipX = Math.max(viewport.x + 4, Math.min(tipX, viewport.x + viewport.w - tipW - 4));
+              tipY = Math.max(viewport.y + 4, Math.min(tipY, viewport.y + viewport.h - tipH - 4));
+              Draw.rect(tipX, tipY, tipW, tipH, "rgba(8,10,22,0.96)");
+              Draw.rectStroke(tipX, tipY, tipW, tipH, overlayColor, 2);
+              lines.forEach((line, lineIndex) => {
+                Draw.text(line, {
+                  x: tipX + 10,
+                  y: tipY + 7 + lineIndex * 15,
+                  size: 10,
+                  font: UI.getTheme().font,
+                  color: "#fff7d6",
+                });
+              });
+            }
+
+            const controlsY = modal.y + modal.h - 34;
+            if (
+              UI.button({
+                x: modal.x + 14,
+                y: controlsY,
+                w: 30,
+                h: 24,
+                label: "−",
+                id: uiId("atlas-zoom-out"),
+              })
+            )
+              atlasZoom = Math.max(0.5, atlasZoom / 2);
+            if (
+              UI.button({
+                x: modal.x + 48,
+                y: controlsY,
+                w: 62,
+                h: 24,
+                label: "Fit",
+                id: uiId("atlas-zoom-reset"),
+              })
+            )
+              resetAtlasView();
+            if (
+              UI.button({
+                x: modal.x + 114,
+                y: controlsY,
+                w: 30,
+                h: 24,
+                label: "+",
+                id: uiId("atlas-zoom-in"),
+              })
+            )
+              atlasZoom = Math.min(4, atlasZoom * 2);
+            if (
+              UI.button({
+                x: modal.x + 150,
+                y: controlsY,
+                w: 76,
+                h: 24,
+                label: "Center",
+                id: uiId("atlas-center"),
+              })
+            )
+              atlasPan = { x: 0, y: 0 };
+            if (views.length > 1) {
+              let variantX = modal.x + 242;
+              views.forEach((candidate, index) => {
+                const label = index === 0 ? "Default" : candidate.label;
+                const variantW = Math.max(72, label.length * 7 + 18);
+                if (
+                  UI.button({
+                    x: variantX,
+                    y: controlsY,
+                    w: variantW,
+                    h: 24,
+                    label,
+                    id: uiId(`atlas-variant-${index}`),
+                  })
+                )
+                  atlasVariant = index;
+                variantX += variantW + 6;
+              });
+            }
+            if (
+              UI.button({
+                x: modal.x + modal.w - 108,
+                y: controlsY,
+                w: 92,
+                h: 24,
+                label: "Close",
+                id: uiId("atlas-close"),
+              })
+            )
+              atlasDebugOpen = false;
+          });
         }
       }),
     );

@@ -30,6 +30,7 @@ interface PointerCache {
   clip: { x: number; y: number; w: number; h: number } | undefined;
   suppressed: boolean;
   overlayDead: boolean;
+  inOverlayPass: boolean;
   p: typeof DEAD_POINTER;
 }
 
@@ -371,6 +372,7 @@ export function uiPointer() {
   ensureWired(); // per-frame housekeeping keeps overlay/tooltip state honest
   const s = st();
   const overlayDead = isOverlayActive() && !isInOverlayPass();
+  const inOverlayPass = isInOverlayPass();
   const clip = s.clips[s.clips.length - 1];
   const c = s.pointerCache;
   if (
@@ -378,12 +380,20 @@ export function uiPointer() {
     c.t === s.transform &&
     c.clip === clip &&
     c.suppressed === s.edgesSuppressed &&
-    c.overlayDead === overlayDead
+    c.overlayDead === overlayDead &&
+    c.inOverlayPass === inOverlayPass
   ) {
     return c.p;
   }
   const p = computeUiPointer(s, overlayDead, clip);
-  s.pointerCache = { t: s.transform, clip, suppressed: s.edgesSuppressed, overlayDead, p };
+  s.pointerCache = {
+    t: s.transform,
+    clip,
+    suppressed: s.edgesSuppressed,
+    overlayDead,
+    inOverlayPass,
+    p,
+  };
   return p;
 }
 

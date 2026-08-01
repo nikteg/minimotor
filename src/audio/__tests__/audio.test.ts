@@ -76,24 +76,54 @@ describe("Audio", () => {
   });
 
   describe("Music", () => {
-    it("Music.on defaults to true", async () => {
+    it("Music starts unmuted", async () => {
       const mod = await import("@src/audio/index.js");
-      expect(mod.Music.on).toBe(true);
+      expect(mod.Music.muted).toBe(false);
     });
 
-    it("Music.on toggles", async () => {
+    it("Music.muted toggles", async () => {
       const mod = await import("@src/audio/index.js");
-      mod.Music.on = true;
-      expect(mod.Music.on).toBe(true);
-      mod.Music.on = false;
-      expect(mod.Music.on).toBe(false);
+      mod.Music.muted = false;
+      expect(mod.Music.muted).toBe(false);
+      mod.Music.muted = true;
+      expect(mod.Music.muted).toBe(true);
     });
 
     it("Music.start activates", async () => {
       const mod = await import("@src/audio/index.js");
       vi.stubGlobal("setInterval", vi.fn());
-      mod.Music.start({ volume: 0.1, stepMs: 100, schedule: vi.fn() });
-      expect(mod.Music.on).toBe(true);
+      mod.Music.start({ volume: 0.1, bpm: 150, schedule: vi.fn() });
+      expect(mod.Music.muted).toBe(false);
+    });
+
+    it("spaces steps by bpm / stepsPerBeat", async () => {
+      const mod = await import("@src/audio/index.js");
+      vi.stubGlobal("setInterval", vi.fn());
+      const schedule = vi.fn();
+      // 150 bpm at the default sixteenths → 100ms a step.
+      mod.Music.start({ volume: 0.1, bpm: 150, schedule });
+      const times = schedule.mock.calls.map(([, when]) => when as number);
+      expect(schedule.mock.calls.map(([step]) => step)).toEqual([0, 1]);
+      expect(times[1] - times[0]).toBeCloseTo(0.1);
+    });
+
+    it("stepsPerBeat stretches the step without touching the tempo", async () => {
+      const mod = await import("@src/audio/index.js");
+      vi.stubGlobal("setInterval", vi.fn());
+      const schedule = vi.fn();
+      // Same 150 bpm, but one call per beat → 400ms a step.
+      mod.Music.start({ volume: 0.1, bpm: 150, stepsPerBeat: 1, schedule });
+      expect(schedule).toHaveBeenCalledTimes(1); // only one step fits the lookahead
+    });
+
+    it("rejects a tempo that would never advance", async () => {
+      const mod = await import("@src/audio/index.js");
+      const schedule = vi.fn();
+      expect(() => mod.Music.start({ volume: 0.1, bpm: 0, schedule })).toThrow(RangeError);
+      expect(() => mod.Music.start({ volume: 0.1, bpm: -120, schedule })).toThrow(RangeError);
+      expect(() => mod.Music.start({ volume: 0.1, bpm: 120, stepsPerBeat: 0, schedule })).toThrow(
+        RangeError,
+      );
     });
   });
 });

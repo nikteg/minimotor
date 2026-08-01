@@ -136,6 +136,54 @@ buttons, panels, lists, tables, dialogs, drag-and-drop). `UI.vw`/`UI.vh`
 provide constrained viewport-relative sizes; modals clamp their preferred
 width inside the viewport automatically.
 
+#### Tileset UI skins
+
+`minimotor/ui` themes can optionally use a pixel-art tileset for widget frames
+while retaining the normal color fallback:
+
+```ts
+import { createTilesetSkin, createUI } from "minimotor/ui";
+
+const UI = createUI(app);
+const skin = createTilesetSkin(art.hud, {
+  tileSize: { w: 16, h: 16 },
+  frames: {
+    panel: {
+      sx: 0,
+      sy: 0,
+      sw: 48,
+      sh: 48,
+      insets: { left: 16, top: 16, right: 16, bottom: 16 },
+    },
+    button: {
+      sx: 0,
+      sy: 0,
+      sw: 48,
+      sh: 48,
+      insets: { left: 16, top: 16, right: 16, bottom: 16 },
+    },
+  },
+});
+
+UI.setTheme({ skin, accent: "#ffd044" });
+```
+
+Frames use source-pixel nine-slice regions: corners stay fixed, edges and the
+center repeat at native pixel scale, and a partial final repeat is clipped.
+Missing roles and `UI.setTheme({})` fall back to the existing fill/stroke
+renderer, so skins can be replaced at runtime without changing widget code.
+
+Theme spacing is shared through `theme.spacing` (`xs`, `sm`, `md`, `lg`, `xl`)
+and is used by layout gaps and widget insets. Individual controls can still
+override it with options such as `pad`, `cellPadX`, and `cellPadY`; a pixel
+theme can override just the tokens it needs:
+
+```ts
+UI.setTheme({
+  spacing: { lg: 16, xl: 20 },
+});
+```
+
 **Collision & math** — `Collision` (swept `moveAndSlide`, one-way platforms,
 walkable slopes, `climbLadder`, `dropThrough`, swept AABB and overlap tests),
 `Vec2`, `Mathf` (lerp, damp, clamp, easing, randomness). Tile legends can

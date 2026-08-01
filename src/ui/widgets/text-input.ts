@@ -24,6 +24,7 @@ import {
   rawPointer,
   registerFocusable,
   requiredWidgetId,
+  resolveThemeTextPadding,
   uiSlot,
   setCursor,
   theme,
@@ -34,6 +35,7 @@ import {
   withUiApp,
   wrapLines,
 } from "@src/ui/core/index.js";
+import type { ThemeTextPadding } from "@src/ui/theme.js";
 import { pointInRect } from "@src/collision/index.js";
 
 export interface TextEditor {
@@ -134,6 +136,9 @@ export interface TextInputOptions extends Flowable {
   w?: number;
   /** Field height in px. Default `32`. */
   h?: number;
+  /** Additional inset for the mirrored text inside the frame. A scalar applies
+   *  to both axes; an object can separate x/y. Defaults to theme.textPad. */
+  textPad?: ThemeTextPadding;
   /** Muted text shown while empty and unfocused. */
   placeholder?: string;
   /** Grayed out; ignores input. */
@@ -261,6 +266,7 @@ function caretIndexAt(
   rect: { x: number; y: number },
   innerX: number,
   innerW: number,
+  innerY: number,
   lineH: number,
   px: number,
   py: number,
@@ -275,8 +281,7 @@ function caretIndexAt(
       ctx.restore();
       return 0;
     }
-    const top = rect.y + 4;
-    const li = Math.max(0, Math.min(lines.length - 1, Math.floor((py - top) / lineH)));
+    const li = Math.max(0, Math.min(lines.length - 1, Math.floor((py - innerY) / lineH)));
     idx = lines[li].start + indexAtLocalX(ctx, lines[li].text, px - innerX);
   } else {
     idx = indexAtLocalX(ctx, shown, px - (innerX - scrollX));
@@ -409,7 +414,7 @@ export function textInput(opts: TextInputOptions): TextInputResult {
   // takes its size from `h`, not the widget's default arg, so without this a
   // multiline field would collapse to the column's default row height and never
   // show its rows.
-  const boxH = opts.h ?? (multiline ? rows * (theme.fontSize + 6) + 12 : 32);
+  const boxH = opts.h ?? (multiline ? rows * (theme.fontSize + 6) + 12 : theme.inputH);
   const rect = place({ ...opts, h: boxH }, opts.w ?? 180, boxH, "textInput");
   // Register this field with the native press listener (mobile keyboards need
   // a synchronous in-gesture focus — see `pressTargets`). Rect + clip stored in
@@ -474,8 +479,10 @@ export function textInput(opts: TextInputOptions): TextInputResult {
     : focused
       ? ""
       : (opts.placeholder ?? "");
-  const innerX = rect.x + 9; // left text edge (matches the 9px inset used below)
-  const innerW = Math.max(0, rect.w - 18);
+  const textPad = resolveThemeTextPadding(opts.textPad, theme.textPad);
+  const innerX = rect.x + 9 + textPad.x; // base frame-safe inset plus theme text padding
+  const innerY = rect.y + 4 + textPad.y;
+  const innerW = Math.max(0, rect.w - 18 - textPad.x * 2);
   const lineH = theme.fontSize + 6;
 
   // Mouse selection: place the caret on press, extend it on drag, select a word
@@ -496,6 +503,7 @@ export function textInput(opts: TextInputOptions): TextInputResult {
         rect,
         innerX,
         innerW,
+        innerY,
         lineH,
         p.x,
         p.y,
@@ -512,6 +520,7 @@ export function textInput(opts: TextInputOptions): TextInputResult {
         rect,
         innerX,
         innerW,
+        innerY,
         lineH,
         p.x,
         p.y,
@@ -531,6 +540,7 @@ export function textInput(opts: TextInputOptions): TextInputResult {
         rect,
         innerX,
         innerW,
+        innerY,
         lineH,
         dp.x,
         dp.y,
@@ -546,9 +556,16 @@ export function textInput(opts: TextInputOptions): TextInputResult {
   drawBox(ctx, rect.x, rect.y, rect.w, rect.h, {
     fill: opts.disabled ? theme.bgActive : theme.bg,
     stroke: focused ? theme.accent : hovered ? theme.accentSoft : theme.border,
+    role: "input",
+    state: opts.disabled ? "disabled" : focused ? "active" : hovered ? "hover" : "default",
   });
   ctx.beginPath();
-  ctx.rect(rect.x + 7, rect.y + 2, Math.max(0, rect.w - 14), Math.max(0, rect.h - 4));
+  ctx.rect(
+    rect.x + 7 + textPad.x,
+    rect.y + 2 + textPad.y,
+    Math.max(0, rect.w - 14 - textPad.x * 2),
+    Math.max(0, rect.h - 4 - textPad.y * 2),
+  );
   ctx.clip();
   ctx.font = uiFont();
   ctx.textAlign = "left";
@@ -564,7 +581,7 @@ export function textInput(opts: TextInputOptions): TextInputResult {
     if (multiline) {
       // Wrap top-aligned, then locate the caret's line + x within it.
       const lines = layoutLines(ctx, shown, innerW);
-      const top = rect.y + 4;
+      const top = innerY;
       // The caret's line: the last line whose start is at or before it (a caret
       // at the very end sits on the final line).
       let caretLine = 0;
@@ -627,7 +644,7 @@ export function textInput(opts: TextInputOptions): TextInputResult {
     // wraps top-aligned. Both are clipped to the box.
     ctx.fillStyle = textColor;
     if (multiline) {
-      const top = rect.y + 4;
+      const top = innerY;
       shown
         .split("\n")
         .flatMap((para) => wrapLines(ctx, para, innerW))

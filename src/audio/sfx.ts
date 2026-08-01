@@ -183,13 +183,13 @@ export function tone(opts: ToneOptions): void {
  *  presets, so every game doesn't re-implement the same blip. All presets are
  *  crash-safe (playSfx). */
 export const Sfx = {
-  /** Whether the SFX bus is unmuted. */
-  get on(): boolean {
-    return Mixer.bus("sfx").on;
+  /** Whether the SFX bus is silenced. */
+  get muted(): boolean {
+    return Mixer.bus("sfx").muted;
   },
   /** Mute/unmute all SFX (click-free). */
-  set on(on: boolean) {
-    Mixer.bus("sfx").setOn(on);
+  set muted(muted: boolean) {
+    Mixer.bus("sfx").setMuted(muted);
   },
   /** Master SFX volume 0..1 (click-free ramp). */
   get volume(): number {

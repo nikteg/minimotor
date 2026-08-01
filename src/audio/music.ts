@@ -6,16 +6,25 @@ import { Bus, Mixer } from "./mixer.js";
 // in advance against audioCtx.currentTime. This keeps the melody steady
 // even if timers jitter, and it won't break if the interval gets throttled.
 
-/** Config for `Music.start` — the music channel's volume, step length, and
- *  per-step note scheduler. */
+/** Config for `Music.start` — the music channel's volume, tempo, and per-step
+ *  note scheduler. */
 export interface MusicConfig {
   /** Master volume for the music channel `0..1`. */
   volume: number;
-  /** Length of one schedule step in ms (e.g. a sixteenth note). */
-  stepMs: number;
+  /** Tempo in beats per minute — the beat you would tap your foot to. */
+  bpm: number;
+  /** How finely `schedule` is called within a beat: 4 = sixteenth notes
+   *  (default), 2 = eighths, 1 = one call per beat. Together with `bpm` this
+   *  fixes the step length, `60000 / bpm / stepsPerBeat` ms. */
+  stepsPerBeat?: number;
   /** Called for each step; book notes via `Music.note` / `Music.kick` /
    *  `Music.noiseHit`. `when` is the audio-clock time (seconds) the step plays. */
   schedule: (step: number, when: number) => void;
+}
+
+/** Seconds per schedule step — the tempo, resolved. */
+function stepSeconds(config: MusicConfig): number {
+  return 60 / config.bpm / (config.stepsPerBeat ?? 4);
 }
 
 const SCHED_AHEAD_S = 0.2;
@@ -57,7 +66,7 @@ function schedulerTick() {
   while (musicNextNoteTime < audioCtx.currentTime + SCHED_AHEAD_S) {
     musicConfig.schedule(musicStep, musicNextNoteTime);
     musicStep++;
-    musicNextNoteTime += musicConfig.stepMs / 1000;
+    musicNextNoteTime += stepSeconds(musicConfig);
   }
 }
 
@@ -89,18 +98,19 @@ document.addEventListener("visibilitychange", () => {
 /** The procedural music channel: a look-ahead Web Audio step scheduler.
  * Book notes from a `MusicConfig.schedule`; persistence belongs to the
  * optional Storage capability. */
-let musicOn = true;
+let musicMuted = false;
 
 export const Music = {
-  // On/off state is reflected in the music bus gain, so the scheduler can keep
-  // running even when muted - switching is instant and click-free.
-  get on(): boolean {
-    return musicOn;
+  // Mute is reflected in the music bus gain, so the scheduler keeps running
+  // while silent - switching is instant, click-free, and resumes mid-phrase
+  // rather than restarting the song.
+  get muted(): boolean {
+    return musicMuted;
   },
-  /** Turn music on/off and update the bus. */
-  set on(on: boolean) {
-    musicOn = on;
-    musicBus?.setOn(on, 50);
+  /** Silence/unsilence the music and update the bus. */
+  set muted(muted: boolean) {
+    musicMuted = muted;
+    musicBus?.setMuted(muted, 50);
   },
 
   /** Start the music channel with a `MusicConfig`. Call on the first user
@@ -108,6 +118,12 @@ export const Music = {
    *  repeatedly. */
   start(config: MusicConfig): void {
     if (musicStarted) return;
+    // A non-positive tempo would make the look-ahead loop book notes forever
+    // and hang the tab, so this one is a throw rather than the silence the rest
+    // of this module falls back to: it can only be a bug in the caller.
+    if (!(stepSeconds(config) > 0) || !Number.isFinite(stepSeconds(config))) {
+      throw new RangeError("Music.start: bpm and stepsPerBeat must be finite and greater than 0");
+    }
     musicConfig = config;
     // Sound must NEVER block the app - swallow all errors.
     try {
@@ -116,7 +132,7 @@ export const Music = {
       // its gain, and games can add filters/sends via Mixer.bus("music").
       musicBus = Mixer.bus("music");
       musicBus.setVolume(config.volume, 0);
-      musicBus.setOn(Music.on, 0);
+      musicBus.setMuted(Music.muted, 0);
       musicStarted = true;
       startScheduler();
     } catch {

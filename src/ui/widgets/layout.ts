@@ -1,4 +1,4 @@
-import { paintFrame } from "./panel.js";
+import { paintFrame, panelTitleBodyOffset } from "./panel.js";
 import {
   AutoContainerConfig,
   LayoutChildren,
@@ -32,6 +32,7 @@ import {
   uiPointer,
   uiToScreen,
   uiWidth,
+  withTheme,
 } from "@src/ui/core/index.js";
 import { dragScroll, scrollbar } from "./lists.js";
 import { anchorViewport } from "@src/ui/core/index.js";
@@ -281,21 +282,23 @@ export function row<R>(
   maybeChildren?: LayoutChildren<R>,
 ): R {
   const [opts, children] = layoutArgs(optsOrChildren, maybeChildren);
-  const wrap = opts.wrap ?? false;
-  // a row's cross is height; wrapping children take their natural height so lines
-  // measure correctly.
-  const fitCross = wrap || (isRootContainer(opts) && opts.h === undefined);
-  const cfg = {
-    pad: opts.pad ?? 0,
-    gap: opts.gap ?? 8,
-    justify: opts.justify ?? "start",
-    reverse: opts.reverse ?? false,
-    fitCross,
-    wrap,
-  };
-  if (opts.overflow && opts.overflow !== "visible")
-    return scrollable("row", "row", opts, cfg, children);
-  return autoContainer("row", "row", opts, cfg, children);
+  return withTheme(opts.theme, () => {
+    const wrap = opts.wrap ?? false;
+    // a row's cross is height; wrapping children take their natural height so lines
+    // measure correctly.
+    const fitCross = wrap || (isRootContainer(opts) && opts.h === undefined);
+    const cfg = {
+      pad: opts.pad ?? 0,
+      gap: opts.gap ?? theme.spacing.md,
+      justify: opts.justify ?? "start",
+      reverse: opts.reverse ?? false,
+      fitCross,
+      wrap,
+    };
+    if (opts.overflow && opts.overflow !== "visible")
+      return scrollable("row", "row", opts, cfg, children);
+    return autoContainer("row", "row", opts, cfg, children);
+  });
 }
 
 /** Lay children out top-to-bottom. See `row`. */
@@ -306,20 +309,22 @@ export function col<R>(
   maybeChildren?: LayoutChildren<R>,
 ): R {
   const [opts, children] = layoutArgs(optsOrChildren, maybeChildren);
-  const wrap = opts.wrap ?? false;
-  // a col's cross is width; wrapping children take their natural width.
-  const fitCross = wrap || (isRootContainer(opts) && opts.w === undefined);
-  const cfg = {
-    pad: opts.pad ?? 0,
-    gap: opts.gap ?? 8,
-    justify: opts.justify ?? "start",
-    reverse: opts.reverse ?? false,
-    fitCross,
-    wrap,
-  };
-  if (opts.overflow && opts.overflow !== "visible")
-    return scrollable("col", "col", opts, cfg, children);
-  return autoContainer("col", "col", opts, cfg, children);
+  return withTheme(opts.theme, () => {
+    const wrap = opts.wrap ?? false;
+    // a col's cross is width; wrapping children take their natural width.
+    const fitCross = wrap || (isRootContainer(opts) && opts.w === undefined);
+    const cfg = {
+      pad: opts.pad ?? 0,
+      gap: opts.gap ?? theme.spacing.md,
+      justify: opts.justify ?? "start",
+      reverse: opts.reverse ?? false,
+      fitCross,
+      wrap,
+    };
+    if (opts.overflow && opts.overflow !== "visible")
+      return scrollable("col", "col", opts, cfg, children);
+    return autoContainer("col", "col", opts, cfg, children);
+  });
 }
 
 /** A bordered/optionally-titled box that also LAYS OUT its children (a column by
@@ -335,6 +340,19 @@ export interface PanelOptions extends LayoutOptions {
   border?: string;
 }
 
+/** Keep an explicitly sized titled pixel panel from placing its first standard
+ *  control inside the skin's fixed bottom edge. Auto-sized panels already get
+ *  this space from their measured children. */
+function panelWithSafeMinimumHeight(opts: PanelOptions): PanelOptions {
+  const frameBottom = theme.skin?.frames.panel?.insets.bottom ?? 0;
+  if (!opts.title || !frameBottom) return opts;
+  const padY = typeof opts.pad === "number" ? opts.pad : theme.pad.y;
+  // Panel top inset + title band + 2px title border + padded default control
+  // + frame edge.
+  const minimum = panelTitleBodyOffset() + 2 + padY + theme.buttonH + frameBottom;
+  return { ...opts, minH: Math.max(opts.minH ?? 0, minimum) };
+}
+
 /** A framed, optionally-titled box that lays its children out — the workhorse
  *  container for menus, dialogs and HUD clusters (`panel` + `col`/`row` in one).
  *  The body is inset below the title strip and padded by `theme.pad`; a bare
@@ -346,35 +364,38 @@ export interface PanelOptions extends LayoutOptions {
  *      if (UI.button({ label: "Resume" })) resume();
  *    }); */
 export function panel<R>(opts: PanelOptions, children: LayoutChildren<R>): R {
-  const dir = opts.dir ?? "col";
-  const fitCross =
-    isRootContainer(opts) && (dir === "col" ? opts.w === undefined : opts.h === undefined);
-  // The title strip is 2px top border + 30px band = 32px. Reserve a matching
-  // 2px below for the bottom border so body content centers in the visible gap
-  // under the strip, not biased low by the unaccounted-for bottom border.
-  const cfg: AutoContainerConfig = {
-    pad: opts.pad ?? theme.pad,
-    gap: opts.gap ?? 8,
-    justify: opts.justify ?? "start",
-    reverse: opts.reverse ?? false,
-    fitCross,
-    top: opts.title ? 32 : 0,
-    bottom: opts.title ? 2 : 0,
-    box: (rect) =>
-      paintFrame(uiCtx(), {
-        x: rect.x,
-        y: rect.y,
-        w: rect.w,
-        h: rect.h,
-        title: opts.title,
-        bg: opts.bg,
-        border: opts.border,
-      }),
-  };
-  // With overflow the frame + title stay fixed and only the body scrolls.
-  if (opts.overflow && opts.overflow !== "visible")
-    return scrollable("panel", dir, opts, cfg, children);
-  return autoContainer("panel", dir, opts, cfg, children);
+  return withTheme(opts.theme, () => {
+    const safeOpts = panelWithSafeMinimumHeight(opts);
+    const dir = safeOpts.dir ?? "col";
+    const fitCross =
+      isRootContainer(safeOpts) &&
+      (dir === "col" ? safeOpts.w === undefined : safeOpts.h === undefined);
+    // The title area includes the panel's top frame inset plus the theme's
+    // title band. Reserve a matching 2px below for the bottom border.
+    const cfg: AutoContainerConfig = {
+      pad: safeOpts.pad ?? theme.pad,
+      gap: safeOpts.gap ?? theme.spacing.md,
+      justify: safeOpts.justify ?? "start",
+      reverse: safeOpts.reverse ?? false,
+      fitCross,
+      top: safeOpts.title ? panelTitleBodyOffset() : 0,
+      bottom: safeOpts.title ? 2 : 0,
+      box: (rect) =>
+        paintFrame(uiCtx(), {
+          x: rect.x,
+          y: rect.y,
+          w: rect.w,
+          h: rect.h,
+          title: safeOpts.title,
+          bg: safeOpts.bg,
+          border: safeOpts.border,
+        }),
+    };
+    // With overflow the frame + title stay fixed and only the body scrolls.
+    if (safeOpts.overflow && safeOpts.overflow !== "visible")
+      return scrollable("panel", dir, safeOpts, cfg, children);
+    return autoContainer("panel", dir, safeOpts, cfg, children);
+  });
 }
 
 /** Insert extra spacing before the next child in the current layout. */

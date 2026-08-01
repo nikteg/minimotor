@@ -11,8 +11,9 @@ import { rooms } from "./src/net/server/rooms.js";
 const here = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
 // Game code imports the engine by its package name, exactly as an external
-// consumer writes it; these aliases point those names at the compiled build.
-// Read straight from `exports` so moving a module is a one-file change.
+// consumer writes it; development aliases point those names at TypeScript
+// source so Vite can transform and HMR the engine without a preceding tsc.
+// Read straight from `exports` so moving a public subpath is a one-file change.
 function subpathAliases(): { find: string; replacement: string }[] {
   const pkg = JSON.parse(readFileSync(here("./package.json"), "utf8")) as {
     exports: Record<string, { default: string }>;
@@ -24,7 +25,7 @@ function subpathAliases(): { find: string; replacement: string }[] {
       .filter(([subpath]) => !subpath.startsWith("./cli"))
       .map(([subpath, entry]) => ({
         find: "minimotor" + subpath.slice(1),
-        replacement: here(entry.default),
+        replacement: here(entry.default.replace(/^\.\/build\//, "./src/").replace(/\.js$/, ".ts")),
       }))
       // Most-specific first: the plain "minimotor" entry must not swallow the
       // "/physics2d" subpath (string aliases also match "<find>/…" prefixes).
@@ -133,8 +134,9 @@ function landingExamples(): Plugin {
 // serve as the showcase for the public API. Vite's root is the samples folder,
 // so the gallery is at "/" and each game at "/<game>/". Game code imports the
 // engine by its package name — `import { createApp } from "minimotor"` — which
-// resolves via the alias below to the compiled build output, exactly matching
-// what an external consumer writes.
+// resolves via the alias below to source during development. Vite transforms
+// the TypeScript directly, so changing `src/` no longer requires rebuilding
+// `build/` first.
 export default defineConfig({
   root: here("./samples"),
   plugins: [sampleSockets(), landingExamples()],
@@ -145,8 +147,8 @@ export default defineConfig({
     // gone stale, since a wrong alias still resolves — to yesterday's module.
     alias: [{ find: /^@src\/(.*)$/, replacement: `${here("./src")}/$1` }, ...subpathAliases()],
   },
-  // Don't pre-bundle the engine so edits to its build output show up without
-  // clearing Vite's dep cache.
+  // Don't pre-bundle the engine so source edits flow through Vite's normal
+  // module graph and HMR path.
   optimizeDeps: { exclude: ["minimotor"] },
   server: { host: true, port: 8765, strictPort: true },
   preview: { host: true, port: 8765, strictPort: true },

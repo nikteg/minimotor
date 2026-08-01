@@ -262,6 +262,27 @@ export function drawFocusRing(
   ctx: CanvasRenderingContext2D,
   rect: { x: number; y: number; w: number; h: number },
 ): void {
+  const cursor = theme.skin?.sprites.cursor;
+  if (cursor) {
+    const { region, image } = cursor;
+    const previousSmoothing = ctx.imageSmoothingEnabled;
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(
+      image,
+      region.sx,
+      region.sy,
+      region.sw,
+      region.sh,
+      rect.x - region.sw - 4,
+      rect.y + (rect.h - region.sh) / 2,
+      region.sw,
+      region.sh,
+    );
+    ctx.imageSmoothingEnabled = previousSmoothing;
+    ctx.restore();
+    return;
+  }
   ctx.save();
   ctx.strokeStyle = theme.accent;
   ctx.lineWidth = Math.max(2, theme.borderWidth);

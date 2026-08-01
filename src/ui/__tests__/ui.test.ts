@@ -14,6 +14,7 @@ import {
   ids,
   row,
   setTheme,
+  withTheme,
   flow,
   text,
   textWidth,
@@ -199,7 +200,12 @@ describe("UI theme", () => {
     expect(defaultTheme.borderWidth).toBe(2);
     expect(defaultTheme.radius).toBe(0);
     expect(defaultTheme.buttonPadX).toBe(28);
-    expect(defaultTheme.pad).toBe(8);
+    expect(defaultTheme.buttonW).toBe(0);
+    expect(defaultTheme.barH).toBe(12);
+    expect(defaultTheme.tabH).toBe(30);
+    expect(defaultTheme.panelTitleH).toBe(32);
+    expect(defaultTheme.panelTitleOverhang).toEqual({ x: 0, y: 0 });
+    expect(defaultTheme.pad).toEqual({ x: 8, y: 8 });
     expect(defaultTheme.textPad).toBe(0);
     expect(defaultTheme.primary).toBe(defaultTheme.accent);
     expect(defaultTheme.danger).toBeDefined();
@@ -207,6 +213,17 @@ describe("UI theme", () => {
     expect(getTheme().radius).toBe(8);
     expect(getTheme().borderWidth).toBe(3);
     expect(getTheme().buttonPadX).toBe(defaultTheme.buttonPadX); // untouched
+    _reset();
+  });
+
+  it("scopes theme overrides and restores the parent after the subtree", () => {
+    setTheme({ font: "base", buttonH: 30 });
+    withTheme({ font: "local", buttonH: 44 }, () => {
+      expect(getTheme().font).toBe("local");
+      expect(getTheme().buttonH).toBe(44);
+    });
+    expect(getTheme().font).toBe("base");
+    expect(getTheme().buttonH).toBe(30);
     _reset();
   });
 });

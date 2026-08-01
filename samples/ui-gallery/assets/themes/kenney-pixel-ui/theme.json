@@ -1,0 +1,100 @@
+{
+  "image": "atlas.png",
+  "tileSize": { "w": 16, "h": 16 },
+  "frames": {
+    "panel": {
+      "x": 0,
+      "y": 208,
+      "w": 48,
+      "h": 48,
+      "insets": { "left": 16, "top": 16, "right": 16, "bottom": 16 }
+    },
+    "panelTitle": {
+      "x": 0,
+      "y": 208,
+      "w": 48,
+      "h": 16,
+      "insets": { "left": 8, "top": 4, "right": 8, "bottom": 4 }
+    },
+    "button": {
+      "x": 96,
+      "y": 0,
+      "w": 48,
+      "h": 16,
+      "insets": { "left": 8, "top": 4, "right": 8, "bottom": 4 }
+    },
+    "buttonHover": {
+      "x": 96,
+      "y": 16,
+      "w": 48,
+      "h": 16,
+      "insets": { "left": 8, "top": 4, "right": 8, "bottom": 4 }
+    },
+    "buttonActive": {
+      "x": 96,
+      "y": 32,
+      "w": 48,
+      "h": 16,
+      "insets": { "left": 8, "top": 4, "right": 8, "bottom": 4 }
+    },
+    "input": {
+      "x": 0,
+      "y": 256,
+      "w": 48,
+      "h": 48,
+      "insets": { "left": 16, "top": 16, "right": 16, "bottom": 16 }
+    },
+    "barTrack": {
+      "x": 0,
+      "y": 416,
+      "w": 48,
+      "h": 16,
+      "insets": { "left": 4, "top": 4, "right": 4, "bottom": 4 }
+    },
+    "barFill": {
+      "x": 96,
+      "y": 416,
+      "w": 48,
+      "h": 16,
+      "insets": { "left": 4, "top": 4, "right": 4, "bottom": 4 }
+    },
+    "sliderTrack": {
+      "x": 0,
+      "y": 416,
+      "w": 48,
+      "h": 16,
+      "insets": { "left": 4, "top": 4, "right": 4, "bottom": 4 }
+    },
+    "sliderFill": {
+      "x": 96,
+      "y": 416,
+      "w": 48,
+      "h": 16,
+      "insets": { "left": 4, "top": 4, "right": 4, "bottom": 4 }
+    },
+    "scrollTrack": {
+      "x": 16,
+      "y": 432,
+      "w": 16,
+      "h": 48,
+      "insets": { "left": 4, "top": 4, "right": 4, "bottom": 4 }
+    },
+    "scrollThumb": {
+      "x": 32,
+      "y": 432,
+      "w": 16,
+      "h": 16,
+      "insets": { "left": 4, "top": 4, "right": 4, "bottom": 4 }
+    }
+  },
+  "sprites": {
+    "icons": {
+      "checkboxOff": { "x": 48, "y": 48, "w": 16, "h": 16 },
+      "checkboxOn": { "x": 96, "y": 48, "w": 16, "h": 16 },
+      "radioOff": { "x": 64, "y": 48, "w": 16, "h": 16 },
+      "radioOn": { "x": 128, "y": 48, "w": 16, "h": 16 },
+      "selectArrow": { "x": 80, "y": 112, "w": 16, "h": 16 }
+    },
+    "sliderKnob": { "x": 112, "y": 416, "w": 16, "h": 16 }
+  }
+}

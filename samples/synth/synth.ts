@@ -189,9 +189,9 @@ function ensureBacking() {
   musicStarted = true;
   Audio.Music.start({
     volume: 0.3,
-    stepMs: 150,
+    bpm: 100, // sixteenths by default, so 150ms per step
     schedule(step, when) {
-      if (!backing || !Audio.Music.on) return;
+      if (!backing || Audio.Music.muted) return;
       const g = GROOVES[grooveIdx];
       const i = step % 64;
       // Transpose the pitched parts with the Octave control (drums stay put),
@@ -328,7 +328,7 @@ Loop.run({
       });
       // The backing groove lives in its own group: pick the groove, and the
       // play/pause button starts/stops it. The Mute checkbox is bound to
-      // `Audio.Music.on`; persistence, when desired, belongs to
+      // `Audio.Music.muted`; persistence, when desired, belongs to
       // `minimotor/storage` rather than the audio engine.
       UI.panel({ title: "Music" }, () => {
         UI.row({ h: 30, gap: 12 }, () => {
@@ -344,8 +344,8 @@ Loop.run({
             backing = !backing;
           }
         });
-        const muteNow = UI.toggle({ id: "mx-mute", label: "Muted", on: !Audio.Music.on });
-        if (muteNow === Audio.Music.on) Audio.Music.on = !muteNow;
+        const muteNow = UI.toggle({ id: "mx-mute", label: "Muted", on: Audio.Music.muted });
+        if (muteNow !== Audio.Music.muted) Audio.Music.muted = muteNow;
       });
       UI.row({ h: 26, gap: 18 }, () => {
         const rv = UI.toggle({ id: "mx-reverb", label: "Reverb", on: reverbOn });

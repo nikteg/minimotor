@@ -4,6 +4,7 @@ import {
   buttonState,
   centeredText,
   consumeKeyboardCommand,
+  drawBox,
   drawFocusRing,
   focusFromPointer,
   hoverCursor,
@@ -27,7 +28,7 @@ export interface TabsOptions extends Flowable {
   /** Total width, split equally between the tabs. Omit to auto-size every
    *  cell to the widest label. */
   w?: number;
-  /** Strip height in px. Default `30`. */
+  /** Strip height in px. Default `theme.tabH`. */
   h?: number;
   /** Tab labels, left to right. */
   items: string[];
@@ -47,8 +48,11 @@ export function tabs(opts: TabsOptions): number {
   // Auto width: equal cells sized to the widest label.
   const w =
     opts.w ??
-    (Math.ceil(Math.max(...opts.items.map((t) => measureWidth(ctx, t)))) + 26) * opts.items.length;
-  const rect = place(opts, w, opts.h ?? 30, "tabs");
+    (Math.ceil(Math.max(...opts.items.map((t) => measureWidth(ctx, t)))) +
+      theme.spacing.lg * 2 +
+      2) *
+      opts.items.length;
+  const rect = place(opts, w, opts.h ?? theme.tabH, "tabs");
   const id = widgetId(opts.id, "tabs");
   const keyboardFocused = registerFocusable(ctx, { id, tabIndex: opts.tabIndex, rect });
   const cellW = rect.w / opts.items.length;
@@ -78,15 +82,29 @@ export function tabs(opts: TabsOptions): number {
       focusFromPointer(ctx, id);
     }
     const isActive = i === active;
-    ctx.fillStyle = isActive ? theme.bg : hover ? theme.bgHover : theme.bgActive;
-    ctx.fillRect(x, rect.y, cellW - 2, rect.h);
-    if (isActive) {
-      ctx.fillStyle = theme.accent;
-      ctx.fillRect(x, rect.y + rect.h - 3, cellW - 2, 3);
+    const hasTabSkin = !!(
+      theme.skin?.frames.tab ||
+      theme.skin?.frames.tabHover ||
+      theme.skin?.frames.tabActive
+    );
+    if (hasTabSkin) {
+      drawBox(ctx, x, rect.y, cellW - 2, rect.h, {
+        fill: isActive ? theme.bg : hover ? theme.bgHover : theme.bgActive,
+        stroke: theme.border,
+        role: "tab",
+        state: isActive ? "active" : hover ? "hover" : "default",
+      });
+    } else {
+      ctx.fillStyle = isActive ? theme.bg : hover ? theme.bgHover : theme.bgActive;
+      ctx.fillRect(x, rect.y, cellW - 2, rect.h);
+      if (isActive) {
+        ctx.fillStyle = theme.accent;
+        ctx.fillRect(x, rect.y + rect.h - (theme.spacing.sm - 1), cellW - 2, theme.spacing.sm - 1);
+      }
     }
     ctx.fillStyle = isActive ? theme.text : theme.textDim;
     ctx.textAlign = "center";
-    centeredText(ctx, label, x + cellW / 2, rect.y + rect.h / 2, cellW - 10);
+    centeredText(ctx, label, x + cellW / 2, rect.y + rect.h / 2, cellW - (theme.spacing.lg - 2));
   });
   ctx.restore();
   ctx.restore();

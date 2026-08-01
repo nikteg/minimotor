@@ -48,6 +48,7 @@ beforeEach(() => {
       (ctx.smoothingAtDraw as boolean[]).push(ctx.imageSmoothingEnabled as boolean);
       calls.push(`draw ${dx},${dy} ${dw}x${dh} @${ctx.globalAlpha}`);
     }),
+    fillText: vi.fn((s: string, x: number, y: number) => calls.push(`fillText ${s} ${x},${y}`)),
     canvas: null,
   };
   HTMLCanvasElement.prototype.getContext = function (type: string) {
@@ -288,5 +289,68 @@ describe("Draw.sprites", () => {
     ecs.spawn(Sprite.with({ x: 100, y: 50, img }));
     Draw.sprites(ecs.dense(Sprite));
     expect(ctx.calls).toContain("draw 90,40 20x20 @1");
+  });
+});
+
+describe("Draw.text with a bitmap font", () => {
+  /** The structural `FontLike` seam — anything with `render` qualifies, which
+   *  is how `Font.atlas` plugs in without the renderer importing it. */
+  function spyFont() {
+    const seen: unknown[] = [];
+    return {
+      seen,
+      font: {
+        render(_c: unknown, str: string, x: number, y: number, style: unknown) {
+          seen.push({ str, x, y, style });
+        },
+      },
+    };
+  }
+
+  it("hands the string to the font instead of fillText", () => {
+    const { seen, font } = spyFont();
+    Draw.text("HI", { x: 5, y: 6, font: font as never });
+    expect(seen).toEqual([{ str: "HI", x: 5, y: 6, style: {} }]);
+    expect(ctx.calls).not.toContain("fillText");
+  });
+
+  it("forwards colour, scale, alignment and the outline options", () => {
+    const { seen, font } = spyFont();
+    Draw.text("HI", {
+      x: 0,
+      y: 0,
+      font: font as never,
+      color: "#f00",
+      scale: 3,
+      align: "center",
+      baseline: "middle",
+      outline: "#000",
+      outlineWidth: 2,
+      outlineStyle: "cross",
+      shadow: { x: 1, y: 1 },
+      shadowColor: "#333",
+    });
+    expect((seen[0] as { style: unknown }).style).toEqual({
+      color: "#f00",
+      scale: 3,
+      align: "center",
+      baseline: "middle",
+      outline: "#000",
+      outlineWidth: 2,
+      outlineStyle: "cross",
+      shadow: { x: 1, y: 1 },
+      shadowColor: "#333",
+    });
+  });
+
+  it("drops a gradient rather than passing a non-colour to a tint", () => {
+    const { seen, font } = spyFont();
+    Draw.text("HI", { x: 0, y: 0, font: font as never, color: fakeGradient() });
+    expect((seen[0] as { style: Record<string, unknown> }).style.color).toBeUndefined();
+  });
+
+  it("still takes a CSS font string", () => {
+    Draw.text("HI", { x: 1, y: 2, font: "8px monospace" });
+    expect(ctx.calls).toContain("fillText HI 1,2");
   });
 });

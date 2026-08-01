@@ -1,6 +1,7 @@
 // Module-local tile and world tests.
 import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
-import { grid, world, set, Tiled, type Skin, type Level } from "@src/tiles/index.js";
+import { grid, world, set, recolor, Tiled, type Skin, type Level } from "@src/tiles/index.js";
+import { LADDER, climbable, ladder, ladderThrough, tagged } from "@src/tiles/presets.js";
 import * as LDtk from "@src/ldtk/index.js";
 import { climbLadder, slide, moveAndSlide, type Solid } from "@src/collision/index.js";
 import { createClockHandle } from "@src/clock/index.js";
@@ -126,8 +127,8 @@ describe("Tiles.grid (level = data)", () => {
     const level = makeLevel();
     const out: Solid[] = [];
     level.solidsNear({ x: 0, y: 25, w: 50, h: 15 }, out); // bottom two rows
-    expect(out.length).toBe(5); // the # floor row only
-    expect(out.every((s) => !s.oneWay)).toBe(true);
+    // The five # floor tiles are merged into one rect with no internal edges.
+    expect(out).toEqual([{ x: 0, y: 30, w: 50, h: 10, oneWay: false, slope: undefined }]);
     out.length = 0;
     level.solidsNear({ x: 10, y: 10, w: 10, h: 10 }, out); // the shelf row
     expect(out.some((s) => s.oneWay)).toBe(true);
@@ -138,7 +139,7 @@ describe("Tiles.grid (level = data)", () => {
       size: 16,
       legend: {
         ">": { slope: "up-right" },
-        "/": { ladder: true },
+        "/": ladder,
       },
     });
     const solids = level.solidsNear(level.rect, []);
@@ -146,8 +147,8 @@ describe("Tiles.grid (level = data)", () => {
     expect(solids).toContainEqual(expect.objectContaining({ slope: "up-right", w: 16, h: 16 }));
     expect(solids).toContainEqual(expect.objectContaining({ x: 16, y: 0, oneWay: true }));
     expect(level.solidAt(4, 4)).toBe(true);
-    expect(level.ladderAt(20, 4)).toBe(true);
-    expect(level.laddersNear(level.rect, [])).toEqual([{ x: 16, y: 0, w: 16, h: 16 }]);
+    expect(level.tagAt(20, 4, LADDER)).toBe(true);
+    expect(level.rectsNear(LADDER, level.rect, [])).toEqual([{ x: 16, y: 0, w: 16, h: 16 }]);
   });
 
   it("lets one map cell own a multi-cell collision or ladder span", () => {
@@ -161,18 +162,18 @@ H..
         size: 16,
         legend: {
           R: { slope: "up-right", span: [2, 1] },
-          H: { ladder: true, span: [1, 2] },
+          H: { ...ladder, span: [1, 2] },
           "#": { solid: true },
         },
       },
     );
 
     expect(level.solidAt(24, 8)).toBe(true); // empty-looking covered half
-    expect(level.ladderAt(8, 24)).toBe(true);
+    expect(level.tagAt(8, 24, LADDER)).toBe(true);
     expect(level.solidsNear({ x: 20, y: 0, w: 4, h: 12 }, [])).toEqual([
       { x: 0, y: 0, w: 32, h: 16, oneWay: false, slope: "up-right" },
     ]);
-    expect(level.laddersNear({ x: 0, y: 20, w: 12, h: 4 }, [])).toEqual([
+    expect(level.rectsNear(LADDER, { x: 0, y: 20, w: 12, h: 4 }, [])).toEqual([
       { x: 0, y: 16, w: 16, h: 32 },
     ]);
   });
@@ -245,7 +246,7 @@ S#
         size: 16,
         legend: {
           "#": { solid: true },
-          T: { ladder: true },
+          T: ladder,
         },
       },
     );
@@ -257,7 +258,7 @@ S#
     const body = { x: 18, y: 40, w: 12, h: 24, vel: { x: 0, y: 0 }, grounded: true };
     let climbing = false;
     for (let step = 0; step < 20; step++) {
-      climbing = climbLadder(body, level, -1, { active: climbing, speed: 1.5 });
+      climbing = climbLadder(body, climbable(level), -1, { active: climbing, speed: 1.5 });
       moveAndSlide(body, level);
     }
     expect(climbing).toBe(true);
@@ -267,10 +268,10 @@ S#
   it("can opt out of the automatic exposed ladder-top platform", () => {
     const level = grid("T", {
       size: 16,
-      legend: { T: { ladder: true, ladderTop: false } },
+      legend: { T: ladderThrough },
     });
     expect(level.solidsNear(level.rect, [])).toEqual([]);
-    expect(level.ladderAt(8, 8)).toBe(true);
+    expect(level.tagAt(8, 8, LADDER)).toBe(true);
   });
 
   it("walks smoothly across a one-cell 1:1 slope in both directions", () => {
@@ -1140,4 +1141,464 @@ it("Skin type is usable for annotation", () => {
   const level: Level<"#"> = grid("#", { size: 4, legend: { "#": { solid: true } } });
   const skin: Skin<typeof level> = { "#": "#000" };
   expect(skin["#"]).toBe("#000");
+});
+
+describe("Tiles.orient", () => {
+  const img = {} as CanvasImageSource;
+
+  function transformCtx() {
+    const blits: unknown[][] = [];
+    const ops: string[] = [];
+    const ctx: Record<string, unknown> = {
+      fillStyle: "",
+      imageSmoothingEnabled: true,
+      fillRect: () => {},
+      drawImage: (...a: unknown[]) => blits.push(a),
+      save: () => ops.push("save"),
+      restore: () => ops.push("restore"),
+      translate: (x: number, y: number) => ops.push(`translate(${x},${y})`),
+      rotate: (r: number) => ops.push(`rotate(${(r / Math.PI) * 2})`),
+      scale: (x: number, y: number) => ops.push(`scale(${x},${y})`),
+      canvas: { width: 100, height: 100 },
+      blits,
+      ops,
+    };
+    return ctx as unknown as CanvasRenderingContext2D & { blits: unknown[][]; ops: string[] };
+  }
+
+  it("returns a new cell and composes with an already-oriented one", () => {
+    const ts = set(img, { size: 16, names: { ramp: [1, 0] } });
+    const once = ts.orient(ts.ramp, { flipX: true, turn: 1 });
+    expect(ts.ramp.flipX).toBeUndefined(); // source untouched
+    expect(once).toMatchObject({ sx: 16, sy: 0, flipX: true, flipY: false, turn: 1 });
+
+    const twice = ts.orient(once, { flipX: true, turn: 3 });
+    expect(twice).toMatchObject({ flipX: false, turn: 0 }); // flips xor, turns add mod 4
+  });
+
+  it("draws an unoriented cell without touching the transform", () => {
+    const level = grid("#", { size: 10, legend: { "#": { solid: true } } });
+    const ts = set(img, { size: 16, names: { ground: [0, 0] } });
+    const ctx = transformCtx();
+    level.render(ctx, { "#": ts.ground });
+    expect(ctx.ops).toEqual([]);
+    expect(ctx.blits).toEqual([[img, 0, 0, 16, 16, 0, 0, 10, 10]]);
+  });
+
+  it("mirrors and turns around the cell centre, keeping the same footprint", () => {
+    const level = grid("#", { size: 10, legend: { "#": { solid: true } } });
+    const ts = set(img, { size: 16, names: { ground: [0, 0] } });
+    const ctx = transformCtx();
+    level.render(ctx, { "#": ts.orient(ts.ground, { flipX: true, turn: 1 }) });
+    expect(ctx.ops).toEqual(["save", "translate(5,5)", "rotate(1)", "scale(-1,1)", "restore"]);
+    // Drawn centred on the origin of the rotated frame, so it still covers 10×10.
+    expect(ctx.blits).toEqual([[img, 0, 0, 16, 16, -5, -5, 10, 10]]);
+  });
+
+  it("swaps the drawn axes for an odd quarter-turn of a non-square stamp", () => {
+    const level = grid("R.", {
+      size: 10,
+      legend: { R: { solid: true, span: [2, 1] } },
+    });
+    const ts = set(img, { size: 16, names: { ground: [0, 0] } });
+    const ctx = transformCtx();
+    level.render(ctx, { R: ts.orient(ts.region(0, 0, 2, 1), { turn: 1 }) });
+    // Footprint is 20×10 world px, so the rotated frame draws 10×20.
+    expect(ctx.blits).toEqual([[img, 0, 0, 32, 16, -5, -10, 10, 20]]);
+  });
+});
+
+describe("Tiles.set.auto4 (dual grid)", () => {
+  const img = {} as CanvasImageSource;
+
+  function blitCtx() {
+    const blits: unknown[][] = [];
+    const ctx: Record<string, unknown> = {
+      fillStyle: "",
+      imageSmoothingEnabled: true,
+      fillRect: () => {},
+      drawImage: (...a: unknown[]) => blits.push(a),
+      canvas: { width: 100, height: 100 },
+      blits,
+    };
+    return ctx as unknown as CanvasRenderingContext2D & { blits: unknown[][] };
+  }
+
+  /** mask → [dx, dy] of every blit, keyed by the atlas cell it came from. */
+  function drawn(ctx: { blits: unknown[][] }) {
+    return ctx.blits.map((b) => ({
+      mask: ((b[2] as number) / 16) * 4 + (b[1] as number) / 16,
+      dx: b[5] as number,
+      dy: b[6] as number,
+    }));
+  }
+
+  it("draws one tile per corner of the lattice, offset by half a cell", () => {
+    const level = grid("##\n##", { size: 10, legend: { "#": { solid: true } } });
+    const ts = set(img, { size: 16, names: { terrain: [0, 0] } });
+    const ctx = blitCtx();
+    level.render(ctx, { "#": ts.auto4(ts.terrain) });
+
+    // 2×2 solid cells → a 3×3 corner lattice, every corner touching terrain.
+    expect(ctx.blits).toHaveLength(9);
+    expect(drawn(ctx)).toEqual([
+      { mask: 4, dx: -5, dy: -5 }, // only the bottom-right cell is filled
+      { mask: 12, dx: 5, dy: -5 }, // bottom-left + bottom-right
+      { mask: 8, dx: 15, dy: -5 },
+      { mask: 6, dx: -5, dy: 5 },
+      { mask: 15, dx: 5, dy: 5 }, // interior: all four corners filled
+      { mask: 9, dx: 15, dy: 5 },
+      { mask: 2, dx: -5, dy: 15 },
+      { mask: 3, dx: 5, dy: 15 },
+      { mask: 1, dx: 15, dy: 15 },
+    ]);
+  });
+
+  it("skips the empty mask unless an explicit cell is given", () => {
+    const level = grid("#.\n..", { size: 10, legend: { "#": { solid: true } } });
+    const ts = set(img, { size: 16, names: { terrain: [0, 0] } });
+
+    const bare = blitCtx();
+    level.render(bare, { "#": ts.auto4(ts.terrain) });
+    // Only the four corners around the single filled cell are non-empty.
+    expect(bare.blits).toHaveLength(4);
+
+    const filled = blitCtx();
+    level.render(filled, { "#": ts.auto4(ts.terrain, { empty: ts.cell(3, 3) }) });
+    expect(filled.blits).toHaveLength(9);
+  });
+
+  it('honours stride and connects across glyphs with connect: "solid"', () => {
+    const level = grid("#R", {
+      size: 10,
+      legend: { "#": { solid: true }, R: { solid: true } },
+    });
+    const ts = set(img, { size: 16, names: { terrain: [0, 0] } });
+
+    const same = blitCtx();
+    level.render(same, { "#": ts.auto4(ts.terrain), R: null });
+    // "same" only sees the "#" cell: 4 corners around it.
+    expect(same.blits).toHaveLength(4);
+
+    const solid = blitCtx();
+    level.render(solid, { "#": ts.auto4(ts.terrain, { connect: "solid" }), R: null });
+    expect(solid.blits).toHaveLength(6); // both cells are solid → a 3×2 lattice
+
+    const strided = blitCtx();
+    level.render(strided, { "#": ts.auto4(ts.terrain, { stride: 2 }), R: null });
+    // Mask 4 sits at atlas (0,1); stride 2 pushes it to row 2 → sy = 32.
+    expect(strided.blits[0][2]).toBe(32);
+  });
+
+  it("paints underneath ordinary tiles and is skipped by region overhang", () => {
+    const level = grid("#o", { size: 10, legend: { "#": { solid: true } } });
+    const ts = set(img, { size: 16, names: { terrain: [0, 0], prop: [5, 5] } });
+    const ctx = blitCtx();
+    level.render(ctx, { "#": ts.auto4(ts.terrain), o: ts.prop });
+    const last = ctx.blits[ctx.blits.length - 1];
+    expect(last).toEqual([img, 80, 80, 16, 16, 10, 0, 10, 10]); // the prop, on top
+  });
+
+  it("rejects a non-positive stride", () => {
+    const ts = set(img, { size: 16, names: { terrain: [0, 0] } });
+    expect(() => ts.auto4(ts.terrain, { stride: 0 })).toThrow(/positive integer/);
+  });
+});
+
+describe("Tiles.recolor", () => {
+  const origGetContext = HTMLCanvasElement.prototype.getContext;
+  afterEach(() => {
+    HTMLCanvasElement.prototype.getContext = origGetContext;
+  });
+
+  /** A 2×1 RGBA image: opaque green, then a transparent pixel of the same hue. */
+  function stubCanvas(pixels: number[]) {
+    const data = new Uint8ClampedArray(pixels);
+    const put: unknown[] = [];
+    HTMLCanvasElement.prototype.getContext = function () {
+      return {
+        imageSmoothingEnabled: true,
+        drawImage: () => {},
+        getImageData: () => ({ data }),
+        putImageData: (image: unknown) => put.push(image),
+      } as unknown as CanvasRenderingContext2D;
+    } as typeof HTMLCanvasElement.prototype.getContext;
+    return { data, put };
+  }
+
+  it("remaps exact colors and leaves transparent pixels alone", () => {
+    const { data, put } = stubCanvas([0x7e, 0xc8, 0x50, 0xff, 0x7e, 0xc8, 0x50, 0x00]);
+    const out = recolor({ width: 2, height: 1 } as CanvasImageSource, {
+      "#7ec850": "#2c4a3b",
+    });
+    expect(out).toBeInstanceOf(HTMLCanvasElement);
+    expect(put).toHaveLength(1);
+    expect(Array.from(data.slice(0, 4))).toEqual([0x2c, 0x4a, 0x3b, 0xff]);
+    expect(Array.from(data.slice(4))).toEqual([0x7e, 0xc8, 0x50, 0x00]); // untouched
+  });
+
+  it("accepts short hex and applies an alpha given on the value", () => {
+    const { data } = stubCanvas([0xaa, 0xbb, 0xcc, 0xff]);
+    recolor({ width: 1, height: 1 } as CanvasImageSource, { "#abc": "#1234" });
+    expect(Array.from(data)).toEqual([0x11, 0x22, 0x33, 0x44]);
+  });
+
+  it("throws on a malformed palette entry", () => {
+    stubCanvas([0, 0, 0, 0]);
+    expect(() => recolor({ width: 1, height: 1 } as CanvasImageSource, { green: "#000" })).toThrow(
+      /not a #rgb/,
+    );
+  });
+
+  it("returns the original image when there is no 2d context or no size", () => {
+    HTMLCanvasElement.prototype.getContext = (() =>
+      null) as unknown as typeof HTMLCanvasElement.prototype.getContext;
+    const image = { width: 4, height: 4 } as CanvasImageSource;
+    expect(recolor(image, { "#000": "#fff" })).toBe(image);
+
+    const sizeless = {} as CanvasImageSource;
+    expect(recolor(sizeless, { "#000": "#fff" })).toBe(sizeless);
+  });
+});
+
+describe("Tiles merged collision rects", () => {
+  it("merges a solid block on both axes", () => {
+    const level = grid("###\n###", { size: 10, legend: { "#": { solid: true } } });
+    expect(level.solidsNear(level.rect, [])).toEqual([
+      { x: 0, y: 0, w: 30, h: 20, oneWay: false, slope: undefined },
+    ]);
+  });
+
+  it("merges one-way platforms sideways only, keeping every top surface", () => {
+    const level = grid("==\n==", { size: 10, legend: { "=": { solid: true, oneWay: true } } });
+    expect(level.solidsNear(level.rect, [])).toEqual([
+      { x: 0, y: 0, w: 20, h: 10, oneWay: true, slope: undefined },
+      { x: 0, y: 10, w: 20, h: 10, oneWay: true, slope: undefined },
+    ]);
+  });
+
+  it("keeps a lower one-way platform catchable underneath an upper one", () => {
+    const level = grid(
+      `
+....
+====
+....
+====
+`,
+      { size: 10, legend: { "=": { solid: true, oneWay: true } } },
+    );
+    const faller = { x: 5, y: 12, w: 6, h: 6 };
+    const hit = slide(faller, { x: 0, y: 20 }, level);
+    expect(hit.down).toBe(true);
+    expect(faller.y).toBeCloseTo(24, 1); // caught by the LOWER platform's top
+  });
+
+  it("never merges slopes or multi-cell spans into their neighbours", () => {
+    const level = grid("#R.#", {
+      size: 10,
+      legend: {
+        "#": { solid: true },
+        R: { slope: "up-right", span: [2, 1] },
+      },
+    });
+    expect(level.solidsNear(level.rect, [])).toEqual([
+      { x: 0, y: 0, w: 10, h: 10, oneWay: false, slope: undefined },
+      { x: 10, y: 0, w: 20, h: 10, oneWay: false, slope: "up-right" },
+      { x: 30, y: 0, w: 10, h: 10, oneWay: false, slope: undefined },
+    ]);
+  });
+
+  it("merges a ladder column and rebuilds after set()", () => {
+    const level = grid("H\nH\nH", { size: 10, legend: { H: ladder } });
+    expect(level.rectsNear(LADDER, level.rect, [])).toEqual([{ x: 0, y: 0, w: 10, h: 30 }]);
+    // The exposed top is still its own one-way standing surface.
+    expect(level.solidsNear(level.rect, [])).toEqual([
+      { x: 0, y: 0, w: 10, h: 10, oneWay: true, slope: undefined },
+    ]);
+
+    level.set(0, 1, null);
+    expect(level.rectsNear(LADDER, level.rect, [])).toEqual([
+      { x: 0, y: 0, w: 10, h: 10 },
+      { x: 0, y: 20, w: 10, h: 10 },
+    ]);
+    // The newly exposed lower ladder gains its own standing surface.
+    expect(level.solidsNear(level.rect, [])).toHaveLength(2);
+  });
+
+  it("returns each merged rect once however many rows the query spans", () => {
+    const level = grid("#\n#\n#\n#", { size: 10, legend: { "#": { solid: true } } });
+    expect(level.solidsNear({ x: 0, y: 0, w: 10, h: 40 }, [])).toEqual([
+      { x: 0, y: 0, w: 10, h: 40, oneWay: false, slope: undefined },
+    ]);
+  });
+
+  it("still culls to the query area", () => {
+    const level = grid("#..#", { size: 10, legend: { "#": { solid: true } } });
+    expect(level.solidsNear({ x: 0, y: 0, w: 10, h: 10 }, [])).toEqual([
+      { x: 0, y: 0, w: 10, h: 10, oneWay: false, slope: undefined },
+    ]);
+  });
+});
+
+describe("Tiles merged collision index", () => {
+  it("returns exactly the overlapping rects on a wide sparse row", () => {
+    // Ten one-tile pillars with gaps — ten separate merged rects in one row.
+    const level = grid("#.#.#.#.#.#.#.#.#.#.", { size: 10, legend: { "#": { solid: true } } });
+    expect(level.solidsNear(level.rect, [])).toHaveLength(10);
+    expect(level.solidsNear({ x: 95, y: 0, w: 30, h: 10 }, [])).toEqual([
+      { x: 100, y: 0, w: 10, h: 10, oneWay: false, slope: undefined },
+      { x: 120, y: 0, w: 10, h: 10, oneWay: false, slope: undefined },
+    ]);
+    expect(level.solidsNear({ x: 11, y: 0, w: 8, h: 10 }, [])).toEqual([]); // in a gap
+  });
+
+  it("finds a wide rect from a query far to its right", () => {
+    const level = grid("####################\n..................#.", {
+      size: 10,
+      legend: { "#": { solid: true } },
+    });
+    expect(level.solidsNear({ x: 185, y: 0, w: 5, h: 20 }, [])).toEqual([
+      { x: 0, y: 0, w: 200, h: 10, oneWay: false, slope: undefined },
+      { x: 180, y: 10, w: 10, h: 10, oneWay: false, slope: undefined },
+    ]);
+  });
+});
+
+describe("Tiles region tags", () => {
+  it("indexes an arbitrary tag the engine has never heard of", () => {
+    const level = grid("ww\nww", {
+      size: 10,
+      legend: { w: { tags: ["spiderweb"] } },
+    });
+    expect(level.tagAt(5, 5, "spiderweb")).toBe(true);
+    expect(level.tagAt(5, 5, "ladder")).toBe(false);
+    // Merged on both axes, like any pure region query.
+    expect(level.rectsNear("spiderweb", level.rect, [])).toEqual([{ x: 0, y: 0, w: 20, h: 20 }]);
+  });
+
+  it("keeps one index per tag and rebuilds them all after set()", () => {
+    const level = grid("ab", {
+      size: 10,
+      legend: { a: { tags: ["ice"] }, b: { tags: ["mud", "ice"] } },
+    });
+    expect(level.rectsNear("ice", level.rect, [])).toEqual([{ x: 0, y: 0, w: 20, h: 10 }]);
+    expect(level.rectsNear("mud", level.rect, [])).toEqual([{ x: 10, y: 0, w: 10, h: 10 }]);
+
+    level.set(1, 0, null);
+    expect(level.rectsNear("ice", level.rect, [])).toEqual([{ x: 0, y: 0, w: 10, h: 10 }]);
+    expect(level.rectsNear("mud", level.rect, [])).toEqual([]);
+  });
+
+  it("returns nothing for a tag no glyph carries, without throwing", () => {
+    const level = grid("##", { size: 10, legend: { "#": { solid: true } } });
+    expect(level.rectsNear("nobody-uses-this", level.rect, [])).toEqual([]);
+    expect(level.tagAt(5, 5, "nobody-uses-this")).toBe(false);
+  });
+
+  it("standOnTop gives a run one surface at the top, not one per cell", () => {
+    const level = grid("V\nV\nV", {
+      size: 10,
+      legend: { V: { tags: ["vine"], standOnTop: true } },
+    });
+    expect(level.solidsNear(level.rect, [])).toEqual([
+      { x: 0, y: 0, w: 10, h: 10, oneWay: true, slope: undefined },
+    ]);
+  });
+});
+
+describe("Tiles presets are data, not privilege", () => {
+  it("ladder is nothing but a tag plus standOnTop", () => {
+    expect(ladder).toEqual({ tags: [LADDER], standOnTop: true });
+    expect(ladderThrough).toEqual({ tags: [LADDER] });
+  });
+
+  it("a hand-rolled tag climbs identically to the built-in ladder", () => {
+    // The claim is equivalence, so assert it against the real thing rather than
+    // against a threshold: same map, same physics, only the tag name differs.
+    const climb = (spec: object, tag: string) => {
+      const level = grid("###\n#T#\n#T#\n###", {
+        size: 16,
+        legend: { "#": { solid: true }, T: spec },
+      });
+      const body = { x: 18, y: 40, w: 12, h: 24, vel: { x: 0, y: 0 }, grounded: true };
+      let climbing = false;
+      for (let step = 0; step < 20; step++) {
+        climbing = climbLadder(body, climbable(level, tag), -1, { active: climbing, speed: 1.5 });
+        moveAndSlide(body, level);
+      }
+      return { climbing, y: body.y };
+    };
+    const rope = climb({ tags: ["rope"], standOnTop: true }, "rope");
+    expect(rope.climbing).toBe(true);
+    expect(rope).toEqual(climb(ladder, LADDER));
+  });
+
+  it("climbable caches its view per level and tag", () => {
+    const level = grid("H", { size: 10, legend: { H: ladder } });
+    expect(climbable(level)).toBe(climbable(level));
+    expect(climbable(level, "rope")).not.toBe(climbable(level));
+  });
+
+  it("tagged() composes with other semantics", () => {
+    expect(tagged("conveyor", { solid: true })).toEqual({ solid: true, tags: ["conveyor"] });
+    expect(tagged("b", tagged("a"))).toEqual({ tags: ["a", "b"] });
+  });
+});
+
+describe("LDtk mm: tags become region tags", () => {
+  const project = (tags: string[]) => ({
+    defaultGridSize: 8,
+    defs: { entities: [{ identifier: "Thing", tags }] },
+    levels: [
+      {
+        identifier: "A",
+        pxWid: 16,
+        pxHei: 8,
+        layerInstances: [
+          {
+            __identifier: "World",
+            __type: "Entities",
+            __gridSize: 8,
+            __cWid: 2,
+            __cHei: 1,
+            entityInstances: [
+              { __identifier: "Thing", __grid: [0, 0], px: [0, 0], width: 8, height: 8 },
+            ],
+          },
+          {
+            __identifier: "Art",
+            __type: "Tiles",
+            __gridSize: 8,
+            __cWid: 2,
+            __cHei: 1,
+            gridTiles: [],
+          },
+        ],
+      },
+    ],
+  });
+
+  it("passes an unrecognised mm: tag straight through — no engine change needed", () => {
+    const level = LDtk.world(project(["mm:quicksand"]), { image: new Image() }).level("A");
+    expect(level.legend.Thing).toEqual({ tags: ["quicksand"] });
+    expect(level.rectsNear("quicksand", level.rect, [])).toEqual([{ x: 0, y: 0, w: 8, h: 8 }]);
+  });
+
+  it("keeps mm:ladder climbable, standing surface and all", () => {
+    const level = LDtk.world(project(["mm:ladder"]), { image: new Image() }).level("A");
+    expect(level.legend.Thing).toEqual({ tags: [LADDER], standOnTop: true });
+    expect(climbable(level).laddersNear(level.rect, [])).toEqual([{ x: 0, y: 0, w: 8, h: 8 }]);
+  });
+
+  it("does NOT turn entity-role tags into tiles", () => {
+    // `mm:portal` is read by `world.portals()`. Making it a legend entry would
+    // stamp its glyph over the floor beneath it.
+    for (const role of ["mm:portal", "mm:sprite", "mm:marker"]) {
+      // `portal` names the entity LDtk.world resolves destinations for; this
+      // fixture has no destinations, so point it at an identifier nothing uses.
+      const world = LDtk.world(project([role]), { image: new Image(), portal: "Unused" });
+      const level = world.level("A");
+      expect(level.legend.Thing, role).toBeUndefined();
+    }
+  });
 });

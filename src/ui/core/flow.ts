@@ -14,6 +14,18 @@ import {
 } from "./layout-capture.js";
 import { ANCHOR_H, ANCHOR_V, anchorViewport, type TextAnchor } from "./text.js";
 import { uiSlot } from "./state.js";
+import { theme, themeKey } from "@src/ui/theme.js";
+
+export interface UiPadding {
+  x: number;
+  y: number;
+}
+
+type Padding = number | UiPadding;
+
+function paddingXY(pad: Padding): UiPadding {
+  return typeof pad === "number" ? { x: pad, y: pad } : pad;
+}
 
 /** Options for `flow()` — a one-axis layout cursor. */
 export interface FlowOptions {
@@ -89,7 +101,7 @@ export interface Flow {
  *    const right = UI.flow({ x: vp.w - 12, y: 12, align: "end" }); // ← grows left */
 export function flow(opts: FlowOptions): Flow {
   const dir = opts.dir ?? "row";
-  const gapPx = opts.gap ?? 8;
+  const gapPx = opts.gap ?? theme.spacing.md;
   const back = opts.align === "end";
   let cx = opts.x;
   let cy = opts.y;
@@ -101,7 +113,7 @@ export function flow(opts: FlowOptions): Flow {
 
   const advance = (w?: number, h?: number) => {
     const W = w ?? (dir === "col" ? (opts.w ?? 120) : 100);
-    const H = h ?? (dir === "row" ? (opts.h ?? 30) : 30);
+    const H = h ?? opts.h ?? theme.buttonH;
     if (wrapping) {
       const mainStart = dir === "row" ? opts.x : opts.y;
       const mainCur = dir === "row" ? cx : cy;
@@ -286,6 +298,9 @@ export function place(
 
 /** Options shared by the closure containers. */
 export interface LayoutOptions {
+  /** Theme overrides for this container and every widget drawn by its
+   *  children. Nested containers may override the scope again. */
+  theme?: import("@src/ui/theme.js").ThemeOverrides;
   /** Explicit rect — a ROOT container (no parent layout) needs `x`/`y`/`w`;
    *  `h` is optional and auto-measured from the children when omitted. */
   x?: number;
@@ -296,6 +311,8 @@ export interface LayoutOptions {
   /** Explicit height. OMIT to auto-size to the children's measured height
    *  (see the module note on auto-height). Give it to pin a fixed height. */
   h?: number;
+  /** Minimum height in px; auto-sized containers grow to at least this value. */
+  minH?: number;
   /** Stable id for the auto-height cache. Optional: falls back to the
    *  `idScope` call-order, then to a position-derived key for pinned
    *  containers. Set it when several unpinned containers would otherwise
@@ -348,7 +365,7 @@ export function runContainer<R>(
   dir: "row" | "col",
   rect: { x: number; y: number; w: number; h: number },
   gap: number,
-  pad: number,
+  pad: Padding,
   justify: "start" | "end",
   reverse: boolean,
   children: (layout: Flow) => R,
@@ -356,7 +373,13 @@ export function runContainer<R>(
   wrap = false,
   contentMain?: number,
 ): R {
-  const inner = { x: rect.x + pad, y: rect.y + pad, w: rect.w - pad * 2, h: rect.h - pad * 2 };
+  const { x: padX, y: padY } = paddingXY(pad);
+  const inner = {
+    x: rect.x + padX,
+    y: rect.y + padY,
+    w: rect.w - padX * 2,
+    h: rect.h - padY * 2,
+  };
   const innerNear = dir === "row" ? inner.x : inner.y;
   const innerMain = dir === "row" ? inner.w : inner.h;
   // JUSTIFY positions the content block on the main axis: "end" pushes it to the
@@ -439,18 +462,19 @@ export function popContainerKey(): void {
  *  order (the same assumption `idScope`'s auto-ids make); if they don't, the
  *  size is one frame stale rather than wrong forever. */
 export function containerKey(opts: LayoutOptions, kind: string): string | undefined {
-  if (opts.id !== undefined) return `${kind}:${opts.id}`;
+  const prefix = `theme${themeKey}:`;
+  if (opts.id !== undefined) return `${prefix}${kind}:${opts.id}`;
   const auto = widgetId(undefined, kind);
-  if (auto) return auto;
+  if (auto) return `${prefix}${auto}`;
   if (opts.x !== undefined && opts.y !== undefined) {
-    return `${kind}@${opts.x}:${opts.y}:${opts.w ?? "auto"}`;
+    return `${prefix}${kind}@${opts.x}:${opts.y}:${opts.w ?? "auto"}`;
   }
   if (opts.anchor !== undefined) {
-    return `${kind}@${opts.anchor}:${opts.w ?? "auto"}:${opts.h ?? "auto"}`;
+    return `${prefix}${kind}@${opts.anchor}:${opts.w ?? "auto"}:${opts.h ?? "auto"}`;
   }
   const parent = keyPath[keyPath.length - 1];
   if (!parent?.key) return undefined;
-  return `${parent.key}>${kind}#${parent.children++}`;
+  return `${prefix}${parent.key}>${kind}#${parent.children++}`;
 }
 
 /** Last-frame measured size for `key` (undefined on the first frame). */
@@ -469,10 +493,16 @@ export function measuredContainerSize(
   st: Flow,
   outerLeft: number,
   outerTop: number,
-  pad: number,
+  pad: Padding,
 ): ContentSize {
+  const { x: padX, y: padY } = paddingXY(pad);
   const e = st.extent;
-  return { w: e.x + e.w - outerLeft + pad, h: e.y + e.h - outerTop + pad, ew: e.w, eh: e.h };
+  return {
+    w: e.x + e.w - outerLeft + padX,
+    h: e.y + e.h - outerTop + padY,
+    ew: e.w,
+    eh: e.h,
+  };
 }
 
 // Resolve a container's own rect: explicit if given, else reserve a slot from
@@ -486,7 +516,8 @@ export function containerRect(
   auto?: ContentSize,
 ): { x: number; y: number; w: number; h: number } {
   const w = opts.w ?? auto?.w;
-  const h = opts.h ?? auto?.h;
+  const requestedH = opts.h ?? auto?.h;
+  const h = requestedH === undefined ? undefined : Math.max(requestedH, opts.minH ?? 0);
   if (opts.anchor) {
     // Root placed in the VIEWPORT: `w`/`h` are the preferred size clamped to the
     // viewport minus `margin`; the anchor + any `x`/`y` offset position it.
@@ -503,7 +534,12 @@ export function containerRect(
   if (opts.x !== undefined && opts.y !== undefined) {
     // Root: pinned position; each omitted axis auto-measured (small first-frame
     // fallback, corrected next frame).
-    return { x: opts.x, y: opts.y, w: w ?? 120, h: h ?? (dir === "row" ? 34 : 40) };
+    return {
+      x: opts.x,
+      y: opts.y,
+      w: w ?? 120,
+      h: Math.max(h ?? (dir === "row" ? 34 : 40), opts.minH ?? 0),
+    };
   }
   const parent = currentLayout();
   if (!parent) {
@@ -515,9 +551,9 @@ export function containerRect(
   // wraps, where the cross size must be this container's NATURAL size so line
   // breaks and line heights measure correctly.
   if (parent.dir === "row") {
-    return parent.next(w, opts.h ?? (parent.wrap ? auto?.h : undefined));
+    return parent.next(w, h ?? (parent.wrap ? auto?.h : opts.minH));
   }
-  return parent.next(opts.w ?? (parent.wrap ? auto?.w : undefined), h);
+  return parent.next(opts.w ?? (parent.wrap ? auto?.w : undefined), h ?? opts.minH);
 }
 
 /** A container's children callback — receives the layout cursor for
@@ -551,7 +587,7 @@ export function runAutoSized<R>(
   body: { x: number; y: number; w: number; h: number },
   dir: "row" | "col",
   gap: number,
-  pad: number,
+  pad: Padding,
   justify: "start" | "end",
   reverse: boolean,
   fitCross: boolean,
@@ -588,8 +624,8 @@ export function runAutoSized<R>(
 
 /** Extra knobs an auto-sizing container passes to `autoContainer`. */
 export interface AutoContainerConfig {
-  /** Inner padding in px. */
-  pad: number;
+  /** Inner padding in px; a number applies equally on both axes. */
+  pad: Padding;
   /** Gap between children in px. */
   gap: number;
   /** Where the content block sits on the main axis (see `LayoutOptions.justify`). */

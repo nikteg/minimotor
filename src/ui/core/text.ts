@@ -1,6 +1,6 @@
 import { uiCtx } from "./context.js";
 import { Flow, currentLayout, place } from "./flow.js";
-import { centeredText, theme, uiFont } from "./theme.js";
+import { centeredText, resolveThemeTextPadding, theme, uiFont } from "./theme.js";
 import { currentUiTransform, uiHeight, uiWidth } from "./input.js";
 import { measureWidth } from "./measure.js";
 import { uiApp } from "./state.js";
@@ -199,8 +199,9 @@ export function text(str: string, rawOpts?: TextOptions): void {
   ctx.font = opts.font ?? uiFont(opts.size ?? theme.fontSize, opts.bold ?? false);
   const natural = Math.ceil(measureWidth(ctx, str));
   const lineH = (opts.size ?? theme.fontSize) + 6;
-  const padX = opts.padX ?? opts.pad ?? theme.textPad;
-  const padY = opts.padY ?? opts.pad ?? theme.textPad;
+  const themePad = resolveThemeTextPadding(theme.textPad);
+  const padX = opts.padX ?? opts.pad ?? themePad.x;
+  const padY = opts.padY ?? opts.pad ?? themePad.y;
   const layout =
     opts.x === undefined && opts.y === undefined ? (opts.at ?? currentLayout()) : undefined;
   const wrapWidth =

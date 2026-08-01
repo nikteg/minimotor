@@ -57,6 +57,8 @@ function renderOrder(opts: {
   columns?: TableColumn<Server>[];
   w?: number;
   h?: number;
+  cellPadX?: number;
+  cellPadY?: number;
 }): { order: Server[]; cellRects: Record<string, { x: number; w: number }[]> } {
   const order: Server[] = [];
   const cellRects: Record<string, { x: number; w: number }[]> = {};
@@ -91,6 +93,8 @@ function renderOrder(opts: {
     rows: opts.rows,
     sort: opts.sort,
     offset: 0,
+    cellPadX: opts.cellPadX ?? 0,
+    cellPadY: opts.cellPadY ?? 0,
     id: "t",
   });
   return { order, cellRects };
@@ -137,6 +141,18 @@ describe("UI.table", () => {
     // contentW = 200 - 14 = 186; ping fixed 70 → name flexes to 116.
     expect(cellRects.name[0].w).toBe(116);
     expect(cellRects.ping[0].x).toBe(116);
+  });
+
+  it("insets header and cell content without changing column layout", () => {
+    const { cellRects } = renderOrder({
+      rows: servers(),
+      sort: { key: "ping", dir: 1 },
+      w: 200,
+      cellPadX: 8,
+      cellPadY: 2,
+    });
+    expect(cellRects.name[0]).toEqual({ x: 8, w: 114 });
+    expect(cellRects.ping[0]).toEqual({ x: 138, w: 54 });
   });
 
   it("draws each header label with a sort arrow on the active column only", () => {

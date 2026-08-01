@@ -93,7 +93,7 @@ export function popover(opts: PopoverOptions, children?: () => void): boolean {
   // height map. The children form auto-sizes height from last frame's measured
   // content; the value form keeps the explicit `h`.
   const key = `popover:${id}`;
-  const pad = opts.pad ?? 12;
+  const pad = opts.pad ?? theme.spacing.lg;
   const top = opts.title ? 32 : 0;
   const h = opts.h ?? (children ? (cachedContentSize(key)?.h ?? 72) : 0);
   let x = opts.x ?? 0;
@@ -142,7 +142,18 @@ export function popover(opts: PopoverOptions, children?: () => void): boolean {
   });
   if (children) {
     const body = { x: rect.x, y: rect.y + top, w: rect.w, h: rect.h - top };
-    runAutoSized(key, rect, body, "col", opts.gap ?? 8, pad, "start", false, false, children);
+    runAutoSized(
+      key,
+      rect,
+      body,
+      "col",
+      opts.gap ?? theme.spacing.md,
+      pad,
+      "start",
+      false,
+      false,
+      children,
+    );
   }
   return true;
 }

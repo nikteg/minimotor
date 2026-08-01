@@ -1,0 +1,9 @@
+{
+  "image": "atlas.png",
+  "size": { "w": 480, "h": 528 },
+  "source": "Kenney Pixel UI Pack / Spritesheet/UIpackSheet_transparent.png",
+  "license": "CC0",
+  "sourceGrid": { "cols": 30, "rows": 33, "tile": 16, "spacing": 2 },
+  "atlasGrid": { "cols": 30, "rows": 33, "tile": 16, "spacing": 0 },
+  "note": "The 2px source gutters were removed without scaling or changing tile pixels. Every source tile is retained at its native 16px size."
+}

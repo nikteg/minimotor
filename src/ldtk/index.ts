@@ -8,12 +8,12 @@ import type { PortalTransition } from "@src/portals/index.js";
 import type { Vec2 } from "@src/math/vec2.js";
 import type { AnyComponentInit, Ecs, Entity } from "@src/ecs/index.js";
 import { grid as tileGrid, type Level, type SkinValue, type TileSpec } from "@src/tiles/index.js";
-
-const EMPTY = ".";
+import { LADDER } from "@src/tiles/presets.js";
+import { EMPTY, isEmptyChar } from "@src/tiles/glyphs.js";
 
 function assertImportGlyphs(values: Record<number, string>, source: string): void {
   for (const glyph of Object.values(values)) {
-    if (glyph.length !== 1 || glyph === EMPTY || glyph === " ") {
+    if (glyph.length !== 1 || isEmptyChar(glyph)) {
       throw new Error(`${source}: imported grid glyphs must be one non-empty character`);
     }
   }
@@ -284,17 +284,33 @@ function ldtkTagMap(project: LDtkProjectJson): {
     }
     const slope = value("mm:slope:");
     const span = value("mm:span:")?.split("x").map(Number);
+    // Anything the geometry tags below do not claim becomes a region TAG
+    // verbatim: `mm:ladder` → "ladder", `mm:ice` → "ice", `mm:your-idea` →
+    // "your-idea". Naming a new region concept in LDtk therefore needs no
+    // change here and none in `Tiles` — read it back with `level.rectsNear`.
+    // Tags that already mean something specific. The first two are collision
+    // geometry, handled just below; the rest name an entity's ROLE in the
+    // project rather than a property of the space it covers, and must not
+    // become legend entries — a `mm:portal` is read by `world.portals()`, and
+    // turning it into a tile would stamp its glyph over the floor beneath it.
+    const CLAIMED = new Set(["mm:solid", "mm:one-way", "mm:marker", "mm:sprite", "mm:portal"]);
+    const regionTags = tags
+      .filter((tag) => tag.startsWith("mm:") && !CLAIMED.has(tag) && !tag.includes(":", 3))
+      .map((tag) => tag.slice(3));
     const semantic =
       tags.includes("mm:solid") ||
       tags.includes("mm:one-way") ||
-      tags.includes("mm:ladder") ||
+      regionTags.length > 0 ||
       slope === "up-right" ||
       slope === "up-left";
     if (!semantic) continue;
     legend[definition.identifier] = {
       ...(tags.includes("mm:solid") ? { solid: true } : {}),
       ...(tags.includes("mm:one-way") ? { solid: true, oneWay: true } : {}),
-      ...(tags.includes("mm:ladder") ? { ladder: true } : {}),
+      ...(regionTags.length > 0 ? { tags: regionTags } : {}),
+      // A climbable run's exposed top has always doubled as a standing surface;
+      // keep that, expressed through the generic mechanism.
+      ...(regionTags.includes(LADDER) ? { standOnTop: true } : {}),
       ...(slope === "up-right" || slope === "up-left" ? { slope } : {}),
       ...(span?.length === 2 &&
       Number.isInteger(span[0]) &&

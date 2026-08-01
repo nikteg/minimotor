@@ -23,7 +23,7 @@ let masterGain: GainNode | null = null;
 
 let masterVolume = 1;
 
-let masterOn = true;
+let masterMuted = false;
 
 interface CompSpec {
   threshold: number;
@@ -90,7 +90,7 @@ function wireMasterOut(ctx: AudioContext): void {
 function ensureMaster(ctx: AudioContext): GainNode {
   if (!masterGain) {
     masterGain = ctx.createGain();
-    masterGain.gain.value = masterOn ? masterVolume : 0;
+    masterGain.gain.value = masterMuted ? 0 : masterVolume;
     wireMasterOut(ctx);
   }
   return masterGain;
@@ -121,9 +121,10 @@ export interface Bus {
   /** Current channel volume `0..1`. */
   readonly volume: number;
   /** Mute/unmute without losing the volume setting. */
-  setOn(on: boolean, rampMs?: number): void;
-  /** Whether the channel is unmuted. */
-  readonly on: boolean;
+  setMuted(muted: boolean, rampMs?: number): void;
+  /** Whether the channel is silenced. Muting only drops the gain — whatever is
+   *  playing keeps playing, so unmuting resumes mid-note rather than restarting. */
+  readonly muted: boolean;
   /** Stereo position: -1 hard left, 0 centre, 1 hard right (click-free ramp,
    *  default 20ms). Sits after the fader and the duck, so panning a bus never
    *  disturbs its volume — and its aux sends stay centred, which is what you
@@ -185,7 +186,7 @@ const effects = new Map<string, Effect>();
 
 function createBus(name: string): Bus {
   let volume = 1;
-  let on = true;
+  let muted = false;
   let pan = 0;
   let inputNode: GainNode | null = null;
   let gainNode: GainNode | null = null;
@@ -255,7 +256,7 @@ function createBus(name: string): Bus {
     const ctx = ensureAudio();
     inputNode = ctx.createGain();
     gainNode = ctx.createGain();
-    gainNode.gain.value = on ? volume : 0;
+    gainNode.gain.value = muted ? 0 : volume;
     duckGain = ctx.createGain();
     gainNode.connect(duckGain);
     duckGain.connect(ensureMaster(ctx));
@@ -273,16 +274,16 @@ function createBus(name: string): Bus {
     get volume() {
       return volume;
     },
-    get on() {
-      return on;
+    get muted() {
+      return muted;
     },
     setVolume(v, rampMs = 20) {
       volume = v;
-      if (gainNode && on) rampParam(gainNode.gain, v, rampMs);
+      if (gainNode && !muted) rampParam(gainNode.gain, v, rampMs);
     },
-    setOn(next, rampMs = 20) {
-      on = next;
-      if (gainNode) rampParam(gainNode.gain, next ? volume : 0, rampMs);
+    setMuted(next, rampMs = 20) {
+      muted = next;
+      if (gainNode) rampParam(gainNode.gain, next ? 0 : volume, rampMs);
     },
     get pan() {
       return pan;
@@ -560,15 +561,15 @@ export const Mixer = {
   /** Master volume 0..1 for everything (click-free ramp). */
   setMasterVolume(v: number, rampMs = 20): void {
     masterVolume = v;
-    if (masterGain && masterOn) rampParam(masterGain.gain, v, rampMs);
+    if (masterGain && !masterMuted) rampParam(masterGain.gain, v, rampMs);
   },
-  /** Whether the master is unmuted. */
-  get on(): boolean {
-    return masterOn;
+  /** Whether everything is silenced. */
+  get muted(): boolean {
+    return masterMuted;
   },
   /** Global mute (click-free). */
-  setOn(on: boolean, rampMs = 20): void {
-    masterOn = on;
-    if (masterGain) rampParam(masterGain.gain, on ? masterVolume : 0, rampMs);
+  setMuted(muted: boolean, rampMs = 20): void {
+    masterMuted = muted;
+    if (masterGain) rampParam(masterGain.gain, muted ? 0 : masterVolume, rampMs);
   },
 };

@@ -8,6 +8,7 @@ import {
   clearWheelClaim,
   consumeKeyboardActivation,
   dragPointer,
+  drawBox,
   drawFocusRing,
   fillRect,
   focusFromPointer,
@@ -30,6 +31,7 @@ import {
 } from "@src/ui/core/index.js";
 import { tooltip } from "./tooltip.js";
 import { clip } from "./layout.js";
+import { listMetrics } from "./list-metrics.js";
 
 /** A vertically-scrolling windowed list. Owns the clip, the visible-range
  *  windowing (only on-screen rows are drawn), the scrollbar and mouse-wheel —
@@ -49,8 +51,8 @@ export interface ListOptions extends Fillable {
   /** Visible height in px; rows outside it are windowed out. Ignored when
    *  auto-flowing. */
   h?: number;
-  /** Row height in px. */
-  rowH: number;
+  /** Row height in px, or a function returning each row's height. */
+  rowH: number | ((index: number) => number);
   /** Total number of rows. */
   count: number;
   /** Current scroll offset (px) — pass state in, assign the return back. */
@@ -318,9 +320,9 @@ export function dragScroll(
 }
 
 /** Draw a windowed vertical list per `ListOptions`, calling `row(index, rect)`
- *  only for the currently visible rows. Handles clipping, the scrollbar, the
- *  mouse wheel and swipe/body-drag scrolling; returns the new (clamped) scroll
- *  `offset` to store back. */
+ *  only for the currently visible rows. Row heights may be fixed or supplied
+ *  per index. Handles clipping, the scrollbar, mouse wheel and swipe/body-drag
+ *  scrolling; returns the new (clamped) scroll `offset` to store back. */
 export function list(
   opts: ListOptions,
   row: (index: number, rect: { x: number; y: number; w: number; h: number }) => void,
@@ -329,14 +331,15 @@ export function list(
   // `at`) layout, leaving `reserve` px for siblings drawn after the list.
   const { x, y, w, h } = fillRect(opts, "list");
   const gap = opts.gap ?? 0;
-  const step = opts.rowH + gap;
-  const content = opts.count * step - (opts.count > 0 ? gap : 0);
+  const metrics = listMetrics(opts.count, opts.rowH, gap);
+  const { heights, tops, content } = metrics;
   const needsBar = content > h;
   const scrollW = needsBar ? (opts.scrollW ?? 10) : 0;
   const listW = w - (scrollW ? scrollW + 4 : 0);
   const max = Math.max(0, content - h);
   let offset = clamp(opts.offset, 0, max);
   const key = opts.id ?? `list:${x}:${y}`;
+  const rowAt = metrics.rowAt;
 
   // Swipe to scroll: drag anywhere in the content area (the scrollbar gutter is
   // excluded — that's the thumb's job) to pan the list. (Wheel is handled after
@@ -360,23 +363,24 @@ export function list(
     const focused = focusedId();
     const focusedIndex = focused ? focusedRowIndex(key, focused, opts.rowId, opts.count) : -1;
     if (focusedIndex >= 0) {
-      const top = focusedIndex * step;
+      const top = tops[focusedIndex];
       if (top < offset) offset = top;
-      else if (top + opts.rowH > offset + h) offset = top + opts.rowH - h;
+      else if (top + heights[focusedIndex] > offset + h) offset = top + heights[focusedIndex] - h;
       offset = clamp(offset, 0, max);
     }
-    const regFirst = Math.max(0, Math.floor(offset / step) - 1);
-    const regLast = Math.min(opts.count, Math.ceil((offset + h) / step) + 1);
+    const regFirst = Math.max(0, rowAt(offset) - 1);
+    const regLast = Math.min(opts.count, rowAt(offset + h) + 2);
     for (let i = regFirst; i < regLast; i++) {
       registerFocusable(ctx, { id: opts.rowId(i) });
     }
   }
 
   clip({ x, y, w: listW, h }, () => {
-    const first = Math.max(0, Math.floor(offset / step));
-    const last = Math.min(opts.count, Math.ceil((offset + h) / step));
+    const first = opts.count > 0 ? rowAt(offset) : 0;
+    let last = first;
+    while (last < opts.count && tops[last] < offset + h) last++;
     for (let i = first; i < last; i++) {
-      row(i, { x, y: y + i * step - offset, w: listW, h: opts.rowH });
+      row(i, { x, y: y + tops[i] - offset, w: listW, h: heights[i] });
     }
   });
 
@@ -620,12 +624,18 @@ export function scrollbar(opts: ScrollbarOptions): number {
   if (opacity > 0.01) {
     ctx.save();
     ctx.globalAlpha *= opacity;
-    ctx.fillStyle = opts.track ?? "rgba(255,255,255,0.07)";
-    ctx.fillRect(trackRect.x, trackRect.y, trackRect.w, trackRect.h);
-    ctx.fillStyle = sd.drag?.id === id || overThumb ? theme.accent : (opts.thumb ?? theme.border);
+    drawBox(ctx, trackRect.x, trackRect.y, trackRect.w, trackRect.h, {
+      fill: opts.track ?? "rgba(255,255,255,0.07)",
+      role: "scrollTrack",
+      axis: horiz ? "x" : "y",
+    });
     const t = thumbRect();
-    if (horiz) ctx.fillRect(t.x, t.y + 1, t.w, t.h - 2);
-    else ctx.fillRect(t.x + 1, t.y, t.w - 2, t.h);
+    drawBox(ctx, t.x, t.y, t.w, t.h, {
+      fill: sd.drag?.id === id || overThumb ? theme.accent : (opts.thumb ?? theme.border),
+      role: "scrollThumb",
+      state: sd.drag?.id === id ? "active" : overThumb ? "hover" : "default",
+      axis: horiz ? "x" : "y",
+    });
     ctx.restore();
   }
   return offset;

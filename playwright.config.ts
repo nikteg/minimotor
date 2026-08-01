@@ -9,7 +9,7 @@ export default defineConfig({
   },
   webServer: {
     // Vite serves the samples folder as root: gallery at "/", games at "/<game>/".
-    // Requires the engine to be built (the `minimotor` alias points at build/).
+    // Vite resolves the local `minimotor` aliases directly to src/.
     command: "pnpm run samples",
     url: "http://localhost:8765/",
     reuseExistingServer: true,

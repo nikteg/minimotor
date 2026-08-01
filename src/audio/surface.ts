@@ -97,10 +97,10 @@ function busHandle(name: string): BusHandle {
       Mixer.bus(name).setVolume(v);
     },
     get muted() {
-      return !Mixer.bus(name).on;
+      return Mixer.bus(name).muted;
     },
     set muted(m: boolean) {
-      Mixer.bus(name).setOn(!m);
+      Mixer.bus(name).setMuted(m);
     },
     fade(volume, ms) {
       Mixer.bus(name).setVolume(volume, ms);
@@ -132,10 +132,10 @@ export const master = {
     Mixer.setMasterVolume(v);
   },
   get muted(): boolean {
-    return !Mixer.on;
+    return Mixer.muted;
   },
   set muted(m: boolean) {
-    Mixer.setOn(!m);
+    Mixer.setMuted(m);
   },
 };
 

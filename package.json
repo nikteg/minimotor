@@ -81,6 +81,10 @@
       "types": "./build/platformer/index.d.ts",
       "default": "./build/platformer/index.js"
     },
+    "./procgen": {
+      "types": "./build/procgen/index.d.ts",
+      "default": "./build/procgen/index.js"
+    },
     "./portals": {
       "types": "./build/portals/index.d.ts",
       "default": "./build/portals/index.js"
@@ -100,6 +104,10 @@
     "./ui": {
       "types": "./build/ui/index.d.ts",
       "default": "./build/ui/index.js"
+    },
+    "./hot": {
+      "types": "./build/hot/index.d.ts",
+      "default": "./build/hot/index.js"
     },
     "./physics2d": {
       "types": "./build/physics2d/index.d.ts",
@@ -143,13 +151,14 @@
     "build": "rm -rf build && tsc && tsc-alias && cp -r src/cli/schemas build/cli/schemas",
     "dev": "concurrently --kill-others \"tsc --watch\" \"tsc-alias --watch\"",
     "prepare": "rm -rf build && tsc && tsc-alias && cp -r src/cli/schemas build/cli/schemas",
-    "samples": "mm dev",
+    "samples": "vite --host",
     "samples:build": "vite build",
     "samples:preview": "vite preview",
     "server:build": "tsc -p tsconfig.server.json && tsc-alias -p tsconfig.server.json",
     "docs:api": "node tools/gen-api-docs.ts",
     "api-lab:levels": "mm level build tools/api-lab-levels.mjs --skin tools/api-lab-levels.mjs --template samples/api-lab/assets/api-lab.ldtk -o samples/api-lab/assets/api-lab.ldtk",
     "ldtk:types": "mm ldtk types samples/api-lab/assets/api-lab.ldtk -o samples/api-lab/api-lab.generated.ts",
+    "procgen:golden": "mm procgen gen dungeon --seed 7 --cols 64 --rows 40 --locks 2 -o tools/procgen-golden.txt",
     "test:e2e": "mm test",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -163,6 +172,7 @@
     "verify:assets": "mm assets check samples/api-lab",
     "verify:cli": "mm --help",
     "verify:generated": "pnpm ldtk:types --check",
+    "verify:procgen": "pnpm procgen:golden --check",
     "verify:ldtk": "mm ldtk check samples/api-lab/assets/api-lab.ldtk",
     "verify:level-design": "pnpm api-lab:levels --check && mm level check samples/api-lab/assets/api-lab.ldtk --portal-boundaries --reciprocal-portals",
     "verify": "pnpm build && pnpm run --parallel \"/^verify:.+$/\""

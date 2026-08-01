@@ -4,6 +4,7 @@ import {
   buttonState,
   centeredText,
   consumeKeyboardActivation,
+  drawThemeSprite,
   drawBox,
   drawFocusRing,
   focusFromPointer,
@@ -35,6 +36,8 @@ export interface ToggleOptions extends Flowable {
   on: boolean;
   /** Box side length in px. Default `16`. */
   size?: number;
+  /** Use a round radio-control appearance instead of a square checkbox. */
+  appearance?: "checkbox" | "radio";
   /** Label font. Default `uiFont()`. */
   font?: string;
   /** Label color. Default `theme.text`. */
@@ -65,7 +68,7 @@ export function toggle(
   ctx.save();
   ctx.font = opts.font ?? uiFont();
   const labelW = measureWidth(ctx, opts.label);
-  const w = size + 8 + Math.ceil(labelW);
+  const w = size + theme.spacing.md + Math.ceil(labelW);
   // Hit region spans box + label, so the text is clickable too. Placed via a
   // layout, the box is vertically centered on the taller slot.
   const slot = place({ x: opts.x, y: opts.y, w, h: opts.h, at: opts.at }, w, size, "toggle");
@@ -91,20 +94,31 @@ export function toggle(
   // Checkbox radius scales down with the theme so a big radius doesn't turn
   // the little box into a circle.
   const boxR = Math.min(theme.radius, 4);
-  drawBox(ctx, rect.x, rect.y, size, size, {
-    fill: theme.bgActive,
-    stroke: state.hover ? theme.accent : theme.border,
-    radius: boxR,
-  });
-  if (on) {
-    drawBox(ctx, rect.x + 4, rect.y + 4, size - 8, size - 8, {
-      fill: theme.accent,
-      radius: Math.max(0, boxR - 2),
+  const radio = opts.appearance === "radio";
+  const spriteName = radio ? (on ? "radioOn" : "radioOff") : on ? "checkboxOn" : "checkboxOff";
+  if (!drawThemeSprite(ctx, spriteName, rect.x, rect.y, size, size)) {
+    drawBox(ctx, rect.x, rect.y, size, size, {
+      fill: theme.bgActive,
+      stroke: state.hover ? theme.accent : theme.border,
+      radius: radio ? size / 2 : boxR,
     });
+    if (on) {
+      drawBox(
+        ctx,
+        rect.x + theme.spacing.sm,
+        rect.y + theme.spacing.sm,
+        size - theme.spacing.sm * 2,
+        size - theme.spacing.sm * 2,
+        {
+          fill: theme.accent,
+          radius: radio ? size / 2 : Math.max(0, boxR - theme.spacing.xs),
+        },
+      );
+    }
   }
   ctx.fillStyle = opts.color ?? theme.text;
   ctx.textAlign = "left";
-  centeredText(ctx, opts.label, rect.x + size + 8, rect.y + size / 2);
+  centeredText(ctx, opts.label, rect.x + size + theme.spacing.md, rect.y + size / 2);
   ctx.restore();
   if (keyboardFocused) drawFocusRing(ctx, rect);
   return on;

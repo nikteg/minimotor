@@ -22,6 +22,13 @@ interface ActiveDrag {
 }
 
 const st = uiSlot<{ drag: ActiveDrag | null }>(() => ({ drag: null }));
+interface ActiveGesture {
+  id: string;
+  startX: number;
+  startY: number;
+}
+
+const gestureSt = uiSlot<{ drag: ActiveGesture | null }>(() => ({ drag: null }));
 
 let hooksRegistered = false;
 function ensureDragHooks(): void {
@@ -32,9 +39,12 @@ function ensureDragHooks(): void {
     // A release not consumed by any drop target cancels the drag.
     const s = st();
     if (s.drag && rawPointer().released) s.drag = null;
+    const gesture = gestureSt();
+    if (gesture.drag && rawPointer().released) gesture.drag = null;
   });
   onReset(() => {
     st().drag = null;
+    gestureSt().drag = null;
   });
 }
 
@@ -151,6 +161,55 @@ export function dragSource<T>(opts: DragSourceOptions<T>): DragSourceState {
   if (dragging) setCursor("grabbing", 1);
   else if (hovered && !s.drag) setCursor("grab", 0);
   return { hovered, dragging };
+}
+
+/** Inputs to `dragGesture`: a rectangle that owns pointer movement without
+ * entering the drag-and-drop payload channel. This is useful for panning a
+ * canvas, moving a window, or scrubbing a viewport where no drop target is
+ * involved. */
+export interface DragGestureOptions {
+  /** Stable identity for this gesture across frames. */
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  disabled?: boolean;
+}
+
+/** The pointer state and displacement returned by `dragGesture`. */
+export interface DragGestureState {
+  hovered: boolean;
+  dragging: boolean;
+  /** Displacement from the pointer position where this gesture began. */
+  dx: number;
+  dy: number;
+}
+
+/** Claim a rectangle for direct pointer dragging without publishing a payload
+ * to `dropTarget`s. The gesture owns the pointer while held and reports its
+ * displacement in the current UI coordinate space. */
+export function dragGesture(opts: DragGestureOptions): DragGestureState {
+  ensureDragHooks();
+  const s = gestureSt();
+  const p = uiPointer();
+  const hovered = !opts.disabled && pointInRect(p.x, p.y, opts);
+  if (hovered && p.pressed && !s.drag) {
+    s.drag = { id: opts.id, startX: p.x, startY: p.y };
+  }
+  const dragging = s.drag?.id === opts.id;
+  if (dragging) {
+    claimPointerGesture();
+    setCursor("grabbing", 1);
+  } else if (hovered && !s.drag) {
+    setCursor("grab", 0);
+  }
+  return {
+    hovered,
+    dragging,
+    dx: dragging ? p.x - s.drag!.startX : 0,
+    dy: dragging ? p.y - s.drag!.startY : 0,
+  };
 }
 
 /** Mark a rectangle as a drop target. On the release frame, `dropped` contains

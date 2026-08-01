@@ -17,8 +17,23 @@ import { registerUiApp, withUiApp } from "./core/state.js";
 // by createUI are permanently bound to one app. Exporting the raw
 // functions made it possible to call UI without an app and fail in uiCtx().
 export type * from "./api.js";
+export {
+  createTilesetSkin,
+  createTilesetSkinFromManifest,
+  frameFromCell,
+  inspectTilesetSkin,
+} from "./api.js";
 
-type UiModuleApi = Omit<typeof UiModule, "_reset" | "animate">;
+type UiModuleApi = Omit<
+  typeof UiModule,
+  | "_reset"
+  | "animate"
+  | "createTilesetSkin"
+  | "createTilesetSkinFromManifest"
+  | "drawThemeSprite"
+  | "frameFromCell"
+  | "inspectTilesetSkin"
+>;
 export type UiApi = UiModuleApi & {
   animate(options: Omit<AnimateOptions, "clock">): Motion;
 };
@@ -41,6 +56,7 @@ export function createUI(app: App, { gamepads }: Partial<Pick<InputApi, "gamepad
     createFloatText: bind(UiModule.createFloatText),
     dialog: bind(UiModule.dialog),
     dragScroll: bind(UiModule.dragScroll),
+    dragGesture: bind(UiModule.dragGesture),
     dragSource: bind(UiModule.dragSource),
     draggedItem: bind(UiModule.draggedItem),
     drawFloatText: bind(UiModule.drawFloatText),
@@ -79,6 +95,7 @@ export function createUI(app: App, { gamepads }: Partial<Pick<InputApi, "gamepad
     setNavPad: bind(UiModule.setNavPad),
     setScale: bind(UiModule.setScale),
     setTheme: bind(UiModule.setTheme),
+    withTheme: bind(UiModule.withTheme),
     slider: bind(UiModule.slider),
     spacer: bind(UiModule.spacer),
     spinner: bind(UiModule.spinner),

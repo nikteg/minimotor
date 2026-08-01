@@ -108,10 +108,11 @@ export function getLayer(
   return layer;
 }
 
-const tintCache = new WeakMap<
-  HTMLCanvasElement | HTMLImageElement | ImageBitmap,
-  LruCache<HTMLCanvasElement>
->();
+/** Any drawable that reports its own size — canvas, image, bitmap, and the
+ *  font atlases `Font.atlas` tints. */
+export type TintSource = CanvasImageSource & { width: number; height: number };
+
+const tintCache = new WeakMap<object, LruCache<HTMLCanvasElement>>();
 
 /** A solid-`color` silhouette of `source` — the same opaque shape, flat-filled.
  *  Draw it over the original at a fading alpha for a hit "white flash" (pair
@@ -123,10 +124,7 @@ const tintCache = new WeakMap<
  *    ctx.globalAlpha = flash.value;
  *    ctx.drawImage(Sprites.tint(frame, "#fff"), x, y); // same dest rect as `frame`
  *    ctx.globalAlpha = 1; */
-export function tint(
-  source: HTMLCanvasElement | HTMLImageElement | ImageBitmap,
-  color: string,
-): HTMLCanvasElement {
+export function tint(source: TintSource, color: string): HTMLCanvasElement {
   const w = Math.max(1, Math.ceil("naturalWidth" in source ? source.naturalWidth : source.width));
   const h = Math.max(
     1,

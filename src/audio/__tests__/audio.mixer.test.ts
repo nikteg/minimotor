@@ -134,13 +134,13 @@ describe("Audio.Mixer", () => {
     bus.setVolume(0.5); // pre-materialize: just records
     void bus.input; // materialize the graph
     bus.setVolume(0.25);
-    bus.setOn(false);
+    bus.setMuted(true);
     expect(bus.volume).toBe(0.25);
-    expect(bus.on).toBe(false);
+    expect(bus.muted).toBe(true);
     Mixer.setMasterVolume(0.8);
-    Mixer.setOn(false);
-    expect(Mixer.on).toBe(false);
-    Mixer.setOn(true);
+    Mixer.setMuted(true);
+    expect(Mixer.muted).toBe(true);
+    Mixer.setMuted(false);
   });
 
   it("inserts a dynamic filter into the chain and sweeps it live", () => {
@@ -286,11 +286,11 @@ describe("Audio.tone", () => {
 });
 
 describe("Audio.Sfx delegates to the sfx bus", () => {
-  it("on/volume flow through Mixer.bus('sfx')", () => {
+  it("mute/volume flow through Mixer.bus('sfx')", () => {
     Sfx.volume = 0.6;
-    Sfx.on = false;
-    expect(Sfx.on).toBe(false);
-    expect(Mixer.bus("sfx").on).toBe(false);
-    Sfx.on = true;
+    Sfx.muted = true;
+    expect(Sfx.muted).toBe(true);
+    expect(Mixer.bus("sfx").muted).toBe(true);
+    Sfx.muted = false;
   });
 });

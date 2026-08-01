@@ -45,6 +45,8 @@ export interface ButtonStyle {
   bgActive?: string;
   /** Corner radius override (px). Defaults to `theme.radius`. */
   radius?: number;
+  /** Use the theme's pixel button frame when available. Default true. */
+  skin?: boolean;
 }
 
 /** A button's geometry + label. Position it yourself (`x`/`y` required,
@@ -55,9 +57,9 @@ export interface ButtonOptions extends ButtonStyle, Flowable {
   id?: string;
   /** Keyboard traversal order. Negative values exclude the button. */
   tabIndex?: number;
-  /** Omit to auto-size to the label (+ padding). */
+  /** Omit to use `theme.buttonW`, or auto-size to the label when it is 0. */
   w?: number;
-  /** Button height in logical px. Default `30`. */
+  /** Button height in logical px. Default `theme.buttonH`. */
   h?: number;
   /** Text drawn centered on the button. */
   label: string;
@@ -94,13 +96,13 @@ function variantColors(opts: ButtonStyle): {
   const v = opts.variant ?? "default";
   let base;
   if (v === "primary") {
-    base = { bg: theme.primary, label: theme.bgActive, border: theme.primary };
+    base = { bg: theme.primary, label: theme.buttonText.primary, border: theme.primary };
   } else if (v === "danger") {
-    base = { bg: theme.danger, label: theme.text, border: theme.danger };
+    base = { bg: theme.danger, label: theme.buttonText.danger, border: theme.danger };
   } else if (v === "ghost") {
-    base = { bg: "transparent", label: theme.text, border: "transparent" };
+    base = { bg: "transparent", label: theme.buttonText.ghost, border: "transparent" };
   } else {
-    base = { bg: theme.bg, label: theme.text, border: theme.border };
+    base = { bg: theme.bg, label: theme.buttonText.default, border: theme.border };
   }
   const solid = v === "primary" || v === "danger";
   return {
@@ -133,8 +135,9 @@ export function button(
   ctx.save();
   ctx.font = opts.font ?? uiFont(opts.size ?? theme.fontSize + 2, opts.bold ?? true);
   // Auto width: the label plus comfortable padding.
-  const w = opts.w ?? Math.ceil(measureWidth(ctx, opts.label)) + theme.buttonPadX;
-  const rect = place(opts, w, opts.h ?? 30, "button");
+  const autoW = Math.ceil(measureWidth(ctx, opts.label)) + theme.buttonPadX;
+  const w = opts.w ?? (theme.buttonW > 0 ? theme.buttonW : Math.max(autoW, theme.buttonMinW));
+  const rect = place(opts, w, opts.h ?? theme.buttonH, "button");
   const id = widgetId(opts.id, "button");
   const keyboardFocused = registerFocusable(ctx, {
     id,
@@ -165,8 +168,11 @@ export function button(
     fill: fill === "transparent" ? undefined : fill,
     stroke,
     radius: opts.radius,
+    role: opts.skin === false ? undefined : "button",
+    state: opts.disabled ? "disabled" : active ? "active" : hover ? "hover" : "default",
+    variant: opts.variant ?? "default",
   });
-  ctx.fillStyle = opts.disabled ? theme.textDisabled : c.label;
+  ctx.fillStyle = opts.disabled ? theme.buttonText.disabled : c.label;
   ctx.textAlign = "center";
   centeredText(
     ctx,

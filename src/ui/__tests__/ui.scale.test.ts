@@ -19,6 +19,7 @@ import {
   button,
   clip,
   col,
+  createTilesetSkin,
   drawFloatText,
   floatText,
   focusedId,
@@ -35,6 +36,7 @@ import {
   select,
   setBaseSize,
   setScale,
+  setTheme,
   slider,
   text,
   toScreen,
@@ -87,6 +89,7 @@ function makeCtx(canvas: HTMLCanvasElement): CanvasRenderingContext2D & { _calls
     arc: vi.fn(),
     clip: vi.fn(),
     fill: vi.fn(),
+    drawImage: vi.fn(),
     stroke: vi.fn(),
     setLineDash: vi.fn(),
     strokeRect: vi.fn(),
@@ -433,10 +436,11 @@ describe("select menu under UI.scaled", () => {
     tick(); // the release opens the editor; the menu draws in this frame's overlay pass
     const calls = ctxCalls(game);
     // Menu backdrop, in the control's OWN (reference) space: under the control
-    // at y = 10+32+2 = 44, and 2 options × 30 + 2×2 pad = 64 tall — then ×2 to
-    // device: (20, 88, 200, 128). The unscaled-anchor bug put it at (10,44,…);
-    // the unscaled-CONTENT bug drew a 64px-tall menu at the scaled anchor.
-    expect(calls.rects).toContainEqual([20, 88, 200, 128]);
+    // at y = 10+32+2 = 44, and 2 options × 30 + 2×8 theme pad = 76 tall —
+    // then ×2 to device: (20, 88, 200, 152). The unscaled-anchor bug put it at
+    // (10,44,…); the unscaled-CONTENT bug drew a 64px-tall menu at the scaled
+    // anchor.
+    expect(calls.rects).toContainEqual([20, 88, 200, 148]);
     expect(calls.rects).not.toContainEqual([10, 44, 100, 64]);
     expect(calls.rects).not.toContainEqual([20, 86, 200, 64]);
   });
@@ -481,11 +485,78 @@ describe("select menu under UI.scaled", () => {
     click(120, 52);
     expect(open).toBe(true);
     // ...and the OPTIONS hit-test where they're drawn: the menu body starts at
-    // reference y = 44 + 2 pad, so option B's row is 76..106 → screen 152..212.
+    // reference y = 44 + 8 theme pad, so option B's row is 82..112 → screen 164..224.
     click(120, 182);
     tick(); // the pick commits in the overlay pass; `select` reads it next frame
     expect(value).toBe("b");
     expect(open).toBe(false);
+  });
+
+  it("supports per-select menu padding without covering the frame", () => {
+    let value = "a";
+    const { game, canvas } = build(() => {
+      setTheme({ pad: { x: 12, y: 10 } });
+      scaled(2, () => {
+        value = select({
+          id: "padded-select",
+          x: 10,
+          y: 10,
+          w: 100,
+          h: 32,
+          value,
+          menuPad: { x: 18, y: 14 },
+          options: [
+            { label: "A", value: "a" },
+            { label: "B", value: "b" },
+          ],
+        }).value;
+      });
+    });
+    tick();
+    downAt(canvas, 120, 52);
+    tick();
+    upAt(120, 52);
+    tick();
+    // Two auto-sized one-line rows plus 2×14 vertical menu padding, rendered at scale 2.
+    expect(ctxCalls(game).rects).toContainEqual([20, 88, 200, 172]);
+  });
+
+  it("renders grouped menus and wraps long option labels", () => {
+    let value = "a";
+    const { game, canvas } = build(() => {
+      scaled(2, () => {
+        value = select({
+          id: "grouped-select",
+          x: 10,
+          y: 10,
+          w: 100,
+          h: 32,
+          value,
+          wrapItems: true,
+          groups: [
+            { label: "Tilesets", options: [{ label: "A", value: "a" }] },
+            {
+              label: "Fonts",
+              options: [{ label: "A long grouped option label", value: "b" }],
+            },
+          ],
+        }).value;
+      });
+    });
+    tick();
+    downAt(canvas, 120, 52);
+    tick();
+    upAt(120, 52);
+    tick();
+    const calls = ctxCalls(game);
+    expect(calls.fillText.map(([label]) => label)).toEqual(
+      expect.arrayContaining(["Tilesets", "Fonts"]),
+    );
+    expect(calls.fillText.map(([label]) => label)).toEqual(
+      expect.arrayContaining(["A long", "grouped", "option", "label"]),
+    );
+    // Two group headers + two auto-sized option rows, plus theme padding.
+    expect(calls.rects).toContainEqual([20, 88, 200, 432]);
   });
 });
 
@@ -578,6 +649,40 @@ describe("nested containers without an id", () => {
     expect(b.rect.y + b.rect.h).toBeLessThanOrEqual(inner.rect.y + inner.rect.h);
     // …and the sibling after it starts BELOW it, not on top of its children.
     expect(after.rect.y).toBeGreaterThanOrEqual(inner.rect.y + inner.rect.h);
+  });
+});
+
+describe("tiled panel content clearance", () => {
+  it("raises a short titled panel above a skin's fixed bottom slice", () => {
+    const image = { width: 48, height: 48 } as unknown as CanvasImageSource;
+    setTheme({
+      pad: { x: 16, y: 16 },
+      skin: createTilesetSkin(image, {
+        tileSize: { w: 16, h: 16 },
+        frames: {
+          panel: {
+            sx: 0,
+            sy: 0,
+            sw: 48,
+            sh: 48,
+            insets: { left: 16, top: 16, right: 16, bottom: 16 },
+          },
+        },
+      }),
+    });
+    layoutCapture(true);
+    build(() => {
+      panel({ x: 10, y: 10, w: 200, h: 80, title: "PIXEL" }, () => {
+        button({ label: "Save", id: "pixel-save" });
+      });
+    });
+    settle();
+    selectUiApp(selectedApp);
+    const tree = layoutTree();
+    const frame = tree.find((entry) => entry.kind === "panel")!;
+    const save = tree.find((entry) => entry.id === "pixel-save")!;
+    expect(frame.rect.h).toBe(112);
+    expect(save.rect.y + save.rect.h).toBeLessThanOrEqual(frame.rect.y + frame.rect.h - 16);
   });
 });
 

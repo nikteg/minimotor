@@ -41,9 +41,12 @@ const overlay = uiSlot<OverlayState>(() => ({
   inPass: false,
 }));
 
-/** An overlay ran LAST frame — background widgets must ignore the pointer. */
+/** An overlay is active for the current frame — background widgets must ignore
+ *  the pointer. This includes an overlay captured during the ordinary draw
+ *  pass and one carried over from the previous frame. */
 export function isOverlayActive(): boolean {
-  return overlay().active;
+  const o = overlay();
+  return o.active || o.seen;
 }
 
 /** The rest of this frame belongs to an overlay opened this frame. */
@@ -51,12 +54,19 @@ export function isInOverlayPass(): boolean {
   return overlay().inPass;
 }
 
-/** Mark that an overlay ran this frame and open its live-input pass — called by
- *  the overlay widgets (popover/modal), which own the capture semantics. */
-export function enterOverlay(focusVisible = false): void {
+/** Capture the background while an overlay is being deferred. The overlay's
+ *  own controls are not live until `enterOverlay()` runs in the overlay pass. */
+export function captureOverlay(focusVisible = false): void {
   const o = overlay();
   o.seen = true;
   markFocusTrap(focusVisible);
+}
+
+/** Mark that an overlay ran this frame and open its live-input pass — called by
+ *  immediate overlays and by deferred overlays when their pass begins. */
+export function enterOverlay(focusVisible = false): void {
+  const o = overlay();
+  captureOverlay(focusVisible);
   o.inPass = true;
 }
 

@@ -1,5 +1,5 @@
 import { listItem } from "./lists.js";
-import { Fillable, fillRect, text } from "@src/ui/core/index.js";
+import { Fillable, fillRect, text, theme } from "@src/ui/core/index.js";
 import { list } from "./lists.js";
 
 // Last sorted copy per input array (weak — dropped with the data). Re-sorts
@@ -25,8 +25,8 @@ export interface TableColumn<Row> {
   sortable?: boolean;
   /** The sortable value — also the default cell text when `cell` is omitted. */
   value?: (row: Row) => string | number;
-  /** Custom cell renderer, drawn into the cell rect (e.g. a coloured number or
-   *  a bar). Falls back to `value` rendered as themed text. */
+  /** Custom cell renderer, drawn into the padded content rect (e.g. a coloured
+   *  number or a bar). Falls back to `value` rendered as themed text. */
   cell?: (row: Row, rect: { x: number; y: number; w: number; h: number }) => void;
 }
 
@@ -68,6 +68,10 @@ export interface TableOptions<Row> extends Fillable {
   headerH?: number;
   /** Vertical gap between rows. Default 0. */
   gap?: number;
+  /** Horizontal inset for header and cell content. Default theme.spacing.sm. */
+  cellPadX?: number;
+  /** Vertical inset for header and cell content. Default theme.spacing.xs. */
+  cellPadY?: number;
   /** The selected row (by identity) to highlight; assign the result's
    *  `selected` back. Omit the field for a non-selectable table. */
   selected?: Row | null;
@@ -112,6 +116,8 @@ export function table<Row>(opts: TableOptions<Row>): TableResult<Row> {
   const rect = fillRect(opts, "table");
   const headerH = opts.headerH ?? 24;
   const gap = opts.gap ?? 0;
+  const cellPadX = Math.max(0, opts.cellPadX ?? theme.spacing.sm);
+  const cellPadY = Math.max(0, opts.cellPadY ?? theme.spacing.xs);
   const rowH = opts.rowH;
   const scrollW = opts.scrollW ?? 10;
 
@@ -191,6 +197,8 @@ export function table<Row>(opts: TableOptions<Row>): TableResult<Row> {
       bold: true,
       align: c.align ?? "left",
       color: activeCol ? "accent" : "dim",
+      padX: cellPadX,
+      padY: cellPadY,
     });
   });
 
@@ -228,7 +236,12 @@ export function table<Row>(opts: TableOptions<Row>): TableResult<Row> {
       });
       if (clicked) selected = rowData;
       opts.columns.forEach((c, ci) => {
-        const cellRect = { x: rects[ci].x, y: rowRect.y, w: rects[ci].w, h: rowH };
+        const cellRect = {
+          x: rects[ci].x + cellPadX,
+          y: rowRect.y + cellPadY,
+          w: Math.max(0, rects[ci].w - cellPadX * 2),
+          h: Math.max(0, rowH - cellPadY * 2),
+        };
         if (c.cell) c.cell(rowData, cellRect);
         else if (c.value) text(String(c.value(rowData)), { ...cellRect, align: c.align ?? "left" });
       });

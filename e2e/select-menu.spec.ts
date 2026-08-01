@@ -5,10 +5,9 @@ import { test, expect, type Page } from "@playwright/test";
 // harness (window.__uiGallery), behavior from getState().city: after scrolling,
 // clicking the menu's top row must pick the city that scrolled into it.
 //
-// Menu geometry (see select.ts drawSelectMenu): 8 visible rows of 30px inside a
-// 2px pad; it opens 2px under the control (flipping above when clipped). City
-// starts at "Tokyo" (index 21 of 24), so the menu OPENS pinned near its bottom
-// (offset 480 = max) and every test scrolls it back UP.
+// City starts at "Tokyo" (index 21 of 24), so the menu OPENS pinned near its
+// bottom and every test scrolls it back UP. Row geometry is read from the
+// layout tree because select rows now size from the active theme font.
 
 interface Entry {
   kind: string;
@@ -17,8 +16,6 @@ interface Entry {
   screenRect: { x: number; y: number; w: number; h: number };
   scale: number;
 }
-
-const ITEM_H = 30;
 
 const getTree = (page: Page): Promise<Entry[]> =>
   page.evaluate(() => window.__uiGallery!.layoutTree() as unknown[]) as Promise<Entry[]>;
@@ -47,7 +44,7 @@ async function menuRect(
 // The open menu's row buttons — id-less row-high buttons inside the menu list's
 // screen rect (the menu is an overlay ABOVE the board, so nothing else is drawn
 // there). Returned as row-top offsets from the list's top edge, sorted. The menu
-// inherits the control's UI scale, so a row is ITEM_H × that scale on screen.
+// inherits the control's UI scale; row heights come from the active theme font.
 async function menuRowYs(page: Page): Promise<number[]> {
   const [tree, menu] = await Promise.all([getTree(page), menuRect(page)]);
   if (!menu) return [];
@@ -56,13 +53,28 @@ async function menuRowYs(page: Page): Promise<number[]> {
       (e) =>
         e.kind === "button" &&
         !e.id &&
-        Math.abs(e.screenRect.h - ITEM_H * e.scale) < 0.5 &&
+        e.screenRect.h > 0 &&
         Math.abs(e.screenRect.x - menu.x) < 0.5 &&
-        e.screenRect.y > menu.y - ITEM_H &&
+        e.screenRect.y > menu.y - 60 &&
         e.screenRect.y < menu.y + menu.h,
     )
     .map((e) => e.screenRect.y - menu.y)
     .sort((a, b) => a - b);
+}
+
+async function cityRowStep(page: Page): Promise<number> {
+  const [tree, menu] = await Promise.all([getTree(page), menuRect(page)]);
+  if (!menu) return 28;
+  const row = tree.find(
+    (e) =>
+      e.kind === "button" &&
+      !e.id &&
+      e.screenRect.h > 0 &&
+      Math.abs(e.screenRect.x - menu.x) < 0.5 &&
+      e.screenRect.y > menu.y - 60 &&
+      e.screenRect.y < menu.y + menu.h,
+  );
+  return row ? row.screenRect.h / row.scale : 28;
 }
 
 // Click the City select and wait for its drop menu (the row buttons) to appear.
@@ -95,13 +107,13 @@ test("the canvas is a gesture surface — native touch panning can't steal swipe
 test("wheel over the open City menu scrolls it (and the top row picks right)", async ({ page }) => {
   await openGallery(page);
   const menu = await openCityMenu(page);
-  // Opens pinned at max (Tokyo centered → clamped to offset 480). Wheel UP by
-  // exactly 8 rows: 480 → 240, so row index 8 — "London" — lands exactly at the
-  // top of the menu.
+  // Opens pinned at max with Tokyo selected. Wheel UP by exactly 8 measured
+  // rows, so row index 8 — "London" — lands exactly at the top of the menu.
   await page.mouse.move(menu.x + menu.w / 2, menu.y + menu.h / 2);
-  await page.mouse.wheel(0, -8 * ITEM_H);
+  const step = await cityRowStep(page);
+  await page.mouse.wheel(0, -8 * step);
   await page.waitForTimeout(100);
-  await page.mouse.click(menu.x + menu.w / 2, menu.y + ITEM_H / 2);
+  await page.mouse.click(menu.x + menu.w / 2, menu.y + step / 2);
   await expect.poll(() => getCity(page)).toBe("London");
 });
 
@@ -122,7 +134,7 @@ test("mouse-dragging the open City menu scrolls it and does not close it", async
   const after = await menuRowYs(page);
   await page.mouse.up();
   expect(after.length).toBeGreaterThanOrEqual(8); // still open mid-drag
-  // The rows moved: a 96px pull from offset 480 lands off the 30px grid, so
+  // The rows moved: a 96px pull changes the variable-height list offset, so
   // the row pattern must differ from the opening one.
   expect(after).not.toEqual(before);
   await page.waitForTimeout(100);
@@ -209,12 +221,13 @@ test("with the board itself scrolled (short window), the wheel goes to the menu,
   const menu = await openCityMenu(page);
   const selBefore = (await selRect())!;
 
-  // Wheel UP 8 rows over the menu: offset 480 → 240 puts "London" at the top.
+  // Wheel UP 8 measured rows puts "London" at the top.
   await page.mouse.move(menu.x + menu.w / 2, menu.y + menu.h / 2);
-  await page.mouse.wheel(0, -8 * ITEM_H);
+  const step = await cityRowStep(page);
+  await page.mouse.wheel(0, -8 * step);
   await page.waitForTimeout(100);
   expect((await selRect())!.y).toBe(selBefore.y); // the board did NOT move
-  await page.mouse.click(menu.x + menu.w / 2, menu.y + ITEM_H / 2);
+  await page.mouse.click(menu.x + menu.w / 2, menu.y + step / 2);
   await expect.poll(() => getCity(page)).toBe("London"); // ...and the menu DID
 });
 
@@ -248,13 +261,14 @@ test("the City menu still scrolls with the board zoomed (UI scale 1.5)", async (
     .poll(async () => (await getTree(page)).filter((e) => e.scale === 1.5).length)
     .toBeGreaterThan(0);
   const menu = await openCityMenu(page);
-  // The menu zooms WITH the board (rows are 1.5 × ITEM_H on screen), but the
-  // scroll offset it accumulates is in the board's reference units — so the
+  // The menu zooms WITH the board, but the scroll offset it accumulates is in
+  // the board's reference units — so the
   // wheel arithmetic is the unscaled one: 8 rows up puts "London" at the top.
   await page.mouse.move(menu.x + menu.w / 2, menu.y + menu.h / 2);
-  await page.mouse.wheel(0, -8 * ITEM_H);
+  const step = await cityRowStep(page);
+  await page.mouse.wheel(0, -8 * step);
   await page.waitForTimeout(100);
-  await page.mouse.click(menu.x + menu.w / 2, menu.y + (ITEM_H * 1.5) / 2);
+  await page.mouse.click(menu.x + menu.w / 2, menu.y + (step * 1.5) / 2);
   await expect.poll(() => getCity(page)).toBe("London");
 });
 
@@ -282,7 +296,8 @@ test("the Theme select toggles at its scaled on-screen position (UI scale 1.5)",
   const menu = (await getTree(page)).find((e) => e.id === "ui-gallery:theme:menu")!;
   expect(menu.scale).toBe(1.5);
   expect(menu.screenRect.y).toBeGreaterThan(r.y + r.h);
-  expect(menu.screenRect.x).toBeCloseTo(r.x + 2 * 1.5, 1);
+  // Visuals keeps its 16px tiled frame inset around the menu body.
+  expect(menu.screenRect.x).toBeCloseTo(r.x + 16 * 1.5, 1);
   // Clicking the control again closes it (this is what the bug broke).
   await page.mouse.click(r.x + r.w / 2, r.y + r.h / 2);
   await expect.poll(menuOpen).toBe(false);

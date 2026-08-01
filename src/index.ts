@@ -39,7 +39,9 @@ import * as Gizmos from "./gizmos/index.js";
  *  ordinary string maps the same multi-level portal/transition contract.
  *  `span` lets one map char own a multi-cell collision shape. `Tiles.set`
  *  slices a tileset image into cells/regions plus `pick`/`anim`/`auto9`/`auto16`
- *  selectors, joined to a level by a `Skin` at `Draw.tiles`.
+ *  selectors, joined to a level by a `Skin` at `Draw.tiles`. `auto4` autotiles
+ *  from a 16-cell DUAL grid instead of a 47-cell blob set, `orient` mirrors and
+ *  turns a cell at draw time, and `recolor` palette-swaps a whole tileset.
  *
  *    const level = Tiles.grid("R.######\\n#..P...#", {
  *      size: 16,
@@ -53,12 +55,35 @@ import * as Gizmos from "./gizmos/index.js";
  *    const start = level.spawnOne("P");
  */
 import * as Tiles from "./tiles/index.js";
+/** Text drawn from a sprite atlas instead of a typeface. `Font.atlas(sheet,
+ *  { cell: 8 })` slices a pixel-font sheet into glyphs — trimmed to their ink,
+ *  so the result is proportional rather than gappy — and `Font.glyphs` names
+ *  arbitrary rects for sheets that are not a grid. Pass the result to
+ *  `Draw.text` as `font`; `color` tints it and `scale` upscales it exactly.
+ *
+ *    const font = Font.atlas(sheet, { cell: 8, chars: Font.ASCII, cols: 16 });
+ *    Draw.text("READY", { x: 20, y: 20, font, color: "#ffd43b", scale: 3 });
+ */
+import * as Font from "./font/index.js";
+/** Optional bundler HMR state bridge. `Hot.create(import.meta.hot)` lets any
+ * sample or game preserve serializable state across Vite module replacement. */
+import * as Hot from "./hot/index.js";
 /** Cover → swap → reveal scene transitions passed to `Scenes.go`. `Transitions.fade`
  *  and `Transitions.wipe` are ready-made; a `Transition` is plain data, and the
  *  pure fixed-step runner `Transitions.run` fires the swap at full coverage. */
 import * as Transitions from "./transitions/index.js";
 
-export { createApp, Sprites, Goodies, Gizmos, Tiles, Transitions, Mathf, Fsm };
+export { createApp, Sprites, Goodies, Gizmos, Tiles, Font, Transitions, Mathf, Fsm, Hot };
+export type {
+  BitmapFont,
+  BitmapTextStyle,
+  FontAtlasOptions,
+  FontGlyphsOptions,
+  FontImage,
+  FontOptions,
+  Glyph,
+} from "./font/index.js";
+export type { HotModuleContext, HotReload } from "./hot/index.js";
 /** One isolated app, as returned by `createApp`. This is the type every
  *  lifecycle-owned factory takes: `createAudio(app)`, `createUI(app)`,
  *  `createNet(app)` — so it's also the type to annotate your own helpers with.
@@ -95,6 +120,7 @@ export type {
   AppOptions,
   DrawApi,
   DrawTextOptions,
+  FontLike,
   DrawSpriteOptions,
   DrawSprite,
   DrawSpritesOptions,
@@ -197,6 +223,10 @@ export type {
   GridOptions as TileGridOptions,
   TileSpec,
   Cell,
+  CellOrientation,
+  DualLayer,
+  Auto4Options,
+  Auto9Options,
   Selector,
   SelectorCell,
   Skin,
@@ -348,10 +378,23 @@ export type {
   TextOptions,
   TextInputOptions,
   TextInputResult,
+  SelectGroup,
   SelectOption,
   SelectOptions,
   SelectResult,
   Theme,
+  ThemeOverrides,
+  ThemePadding,
+  ThemeSpacing,
+  ThemeTextPadding,
+  ThemeButtonText,
+  NineSliceRegion,
+  TileRegion,
+  TilesetFrameRole,
+  TilesetSkin,
+  TilesetSkinOptions,
+  TilesetSprite,
+  TilesetCellSource,
   ToggleOptions,
 } from "./ui/api.js";
 

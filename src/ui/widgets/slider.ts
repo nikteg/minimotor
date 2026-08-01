@@ -4,6 +4,7 @@ import {
   centeredText,
   claimPointerGesture,
   consumeKeyboardCommand,
+  drawBox,
   dragPointer,
   drawFocusRing,
   focusFromPointer,
@@ -101,10 +102,17 @@ export function slider(
   const sy = slot.y + slot.h / 2;
   const sw = Math.max(10, slot.w - labelSpace - valueSpace);
   const id = widgetId(opts.id, "slider") ?? `${sx}:${sy}`;
-  const knobR = 7;
+  const knobSprite = theme.skin?.sprites.sliderKnob;
+  const knobW = knobSprite?.region.sw ?? 14;
+  const knobH = knobSprite?.region.sh ?? 14;
+  const knobHalfW = knobW / 2;
+  const knobHalfH = knobH / 2;
+  // The sprite is a left-aligned handle. Its left edge travels over the usable
+  // track width, keeping the complete sprite inside at both endpoints.
+  const knobTravel = Math.max(0, sw - knobW);
   const p = uiPointer();
   // Generous hit region: the whole track strip, knob included.
-  const hit = { x: sx - knobR, y: sy - knobR, w: sw + knobR * 2, h: knobR * 2 };
+  const hit = { x: sx - knobHalfW, y: sy - knobHalfH, w: sw + knobW, h: knobH };
   const keyboardFocused = registerFocusable(ctx, {
     id,
     disabled: opts.disabled,
@@ -143,7 +151,9 @@ export function slider(
     if (opts.step) value = Math.round(value / opts.step) * opts.step;
     value = clamp(value, min, max);
   }
-  const knobX = sx + ((value - min) / (max - min || 1)) * sw;
+  const valueRatio = (value - min) / (max - min || 1);
+  const knobX = sx + valueRatio * knobTravel;
+  const valueX = knobSprite ? knobX : sx + valueRatio * sw;
 
   ctx.save();
   ctx.font = opts.font ?? uiFont();
@@ -152,14 +162,39 @@ export function slider(
     ctx.textAlign = "left";
     centeredText(ctx, opts.label, slot.x, sy);
   }
-  ctx.fillStyle = theme.track;
-  ctx.fillRect(sx, sy - 2, sw, 4);
-  ctx.fillStyle = theme.accent;
-  ctx.fillRect(sx, sy - 2, knobX - sx, 4);
-  ctx.beginPath();
-  ctx.arc(knobX, sy, knobR, 0, Math.PI * 2);
-  ctx.fillStyle = sd.id === id || hover ? theme.accent : theme.accentSoft;
-  ctx.fill();
+  const trackH = theme.skin?.frames.sliderTrack ? theme.sliderH : 4;
+  const trackY = sy - trackH / 2;
+  drawBox(ctx, sx, trackY, sw, trackH, {
+    fill: theme.track,
+    role: "sliderTrack",
+  });
+  if (valueX > sx) {
+    drawBox(ctx, sx, trackY, valueX - sx, trackH, {
+      fill: theme.accent,
+      role: "sliderFill",
+    });
+  }
+  if (knobSprite) {
+    const previousSmoothing = ctx.imageSmoothingEnabled;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(
+      knobSprite.image,
+      knobSprite.region.sx,
+      knobSprite.region.sy,
+      knobSprite.region.sw,
+      knobSprite.region.sh,
+      knobX,
+      sy - knobHalfH,
+      knobW,
+      knobH,
+    );
+    ctx.imageSmoothingEnabled = previousSmoothing;
+  } else {
+    ctx.beginPath();
+    ctx.arc(sx + valueRatio * sw, sy, knobHalfW, 0, Math.PI * 2);
+    ctx.fillStyle = sd.id === id || hover ? theme.accent : theme.accentSoft;
+    ctx.fill();
+  }
   ctx.fillStyle = opts.color ?? theme.text;
   ctx.textAlign = "right";
   centeredText(ctx, fmt(value), slot.x + slot.w, sy);

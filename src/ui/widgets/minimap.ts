@@ -1,5 +1,6 @@
 import type { Rect } from "@src/engine/index.js";
 import type { Level, TileSpec } from "@src/tiles/index.js";
+import { LADDER } from "@src/tiles/presets.js";
 import { uiCtx } from "@src/ui/core/index.js";
 
 export interface MinimapCell {
@@ -42,7 +43,7 @@ export function minimap(level: Level<string>, options: MinimapOptions): void {
   const color =
     options.tile ??
     ((cell: MinimapCell) =>
-      cell.spec.ladder ? "#e8b56a" : cell.spec.oneWay ? "#d59b63" : "#665b86");
+      cell.spec.tags?.includes(LADDER) ? "#e8b56a" : cell.spec.oneWay ? "#d59b63" : "#665b86");
 
   ctx.save();
   ctx.beginPath();
