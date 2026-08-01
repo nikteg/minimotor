@@ -137,9 +137,28 @@ function landingExamples(): Plugin {
 // resolves via the alias below to source during development. Vite transforms
 // the TypeScript directly, so changing `src/` no longer requires rebuilding
 // `build/` first.
+// The aliases above are computed ONCE, when the config loads. Vite watches
+// `vite.config.ts` and restarts on changes to it, but it has no idea this
+// config read `package.json` — so adding or renaming a subpath there leaves a
+// running dev server serving yesterday's alias table, and the import fails with
+// "Failed to resolve import" for a path that is plainly in `exports`. Watch the
+// file we actually derived from and restart when it moves.
+function watchPackageExports(): Plugin {
+  return {
+    name: "minimotor-watch-package-exports",
+    configureServer(server) {
+      const pkg = here("./package.json");
+      server.watcher.add(pkg);
+      server.watcher.on("change", (file) => {
+        if (file === pkg) void server.restart();
+      });
+    },
+  };
+}
+
 export default defineConfig({
   root: here("./samples"),
-  plugins: [sampleSockets(), landingExamples()],
+  plugins: [sampleSockets(), landingExamples(), watchPackageExports()],
   resolve: {
     // Derived from the package's own `exports` map rather than restated here:
     // a hand-kept copy is a third place every subpath has to be spelled (after

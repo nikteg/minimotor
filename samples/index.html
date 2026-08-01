@@ -442,20 +442,21 @@
          and, because the count is right-aligned inside its cell, put every
          number in one vertical rule. `auto-fill` down to 140px keeps the
          widest chip intact and reflows to fewer columns on a narrow window. */
+      /* Families are COLUMNS. A newspaper column flow rather than a grid,
+         because the families are uneven (8 core against 1 net) and column flow
+         packs short ones together instead of leaving a grid row mostly empty.
+         `break-inside: avoid` keeps a family whole, so a colour never splits
+         across two columns. */
       .filter-tags {
+        column-width: 150px;
+        column-gap: 16px;
+      }
+      .filter-band {
         display: flex;
         flex-direction: column;
-        gap: 16px;
-      }
-      /* Every band is the same grid template at the same width, so the columns
-         line up across bands — the picker reads as one table, just with each
-         colour on its own rows. The between-band gap is a clear multiple of the
-         within-band one (16 vs 6), which is what makes the grouping read as
-         grouping rather than as an uneven row, with no label needed. */
-      .filter-band {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
         gap: 6px;
+        margin-bottom: 16px;
+        break-inside: avoid;
       }
       .filter-tags .tag {
         display: flex;
