@@ -205,8 +205,8 @@
       figure.snippet figcaption {
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        gap: 12px;
+        flex-wrap: wrap;
+        gap: 8px 12px;
         padding: 10px 12px 10px 16px;
         border-bottom: 1px solid var(--border);
         font-size: 0.9rem;
@@ -216,6 +216,16 @@
       figure.snippet figcaption b {
         color: var(--text);
         font-weight: 600;
+      }
+      /* Derived from the snippet's own source, in the same chips the showcase
+         uses — so the two sections describe the engine with one vocabulary. */
+      .snippet-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+      }
+      figure.snippet figcaption .spacer {
+        flex: 1;
       }
       button.copy {
         flex: 0 0 auto;
@@ -363,15 +373,15 @@
       .ns-data {
         --h: 90;
       }
-      /* `base` is the debug/perf overlay: on nearly every sample, so it is
-         pushed as far down the page's contrast range as it can go while still
-         being readable. Dashed, because the dash says "ambient, not a feature
-         this sample is about" without needing any colour at all. */
+      /* `base` is the debug/perf overlay. It has no hue because it is on nearly
+         every sample and a colour would just add noise — but it still has to be
+         READABLE, so it runs brighter than the page's ambient `--dim`. The dash
+         does the "ambient, not a feature this sample is about" work instead. */
       .ns-base,
       .tag.ns-none {
         background: transparent;
-        color: #4d545e;
-        border: 1px dashed #33393f;
+        color: #aab4c0;
+        border: 1px dashed #626b78;
       }
 
       /* ---------- namespace filter ---------- */
@@ -612,10 +622,11 @@
       <h1><span class="accent">mini</span>motor</h1>
       <p class="tag">
         A tiny, dependency-free 2D game engine for the web. One canvas, plain data, batteries
-        included — loop, input, camera, tiles, ECS, audio, netcode and an immediate-mode UI.
+        included — loop, input, camera, tiles, ECS, audio, physics, netcode, level generation,
+        bitmap fonts and an immediate-mode UI.
       </p>
       <div class="badges">
-        <span>0 runtime dependencies</span>
+        <span>0 browser dependencies</span>
         <span>TypeScript</span>
         <span>fixed-timestep loop</span>
         <span>~1 file to start</span>
@@ -646,14 +657,19 @@
         <div class="section-head">
           <h2>Tiny by design</h2>
           <p>
-            Everything is reached through PascalCase namespaces off <code>"minimotor"</code>. No
-            setup ceremony — here are complete, real snippets.
+            One <code>createApp</code> per canvas, then capabilities bound to it —
+            <code>createCamera(app)</code>, <code>createUI(app)</code> — alongside pure namespaces
+            like <code>Tiles</code> and <code>Mathf</code> straight off <code>"minimotor"</code>.
+            These four files are the real thing, not excerpts: they are typechecked by
+            <code>pnpm verify</code> and served here verbatim.
           </p>
         </div>
         <div class="examples">
           <figure class="snippet">
             <figcaption>
-              <span><b>Move a square</b> — createApp, Loop, Keys, Draw</span>
+              <span><b>Move a square</b> — the whole engine, minus everything</span>
+              <span class="snippet-tags" data-for="square"></span>
+              <span class="spacer"></span>
               <button class="copy" type="button">Copy</button>
             </figcaption>
             <pre><code data-example="square"></code></pre>
@@ -662,6 +678,8 @@
           <figure class="snippet">
             <figcaption>
               <span><b>Tiles &amp; collision</b> — the level is the source</span>
+              <span class="snippet-tags" data-for="tiles"></span>
+              <span class="spacer"></span>
               <button class="copy" type="button">Copy</button>
             </figcaption>
             <pre><code data-example="tiles"></code></pre>
@@ -670,6 +688,8 @@
           <figure class="snippet">
             <figcaption>
               <span><b>Animate a sprite</b> — one image per state</span>
+              <span class="snippet-tags" data-for="anim"></span>
+              <span class="spacer"></span>
               <button class="copy" type="button">Copy</button>
             </figcaption>
             <pre><code data-example="anim"></code></pre>
@@ -678,6 +698,8 @@
           <figure class="snippet">
             <figcaption>
               <span><b>Follow camera + ECS</b> — data never draws itself</span>
+              <span class="snippet-tags" data-for="camera"></span>
+              <span class="spacer"></span>
               <button class="copy" type="button">Copy</button>
             </figcaption>
             <pre><code data-example="camera"></code></pre>
@@ -690,8 +712,9 @@
         <div class="section-head">
           <h2>Showcase</h2>
           <p>
-            Every sample is one self-contained file. Fundamentals put a single module front and
-            center; the games compose many together into a full playable loop.
+            Every sample is self-contained and runs straight from engine source. Fundamentals put
+            one capability front and center; the games compose many into a full playable loop. Tags
+            are the namespaces a sample actually imports — pick some to narrow the grid.
           </p>
         </div>
 
@@ -1371,6 +1394,23 @@
           "afterbegin",
           `<span class="gutter" aria-hidden="true">${Array.from({ length: lines }, (_, i) => i + 1).join("\n")}</span>`,
         );
+      }
+
+      // ---- snippet tags ----
+      // Read off the snippet's own source rather than written by hand, so a
+      // caption cannot claim an API the code below it stopped using. A
+      // namespace shows up as `Name.` at a call site; the few that samples bind
+      // in lower case (`const ecs = createEcs()`) are found by their factory.
+      const FACTORY = { createEcs: "ECS", createAssets: "Assets", createApp: "Draw" };
+      const VOCAB = Object.values(NS).flat();
+      for (const slot of document.querySelectorAll(".snippet-tags")) {
+        const src = document.querySelector(`code[data-example="${slot.dataset.for}"]`)?.textContent;
+        if (!src) continue;
+        const found = new Set(VOCAB.filter((n) => new RegExp(`\\b${n}\\.`).test(src)));
+        for (const [fn, ns] of Object.entries(FACTORY)) if (src.includes(fn)) found.add(ns);
+        slot.innerHTML = VOCAB.filter((n) => found.has(n))
+          .map((n) => chip(n))
+          .join("");
       }
 
       // ---- copy-code buttons ----
