@@ -14,21 +14,21 @@
       "y": 208,
       "w": 48,
       "h": 16,
-      "insets": { "left": 8, "top": 4, "right": 8, "bottom": 4 }
+      "insets": { "left": 8, "top": 4, "right": 8, "bottom": 5 }
     },
     "button": {
       "x": 96,
       "y": 0,
       "w": 48,
       "h": 16,
-      "insets": { "left": 8, "top": 4, "right": 8, "bottom": 4 }
+      "insets": { "left": 8, "top": 7, "right": 8, "bottom": 5 }
     },
     "buttonHover": {
       "x": 96,
       "y": 16,
       "w": 48,
       "h": 16,
-      "insets": { "left": 8, "top": 4, "right": 8, "bottom": 4 }
+      "insets": { "left": 8, "top": 4, "right": 8, "bottom": 5 }
     },
     "buttonActive": {
       "x": 96,
