@@ -5,6 +5,13 @@ and in the long header comments at the top of each module — those are the
 source of truth. This file records things that are hard to discover by reading
 the code.
 
+## Prefer auto layout
+
+When building UI, **ALWAYS** try to use auto containers and auto sizing first.
+Let rows, columns, panels, and their children derive their dimensions from
+content; only hard-code a size when the design or the asset genuinely requires
+one.
+
 ## Checking nine-slice and tile frame art
 
 `mm ui` reads the atlas pixels and reports frame defects as numbers. **Use it

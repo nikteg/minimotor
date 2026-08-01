@@ -332,11 +332,21 @@ export interface Fillable extends Flowable {
 const lastRectSlot = uiSlot<{ rect: { x: number; y: number; w: number; h: number } | null }>(
   () => ({ rect: null }),
 );
+const lastContainerSlot = uiSlot<{
+  rect: { x: number; y: number; w: number; h: number } | null;
+}>(() => ({ rect: null }));
 
 /** The rect of the most recently placed widget — what `popover`/`floatText`
  *  anchor to when called without `x`/`y`. Null before any widget has drawn. */
 export function lastWidgetRect(): { x: number; y: number; w: number; h: number } | null {
   return lastRectSlot().rect;
+}
+
+/** The most recently completed auto-layout container's outer rect, including
+ * its padding. Useful when a separately transformed block must start after a
+ * measured container. */
+export function lastContainerRect(): { x: number; y: number; w: number; h: number } | null {
+  return lastContainerSlot().rect;
 }
 
 /** Resolve a `Fillable`'s rect: an explicit `x`/`y` wins; otherwise fill the
@@ -423,8 +433,8 @@ export interface LayoutOptions {
   /** Gap between children in px. Default 8. */
   gap?: number;
   /** Inner padding in px. `row`/`col` default to 0 (flush structural flow);
-   *  `group` defaults to `theme.pad`. */
-  pad?: number;
+   *  `group` defaults to `theme.pad`. Pass `{ x, y }` for independent axes. */
+  pad?: number | UiPadding;
   /** Where the content block sits on the main axis when the container is wider
    *  (a row) / taller (a col) than its children — POSITION, not order (this is
    *  flexbox's `justify-content`). `"center"` shares the slack on both sides;
@@ -753,11 +763,15 @@ export function runAutoSized<R>(
         // The children are placed and drawn; their extent is this container's
         // true size. A deferred slot writes it back into the rect the parent is
         // still holding open, so the next sibling starts from the right place
-        // THIS frame instead of the next one. Only the axis the PARENT is
-        // waiting on is written — the other one it already chose.
+        // THIS frame instead of the next one. A fitCross parent also receives
+        // the child's natural cross-axis size, so nested auto containers can
+        // grow the row/column around their content immediately.
         if (reservation) {
           const { axis, slot } = reservation;
-          slot.commit(axis === "w" ? measured.w : undefined, axis === "h" ? measured.h : undefined);
+          slot.commit(
+            axis === "w" || reservation.crossAxis === "w" ? measured.w : undefined,
+            axis === "h" || reservation.crossAxis === "h" ? measured.h : undefined,
+          );
         }
         return r;
       } finally {
@@ -840,6 +854,8 @@ interface Reservation {
   slot: DeferredSlot;
   /** Which of the container's axes the parent is waiting on. */
   axis: "w" | "h";
+  /** When the parent shrink-wraps its cross axis, commit that measured axis too. */
+  crossAxis?: "w" | "h";
 }
 
 function tryReserve(
@@ -863,7 +879,13 @@ function tryReserve(
   const provisionalH =
     axis === "h" ? Math.max(cached?.h ?? 0, opts.minH ?? 0) || undefined : (opts.h ?? opts.minH);
   const slot = parent.reserve(provisionalW, provisionalH);
-  return slot ? { slot, axis } : null;
+  return slot
+    ? {
+        slot,
+        axis,
+        crossAxis: parent.fitCross ? (axis === "w" ? "h" : "w") : undefined,
+      }
+    : null;
 }
 
 /** The single auto-sizing container: resolve the rect from `opts` (measuring
@@ -924,5 +946,6 @@ export function autoContainer<R>(
       h: measured && opts.h === undefined ? rect.h - measured.h : 0,
     });
   }
+  lastContainerSlot().rect = rect;
   return result;
 }

@@ -742,7 +742,11 @@ const baseDefaults = {
 // `select` is derived, not authored: it restates the tokens the drop-menu used
 // to borrow, and `resolveSelect` runs again on every merge so a theme that
 // moves `primary` moves the menu highlight with it.
-export const defaultTheme: Theme = { ...baseDefaults, select: resolveSelect(baseDefaults) };
+export const defaultTheme: Theme = {
+  ...baseDefaults,
+  skin: undefined,
+  select: resolveSelect(baseDefaults),
+};
 
 export let theme: Theme = { ...defaultTheme };
 /** Changes whenever theme-dependent auto-layout measurements must be rebuilt. */

@@ -51,6 +51,7 @@ export {
   getTheme,
   ids,
   idScope,
+  lastContainerRect,
   lastWidgetRect as lastRect,
   layoutCapture,
   layoutIssues,
