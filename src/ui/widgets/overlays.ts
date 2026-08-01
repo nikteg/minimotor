@@ -1,7 +1,7 @@
 import { ButtonVariant, button } from "./button.js";
 import { PanelFrame, paintFrame } from "./panel.js";
 import { panel, row } from "./layout.js";
-import { scrollGestureActive } from "./lists.js";
+import { dismissedByOutsideRelease } from "./lists.js";
 import {
   LayoutChildren,
   cachedContentSize,
@@ -12,7 +12,6 @@ import {
   hasActiveNavPad,
   lastWidgetRect,
   measureWidth,
-  pointerGestureOwned,
   rawPointer,
   runAutoSized,
   sweptCache,
@@ -22,8 +21,7 @@ import {
   uiFont,
   uiToScreen,
 } from "@src/ui/core/index.js";
-import { anchorViewport } from "@src/ui/core/index.js";
-import { pointInRect } from "@src/collision/index.js";
+import { anchorViewport, fitAnchored } from "@src/ui/core/index.js";
 
 // Scale is LEXICAL: an overlay is scaled by the `UI.scaled` block it's drawn
 // in, like any other widget — it just has to be drawn LATE (so it paints over
@@ -99,10 +97,12 @@ export function popover(opts: PopoverOptions, children?: () => void): boolean {
   let x = opts.x ?? 0;
   let y = opts.y ?? 0;
   if (anchor) {
-    const vp = anchorViewport();
-    x = Math.max(4, Math.min(anchor.x, vp.w - opts.w - 4));
-    y = anchor.y + anchor.h + 4;
-    if (y + h > vp.h - 4) y = Math.max(4, anchor.y - h - 4);
+    const gap = 4;
+    ({ x, y } = fitAnchored(
+      { x: anchor.x, y: anchor.y + anchor.h + gap, w: opts.w, h },
+      anchor.y - h - gap,
+      4,
+    ));
   }
   const rect = { x, y, w: opts.w, h };
 
@@ -117,16 +117,7 @@ export function popover(opts: PopoverOptions, children?: () => void): boolean {
   const tl = uiToScreen(rect.x, rect.y);
   const br = uiToScreen(rect.x + rect.w, rect.y + rect.h);
   const screenRect = { x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y };
-  if (
-    open &&
-    was &&
-    p.released &&
-    !pointInRect(p.x, p.y, screenRect) &&
-    !scrollGestureActive() &&
-    !pointerGestureOwned()
-  ) {
-    open = false;
-  }
+  if (open && was && dismissedByOutsideRelease(p, screenRect)) open = false;
   popoverWasOpen.set(id, open);
   if (!open) return false;
 

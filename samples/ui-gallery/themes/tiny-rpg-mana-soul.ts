@@ -26,8 +26,8 @@ export function createTinyRpgThemes(atlas: CanvasImageSource): TinyRpgThemes {
       disabled: [6, 10, 6, 2],
     },
   });
-  const buttons = (y: number) =>
-    Tiles.set(atlas, {
+  const buttons = (image: CanvasImageSource, y: number) =>
+    Tiles.set(image, {
       size: 1,
       names: {
         default: [0, y, 96, 22],
@@ -36,7 +36,64 @@ export function createTinyRpgThemes(atlas: CanvasImageSource): TinyRpgThemes {
         disabled: [288, y, 96, 22],
       },
     });
-  const normalButtons = buttons(256);
+  const normalButtons = buttons(atlas, 256);
+  // The pack shades the button plate with a 4-step ramp — one blue for the
+  // default/pressed states, one green for hover — over gold arrow caps that
+  // every state shares. A semantic variant is that SAME art with just those two
+  // ramps palette-swapped: the caps, outline, bevel and per-state shading stay
+  // pixel-identical, and only the plate changes hue. (Blending a tint over the
+  // whole frame instead would drag the gold caps along with it.)
+  const plateRamp = (
+    lit: string,
+    body: string,
+    shade: string,
+    deep: string,
+    hoverLit: string,
+    hoverBody: string,
+    hoverShade: string,
+    hoverDeep: string,
+  ): Record<string, string> => ({
+    "#07c2ed": lit, // default plate: highlight
+    "#4193d5": body, //                face (and the pressed plate's highlight)
+    "#425db0": shade, //               bevel (and the pressed plate's face)
+    "#332370": deep, //                deepest shadow
+    "#d0e12e": hoverLit, // hover plate, same four steps
+    "#8dde32": hoverBody,
+    "#31ce60": hoverShade,
+    "#00ab55": hoverDeep,
+  });
+  const primaryButtons = buttons(
+    Tiles.recolor(
+      atlas,
+      plateRamp(
+        "#ffd08a",
+        "#e8894a",
+        "#a9522c",
+        "#5c2a1c",
+        "#ffe6a8",
+        "#ffab5c",
+        "#d9703a",
+        "#8f4324",
+      ),
+    ),
+    256,
+  );
+  const dangerButtons = buttons(
+    Tiles.recolor(
+      atlas,
+      plateRamp(
+        "#ffb3c0",
+        "#d75a76",
+        "#9c3350",
+        "#55182f",
+        "#ffd2da",
+        "#f37e95",
+        "#c44a68",
+        "#86293f",
+      ),
+    ),
+    256,
+  );
   const bars = Tiles.set(atlas, {
     size: 1,
     names: {
@@ -91,16 +148,15 @@ export function createTinyRpgThemes(atlas: CanvasImageSource): TinyRpgThemes {
   // mid-section of the bracket's side rule, which repeat cleanly.
   const tabFrame = (cell: TilesetCellSource) =>
     nine(cell, { left: 24, top: 10, right: 24, bottom: 11 });
-  // The normal button art reserves 16px for each arrow/cap. Variants are the
-  // SAME button recolored: the tint swaps the art's hue while keeping its
-  // luminosity, so arrows, outline and shading are pixel-identical to the
-  // default button and only the color reads as "primary" / "danger".
+  // 21px is the narrowest corner that leaves a FLAT centre column in all four
+  // button states: the arrow caps, the plate's bevel and the pressed/disabled
+  // states' deeper inset all end by x 21 / x 75. Anything narrower keeps a piece
+  // of that edge inside the repeating centre, which then re-draws it every
+  // centre-width as a vertical slit down a wide button. Vertically the only
+  // repeatable band is the flat face (rows 6–15) — the rows outside it carry the
+  // top highlight and the bottom shadow.
   const arrowButtonFrame = (cell: TilesetCellSource) =>
-    nine(cell, { left: 16, top: 4, right: 16, bottom: 4 });
-  const tintedButtonFrame = (cell: TilesetCellSource, tint: string) => ({
-    ...arrowButtonFrame(cell),
-    tint,
-  });
+    nine(cell, { left: 21, top: 6, right: 21, bottom: 6 });
   const inputFrame = tabFrame(tabs.base);
   const inputHoverFrame = tabFrame(tabs.hover);
   const inputActiveFrame = tabFrame(tabs.active);
@@ -147,15 +203,15 @@ export function createTinyRpgThemes(atlas: CanvasImageSource): TinyRpgThemes {
         // The disabled state keeps the pack's own greyed-out button in every
         // variant: a disabled button reads as "off", not as a dim primary.
         primary: {
-          default: tintedButtonFrame(normalButtons.default, "#d86a39"),
-          hover: tintedButtonFrame(normalButtons.hover, "#d86a39"),
-          active: tintedButtonFrame(normalButtons.active, "#d86a39"),
+          default: arrowButtonFrame(primaryButtons.default),
+          hover: arrowButtonFrame(primaryButtons.hover),
+          active: arrowButtonFrame(primaryButtons.active),
           disabled: arrowButtonFrame(normalButtons.disabled),
         },
         danger: {
-          default: tintedButtonFrame(normalButtons.default, "#c34d67"),
-          hover: tintedButtonFrame(normalButtons.hover, "#c34d67"),
-          active: tintedButtonFrame(normalButtons.active, "#c34d67"),
+          default: arrowButtonFrame(dangerButtons.default),
+          hover: arrowButtonFrame(dangerButtons.hover),
+          active: arrowButtonFrame(dangerButtons.active),
           disabled: arrowButtonFrame(normalButtons.disabled),
         },
         ghost: {
@@ -170,12 +226,14 @@ export function createTinyRpgThemes(atlas: CanvasImageSource): TinyRpgThemes {
         // 40×19. Trim the transparent trailing edge so the slider anchor and
         // endpoint line up with the visible sprite.
         cursor: { image: atlas, region: { sx: 336, sy: 352, sw: 40, sh: 19 } },
-        // A slider knob is CENTERED on its value, so it needs to be the round
-        // comet head on its own — the full sprite's long tail would put most of
-        // the art to one side of the value it is supposed to mark.
+        // The whole comet is the knob, but its HEAD is the handle — the tail
+        // trails off to the right. Anchor on the head's center (source x 0–17,
+        // y 1–18) so the value sits under the ball rather than under the middle
+        // of the tail.
         sliderKnob: {
           image: atlas,
-          region: { sx: 336, sy: 353, sw: 18, sh: 18 },
+          region: { sx: 336, sy: 352, sw: 40, sh: 19 },
+          anchor: { x: 9, y: 10 },
         },
       },
     }),

@@ -51,8 +51,7 @@ async function menuRowYs(page: Page): Promise<number[]> {
   return tree
     .filter(
       (e) =>
-        e.kind === "button" &&
-        !e.id &&
+        e.kind === "selectOption" &&
         e.screenRect.h > 0 &&
         Math.abs(e.screenRect.x - menu.x) < 0.5 &&
         e.screenRect.y > menu.y - 60 &&
@@ -67,8 +66,7 @@ async function cityRowStep(page: Page): Promise<number> {
   if (!menu) return 28;
   const row = tree.find(
     (e) =>
-      e.kind === "button" &&
-      !e.id &&
+      e.kind === "selectOption" &&
       e.screenRect.h > 0 &&
       Math.abs(e.screenRect.x - menu.x) < 0.5 &&
       e.screenRect.y > menu.y - 60 &&
@@ -77,7 +75,7 @@ async function cityRowStep(page: Page): Promise<number> {
   return row ? row.screenRect.h / row.scale : 28;
 }
 
-// Click the City select and wait for its drop menu (the row buttons) to appear.
+// Click the City select and wait for its drop menu (the option rows) to appear.
 async function openCityMenu(page: Page): Promise<{ x: number; y: number; w: number; h: number }> {
   const sel = (await getTree(page)).find((e) => e.id === "ui-gallery:select-city");
   expect(sel).toBeDefined();

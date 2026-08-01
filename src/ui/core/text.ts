@@ -70,6 +70,31 @@ export function anchorViewport(): {
   return vp;
 }
 
+/** Keep a box that hangs off something else on screen.
+ *
+ *  `box` is where it WANTS to go (already offset from its anchor by whatever
+ *  gap that caller likes), `flipY` is the top edge to use instead when it would
+ *  run off the bottom — normally above the anchor. The result is clamped into
+ *  `anchorViewport()` with `margin` px to spare on every side, so a flip that
+ *  itself doesn't fit still lands on screen.
+ *
+ *  Shared by the popover, the select drop-menu and the tooltip. They had each
+ *  written the clamp inline and drifted to different margins; the gaps stay
+ *  theirs (a menu hugs its control, a tooltip trails the cursor), only the
+ *  staying-on-screen part is common. */
+export function fitAnchored(
+  box: { x: number; y: number; w: number; h: number },
+  flipY: number,
+  margin: number,
+): { x: number; y: number } {
+  const vp = anchorViewport();
+  const y = box.y + box.h > vp.h - margin ? flipY : box.y;
+  return {
+    x: Math.max(margin, Math.min(box.x, vp.w - box.w - margin)),
+    y: Math.max(margin, y),
+  };
+}
+
 /** A themed text label. */
 export interface TextOptions {
   /** Position. In a layout, omit and it flows like any widget (reserving a

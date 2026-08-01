@@ -92,5 +92,6 @@ export type {
   ThemeSpacing,
   ThemeTextPadding,
   ThemeButtonText,
+  ThemeSelect,
   ThemeTextOutline,
 } from "./core/index.js";

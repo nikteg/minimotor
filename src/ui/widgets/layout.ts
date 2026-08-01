@@ -5,7 +5,6 @@ import {
   LayoutOptions,
   autoContainer,
   cachedContentSize,
-  claimWheel,
   containerKey,
   containerRect,
   currentLayout,
@@ -34,16 +33,16 @@ import {
   uiWidth,
   withTheme,
 } from "@src/ui/core/index.js";
-import { dragScroll, scrollbar } from "./lists.js";
+import { dragScroll, scrollbar, scrollbarFade, wheelScroll } from "./lists.js";
 import { anchorViewport } from "@src/ui/core/index.js";
 import { pointInRect } from "@src/collision/index.js";
 import { clamp } from "@src/math/mathf.js";
 
-// Persisted scroll offset + a scrollbar fade alpha per scrolling container,
-// keyed by its scrollbar id. Swept, so position-keyed entries from containers
-// that move or stop being drawn age out instead of accumulating.
+// Persisted scroll offset per scrolling container, keyed by its scrollbar id.
+// Swept, so position-keyed entries from containers that move or stop being
+// drawn age out instead of accumulating. (The bar's fade alpha is kept next to
+// `scrollbar` itself — every scroll region fades through `scrollbarFade`.)
 const scrollOffsets = sweptCache<number>();
-const scrollAlphas = sweptCache<number>();
 // The focus-reveal epoch each region last scrolled for — so one Tab produces
 // one scroll, and the user can wheel away afterwards without being dragged back.
 const revealSeen = sweptCache<number>();
@@ -183,23 +182,12 @@ function scrollable<R>(
     max,
   );
 
-  // The pointer, captured at the REGION'S ENTRY: if this region is background
-  // to an open overlay, the pointer is dead HERE — and must stay dead for the
-  // wheel claim below, which runs after the children. (A child select/popover
-  // calling `enterOverlay` enlivens the pointer for the REST of the frame; the
-  // end-of-body claim re-reading it would steal the wheel from the overlay's
-  // own scroll region — the drop menu — through the dead background.)
+  // The pointer at the REGION'S ENTRY — `wheelScroll` below needs this read, not
+  // a fresh one (see its doc).
   const p = uiPointer();
 
-  // Fade the scrollbar to full while the pointer is inside the region and back
-  // to a faint resting level when it leaves (so there's always a hint that the
-  // area scrolls). The offset math runs at any alpha, so a faded bar stays
-  // usable. No overflow → fully hidden.
-  const FAINT = 0.28;
-  const prevAlpha = scrollAlphas.get(sbId) ?? 0;
-  const target = max <= 0 ? 0 : pointInRect(p.x, p.y, bodyRect) ? 1 : FAINT;
-  const alpha = prevAlpha + (target - prevAlpha) * 0.2;
-  scrollAlphas.set(sbId, alpha < 0.01 ? 0 : alpha);
+  // The offset math runs at any alpha, so a faded bar stays usable.
+  const alpha = scrollbarFade(sbId, pointInRect(p.x, p.y, bodyRect), max > 0);
 
   const originX = bodyRect.x - (horiz ? offset : 0);
   const originY = bodyRect.y - (horiz ? 0 : offset);
@@ -221,16 +209,7 @@ function scrollable<R>(
     );
   });
 
-  // Wheel AFTER the children: a nested scroll region draws (and claims) first,
-  // so the wheel scrolls the INNERMOST region under the pointer until its edge,
-  // then chains outward. One-frame render lag on the wheel is invisible.
-  // Uses the ENTRY pointer `p` (see above), not a fresh read.
-  offset = clamp(
-    offset +
-      claimWheel(pointInRect(p.x, p.y, bodyRect), p.wheel, offset <= 0.5, offset >= max - 0.5),
-    0,
-    max,
-  );
+  offset = wheelScroll(p, bodyRect, offset, max);
 
   // Follow the keyboard: Tab can move focus to a widget scrolled out of sight,
   // and a focus ring nobody can see is a dead end. The children have drawn by

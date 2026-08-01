@@ -107,9 +107,20 @@ export function slider(
   const knobH = knobSprite?.region.sh ?? 14;
   const knobHalfW = knobW / 2;
   const knobHalfH = knobH / 2;
+  // Where the value sits INSIDE the knob art. Centered unless the skin says
+  // otherwise — the Tiny RPG knob is a comet whose head is the handle and whose
+  // tail is decoration, so its anchor is over the head.
+  const knobAnchorX = knobSprite?.anchor?.x ?? knobHalfW;
+  const knobAnchorY = knobSprite?.anchor?.y ?? knobHalfH;
   const p = uiPointer();
-  // Generous hit region: the whole track strip, knob included.
-  const hit = { x: sx - knobHalfW, y: sy - knobHalfH, w: sw + knobW, h: knobH };
+  // Generous hit region: the whole track strip, plus the knob art either side
+  // of the anchor at the endpoints.
+  const hit = {
+    x: sx - knobAnchorX,
+    y: sy - knobAnchorY,
+    w: sw + knobW,
+    h: knobH,
+  };
   const keyboardFocused = registerFocusable(ctx, {
     id,
     disabled: opts.disabled,
@@ -155,7 +166,7 @@ export function slider(
   // knob's LEFT edge over `sw - knobW` instead makes it lag the pointer by up
   // to a knob width and stops the fill short of the end.)
   const valueX = sx + valueRatio * sw;
-  const knobX = valueX - knobHalfW;
+  const knobX = valueX - knobAnchorX;
 
   ctx.save();
   ctx.font = opts.font ?? uiFont();
@@ -186,7 +197,7 @@ export function slider(
       knobSprite.region.sw,
       knobSprite.region.sh,
       knobX,
-      sy - knobHalfH,
+      sy - knobAnchorY,
       knobW,
       knobH,
     );

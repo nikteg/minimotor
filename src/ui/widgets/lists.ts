@@ -15,6 +15,7 @@ import {
   focusedId,
   hoverCursor,
   ensureWired,
+  lifecycleOnce,
   onFrameEnd,
   claimPointerGesture,
   pointerGestureOwned,
@@ -124,10 +125,7 @@ const FLING_STOP = 0.4;
 
 // Frame-end: clear the click-suppression flag, the wheel claim, the one-frame
 // scroll-ended flag and any pending handoff offer.
-let listHooksWired = false;
-function ensureListHooks(): void {
-  if (listHooksWired) return;
-  listHooksWired = true;
+const ensureListHooks = lifecycleOnce(() => {
   onFrameEnd(clearPointerEdges);
   onFrameEnd(clearWheelClaim);
   onFrameEnd(() => {
@@ -138,6 +136,36 @@ function ensureListHooks(): void {
       if (bs.drag.handoff === 0) bs.drag.from = null;
     }
   });
+});
+
+/** Apply this frame's wheel to a scroll region and re-clamp its offset.
+ *
+ *  Call it AFTER the region's body has drawn: a nested region inside the body
+ *  runs first and claims the wheel, so the wheel scrolls the INNERMOST region
+ *  under the pointer until its edge and then chains outward. (The offset lands
+ *  one frame late as a result — invisible on a wheel.)
+ *
+ *  `p` must be the pointer read at the region's ENTRY, not a fresh read here.
+ *  A region that is background to an open overlay sees a DEAD pointer on entry
+ *  and must keep seeing it: a child `select`/popover calling `enterOverlay`
+ *  enlivens the pointer for the rest of the frame, and re-reading it after the
+ *  body would let the dead background region steal the wheel from the overlay's
+ *  own scroll region.
+ *
+ *  Shared by `list`/`grid`/`table` and the `overflow` containers. */
+export function wheelScroll(
+  p: { x: number; y: number; wheel: number },
+  area: { x: number; y: number; w: number; h: number },
+  offset: number,
+  max: number,
+): number {
+  const delta = claimWheel(
+    pointInRect(p.x, p.y, area),
+    p.wheel,
+    offset <= 0.5,
+    offset >= max - 0.5,
+  );
+  return clamp(offset + delta, 0, max);
 }
 
 /** True while a body drag-scroll is live (or just released this frame) —
@@ -146,6 +174,25 @@ function ensureListHooks(): void {
 export function scrollGestureActive(): boolean {
   const bs = bodyScrollSlot();
   return (bs.drag?.active ?? false) || bs.endedThisFrame;
+}
+
+/** Should this frame's pointer release dismiss an open overlay?
+ *
+ *  Only a release, only outside every rect the overlay owns (its own box, and
+ *  for a drop-menu the control that opened it), and never the release that
+ *  merely ENDS a gesture: a swipe that started inside the overlay and lifted
+ *  outside it, or a widget drag that owns the pointer, is not a click-outside.
+ *  Lives here because that gesture state does — the popover and the select menu
+ *  had both spelled the same four conditions out inline.
+ *
+ *  `p` and `rects` must be in the SAME space: the select menu uses the current
+ *  space, the popover maps its rect to screen coords to match `rawPointer`. */
+export function dismissedByOutsideRelease(
+  p: { x: number; y: number; released: boolean },
+  ...rects: readonly { x: number; y: number; w: number; h: number }[]
+): boolean {
+  if (!p.released || scrollGestureActive() || pointerGestureOwned()) return false;
+  return rects.every((r) => !pointInRect(p.x, p.y, r));
 }
 
 /** Cancel any in-progress body-drag — a scrollbar calls this when it grabs its
@@ -346,11 +393,8 @@ export function list(
   // the rows below, so a nested region inside a row claims it first.)
   offset = dragScroll(key, { x, y, w: listW, h }, "y", offset, max);
 
-  // The pointer at the LIST'S ENTRY: a list that is background to an open
-  // overlay sees a dead pointer here, and the wheel claim below (after the
-  // rows) must use THIS state — a row child calling `enterOverlay` enlivens
-  // later reads for the rest of the frame, which would let a dead background
-  // list steal the wheel from the overlay's own scroll region.
+  // The pointer at the LIST'S ENTRY — `wheelScroll` below needs this read, not
+  // a fresh one (see its doc).
   const wp = uiPointer();
 
   // Keyboard navigation: scroll so the focused row is in view, then register
@@ -384,23 +428,10 @@ export function list(
     }
   });
 
-  // Wheel AFTER the rows: a nested scroll region inside a row runs first and
-  // claims the wheel, so it scrolls the INNER region until its edge, then chains
-  // outward (inner-first). One-frame render lag on the wheel is invisible.
-  // Uses the ENTRY pointer `wp` (see above), not a fresh read.
-  offset = clamp(
-    offset +
-      claimWheel(
-        pointInRect(wp.x, wp.y, { x, y, w, h }),
-        wp.wheel,
-        offset <= 0.5,
-        offset >= max - 0.5,
-      ),
-    0,
-    max,
-  );
+  offset = wheelScroll(wp, { x, y, w, h }, offset, max);
 
   if (scrollW) {
+    const sbId = opts.id ? `${opts.id}:sb` : `${x}:${y}`;
     offset = scrollbar({
       x: x + w - scrollW,
       y,
@@ -410,6 +441,8 @@ export function list(
       content,
       offset,
       id: opts.id ? `${opts.id}:sb` : undefined,
+      // Uses the ENTRY pointer `wp`, like the wheel claim above.
+      opacity: scrollbarFade(sbId, pointInRect(wp.x, wp.y, { x, y, w, h }), max > 0),
     });
   }
   return offset;
@@ -544,6 +577,24 @@ const scrollDragSlot = uiSlot<{ drag: { id: string; grab: number } | null }>(() 
   drag: null,
 }));
 
+// Per-scrollbar fade alpha. Swept, so position-keyed entries from regions that
+// move or stop being drawn age out instead of accumulating.
+const scrollAlphas = sweptCache<number>();
+
+/** Ease a scroll region's bar toward full while the pointer is inside it and
+ *  back to a faint resting level when it leaves, so there is always a hint that
+ *  the area scrolls without a bright bar sitting over static content. Returns 0
+ *  when nothing overflows. Shared by `list`/`grid`/`table` and the `overflow`
+ *  containers so every scroll region in a screen fades alike. */
+export function scrollbarFade(id: string, hovered: boolean, overflows: boolean): number {
+  const FAINT = 0.28;
+  const previous = scrollAlphas.get(id) ?? 0;
+  const target = overflows ? (hovered ? 1 : FAINT) : 0;
+  const alpha = previous + (target - previous) * 0.2;
+  scrollAlphas.set(id, alpha < 0.01 ? 0 : alpha);
+  return alpha;
+}
+
 /** Compute the next offset for a scrollbar — thumb drag, track paging and
  *  wheel — and draw it. Returns the new offset (clamped to the content):
  *
@@ -620,7 +671,13 @@ export function scrollbar(opts: ScrollbarOptions): number {
   offset = clamp(offset, 0, max);
   along = alongStart + (offset / max) * range;
 
-  const opacity = opts.opacity ?? 1;
+  // A region that named its `wheelArea` has told us where "inside" is, so it
+  // gets the same fade the `list`/`grid`/`table` and `overflow` bars use
+  // without computing it. An explicit `opacity` still wins; a bar with neither
+  // has no region to hover and stays solid.
+  const opacity =
+    opts.opacity ??
+    (opts.wheelArea ? scrollbarFade(id, pointInRect(p.x, p.y, opts.wheelArea), true) : 1);
   if (opacity > 0.01) {
     ctx.save();
     ctx.globalAlpha *= opacity;

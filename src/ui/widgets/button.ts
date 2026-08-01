@@ -11,6 +11,7 @@ import {
   measureWidth,
   place,
   registerFocusable,
+  shade,
   theme,
   uiCtx,
   uiFont,
@@ -72,19 +73,6 @@ export interface ButtonOptions extends ButtonStyle, Flowable {
 
 /** Resolve a variant into (idle, hover, active) fills, border and label
  *  colors — mixing in the theme and any per-button overrides. */
-// Nudge a color toward black/white without parsing it — CSS color-mix is
-// understood by canvas fillStyle in every browser we target. Memoized: the
-// inputs are theme colors (a handful), and buttons call this every frame.
-const shadeCache = new Map<string, string>();
-function shade(c: string, dark: boolean): string {
-  const key = dark ? `d:${c}` : `l:${c}`;
-  let mixed = shadeCache.get(key);
-  if (!mixed) {
-    mixed = `color-mix(in srgb, ${c} ${dark ? 82 : 88}%, ${dark ? "#000" : "#fff"})`;
-    shadeCache.set(key, mixed);
-  }
-  return mixed;
-}
 
 function variantColors(opts: ButtonStyle): {
   bg: string;

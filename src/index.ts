@@ -405,6 +405,7 @@ export type {
   ThemeSpacing,
   ThemeTextPadding,
   ThemeButtonText,
+  ThemeSelect,
   NineSliceRegion,
   TileRegion,
   TilesetFrameRole,

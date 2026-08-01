@@ -1,6 +1,7 @@
 import {
   claimPointerGesture,
   ensureWired,
+  lifecycleOnce,
   onFrameEnd,
   onReset,
   rawPointer,
@@ -30,10 +31,7 @@ interface ActiveGesture {
 
 const gestureSt = uiSlot<{ drag: ActiveGesture | null }>(() => ({ drag: null }));
 
-let hooksRegistered = false;
-function ensureDragHooks(): void {
-  if (hooksRegistered) return;
-  hooksRegistered = true;
+const ensureDragHooks = lifecycleOnce(() => {
   ensureWired(); // so the frame-end hook actually runs
   onFrameEnd(() => {
     // A release not consumed by any drop target cancels the drag.
@@ -46,7 +44,7 @@ function ensureDragHooks(): void {
     st().drag = null;
     gestureSt().drag = null;
   });
-}
+});
 
 /** Inputs to `dragSource`: the draggable rect, its identity, and the `payload`
  *  it carries. */

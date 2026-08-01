@@ -11,6 +11,7 @@ import {
   centeredText,
   consumeKeyboardActivation,
   consumeKeyboardCommand,
+  buttonState,
   drawBox,
   currentUiTransform,
   dragPointer,
@@ -20,6 +21,9 @@ import {
   enterOverlay,
   focusFromPointer,
   hoverCursor,
+  lifecycleOnce,
+  layoutCaptureActive,
+  recordLayout,
   markFocusableOverlay,
   onFrameEnd,
   onOverlayPass,
@@ -31,7 +35,7 @@ import {
   registerFocusable,
   requiredWidgetId,
   uiSlot,
-  anchorViewport,
+  fitAnchored,
   theme,
   uiCtx,
   uiFont,
@@ -43,9 +47,9 @@ import {
   wrapLines,
   withTheme,
 } from "@src/ui/core/index.js";
-import { button } from "./button.js";
-import { list, scrollGestureActive } from "./lists.js";
+import { dismissedByOutsideRelease, list, scrollGestureActive } from "./lists.js";
 import { listMetrics } from "./list-metrics.js";
+import { evictUnseenEditor, mountHiddenEditor, type NativeEditorHost } from "./native-editor.js";
 import { paintFrame } from "./panel.js";
 import { pointInRect } from "@src/collision/index.js";
 import { clamp } from "@src/math/mathf.js";
@@ -80,14 +84,10 @@ export interface SelectOverlayRequest<T = unknown> {
   theme: import("@src/ui/theme.js").Theme;
 }
 
-// All select state, per UI runtime (each game owns its editor/menu). `seen` is
-// the ids of every select drawn THIS frame — a Set, not a single id: with more
-// than one select on screen, a single "last seen" id let a later-drawn
-// select's id evict an earlier open select at frame-end (its menu vanished on
-// the click that opened it). Cleared each frame.
-interface SelectState {
-  editor: SelectEditor | null;
-  seen: Set<string>;
+// All select state, per UI runtime (each game owns its editor/menu). The
+// editor + `seen` half is the shared native-editor host — see `native-editor.ts`
+// for why `seen` is a Set.
+interface SelectState extends NativeEditorHost<SelectEditor> {
   request: SelectOverlayRequest | null;
   commit: { id: string; index: number } | null;
 }
@@ -200,14 +200,11 @@ function menuEntries<T>(opts: ResolvedSelectOptions<T>): SelectMenuEntry<T>[] {
 // The select hangs a deferred menu draw + editor cleanup off the frame loop.
 // Register those with the lifecycle the first time a select is drawn, so core
 // never has to import this widget.
-let hooksRegistered = false;
-function ensureSelectHooks(): void {
-  if (hooksRegistered) return;
-  hooksRegistered = true;
+const ensureSelectHooks = lifecycleOnce(() => {
   onOverlayPass(drawSelectOverlay);
   onFrameEnd(selectEndFrame);
   onReset(resetSelect);
-}
+});
 
 export function removeSelectEditor(): void {
   const s = st();
@@ -222,18 +219,6 @@ export function openSelectEditor<T>(
 ): void {
   removeSelectEditor();
   const select = document.createElement("select");
-  select.setAttribute("aria-label", opts.ariaLabel ?? opts.id);
-  select.tabIndex = -1;
-  select.dataset.minimotorUi = "true";
-  Object.assign(select.style, {
-    position: "fixed",
-    left: "-1000px",
-    top: "0",
-    width: "1px",
-    height: "1px",
-    opacity: "0",
-    pointerEvents: "none",
-  });
   if (opts.groups) {
     let optionIndex = 0;
     for (const group of opts.groups) {
@@ -282,7 +267,7 @@ export function openSelectEditor<T>(
       select.blur();
     }
   });
-  document.body.appendChild(select);
+  mountHiddenEditor(select, opts.ariaLabel ?? opts.id);
   st().editor = editor;
   select.focus({ preventScroll: true });
 }
@@ -510,6 +495,74 @@ export function drawSelectOverlay(): void {
   }
 }
 
+/** The `theme.select` label color for one row state. Shared by the plain and
+ *  the wrapped painter so a wrapped menu can't drift from a normal one. */
+function selectRowLabelColor(disabled: boolean | undefined, selected: boolean): string {
+  if (disabled) return theme.select.textDisabled;
+  return selected ? theme.select.textSelected : theme.select.text;
+}
+
+/** Paint one option row and report a click on it.
+ *
+ *  Deliberately NOT a `button()`: menu rows only ever looked like buttons
+ *  because that was the nearest widget to hand, which left them wearing the
+ *  primary/ghost variants — so restyling a call-to-action moved the dropdown
+ *  highlight, and `button`'s hard-wired disabled fill and hover border ring
+ *  were unreachable from a theme. Rows now read `theme.select` directly. They
+ *  are also not focusable: the open menu is driven by the native `<select>`
+ *  behind it, so putting every row in the tab order would fight it. */
+function selectRow(
+  ctx: CanvasRenderingContext2D,
+  rect: { x: number; y: number; w: number; h: number },
+  label: string,
+  disabled: boolean | undefined,
+  selected: boolean,
+): boolean {
+  // Rows used to appear in the layout tree as `button`s, because they used to
+  // BE buttons. They are their own kind now — the menu is windowed by `list`,
+  // so no `place()` call records them.
+  if (layoutCaptureActive) recordLayout("selectOption", undefined, rect);
+  const s = theme.select;
+  const state = disabled
+    ? { hover: false, active: false, clicked: false }
+    : buttonState(rect, uiPointer());
+  hoverCursor(state.hover);
+  const fill = disabled
+    ? s.bgDisabled
+    : selected
+      ? state.active
+        ? s.bgSelectedActive
+        : state.hover
+          ? s.bgSelectedHover
+          : s.bgSelected
+      : state.active
+        ? s.bgActive
+        : state.hover
+          ? s.bgHover
+          : s.bg;
+  if (fill !== "transparent") {
+    ctx.save();
+    ctx.fillStyle = fill;
+    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    ctx.restore();
+  }
+  if (label) {
+    ctx.save();
+    ctx.font = uiFont(theme.fontSize + 2, true);
+    ctx.fillStyle = selectRowLabelColor(disabled, selected);
+    ctx.textAlign = "center";
+    centeredText(
+      ctx,
+      label,
+      rect.x + rect.w / 2,
+      rect.y + rect.h / 2 + (state.active ? 1 : 0),
+      rect.w - 12, // labels squeeze rather than spill
+    );
+    ctx.restore();
+  }
+  return state.clicked;
+}
+
 function drawWrappedSelectLabel(
   ctx: CanvasRenderingContext2D,
   option: SelectOption<unknown>,
@@ -518,7 +571,7 @@ function drawWrappedSelectLabel(
 ): void {
   ctx.save();
   ctx.font = uiFont(theme.fontSize + 2, true);
-  ctx.fillStyle = option.disabled ? theme.textDisabled : selected ? theme.bgActive : theme.text;
+  ctx.fillStyle = selectRowLabelColor(option.disabled, selected);
   ctx.textAlign = "center";
   const maxW = Math.max(1, rect.w - 12);
   const lineH = theme.fontSize + 8;
@@ -584,9 +637,13 @@ function drawSelectMenu(
   let listH = metrics.tops[visibleEntries] ?? 0;
   if (listH <= 0) listH = lineH + 8;
   const menuH = listH + padY * 2;
-  const vp = anchorViewport();
-  const menuY = rect.y + rect.h + menuH <= vp.h - 4 ? rect.y + rect.h + 2 : rect.y - menuH - 2;
-  const menu = { x: rect.x, y: menuY, w: rect.w, h: menuH };
+  const gap = 2;
+  const menuPos = fitAnchored(
+    { x: rect.x, y: rect.y + rect.h + gap, w: rect.w, h: menuH },
+    rect.y - menuH - gap,
+    4,
+  );
+  const menu = { x: menuPos.x, y: menuPos.y, w: rect.w, h: menuH };
 
   ctx.save();
   ctx.fillStyle = theme.bgActive;
@@ -615,7 +672,7 @@ function drawSelectMenu(
   editor.lastIndex = editor.index;
 
   // The menu is a windowed `list` scroll region: scrollbar + wheel + swipe, only
-  // the visible options drawn. The row callback paints one option button.
+  // the visible options drawn. The row callback paints one option row.
   let picked = -1;
   editor.scroll = list(
     {
@@ -633,7 +690,7 @@ function drawSelectMenu(
       if (entry.kind === "group") {
         ctx.save();
         ctx.font = uiFont(theme.fontSize, true);
-        ctx.fillStyle = theme.accent;
+        ctx.fillStyle = theme.select.groupLabel;
         ctx.textAlign = "center";
         centeredText(ctx, entry.label, r.x + r.w / 2, r.y + r.h / 2, r.w - 4);
         ctx.restore();
@@ -641,17 +698,14 @@ function drawSelectMenu(
       }
       const option = entry.option;
       const selectedOption = Object.is(option.value, value);
-      const clicked = button({
-        x: r.x,
-        y: r.y,
-        w: r.w,
-        h: r.h,
-        // Wrapped labels are drawn below after the button paints its frame.
-        label: opts.wrapItems ? "" : option.label,
-        disabled: option.disabled,
-        variant: selectedOption ? "primary" : "ghost",
-        skin: false,
-      });
+      // Wrapped labels are drawn below, after the row paints its fill.
+      const clicked = selectRow(
+        ctx,
+        r,
+        opts.wrapItems ? "" : option.label,
+        option.disabled,
+        selectedOption,
+      );
       if (opts.wrapItems) drawWrappedSelectLabel(ctx, option, r, selectedOption);
       if (clicked) picked = entry.optionIndex;
     },
@@ -665,29 +719,18 @@ function drawSelectMenu(
     return;
   }
 
-  // Close on a click outside — but never on the release that merely ends a
-  // scroll gesture or a widget drag (e.g. a swipe that started inside the menu
-  // and lifted outside it must not dismiss the menu).
-  if (
-    !editor.justOpened &&
-    p.released &&
-    !pointInRect(p.x, p.y, rect) &&
-    !pointInRect(p.x, p.y, menu) &&
-    !scrollGestureActive() &&
-    !pointerGestureOwned()
-  ) {
+  // Close on a click outside the menu AND the control that opened it. (The
+  // frame the menu opens is exempt: that press is what opened it.)
+  if (!editor.justOpened && dismissedByOutsideRelease(p, rect, menu)) {
     removeSelectEditor();
     return;
   }
   editor.justOpened = false;
 }
 
-// Frame-end: drop a native editor whose immediate-mode select stopped drawing,
-// then clear the per-frame seen set. Called by frame's onFrame housekeeping.
+// Called by frame's onFrame housekeeping.
 export function selectEndFrame(): void {
-  const s = st();
-  if (s.editor && !s.seen.has(s.editor.id)) removeSelectEditor();
-  s.seen.clear();
+  evictUnseenEditor(st(), removeSelectEditor);
 }
 
 /** Reset all select state — for tests (see frame `_reset`). */

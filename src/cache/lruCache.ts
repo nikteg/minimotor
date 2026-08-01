@@ -10,8 +10,8 @@
 //     re-bakes".
 //   - plain `Map` — small CLOSED key sets (16 autotile masks, a fixed palette)
 //     where eviction would only cause pointless re-bakes.
-//   - `WeakMap` — identity-keyed caches (per-source-image tints) that should
-//     die with the object they decorate.
+//   - `WeakMap` — identity-keyed caches (per-source-image derivatives) that
+//     should die with the object they decorate.
 
 /** A bounded string-keyed cache with least-recently-used eviction. */
 export interface LruCache<V> {

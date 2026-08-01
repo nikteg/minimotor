@@ -31,8 +31,6 @@ export interface NineSliceRegion extends TileRegion {
   mapping?: TilesetMapping;
   /** Orientation of the source frame. Horizontal is the default. */
   orientation?: "x" | "y";
-  /** Optional color tint applied to the source art while preserving its pixel detail. */
-  tint?: string;
 }
 
 export type TilesetFrameRole =
@@ -67,6 +65,11 @@ export interface TilesetSprite {
   image: CanvasImageSource;
   region: TileRegion;
   mapping?: TilesetMapping;
+  /** The point INSIDE `region` (source px, from its top-left) that lands on
+   *  whatever the sprite marks — a slider knob's value, a cursor's hotspot.
+   *  Defaults to the region's center. Asymmetric art needs it: a comet-shaped
+   *  knob is grabbed by its head, not by the middle of its tail. */
+  anchor?: { x: number; y: number };
 }
 
 /** The source shape shared by `Tiles.Cell` and UI frame definitions. Keeping
@@ -121,7 +124,6 @@ export interface TilesetManifestRegion {
   insets?: NineSliceRegion["insets"];
   mapping?: TilesetMapping;
   orientation?: "x" | "y";
-  tint?: string;
 }
 
 export interface TilesetSkinManifest {
@@ -294,6 +296,84 @@ export interface ThemeButtonText {
   disabled: string;
 }
 
+/** Colors of a `select` drop-menu's rows. The menu used to borrow the button
+ *  variants (`primary` for the current value, `ghost` for the rest), which tied
+ *  a list to a call-to-action's palette: restyling the primary button moved the
+ *  dropdown highlight with it, and a pixel skin's button frame leaked into rows
+ *  that are not buttons. These tokens are the menu's own.
+ *
+ *  Every one of them DEFAULTS to the token it used to borrow, so a theme that
+ *  sets none looks exactly as it did — and a theme that only sets `primary` or
+ *  `accent` still tints the menu, because the defaults resolve after the merge. */
+export interface ThemeSelect {
+  /** Row label. */
+  text: string;
+  /** Label of the row holding the current value. */
+  textSelected: string;
+  /** Label of an unselectable row. */
+  textDisabled: string;
+  /** Row fill when idle. `"transparent"` lets the menu frame show through. */
+  bg: string;
+  /** Row fill when hovered. */
+  bgHover: string;
+  /** Row fill while held. */
+  bgActive: string;
+  /** Fill of an unselectable row. */
+  bgDisabled: string;
+  /** Fill behind the current value's row. */
+  bgSelected: string;
+  /** Fill behind the current value's row when hovered. */
+  bgSelectedHover: string;
+  /** Fill behind the current value's row while held. */
+  bgSelectedActive: string;
+  /** Heading above a group of rows in a grouped menu. */
+  groupLabel: string;
+}
+
+/** The tokens a `ThemeSelect` falls back to when a theme leaves it unset. */
+type SelectTokenSources = Pick<
+  Theme,
+  "buttonText" | "primary" | "bg" | "bgHover" | "bgActive" | "accent"
+>;
+
+/** Nudge a color toward white/black without parsing it — CSS `color-mix` is
+ *  understood by canvas `fillStyle` in every browser we target. This is how the
+ *  kit derives a hover lift and a pressed shade from a single authored fill, so
+ *  it lives with the tokens rather than inside one widget. Memoized: the inputs
+ *  are theme colors (a handful) and buttons call it every frame. */
+const shadeCache = new Map<string, string>();
+export function shade(color: string, dark: boolean): string {
+  const key = dark ? `d:${color}` : `l:${color}`;
+  let mixed = shadeCache.get(key);
+  if (!mixed) {
+    mixed = `color-mix(in srgb, ${color} ${dark ? 82 : 88}%, ${dark ? "#000" : "#fff"})`;
+    shadeCache.set(key, mixed);
+  }
+  return mixed;
+}
+
+/** Resolve the `select` group against an ALREADY-MERGED theme, so the defaults
+ *  track whatever `primary`/`accent`/`buttonText` that theme ended up with.
+ *  (`withTheme` doesn't re-derive — like `buttonText`, a scoped override just
+ *  merges over the group already in effect.) The two `shade` fallbacks are the
+ *  lift and the press the primary button variant used to apply to the selected
+ *  row — same helper, so they cannot drift apart. */
+function resolveSelect(base: SelectTokenSources, overrides?: Partial<ThemeSelect>): ThemeSelect {
+  return {
+    text: overrides?.text ?? base.buttonText.ghost,
+    textSelected: overrides?.textSelected ?? base.buttonText.primary,
+    textDisabled: overrides?.textDisabled ?? base.buttonText.disabled,
+    bg: overrides?.bg ?? "transparent",
+    bgHover: overrides?.bgHover ?? base.bgHover,
+    bgActive: overrides?.bgActive ?? base.bgActive,
+    bgDisabled: overrides?.bgDisabled ?? base.bgActive,
+    bgSelected: overrides?.bgSelected ?? base.primary,
+    bgSelectedHover: overrides?.bgSelectedHover ?? shade(base.primary, false),
+    bgSelectedActive: overrides?.bgSelectedActive ?? shade(base.primary, true),
+    groupLabel: overrides?.groupLabel ?? base.accent,
+  };
+}
+
 /** Optional canvas text outline used by pixel fonts with a dark keyline. */
 export interface ThemeTextOutline {
   color: string;
@@ -324,14 +404,7 @@ function validateRegion(
   insets?: NineSliceRegion["insets"],
 ): void {
   for (const [key, value] of Object.entries(region)) {
-    if (
-      key === "insets" ||
-      key === "image" ||
-      key === "mapping" ||
-      key === "orientation" ||
-      key === "tint"
-    )
-      continue;
+    if (key === "insets" || key === "image" || key === "mapping" || key === "orientation") continue;
     if (!Number.isFinite(value) || value < 0)
       throw new Error(`TilesetSkin: ${label}.${key} must be non-negative`);
   }
@@ -416,7 +489,6 @@ export function createTilesetSkinFromManifest(
     insets: source.insets ?? { left: 0, top: 0, right: 0, bottom: 0 },
     mapping: source.mapping,
     orientation: source.orientation,
-    tint: source.tint,
   });
   const sprite = (source: TilesetManifestSprite): TilesetSprite => ({
     image,
@@ -476,6 +548,8 @@ export interface Theme {
   textDisabled: string;
   /** Semantic button label colors. Individual button `color` overrides these. */
   buttonText: ThemeButtonText;
+  /** Colors of a `select` drop-menu's rows — see `ThemeSelect`. */
+  select: ThemeSelect;
   /** Widget fill when idle. */
   bg: string;
   /** Widget fill when hovered. */
@@ -548,10 +622,11 @@ export interface Theme {
 /** Partial theme update with independently overridable spacing tokens. */
 export type ThemeOverrides = Omit<
   Partial<Theme>,
-  "spacing" | "buttonText" | "panelTitleOverhang" | "panelTitlePad"
+  "spacing" | "buttonText" | "select" | "panelTitleOverhang" | "panelTitlePad"
 > & {
   spacing?: Partial<ThemeSpacing>;
   buttonText?: Partial<ThemeButtonText>;
+  select?: Partial<ThemeSelect>;
   panelTitleOverhang?: Partial<ThemePadding>;
   panelTitlePad?: Partial<ThemePadding>;
 };
@@ -593,7 +668,7 @@ function themeValueSignature(value: Theme): string {
 
 /** The built-in `Theme` — the base every `setTheme` override is merged over
  *  (so overrides never compound) and the reset target for `getTheme`. */
-export const defaultTheme: Theme = {
+const baseDefaults = {
   spacing: { xs: 2, sm: 4, md: 8, lg: 12, xl: 16 },
   font: "monospace",
   fontSize: 13,
@@ -635,6 +710,11 @@ export const defaultTheme: Theme = {
   textPad: 0,
 };
 
+// `select` is derived, not authored: it restates the tokens the drop-menu used
+// to borrow, and `resolveSelect` runs again on every merge so a theme that
+// moves `primary` moves the menu highlight with it.
+export const defaultTheme: Theme = { ...baseDefaults, select: resolveSelect(baseDefaults) };
+
 export let theme: Theme = { ...defaultTheme };
 /** Changes whenever theme-dependent auto-layout measurements must be rebuilt. */
 export let themeRevision = 0;
@@ -644,7 +724,7 @@ export let themeKey = `global:${themeValueSignature(theme)}`;
 /** Restyle every widget at once. Overrides are merged over the DEFAULT theme
  *  (not the current one), so two `setTheme` calls don't compound. */
 export function setTheme(overrides: ThemeOverrides): void {
-  theme = {
+  const merged = {
     ...defaultTheme,
     ...overrides,
     spacing: { ...defaultTheme.spacing, ...overrides.spacing },
@@ -655,6 +735,9 @@ export function setTheme(overrides: ThemeOverrides): void {
     },
     panelTitlePad: { ...defaultTheme.panelTitlePad, ...overrides.panelTitlePad },
   };
+  // Resolved LAST, so the unset tokens fall back to the tokens THIS theme ended
+  // up with rather than the built-in ones.
+  theme = { ...merged, select: resolveSelect(merged, overrides.select) };
   themeRevision++;
   themeKey = `global:${themeRevision}:${themeValueSignature(theme)}`;
 }
@@ -674,6 +757,7 @@ export function withTheme<R>(overrides: ThemeOverrides | undefined, children: ()
     ...overrides,
     spacing: { ...theme.spacing, ...overrides.spacing },
     buttonText: { ...theme.buttonText, ...overrides.buttonText },
+    select: { ...theme.select, ...overrides.select },
     panelTitleOverhang: { ...theme.panelTitleOverhang, ...overrides.panelTitleOverhang },
     panelTitlePad: { ...theme.panelTitlePad, ...overrides.panelTitlePad },
   };

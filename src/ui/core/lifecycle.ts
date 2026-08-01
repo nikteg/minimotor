@@ -99,6 +99,26 @@ export function onFrameEnd(fn: LifecycleHook): void {
   if (!frameEndHooks.includes(fn)) frameEndHooks.push(fn);
 }
 
+/** Wrap one-time hook registration.
+ *
+ *  A widget can't register its lifecycle hooks at import time — that would wire
+ *  the frame loop for a widget the game never draws — so each registers on its
+ *  first draw and must then not register again. Five widgets had written the
+ *  same module-level `let wired` guard; this is that guard:
+ *
+ *      const ensureHooks = lifecycleOnce(() => { onFrameEnd(sweep); onReset(clear); });
+ *
+ *  Module-scoped, deliberately, like the hook lists themselves: registration is
+ *  idempotent per hook, and the hooks look up per-app state when they run. */
+export function lifecycleOnce(register: () => void): () => void {
+  let done = false;
+  return () => {
+    if (done) return;
+    done = true;
+    register();
+  };
+}
+
 /** Register test-reset cleanup, run by `_reset` (once per app — release
  *  DOM nodes here; plain slot state is dropped wholesale). */
 export function onReset(fn: LifecycleHook): void {

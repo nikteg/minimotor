@@ -48,6 +48,8 @@ export {
   type ThemeTextPadding,
   type ThemeTextOutline,
   type ThemeButtonText,
+  type ThemeSelect,
+  shade,
 } from "@src/ui/theme.js";
 export type { Theme } from "@src/ui/theme.js";
 
@@ -277,64 +279,6 @@ function drawOrientedNineSlice(
   ctx.restore();
 }
 
-const tintedAtlasCache = new WeakMap<object, Map<string, CanvasImageSource>>();
-
-/** Create a cached, detail-preserving tint of an atlas. Keeping the tint on
- *  the source image means nine-slice borders, corners, and repeated pixels
- *  all receive the same treatment without tinting the surface behind them.
- *
- *  This MULTIPLIES, so it can only darken toward the tint — the right tool for
- *  shading light art (a parchment frame going amber), not for restating a hue.
- *  To swap specific colors — a blue button plate becoming orange while its gold
- *  caps stay gold — palette-swap the atlas with `Tiles.recolor` and point the
- *  frame at the returned image via `NineSliceRegion.image`. */
-function tintedAtlas(image: CanvasImageSource, color: string): CanvasImageSource {
-  if (!color) return image;
-  const source = image as CanvasImageSource & {
-    width?: number;
-    height?: number;
-    naturalWidth?: number;
-    naturalHeight?: number;
-  };
-  const width = source.naturalWidth ?? source.width ?? 0;
-  const height = source.naturalHeight ?? source.height ?? 0;
-  if (width <= 0 || height <= 0) return image;
-
-  const key = image as object;
-  let colors = tintedAtlasCache.get(key);
-  if (!colors) {
-    colors = new Map();
-    tintedAtlasCache.set(key, colors);
-  }
-  const cached = colors.get(color);
-  if (cached) return cached;
-
-  const canvas =
-    typeof OffscreenCanvas !== "undefined"
-      ? new OffscreenCanvas(width, height)
-      : typeof document !== "undefined"
-        ? Object.assign(document.createElement("canvas"), { width, height })
-        : undefined;
-  if (!canvas) return image;
-  const tintContext = canvas.getContext("2d") as
-    | CanvasRenderingContext2D
-    | OffscreenCanvasRenderingContext2D
-    | null;
-  if (!tintContext) return image;
-  tintContext.imageSmoothingEnabled = false;
-  tintContext.drawImage(image, 0, 0, width, height);
-  tintContext.globalCompositeOperation = "color";
-  tintContext.fillStyle = color;
-  tintContext.fillRect(0, 0, width, height);
-  // Blend modes composite with source-over ALPHA, so the fill above just made
-  // every transparent pixel solid — a nine-slice frame would paint an opaque
-  // rectangle behind itself. Mask back down to the art's own alpha.
-  tintContext.globalCompositeOperation = "destination-in";
-  tintContext.drawImage(image, 0, 0, width, height);
-  colors.set(color, canvas as unknown as CanvasImageSource);
-  return canvas as unknown as CanvasImageSource;
-}
-
 /** Paint a pixel-native nine-slice region, clipping partial repeats. */
 export function drawNineSlice(
   ctx: CanvasRenderingContext2D,
@@ -345,14 +289,13 @@ export function drawNineSlice(
   w: number,
   h: number,
 ): void {
-  const sourceImage = region.tint ? tintedAtlas(image, region.tint) : image;
   const { left, top, right, bottom } = region.insets;
   const centerW = region.sw - left - right;
   const centerH = region.sh - top - bottom;
   if (w < left + right || h < top + bottom) {
     // A control smaller than its fixed corners cannot be represented without
     // overlapping slices; scale the complete frame only for this edge case.
-    drawImagePart(ctx, sourceImage, region.sx, region.sy, region.sw, region.sh, x, y, w, h);
+    drawImagePart(ctx, image, region.sx, region.sy, region.sw, region.sh, x, y, w, h);
     return;
   }
 
@@ -363,22 +306,11 @@ export function drawNineSlice(
   const sx = region.sx;
   const sy = region.sy;
 
-  drawImagePart(ctx, sourceImage, sx, sy, left, top, x, y, left, top);
+  drawImagePart(ctx, image, sx, sy, left, top, x, y, left, top);
+  drawImagePart(ctx, image, sx + region.sw - right, sy, right, top, x + w - right, y, right, top);
   drawImagePart(
     ctx,
-    sourceImage,
-    sx + region.sw - right,
-    sy,
-    right,
-    top,
-    x + w - right,
-    y,
-    right,
-    top,
-  );
-  drawImagePart(
-    ctx,
-    sourceImage,
+    image,
     sx,
     sy + region.sh - bottom,
     left,
@@ -390,7 +322,7 @@ export function drawNineSlice(
   );
   drawImagePart(
     ctx,
-    sourceImage,
+    image,
     sx + region.sw - right,
     sy + region.sh - bottom,
     right,
@@ -401,10 +333,10 @@ export function drawNineSlice(
     bottom,
   );
 
-  repeatSlice(ctx, sourceImage, sx + left, sy, centerW, top, dx, y, dw, top);
+  repeatSlice(ctx, image, sx + left, sy, centerW, top, dx, y, dw, top);
   repeatSlice(
     ctx,
-    sourceImage,
+    image,
     sx + left,
     sy + region.sh - bottom,
     centerW,
@@ -414,10 +346,10 @@ export function drawNineSlice(
     dw,
     bottom,
   );
-  repeatSlice(ctx, sourceImage, sx, sy + top, left, centerH, x, dy, left, dh);
+  repeatSlice(ctx, image, sx, sy + top, left, centerH, x, dy, left, dh);
   repeatSlice(
     ctx,
-    sourceImage,
+    image,
     sx + region.sw - right,
     sy + top,
     right,
@@ -427,7 +359,7 @@ export function drawNineSlice(
     right,
     dh,
   );
-  repeatSlice(ctx, sourceImage, sx + left, sy + top, centerW, centerH, dx, dy, dw, dh);
+  repeatSlice(ctx, image, sx + left, sy + top, centerW, centerH, dx, dy, dw, dh);
 }
 
 /** Fill (and optionally stroke) a themed box: rounded per `theme.radius`,

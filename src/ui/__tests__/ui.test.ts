@@ -196,6 +196,21 @@ describe("UI theme", () => {
     expect(getTheme()).toEqual(defaultTheme);
   });
 
+  it("derives the select tokens from the theme that set them, not the built-ins", () => {
+    // The drop menu no longer borrows the button variants, but a theme that
+    // only moves `primary`/`accent` must still repaint it — the group resolves
+    // AFTER the merge, so it sees the new values.
+    setTheme({ primary: "#d86a39", accent: "#ffd34e" });
+    expect(getTheme().select.bgSelected).toBe("#d86a39");
+    expect(getTheme().select.groupLabel).toBe("#ffd34e");
+    // An explicit token wins over the derivation, and only that one.
+    setTheme({ primary: "#d86a39", select: { bgSelected: "#123456" } });
+    expect(getTheme().select.bgSelected).toBe("#123456");
+    expect(getTheme().select.bgSelectedHover).toContain("#d86a39");
+    _reset();
+    expect(getTheme().select.bgSelected).toBe(defaultTheme.primary);
+  });
+
   it("exposes the new metric and variant-color fields with defaults", () => {
     expect(defaultTheme.borderWidth).toBe(2);
     expect(defaultTheme.radius).toBe(0);

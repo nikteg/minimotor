@@ -7,6 +7,7 @@ import {
   ensureWired,
   lastWidgetRect,
   onReset,
+  lifecycleOnce,
   onStep,
   uiSlot,
   uiCtx,
@@ -171,10 +172,7 @@ export function createFloatText(): FloatTextManager {
 // fixed step (via `onStep`) so it pauses with the loop like Clock/Tween.
 const floats = uiSlot<FloatTextManager>(createFloatText);
 
-let hooksRegistered = false;
-function ensureFloatTextHooks(): void {
-  if (hooksRegistered) return;
-  hooksRegistered = true;
+const ensureFloatTextHooks = lifecycleOnce(() => {
   onStep(() => {
     const app = uiApp();
     floats().advance(app.Loop.step);
@@ -182,7 +180,7 @@ function ensureFloatTextHooks(): void {
   onReset(() => {
     floats().clear();
   });
-}
+});
 
 /** Spawn a rising, fading text at (x, y) — score pops, damage numbers,
  *  pickup labels. Aged on the fixed step; draw with `drawFloatText`. Coords are

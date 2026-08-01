@@ -3,7 +3,7 @@
 // hit-area is hovered; `drawTips` paints it near the pointer once the hover has
 // held ~350 ms. Hover stability + reset run off the kernel's frame-end hooks.
 import {
-  anchorViewport,
+  fitAnchored,
   centeredText,
   currentUiScale,
   ensureWired,
@@ -55,7 +55,6 @@ export function drawTips(): void {
   if (!shown || performance.now() - shown.since < 350) return;
   withTheme(shown.theme, () => {
     const msg = shown.text;
-    const vp = anchorViewport();
     const p = rawPointer();
     ctx.save();
     ctx.font = uiFont(theme.fontSize - 1);
@@ -76,10 +75,18 @@ export function drawTips(): void {
     const boxH = Math.max(28, frameMinH + (panelFrame ? theme.spacing.md * 2 : 0));
     const w = boxW * scale; // …and on screen, for the placement clamp
     const h = boxH * scale;
-    let x = p.x + theme.spacing.lg + theme.spacing.xs;
-    let y = p.y + (theme.spacing.xl + theme.spacing.xs) * scale;
-    if (x + w > vp.w - theme.spacing.xs * 2) x = vp.w - theme.spacing.xs * 2 - w;
-    if (y + h > vp.h - theme.spacing.xs * 2) y = p.y - theme.spacing.md - h;
+    // Trails below-right of the cursor, and jumps ABOVE it near the bottom edge
+    // (a tip under the pointer would sit off-screen, not just cramped).
+    const { x, y } = fitAnchored(
+      {
+        x: p.x + theme.spacing.lg + theme.spacing.xs,
+        y: p.y + (theme.spacing.xl + theme.spacing.xs) * scale,
+        w,
+        h,
+      },
+      p.y - theme.spacing.md - h,
+      theme.spacing.xs * 2,
+    );
     ctx.translate(x, y);
     ctx.scale(scale, scale);
     paintFrame(ctx, {

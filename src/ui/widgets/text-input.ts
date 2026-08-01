@@ -18,6 +18,7 @@ import {
   isInOverlayPass,
   isOverlayActive,
   measureWidth,
+  lifecycleOnce,
   onFrameEnd,
   onReset,
   place,
@@ -36,6 +37,7 @@ import {
   wrapLines,
 } from "@src/ui/core/index.js";
 import type { ThemeTextPadding } from "@src/ui/theme.js";
+import { evictUnseenEditor, mountHiddenEditor, type NativeEditorHost } from "./native-editor.js";
 import { pointInRect } from "@src/collision/index.js";
 
 export interface TextEditor {
@@ -73,13 +75,7 @@ interface PressTarget {
   dead: boolean;
 }
 
-interface TextInputState {
-  editor: TextEditor | null;
-  /** Ids of every text input drawn THIS frame. A Set, not a single id: with
-   *  more than one field on screen, a single "last seen" id let a later-drawn
-   *  field's id evict an earlier focused field's editor at frame-end (you
-   *  couldn't focus any field but the last one). Cleared each frame. */
-  seen: Set<string>;
+interface TextInputState extends NativeEditorHost<TextEditor> {
   /** Hit targets accumulating THIS frame — swapped into `pressTargets` at
    *  frame end. */
   drawnTargets: Map<string, PressTarget>;
@@ -97,6 +93,13 @@ const st = uiSlot<TextInputState>(() => ({
   drawnTargets: new Map(),
   pressTargets: new Map(),
 }));
+
+// Register the frame-end eviction + reset with the lifecycle the first time a
+// field is drawn, so core never has to import this widget.
+const ensureTextInputHooks = lifecycleOnce(() => {
+  onFrameEnd(textInputEndFrame);
+  onReset(resetTextInput);
+});
 
 // Canvases with the native press listener attached (one per canvas).
 const pressWired = new WeakSet<HTMLCanvasElement>();
@@ -336,18 +339,6 @@ export function openTextEditor(opts: TextInputOptions & { id: string }): void {
   if (opts.inputMode) input.inputMode = opts.inputMode;
   input.autocomplete = "off";
   input.spellcheck = false;
-  input.setAttribute("aria-label", opts.ariaLabel ?? opts.placeholder ?? opts.id);
-  input.tabIndex = -1;
-  input.dataset.minimotorUi = "true";
-  Object.assign(input.style, {
-    position: "fixed",
-    left: "-1000px",
-    top: "0",
-    width: "1px",
-    height: "1px",
-    opacity: "0",
-    pointerEvents: "none",
-  });
   const editor: TextEditor = {
     id: opts.id,
     input,
@@ -377,7 +368,7 @@ export function openTextEditor(opts: TextInputOptions & { id: string }): void {
       input.blur();
     }
   });
-  document.body.appendChild(input);
+  mountHiddenEditor(input, opts.ariaLabel ?? opts.placeholder ?? opts.id);
   st().editor = editor;
   input.focus({ preventScroll: true });
   // Selection APIs throw for some valid input types (notably number/email).
@@ -666,12 +657,9 @@ export function textInput(opts: TextInputOptions): TextInputResult {
   return { value, changed, submitted, focused };
 }
 
-// Native editing bridges only live while their immediate-mode widget is still
-// submitted every frame; drop the editor when its field stops drawing.
 function textInputEndFrame(): void {
   const s = st();
-  if (s.editor && !s.seen.has(s.editor.id)) removeTextEditor();
-  s.seen.clear();
+  evictUnseenEditor(s, removeTextEditor);
   // Publish this frame's hit targets for the native press listener and start
   // collecting the next frame's into the (reused) old map.
   const drawn = s.drawnTargets;
@@ -687,14 +675,4 @@ function resetTextInput(): void {
   s.seen.clear();
   s.drawnTargets.clear();
   s.pressTargets.clear();
-}
-
-// Register the frame-end eviction + reset with the lifecycle the first time a
-// field is drawn, so core never has to import this widget.
-let hooksRegistered = false;
-function ensureTextInputHooks(): void {
-  if (hooksRegistered) return;
-  hooksRegistered = true;
-  onFrameEnd(textInputEndFrame);
-  onReset(resetTextInput);
 }
