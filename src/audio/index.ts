@@ -4,6 +4,14 @@
 // effects, `Audio.music` schedules a song, `Audio.bus`/`Audio.master` mix, and
 // `Audio.tone`/`Audio.engine` synthesize.
 //
+// EVERY SOUND THIS APP MAKES HANGS OFF ITS OWN BUSES. The page shares one
+// `AudioContext` (browsers cap them), but the sfx bus, the music bus, any
+// `Audio.bus(name)` and the `Audio.Music` step scheduler are all namespaced per
+// app, so `Audio.master` reaches all of them and `destroy()` silences all of
+// them. Two apps on one page never hear each other. The one deliberate
+// exception is `Audio.Mixer`, the page-wide mixer itself — reach for it only
+// when you actually mean "every app on this page".
+//
 //   const Audio = createAudio(app);
 //   const sounds = Audio.sfx({
 //     jump: { freq: { from: 300, to: 600 }, ms: 120 },
@@ -21,6 +29,7 @@ import type {
   SfxHandle,
   SfxSpec,
 } from "./surface.js";
+import type { MusicChannel } from "./music.js";
 import type { App } from "@src/engine/app.js";
 
 export interface AudioMaster {
@@ -31,10 +40,12 @@ export interface AudioMaster {
 
 export type AudioApi = Omit<
   typeof AudioModule,
-  "buses" | "master" | "bus" | "sfx" | "engine" | "music"
+  "buses" | "master" | "bus" | "sfx" | "engine" | "music" | "createMusicChannel"
 > & {
   readonly buses: { readonly sfx: BusHandle; readonly music: BusHandle };
   readonly master: AudioMaster;
+  /** This app's procedural step scheduler, booked onto `buses.music`. */
+  readonly Music: MusicChannel;
   bus(name: string, options?: { lowpass?: number; reverb?: number }): BusHandle;
   sfx<K extends string>(
     map: Record<K, SfxSpec>,
@@ -52,6 +63,10 @@ export function createAudio(app: App): AudioApi {
   const prefix = `game-${nextAudioId++}:`;
   const sfxBus = AudioModule.bus(`${prefix}sfx`);
   const musicBus = AudioModule.bus(`${prefix}music`);
+  // The step scheduler books notes straight onto the bus node, so it takes the
+  // raw mixer bus behind the same name as the `musicBus` handle above — one
+  // channel strip, two views of it.
+  const music = AudioModule.createMusicChannel(AudioModule.Mixer.bus(`${prefix}music`));
   const stoppable = new Set<{ stop(): void }>();
   let masterVolume = 1;
   let masterMuted = false;
@@ -66,6 +81,10 @@ export function createAudio(app: App): AudioApi {
   const destroy = () => {
     if (destroyed) return;
     destroyed = true;
+    // Stop the scheduler FIRST: muting only drops the gain, so a running
+    // channel would keep booking notes (and holding a page-level visibility
+    // listener) for a canvas that no longer exists.
+    music.stop();
     for (const handle of stoppable) handle.stop();
     stoppable.clear();
     sfxBus.muted = true;
@@ -74,7 +93,7 @@ export function createAudio(app: App): AudioApi {
 
   const api: AudioApi = {
     Mixer: AudioModule.Mixer,
-    Music: AudioModule.Music,
+    Music: music,
     Recipes: AudioModule.Recipes,
     Sfx: AudioModule.Sfx,
     ensureAudio: AudioModule.ensureAudio,

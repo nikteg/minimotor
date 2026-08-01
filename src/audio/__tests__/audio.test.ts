@@ -76,54 +76,134 @@ describe("Audio", () => {
   });
 
   describe("Music", () => {
-    it("Music starts unmuted", async () => {
+    // Every test builds its OWN channel — a music channel is per-app, and the
+    // isolation tests below are the reason the module no longer has a singleton
+    // to reach for.
+    const channel = async (name = "music") => {
       const mod = await import("@src/audio/index.js");
-      expect(mod.Music.muted).toBe(false);
+      return mod.createMusicChannel(mod.Mixer.bus(name));
+    };
+
+    it("starts unmuted", async () => {
+      expect((await channel()).muted).toBe(false);
     });
 
-    it("Music.muted toggles", async () => {
-      const mod = await import("@src/audio/index.js");
-      mod.Music.muted = false;
-      expect(mod.Music.muted).toBe(false);
-      mod.Music.muted = true;
-      expect(mod.Music.muted).toBe(true);
+    it("muted toggles", async () => {
+      const music = await channel();
+      music.muted = false;
+      expect(music.muted).toBe(false);
+      music.muted = true;
+      expect(music.muted).toBe(true);
     });
 
-    it("Music.start activates", async () => {
-      const mod = await import("@src/audio/index.js");
+    it("start activates", async () => {
+      const music = await channel();
       vi.stubGlobal("setInterval", vi.fn());
-      mod.Music.start({ volume: 0.1, bpm: 150, schedule: vi.fn() });
-      expect(mod.Music.muted).toBe(false);
+      music.start({ volume: 0.1, bpm: 150, schedule: vi.fn() });
+      expect(music.muted).toBe(false);
     });
 
     it("spaces steps by bpm / stepsPerBeat", async () => {
-      const mod = await import("@src/audio/index.js");
+      const music = await channel();
       vi.stubGlobal("setInterval", vi.fn());
       const schedule = vi.fn();
       // 150 bpm at the default sixteenths → 100ms a step.
-      mod.Music.start({ volume: 0.1, bpm: 150, schedule });
+      music.start({ volume: 0.1, bpm: 150, schedule });
       const times = schedule.mock.calls.map(([, when]) => when as number);
       expect(schedule.mock.calls.map(([step]) => step)).toEqual([0, 1]);
       expect(times[1] - times[0]).toBeCloseTo(0.1);
     });
 
     it("stepsPerBeat stretches the step without touching the tempo", async () => {
-      const mod = await import("@src/audio/index.js");
+      const music = await channel();
       vi.stubGlobal("setInterval", vi.fn());
       const schedule = vi.fn();
       // Same 150 bpm, but one call per beat → 400ms a step.
-      mod.Music.start({ volume: 0.1, bpm: 150, stepsPerBeat: 1, schedule });
+      music.start({ volume: 0.1, bpm: 150, stepsPerBeat: 1, schedule });
       expect(schedule).toHaveBeenCalledTimes(1); // only one step fits the lookahead
     });
 
     it("rejects a tempo that would never advance", async () => {
-      const mod = await import("@src/audio/index.js");
+      const music = await channel();
       const schedule = vi.fn();
-      expect(() => mod.Music.start({ volume: 0.1, bpm: 0, schedule })).toThrow(RangeError);
-      expect(() => mod.Music.start({ volume: 0.1, bpm: -120, schedule })).toThrow(RangeError);
-      expect(() => mod.Music.start({ volume: 0.1, bpm: 120, stepsPerBeat: 0, schedule })).toThrow(
+      expect(() => music.start({ volume: 0.1, bpm: 0, schedule })).toThrow(RangeError);
+      expect(() => music.start({ volume: 0.1, bpm: -120, schedule })).toThrow(RangeError);
+      expect(() => music.start({ volume: 0.1, bpm: 120, stepsPerBeat: 0, schedule })).toThrow(
         RangeError,
       );
+    });
+
+    it("stop lets a later start run again from step 0", async () => {
+      const music = await channel();
+      vi.stubGlobal("setInterval", vi.fn());
+      const first = vi.fn();
+      music.start({ volume: 0.1, bpm: 150, schedule: first });
+      expect(first.mock.calls.map(([step]) => step)).toEqual([0, 1]);
+      music.stop();
+      const second = vi.fn();
+      music.start({ volume: 0.1, bpm: 150, schedule: second });
+      expect(second.mock.calls.map(([step]) => step)).toEqual([0, 1]);
+    });
+
+    it("two channels keep their own mute, tempo and step counter", async () => {
+      vi.stubGlobal("setInterval", vi.fn());
+      const a = await channel("game-a:music");
+      const b = await channel("game-b:music");
+
+      const scheduleA = vi.fn();
+      const scheduleB = vi.fn();
+      // 150 bpm sixteenths (100ms) vs 60 bpm sixteenths (250ms) — different
+      // tempos means a different number of steps fits the same lookahead.
+      a.start({ volume: 0.1, bpm: 150, schedule: scheduleA });
+      b.start({ volume: 0.1, bpm: 60, schedule: scheduleB });
+      expect(scheduleA).toHaveBeenCalledTimes(2);
+      expect(scheduleB).toHaveBeenCalledTimes(1);
+
+      a.muted = true;
+      expect(a.muted).toBe(true);
+      expect(b.muted).toBe(false);
+    });
+
+    it("the second app's start is not swallowed by the first's", async () => {
+      vi.stubGlobal("setInterval", vi.fn());
+      const a = await channel("game-a:music");
+      const b = await channel("game-b:music");
+      a.start({ volume: 0.1, bpm: 150, schedule: vi.fn() });
+      const scheduleB = vi.fn();
+      b.start({ volume: 0.1, bpm: 150, schedule: scheduleB });
+      expect(scheduleB).toHaveBeenCalled();
+    });
+  });
+
+  describe("page-level side effects", () => {
+    it("importing the module registers no document listener", async () => {
+      const add = vi.spyOn(document, "addEventListener");
+      await import("@src/audio/index.js");
+      expect(add).not.toHaveBeenCalledWith("visibilitychange", expect.anything());
+      add.mockRestore();
+    });
+
+    it("the visibility listener is wired on the first start and dropped on the last stop", async () => {
+      vi.stubGlobal("setInterval", vi.fn());
+      const add = vi.spyOn(document, "addEventListener");
+      const remove = vi.spyOn(document, "removeEventListener");
+      const mod = await import("@src/audio/index.js");
+      const a = mod.createMusicChannel(mod.Mixer.bus("game-a:music"));
+      const b = mod.createMusicChannel(mod.Mixer.bus("game-b:music"));
+
+      a.start({ volume: 0.1, bpm: 150, schedule: vi.fn() });
+      b.start({ volume: 0.1, bpm: 150, schedule: vi.fn() });
+      // One listener drives every running channel, not one per channel.
+      const wires = add.mock.calls.filter(([type]) => type === "visibilitychange");
+      expect(wires).toHaveLength(1);
+
+      a.stop();
+      expect(remove).not.toHaveBeenCalledWith("visibilitychange", expect.anything());
+      b.stop();
+      expect(remove).toHaveBeenCalledWith("visibilitychange", expect.anything());
+
+      add.mockRestore();
+      remove.mockRestore();
     });
   });
 });
