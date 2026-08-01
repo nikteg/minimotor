@@ -346,8 +346,8 @@ function panelWithSafeMinimumHeight(opts: PanelOptions): PanelOptions {
  *  mirrored around the whole body. */
 function panelPadding(opts: PanelOptions): { x: number; y: number } {
   const base = opts.pad ?? theme.pad;
-  const padX = typeof base === "number" ? base : base.x;
-  const padY = typeof base === "number" ? base : base.y;
+  const padX = typeof base === "number" ? base : (base.x ?? 0);
+  const padY = typeof base === "number" ? base : (base.y ?? 0);
   return { x: padX + theme.panelInset.x, y: padY };
 }
 

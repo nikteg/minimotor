@@ -437,24 +437,29 @@ Loop.run({
   },
 
   draw() {
-    // The header stays outside UI.scaled, so its controls remain native-size
-    // and reachable while the board below zooms. The header has its own column
-    // so the row is centered vertically without turning the board viewport into
-    // one giant layout container. Use the built-in theme for this chrome.
+    // The viewport itself is the outer column: the header takes its natural
+    // height, and the board fills whatever remains below it. The header stays
+    // outside UI.scaled so its controls remain native-size and reachable.
     UI.col(
       {
         x: 0,
         y: 0,
         w: view.w,
-        pad: { x: 0, y: 8 },
-        fitCross: true,
-        theme: UI.defaultTheme,
+        h: view.h,
+        gap: 0,
+        pad: 0,
       },
-      () => {
+      (viewport) => {
+        UI.col(
+          {
+            pad: { y: 8 },
+            fitCross: true,
+            theme: UI.defaultTheme,
+          },
+          () => {
         UI.row(
           {
             id: uiId("header-row"),
-            w: view.w,
             gap: 32,
             justify: "center",
             alignCross: "center",
@@ -514,9 +519,10 @@ Loop.run({
             );
           },
         );
-      },
-    );
-    const headerH = UI.lastContainerRect()?.h ?? 0;
+          },
+        );
+
+        const boardRect = viewport.fill(12);
     // Publish the knob as the GLOBAL UI scale — the DEFAULT FACTOR the no-arg
     // `UI.scaled(() => …)` block below applies. The setting is only a
     // preference; the BLOCK is what applies it, so the boundary between what
@@ -530,31 +536,32 @@ Loop.run({
     // too narrow (each new line clears the previous line's tallest column, so
     // nothing overlaps), and each column AUTO-SIZES its height from its children.
     // `idScope` gives the nested containers stable cache ids.
-    const th = UI.getTheme(); // drag & drop bins/preview paint from the live theme
-    // The board sits just below the measured header chrome.
+        const th = UI.getTheme(); // drag & drop bins/preview paint from the live theme
+    // The board occupies the remaining viewport slot reserved above.
     // The popover's anchor, in the board's REFERENCE coords — it's drawn inside
     // the same block, so it carries over without mapping.
-    let popoverAt = { x: 24, y: headerH };
+        let popoverAt = { x: 24, y: 0 };
     UI.idScope("panels", () =>
       // ONE scaled block holds everything that zooms: the board, the drag
       // preview and the overlays. Draw AND pointer are scaled together, so
       // hit-testing matches. Inside we lay out in REFERENCE units and read the
       // (scaled) space via UI.width/height, so the columns still REFLOW to fit;
-      // only the zoom differs. UI.fromScreen brings the header's screen-px
-      // chrome into those units, so no division by the scale appears here.
+      // only the zoom differs. UI.fromScreen maps the auto-flowed screen slot
+      // into those units, so no division by the scale appears here.
       UI.scaled(() => {
         const availW = UI.width();
-        const availH = UI.height();
         const baseX = 24;
-        const baseY = UI.fromScreen(0, headerH).y; // pin the board under the header
-        const bottomGap = UI.fromScreen(0, 12).y;
+        const baseY = UI.fromScreen(0, boardRect.y).y;
+        const boardBottom = UI.fromScreen(0, boardRect.y + boardRect.h).y;
+        const boardH = boardBottom - baseY;
+        popoverAt = { x: 24, y: baseY };
         const colW = 300;
         UI.col(
           {
             x: baseX,
             y: baseY,
             w: availW - baseX * 2,
-            h: availH - baseY - bottomGap,
+            h: boardH,
             overflow: "auto",
             pad: 0,
             gap: 0,
@@ -1037,15 +1044,20 @@ Loop.run({
                     ];
                     bins.forEach((bin, bi) => {
                       const bx = binsRow.x + bi * (binW + 12);
-                      // No `accepts` predicate: a bin takes its OWN items back, so
-                      // the same gesture that moves an item across also reorders
-                      // one in place.
+                      // A bin takes items from the OTHER bin and from itself —
+                      // so the same gesture that moves an item across also
+                      // reorders one in place — but not the inventory's emoji.
+                      // The two collections hold different kinds of thing, and
+                      // `accepts` is where that belongs: refusing at the target
+                      // makes the cursor and the ring say no before the release,
+                      // rather than the drop handler quietly discarding it.
                       const target = UI.dropTarget<DragItem>({
                         id: `bin:${bin.id}`,
                         x: bx,
                         y: binsRow.y,
                         w: binW,
                         h: binH,
+                        accepts: (payload) => payload.from !== "inventory",
                       });
                       const insertAt = UI.panel(
                         {
@@ -1058,8 +1070,14 @@ Loop.run({
                           // `highlight` rather than `border`: a pixel skin's
                           // nine-slice replaces the frame's own stroke, so a
                           // border here would answer the pointer under the flat
-                          // themes and stay silent under the tileset ones.
-                          highlight: target.canDrop ? th.accent : undefined,
+                          // themes and stay silent under the tileset ones. The
+                          // ring says which bin a release would land in, and
+                          // says "not this one" when `accepts` has refused.
+                          highlight: target.canDrop
+                            ? th.accent
+                            : target.hovered
+                              ? th.danger
+                              : undefined,
                         },
                         (binBody) => {
                           const slots: Rect[] = [];
@@ -1091,7 +1109,7 @@ Loop.run({
                             items: slots,
                             axis: "y",
                             empty: { ...binBody.extent, w: binW, h: 0 },
-                            silent: !target.hovered,
+                            silent: !target.canDrop,
                           });
                         },
                       );
@@ -1104,9 +1122,7 @@ Loop.run({
                         const sameBin = from === bin.id;
                         if (from === "loadout")
                           binLoadout = binLoadout.filter((x) => x !== item);
-                        else if (from === "stash")
-                          binStash = binStash.filter((x) => x !== item);
-                        else invSlots = invSlots.filter((x) => x !== item);
+                        else binStash = binStash.filter((x) => x !== item);
                         const removedBefore =
                           sameBin && bin.items.indexOf(item) < insertAt;
                         const at = insertAt - (removedBefore ? 1 : 0);
@@ -1135,13 +1151,18 @@ Loop.run({
                     const slot = UI.dropTarget<DragItem>({
                       id: uiId("inv-grid"),
                       ...invBox,
+                      accepts: (payload) => payload.from === "inventory",
                     });
                     const cellRects: Rect[] = [];
                     const invAt = UI.panel(
                       {
                         ...invBox,
                         title: "INVENTORY",
-                        highlight: slot.canDrop ? th.accent : undefined,
+                        highlight: slot.canDrop
+                          ? th.accent
+                          : slot.hovered
+                            ? th.danger
+                            : undefined,
                       },
                       (invBody) => {
                         const cells = invBody.fill();
@@ -1173,24 +1194,17 @@ Loop.run({
                           items: cellRects,
                           axis: "x",
                           empty: { ...cells, w: 0 },
-                          silent: !slot.hovered,
+                          silent: !slot.canDrop,
                         });
                       },
                     );
+                    // Reorder only — `accepts` has already turned everything
+                    // else away, so the item is always one of these.
                     if (slot.dropped) {
-                      const { item, from } = slot.dropped.payload;
-                      const was =
-                        from === "inventory" ? invSlots.indexOf(item) : -1;
-                      if (from === "loadout")
-                        binLoadout = binLoadout.filter((x) => x !== item);
-                      else if (from === "stash")
-                        binStash = binStash.filter((x) => x !== item);
+                      const { item } = slot.dropped.payload;
+                      const was = invSlots.indexOf(item);
                       const next = invSlots.filter((_, i) => i !== was);
-                      next.splice(
-                        was >= 0 && was < invAt ? invAt - 1 : invAt,
-                        0,
-                        item,
-                      );
+                      next.splice(was < invAt ? invAt - 1 : invAt, 0, item);
                       invSlots = next;
                     }
                   });
@@ -1792,6 +1806,7 @@ Loop.run({
         }
       }),
     );
+    });
 
     // Floating texts, then tooltips — on the very top, and OUTSIDE the block:
     // these paint things spawned/requested earlier, each of which captured the
