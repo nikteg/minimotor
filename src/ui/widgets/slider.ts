@@ -107,9 +107,6 @@ export function slider(
   const knobH = knobSprite?.region.sh ?? 14;
   const knobHalfW = knobW / 2;
   const knobHalfH = knobH / 2;
-  // The sprite is a left-aligned handle. Its left edge travels over the usable
-  // track width, keeping the complete sprite inside at both endpoints.
-  const knobTravel = Math.max(0, sw - knobW);
   const p = uiPointer();
   // Generous hit region: the whole track strip, knob included.
   const hit = { x: sx - knobHalfW, y: sy - knobHalfH, w: sw + knobW, h: knobH };
@@ -152,8 +149,13 @@ export function slider(
     value = clamp(value, min, max);
   }
   const valueRatio = (value - min) / (max - min || 1);
-  const knobX = sx + valueRatio * knobTravel;
-  const valueX = knobSprite ? knobX : sx + valueRatio * sw;
+  // ONE position drives the fill and the knob, and it is the same mapping the
+  // drag above reads the value back through — so the knob sits exactly under
+  // the cursor, and the fill spans the whole track at `max`. (Travelling the
+  // knob's LEFT edge over `sw - knobW` instead makes it lag the pointer by up
+  // to a knob width and stops the fill short of the end.)
+  const valueX = sx + valueRatio * sw;
+  const knobX = valueX - knobHalfW;
 
   ctx.save();
   ctx.font = opts.font ?? uiFont();
@@ -191,7 +193,7 @@ export function slider(
     ctx.imageSmoothingEnabled = previousSmoothing;
   } else {
     ctx.beginPath();
-    ctx.arc(sx + valueRatio * sw, sy, knobHalfW, 0, Math.PI * 2);
+    ctx.arc(valueX, sy, knobHalfW, 0, Math.PI * 2);
     ctx.fillStyle = sd.id === id || hover ? theme.accent : theme.accentSoft;
     ctx.fill();
   }

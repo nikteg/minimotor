@@ -714,13 +714,12 @@ Loop.run({
               // the flowing column and hand each its slot rect.
               UI.col({ w: colW, gap: 16, id: uiId("col3") }, (st) => {
                 const listBox = st.next(colW, 210);
-                UI.panel({ ...listBox, title: "List" }, () => {
-                  const listArea: Rect = {
-                    x: listBox.x + 10,
-                    y: listBox.y + 40,
-                    w: listBox.w - 20,
-                    h: listBox.h - 50,
-                  };
+                UI.panel({ ...listBox, title: "List" }, (body) => {
+                  // Take the panel's own body slot instead of guessing an inset:
+                  // how far the title strip reaches down is the THEME's business
+                  // (frame inset + panelTitleH), and a hardcoded offset slides
+                  // the first row under a taller title.
+                  const listArea: Rect = body.fill();
                   listOffset = UI.list(
                     {
                       ...listArea,
@@ -741,12 +740,9 @@ Loop.run({
                 });
 
                 const tableBox = st.next(colW, 232);
-                UI.panel({ ...tableBox, title: "Table" }, () => {
+                UI.panel({ ...tableBox, title: "Table" }, (body) => {
                   const res = UI.table<Player>({
-                    x: tableBox.x + 10,
-                    y: tableBox.y + 40,
-                    w: tableBox.w - 20,
-                    h: tableBox.h - 50,
+                    ...body.fill(),
                     rowH: 26,
                     cellPadX: 8,
                     cellPadY: 2,

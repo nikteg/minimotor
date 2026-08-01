@@ -269,12 +269,15 @@ export function fillRect(
 /** Resolve a widget's rect: an explicit `at` flow, else the ambient layout
  *  (unless the caller pinned x/y), else absolute coordinates. `autoW` is the
  *  widget's natural main-axis size (e.g. a button's label width); `kind`
- *  labels the rect in a layout capture (see `layoutCapture`). */
+ *  labels the rect in a layout capture (see `layoutCapture`). Set `intrinsicH`
+ *  for a widget whose height is dictated by its art rather than by the row
+ *  rhythm (`select`, `tabs`) — see the column branch below. */
 export function place(
   opts: Flowable,
   autoW: number,
   defaultH: number,
   kind = "widget",
+  intrinsicH = false,
 ): { x: number; y: number; w: number; h: number } {
   const pinned = opts.x !== undefined || opts.y !== undefined;
   const st = pinned ? undefined : (opts.at ?? currentLayout());
@@ -286,7 +289,15 @@ export function place(
     if (st.dir === "row") {
       rect = st.next(opts.w ?? autoW, opts.h ?? (st.fitCross ? defaultH : undefined));
     } else {
-      rect = st.next(opts.w ?? (st.fitCross ? autoW : undefined), opts.h);
+      // In a COLUMN, height is the main axis and an undated slot falls back to
+      // the flow's generic row height (`theme.buttonH`). `intrinsicH` widgets
+      // opt out of that: their art has a height of its own, and squeezing it
+      // into a button-sized slot squashes the frame. Rows are unaffected —
+      // there height is the CROSS axis and filling the row is still right.
+      rect = st.next(
+        opts.w ?? (st.fitCross ? autoW : undefined),
+        opts.h ?? (intrinsicH ? defaultH : undefined),
+      );
     }
   } else {
     rect = { x: opts.x ?? 0, y: opts.y ?? 0, w: opts.w ?? autoW, h: opts.h ?? defaultH };

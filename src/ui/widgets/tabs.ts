@@ -52,7 +52,7 @@ export function tabs(opts: TabsOptions): number {
       theme.spacing.lg * 2 +
       2) *
       opts.items.length;
-  const rect = place(opts, w, opts.h ?? theme.tabH, "tabs");
+  const rect = place(opts, w, opts.h ?? theme.tabH, "tabs", true);
   const id = widgetId(opts.id, "tabs");
   const keyboardFocused = registerFocusable(ctx, { id, tabIndex: opts.tabIndex, rect });
   const cellW = rect.w / opts.items.length;

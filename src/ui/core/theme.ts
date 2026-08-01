@@ -279,9 +279,14 @@ function drawOrientedNineSlice(
 
 const tintedAtlasCache = new WeakMap<object, Map<string, CanvasImageSource>>();
 
-/** Create a cached, detail-preserving tint of an atlas. Keeping the tint on
+/** Create a cached, detail-preserving RECOLOR of an atlas. Keeping the tint on
  *  the source image means nine-slice borders, corners, and repeated pixels
- *  all receive the same treatment without tinting the surface behind them. */
+ *  all receive the same treatment without tinting the surface behind them.
+ *
+ *  The art keeps its own LUMINOSITY and only takes the tint's hue/saturation,
+ *  so a tinted button is the same button in another color — highlights, shading
+ *  and outlines all survive. (A multiply would instead darken every pixel
+ *  toward the tint, which turns a blue button brown rather than orange.) */
 function tintedAtlas(image: CanvasImageSource, color: string): CanvasImageSource {
   if (!color) return image;
   const source = image as CanvasImageSource & {
@@ -317,9 +322,14 @@ function tintedAtlas(image: CanvasImageSource, color: string): CanvasImageSource
   if (!tintContext) return image;
   tintContext.imageSmoothingEnabled = false;
   tintContext.drawImage(image, 0, 0, width, height);
-  tintContext.globalCompositeOperation = "multiply";
+  tintContext.globalCompositeOperation = "color";
   tintContext.fillStyle = color;
   tintContext.fillRect(0, 0, width, height);
+  // Blend modes composite with source-over ALPHA, so the fill above just made
+  // every transparent pixel solid — a nine-slice frame would paint an opaque
+  // rectangle behind itself. Mask back down to the art's own alpha.
+  tintContext.globalCompositeOperation = "destination-in";
+  tintContext.drawImage(image, 0, 0, width, height);
   colors.set(color, canvas as unknown as CanvasImageSource);
   return canvas as unknown as CanvasImageSource;
 }

@@ -83,11 +83,18 @@ export function createTinyRpgThemes(atlas: CanvasImageSource): TinyRpgThemes {
     right: 32,
     bottom: 0,
   });
+  // The tab/input art is a 96×32 plate whose only decoration is a corner
+  // bracket in each corner: the brackets sit at x 7–17 / 75–85 and y 5–8 /
+  // 23–25. The corner slices must CONTAIN them — 16px-wide corners cut each
+  // bracket in half and the leftover half then tiles across the middle as
+  // stray marks. The centre slices are the plain fill and the straight
+  // mid-section of the bracket's side rule, which repeat cleanly.
   const tabFrame = (cell: TilesetCellSource) =>
-    nine(cell, { left: 16, top: 8, right: 16, bottom: 8 });
-  // The normal button art reserves 16px for each arrow/cap. Variants reuse
-  // these same slices and receive a source tint, so their pixel details and
-  // state-specific art stay consistent with the normal button.
+    nine(cell, { left: 24, top: 10, right: 24, bottom: 11 });
+  // The normal button art reserves 16px for each arrow/cap. Variants are the
+  // SAME button recolored: the tint swaps the art's hue while keeping its
+  // luminosity, so arrows, outline and shading are pixel-identical to the
+  // default button and only the color reads as "primary" / "danger".
   const arrowButtonFrame = (cell: TilesetCellSource) =>
     nine(cell, { left: 16, top: 4, right: 16, bottom: 4 });
   const tintedButtonFrame = (cell: TilesetCellSource, tint: string) => ({
@@ -137,17 +144,19 @@ export function createTinyRpgThemes(atlas: CanvasImageSource): TinyRpgThemes {
         scrollThumbActive: barLight,
       },
       buttonVariants: {
+        // The disabled state keeps the pack's own greyed-out button in every
+        // variant: a disabled button reads as "off", not as a dim primary.
         primary: {
           default: tintedButtonFrame(normalButtons.default, "#d86a39"),
           hover: tintedButtonFrame(normalButtons.hover, "#d86a39"),
           active: tintedButtonFrame(normalButtons.active, "#d86a39"),
-          disabled: tintedButtonFrame(normalButtons.disabled, "#8d7952"),
+          disabled: arrowButtonFrame(normalButtons.disabled),
         },
         danger: {
           default: tintedButtonFrame(normalButtons.default, "#c34d67"),
           hover: tintedButtonFrame(normalButtons.hover, "#c34d67"),
           active: tintedButtonFrame(normalButtons.active, "#c34d67"),
-          disabled: tintedButtonFrame(normalButtons.disabled, "#8d7952"),
+          disabled: arrowButtonFrame(normalButtons.disabled),
         },
         ghost: {
           default: arrowButtonFrame(normalButtons.default),
@@ -161,9 +170,12 @@ export function createTinyRpgThemes(atlas: CanvasImageSource): TinyRpgThemes {
         // 40×19. Trim the transparent trailing edge so the slider anchor and
         // endpoint line up with the visible sprite.
         cursor: { image: atlas, region: { sx: 336, sy: 352, sw: 40, sh: 19 } },
+        // A slider knob is CENTERED on its value, so it needs to be the round
+        // comet head on its own — the full sprite's long tail would put most of
+        // the art to one side of the value it is supposed to mark.
         sliderKnob: {
           image: atlas,
-          region: { sx: 336, sy: 352, sw: 40, sh: 19 },
+          region: { sx: 336, sy: 353, sw: 18, sh: 18 },
         },
       },
     }),

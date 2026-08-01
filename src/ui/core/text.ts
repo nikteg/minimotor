@@ -219,11 +219,15 @@ export function text(str: string, rawOpts?: TextOptions): void {
       : lineH;
   const autoW =
     opts.wrap && opts.w === undefined && layout?.dir === "row" ? layout.remaining : undefined;
+  // A self-sized slot must include the padding it will then be inset by —
+  // otherwise the label is ellipsized to fit inside its OWN `theme.textPad`,
+  // and every label under a theme with a non-zero textPad loses its last
+  // characters to "…".
   const rect = place(
     opts.wrap && wrapWidth !== undefined
       ? { ...opts, w: autoW ?? opts.w, h: opts.h ?? autoH }
       : opts,
-    natural,
+    natural + padX * 2,
     autoH,
     "text",
   );

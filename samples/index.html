@@ -17,8 +17,16 @@
         --border: #2a2f38;
         --text: #e7ecf0;
         --dim: #8b94a0;
+        --card-text: #bcc6d2;
+        /* Code sits BELOW the page, not on it: darker than --bg so a snippet
+           reads as a well rather than as another panel. */
+        --code-bg: #07090c;
         --accent: #4ecdc4;
         --accent-2: #ffd166;
+        /* One radius for the whole page. Near-square reads as tooling rather
+           than as a consumer app, and it matches the pixel grid the samples
+           themselves draw on. */
+        --radius: 2px;
       }
       /* No global smooth scroll: it also animates the browser's scroll
          restoration on Back (top→bottom on every return from a sample). Anchor
@@ -137,7 +145,7 @@
         align-items: center;
         gap: 8px;
         padding: 11px 20px;
-        border-radius: 9px;
+        border-radius: var(--radius);
         font-weight: 600;
         font-size: 0.95rem;
         border: 1px solid var(--border);
@@ -191,7 +199,7 @@
       figure.snippet {
         background: var(--panel);
         border: 1px solid var(--border);
-        border-radius: 12px;
+        border-radius: var(--radius);
         overflow: hidden;
       }
       figure.snippet figcaption {
@@ -217,7 +225,7 @@
         font: inherit;
         font-size: 0.78rem;
         padding: 4px 10px;
-        border-radius: 7px;
+        border-radius: var(--radius);
         cursor: pointer;
         transition:
           color 0.15s,
@@ -234,8 +242,10 @@
         border-color: var(--accent);
       }
       pre {
+        position: relative;
         margin: 0;
-        padding: 16px;
+        padding: 16px 16px 16px 56px;
+        background: var(--code-bg);
         overflow-x: auto;
         font:
           0.82rem/1.6 "SF Mono",
@@ -247,6 +257,20 @@
       }
       pre code {
         white-space: pre;
+      }
+      /* Line numbers live in a sibling of <code>, so `code.textContent` — what
+         the Copy button reads — never contains them. `user-select: none` keeps
+         them out of a hand-made selection too. */
+      .gutter {
+        position: absolute;
+        left: 0;
+        top: 16px;
+        width: 40px;
+        text-align: right;
+        color: var(--dim);
+        opacity: 0.45;
+        user-select: none;
+        pointer-events: none;
       }
       .tok-key {
         color: #c792ea;
@@ -277,7 +301,7 @@
       a.card {
         background: var(--panel);
         border: 1px solid var(--border);
-        border-radius: 12px;
+        border-radius: var(--radius);
         padding: 20px;
         color: inherit;
         display: flex;
@@ -306,14 +330,14 @@
          belongs to — so scanning the grid for "which samples touch the net" is
          a colour match rather than a read. One hue per family, expressed once
          as `--h` and reused for text, fill and border. */
-      a.card .tag {
-        background: hsl(var(--h) 90% 55% / 0.18);
-        color: hsl(var(--h) 100% 74%);
+      .tag {
+        background: hsl(var(--h) 100% 50% / 0.22);
+        color: hsl(var(--h) 100% 76%);
         font-size: 0.72rem;
         font-family: ui-monospace, monospace;
         padding: 2px 8px;
-        border-radius: 5px;
-        border: 1px solid hsl(var(--h) 85% 60% / 0.5);
+        border-radius: var(--radius);
+        border: 1px solid hsl(var(--h) 100% 62% / 0.7);
       }
       .ns-core {
         --h: 215;
@@ -339,14 +363,142 @@
       .ns-data {
         --h: 90;
       }
-      /* Namespaces with no family — greyed rather than given a meaningless hue. */
-      a.card .tag.ns-none {
-        background: var(--panel-2);
+      /* `base` is the debug/perf overlay: on nearly every sample, so a hue of
+         its own would be 37 cards' worth of noise. Grey and DASHED — the dash
+         says "ambient, not a feature this sample is about" at a glance, and a
+         mid-grey stroke gives the chip a real edge instead of the almost
+         invisible `--border` the coloured tags can get away with. */
+      .ns-base,
+      .tag.ns-none {
+        background: transparent;
         color: var(--dim);
-        border-color: var(--border);
+        border: 1px dashed #454c58;
       }
-      a.card p {
+
+      /* ---------- namespace filter ---------- */
+      .filter {
+        border: 1px solid var(--border);
+        background: var(--panel);
+        border-radius: var(--radius);
+        padding: 14px 16px;
+        margin-bottom: 26px;
+      }
+      .filter-head {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 10px;
+        font-size: 0.82rem;
         color: var(--dim);
+      }
+      /* The summary is prose with chips inline, so it needs the same flex row
+         treatment as the picker to keep them on the text baseline. */
+      #filter-summary {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      #filter-summary .plus {
+        opacity: 0.6;
+      }
+      .filter-head .spacer {
+        flex: 1;
+      }
+      /* Clear is the way out of a filter that hid everything you were looking
+         at, so it is a solid accent button rather than another quiet outline. */
+      .filter-head button {
+        border: 1px solid var(--accent);
+        background: var(--accent);
+        color: #06231f;
+        font: inherit;
+        font-weight: 700;
+        font-size: 0.82rem;
+        letter-spacing: 0.3px;
+        padding: 3px 14px;
+        border-radius: var(--radius);
+        cursor: pointer;
+        transition:
+          background 0.15s,
+          border-color 0.15s,
+          opacity 0.15s;
+      }
+      .filter-head button:hover:not(:disabled) {
+        background: #66e0d7;
+        border-color: #66e0d7;
+      }
+      /* Nothing to clear: fully out of the way rather than a dead accent slab. */
+      .filter-head button:disabled {
+        background: transparent;
+        border-color: var(--border);
+        color: var(--dim);
+        font-weight: 400;
+        opacity: 0.5;
+        cursor: default;
+      }
+      .filter-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      /* Scoped to `.filter-tags`, NOT `.filter`: the summary line above renders
+         the same chips purely as labels, and they must not look clickable.
+         Unpicked chips sit at the same weight as a card tag; picked ones fill
+         in solid, so the current filter is legible from across the page. */
+      .filter-tags .tag {
+        cursor: pointer;
+        user-select: none;
+        border-width: 1px;
+      }
+      .filter-tags .tag:hover {
+        background: hsl(var(--h) 100% 55% / 0.4);
+        border-color: hsl(var(--h) 100% 70%);
+        color: hsl(var(--h) 100% 86%);
+      }
+      .filter-tags .tag.ns-base:hover {
+        background: var(--panel-2);
+        border-color: var(--dim);
+        border-style: solid;
+        color: var(--text);
+      }
+      .filter-tags .tag[aria-pressed="true"]:hover {
+        background: hsl(var(--h) 100% 70%);
+      }
+      .filter-tags .tag[aria-pressed="true"] {
+        background: hsl(var(--h) 100% 60%);
+        color: #0d0f12;
+        border-color: hsl(var(--h) 100% 70%);
+        font-weight: 700;
+      }
+      .filter-tags .tag.ns-base[aria-pressed="true"] {
+        background: var(--text);
+        border: 1px solid var(--text);
+        color: var(--bg);
+      }
+      .filter-tags .tag .n {
+        opacity: 0.6;
+        margin-left: 5px;
+      }
+      /* Adding this one would leave nothing on screen, so it is not clickable
+         — a dead end you can see rather than one you discover. */
+      .filter-tags .tag.empty {
+        opacity: 0.3;
+        cursor: default;
+        pointer-events: none;
+      }
+      /* Non-matching cards are removed outright, so the grid reflows and the
+         survivors sit together instead of being hunted for. `[hidden]` needs
+         the override because `.card` and `.group` both set `display`. */
+      a.card[hidden],
+      .group[hidden] {
+        display: none;
+      }
+      /* Card copy is the thing you actually read to choose a sample, so it gets
+         a brighter grey than the page's ambient `--dim` (which is for labels
+         and chrome, where low contrast is the point). */
+      a.card p {
+        color: var(--card-text);
         font-size: 0.88rem;
       }
       .flag {
@@ -355,7 +507,7 @@
         font-size: 0.7rem;
         color: var(--accent-2);
         border: 1px solid var(--accent-2);
-        border-radius: 5px;
+        border-radius: var(--radius);
         padding: 1px 6px;
         vertical-align: middle;
       }
@@ -544,15 +696,32 @@
           </p>
         </div>
 
-        <h3 style="color: var(--dim); font-size: 0.95rem; margin: 6px 0 14px; letter-spacing: 1px">
-          FUNDAMENTALS
-        </h3>
-        <div class="grid" id="grid-fundamentals"></div>
+        <div class="filter" id="filter">
+          <div class="filter-head">
+            <span id="filter-summary">Filter by namespace</span>
+            <span class="spacer"></span>
+            <button id="filter-clear" type="button" disabled>Clear</button>
+          </div>
+          <div class="filter-tags" id="filter-tags"></div>
+        </div>
 
-        <h3 style="color: var(--dim); font-size: 0.95rem; margin: 34px 0 14px; letter-spacing: 1px">
-          GAMES
-        </h3>
-        <div class="grid" id="grid-games"></div>
+        <div class="group">
+          <h3
+            style="color: var(--dim); font-size: 0.95rem; margin: 6px 0 14px; letter-spacing: 1px"
+          >
+            FUNDAMENTALS
+          </h3>
+          <div class="grid" id="grid-fundamentals"></div>
+        </div>
+
+        <div class="group">
+          <h3
+            style="color: var(--dim); font-size: 0.95rem; margin: 34px 0 14px; letter-spacing: 1px"
+          >
+            GAMES
+          </h3>
+          <div class="grid" id="grid-games"></div>
+        </div>
       </section>
     </main>
 
@@ -571,11 +740,16 @@
       // searchable ("what uses Physics2D?") and keeps the catalog honest — a
       // tag that stops matching the code is a tag that fails the check below.
       //
-      // The colour is the subsystem FAMILY, so a glance sorts the grid by what
-      // part of the engine a sample exercises rather than by its title.
+      // Each card lists EVERY namespace its source imports, so the tag row is a
+      // dependency list rather than a summary — that is what makes the filter
+      // below trustworthy. The colour is the subsystem FAMILY, and tags are
+      // ordered by family, so a glance sorts the grid by what part of the
+      // engine a sample exercises rather than by its title.
+      //
+      // `base` is the debug/perf overlay every sample carries: listed for
+      // completeness, greyed so 37 cards' worth of it stays out of the way.
       const NS = {
         core: [
-          "createApp",
           "Loop",
           "Draw",
           "Collision",
@@ -588,17 +762,26 @@
           "Signals",
           "Hot",
         ],
-        render: ["Sprites", "Anim", "Aseprite", "Font", "Particles", "Camera", "Transitions"],
         world: ["Tiles", "LDtk", "Procgen", "Platformer", "Portals", "Physics2D"],
+        render: ["Sprites", "Anim", "Aseprite", "Font", "Particles", "Camera", "Transitions"],
         input: ["Input", "Keys", "Pointer", "OnscreenInput"],
-        ui: ["UI", "Scenes", "Debug"],
+        ui: ["UI", "Scenes"],
         audio: ["Audio"],
         net: ["Net", "Snapshots"],
-        data: ["Assets", "Storage", "Autosave", "Timers", "Clock", "RNG", "ECS", "Capture"],
+        data: ["Assets", "Storage", "Autosave", "Timers", "Clock", "RNG", "ECS"],
+        base: ["Performance", "Debug", "Capture"],
       };
       const FAMILY = Object.fromEntries(
         Object.entries(NS).flatMap(([family, names]) => names.map((n) => [n, family])),
       );
+      // Sub-namespaces (`Audio.Sfx`) take their parent's family, so a chip and
+      // its parent share a hue and read as one group.
+      const familyOf = (name) => FAMILY[name.split(".")[0]];
+      const chip = (name, extra = "") => {
+        const family = familyOf(name);
+        if (!family) console.warn(`"${name}" is not a minimotor namespace`);
+        return `<span class="tag ns-${family ?? "none"}" data-ns="${name}"${extra}>${name}</span>`;
+      };
 
       // ---- sample catalog (single source of truth for the showcase) ----
       // FUNDAMENTALS put one capability front and center; GAMES compose many
@@ -609,147 +792,191 @@
           "minimal",
           "Minimal",
           "",
-          ["createApp", "Keys", "Loop"],
+          ["Mathf", "UI", "Performance"],
           "Absolute minimum: a colored square that moves with the arrow keys.",
         ],
         [
           "touchpad",
           "Touch Gamepad",
           "",
-          ["OnscreenInput", "Input", "Gizmos"],
+          ["Goodies", "Gizmos", "Input", "OnscreenInput", "UI", "Performance"],
           "An on-screen analog stick + buttons that feed the same Input.map bindings as a keyboard or hardware pad. Drive a rover — on a phone, a mouse, or the keyboard.",
         ],
         [
           "scenes",
           "Scenes",
           "",
-          ["Scenes", "Transitions", "UI"],
+          [
+            "Collision",
+            "Mathf",
+            "Gizmos",
+            "Transitions",
+            "UI",
+            "Scenes",
+            "Audio",
+            "Audio.Sfx",
+            "Performance",
+          ],
           "Menu → play → game over with a pushed pause overlay: the Scenes stack, fade/wipe transitions and the UI helpers.",
         ],
         [
           "ui-gallery",
           "UI Gallery",
           "",
-          ["UI", "Draw"],
+          ["Hot", "Tiles", "UI", "Assets", "Storage"],
           "Every UI primitive on one screen — buttons, toggles, sliders, selects, text input, tabs, lists, tables, progress bars, popovers, dialogs and drag & drop.",
         ],
         [
           "fonts",
           "Fonts",
           "",
-          ["Font", "Draw", "Sprites"],
+          ["Sprites", "Font", "Input", "UI", "Performance"],
           "Text every way: canvas type against a hand-drawn bitmap font, tinted from one white atlas, with outlines, drop shadows, wrapping and an icon font.",
         ],
         [
           "sprites",
           "Sprites",
           "",
-          ["Sprites", "Anim", "ECS"],
+          ["Mathf", "Goodies", "Sprites", "Sprites.Sprite", "Anim", "UI", "ECS", "Performance"],
           "A procedural sheet baked with Sprites.atlas, animated with Anim.fromGrid and blitted via Draw.sprites(ecs.dense(...)).",
         ],
         [
           "procgen",
           "Procgen",
           "",
-          ["Procgen", "Tiles", "RNG"],
+          ["Tiles", "Procgen", "Sprites", "Camera", "Input", "UI", "Performance"],
           "Four generators on one screen: dungeon topology, caves, adjacency synthesis and a gradient-steered variant — with dual-grid autotiling and merged collision overlays.",
         ],
         [
           "bounce",
           "Bounce",
           "",
-          ["Loop", "Storage", "Audio"],
+          [
+            "Collision",
+            "Mathf",
+            "Vec2",
+            "Gizmos",
+            "Particles",
+            "Camera",
+            "UI",
+            "Audio",
+            "Audio.Mixer",
+            "Performance",
+          ],
           "A ball bounces off the walls; each hit scores a point. Best score saved with Storage.",
         ],
         [
           "snake",
           "Snake",
           "",
-          ["Storage", "Goodies", "UI"],
+          ["Goodies", "Gizmos", "Particles", "Camera", "UI", "Audio", "Audio.Sfx", "Performance"],
           "Classic grid snake with a growing tail. Collect food, avoid yourself. Arrows or WASD.",
         ],
         [
           "particles",
           "Particles",
           "",
-          ["Particles", "ECS", "Sprites"],
+          ["Sprites", "UI", "ECS", "Performance"],
           "A firework spark effect on the ECS. Click to spawn; gravity pulls the sparks down.",
         ],
         [
           "synth",
           "Synth",
           "",
-          ["Audio", "Pointer", "UI"],
+          ["Mathf", "UI", "Audio", "Audio.Mixer", "Audio.Music", "Performance"],
           "A playable synth: piano keys, four waveforms, octave shift, scheduled grooves and a bar visualizer.",
         ],
         [
           "tiles",
           "Tiles",
           "",
-          ["Tiles", "Camera", "Input"],
+          [
+            "Collision",
+            "Mathf",
+            "Tiles",
+            "Sprites",
+            "Camera",
+            "Input",
+            "Input.Buttons",
+            "UI",
+            "Audio",
+            "Audio.Sfx",
+            "Performance",
+          ],
           "A scrolling tile platformer culled to the camera, on keyboard or gamepad.",
         ],
         [
           "juice",
           "Juice",
           "",
-          ["Particles", "Camera", "Input"],
+          ["Mathf", "Particles", "Camera", "Input", "UI", "Audio", "Audio.Sfx", "Performance"],
           "Impact feedback: particle bursts, screen shake and haptics on every hit.",
         ],
         [
           "physics",
           "Physics",
           "",
-          ["Physics2D", "ECS", "Audio"],
+          [
+            "Mathf",
+            "Physics2D",
+            "Sprites",
+            "Sprites.Sprite",
+            "Camera",
+            "UI",
+            "Audio",
+            "Audio.Sfx",
+            "ECS",
+            "Performance",
+          ],
           "Real rigid bodies via the opt-in planck (Box2D) adapter: crates stack and sleep, a motorized paddle flings everything.",
         ],
         [
           "serverbrowser",
           "Server Browser",
           "",
-          ["UI", "Pointer"],
+          ["Mathf", "UI", "Performance"],
           "A full immediate-mode GUI screen: tabs, toggles, a sortable scrollable table and a mock join flow. No DOM.",
         ],
         [
           "menu-nav",
           "Menu Nav",
           "",
-          ["UI", "Input", "OnscreenInput"],
+          ["Input", "OnscreenInput", "UI"],
           "Keyboard + gamepad focus navigation across UI widgets — Tab / D-pad to move, Enter / A to activate. The on-screen D-pad drives the menu too.",
         ],
         [
           "dual-canvas",
           "Dual Canvas",
           "",
-          ["createApp", "UI"],
+          ["UI"],
           "Two independent apps on one page, each driving its own explicitly bound immediate-mode UI.",
         ],
         [
           "swept",
           "Swept Collision",
           "",
-          ["Collision", "Mathf"],
+          ["Collision", "Mathf", "UI", "Audio", "Audio.Sfx", "Performance"],
           "A projectile into a thin wall — toggle swept vs per-frame overlap and watch fast movers tunnel.",
         ],
         [
           "netroom",
           "Net Room",
           "",
-          ["Net", "Camera", "Input"],
+          ["Camera", "Input", "UI", "Net", "Performance"],
           "The smallest real multiplayer game: join a room, share a blob, grab shared coins. Add ?server to route the identical code through a dedicated server instead of peer-to-peer.",
         ],
         [
           "netpeer",
           "P2P Data Channel",
           "",
-          ["Net", "UI"],
+          ["UI", "Net", "Performance"],
           "A real WebRTC data channel, both peers in one page. The right dot is drawn only from bytes that crossed the wire.",
         ],
         [
           "netrtc",
           "WebRTC Host / Join",
           "",
-          ["Net", "UI"],
+          ["UI", "Net"],
           "Pure peer-to-peer multiplayer in a star topology via Net.host / Net.join over a signaling relay.",
         ],
         [
@@ -763,21 +990,21 @@
           "clockwork",
           "Clockwork Garden",
           "",
-          ["Clock", "Signals", "Particles"],
+          ["Mathf", "Gizmos", "Signals", "Anim", "Particles", "UI", "Audio", "Performance"],
           "A rhythm garden: timed spawns, eased buds and score/combo events wired together by Signals.",
         ],
         [
           "camera",
           "Parallax Courier",
           "",
-          ["Camera", "Mathf", "Particles"],
+          ["Mathf", "Particles", "Camera", "Input", "UI", "Audio", "Performance"],
           "Fly a neon valley and dock at beacons with a smooth dead-zone camera, zoom and procedural parallax.",
         ],
         [
           "assetquest",
           "Asset Quest",
           "",
-          ["Assets", "Anim", "Particles"],
+          ["Collision", "Anim", "Particles", "UI", "Audio", "Assets", "Performance"],
           "Load a JSON map + image manifest, collect every moon key, then reach the unlocked gate.",
         ],
       ];
@@ -786,100 +1013,326 @@
           "api-lab",
           "API Lab",
           "✨",
-          ["LDtk", "Platformer", "Portals", "Net"],
+          [
+            "Collision",
+            "Mathf",
+            "Tiles",
+            "LDtk",
+            "Platformer",
+            "Portals",
+            "Sprites",
+            "Anim",
+            "Particles",
+            "Camera",
+            "Input",
+            "OnscreenInput",
+            "UI",
+            "Scenes",
+            "Audio",
+            "Audio.Recipes",
+            "Net",
+            "Assets",
+            "Storage",
+            "Timers",
+            "Debug",
+          ],
           "The flagship multiplayer platformer that designed the current API: three LDtk levels, portals, slopes, ladders, gems, animation, audio, UI and synchronized players in one terse sample.",
         ],
         [
           "pixel-adventure",
           "Pixel Adventure",
           "",
-          ["Anim", "Tiles", "Collision", "Camera"],
+          [
+            "Collision",
+            "Mathf",
+            "Tiles",
+            "Sprites",
+            "Anim",
+            "Particles",
+            "Camera",
+            "Input",
+            "OnscreenInput",
+            "UI",
+            "Audio",
+            "Assets",
+            "Timers",
+            "Performance",
+          ],
           "A complete platformer on Pixel Frog CC0 art: autotiled terrain, a multi-image Anim.fromImages player, moveAndSlide collision, stomp combat and synth SFX.",
         ],
         [
           "ascent",
           "Ascent",
           "",
-          ["Fsm", "Timers", "ECS", "Sprites"],
+          [
+            "Mathf",
+            "Gizmos",
+            "Fsm",
+            "Sprites",
+            "Sprites.Sprite",
+            "Anim",
+            "Particles",
+            "Camera",
+            "Input",
+            "Input.Buttons",
+            "OnscreenInput",
+            "UI",
+            "Audio",
+            "Assets",
+            "Storage",
+            "Timers",
+            "ECS",
+            "Performance",
+          ],
           "A Celeste-style precision platformer: forced dash-crystal chains over spike voids, wall jumps and coyote time.",
         ],
         [
           "breakout",
           "Breakout",
           "",
-          ["Scenes", "ECS", "Collision"],
+          [
+            "Collision",
+            "Mathf",
+            "Vec2",
+            "Gizmos",
+            "Camera",
+            "UI",
+            "Scenes",
+            "Audio",
+            "Audio.Sfx",
+            "ECS",
+            "Performance",
+          ],
           "Paddle + ball + destructible blocks. Blocks are ECS entities; Scenes drive play and a game-over overlay.",
         ],
         [
           "road-rivals",
           "Road Rivals",
           "",
-          ["Net", "Physics2D", "Snapshots"],
+          [
+            "Collision",
+            "Mathf",
+            "Goodies",
+            "Gizmos",
+            "Physics2D",
+            "Camera",
+            "Transitions",
+            "Input",
+            "Input.Buttons",
+            "OnscreenInput",
+            "UI",
+            "Audio",
+            "Audio.Mixer",
+            "Net",
+            "ECS",
+            "Performance",
+          ],
           "Two live clients in one page: fight on foot, drive a drifting car, and see remote players smoothed by snapshot interpolation.",
         ],
         [
           "netgame",
           "Multiplayer Blobs",
           "",
-          ["Net", "Snapshots"],
+          ["Mathf", "UI", "Audio", "Audio.Recipes", "Net", "Performance"],
           "Every open tab is a player, relayed by the dev server. Sends at 20 Hz — remotes glide via interpolation.",
         ],
         [
           "pocket",
           "Pocket Asteroids",
           "",
-          ["Input", "Particles", "Goodies"],
+          ["Mathf", "Goodies", "Gizmos", "Particles", "Input", "UI", "Audio", "Performance"],
           "A full Asteroids loop: rotate, thrust, wrap, fire, split rocks, clear waves and hyperspace.",
         ],
         [
           "guild-trader",
           "Guild Trader",
           "",
-          ["UI", "Goodies", "Flow"],
+          ["Goodies", "Gizmos", "Flow", "UI", "Performance"],
           "Trade with Mara using draggable stack inventories, weighted loot and fair encounter bags.",
         ],
         [
           "dungeon-scout",
           "Dungeon Scout",
           "",
-          ["Goodies", "Gizmos", "Mathf"],
+          ["Mathf", "Goodies", "Gizmos", "Input", "UI", "Performance"],
           "Explore generated rooms with reachable-region, grid-line and field-of-view recipes.",
         ],
         [
           "lead-defender",
           "Lead Defender",
           "",
-          ["Goodies", "Collision", "Particles"],
+          ["Collision", "Goodies", "Particles", "UI", "Performance"],
           "An automated turret predicts moving targets through escalating radial enemy waves.",
         ],
         [
           "checkpoint-rally",
           "Checkpoint Rally",
           "",
-          ["Physics2D", "Gizmos", "Audio"],
+          [
+            "Collision",
+            "Mathf",
+            "Gizmos",
+            "Physics2D",
+            "Camera",
+            "Input",
+            "UI",
+            "Audio",
+            "Audio.Sfx",
+            "Storage",
+            "Performance",
+          ],
           "Drive a circuit hitting gates in order; a dead-zone camera, a corner minimap and your best lap time.",
         ],
         [
           "solitaire",
           "Solitaire",
           "",
-          ["Scenes", "UI", "Storage"],
+          [
+            "Collision",
+            "Mathf",
+            "Goodies",
+            "Gizmos",
+            "Fsm",
+            "Signals",
+            "Sprites",
+            "Anim",
+            "Particles",
+            "Transitions",
+            "Input",
+            "UI",
+            "Scenes",
+            "Audio",
+            "Audio.Sfx",
+            "Storage",
+            "Timers",
+            "Performance",
+          ],
           "Klondike solitaire: drag-and-drop, undo, hints, a win celebration and persisted stats.",
         ],
       ];
       const card = ([slug, title, flag, tags, desc]) => {
-        const t = tags
-          .map((x) => {
-            const family = FAMILY[x];
-            if (!family) console.warn(`sample "${slug}": "${x}" is not a minimotor namespace`);
-            return `<span class="tag ns-${family ?? "none"}">${x}</span>`;
-          })
-          .join("");
+        const t = tags.map((x) => chip(x)).join("");
         const f = flag ? `<span class="flag">${flag}</span>` : "";
-        return `<a class="card" href="./${slug}/"><h3>${title}${f}</h3><div class="tags">${t}</div><p>${desc}</p></a>`;
+        return `<a class="card" href="./${slug}/" data-ns="${tags.join(" ")}"><h3>${title}${f}</h3><div class="tags">${t}</div><p>${desc}</p></a>`;
       };
       document.getElementById("grid-fundamentals").innerHTML = FUNDAMENTALS.map(card).join("");
       document.getElementById("grid-games").innerHTML = GAMES.map(card).join("");
+
+      // ---- namespace filter ----
+      // Picking narrows by AND: a card must use EVERY picked namespace. That is
+      // the question worth asking of a sample grid ("who combines Net with
+      // Physics2D?"); OR just re-sorts the page by popularity. Non-matches are
+      // dimmed rather than removed, so the grid keeps its shape and you can see
+      // what the filter ruled out.
+      const CARDS = [...document.querySelectorAll("#showcase a.card")].map((el) => ({
+        el,
+        ns: new Set(el.dataset.ns.split(" ")),
+      }));
+      const counts = new Map();
+      for (const c of CARDS) for (const n of c.ns) counts.set(n, (counts.get(n) ?? 0) + 1);
+      // Filter chips follow the same family order as the card tags, and each
+      // sub-namespace sits right after its parent — so a chip and the tag it
+      // matches occupy the same place in both rows.
+      const USED = Object.values(NS)
+        .flat()
+        .flatMap((n) => [
+          ...(counts.has(n) ? [n] : []),
+          ...[...counts.keys()].filter((k) => k.startsWith(`${n}.`)).sort(),
+        ]);
+
+      const picked = new Set(
+        (new URL(location.href).searchParams.get("ns") ?? "")
+          .split(",")
+          .filter((n) => counts.has(n)),
+      );
+      const tagBar = document.getElementById("filter-tags");
+      const summary = document.getElementById("filter-summary");
+      const clear = document.getElementById("filter-clear");
+      tagBar.innerHTML = USED.map((n) =>
+        chip(n, ` role="button" tabindex="0" aria-pressed="false"`),
+      ).join("");
+      // Counts are appended after the fact so `chip` stays the one place a tag
+      // is built — the card rows and the filter row cannot drift apart.
+      for (const el of tagBar.querySelectorAll(".tag")) {
+        el.insertAdjacentHTML("beforeend", `<span class="n">${counts.get(el.dataset.ns)}</span>`);
+      }
+
+      function apply() {
+        for (const c of CARDS) {
+          c.el.hidden = ![...picked].every((n) => c.ns.has(n));
+        }
+        // Counts are FACETED: each chip shows how many of the samples still on
+        // screen also use it, so the number answers "what happens if I add
+        // this?" rather than "how popular is this?". A chip that would empty
+        // the grid says 0 and recedes, which makes dead ends visible before
+        // you click them.
+        const visible = CARDS.filter((c) => !c.el.hidden);
+        for (const el of tagBar.querySelectorAll(".tag")) {
+          const n = el.dataset.ns;
+          const count = visible.filter((c) => c.ns.has(n)).length;
+          el.setAttribute("aria-pressed", String(picked.has(n)));
+          // Never disable a PICKED chip: it always reads 0 companions once it
+          // is the only thing left, and you must be able to un-pick it.
+          const dead = count === 0 && !picked.has(n);
+          el.classList.toggle("empty", dead);
+          el.setAttribute("aria-disabled", String(dead));
+          el.tabIndex = dead ? -1 : 0;
+          el.querySelector(".n").textContent = count;
+        }
+        // A heading over an empty grid reads as a bug, so a group that filtered
+        // down to nothing goes away with its cards.
+        for (const group of document.querySelectorAll("#showcase .group")) {
+          group.hidden = !group.querySelector("a.card:not([hidden])");
+        }
+        const shown = CARDS.filter((c) => !c.el.hidden).length;
+        // The summary names the picked namespaces with the same chips the cards
+        // and the picker use, so "what am I filtered to" looks identical
+        // wherever you read it. `chip` again — one definition, three places.
+        summary.innerHTML = picked.size
+          ? `${shown} of ${CARDS.length} samples use ${[...picked].map((n) => chip(n)).join('<span class="plus">+</span>')}`
+          : "Filter by namespace";
+        clear.disabled = picked.size === 0;
+        // `replaceState`, not `pushState`: a filter is a view of this page, not
+        // somewhere you navigated to, so Back should leave the showcase.
+        const url = new URL(location.href);
+        if (picked.size) url.searchParams.set("ns", [...picked].join(","));
+        else url.searchParams.delete("ns");
+        history.replaceState(null, "", url);
+      }
+
+      function toggle(name) {
+        // CSS already blocks the pointer on a dead chip; this is the same rule
+        // for the paths CSS cannot reach (keyboard, a tag clicked on a card).
+        if (tagBar.querySelector(`.tag[data-ns="${name}"]`)?.classList.contains("empty")) return;
+        if (!picked.delete(name)) picked.add(name);
+        apply();
+      }
+      tagBar.addEventListener("click", (e) => {
+        const el = e.target.closest(".tag");
+        if (el) toggle(el.dataset.ns);
+      });
+      tagBar.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        const el = e.target.closest(".tag");
+        if (!el) return;
+        e.preventDefault();
+        toggle(el.dataset.ns);
+      });
+      // A tag inside a card is the same control. The card is an <a>, so the
+      // click has to be stopped before it navigates to the sample.
+      for (const c of CARDS) {
+        c.el.addEventListener("click", (e) => {
+          const el = e.target.closest(".tag");
+          if (!el) return;
+          e.preventDefault();
+          toggle(el.dataset.ns);
+        });
+      }
+      clear.addEventListener("click", () => {
+        picked.clear();
+        apply();
+      });
+      apply();
 
       // ---- featherweight syntax highlighter (single pass, so inserted spans
       //      are never re-matched — comment/string first wins each character) ----
@@ -913,6 +1366,13 @@
                     : null;
           return cls ? `<span class="${cls}">${m}</span>` : m;
         });
+        // Gutter last, from the final line count, and outside <code> so it
+        // stays out of the clipboard.
+        const lines = code.textContent.replace(/\n$/, "").split("\n").length;
+        code.parentElement.insertAdjacentHTML(
+          "afterbegin",
+          `<span class="gutter" aria-hidden="true">${Array.from({ length: lines }, (_, i) => i + 1).join("\n")}</span>`,
+        );
       }
 
       // ---- copy-code buttons ----
