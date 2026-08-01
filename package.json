@@ -1,7 +1,7 @@
 {
   "name": "minimotor",
   "version": "0.2.0",
-  "description": "Minimal 2D canvas framework — fixed-step loop, drawing, input, collision, audio — for small games and playful apps",
+  "description": "Minimal 2D canvas framework \u2014 fixed-step loop, drawing, input, collision, audio \u2014 for small games and playful apps",
   "homepage": "https://github.com/nikteg/minimotor#readme",
   "bugs": "https://github.com/nikteg/minimotor/issues",
   "license": "MIT",
@@ -76,6 +76,10 @@
     "./particles": {
       "types": "./build/particles/index.d.ts",
       "default": "./build/particles/index.js"
+    },
+    "./3d": {
+      "types": "./build/render3d/index.d.ts",
+      "default": "./build/render3d/index.js"
     },
     "./platformer": {
       "types": "./build/platformer/index.d.ts",
@@ -186,6 +190,7 @@
     "@types/node": "^26.1.1",
     "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^4.1.10",
+    "@webgpu/types": "^0.1.71",
     "concurrently": "^10.0.4",
     "jsdom": "^29.1.1",
     "minimotor": "link:.",

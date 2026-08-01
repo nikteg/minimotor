@@ -1,0 +1,151 @@
+// ---------- 3D camera ----------
+// A camera is state (where it is, what it looks at, how wide) plus two derived
+// matrices. It does NOT own a projection convention: `viewProjection` takes the
+// clip-depth flag from the device it is being rendered by, so one camera can
+// feed a WebGL2 target and a WebGPU target in the same frame without either
+// silently rendering nothing.
+//
+// The orbit controls live here rather than in the UI widget because they are
+// the same interaction whether they are driven by a pointer, a gamepad or a
+// scripted turntable, and a widget should not own a camera model.
+
+import { Mat4 } from "@src/math/mat4.js";
+import { Vec3 } from "@src/math/vec3.js";
+import { bounds } from "./mesh.js";
+import type { MeshData } from "./mesh.js";
+
+/** A perspective (or orthographic) camera positioned by an orbit around a
+ *  target — the model previews and turntables this exists for all move that
+ *  way, and a free-fly camera is `yaw`/`pitch` with the distance at zero. */
+export interface Camera3D {
+  /** The point the camera looks at and orbits around. */
+  target: Vec3;
+  /** Distance from the target. */
+  distance: number;
+  /** Horizontal angle in radians, 0 looking down −Z. */
+  yaw: number;
+  /** Vertical angle in radians, clamped by `pitchLimit`. */
+  pitch: number;
+  /** Vertical field of view in radians. Ignored when `orthographic`. */
+  fov: number;
+  /** Near clip plane. Too small a value wastes depth precision and causes
+   *  z-fighting; keep it as large as the scene allows. */
+  near: number;
+  /** Far clip plane. `Infinity` is allowed and well-conditioned. */
+  far: number;
+  /** Use an orthographic projection, sized by `distance` — for isometric
+   *  scenes and for icons that must not foreshorten. */
+  orthographic?: boolean;
+  /** How far the pitch may travel from level, in radians. Defaults to just
+   *  under a right angle: at exactly ±90° the view direction is parallel to
+   *  the up vector and `lookAt` has no basis to build from. */
+  pitchLimit?: number;
+  /** Up vector, +Y unless a game says otherwise. */
+  up?: Vec3;
+}
+
+const DEFAULT_PITCH_LIMIT = Math.PI / 2 - 0.01;
+
+/** A camera with defaults that frame a roughly unit-sized object. */
+export function createCamera(init: Partial<Camera3D> = {}): Camera3D {
+  return {
+    target: { x: 0, y: 0, z: 0 },
+    distance: 3,
+    yaw: 0.6,
+    pitch: 0.4,
+    fov: Math.PI / 4,
+    near: 0.05,
+    far: 100,
+    ...init,
+  };
+}
+
+/** Where the camera sits in world space, derived from the orbit. */
+export function cameraPosition(cam: Camera3D, out?: Vec3): Vec3 {
+  const o = out ?? { x: 0, y: 0, z: 0 };
+  const cp = Math.cos(cam.pitch);
+  o.x = cam.target.x + Math.sin(cam.yaw) * cp * cam.distance;
+  o.y = cam.target.y + Math.sin(cam.pitch) * cam.distance;
+  o.z = cam.target.z + Math.cos(cam.yaw) * cp * cam.distance;
+  return o;
+}
+
+const UP: Vec3 = { x: 0, y: 1, z: 0 };
+const eye: Vec3 = { x: 0, y: 0, z: 0 };
+
+/** The view matrix — world space to camera space. */
+export function viewMatrix(cam: Camera3D, out?: Mat4): Mat4 {
+  return Mat4.lookAt(cameraPosition(cam, eye), cam.target, cam.up ?? UP, out);
+}
+
+/** The projection matrix for an `aspect` (width / height) viewport.
+ *
+ *  `zeroToOne` MUST come from the device being rendered to — WebGL2 wants
+ *  false, WebGPU true. Passing the wrong one does not warn; it renders an
+ *  empty viewport or a depth-fighting mess. */
+export function projectionMatrix(
+  cam: Camera3D,
+  aspect: number,
+  zeroToOne: boolean,
+  out?: Mat4,
+): Mat4 {
+  if (cam.orthographic) {
+    // Size the box so that, at the target, an orthographic view frames the
+    // same height a perspective one would — switching projection then keeps
+    // the subject the same size instead of jumping.
+    const halfH = Math.tan(cam.fov / 2) * cam.distance;
+    const halfW = halfH * aspect;
+    return Mat4.ortho(-halfW, halfW, -halfH, halfH, cam.near, cam.far, zeroToOne, out);
+  }
+  return Mat4.perspective(cam.fov, aspect, cam.near, cam.far, zeroToOne, out);
+}
+
+/** Projection · view, the single matrix a vertex shader needs. */
+export function viewProjection(
+  cam: Camera3D,
+  aspect: number,
+  zeroToOne: boolean,
+  out?: Mat4,
+): Mat4 {
+  const proj = projectionMatrix(cam, aspect, zeroToOne, out ?? Mat4.create());
+  return Mat4.mul(proj, viewMatrix(cam, scratchView), proj);
+}
+
+const scratchView = Mat4.create();
+
+/** Orbit by a pointer delta in PIXELS. Taking pixels rather than radians keeps
+ *  the sensitivity in one place, so every viewport drags at the same rate
+ *  regardless of its size. Pitch is clamped, yaw wraps freely. */
+export function orbit(cam: Camera3D, dxPixels: number, dyPixels: number, sensitivity = 0.01): void {
+  const limit = cam.pitchLimit ?? DEFAULT_PITCH_LIMIT;
+  cam.yaw -= dxPixels * sensitivity;
+  cam.pitch = Math.min(limit, Math.max(-limit, cam.pitch + dyPixels * sensitivity));
+}
+
+/** Dolly in or out by a wheel/pinch amount. Multiplicative, so a notch moves
+ *  the same PROPORTION of the way in whether the camera is near or far — which
+ *  is what makes zoom feel linear. Never reaches or passes the target. */
+export function dolly(cam: Camera3D, amount: number, min = 0.05, max = 1e4): void {
+  cam.distance = Math.min(max, Math.max(min, cam.distance * Math.exp(amount)));
+}
+
+/** Point the camera at a mesh and back off far enough to see all of it —
+ *  the "I loaded a model of unknown size and got a black screen" fix.
+ *
+ *  `padding` is a multiplier on the fitted distance (1.2 leaves a comfortable
+ *  margin). Near and far are re-derived from the resulting distance, because a
+ *  camera framing a 0.01-unit gem and one framing a 500-unit ship cannot share
+ *  clip planes without losing all depth precision. */
+export function frameMesh(cam: Camera3D, mesh: MeshData, padding = 1.2): Camera3D {
+  const { min, max } = bounds(mesh);
+  Vec3.scale(Vec3.add(min, max, cam.target), 0.5);
+  const radius = Vec3.dist(min, max) / 2;
+  if (radius === 0) return cam;
+  // Fit the bounding sphere to the NARROWER of the two fields of view. The
+  // horizontal one is the narrower whenever the viewport is portrait, but the
+  // aspect is not known here, so fit vertically and let `padding` cover it.
+  cam.distance = (radius / Math.sin(cam.fov / 2)) * padding;
+  cam.near = Math.max(1e-4, cam.distance - radius * 2);
+  cam.far = cam.distance + radius * 2;
+  return cam;
+}

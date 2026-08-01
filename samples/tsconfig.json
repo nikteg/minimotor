@@ -8,7 +8,9 @@
     "noEmit": true,
     "allowImportingTsExtensions": true,
     "skipLibCheck": true,
-    "types": [],
+    // WebGPU is not in TypeScript's bundled dom lib yet, and src/render3d
+    // reaches into it.
+    "types": ["@webgpu/types"],
     "paths": {
       "@src/*": ["../src/*"],
       "minimotor": ["../src/index.ts"],
@@ -25,6 +27,7 @@
       "minimotor/onscreen-input": ["../src/onscreen/index.ts"],
       "minimotor/net": ["../src/net/index.ts"],
       "minimotor/particles": ["../src/particles/index.ts"],
+      "minimotor/3d": ["../src/render3d/index.ts"],
       "minimotor/platformer": ["../src/platformer/index.ts"],
       "minimotor/portals": ["../src/portals/index.ts"],
       "minimotor/procgen": ["../src/procgen/index.ts"],

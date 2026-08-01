@@ -4,6 +4,8 @@
     "module": "esnext",
     "moduleResolution": "bundler",
     "lib": ["es2020", "dom"],
+    // WebGPU is not in TypeScript's bundled dom lib yet; @webgpu/types adds it.
+    "types": ["node", "@webgpu/types"],
     "strict": true,
     "noUnusedLocals": true,
     "paths": {

@@ -322,7 +322,12 @@ export function drawLayoutOverlay(opts: LayoutOverlayOptions = {}): void {
     // The half-pixel offset is what keeps a 1px stroke on the pixel rather
     // than smeared across two of them.
     const half = look.width / 2;
-    ctx.strokeRect(r.x + half, r.y + half, Math.max(0, r.w - look.width), Math.max(0, r.h - half * 2));
+    ctx.strokeRect(
+      r.x + half,
+      r.y + half,
+      Math.max(0, r.w - look.width),
+      Math.max(0, r.h - half * 2),
+    );
     if (labels === "none" || entry.id === undefined) continue;
     const container = BACKDROP_CONTAINERS.has(entry.kind) || FLOW_CONTAINERS.has(entry.kind);
     if (labels === "containers" && !container) continue;

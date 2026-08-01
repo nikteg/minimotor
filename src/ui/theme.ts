@@ -794,10 +794,7 @@ export let themeRevision = 0;
 /** Stable cache identity for the active global or locally-scoped theme. */
 export let themeKey = `global:${themeValueSignature(theme)}`;
 
-function mergeButtonTheme(
-  base: ThemeButton,
-  override: ThemeOverrides["button"],
-): ThemeButton {
+function mergeButtonTheme(base: ThemeButton, override: ThemeOverrides["button"]): ThemeButton {
   return {
     ...base,
     ...override,
@@ -806,10 +803,7 @@ function mergeButtonTheme(
   };
 }
 
-function mergePanelTheme(
-  base: ThemePanel,
-  override: ThemeOverrides["panel"],
-): ThemePanel {
+function mergePanelTheme(base: ThemePanel, override: ThemeOverrides["panel"]): ThemePanel {
   return {
     ...base,
     ...override,

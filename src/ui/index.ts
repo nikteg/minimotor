@@ -116,6 +116,7 @@ export function createUI(app: App, { gamepads }: Partial<Pick<InputApi, "gamepad
     toggle: bind(UiModule.toggle),
     tooltip: bind(UiModule.tooltip),
     vh: bind(UiModule.vh),
+    viewport3d: bind(UiModule.viewport3d),
     vw: bind(UiModule.vw),
     width: bind(UiModule.width),
     worldLabel: bind(UiModule.worldLabel),

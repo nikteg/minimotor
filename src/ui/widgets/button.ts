@@ -147,7 +147,8 @@ export function button(
   // this so a caller can reserve the same space before the button is placed.
   const padding = resolveThemePadding(theme.button.padding);
   const autoW = Math.ceil(measureWidth(ctx, opts.label)) + padding.left + padding.right;
-  const w = opts.w ??
+  const w =
+    opts.w ??
     (theme.button.width > 0 ? theme.button.width : Math.max(autoW, theme.button.minWidth));
   const rect = place(opts, w, opts.h ?? theme.button.height, "button");
   const id = widgetId(opts.id, "button");

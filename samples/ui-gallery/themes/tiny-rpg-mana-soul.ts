@@ -44,12 +44,7 @@ export function createTinyRpgThemes(atlas: CanvasImageSource): TinyRpgThemes {
   // as brightness. Their heights differ (18/20/22) because the lit ones carry
   // an outer glow; `tabH` sits at the top of that range so the stretch is a
   // couple of pixels of flat face rather than a resized capsule.
-  const bar = (
-    sx: number,
-    sy: number,
-    sw: number,
-    sh: number,
-  ): TilesetCellSource => ({
+  const bar = (sx: number, sy: number, sw: number, sh: number): TilesetCellSource => ({
     image: atlas,
     sx,
     sy,
@@ -391,14 +386,9 @@ export function createTinyRpgThemes(atlas: CanvasImageSource): TinyRpgThemes {
   return { theme, panelAlt };
 }
 
-export async function loadTinyRpgThemes(
-  Assets: AssetStore,
-): Promise<TinyRpgThemes> {
+export async function loadTinyRpgThemes(Assets: AssetStore): Promise<TinyRpgThemes> {
   const { atlas } = await Assets.load({
-    atlas: new URL(
-      "../assets/themes/tiny-rpg-mana-soul/atlas.png",
-      import.meta.url,
-    ).href,
+    atlas: new URL("../assets/themes/tiny-rpg-mana-soul/atlas.png", import.meta.url).href,
   });
   return createTinyRpgThemes(atlas);
 }

@@ -17,6 +17,7 @@
 //   dragdrop   — drag & drop and direct pointer drag gestures
 //   float-text — rising score/damage numbers
 //   tooltip    — hover tooltip
+//   viewport3d — a live GPU 3D view, blitted in as an ordinary widget
 //   select     — native-backed dropdown
 //   text-input — native-backed text field
 // (panel.ts holds the internal frame painter used by panel/overlays/select — not
@@ -36,6 +37,7 @@ export * from "./float-text.js";
 export * from "./tooltip.js";
 export * from "./world-label.js";
 export * from "./minimap.js";
+export * from "./viewport3d.js";
 export { select } from "./select.js";
 export type { SelectGroup, SelectOption, SelectOptions, SelectResult } from "./select.js";
 export { textInput } from "./text-input.js";
