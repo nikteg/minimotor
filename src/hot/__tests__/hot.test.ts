@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createHotReload } from "../index.js";
 
-describe("Hot", () => {
+describe("HotReload", () => {
   it("persists state and runs cleanup through a compatible HMR context", () => {
     const data: Record<string, unknown> = {};
     let dispose: ((next: Record<string, unknown>) => void) | undefined;

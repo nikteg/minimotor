@@ -445,12 +445,13 @@
       .filter-tags {
         display: flex;
         flex-direction: column;
-        gap: 10px;
+        gap: 16px;
       }
       /* Every band is the same grid template at the same width, so the columns
          line up across bands — the picker reads as one table, just with each
-         colour on its own rows. The gap between bands is wider than the gap
-         within one, which is what makes the grouping visible without a label. */
+         colour on its own rows. The between-band gap is a clear multiple of the
+         within-band one (16 vs 6), which is what makes the grouping read as
+         grouping rather than as an uneven row, with no label needed. */
       .filter-band {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
@@ -793,7 +794,7 @@
           "Gizmos",
           "Fsm",
           "Signals",
-          "Hot",
+          "HotReload",
         ],
         world: ["Tiles", "LDtk", "Procgen", "Platformer", "Portals", "Physics2D"],
         render: ["Sprites", "Anim", "Aseprite", "Font", "Particles", "Camera", "Transitions"],
@@ -856,7 +857,7 @@
           "ui-gallery",
           "UI Gallery",
           "",
-          ["Hot", "Tiles", "UI", "Assets", "Storage"],
+          ["HotReload", "Tiles", "UI", "Assets", "Storage"],
           "Every UI primitive on one screen — buttons, toggles, sliders, selects, text input, tabs, lists, tables, progress bars, popovers, dialogs and drag & drop.",
         ],
         [

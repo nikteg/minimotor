@@ -32,7 +32,7 @@
       "minimotor/storage": ["../src/storage/index.ts"],
       "minimotor/timers": ["../src/timers/index.ts"],
       "minimotor/ui": ["../src/ui/index.ts"],
-      "minimotor/hot": ["../src/hot/index.ts"],
+      "minimotor/hot-reload": ["../src/hot/index.ts"],
       "minimotor/physics2d": ["../src/physics2d/index.ts"],
       "minimotor/performance": ["../src/perf/index.ts"],
       "minimotor/snapshots": ["../src/snapshots/index.ts"],

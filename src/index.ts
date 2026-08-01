@@ -15,7 +15,7 @@
 //   USEFUL WITHOUT A CANVAS — it is pure, but you would reasonably import it
 //   ALONE, from a server, a test or the `mm` CLI, without pulling in the
 //   engine: procgen, ecs, ldtk, aseprite, platformer, rng, snapshots, sprites,
-//   hot.
+//   hot-reload.
 //
 // THIS FILE is what is left: pure namespaces you use *alongside* the canvas
 // and would never import on their own — `Collision`, `Tiles`, `Font`,
@@ -23,7 +23,7 @@
 // `Vec2`. They ride along with `createApp` because that is where they are used.
 //
 // ONE NAME, ONE HOME. A capability appears in exactly one of those places.
-// `Sprites` and `Hot` used to be in two, and `Sprites` was the worse case: the
+// `Sprites` and `HotReload` used to be in two, and `Sprites` was the worse case: the
 // root re-exported `./sprites/core.js` while the subpath exported core + ECS,
 // so `Sprites.Sprite` existed through `minimotor/sprites` and not through
 // `minimotor` — while the doc comment here promised it either way. Both now

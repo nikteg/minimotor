@@ -12,11 +12,11 @@
 // straight back — the immediate-mode round-trip.
 import { createUI } from "minimotor/ui";
 import { createApp } from "minimotor";
-import * as Hot from "minimotor/hot";
+import * as HotReload from "minimotor/hot-reload";
 import { createAssets } from "minimotor/assets";
 import { createBrowserStorage } from "minimotor/storage";
 import type { SelectGroup } from "minimotor/ui";
-import type { HotModuleContext } from "minimotor/hot";
+import type { HotModuleContext } from "minimotor/hot-reload";
 import type { TableSort, Theme } from "minimotor";
 import { installLayoutProbe } from "../shared/layout-probe.ts";
 import { createGalleryThemeCatalog } from "./gallery-themes.ts";
@@ -112,7 +112,7 @@ interface GalleryHmrState {
   currentTheme: string;
 }
 
-const galleryHot = Hot.create((import.meta as ImportMeta & { hot?: HotModuleContext }).hot);
+const galleryHot = HotReload.create((import.meta as ImportMeta & { hot?: HotModuleContext }).hot);
 const previousGalleryState = galleryHot.restore<GalleryHmrState>("ui-gallery");
 
 // ---- interactive state (the round-trip target for each widget) ----

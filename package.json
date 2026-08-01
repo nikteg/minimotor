@@ -105,7 +105,7 @@
       "types": "./build/ui/index.d.ts",
       "default": "./build/ui/index.js"
     },
-    "./hot": {
+    "./hot-reload": {
       "types": "./build/hot/index.d.ts",
       "default": "./build/hot/index.js"
     },
