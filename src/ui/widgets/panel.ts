@@ -3,7 +3,14 @@
 // container, in ./layout.ts), the overlays (popover / modal / dialog) and the
 // `select` drop menu all paint. Not part of the public `UI.*` surface — it's the
 // shared drawing primitive, not a widget.
-import { centeredText, drawBox, roundRectPath, theme, uiFont } from "@src/ui/core/index.js";
+import {
+  centeredText,
+  drawBox,
+  resolveThemePadding,
+  roundRectPath,
+  theme,
+  uiFont,
+} from "@src/ui/core/index.js";
 
 /** Geometry + look of a panel frame. */
 export interface PanelFrame {
@@ -17,7 +24,7 @@ export interface PanelFrame {
   h: number;
   /** Optional title; when set, a title strip is drawn along the top. */
   title?: string;
-  /** Fill color. Default `theme.panelBg`. */
+  /** Fill color. Default `theme.panel.background`. */
   bg?: string;
   /** Border color. Default `theme.border`. */
   border?: string;
@@ -49,7 +56,7 @@ function panelFrameInsets(): FrameInsets {
  *  inset is part of the title area so title art sits inside the panel rather
  *  than painting over its decorative corners. */
 export function panelTitleBodyOffset(): number {
-  return panelFrameInsets().top + theme.panelTitleH;
+  return panelFrameInsets().top + theme.panel.title.height;
 }
 
 /** Paint a framed box with an optional title strip — the shared box the public
@@ -57,29 +64,29 @@ export function panelTitleBodyOffset(): number {
 export function paintFrame(ctx: CanvasRenderingContext2D, opts: PanelFrame): void {
   ctx.save();
   drawBox(ctx, opts.x, opts.y, opts.w, opts.h, {
-    fill: opts.bg ?? theme.panelBg,
+    fill: opts.bg ?? theme.panel.background,
     stroke: opts.border ?? theme.border,
     role: "panel",
   });
   if (opts.title) {
-    const titleH = theme.panelTitleH;
+    const titleH = theme.panel.title.height;
     const panelInsets = panelFrameInsets();
     const titleFrame = theme.skin?.frames.panelTitle;
-    const overhangX = Math.max(0, theme.panelTitleOverhang.x);
-    const overhangY = Math.max(0, theme.panelTitleOverhang.y);
+    const overhang = resolveThemePadding(theme.panel.title.overhang);
+    const overhangLeft = Math.max(0, overhang.left);
+    const overhangRight = Math.max(0, overhang.right);
+    const overhangTop = Math.max(0, overhang.top);
     // The resulting insets may be negative: that is what lets decorative
     // title caps extend beyond the panel's outer edge.
-    const sideInset = panelInsets.left - overhangX;
-    const farSideInset = panelInsets.right - overhangX;
     const titleRect = {
-      x: opts.x + sideInset,
-      y: opts.y + panelInsets.top - overhangY,
-      w: Math.max(0, opts.w - sideInset - farSideInset),
+      x: opts.x + panelInsets.left - overhangLeft,
+      y: opts.y + panelInsets.top - overhangTop,
+      w: Math.max(0, opts.w - panelInsets.left + overhangLeft - panelInsets.right + overhangRight),
       h: titleH,
     };
     if (titleFrame) {
       drawBox(ctx, titleRect.x, titleRect.y, titleRect.w, titleRect.h, {
-        fill: opts.bg ?? theme.panelBg,
+        fill: opts.bg ?? theme.panel.background,
         stroke: opts.border ?? theme.border,
         role: "panelTitle",
       });
@@ -90,20 +97,21 @@ export function paintFrame(ctx: CanvasRenderingContext2D, opts: PanelFrame): voi
       ctx.fillStyle = "rgba(255,255,255,0.06)";
       ctx.fillRect(titleRect.x, titleRect.y, titleRect.w, titleRect.h);
     }
-    ctx.fillStyle = opts.titleColor ?? theme.panelTitleText ?? theme.accent;
+    ctx.fillStyle = opts.titleColor ?? theme.panel.title.color ?? theme.accent;
     ctx.font = opts.font ?? uiFont(theme.fontSize + 1, true);
     ctx.textAlign = "left";
-    // Inset the title by theme.pad so a panel's header text lines up with the
-    // left edge of its padded body content. panelTitlePad is independent from
+    // Inset the title by panel padding so a panel's header text lines up with
+    // the left edge of its padded body content. Title padding is independent from
     // textPad, so tuning a title does not move other labels or controls.
-    const titleTextPad = theme.panelTitlePad;
+    const titleTextPad = resolveThemePadding(theme.panel.title.padding);
+    const bodyPad = resolveThemePadding(theme.panel.padding);
     const titleInsetX =
-      Math.max(theme.pad.x - panelInsets.left, titleFrame?.insets.left ?? 0) + titleTextPad.x;
+      Math.max(bodyPad.left - panelInsets.left, titleFrame?.insets.left ?? 0) + titleTextPad.left;
     centeredText(
       ctx,
       opts.title,
       titleRect.x + titleInsetX,
-      titleRect.y + titleH / 2 + titleTextPad.y,
+      titleRect.y + titleH / 2 + titleTextPad.top,
       Math.max(1, titleRect.w - titleInsetX * 2),
     );
   }

@@ -270,27 +270,64 @@ export interface ThemeSpacing {
   xl: number;
 }
 
-/** Two-axis content padding. Widget-level `pad` options remain numeric and
- *  apply the same value to both axes. */
+/** Content padding. `x`/`y` are shorthands for the two horizontal/vertical
+ *  edges; an explicit edge wins over its shorthand. */
 export interface ThemePadding {
-  x: number;
-  y: number;
+  x?: number;
+  y?: number;
+  top?: number;
+  right?: number;
+  bottom?: number;
+  left?: number;
 }
 
-/** A text inset may stay as a scalar for compatibility, or use independent
- *  horizontal/vertical values for pixel UI. */
+/** Fully resolved padding. `x`/`y` retain the legacy meaning of the near
+ *  edges (left/top); use the named edges when asymmetry matters. */
+export interface ResolvedThemePadding {
+  x: number;
+  y: number;
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+/** A text inset may stay as a scalar for compatibility, or use axis/edge
+ *  values for pixel UI. */
 export type ThemeTextPadding = number | ThemePadding;
 
-/** Resolve a scalar or two-axis text inset without making widgets duplicate
+/** Resolve a scalar, axis shorthand, or explicit-edge padding value. */
+export function resolveThemePadding(
+  value: number | ThemePadding | undefined,
+  fallback: number | ThemePadding = 0,
+): ResolvedThemePadding {
+  const resolved = value ?? fallback;
+  if (typeof resolved === "number") {
+    return {
+      x: resolved,
+      y: resolved,
+      top: resolved,
+      right: resolved,
+      bottom: resolved,
+      left: resolved,
+    };
+  }
+  const x = resolved.x ?? 0;
+  const y = resolved.y ?? 0;
+  const left = resolved.left ?? x;
+  const right = resolved.right ?? x;
+  const top = resolved.top ?? y;
+  const bottom = resolved.bottom ?? y;
+  return { x: left, y: top, top, right, bottom, left };
+}
+
+/** Resolve a scalar or edge-aware text inset without making widgets duplicate
  *  the compatibility logic. */
 export function resolveThemeTextPadding(
   value: ThemeTextPadding | undefined,
   fallback: ThemeTextPadding = 0,
-): ThemePadding {
-  const resolved = value ?? fallback;
-  return typeof resolved === "number"
-    ? { x: resolved, y: resolved }
-    : { x: resolved.x, y: resolved.y };
+): ResolvedThemePadding {
+  return resolveThemePadding(value, fallback);
 }
 
 /** Semantic label colors for button variants. Per-button `color` still wins. */
@@ -339,7 +376,7 @@ export interface ThemeSelect {
 /** The tokens a `ThemeSelect` falls back to when a theme leaves it unset. */
 type SelectTokenSources = Pick<
   Theme,
-  "buttonText" | "primary" | "bg" | "bgHover" | "bgActive" | "accent"
+  "button" | "primary" | "bg" | "bgHover" | "bgActive" | "accent"
 >;
 
 /** Nudge a color toward white/black without parsing it — CSS `color-mix` is
@@ -359,16 +396,14 @@ export function shade(color: string, dark: boolean): string {
 }
 
 /** Resolve the `select` group against an ALREADY-MERGED theme, so the defaults
- *  track whatever `primary`/`accent`/`buttonText` that theme ended up with.
- *  (`withTheme` doesn't re-derive — like `buttonText`, a scoped override just
- *  merges over the group already in effect.) The two `shade` fallbacks are the
- *  lift and the press the primary button variant used to apply to the selected
- *  row — same helper, so they cannot drift apart. */
+ *  track whatever `primary`/`accent`/`button.text` that theme ended up with.
+ *  The two `shade` fallbacks are the lift and the press the primary button
+ *  variant uses for the selected row — same helper, so they cannot drift apart. */
 function resolveSelect(base: SelectTokenSources, overrides?: Partial<ThemeSelect>): ThemeSelect {
   return {
-    text: overrides?.text ?? base.buttonText.ghost,
-    textSelected: overrides?.textSelected ?? base.buttonText.primary,
-    textDisabled: overrides?.textDisabled ?? base.buttonText.disabled,
+    text: overrides?.text ?? base.button.text.ghost,
+    textSelected: overrides?.textSelected ?? base.button.text.primary,
+    textDisabled: overrides?.textDisabled ?? base.button.text.disabled,
     bg: overrides?.bg ?? "transparent",
     bgHover: overrides?.bgHover ?? base.bgHover,
     bgActive: overrides?.bgActive ?? base.bgActive,
@@ -384,6 +419,34 @@ function resolveSelect(base: SelectTokenSources, overrides?: Partial<ThemeSelect
 export interface ThemeTextOutline {
   color: string;
   width: number;
+}
+
+/** Shared button appearance and sizing tokens. Button padding uses the same
+ *  edge-aware shape as layout padding; `x` is the per-side shorthand. */
+export interface ThemeButton {
+  text: ThemeButtonText;
+  padding: ThemePadding;
+  width: number;
+  minWidth: number;
+  height: number;
+}
+
+/** The title strip is nested because its metrics describe one coherent part
+ *  of a panel rather than independent global tokens. */
+export interface ThemePanelTitle {
+  height: number;
+  color?: string;
+  padding: ThemePadding;
+  overhang: ThemePadding;
+}
+
+/** Shared panel/group/modal surface tokens. `frameInset` is art clearance;
+ *  `padding` is the content inset and can be tuned independently. */
+export interface ThemePanel {
+  background: string;
+  padding: ThemePadding;
+  frameInset: ThemePadding;
+  title: ThemePanelTitle;
 }
 
 function imageDimension(image: CanvasImageSource, axis: "w" | "h"): number {
@@ -552,8 +615,10 @@ export interface Theme {
   textDim: string;
   /** Disabled label text. */
   textDisabled: string;
-  /** Semantic button label colors. Individual button `color` overrides these. */
-  buttonText: ThemeButtonText;
+  /** Semantic button appearance and sizing. Individual button options win. */
+  button: ThemeButton;
+  /** Shared panel/group/modal surface appearance and content geometry. */
+  panel: ThemePanel;
   /** Colors of a `select` drop-menu's rows — see `ThemeSelect`. */
   select: ThemeSelect;
   /** Widget fill when idle. */
@@ -565,8 +630,6 @@ export interface Theme {
   bgActive: string;
   /** Widget border when not hovered. */
   border: string;
-  /** Panel/modal/tooltip background. */
-  panelBg: string;
   /** Track behind sliders/scrollbars/bars. */
   track: string;
   /** The modal backdrop. */
@@ -579,11 +642,6 @@ export interface Theme {
   borderWidth: number;
   /** Corner radius in px (0 = square). Default 0. */
   radius: number;
-  /** Horizontal padding added around auto-sized button labels. Default 28. */
-  buttonPadX: number;
-  /** Default button height in px. Default 30. Pixel skins can lower this to
-   *  their native frame height so fixed artwork is not vertically stretched. */
-  buttonH: number;
   /** Default single-line text-input height in px. Default 32. */
   inputH: number;
   /** Default bar height in px. Default 12. Pixel skins can match their native
@@ -599,37 +657,8 @@ export interface Theme {
    *  top of `scrollbarW`, so the gutter a scrolling container takes out of its
    *  own width is `scrollbarW + scrollbarGap`. Default 4. */
   scrollbarGap: number;
-  /** Default button width in px. 0 keeps content auto-sizing; explicit `w`
-   *  still wins. Pixel skins can set this to their native frame width. */
-  buttonW: number;
-  /** Minimum width for auto-sized buttons. Explicit `w` still wins. Default 0. */
-  buttonMinW: number;
   /** Default tab-strip height in px. Default 30. */
   tabH: number;
-  /** Height of a themed panel title strip. Default 32. */
-  panelTitleH: number;
-  /** Independent title-text inset. Unlike `textPad`, this only affects panel
-   *  titles. Default `{ x: 0, y: 0 }`. */
-  panelTitlePad: ThemePadding;
-  /** Panel title text color. Defaults to `accent`. */
-  panelTitleText?: string;
-  /** How far the panel-title frame may extend past the panel frame while
-   *  consuming its fixed insets. Values are non-negative. Default `{ x: 0,
-   *  y: 0 }`. */
-  panelTitleOverhang: ThemePadding;
-  /** Extra space between a panel's frame and its children, added on top of
-   *  `pad`. `y` is the one that earns its keep: a skin whose title strip is
-   *  taller than `panelTitleH`, or whose frame carries a decorative inner rail,
-   *  spends it here so EVERY panel in the theme clears the art — instead of
-   *  each screen hand-tuning a y offset that only suits one skin. `x` insets
-   *  both sides the same way. Default `{ x: 0, y: 0 }`. */
-  panelInset: ThemePadding;
-  /** Default inner padding (px) for bordered content containers — the `group`
-   *  body inset. Override per call with `pad`. Structural flow containers
-   *  (`row`/`col`) intentionally stay flush (pad 0) so widgets align to their
-   *  slot edges; use a `group` (or an explicit `pad`) when you want a box that
-   *  insets its content. Default `{ x: 8, y: 8 }`. */
-  pad: ThemePadding;
   /** Default inset (px) applied by `UI.text` when no `pad`/`padX`/`padY` is
    *  given. 0 keeps a label flush with its slot (so it lines up with sibling
    *  widgets and HUD columns); raise it for a global label inset. Default 0. */
@@ -644,16 +673,21 @@ export interface Theme {
 }
 
 /** Partial theme update with independently overridable spacing tokens. */
-export type ThemeOverrides = Omit<
-  Partial<Theme>,
-  "spacing" | "buttonText" | "select" | "panelTitleOverhang" | "panelTitlePad" | "panelInset"
-> & {
+export type ThemeOverrides = Omit<Partial<Theme>, "spacing" | "button" | "panel" | "select"> & {
   spacing?: Partial<ThemeSpacing>;
-  buttonText?: Partial<ThemeButtonText>;
+  button?: Omit<Partial<ThemeButton>, "text" | "padding"> & {
+    text?: Partial<ThemeButtonText>;
+    padding?: Partial<ThemePadding>;
+  };
+  panel?: Omit<Partial<ThemePanel>, "padding" | "frameInset" | "title"> & {
+    padding?: Partial<ThemePadding>;
+    frameInset?: Partial<ThemePadding>;
+    title?: Omit<Partial<ThemePanelTitle>, "padding" | "overhang"> & {
+      padding?: Partial<ThemePadding>;
+      overhang?: Partial<ThemePadding>;
+    };
+  };
   select?: Partial<ThemeSelect>;
-  panelTitleOverhang?: Partial<ThemePadding>;
-  panelTitlePad?: Partial<ThemePadding>;
-  panelInset?: Partial<ThemePadding>;
 };
 
 const themeObjectIds = new WeakMap<object, number>();
@@ -702,39 +736,45 @@ const baseDefaults = {
   text: "#e8f0f4",
   textDim: "#7d8894",
   textDisabled: "#5a6a75",
-  buttonText: {
-    default: "#e8f0f4",
-    primary: "#1d2b36",
-    danger: "#e8f0f4",
-    ghost: "#e8f0f4",
-    disabled: "#5a6a75",
+  button: {
+    text: {
+      default: "#e8f0f4",
+      primary: "#1d2b36",
+      danger: "#e8f0f4",
+      ghost: "#e8f0f4",
+      disabled: "#5a6a75",
+    },
+    padding: { x: 14, y: 0 },
+    width: 0,
+    minWidth: 0,
+    height: 30,
   },
   bg: "#24384a",
   bgHover: "#2c4356",
   bgActive: "#1d2b36",
   border: "#3a5568",
-  panelBg: "rgba(13,18,26,0.92)",
   track: "rgba(255,255,255,0.12)",
   dim: "rgba(0,0,0,0.55)",
   primary: "#4ecdc4",
   danger: "#ff6b6b",
   borderWidth: 2,
   radius: 0,
-  buttonPadX: 28,
-  buttonH: 30,
   inputH: 32,
   barH: 12,
   sliderH: 4,
   scrollbarW: 10,
   scrollbarGap: 4,
-  buttonW: 0,
-  buttonMinW: 0,
   tabH: 30,
-  panelTitleH: 32,
-  panelTitlePad: { x: 0, y: 0 },
-  panelTitleOverhang: { x: 0, y: 0 },
-  panelInset: { x: 0, y: 0 },
-  pad: { x: 8, y: 8 },
+  panel: {
+    background: "rgba(13,18,26,0.92)",
+    padding: { x: 8, y: 8 },
+    frameInset: { x: 0, y: 0 },
+    title: {
+      height: 32,
+      padding: { x: 0, y: 0 },
+      overhang: { x: 0, y: 0 },
+    },
+  },
   textPad: 0,
   focusStyle: "ring" as ThemeFocusStyle,
 };
@@ -754,6 +794,36 @@ export let themeRevision = 0;
 /** Stable cache identity for the active global or locally-scoped theme. */
 export let themeKey = `global:${themeValueSignature(theme)}`;
 
+function mergeButtonTheme(
+  base: ThemeButton,
+  override: ThemeOverrides["button"],
+): ThemeButton {
+  return {
+    ...base,
+    ...override,
+    text: { ...base.text, ...override?.text },
+    padding: { ...base.padding, ...override?.padding },
+  };
+}
+
+function mergePanelTheme(
+  base: ThemePanel,
+  override: ThemeOverrides["panel"],
+): ThemePanel {
+  return {
+    ...base,
+    ...override,
+    padding: { ...base.padding, ...override?.padding },
+    frameInset: { ...base.frameInset, ...override?.frameInset },
+    title: {
+      ...base.title,
+      ...override?.title,
+      padding: { ...base.title.padding, ...override?.title?.padding },
+      overhang: { ...base.title.overhang, ...override?.title?.overhang },
+    },
+  };
+}
+
 /** Restyle every widget at once. Overrides are merged over the DEFAULT theme
  *  (not the current one), so two `setTheme` calls don't compound. */
 export function setTheme(overrides: ThemeOverrides): void {
@@ -761,13 +831,8 @@ export function setTheme(overrides: ThemeOverrides): void {
     ...defaultTheme,
     ...overrides,
     spacing: { ...defaultTheme.spacing, ...overrides.spacing },
-    buttonText: { ...defaultTheme.buttonText, ...overrides.buttonText },
-    panelTitleOverhang: {
-      ...defaultTheme.panelTitleOverhang,
-      ...overrides.panelTitleOverhang,
-    },
-    panelTitlePad: { ...defaultTheme.panelTitlePad, ...overrides.panelTitlePad },
-    panelInset: { ...defaultTheme.panelInset, ...overrides.panelInset },
+    button: mergeButtonTheme(defaultTheme.button, overrides.button),
+    panel: mergePanelTheme(defaultTheme.panel, overrides.panel),
   };
   // Resolved LAST, so the unset tokens fall back to the tokens THIS theme ended
   // up with rather than the built-in ones.
@@ -786,16 +851,15 @@ export function withTheme<R>(overrides: ThemeOverrides | undefined, children: ()
   if (!overrides) return children();
   const previous = theme;
   const previousKey = themeKey;
-  theme = {
+  const merged = {
     ...theme,
     ...overrides,
     spacing: { ...theme.spacing, ...overrides.spacing },
-    buttonText: { ...theme.buttonText, ...overrides.buttonText },
     select: { ...theme.select, ...overrides.select },
-    panelTitleOverhang: { ...theme.panelTitleOverhang, ...overrides.panelTitleOverhang },
-    panelTitlePad: { ...theme.panelTitlePad, ...overrides.panelTitlePad },
-    panelInset: { ...theme.panelInset, ...overrides.panelInset },
+    button: mergeButtonTheme(theme.button, overrides.button),
+    panel: mergePanelTheme(theme.panel, overrides.panel),
   };
+  theme = { ...merged, select: resolveSelect(merged, overrides.select) };
   themeKey = `${previousKey}:scope:${themeValueSignature(theme)}`;
   try {
     return children();

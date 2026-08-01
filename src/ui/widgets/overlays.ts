@@ -33,7 +33,7 @@ import { anchorViewport, fitAnchored } from "@src/ui/core/index.js";
 // ---------- Popover ----------
 
 /** An anchored floating panel (dropdown, filter flyout). */
-export interface PopoverOptions extends Omit<PanelFrame, "x" | "y" | "h"> {
+export interface PopoverOptions extends Omit<PanelFrame, "x" | "y" | "w" | "h"> {
   /** Open state — pass yours in, assign the return value back. */
   open: boolean;
   /** Identity across frames. Defaults to the position. */
@@ -45,6 +45,8 @@ export interface PopoverOptions extends Omit<PanelFrame, "x" | "y" | "h"> {
   x?: number;
   /** Top edge in px (see `x`). */
   y?: number;
+  /** Explicit width. Omit in the `children` form to auto-size to its content. */
+  w?: number;
   /** Explicit height. OMIT when using the `children` form — the box then
    *  AUTO-SIZES to its content (measured last frame, à la `group`). */
   h?: number;
@@ -93,18 +95,20 @@ export function popover(opts: PopoverOptions, children?: () => void): boolean {
   const key = `popover:${id}`;
   const pad = opts.pad ?? theme.spacing.lg;
   const top = opts.title ? 32 : 0;
-  const h = opts.h ?? (children ? (cachedContentSize(key)?.h ?? 72) : 0);
+  const cached = cachedContentSize(key);
+  const w = opts.w ?? (children ? (cached?.w ?? 220) : 0);
+  const h = opts.h ?? (children ? (cached?.h ?? 72) : 0);
   let x = opts.x ?? 0;
   let y = opts.y ?? 0;
   if (anchor) {
     const gap = 4;
     ({ x, y } = fitAnchored(
-      { x: anchor.x, y: anchor.y + anchor.h + gap, w: opts.w, h },
+      { x: anchor.x, y: anchor.y + anchor.h + gap, w, h },
       anchor.y - h - gap,
       4,
     ));
   }
-  const rect = { x, y, w: opts.w, h };
+  const rect = { x, y, w, h };
 
   const was = popoverWasOpen.get(id) ?? false;
   let open = opts.open;
@@ -167,7 +171,7 @@ export interface ModalOptions {
   dir?: "row" | "col";
   /** Gap between children (children form). Default 8. */
   gap?: number;
-  /** Inner padding (children form). Default `theme.pad`. */
+  /** Inner padding (children form). Default `theme.panel.padding`. */
   pad?: number;
   /** Space kept from every viewport edge while clamping. Default 12. */
   margin?: number;

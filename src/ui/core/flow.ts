@@ -19,14 +19,35 @@ import { uiSlot } from "./state.js";
 import { theme, themeKey } from "@src/ui/theme.js";
 
 export interface UiPadding {
-  x: number;
-  y: number;
+  x?: number;
+  y?: number;
+  top?: number;
+  right?: number;
+  bottom?: number;
+  left?: number;
 }
 
 type Padding = number | UiPadding;
+type ResolvedPadding = {
+  x: number;
+  y: number;
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+};
 
-function paddingXY(pad: Padding): UiPadding {
-  return typeof pad === "number" ? { x: pad, y: pad } : pad;
+function resolvePadding(pad: Padding): ResolvedPadding {
+  if (typeof pad === "number") {
+    return { x: pad, y: pad, top: pad, right: pad, bottom: pad, left: pad };
+  }
+  const x = pad.x ?? 0;
+  const y = pad.y ?? 0;
+  const left = pad.left ?? x;
+  const right = pad.right ?? x;
+  const top = pad.top ?? y;
+  const bottom = pad.bottom ?? y;
+  return { x: left, y: top, top, right, bottom, left };
 }
 
 /** Options for `flow()` — a one-axis layout cursor. */
@@ -163,7 +184,7 @@ export function flow(opts: FlowOptions): Flow {
   // the slot and folds it into `last`/`extent`. `next` is both, back to back.
   const slotRect = (w?: number, h?: number) => {
     const W = w ?? (dir === "col" ? (opts.w ?? 120) : 100);
-    const H = h ?? opts.h ?? theme.buttonH;
+    const H = h ?? opts.h ?? theme.button.height;
     if (wrapping) {
       const mainStart = dir === "row" ? opts.x : opts.y;
       const mainCur = dir === "row" ? cx : cy;
@@ -332,21 +353,11 @@ export interface Fillable extends Flowable {
 const lastRectSlot = uiSlot<{ rect: { x: number; y: number; w: number; h: number } | null }>(
   () => ({ rect: null }),
 );
-const lastContainerSlot = uiSlot<{
-  rect: { x: number; y: number; w: number; h: number } | null;
-}>(() => ({ rect: null }));
 
 /** The rect of the most recently placed widget — what `popover`/`floatText`
  *  anchor to when called without `x`/`y`. Null before any widget has drawn. */
 export function lastWidgetRect(): { x: number; y: number; w: number; h: number } | null {
   return lastRectSlot().rect;
-}
-
-/** The most recently completed auto-layout container's outer rect, including
- * its padding. Useful when a separately transformed block must start after a
- * measured container. */
-export function lastContainerRect(): { x: number; y: number; w: number; h: number } | null {
-  return lastContainerSlot().rect;
 }
 
 /** Resolve a `Fillable`'s rect: an explicit `x`/`y` wins; otherwise fill the
@@ -391,7 +402,7 @@ export function place(
       rect = st.next(opts.w ?? autoW, opts.h ?? (st.fitCross ? defaultH : undefined));
     } else {
       // In a COLUMN, height is the main axis and an undated slot falls back to
-      // the flow's generic row height (`theme.buttonH`). `intrinsicH` widgets
+      // the flow's generic row height (`theme.button.height`). `intrinsicH` widgets
       // opt out of that: their art has a height of its own, and squeezing it
       // into a button-sized slot squashes the frame. Rows are unaffected —
       // there height is the CROSS axis and filling the row is still right.
@@ -433,7 +444,8 @@ export interface LayoutOptions {
   /** Gap between children in px. Default 8. */
   gap?: number;
   /** Inner padding in px. `row`/`col` default to 0 (flush structural flow);
-   *  `group` defaults to `theme.pad`. Pass `{ x, y }` for independent axes. */
+   *  `group` defaults to `theme.panel.padding`. Pass `{ x, y }` for axis shorthands, or
+   *  `{ top, right, bottom, left }` for independent edges. */
   pad?: number | UiPadding;
   /** Where the content block sits on the main axis when the container is wider
    *  (a row) / taller (a col) than its children — POSITION, not order (this is
@@ -483,6 +495,9 @@ export interface LayoutOptions {
    *  with a scrollbar + wheel; a titled `group` keeps its title fixed and scrolls
    *  only the body. `"hidden"` clips to the box without scrolling. */
   overflow?: "visible" | "hidden" | "auto" | "scroll";
+  /** Fill the remaining main-axis space in the parent flow. This is the
+   *  container equivalent of Flow.fill(); only meaningful when nested. */
+  flex?: "fill";
   /** Flex-wrap: children that would overflow the main axis wrap onto a new line
    *  (a row wraps downward, a col sideways), each line offset by the previous
    *  line's tallest/widest child. Needs a bounded main axis (`w` for a row, `h`
@@ -514,12 +529,12 @@ export function runContainer<R>(
   contentMain?: number,
   alignCross: "start" | "center" | "end" = "start",
 ): R {
-  const { x: padX, y: padY } = paddingXY(pad);
+  const padding = resolvePadding(pad);
   const inner = {
-    x: rect.x + padX,
-    y: rect.y + padY,
-    w: rect.w - padX * 2,
-    h: rect.h - padY * 2,
+    x: rect.x + padding.left,
+    y: rect.y + padding.top,
+    w: rect.w - padding.left - padding.right,
+    h: rect.h - padding.top - padding.bottom,
   };
   const innerNear = dir === "row" ? inner.x : inner.y;
   const innerMain = dir === "row" ? inner.w : inner.h;
@@ -640,7 +655,7 @@ export function measuredContainerSize(
   outerTop: number,
   pad: Padding,
 ): ContentSize {
-  const { x: padX, y: padY } = paddingXY(pad);
+  const padding = resolvePadding(pad);
   const e = st.extent;
   // MAIN axis from the extent (where the run actually reached), CROSS axis from
   // what the children asked for. The two differ only under `alignCross`, and
@@ -648,8 +663,18 @@ export function measuredContainerSize(
   const crossSize = st.crossExtent;
   const crossSpan = st.crossStart - (st.dir === "row" ? outerTop : outerLeft) + crossSize;
   return st.dir === "row"
-    ? { w: e.x + e.w - outerLeft + padX, h: crossSpan + padY, ew: e.w, eh: crossSize }
-    : { w: crossSpan + padX, h: e.y + e.h - outerTop + padY, ew: crossSize, eh: e.h };
+    ? {
+        w: e.x + e.w - outerLeft + padding.right,
+        h: crossSpan + padding.bottom,
+        ew: e.w,
+        eh: crossSize,
+      }
+    : {
+        w: crossSpan + padding.right,
+        h: e.y + e.h - outerTop + padding.bottom,
+        ew: crossSize,
+        eh: e.h,
+      };
 }
 
 // Resolve a container's own rect: explicit if given, else reserve a slot from
@@ -690,7 +715,25 @@ export function containerRect(
   }
   const parent = currentLayout();
   if (!parent) {
+    if (opts.flex === "fill") {
+      const viewport = anchorViewport();
+      return {
+        x: opts.x ?? 0,
+        y: opts.y ?? 0,
+        w: w ?? viewport.w,
+        h: Math.max(h ?? viewport.h, opts.minH ?? 0),
+      };
+    }
     throw new Error("Minimotor.UI: a root row/col/group needs explicit x/y");
+  }
+  if (opts.flex === "fill") {
+    const slot = parent.fill();
+    return {
+      x: slot.x,
+      y: slot.y,
+      w: parent.dir === "row" ? slot.w : (w ?? slot.w),
+      h: parent.dir === "col" ? slot.h : (h ?? slot.h),
+    };
   }
   // Nested: reserve a slot from the parent. Size along the PARENT's main axis
   // (width for a row parent, height for a col parent) from auto/explicit; pass
@@ -864,7 +907,8 @@ function tryReserve(
   cfg: AutoContainerConfig,
   cached: ContentSize | undefined,
 ): Reservation | null {
-  if (cfg.box || cfg.wrap || cfg.reverse || cfg.justify !== "start") return null;
+  if (cfg.box || cfg.wrap || cfg.reverse || cfg.justify !== "start" || opts.flex === "fill")
+    return null;
   // Roots (anchored, or pinned x/y) don't take a slot from anyone.
   if (opts.anchor !== undefined || (opts.x !== undefined && opts.y !== undefined)) return null;
   const parent = currentLayout();
@@ -946,6 +990,5 @@ export function autoContainer<R>(
       h: measured && opts.h === undefined ? rect.h - measured.h : 0,
     });
   }
-  lastContainerSlot().rect = rect;
   return result;
 }

@@ -8,7 +8,7 @@ import { createPerformanceMonitoring } from "minimotor/performance";
 // The server list is mock data — swap fetchServers() for a real request.
 import { createUI } from "minimotor/ui";
 import { Mathf, createApp } from "minimotor";
-import { TableSort, Theme } from "minimotor";
+import { TableSort, ThemeOverrides } from "minimotor";
 import { installLayoutProbe } from "../shared/layout-probe.ts";
 
 interface Server {
@@ -83,7 +83,7 @@ const uiId = UI.ids("server-browser");
 
 // A second look for the whole kit — one setTheme call restyles every widget.
 // Also shows off the metric knobs: rounded corners and a thicker border.
-const AMBER: Partial<Theme> = {
+const AMBER: ThemeOverrides = {
   font: "Verdana, sans-serif",
   fontSize: 12,
   accent: "#ffb454",
@@ -94,7 +94,7 @@ const AMBER: Partial<Theme> = {
   bgHover: "#4a3c24",
   bgActive: "#2a2214",
   border: "#5a4a2e",
-  panelBg: "rgba(24,18,8,0.94)",
+  panel: { background: "rgba(24,18,8,0.94)" },
   primary: "#ffb454",
   danger: "#e8663d",
   radius: 8,

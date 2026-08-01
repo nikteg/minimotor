@@ -331,8 +331,8 @@ describe("cache-key collisions", () => {
 
 // A skin whose frame art needs more room than `pad` gives it used to leave each
 // SCREEN hand-tuning a y offset per panel — which then only suited that one
-// skin. `panelInset` is where the theme states it once.
-describe("theme.panelInset", () => {
+// skin. `panel.frameInset` is where the theme states it once.
+describe("theme.panel.frameInset", () => {
   const build = () =>
     panel({ x: 0, y: 0, w: 300, h: 200, id: "p" }, () => button({ id: "b", label: "B" }));
 
@@ -343,7 +343,7 @@ describe("theme.panelInset", () => {
 
   it("pushes a panel's body down by the y inset", () => {
     const plain = settledButton();
-    setTheme({ panelInset: { y: 10 } });
+    setTheme({ panel: { frameInset: { y: 10 } } });
     const inset = settledButton();
     expect(inset.y).toBe(plain.y + 10);
     expect(inset.x).toBe(plain.x);
@@ -352,16 +352,26 @@ describe("theme.panelInset", () => {
 
   it("insets both sides on x, so the body narrows by twice the value", () => {
     const plain = settledButton();
-    setTheme({ panelInset: { x: 6 } });
+    setTheme({ panel: { frameInset: { x: 6 } } });
     const inset = settledButton();
     expect(inset.x).toBe(plain.x + 6);
     expect(inset.w).toBe(plain.w - 12);
     _reset();
   });
 
+  it("accepts independent edge values", () => {
+    const plain = settledButton();
+    setTheme({ panel: { frameInset: { top: 10, right: 3, bottom: 4, left: 6 } } });
+    const inset = settledButton();
+    expect(inset.x).toBe(plain.x + 6);
+    expect(inset.y).toBe(plain.y + 10);
+    expect(inset.w).toBe(plain.w - 9);
+    _reset();
+  });
+
   it("stacks with the title band rather than replacing it", () => {
     const titled = (extra: number) => {
-      setTheme(extra ? { panelInset: { y: extra } } : {});
+      setTheme(extra ? { panel: { frameInset: { y: extra } } } : {});
       const run = () =>
         panel({ x: 0, y: 0, w: 300, h: 200, id: "t", title: "T" }, () =>
           button({ id: "b", label: "B" }),
@@ -376,7 +386,7 @@ describe("theme.panelInset", () => {
 
   it("defaults to no change at all", () => {
     const plain = settledButton();
-    setTheme({ panelInset: {} });
+    setTheme({ panel: { frameInset: {} } });
     expect(settledButton()).toEqual(plain);
     _reset();
   });

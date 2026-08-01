@@ -12,6 +12,7 @@ import {
   measureWidth,
   place,
   registerFocusable,
+  resolveThemePadding,
   shade,
   theme,
   uiCtx,
@@ -59,9 +60,9 @@ export interface ButtonOptions extends ButtonStyle, Flowable {
   id?: string;
   /** Keyboard traversal order. Negative values exclude the button. */
   tabIndex?: number;
-  /** Omit to use `theme.buttonW`, or auto-size to the label when it is 0. */
+  /** Omit to use `theme.button.width`, or auto-size to the label when it is 0. */
   w?: number;
-  /** Button height in logical px. Default `theme.buttonH`. */
+  /** Button height in logical px. Default `theme.button.height`. */
   h?: number;
   /** Text drawn centered on the button. */
   label: string;
@@ -85,13 +86,13 @@ function variantColors(opts: ButtonStyle): {
   const v = opts.variant ?? "default";
   let base;
   if (v === "primary") {
-    base = { bg: theme.primary, label: theme.buttonText.primary, border: theme.primary };
+    base = { bg: theme.primary, label: theme.button.text.primary, border: theme.primary };
   } else if (v === "danger") {
-    base = { bg: theme.danger, label: theme.buttonText.danger, border: theme.danger };
+    base = { bg: theme.danger, label: theme.button.text.danger, border: theme.danger };
   } else if (v === "ghost") {
-    base = { bg: "transparent", label: theme.buttonText.ghost, border: "transparent" };
+    base = { bg: "transparent", label: theme.button.text.ghost, border: "transparent" };
   } else {
-    base = { bg: theme.bg, label: theme.buttonText.default, border: theme.border };
+    base = { bg: theme.bg, label: theme.button.text.default, border: theme.border };
   }
   const solid = v === "primary" || v === "danger";
   return {
@@ -107,7 +108,7 @@ function variantColors(opts: ButtonStyle): {
  *
  *  For laying out AROUND a button before it is placed — a `spacer` that pushes
  *  one flush right has to know how much room to leave, and a hardcoded number
- *  is wrong the moment a skin changes `buttonPadX`, `buttonMinW` or the font.
+ *  is wrong the moment a skin changes button padding, min width or the font.
  *  Pass the same `font`/`size`/`bold` the button will get. */
 export function buttonWidth(
   label: string,
@@ -116,9 +117,10 @@ export function buttonWidth(
   const ctx = uiCtx();
   const prev = ctx.font;
   ctx.font = opts?.font ?? uiFont(opts?.size ?? theme.fontSize + 2, opts?.bold ?? true);
-  const autoW = Math.ceil(measureWidth(ctx, label)) + theme.buttonPadX;
+  const padding = resolveThemePadding(theme.button.padding);
+  const autoW = Math.ceil(measureWidth(ctx, label)) + padding.left + padding.right;
   ctx.font = prev;
-  return theme.buttonW > 0 ? theme.buttonW : Math.max(autoW, theme.buttonMinW);
+  return theme.button.width > 0 ? theme.button.width : Math.max(autoW, theme.button.minWidth);
 }
 
 /** Draw an immediate-mode button and report whether it was clicked this
@@ -143,9 +145,11 @@ export function button(
   ctx.font = opts.font ?? uiFont(opts.size ?? theme.fontSize + 2, opts.bold ?? true);
   // Auto width: the label plus comfortable padding. `buttonWidth` restates
   // this so a caller can reserve the same space before the button is placed.
-  const autoW = Math.ceil(measureWidth(ctx, opts.label)) + theme.buttonPadX;
-  const w = opts.w ?? (theme.buttonW > 0 ? theme.buttonW : Math.max(autoW, theme.buttonMinW));
-  const rect = place(opts, w, opts.h ?? theme.buttonH, "button");
+  const padding = resolveThemePadding(theme.button.padding);
+  const autoW = Math.ceil(measureWidth(ctx, opts.label)) + padding.left + padding.right;
+  const w = opts.w ??
+    (theme.button.width > 0 ? theme.button.width : Math.max(autoW, theme.button.minWidth));
+  const rect = place(opts, w, opts.h ?? theme.button.height, "button");
   const id = widgetId(opts.id, "button");
   const keyboardFocused = registerFocusable(ctx, {
     id,
@@ -189,7 +193,7 @@ export function button(
     state: opts.disabled ? "disabled" : active ? "active" : hover ? "hover" : "default",
     variant: opts.variant ?? "default",
   });
-  ctx.fillStyle = opts.disabled ? theme.buttonText.disabled : c.label;
+  ctx.fillStyle = opts.disabled ? theme.button.text.disabled : c.label;
   ctx.textAlign = "center";
   centeredText(
     ctx,

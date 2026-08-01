@@ -495,7 +495,7 @@ describe("select menu under UI.scaled", () => {
   it("supports per-select menu padding without covering the frame", () => {
     let value = "a";
     const { game, canvas } = build(() => {
-      setTheme({ pad: { x: 12, y: 10 } });
+      setTheme({ panel: { padding: { x: 12, y: 10 } } });
       scaled(2, () => {
         value = select({
           id: "padded-select",
@@ -656,7 +656,7 @@ describe("tiled panel content clearance", () => {
   it("raises a short titled panel above a skin's fixed bottom slice", () => {
     const image = { width: 48, height: 48 } as unknown as CanvasImageSource;
     setTheme({
-      pad: { x: 16, y: 16 },
+      panel: { padding: { x: 16, y: 16 } },
       skin: createTilesetSkin(image, {
         tileSize: { w: 16, h: 16 },
         frames: {

@@ -43,6 +43,7 @@ import {
   uiPointer,
   uiWidth,
   ellipsize,
+  resolveThemePadding,
   resolveThemeTextPadding,
   wrapLines,
   withTheme,
@@ -146,7 +147,7 @@ export interface SelectOptions<T> extends Flowable {
    *  selection. Default `8`. */
   maxVisible?: number;
   /** Inner padding between the dropdown frame and its option list. Defaults
-   *  to `theme.pad`, so tiled frames keep their fixed border slices clear. */
+   *  to `theme.panel.padding`, so tiled frames keep their fixed border slices clear. */
   menuPad?: ThemePadding;
   /** Wrap long option labels onto as many lines as they need. Default `false`. */
   wrapItems?: boolean;
@@ -620,12 +621,16 @@ function drawSelectMenu(
   // means selectable option rows. Each entry's height is measured below, so a
   // short label occupies one line and a wrapped label gets only the space it
   // actually needs.
-  const requestedPad = opts.menuPad ?? theme.pad;
+  const requestedPad = opts.menuPad ?? theme.panel.padding;
+  const menuPad = resolveThemePadding(requestedPad);
   // Keep a tiny usable body for unusually narrow controls instead of allowing
   // negative list dimensions when a theme's frame padding is larger than the
   // select width.
-  const padX = Math.min(Math.max(0, requestedPad.x), Math.max(0, (rect.w - 1) / 2));
-  const padY = Math.max(0, requestedPad.y);
+  const padLeft = Math.max(0, menuPad.left);
+  const padRight = Math.max(0, menuPad.right);
+  const padTop = Math.max(0, menuPad.top);
+  const padBottom = Math.max(0, menuPad.bottom);
+  const contentW = Math.max(1, rect.w - padLeft - padRight);
   const lineH = theme.fontSize + 8;
   // A skinned group header is a decorative STRIP, and strips are usually fixed-
   // height plates: their whole height is the nine-slice's repeating band (top
@@ -640,7 +645,7 @@ function drawSelectMenu(
   const itemHeights = (() => {
     ctx.save();
     ctx.font = uiFont(theme.fontSize + 2, true);
-    const maxW = Math.max(1, rect.w - padX * 2 - 26);
+    const maxW = Math.max(1, contentW - 26);
     const heights = entries.map((entry) => {
       if (entry.kind === "group") return groupH;
       if (!opts.wrapItems) return lineH + 8;
@@ -661,7 +666,7 @@ function drawSelectMenu(
   }
   let listH = metrics.tops[visibleEntries] ?? 0;
   if (listH <= 0) listH = lineH + 8;
-  const menuH = listH + padY * 2;
+  const menuH = listH + padTop + padBottom;
   const gap = 2;
   const menuPos = fitAnchored(
     { x: rect.x, y: rect.y + rect.h + gap, w: rect.w, h: menuH },
@@ -701,9 +706,9 @@ function drawSelectMenu(
   let picked = -1;
   editor.scroll = list(
     {
-      x: menu.x + padX,
-      y: menu.y + padY,
-      w: menu.w - padX * 2,
+      x: menu.x + padLeft,
+      y: menu.y + padTop,
+      w: Math.max(1, menu.w - padLeft - padRight),
       h: listH,
       rowH: (index) => itemHeights[index],
       count,

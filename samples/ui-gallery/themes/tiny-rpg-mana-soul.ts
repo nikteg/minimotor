@@ -1,11 +1,11 @@
 import { Tiles } from "minimotor";
 import type { AssetStore } from "minimotor/assets";
 import { createTilesetSkin, frameFromCell } from "minimotor/ui";
-import type { TilesetCellSource, Theme } from "minimotor";
+import type { TilesetCellSource, ThemeOverrides } from "minimotor";
 
 export interface TinyRpgThemes {
-  theme: Partial<Theme>;
-  panelAlt: Partial<Theme>;
+  theme: ThemeOverrides;
+  panelAlt: ThemeOverrides;
 }
 
 export function createTinyRpgThemes(atlas: CanvasImageSource): TinyRpgThemes {
@@ -260,7 +260,7 @@ export function createTinyRpgThemes(atlas: CanvasImageSource): TinyRpgThemes {
   });
   const barFill = nine(bars.fill, { left: 2, top: 5, right: 2, bottom: 5 });
 
-  const theme: Partial<Theme> = {
+  const theme: ThemeOverrides = {
     skin: createTilesetSkin(atlas, {
       tileSize: { w: 16, h: 16 },
       frames: {
@@ -330,39 +330,46 @@ export function createTinyRpgThemes(atlas: CanvasImageSource): TinyRpgThemes {
     fontSize: 16,
     focusStyle: "hover",
     textOutline: { color: "#1a143e", width: 3 },
-    buttonW: 0,
-    buttonMinW: 96,
-    buttonH: 22,
+    button: {
+      padding: { x: 18, y: 0 },
+      width: 0,
+      minWidth: 96,
+      height: 22,
+      text: {
+        default: "#fff2b7",
+        primary: "#fff2b7",
+        danger: "#fff2b7",
+        ghost: "#fff2b7",
+        disabled: "#8d7952",
+      },
+    },
     inputH: 32,
     barH: 15,
     sliderH: 15,
     tabH: 22,
-    panelTitleH: 32,
-    panelTitlePad: { x: 8, y: 0 },
-    panelTitleOverhang: { x: 16, y: 0 },
-    panelInset: { x: 0, y: 0 },
-    buttonText: {
-      default: "#fff2b7",
-      primary: "#fff2b7",
-      danger: "#fff2b7",
-      ghost: "#fff2b7",
-      disabled: "#8d7952",
+    panel: {
+      title: {
+        height: 32,
+        padding: { x: 8, y: 0 },
+        overhang: { x: 16, y: 0 },
+        color: "#ffffff",
+      },
+      frameInset: { x: 0, y: 0 },
+      background: "rgba(12,16,53,0.97)",
+      padding: { x: 16, y: 16 },
     },
-    panelTitleText: "#ffffff",
     accent: "#ffd34e",
     accentSoft: "#ad7628",
     text: "#fff2b7",
     textDim: "#c7ad70",
-    panelBg: "rgba(12,16,53,0.97)",
     border: "#e2a32e",
     bg: "#31376e",
     bgHover: "#4b5598",
     bgActive: "#20254e",
     primary: "#d86a39",
-    pad: { x: 16, y: 16 },
     textPad: { x: 2, y: 1 },
   };
-  const panelAlt: Partial<Theme> = {
+  const panelAlt: ThemeOverrides = {
     skin: createTilesetSkin(atlas, {
       tileSize: { w: 16, h: 16 },
       frames: {
@@ -373,9 +380,13 @@ export function createTinyRpgThemes(atlas: CanvasImageSource): TinyRpgThemes {
       buttonVariants: theme.skin!.buttonVariants,
       sprites: theme.skin!.sprites,
     }),
-    panelTitleH: 24,
-    panelTitlePad: { x: 4, y: -2 },
-    panelTitleOverhang: { x: 24, y: 0 },
+    panel: {
+      title: {
+        height: 24,
+        padding: { x: 4, y: -2 },
+        overhang: { x: 24, y: 0 },
+      },
+    },
   };
   return { theme, panelAlt };
 }

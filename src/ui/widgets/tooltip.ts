@@ -94,7 +94,7 @@ export function drawTips(): void {
       y: 0,
       w: boxW,
       h: boxH,
-      bg: theme.panelBg,
+      bg: theme.panel.background,
       border: theme.border,
     });
     ctx.fillStyle = theme.text;

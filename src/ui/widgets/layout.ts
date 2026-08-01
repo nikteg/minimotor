@@ -22,6 +22,7 @@ import {
   pushPointerClip,
   pushUiTransform,
   roundRectPath,
+  resolveThemePadding,
   runAutoSized,
   storeContentSize,
   sweptCache,
@@ -316,7 +317,7 @@ export interface PanelOptions extends LayoutOptions {
   title?: string;
   /** Body layout axis. Default `"col"`. */
   dir?: "row" | "col";
-  /** Frame fill color. Default `theme.panelBg`. */
+  /** Frame fill color. Default `theme.panel.background`. */
   bg?: string;
   /** Frame border color. Default `theme.border`. */
   border?: string;
@@ -332,28 +333,46 @@ export interface PanelOptions extends LayoutOptions {
 function panelWithSafeMinimumHeight(opts: PanelOptions): PanelOptions {
   const frameBottom = theme.skin?.frames.panel?.insets.bottom ?? 0;
   if (!opts.title || !frameBottom) return opts;
-  const padY = typeof opts.pad === "number" ? opts.pad : theme.pad.y;
   // Panel top inset + title band + 2px title border + the theme's own body
-  // inset on both edges + padded default control + frame edge.
+  // inset on both edges + padded default control + frame edge. `panelPadding`
+  // rather than a second reading of `opts.pad` keeps partial edge values
+  // consistent between the measured minimum and the actual body flow.
+  const inset = resolveThemePadding(theme.panel.frameInset);
+  const padding = resolveThemePadding(panelPadding(opts));
   const minimum =
-    panelTitleBodyOffset() + 2 + theme.panelInset.y * 2 + padY + theme.buttonH + frameBottom;
+    panelTitleBodyOffset() +
+    2 +
+    inset.top +
+    inset.bottom +
+    padding.top +
+    theme.button.height +
+    frameBottom;
   return { ...opts, minH: Math.max(opts.minH ?? 0, minimum) };
 }
 
 /** The panel's own padding: the caller's (or the theme's) `pad`, plus the
- *  theme's `panelInset` on the x axis. The y axis is spent on `cfg.top` /
- *  `cfg.bottom` instead, so it stacks with the title band rather than being
+ *  theme's `panel.frameInset` on the horizontal edges. Vertical inset is spent on
+ *  `cfg.top` / `cfg.bottom`, so it stacks with the title band instead of being
  *  mirrored around the whole body. */
-function panelPadding(opts: PanelOptions): { x: number; y: number } {
-  const base = opts.pad ?? theme.pad;
-  const padX = typeof base === "number" ? base : (base.x ?? 0);
-  const padY = typeof base === "number" ? base : (base.y ?? 0);
-  return { x: padX + theme.panelInset.x, y: padY };
+function panelPadding(opts: PanelOptions): {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+} {
+  const base = resolveThemePadding(opts.pad, theme.panel.padding);
+  const inset = resolveThemePadding(theme.panel.frameInset);
+  return {
+    top: base.top,
+    right: base.right + inset.right,
+    bottom: base.bottom,
+    left: base.left + inset.left,
+  };
 }
 
 /** A framed, optionally-titled box that lays its children out — the workhorse
  *  container for menus, dialogs and HUD clusters (`panel` + `col`/`row` in one).
- *  The body is inset below the title strip and padded by `theme.pad`; a bare
+ *  The body is inset below the title strip and padded by `theme.panel.padding`; a bare
  *  frame is just `UI.panel(opts, () => {})` positioning content absolutely
  *  inside. `title`/`bg`/`border` style the frame; the rest is `LayoutOptions`
  *  (`justify`/`anchor`/`overflow`/`dir`/nesting):
@@ -371,8 +390,9 @@ export function panel<R>(opts: PanelOptions, children: LayoutChildren<R>): R {
         (dir === "col" ? safeOpts.w === undefined : safeOpts.h === undefined));
     // The title area includes the panel's top frame inset plus the theme's
     // title band. Reserve a matching 2px below for the bottom border.
-    // `panelInset.y` rides on both ends: it is the gap a skin needs between its
-    // frame art and any content, and it applies with or without a title.
+    // The panel inset is the gap a skin needs between its frame art and any
+    // content, and it applies with or without a title.
+    const panelInset = resolveThemePadding(theme.panel.frameInset);
     const cfg: AutoContainerConfig = {
       pad: panelPadding(safeOpts),
       gap: safeOpts.gap ?? theme.spacing.md,
@@ -380,8 +400,8 @@ export function panel<R>(opts: PanelOptions, children: LayoutChildren<R>): R {
       reverse: safeOpts.reverse ?? false,
       fitCross,
       alignCross: safeOpts.alignCross,
-      top: (safeOpts.title ? panelTitleBodyOffset() : 0) + theme.panelInset.y,
-      bottom: (safeOpts.title ? 2 : 0) + theme.panelInset.y,
+      top: (safeOpts.title ? panelTitleBodyOffset() : 0) + panelInset.top,
+      bottom: (safeOpts.title ? 2 : 0) + panelInset.bottom,
       box: (rect) =>
         paintFrame(uiCtx(), {
           x: rect.x,

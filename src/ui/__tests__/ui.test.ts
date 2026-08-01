@@ -211,35 +211,51 @@ describe("UI theme", () => {
     expect(getTheme().select.bgSelected).toBe(defaultTheme.primary);
   });
 
+  it("re-derives select tokens inside a local theme scope", () => {
+    withTheme(
+      {
+        primary: "#d86a39",
+        accent: "#ffd34e",
+        button: { text: { primary: "#fff7d6" } },
+      },
+      () => {
+        expect(getTheme().select.bgSelected).toBe("#d86a39");
+        expect(getTheme().select.groupLabel).toBe("#ffd34e");
+        expect(getTheme().select.textSelected).toBe("#fff7d6");
+      },
+    );
+    expect(getTheme()).toEqual(defaultTheme);
+  });
+
   it("exposes the new metric and variant-color fields with defaults", () => {
     expect(defaultTheme.borderWidth).toBe(2);
     expect(defaultTheme.radius).toBe(0);
-    expect(defaultTheme.buttonPadX).toBe(28);
-    expect(defaultTheme.buttonW).toBe(0);
+    expect(defaultTheme.button.padding).toEqual({ x: 14, y: 0 });
+    expect(defaultTheme.button.width).toBe(0);
     expect(defaultTheme.barH).toBe(12);
     expect(defaultTheme.tabH).toBe(30);
-    expect(defaultTheme.panelTitleH).toBe(32);
-    expect(defaultTheme.panelTitleOverhang).toEqual({ x: 0, y: 0 });
-    expect(defaultTheme.panelInset).toEqual({ x: 0, y: 0 });
-    expect(defaultTheme.pad).toEqual({ x: 8, y: 8 });
+    expect(defaultTheme.panel.title.height).toBe(32);
+    expect(defaultTheme.panel.title.overhang).toEqual({ x: 0, y: 0 });
+    expect(defaultTheme.panel.frameInset).toEqual({ x: 0, y: 0 });
+    expect(defaultTheme.panel.padding).toEqual({ x: 8, y: 8 });
     expect(defaultTheme.textPad).toBe(0);
     expect(defaultTheme.primary).toBe(defaultTheme.accent);
     expect(defaultTheme.danger).toBeDefined();
     setTheme({ radius: 8, borderWidth: 3 });
     expect(getTheme().radius).toBe(8);
     expect(getTheme().borderWidth).toBe(3);
-    expect(getTheme().buttonPadX).toBe(defaultTheme.buttonPadX); // untouched
+    expect(getTheme().button.padding).toEqual(defaultTheme.button.padding); // untouched
     _reset();
   });
 
   it("scopes theme overrides and restores the parent after the subtree", () => {
-    setTheme({ font: "base", buttonH: 30 });
-    withTheme({ font: "local", buttonH: 44 }, () => {
+    setTheme({ font: "base", button: { height: 30 } });
+    withTheme({ font: "local", button: { height: 44 } }, () => {
       expect(getTheme().font).toBe("local");
-      expect(getTheme().buttonH).toBe(44);
+      expect(getTheme().button.height).toBe(44);
     });
     expect(getTheme().font).toBe("base");
-    expect(getTheme().buttonH).toBe(30);
+    expect(getTheme().button.height).toBe(30);
     _reset();
   });
 });

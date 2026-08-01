@@ -1,4 +1,4 @@
-import type { Theme } from "minimotor";
+import type { ThemeOverrides } from "minimotor";
 import type { AssetStore } from "minimotor/assets";
 import { inspectTilesetSkin } from "minimotor/ui";
 import { loadTinyRpgThemes, type TinyRpgThemes } from "./themes/tiny-rpg-mana-soul.ts";
@@ -13,16 +13,16 @@ export interface GalleryThemeAlternative {
   /** Stable consumer-facing key, independent of the display label. */
   key: string;
   label: string;
-  theme: Partial<Theme>;
+  theme: ThemeOverrides;
 }
 
 export interface GalleryThemeSources {
-  visuals: Partial<Theme>;
-  kenneyUi: Partial<Theme>;
-  kenneyAdventure: Partial<Theme>;
+  visuals: ThemeOverrides;
+  kenneyUi: ThemeOverrides;
+  kenneyAdventure: ThemeOverrides;
   tiny: TinyRpgThemes;
-  hexany: Partial<Theme>;
-  paper: Partial<Theme>;
+  hexany: ThemeOverrides;
+  paper: ThemeOverrides;
 }
 
 export interface GalleryThemeCatalogOptions {
@@ -35,7 +35,7 @@ export interface GalleryThemeCatalogOptions {
 }
 
 export interface GalleryThemeCatalog {
-  presets: { label: string; value: string; preset: Partial<Theme> }[];
+  presets: { label: string; value: string; preset: ThemeOverrides }[];
   alternatives: Readonly<Record<string, readonly GalleryThemeAlternative[]>>;
   atlasDebug: Readonly<Record<string, GalleryAtlasDebug>>;
 }
@@ -62,7 +62,7 @@ export async function createGalleryThemeCatalog(
   };
   const alternatives = options.defineAlternatives?.(themes) ?? {};
 
-  const inspectPreset = (preset: Partial<Theme>): GalleryAtlasVariant | undefined => {
+  const inspectPreset = (preset: ThemeOverrides): GalleryAtlasVariant | undefined => {
     if (!preset.skin) return undefined;
     return { label: "Default", ...inspectTilesetSkin(preset.skin) };
   };
@@ -95,7 +95,7 @@ export async function createGalleryThemeCatalog(
         bgHover: "#1b4d25",
         bgActive: "#0b2110",
         border: "#36783f",
-        panelBg: "rgba(4,16,7,0.96)",
+        panel: { background: "rgba(4,16,7,0.96)" },
         radius: 0,
         borderWidth: 2,
         font: '"VT323", monospace',
@@ -167,7 +167,7 @@ export async function createGalleryThemeCatalog(
         bgHover: "#dce3ec",
         bgActive: "#cdd6e2",
         border: "#b3bfce",
-        panelBg: "rgba(244,247,250,0.96)",
+        panel: { background: "rgba(244,247,250,0.96)" },
         track: "rgba(0,0,0,0.12)",
         dim: "rgba(30,40,60,0.35)",
         danger: "#e5484d",

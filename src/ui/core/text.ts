@@ -225,22 +225,24 @@ export function text(str: string, rawOpts?: TextOptions): void {
   const natural = Math.ceil(measureWidth(ctx, str));
   const lineH = (opts.size ?? theme.fontSize) + 6;
   const themePad = resolveThemeTextPadding(theme.textPad);
-  const padX = opts.padX ?? opts.pad ?? themePad.x;
-  const padY = opts.padY ?? opts.pad ?? themePad.y;
+  const padLeft = opts.padX ?? opts.pad ?? themePad.left;
+  const padRight = opts.padX ?? opts.pad ?? themePad.right;
+  const padTop = opts.padY ?? opts.pad ?? themePad.top;
+  const padBottom = opts.padY ?? opts.pad ?? themePad.bottom;
   const layout =
     opts.x === undefined && opts.y === undefined ? (opts.at ?? currentLayout()) : undefined;
   const wrapWidth =
     opts.maxWidth ??
     (opts.w !== undefined
-      ? opts.w - padX * 2
+      ? opts.w - padLeft - padRight
       : layout?.dir === "col" && layout.crossSize !== undefined
-        ? layout.crossSize - padX * 2
+        ? layout.crossSize - padLeft - padRight
         : layout?.dir === "row"
-          ? layout.remaining - padX * 2
+          ? layout.remaining - padLeft - padRight
           : undefined);
   const autoH =
     opts.wrap && wrapWidth !== undefined
-      ? wrapLines(ctx, str, Math.max(0, wrapWidth)).length * lineH + padY * 2
+      ? wrapLines(ctx, str, Math.max(0, wrapWidth)).length * lineH + padTop + padBottom
       : lineH;
   const autoW =
     opts.wrap && opts.w === undefined && layout?.dir === "row" ? layout.remaining : undefined;
@@ -252,17 +254,17 @@ export function text(str: string, rawOpts?: TextOptions): void {
     opts.wrap && wrapWidth !== undefined
       ? { ...opts, w: autoW ?? opts.w, h: opts.h ?? autoH }
       : opts,
-    natural + padX * 2,
+    natural + padLeft + padRight,
     autoH,
     "text",
   );
 
   // Inset within the slot (pad shorthand + per-axis overrides). Falls back to
   // the theme's textPad (default 0 → flush) so a global inset is one setTheme.
-  const bx = rect.x + padX;
-  const bw = rect.w - padX * 2;
-  const by = rect.y + padY;
-  const bh = rect.h - padY * 2;
+  const bx = rect.x + padLeft;
+  const bw = rect.w - padLeft - padRight;
+  const by = rect.y + padTop;
+  const bh = rect.h - padTop - padBottom;
 
   const align = opts.align ?? "left";
   ctx.fillStyle = resolveColor(opts.color);
