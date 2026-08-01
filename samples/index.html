@@ -436,10 +436,21 @@
         opacity: 0.5;
         cursor: default;
       }
+      /* A GRID, not a wrap flow. Chips vary from 51px ("UI") to 134px
+         ("Sprites.Sprite"), and ragged rows of 38 of them are hard to scan —
+         you re-find your place on every row. Equal columns line the names up
+         and, because the count is right-aligned inside its cell, put every
+         number in one vertical rule. `auto-fill` down to 140px keeps the
+         widest chip intact and reflows to fewer columns on a narrow window. */
       .filter-tags {
-        display: flex;
-        flex-wrap: wrap;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
         gap: 6px;
+      }
+      .filter-tags .tag {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
       }
       /* Scoped to `.filter-tags`, NOT `.filter`: the summary line above renders
          the same chips purely as labels, and they must not look clickable.
@@ -484,6 +495,7 @@
         display: inline-block;
         min-width: 2ch;
         text-align: right;
+        flex: 0 0 auto;
         font-variant-numeric: tabular-nums;
         opacity: 0.6;
         margin-left: 5px;
