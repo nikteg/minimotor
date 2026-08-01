@@ -233,12 +233,21 @@ const GRID = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => ({
 function newFrame(): void {
   fixture.endFrame();
   selectUiApp(fixture.app);
+  (fixture.ctx.moveTo as unknown as ReturnType<typeof vi.fn>).mockClear();
 }
 
 /** Sub-paths started this frame. The caret is an I-beam — a rule plus a tick
  *  at each end — so "drawn" is >0, not any particular count. */
 function strokes(): number {
   return (fixture.ctx.moveTo as unknown as ReturnType<typeof vi.fn>).mock.calls.length;
+}
+
+/** Where the caret's main rule started. The I-beam's first sub-path is the
+ *  rule itself, so its `moveTo` is the caret's own position. */
+function caretAt(): { x: number; y: number } {
+  const calls = (fixture.ctx.moveTo as unknown as ReturnType<typeof vi.fn>).mock.calls;
+  const [x, y] = calls[0] as [number, number];
+  return { x, y };
 }
 
 /** Grab SOURCE and carry the payload to (x, y), leaving it in flight. */
@@ -313,5 +322,47 @@ describe("dropIndicator draws only while a payload is in flight", () => {
     const target = dropTarget({ id: "list", x: 0, y: 0, w: 100, h: 90 });
     expect(target.dropped).not.toBeNull();
     expect(dropIndicator({ items: COLUMN, axis: "y" })).toBe(1);
+  });
+});
+
+/** Two rows 30px tall with a 10px gap — the shape every gapped list has. The
+ *  insertion point between them is named by TWO edges, y=30 and y=40. */
+const GAPPED = [
+  { x: 0, y: 0, w: 100, h: 30 },
+  { x: 0, y: 40, w: 100, h: 30 },
+];
+
+describe("the caret sits in the gap, not against whichever item is nearer", () => {
+  it("draws one insertion point at one place from either side of the gap", () => {
+    // Approaching from above (still over row 0) and from below (over row 1)
+    // are the same insertion index, so they must also be the same LINE. Before
+    // this, the caret snapped 10px across the gap as the pointer crossed it.
+    carryTo(50, 33);
+    expect(dropIndicator({ items: GAPPED, axis: "y" })).toBe(1);
+    const fromAbove = caretAt();
+    newFrame();
+    move(50, 37);
+    expect(dropIndicator({ items: GAPPED, axis: "y" })).toBe(1);
+    expect(caretAt()).toEqual(fromAbove);
+    // ...and that one place is the middle of the gap, not either edge.
+    expect(fromAbove.y).toBe(35);
+  });
+
+  it("keeps the outer insertion points on the list's own edges", () => {
+    carryTo(50, 2);
+    expect(dropIndicator({ items: GAPPED, axis: "y" })).toBe(0);
+    expect(caretAt().y).toBe(0);
+  });
+
+  it("uses the nearest edge where a grid row break leaves nothing to average", () => {
+    // Index 4 is the end of row 0 AND the start of row 1. Those cannot be
+    // averaged into one line, so each side of the wrap draws its own edge.
+    carryTo(2, 60);
+    expect(dropIndicator({ items: GRID, axis: "x" })).toBe(4);
+    expect(caretAt().x).toBe(0);
+    newFrame();
+    move(158, 20);
+    expect(dropIndicator({ items: GRID, axis: "x" })).toBe(4);
+    expect(caretAt().x).toBe(160);
   });
 });

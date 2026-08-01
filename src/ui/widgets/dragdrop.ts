@@ -294,6 +294,30 @@ export interface DropIndicatorOptions {
 
 type Caret = readonly [ax: number, ay: number, bx: number, by: number];
 
+/** The line to actually draw for an insertion point, given every edge that
+ *  means it. An interior point is named by TWO edges — the trailing edge of
+ *  the item before and the leading edge of the item after — and a gap between
+ *  the items puts those a few px apart. Drawing whichever one the pointer is
+ *  nearer makes the caret jump across the gap while the index never changes,
+ *  so when the two are parallel and aligned the caret goes down the middle of
+ *  the gap instead. In a GRID the pair straddles a row break and is not
+ *  aligned at all; then there is nothing to average and the nearest edge is
+ *  the honest answer. */
+function centreOfGap(segs: readonly Caret[], axis: "x" | "y", nearest: Caret): Caret {
+  const [first, second] = segs;
+  if (!first || !second) return nearest;
+  if (axis === "y") {
+    // Horizontal carets: the same span across the flow means the same column.
+    if (first[0] !== second[0] || first[2] !== second[2]) return nearest;
+    const y = (first[1] + second[1]) / 2;
+    return [first[0], y, first[2], y];
+  }
+  // Vertical carets: the same span down the flow means the same row.
+  if (first[1] !== second[1] || first[3] !== second[3]) return nearest;
+  const x = (first[0] + second[0]) / 2;
+  return [x, first[1], x, first[3]];
+}
+
 /** Shortest distance from a point to a line SEGMENT (not the infinite line —
  *  the ends matter, or a grid row's caret would attract the pointer from the
  *  row above it). */
@@ -366,33 +390,40 @@ export function dropIndicator(opts: DropIndicatorOptions): number {
   // edge AFTER. The two are duplicates in a plain list (item i's leading edge
   // and item i-1's trailing edge both mean "index i") and distinct in a grid,
   // where they sit on different rows.
-  const candidates: { index: number; seg: Caret }[] = [];
+  const byIndex = new Map<number, Caret[]>();
+  const offer = (index: number, seg: Caret) => {
+    const at = byIndex.get(index);
+    if (at) at.push(seg);
+    else byIndex.set(index, [seg]);
+  };
   for (const [i, r] of opts.items.entries()) {
     if (axis === "y") {
-      candidates.push({ index: i, seg: [r.x, r.y, r.x + r.w, r.y] });
-      candidates.push({ index: i + 1, seg: [r.x, r.y + r.h, r.x + r.w, r.y + r.h] });
+      offer(i, [r.x, r.y, r.x + r.w, r.y]);
+      offer(i + 1, [r.x, r.y + r.h, r.x + r.w, r.y + r.h]);
     } else {
-      candidates.push({ index: i, seg: [r.x, r.y, r.x, r.y + r.h] });
-      candidates.push({ index: i + 1, seg: [r.x + r.w, r.y, r.x + r.w, r.y + r.h] });
+      offer(i, [r.x, r.y, r.x, r.y + r.h]);
+      offer(i + 1, [r.x + r.w, r.y, r.x + r.w, r.y + r.h]);
     }
   }
-  if (candidates.length === 0) {
+  if (byIndex.size === 0) {
     const e = opts.empty;
     if (!e) return 0;
-    candidates.push({
-      index: 0,
-      seg: axis === "y" ? [e.x, e.y, e.x + e.w, e.y] : [e.x, e.y, e.x, e.y + e.h],
-    });
+    offer(0, axis === "y" ? [e.x, e.y, e.x + e.w, e.y] : [e.x, e.y, e.x, e.y + e.h]);
   }
-  let best = candidates[0]!;
-  let bestDistance = distanceToSegment(p.x, p.y, best.seg);
-  for (const candidate of candidates) {
-    const distance = distanceToSegment(p.x, p.y, candidate.seg);
-    if (distance < bestDistance) {
-      best = candidate;
+  let bestIndex = 0;
+  let bestSegs: Caret[] = [];
+  let bestSeg: Caret = [0, 0, 0, 0];
+  let bestDistance = Infinity;
+  for (const [index, segs] of byIndex) {
+    for (const seg of segs) {
+      const distance = distanceToSegment(p.x, p.y, seg);
+      if (distance >= bestDistance) continue;
       bestDistance = distance;
+      bestIndex = index;
+      bestSegs = segs;
+      bestSeg = seg;
     }
   }
-  if (!opts.silent && st().drag) paintCaret(best.seg, opts);
-  return best.index;
+  if (!opts.silent && st().drag) paintCaret(centreOfGap(bestSegs, axis, bestSeg), opts);
+  return bestIndex;
 }
