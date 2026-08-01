@@ -474,7 +474,17 @@
         border: 1px solid var(--text);
         color: var(--bg);
       }
+      /* The count sits in a fixed slot. Without it a chip narrows when its
+         number drops a digit (12 -> 2), and since the picker is a wrap flow
+         that shift travels down every chip after it — so picking one tag makes
+         two dozen others twitch sideways. `2ch` fits the largest count there
+         can be (37 samples), and tabular figures keep the digits themselves
+         from changing width. */
       .filter-tags .tag .n {
+        display: inline-block;
+        min-width: 2ch;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
         opacity: 0.6;
         margin-left: 5px;
       }
