@@ -236,10 +236,7 @@ Loop.run({
     if (lastFrame !== 0) frameWindow.push(now - lastFrame);
     lastFrame = now;
 
-    Draw.sprites(
-      sprites,
-      culling ? { view: { x: 0, y: 0, w: view.w, h: view.h } } : undefined,
-    );
+    Draw.sprites(sprites, culling ? { view: { x: 0, y: 0, w: view.w, h: view.h } } : undefined);
     // Measured around the sprite call only — the UI below is chrome, and
     // counting it would tax the thing under test with the cost of reporting
     // on it.
@@ -257,19 +254,14 @@ Loop.run({
       });
 
       UI.row({ gap: 8 }, () => {
-        if (
-          UI.button({ label: ramping ? "…" : "Find wall", disabled: ramping })
-        )
-          startRamp();
+        if (UI.button({ label: ramping ? "…" : "Find wall", disabled: ramping })) startRamp();
         if (UI.button({ label: mode === "blit" ? "Blit" : "Rotate" })) {
           mode = mode === "blit" ? "transform" : "blit";
         }
-        if (UI.button({ label: culling ? "Cull on" : "Cull off" }))
-          culling = !culling;
+        if (UI.button({ label: culling ? "Cull on" : "Cull off" })) culling = !culling;
       });
       UI.row({ gap: 8 }, () => {
-        if (UI.button({ label: "−1k" }))
-          resize(Math.max(0, sprites.length - 1000));
+        if (UI.button({ label: "−1k" })) resize(Math.max(0, sprites.length - 1000));
         if (UI.button({ label: "+1k" })) resize(sprites.length + 1000);
       });
 
@@ -278,13 +270,10 @@ Loop.run({
           color: "accent",
           size: 14,
         });
-        UI.text(
-          `at ${verdict.drawMs.toFixed(2)} ms of draw · ${verdict.mode}`,
-          {
-            color: "dim",
-            size: 12,
-          },
-        );
+        UI.text(`at ${verdict.drawMs.toFixed(2)} ms of draw · ${verdict.mode}`, {
+          color: "dim",
+          size: 12,
+        });
       } else if (ramping) {
         UI.text(`searching · lo ${lo} hi ${hi || "?"}`, {
           color: "dim",

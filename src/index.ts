@@ -422,6 +422,14 @@ export type {
 
 export { Vec2 } from "./math/vec2.js";
 
+/** 3D math: structural `Vec3`/`Quat` (plain `{x,y,z}` / `{x,y,z,w}` data, same
+ *  out-last convention as `Vec2`) and column-major `Mat4`. Right-handed, +Y up,
+ *  camera down −Z — the glTF/OpenGL convention, deliberately NOT the 2D
+ *  renderer's +Y down. */
+export { Vec3 } from "./math/vec3.js";
+export { Quat } from "./math/quat.js";
+export { Mat4 } from "./math/mat4.js";
+
 /** Page-level styling and gesture guards. `createApp` applies `applyFullscreen`
  *  for you unless you pass `fullscreen: false`; these are the manual handles for
  *  pages that opt out and want to apply the rules themselves, later, or merge

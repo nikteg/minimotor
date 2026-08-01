@@ -97,13 +97,7 @@ export interface RenderTarget {
   /** Batched sprite blit — the call that actually matters for throughput. */
   sprites(list: Iterable<DrawSprite>, opts?: DrawSpritesOptions): void;
   quad(x: number, y: number, w: number, h: number, fill: Fill): void;
-  image(
-    img: TextureSource,
-    dst: Rect,
-    src?: Rect,
-    tint?: string,
-    alpha?: number,
-  ): void;
+  image(img: TextureSource, dst: Rect, src?: Rect, tint?: string, alpha?: number): void;
   /** Escape hatch: the 2D context, or null on a GPU target. Everything that
    *  needs this is a candidate for staying on the overlay layer. */
   readonly ctx2d: CanvasRenderingContext2D | null;
@@ -196,10 +190,7 @@ them to `new OffscreenCanvas(w, h)` behind one helper:
 
 ```ts
 // src/engine/offscreen.ts
-export function scratchCanvas(
-  w: number,
-  h: number,
-): OffscreenCanvas | HTMLCanvasElement;
+export function scratchCanvas(w: number, h: number): OffscreenCanvas | HTMLCanvasElement;
 ```
 
 ...keeps them out of the document entirely, which avoids layout/style cost on
