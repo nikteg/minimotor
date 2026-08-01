@@ -15,9 +15,14 @@
 // Two conventions worth stating because getting either wrong looks like a
 // renderer bug rather than a convention mismatch:
 //
-//   - `MeshData.uvs` has v = 0 at the TOP, like every image the engine loads.
-//     GL samples with v = 0 at the bottom, so `UNPACK_FLIP_Y_WEBGL` is set on
-//     upload and the shader does no flipping.
+//   - `MeshData.uvs` has v = 0 at the TOP, like every image the engine loads,
+//     and `texImage2D` uploads an image's FIRST row at v = 0. Those two agree,
+//     so nothing flips: no `UNPACK_FLIP_Y_WEBGL`, no flip in the shader.
+//     Setting the flip — the reflex, because GL is usually described as
+//     bottom-up — makes v = 0 the image's last row and turns every texture
+//     upside down. It shipped that way once, and a UI surface on a quad is how
+//     it was noticed: geometry-mapped art is symmetric enough to hide it,
+//     text is not.
 //   - Front faces are counter-clockwise (glTF and GL default). A mesh built
 //     the other way renders inside-out; `flipWinding` fixes the mesh rather
 //     than this file flipping the culling.
@@ -192,7 +197,7 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
   };
 
   const meshes = new WeakMap<object, GpuMesh>();
-  const textures = new WeakMap<object, WebGLTexture>();
+  const textures = new WeakMap<object, { texture: WebGLTexture; version: number }>();
 
   let width = opts.width ?? 300;
   let height = opts.height ?? 150;
@@ -262,13 +267,19 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     return gpu;
   }
 
-  function uploadTexture(source: TexImageSource, pixelated: boolean): WebGLTexture {
+  function uploadTexture(
+    source: TexImageSource,
+    pixelated: boolean,
+    version: number,
+  ): WebGLTexture {
     const cached = textures.get(source as object);
-    if (cached) return cached;
-    const tex = gl!.createTexture();
+    if (cached && cached.version === version) return cached.texture;
+    // Re-uploading into the SAME texture object rather than making a new one:
+    // a live surface would otherwise leak one texture per frame.
+    const tex = cached?.texture ?? gl!.createTexture();
     if (!tex) throw new Error("WebGL2: could not create a texture.");
     gl!.bindTexture(gl!.TEXTURE_2D, tex);
-    gl!.pixelStorei(gl!.UNPACK_FLIP_Y_WEBGL, true);
+    gl!.pixelStorei(gl!.UNPACK_FLIP_Y_WEBGL, false);
     gl!.pixelStorei(gl!.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
     gl!.texImage2D(gl!.TEXTURE_2D, 0, gl!.RGBA, gl!.RGBA, gl!.UNSIGNED_BYTE, source);
     const filter = pixelated ? gl!.NEAREST : gl!.LINEAR;
@@ -278,7 +289,7 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     // wrapping one bleeds the opposite edge into a uv that lands exactly on 1.
     gl!.texParameteri(gl!.TEXTURE_2D, gl!.TEXTURE_WRAP_S, gl!.CLAMP_TO_EDGE);
     gl!.texParameteri(gl!.TEXTURE_2D, gl!.TEXTURE_WRAP_T, gl!.CLAMP_TO_EDGE);
-    textures.set(source as object, tex);
+    textures.set(source as object, { texture: tex, version });
     return tex;
   }
 
@@ -301,7 +312,10 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
 
     if (material.texture) {
       gl!.activeTexture(gl!.TEXTURE0);
-      gl!.bindTexture(gl!.TEXTURE_2D, uploadTexture(material.texture, material.pixelated ?? true));
+      gl!.bindTexture(
+        gl!.TEXTURE_2D,
+        uploadTexture(material.texture, material.pixelated ?? true, material.textureVersion ?? 0),
+      );
       gl!.uniform1i(u.texture, 0);
       gl!.uniform1i(u.hasTexture, 1);
     } else {

@@ -25,8 +25,9 @@ export interface MeshData {
    *  a source doesn't provide them. */
   normals?: Float32Array;
   /** `[u, v]` per vertex. `v = 0` is the TOP of a texture, as in glTF and as
-   *  `drawImage` sees an image — not OpenGL's bottom-up convention. The
-   *  backends flip on upload rather than making every mesh do it. */
+   *  `drawImage` sees an image — not OpenGL's bottom-up convention. Both
+   *  backends upload an image's first row at v = 0, so this needs no flip
+   *  anywhere; see the note at the top of `webgl2.ts`. */
   uvs?: Float32Array;
   /** `[r, g, b, a]` per vertex, 0..1. Multiplied with the material colour. */
   colors?: Float32Array;

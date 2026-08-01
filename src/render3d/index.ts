@@ -6,14 +6,25 @@
 //   scene.ts     a flat, JSON-safe node array with TRS transforms
 //   camera.ts    an orbit camera and its matrices
 //   animation.ts keyframe tracks over node transforms
+//   ui-surface.ts the UI drawn onto a quad IN the scene
 //   renderer.ts  the backend-agnostic interface
 //   webgl2.ts    the WebGL2 backend
 //   webgpu.ts    the WebGPU backend
 //
 // Nothing here reaches into the 2D renderer, and the 2D renderer does not know
-// this exists. The two meet in exactly one place — `UI.viewport3d`, which
-// blits a rendered frame into the UI's 2D context so a 3D view behaves like a
-// widget.
+// this exists. The two meet in exactly two places, and they point opposite
+// ways:
+//
+//   `UI.viewport3d`   a 3D view INSIDE the UI. Renders to the renderer's
+//                     canvas and blits it into a widget's rect, so it clips,
+//                     scrolls and sits under a modal like anything else.
+//   `createUiSurface` the UI INSIDE the 3D scene. The UI draws into an
+//                     offscreen 2D canvas, that canvas is a texture, and the
+//                     texture goes on a quad — so a panel can hang on a wall
+//                     in world space, and a 3D object can pass in FRONT of it.
+//
+// Neither replaces the other: the first can never appear above a UI element,
+// the second can never be clipped by a scrolling list.
 //
 //   const renderer = await createRenderer3D();
 //   const scene = createScene();
@@ -30,6 +41,15 @@ export * from "./mesh.js";
 export * from "./scene.js";
 export * from "./camera.js";
 export * from "./animation.js";
+export {
+  createUiSurface,
+  intersectQuad,
+  pointerRay,
+  type Ray,
+  type UiSurface,
+  type UiSurfaceDrawOptions,
+  type UiSurfaceOptions,
+} from "./ui-surface.js";
 export type { Backend3D, RenderOptions, RenderStats, Renderer3D } from "./renderer.js";
 export { createWebGL2Renderer } from "./webgl2.js";
 export type { WebGL2RendererOptions } from "./webgl2.js";

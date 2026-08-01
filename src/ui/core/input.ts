@@ -154,6 +154,23 @@ const rawScratch = { ...DEAD_POINTER };
  *  block everyone else). Reused scratch object: read, don't hold. */
 export function rawPointer() {
   const p = uiApp().Pointer;
+  // A pointer OVERRIDE replaces the position (and only the position) for the
+  // duration of a surface draw. Everything else — the button edges, the wheel
+  // — is still the real device's, because a UI drawn onto a 3D quad is being
+  // clicked by the same physical pointer; only WHERE it lands has to be
+  // re-derived, by casting a ray at the quad. `off` moves it far out of every
+  // rect, which is how a ray that misses the quad reads as "not hovering"
+  // without a second code path.
+  if (pointerOverride) {
+    rawScratch.x = pointerOverride.off ? -1e9 : pointerOverride.x;
+    rawScratch.y = pointerOverride.off ? -1e9 : pointerOverride.y;
+    rawScratch.down = p.down;
+    rawScratch.released = p.frameReleased;
+    rawScratch.pressed = p.framePressed;
+    rawScratch.doublePressed = p.frameDoublePressed;
+    rawScratch.wheel = p.wheel;
+    return rawScratch;
+  }
   rawScratch.x = p.x;
   rawScratch.y = p.y;
   rawScratch.down = p.down;
@@ -162,6 +179,40 @@ export function rawPointer() {
   rawScratch.doublePressed = p.frameDoublePressed;
   rawScratch.wheel = p.wheel;
   return rawScratch;
+}
+
+/** Where the pointer should be treated as being, in place of the device's own
+ *  position. Set while a UI is drawn onto a surface whose pixels are not on
+ *  the screen — see `pushPointerOverride`. */
+interface PointerOverride {
+  x: number;
+  y: number;
+  /** The pointer is not over this surface at all. */
+  off: boolean;
+}
+let pointerOverride: PointerOverride | null = null;
+
+/** Re-aim the pointer at `(x, y)` in the current surface's coordinates, or
+ *  mark it as missing the surface entirely. Returns the previous override so
+ *  it can be restored — surfaces nest.
+ *
+ *  This exists because hit-testing a UI on a 3D quad is a ray cast, not an
+ *  affine transform, so `pushUiTransform` (a scale plus an offset) cannot
+ *  express it. */
+export function pushPointerOverride(x: number, y: number, off: boolean): PointerOverride | null {
+  const prev = pointerOverride;
+  pointerOverride = { x, y, off };
+  // The memoized pointer is keyed on the transform and clip, neither of which
+  // changed, so it has to be dropped explicitly or the surface would see the
+  // screen-space position for the rest of the frame.
+  st().pointerCache = null;
+  return prev;
+}
+
+/** Restore a previous override (or null for the real device pointer). */
+export function popPointerOverride(prev: PointerOverride | null): void {
+  pointerOverride = prev;
+  st().pointerCache = null;
 }
 
 // ---------- UI transform (scale / reference-size fit) -----------------------

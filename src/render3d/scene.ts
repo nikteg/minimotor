@@ -30,6 +30,12 @@ export interface Material {
   /** Surface texture. Any 2D image source the engine already rasterises to —
    *  a sprite, an atlas canvas, an `ImageBitmap`. */
   texture?: TexImageSource;
+  /** Bump this whenever the texture's PIXELS change. Textures are cached by
+   *  object identity, so a canvas that is redrawn in place looks unchanged to
+   *  the renderer and would keep showing its first frame forever — which is
+   *  exactly what a live UI surface is. Leave it undefined for a static image
+   *  and the upload happens once. */
+  textureVersion?: number;
   /** Skip lighting entirely and emit `color` directly. For UI gizmos,
    *  wireframe-ish helpers and anything that must stay legible at any angle. */
   unlit?: boolean;

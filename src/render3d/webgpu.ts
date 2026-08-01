@@ -314,7 +314,10 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
   });
 
   const meshes = new WeakMap<object, GpuMesh>();
-  const textureGroups = new WeakMap<object, GPUBindGroup>();
+  const textureGroups = new WeakMap<
+    object,
+    { group: GPUBindGroup; texture: GPUTexture; version: number; width: number; height: number }
+  >();
 
   let width = opts.width ?? 300;
   let height = opts.height ?? 150;
@@ -374,10 +377,27 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     return gpu;
   }
 
-  function textureGroupFor(source: TexImageSource, pixelated: boolean): GPUBindGroup {
-    const cached = textureGroups.get(source as object);
-    if (cached) return cached;
+  function textureGroupFor(
+    source: TexImageSource,
+    pixelated: boolean,
+    version: number,
+  ): GPUBindGroup {
     const size = sourceSize(source);
+    const cached = textureGroups.get(source as object);
+    if (cached && cached.width === size.width && cached.height === size.height) {
+      if (cached.version === version) return cached.group;
+      // Same dimensions: copy into the existing texture and keep the bind
+      // group. A resize has to rebuild both, since a GPUTexture's size is
+      // fixed at creation.
+      device.queue.copyExternalImageToTexture(
+        { source },
+        { texture: cached.texture, premultipliedAlpha: true },
+        [size.width, size.height],
+      );
+      cached.version = version;
+      return cached.group;
+    }
+    cached?.texture.destroy();
     const texture = device.createTexture({
       size: [size.width, size.height],
       format: "rgba8unorm",
@@ -397,7 +417,13 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
         { binding: 1, resource: texture.createView() },
       ],
     });
-    textureGroups.set(source as object, group);
+    textureGroups.set(source as object, {
+      group,
+      texture,
+      version,
+      width: size.width,
+      height: size.height,
+    });
     return group;
   }
 
@@ -533,7 +559,11 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
         pass.setBindGroup(
           1,
           material.texture
-            ? textureGroupFor(material.texture, material.pixelated ?? true)
+            ? textureGroupFor(
+                material.texture,
+                material.pixelated ?? true,
+                material.textureVersion ?? 0,
+              )
             : blankBindGroup,
         );
         pass.setVertexBuffer(0, gpu.positions);

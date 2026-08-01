@@ -20,11 +20,13 @@ import {
   createClip,
   createRenderer3D,
   createScene,
+  createUiSurface,
   cylinder,
   frameMesh,
   mergeMeshes,
   node,
   plane,
+  updateWorldMatrices,
   sampleClip,
   sphere,
   spinTrack,
@@ -37,7 +39,7 @@ import {
 
 const game = createApp("game", { background: "#0e1017" });
 const view = game.viewport;
-const { Draw, Loop } = game;
+const { Draw, Loop, Pointer } = game;
 const UI = createUI(game);
 
 // ---- the scenes ------------------------------------------------------------
@@ -116,6 +118,22 @@ const itemScenes: Scene3D[] = inventory.map((item) => {
 });
 const itemCamera = createCamera({ distance: 1.9, pitch: 0.5, yaw: 0.6 });
 
+// ---- a UI panel living IN the scene ---------------------------------------
+// The opposite direction from the viewport: this is the ordinary 2D UI drawn
+// into an offscreen canvas, uploaded as a texture, and hung on a quad in world
+// space. It is a real UI — the buttons below are hit-tested by casting the
+// pointer's ray at the quad — and the spinning shape passes IN FRONT of it,
+// which nothing blitted into the UI layer could do.
+const surface = createUiSurface({
+  width: 260,
+  height: 150,
+  worldWidth: 1.5,
+  background: "rgba(12,16,28,0.86)",
+});
+let surfaceNode = -1;
+let hologramHits = 0;
+let hologramColor: [number, number, number, number] = [0.95, 0.55, 0.22, 1];
+
 // A ground plane, only used by the "environment" toggle, to show that the
 // same scene array can gain and lose nodes between frames.
 const ground = node({
@@ -126,6 +144,18 @@ const ground = node({
 });
 
 // ---- state -----------------------------------------------------------------
+
+// Placed behind and above the plinth, tilted toward the viewer.
+surfaceNode = addNode(
+  showcase.scene,
+  node({
+    name: "wall-panel",
+    mesh: surface.mesh,
+    material: surface.material,
+    position: { x: 0, y: 0.45, z: -0.95 },
+    rotation: { x: 0, y: 0, z: 0, w: 1 },
+  }),
+);
 
 let renderer: Renderer3D | null = null;
 let rendererError: string | null = null;
@@ -184,6 +214,53 @@ Loop.run({
       }
       // Fill what is left, reserving the two control rows plus the caption.
       const stage = body.fill(96);
+
+      // The world-space panel is drawn BEFORE the viewport, because it has to
+      // be a finished texture by the time the scene renders. Its pointer comes
+      // from last frame's viewport rect — one frame stale, and invisible at
+      // pointer speeds.
+      updateWorldMatrices(showcase.scene);
+      surface.draw(
+        {
+          model: showcase.scene.nodes[surfaceNode].world!,
+          camera: showcaseCamera,
+          pointer: {
+            // The app pointer, in screen-logical coords — the same space the
+            // widget rects are in here, since this sample uses no `UI.scaled`.
+            x: Pointer.x - stage.x,
+            y: Pointer.y - stage.y,
+            viewW: stage.w,
+            viewH: stage.h,
+          },
+        },
+        () => {
+          // An idScope keeps these widgets' ids from colliding with the
+          // identically-shaped ones on the screen UI.
+          UI.idScope("hologram", () => {
+            UI.text("SYSTEM PANEL", { x: 12, y: 10, size: 13, bold: true, color: "accent" });
+            UI.text(`interactions: ${hologramHits}`, { x: 12, y: 34, size: 11, color: "dim" });
+            UI.row({ x: 12, y: 56, w: 236, gap: 8 }, () => {
+              for (const [label, rgb] of SWATCHES) {
+                if (UI.button({ label, w: 68 })) {
+                  hologramColor = rgb;
+                  hologramHits++;
+                }
+              }
+            });
+            UI.text("a real UI, on a quad, in the scene", {
+              x: 12,
+              y: 112,
+              size: 10,
+              color: "dim",
+            });
+          });
+        },
+      );
+      showcase.scene.nodes[1].material = {
+        ...showcase.scene.nodes[1].material,
+        color: hologramColor,
+      };
+
       UI.viewport3d({
         ...stage,
         id: "showcase",
@@ -264,6 +341,12 @@ Loop.run({
 });
 
 let listOffset = 0;
+
+const SWATCHES: [string, [number, number, number, number]][] = [
+  ["Amber", [0.95, 0.55, 0.22, 1]],
+  ["Jade", [0.3, 0.85, 0.55, 1]],
+  ["Violet", [0.66, 0.42, 0.95, 1]],
+];
 
 // ---- small helpers ---------------------------------------------------------
 

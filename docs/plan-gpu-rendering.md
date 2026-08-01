@@ -253,81 +253,89 @@ responsive to clicks.
 4a can go first; it is independent of everything and improves the current
 Canvas2D engine on its own.
 
-## Does this enable 3D games?
+## 3D — built, and how it relates to the stages above
 
-No — and the gap is bigger than it looks, so it is worth being explicit before
-anyone plans around it.
+The three questions this section originally answered ("does this enable 3D?",
+"should we add `Vec3`?", "how would 3D appear in the UI?") have been answered
+by building it. `src/render3d`, exported as `minimotor/3d`, is in the tree.
+What follows is what it is and — more usefully — what it deliberately is not.
 
-What stage 2 builds is an **orthographic quad batcher**: one shader, a
-`x, y, u, v, rgba` vertex, a 2×3 transform applied on the CPU, and `z` used
-purely as a sort key with no depth buffer. Every design decision in it assumes
-flat, axis-aligned, painter's-algorithm 2D. None of the following exists or is
-implied by it:
+The honest framing: **3D did not come out of stages 1–3, and it did not need
+them.** The batcher stages are about pushing more 2D sprites through Canvas2D's
+ceiling. 3D is a separate renderer with its own pipeline that happens to share
+the GPU. Both can proceed independently; neither blocks the other.
 
-| Needed for 3D               | In this plan                          |
-| --------------------------- | ------------------------------------- |
-| Perspective + view matrices | no — one ortho projection uniform     |
-| Depth buffer + depth test   | no — `z` is a CPU sort key            |
-| Mesh vertex/index buffers   | no — quads from a static index buffer |
-| Normals, lighting, shading  | no                                    |
-| Material / shader authoring | explicitly out of scope (see above)   |
-| Frustum culling             | no — a 2D rect cull                   |
-| Model loading (glTF)        | no                                    |
+### What exists
 
-What the plan _does_ leave behind is a seam. `RenderTarget` (stage 1) is where
-a `WebGL3DTarget` would plug in, and stage 2 establishes context creation,
-texture upload and the resize/DPR plumbing that any GL backend needs. That is
-real, but it is the small part. A 3D path is a larger project than this entire
-document, and it should be proposed on its own terms rather than smuggled in
-as "phase 5".
+| Module                                | What it is                                                                                                                             |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `math/vec3`, `math/quat`, `math/mat4` | Right-handed, +Y up, camera down −Z. Column-major matrices. `out` last and optional, as `Vec2` has always done.                        |
+| `render3d/mesh`                       | Geometry as plain typed arrays; box / sphere / plane / cylinder / cone / torus; smooth normals; merge.                                 |
+| `render3d/scene`                      | A **flat** node array with TRS transforms, parents by index. JSON-safe, so hot-reload state saving and snapshots work on it unchanged. |
+| `render3d/camera`                     | An orbit camera. Does not own a clip-depth convention.                                                                                 |
+| `render3d/animation`                  | glTF-shaped keyframe tracks, slerped rotations, binary-searched sampling.                                                              |
+| `render3d/webgl2`, `render3d/webgpu`  | Two backends behind one `Renderer3D`. Blinn-Phong, up to four directional lights, depth buffer, sorted transparency.                   |
+| `ui/widgets/viewport3d`               | A 3D view as a UI widget.                                                                                                              |
+| `render3d/ui-surface`                 | The UI as a texture on a quad in the scene.                                                                                            |
 
-### Should we introduce `Vec3`?
+### Why two backends rather than "WebGPU when ready"
 
-Not yet, and not as part of this. `Vec2` (`src/math/vec2.ts`) earns its place
-by being _structural_ — anything with `x`/`y` is one, so sprites, bodies, the
-pointer and tile spawn points all satisfy it without importing anything, and
-eleven modules use it. A `Vec3` today would have no such consumer:
+Because one implementation cannot tell you which of its choices were decisions
+and which were assumptions. The clearest example is in this document's own
+history: `Mat4.perspective` takes a `zeroToOne` flag because WebGL2 maps the
+near plane to −1 and WebGPU to 0. With a single backend that would have been a
+hard-coded constant, discovered years later as "WebGPU renders nothing".
+`createRenderer3D` prefers WebGPU and falls back to WebGL2 silently; callers
+that care read `renderer.backend`.
 
-- Sprite `z` is a scalar sort key, not a coordinate. Widening it to a vector
-  would make every sprite carry a field the renderer throws away.
-- The physics is `planck` — a 2D solver. There is no third axis to integrate.
-- The one place a third component is arguably meaningful is audio, and the
-  mixer already models it as what it actually is: a scalar `setPan`
-  (`src/audio/mixer.ts:132`) over a `StereoPannerNode`. Positional audio would
-  want a `Vec3`, but that is a feature request, not a consequence of this plan.
+### The two directions 3D and the UI meet
 
-The rule the codebase already follows is to add the type when the consumer
-arrives. Adding it before means guessing the shape (row/column? `z` up or `y`
-up? handedness?) with nothing to check the guess against.
+This is the part worth understanding before building anything on it, because
+the two look similar and solve opposite problems.
 
-## How would 3D content appear inside the UI?
+**`UI.viewport3d` — 3D inside the UI.** The renderer draws into its own canvas
+at the widget's device-pixel size and the widget blits it in with one
+`drawImage`. Because the result is just pixels in the UI's 2D context, it
+clips, scrolls, and z-orders like any other widget — `samples/render3d` puts
+six live previews inside a scrolling list. The cost is one blit of a small
+canvas per frame. The limit is that a 3D object can never appear in front of a
+UI element.
 
-The layered composition answers this better than a single-canvas design would,
-and in two different ways depending on what is being asked for.
+**`createUiSurface` — the UI inside the 3D scene.** The UI renders into an
+offscreen 2D canvas, which is a texture, which goes on a quad. No widget was
+ported to the GPU and no text shaping was reimplemented — the UI does not know
+it is on a plane. A panel can hang on a wall in world space, angle away from
+the viewer, and have a 3D object pass in **front** of it. The limit is the
+mirror image of the other: it cannot be clipped by a scrolling list.
 
-**A 3D world with a 2D HUD** is already the shape of the diagram above. The
-scene canvas renders the world with whatever backend it has; the UI is a
-transparent 2D canvas on top. Nothing about `src/ui` changes. This case is free.
+The non-obvious part of the second is input. Hit-testing a UI on a quad is a
+ray cast — unproject through the camera, intersect the plane, convert to uv —
+which the UI's existing scale-plus-offset transform cannot express. So the
+kernel gained one small seam, `pushPointerOverride`, that replaces the pointer's
+POSITION only: the press and release edges and the wheel stay the real
+device's, because it is the same physical pointer, and only where it lands has
+to be re-derived.
 
-**A 3D view inside a panel** — a character preview, an item inspector, a
-rotatable model in a shop screen — needs one observation: the overlay canvas is
-**transparent where the UI has not painted**. So a panel does not need to blit
-anything or punch a hole. It draws its frame and title on the overlay, leaves
-the interior unpainted, and the scene layer renders the 3D viewport into that
-same screen rect underneath. The browser composites. There is no readback and
-no `drawImage(glCanvas, …)`, which is the cost the plan already rules out.
+### What is still not there
 
-The constraint that comes with it is **z-order is fixed**: the scene layer is
-always under all UI. A 3D preview can sit inside a panel, but it can never
-appear _above_ a UI element — so a modal opening over the preview covers it,
-which is usually what you want, and a tooltip drawn over it works, which is
-also what you want. What does not work is a 3D object that floats above the
-HUD. If that is ever needed it is a third canvas, not a change to these two.
+Worth being as explicit about this as the original version of this section was:
 
-For a preview that does not animate — inventory icons, a turnaround sheet —
-neither of the above applies: render it once into an `OffscreenCanvas` (stage
-4a's `scratchCanvas`) and let the UI blit the result as an ordinary image. That
-costs nothing per frame and works on the Canvas2D backend too.
+- **No shadows.** Directional lights with no shadow map. A ground-plane blob or
+  a baked texture is the current answer.
+- **No skinning.** Animation drives node transforms, so a hierarchy of rigid
+  parts animates; a deforming character does not.
+- **No model loading.** No glTF importer. Geometry is built in code.
+- **No material/shader API.** One Blinn-Phong shader with uniform switches.
+  Still out of scope for the same reason as before: how a game ships a custom
+  shader, and how that degrades across two backends, is a design question of
+  its own.
+- **No frustum culling** beyond per-node visibility, and no instancing. Both
+  matter at scene sizes well past what the samples reach.
+- **`Vec3` has consumers now** — the scene graph, the camera, the meshes — so
+  the earlier answer ("wait for one") resolved itself by the consumer arriving.
+  `Vec3` is still deliberately NOT interchangeable with `Vec2`: structural
+  typing would let one slip into the 2D renderer and have its `z` silently
+  dropped.
 
 ## The measurement to take before starting any of it
 
