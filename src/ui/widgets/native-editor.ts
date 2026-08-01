@@ -26,8 +26,13 @@ export function mountHiddenEditor(el: HTMLElement, ariaLabel: string): void {
     position: "fixed",
     left: "-1000px",
     top: "0",
-    width: "1px",
-    height: "1px",
+    // A REAL box, not the 1×1 that offscreen-input recipes usually suggest:
+    // Chromium copies nothing from a selection with no rendered width, so
+    // Cmd/Ctrl+C and Cmd/Ctrl+X silently did nothing (paste was unaffected,
+    // which is what made it easy to miss). `position: fixed` keeps this size
+    // out of layout — the document's scroll extent doesn't change.
+    width: "320px",
+    height: "48px",
     opacity: "0",
     pointerEvents: "none",
   });

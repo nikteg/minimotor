@@ -299,7 +299,10 @@ declare global {
     __uiGallery?: {
       setScale(s: number): void;
       setTheme(value: string): void;
-      getState(): { uiScale: number; volume: number; city: string };
+      getState(): { uiScale: number; volume: number; city: string; name: string; notes: string };
+      /** Width of `str` in the ACTIVE theme's UI font — what the widgets draw
+       *  with. Tests use it to aim a click at a character offset. */
+      textWidth(str: string): number;
       layoutCapture(on: boolean): void;
       layoutTree(): ReturnType<typeof UI.layoutTree>;
     };
@@ -312,7 +315,8 @@ window.__uiGallery = {
   setTheme: (value) => {
     applyTheme(value);
   },
-  getState: () => ({ uiScale, volume, city }),
+  getState: () => ({ uiScale, volume, city, name, notes }),
+  textWidth: (str) => UI.textWidth(str),
   layoutCapture: UI.layoutCapture,
   layoutTree: UI.layoutTree,
 };
