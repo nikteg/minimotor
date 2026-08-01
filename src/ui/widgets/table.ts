@@ -75,7 +75,8 @@ export interface TableOptions<Row> extends Fillable {
   /** The selected row (by identity) to highlight; assign the result's
    *  `selected` back. Omit the field for a non-selectable table. */
   selected?: Row | null;
-  /** Scrollbar width when the list overflows. Default 10. */
+  /** Scrollbar width when the list overflows. Defaults to the theme's
+   *  `scrollbarW`. */
   scrollW?: number;
   /** Stable prefix for the header, row, list and scrollbar widget ids. */
   id?: string;
@@ -119,13 +120,13 @@ export function table<Row>(opts: TableOptions<Row>): TableResult<Row> {
   const cellPadX = Math.max(0, opts.cellPadX ?? theme.spacing.sm);
   const cellPadY = Math.max(0, opts.cellPadY ?? theme.spacing.xs);
   const rowH = opts.rowH;
-  const scrollW = opts.scrollW ?? 10;
+  const scrollW = opts.scrollW ?? theme.scrollbarW;
 
   // Does the list overflow → is a scrollbar gutter reserved? Match `list`'s own
   // formula so the header columns line up with the row cells (both drop it).
   const listH = rect.h - headerH;
   const content = opts.rows.length * (rowH + gap) - (opts.rows.length > 0 ? gap : 0);
-  const barW = content > listH ? scrollW + 4 : 0;
+  const barW = content > listH ? scrollW + theme.scrollbarGap : 0;
   const contentW = rect.w - barW;
 
   // Column x-layout: fixed widths first, the remainder split among flex columns.
