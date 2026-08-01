@@ -1,6 +1,33 @@
 // Minimotor — a minimal 2D canvas framework for small games and playful apps.
-// createApp creates isolated apps. Optional stateful capabilities live at explicit
-// subpaths (`minimotor/audio`, `minimotor/net`, `minimotor/ui`, ...).
+// createApp creates isolated apps.
+//
+// WHERE A CAPABILITY LIVES
+//
+// A capability gets its own SUBPATH (`minimotor/audio`, `minimotor/ui`,
+// `minimotor/procgen`, ...) when either is true:
+//
+//   BOUND TO AN APP — it is created with `create*(app)` and owns per-app state
+//   and lifecycle. Every one of these is subpath-only, with no exceptions:
+//   animation, assets, audio, autosave, camera, capture, debug, input, net,
+//   onscreen-input, particles, performance, physics2d, portals, scenes,
+//   storage, timers, ui.
+//
+//   USEFUL WITHOUT A CANVAS — it is pure, but you would reasonably import it
+//   ALONE, from a server, a test or the `mm` CLI, without pulling in the
+//   engine: procgen, ecs, ldtk, aseprite, platformer, rng, snapshots, sprites,
+//   hot.
+//
+// THIS FILE is what is left: pure namespaces you use *alongside* the canvas
+// and would never import on their own — `Collision`, `Tiles`, `Font`,
+// `Goodies`/`Gizmos` (the pure/stateful pair), `Fsm`, `Transitions`, `Mathf`,
+// `Vec2`. They ride along with `createApp` because that is where they are used.
+//
+// ONE NAME, ONE HOME. A capability appears in exactly one of those places.
+// `Sprites` and `Hot` used to be in two, and `Sprites` was the worse case: the
+// root re-exported `./sprites/core.js` while the subpath exported core + ECS,
+// so `Sprites.Sprite` existed through `minimotor/sprites` and not through
+// `minimotor` — while the doc comment here promised it either way. Both now
+// live at their subpath only.
 
 import { createApp } from "./engine/index.js";
 import * as Collision from "./collision/index.js";
@@ -14,11 +41,6 @@ import * as Fsm from "./fsm/index.js";
  *  (`Mathf.clamp`, `Mathf.remap`), oscillators (`Mathf.pingPong`, `Mathf.wave`),
  *  plus randomness and 0..1 easing curves. */
 import * as Mathf from "./math/mathf.js";
-/** Offscreen pre-rendering and sprite-sheet baking. `Sprites.getSprite`/
- *  `Sprites.getLayer` cache expensive draws, `Sprites.tint` recolors, and
- *  `Sprites.atlas`/`Sprites.packAtlas` build sheets for `Anim.fromGrid`/`Tiles.grid`
- *  — plus the standard `Sprites.Sprite` ECS component. */
-import * as Sprites from "./sprites/core.js";
 /** Pure, dependency-free game recipes (call one, get a value) that recur across
  *  genres: `Goodies.leadTarget`/`Goodies.nearest` (steering), `Goodies.floodFill`/
  *  `Goodies.lineOfSight` (grid), `Goodies.weightedPick`/`Goodies.rollDice`
@@ -65,15 +87,12 @@ import * as Tiles from "./tiles/index.js";
  *    Draw.text("READY", { x: 20, y: 20, font, color: "#ffd43b", scale: 3 });
  */
 import * as Font from "./font/index.js";
-/** Optional bundler HMR state bridge. `Hot.create(import.meta.hot)` lets any
- * sample or game preserve serializable state across Vite module replacement. */
-import * as Hot from "./hot/index.js";
 /** Cover → swap → reveal scene transitions passed to `Scenes.go`. `Transitions.fade`
  *  and `Transitions.wipe` are ready-made; a `Transition` is plain data, and the
  *  pure fixed-step runner `Transitions.run` fires the swap at full coverage. */
 import * as Transitions from "./transitions/index.js";
 
-export { createApp, Sprites, Goodies, Gizmos, Tiles, Font, Transitions, Mathf, Fsm, Hot };
+export { createApp, Goodies, Gizmos, Tiles, Font, Transitions, Mathf, Fsm };
 export type {
   BitmapFont,
   BitmapTextStyle,
@@ -83,7 +102,6 @@ export type {
   FontOptions,
   Glyph,
 } from "./font/index.js";
-export type { HotModuleContext, HotReload } from "./hot/index.js";
 /** One isolated app, as returned by `createApp`. This is the type every
  *  lifecycle-owned factory takes: `createAudio(app)`, `createUI(app)`,
  *  `createNet(app)` — so it's also the type to annotate your own helpers with.
@@ -261,7 +279,6 @@ export type {
   ToneOptions,
   ToneSweep,
 } from "./audio/index.js";
-export type { SpriteCanvas, AtlasOptions, SpriteData } from "./sprites/index.js";
 export type {
   Weighted,
   GridPoint,

@@ -11,11 +11,13 @@
 // current value in and returns the (possibly changed) value, which we store
 // straight back — the immediate-mode round-trip.
 import { createUI } from "minimotor/ui";
-import { createApp, Hot } from "minimotor";
+import { createApp } from "minimotor";
+import * as Hot from "minimotor/hot";
 import { createAssets } from "minimotor/assets";
 import { createBrowserStorage } from "minimotor/storage";
 import type { SelectGroup } from "minimotor/ui";
-import type { HotModuleContext, TableSort, Theme } from "minimotor";
+import type { HotModuleContext } from "minimotor/hot";
+import type { TableSort, Theme } from "minimotor";
 import { installLayoutProbe } from "../shared/layout-probe.ts";
 import { createGalleryThemeCatalog } from "./gallery-themes.ts";
 import {

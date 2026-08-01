@@ -363,15 +363,15 @@
       .ns-data {
         --h: 90;
       }
-      /* `base` is the debug/perf overlay. It has no hue because it is on nearly
-         every sample and a colour would just add noise — but it still has to be
-         READABLE, so it runs brighter than the page's ambient `--dim`. The dash
-         does the "ambient, not a feature this sample is about" work instead. */
+      /* `base` is the debug/perf overlay. Same chip as every other tag — solid
+         border, readable text — just built from neutral greys instead of a hue,
+         because it appears on nearly every sample and a colour there would only
+         compete with the tags that mean something. */
       .ns-base,
       .tag.ns-none {
-        background: rgb(255 255 255 / 0.06);
-        color: #dde4ec;
-        border: 1px dashed #8b96a5;
+        background: rgb(255 255 255 / 0.1);
+        color: #eef2f7;
+        border: 1px solid #a3aebd;
       }
 
       /* ---------- namespace filter ---------- */
@@ -456,10 +456,9 @@
         color: hsl(var(--h) 100% 86%);
       }
       .filter-tags .tag.ns-base:hover {
-        background: var(--panel-2);
-        border-color: var(--dim);
-        border-style: solid;
-        color: var(--text);
+        background: rgb(255 255 255 / 0.2);
+        border-color: #cfd7e2;
+        color: #ffffff;
       }
       .filter-tags .tag[aria-pressed="true"]:hover {
         background: hsl(var(--h) 100% 70%);

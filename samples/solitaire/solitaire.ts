@@ -21,10 +21,10 @@ import {
   Gizmos,
   Goodies,
   Mathf,
-  Sprites,
   createApp,
   Transitions,
 } from "minimotor";
+import * as Sprites from "minimotor/sprites";
 import { installLayoutProbe } from "../shared/layout-probe.ts";
 
 // ---- Types ----
