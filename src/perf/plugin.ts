@@ -12,6 +12,9 @@ import { createPerfTracker } from "./tracker.js";
  *  Subscribed with `app.onFrame` by the feature that owns it. */
 export interface PerfOverlay {
   frame(app: App): void;
+  /** Swap the `NetMeter` the throughput readings come from, or pass null to
+   *  drop back to frame stats only. See `PerfOptions.net`. */
+  setNet(meter: NetMeter | null): void;
 }
 
 export interface PerfOptions {
@@ -20,7 +23,13 @@ export interface PerfOptions {
   /** Metric arrangement. `"horizontal"` is a compact horizontal bar.
    * Default `"vertical"`. */
   layout?: "vertical" | "horizontal";
-  /** A `NetMeter` to display network throughput alongside the frame stats. */
+  /** A `NetMeter` to display network throughput alongside the frame stats.
+   *
+   *  A meter that does not exist yet is the normal case, not an edge one — a
+   *  game's room is opened long after its overlay is installed, and every
+   *  rejoin makes a new meter. Omit this and call `setNet` when there is one;
+   *  the sparklines are allocated either way, so switching does not lose the
+   *  history or change the overlay's size. */
   net?: NetMeter;
   /** An ECS world (anything with a numeric `size`) whose live entity count
    *  should be shown. */
@@ -47,21 +56,28 @@ function usedHeapMB(): number | undefined {
 export function plugin(opts: PerfOptions = {}): PerfOverlay {
   const tick = createPerfTracker();
   const wantGraphs = opts.graphs ?? true;
+  let net: NetMeter | null = opts.net ?? null;
   const frameSpark = wantGraphs ? createSparkline() : undefined;
-  const upSpark = wantGraphs && opts.net ? createSparkline() : undefined;
-  const downSpark = wantGraphs && opts.net ? createSparkline() : undefined;
+  // Allocated up front rather than when a meter arrives: `setNet` must not
+  // change the overlay's layout mid-session, and a sparkline nobody pushes to
+  // costs one empty array.
+  const upSpark = wantGraphs ? createSparkline() : undefined;
+  const downSpark = wantGraphs ? createSparkline() : undefined;
   const graphs = wantGraphs ? { frame: frameSpark, up: upSpark, down: downSpark } : undefined;
   let dimmed = false;
   let box: { x: number; y: number; w: number; h: number } | null = null;
   return {
+    setNet(meter) {
+      net = meter;
+    },
     frame(app) {
       const now = performance.now();
       const stats = tick(now);
-      const net = opts.net ? opts.net.sample(now) : undefined;
+      const rates = net ? net.sample(now) : undefined;
       frameSpark?.push(stats.frameMs);
-      if (net) {
-        upSpark?.push(net.upBps);
-        downSpark?.push(net.downBps);
+      if (rates) {
+        upSpark?.push(rates.upBps);
+        downSpark?.push(rates.downBps);
       }
       // Click the HUD (its rect from the previous frame) to toggle it dim.
       const p = app.Pointer;
@@ -78,7 +94,7 @@ export function plugin(opts: PerfOptions = {}): PerfOverlay {
         viewW: app.canvas.width / vp.dpr, // window CSS width
         anchor: opts.anchor ?? "top-right",
         layout: opts.layout,
-        net,
+        net: rates,
         timings: app.timings,
         entities: opts.world?.size,
         heapMB: usedHeapMB(),

@@ -7,6 +7,7 @@ import type { CameraLens } from "@src/camera/index.js";
 import type { App, Rect } from "@src/engine/index.js";
 import { createInspector, type Inspection } from "./inspector.js";
 import { plugin as perfPlugin, type PerfOptions } from "@src/perf/index.js";
+import type { NetMeter } from "@src/perf/net-meter.js";
 
 export type DebugMode = "off" | "performance" | "collision";
 
@@ -30,6 +31,7 @@ export interface DebugOptions {
 export interface DebugPlugin {
   readonly mode: DebugMode;
   cycle(): DebugMode;
+  setNetMeter(meter: NetMeter | null): void;
   /** Run once per rendered frame, after `draw`: poll the shortcut and paint the
    *  overlay. `createDebug` subscribes this with `app.onFrame`. */
   frame(app: App): void;
@@ -38,6 +40,11 @@ export interface DebugPlugin {
 export interface DebugApi {
   readonly mode: DebugMode;
   cycle(): DebugMode;
+  /** Point the perf HUD's throughput readings at a `NetMeter`, or null for
+   *  none. A game's room is opened long after its debug overlay is installed,
+   *  and every rejoin makes a new meter — so this is a setter rather than a
+   *  constructor argument. No-op when the HUD is disabled (`perf: false`). */
+  setNetMeter(meter: NetMeter | null): void;
   watch(name: string, read: () => unknown): () => void;
   snapshot(): Record<string, unknown>;
   readonly entries: readonly Inspection[];
@@ -114,6 +121,9 @@ function debugPlugin(opts: DebugOptions): DebugPlugin {
       return modes[index];
     },
     cycle,
+    setNetMeter(meter) {
+      perf?.setNet(meter);
+    },
     frame(app) {
       // The shortcut is edge-detected here rather than in a fixed step so it
       // still works while the loop is paused — `onFrame` runs on paused frames.
@@ -146,6 +156,7 @@ export function createDebug(app: App, opts: DebugOptions = {}): DebugApi {
       return plugin.mode;
     },
     cycle: () => plugin.cycle(),
+    setNetMeter: (meter) => plugin.setNetMeter(meter),
     watch: inspector.watch,
     snapshot: inspector.snapshot,
     get entries() {

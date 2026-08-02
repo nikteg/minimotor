@@ -94,8 +94,16 @@ function drawHorizontalPerfHud(
   ctx.font = "10px monospace";
   ctx.textBaseline = "top";
   ctx.textAlign = "left";
+  // `width` is the column this segment would LIKE to occupy, which keeps the
+  // readings vertically aligned as the numbers change width. It is a minimum,
+  // not a clip: a segment whose text outgrows it (a three-digit frame time, a
+  // step multiplier, a wider font) pushes the next one along instead of being
+  // written over by it. Font must already be set — this measures.
+  const GAP = 10;
+  const advance = (segment: Segment): number =>
+    Math.max(segment.width, Math.ceil(ctx.measureText(segment.text).width) + GAP);
   const textW = Math.max(
-    ...rows.map((segments) => segments.reduce((sum, segment) => sum + segment.width, 0)),
+    ...rows.map((segments) => segments.reduce((sum, segment) => sum + advance(segment), 0)),
   );
   const boxW = Math.ceil(Math.max(textW + 8, sparks.length ? 300 : 0));
   const textH = 10 + rows.length * 14;
@@ -113,7 +121,7 @@ function drawHorizontalPerfHud(
     for (const segment of segments) {
       ctx.fillStyle = segment.color;
       ctx.fillText(segment.text, x, bgY + 7 + row * 14);
-      x += segment.width;
+      x += advance(segment);
     }
   });
 

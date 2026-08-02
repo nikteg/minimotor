@@ -4,6 +4,7 @@
 // displays.
 
 import type { App } from "@src/engine/app.js";
+import type { NetMeter } from "./net-meter.js";
 import { plugin, type PerfOptions } from "./plugin.js";
 
 export { createNetMeter } from "./net-meter.js";
@@ -19,6 +20,11 @@ export interface PerformanceMonitoringApi {
   show(): void;
   hide(): void;
   toggle(): boolean;
+  /** Point the throughput readings at a `NetMeter`, or null for none. The
+   *  monitor is installed once at startup but a room is opened later and
+   *  replaced on every rejoin, so the meter is a thing you SET, not a thing you
+   *  construct the monitor around. */
+  setNetMeter(meter: NetMeter | null): void;
 }
 
 export function createPerformanceMonitoring(
@@ -45,6 +51,9 @@ export function createPerformanceMonitoring(
     toggle() {
       visible = !visible;
       return visible;
+    },
+    setNetMeter(meter) {
+      monitor.setNet(meter);
     },
   };
 }
