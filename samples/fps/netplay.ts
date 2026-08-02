@@ -135,6 +135,10 @@ export type FpsProtocol = {
     died: { by: string };
     /** A victim announcing it is back. */
     spawned: Record<string, never>;
+    /** Someone pulled a trigger. Carries nothing: the listener already has the
+     *  shooter's interpolated position, and a shot you hear should come from
+     *  where you last SAW them rather than from a truer place you cannot see. */
+    shot: Record<string, never>;
   };
   requests: {
     /** Flip one terminal switch. The host owns the record; this asks it to. */
@@ -257,6 +261,8 @@ export interface MatchOptions {
   onHit(from: string, dmg: number): void;
   /** `who` died; `by` gets the kill. Both ends learn it from the same event. */
   onDeath(who: string, by: string): void;
+  /** Someone else fired, at `distance` metres from us. */
+  onRemoteShot(distance: number): void;
 }
 
 export interface Match {
@@ -322,6 +328,12 @@ export async function joinMatch(Net: NetApi, opts: MatchOptions): Promise<Match>
   // a smooth 20-metre glide across the arena. Dropping that peer's snapshots
   // makes their next one SNAP, which is what a respawn should look like.
   net.events.on("spawned", (_data, from) => others.snap(from));
+  net.events.on("shot", (_data, from) => {
+    const shooter = [...others].find((o) => o.id === from);
+    if (!shooter) return;
+    const me = opts.local();
+    opts.onRemoteShot(Math.hypot(shooter.x - me.x, shooter.y - me.y, shooter.z - me.z));
+  });
 
   const bodyBox: Box = { x: 0, y: 0, z: 0, ...PLAYER_HALF };
 
@@ -348,6 +360,9 @@ export async function joinMatch(Net: NetApi, opts: MatchOptions): Promise<Match>
       net.events.request("resetTargets", {});
     },
     shoot(origin, dir) {
+      // Announced whether or not it connects — the room hears the gun, not the
+      // outcome.
+      net.events.emit("shot", {});
       // Clip to cover first: a shot that would hit a wall before a player is a
       // miss, and testing players first is how you shoot through crates.
       const maxRange = Math.min(wallDistance(origin, dir), MAX_SHOT_RANGE);

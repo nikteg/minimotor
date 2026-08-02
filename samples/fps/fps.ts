@@ -36,6 +36,7 @@ import { createUI, type Flow } from "minimotor/ui";
 import { Buttons, createInput } from "minimotor/input";
 import { createOnscreenInput } from "minimotor/onscreen-input";
 import { createNet } from "minimotor/net";
+import { createAudio } from "minimotor/audio";
 import { Quat, Vec3, createApp } from "minimotor";
 import {
   addNode,
@@ -70,6 +71,7 @@ import {
   stepTargets,
   targets,
   wallDistance,
+  type Box,
 } from "./arena.js";
 import {
   DEFAULT_DELAY_MS,
@@ -83,6 +85,7 @@ import {
   type PlayerState,
   type RemotePlayer,
 } from "./netplay.js";
+import { atDistance, createSounds } from "./sound.js";
 
 // No `background`: the engine then leaves the play area unpainted, so the 2D
 // canvas stays transparent and the scene layer shows through it. Passing one
@@ -101,6 +104,8 @@ const Input = createInput(game);
 const UI = createUI(game, Input);
 const OnscreenInput = createOnscreenInput(game, Input, UI);
 const Net = createNet(game);
+const Audio = createAudio(game);
+const sfx = createSounds(Audio);
 
 /** The well-known room every client meets in. Not a server feature — see
  *  `netplay.ts` §1. */
@@ -142,14 +147,17 @@ const pad = OnscreenInput.gamepad({
 // device's.
 
 const TERMINAL_POS = { x: 0, y: 1.9, z: -13.4 };
+const TERMINAL_PX_W = 260;
+const TERMINAL_PX_H = 210;
+const TERMINAL_WORLD_W = 2.2;
 const terminal = createUiSurface({
   // Required here and not in `samples/render3d`: that one draws its surface
   // from inside a `UI.viewport3d` callback, which has already selected the app.
   // This one draws straight from `Loop.draw`, so the surface has to be told.
   app: game,
-  width: 260,
-  height: 210,
-  worldWidth: 2.2,
+  width: TERMINAL_PX_W,
+  height: TERMINAL_PX_H,
+  worldWidth: TERMINAL_WORLD_W,
   background: "rgba(10,14,24,0.92)",
 });
 const terminalNode = addNode(
@@ -261,6 +269,125 @@ function seatRgb(index: number): [number, number, number, number] {
   return [r + m, g + m, b + m, 1];
 }
 
+// ---- the viewmodel ---------------------------------------------------------
+// A real gun in the scene rather than a rectangle on the HUD, because the thing
+// that has to be in the right place is the MUZZLE — and the only way for a
+// screen-space flash to sit on the end of a barrel is to guess at where the
+// barrel projects to. Modelling it means the flash is simply a child of the
+// barrel: correct at every FOV, every aspect ratio and every recoil offset,
+// with no projection anywhere.
+//
+// Everything hangs off `gunPivot`, which is placed at the EYE each frame with
+// the camera's own orientation, so the children are authored in a comfortable
+// local frame: +x right, +y up, −z forward, the same convention as the camera.
+
+const GUN_METAL: readonly [number, number, number, number] = [0.17, 0.18, 0.22, 1];
+const GUN_DARK: readonly [number, number, number, number] = [0.1, 0.11, 0.14, 1];
+
+const gunPivot = addNode(scene, node({ name: "viewmodel" }));
+/** The parts that recoil together — everything except the pivot, so the kick is
+ *  one node's position rather than six. */
+const gunBody = addNode(scene, node({ parent: gunPivot }));
+
+const gunPart = (
+  mesh: ReturnType<typeof box>,
+  x: number,
+  y: number,
+  z: number,
+  color: readonly [number, number, number, number],
+) =>
+  addNode(
+    scene,
+    node({
+      parent: gunBody,
+      mesh,
+      position: { x, y, z },
+      material: { color, shininess: 40, specular: 0.2 },
+    }),
+  );
+
+// HOW FAR OUT the gun sits is the whole tuning problem, and it is a
+// consequence of the FOV rather than of the model. A real shooter renders its
+// viewmodel in a SECOND pass with its own narrow FOV, precisely so the two can
+// be tuned apart; in one pass, at the 91° this game plays at, an object held
+// 0.35 m from the eye subtends about a third of the screen — the first version
+// of this gun was a grey wedge across the bottom-right quadrant.
+//
+// So it is held out at arm's length instead: ~0.7 m to the receiver, ~1.2 m to
+// the muzzle. That lands it in the bottom-right corner at a believable size and
+// costs one thing, which is worth knowing about — a barrel that long pokes
+// through a wall the player is pressed against, because the collision radius is
+// only 0.35 m. A second pass is the cure if that ever matters.
+gunPart(box(0.075, 0.09, 0.32), 0.26, -0.235, -0.78, GUN_METAL);
+gunPart(box(0.042, 0.042, 0.32), 0.26, -0.2, -1.1, GUN_DARK);
+gunPart(box(0.065, 0.14, 0.07), 0.26, -0.33, -0.66, GUN_DARK);
+gunPart(box(0.048, 0.11, 0.04), 0.26, -0.33, -0.78, GUN_METAL);
+gunPart(box(0.015, 0.038, 0.015), 0.26, -0.155, -1.2, GUN_METAL);
+
+/** Where the barrel ends, in the gun's local frame. The flash hangs off this,
+ *  so there is one number to change. */
+const MUZZLE_LOCAL = { x: 0.26, y: -0.2, z: -1.32 };
+
+// The flash: unlit so it reads as light rather than as a lit yellow box, and
+// transparent so it fades out instead of popping. Two crossed cards would be
+// the next refinement; a box is enough at the size it is on screen.
+// The alpha is mutated in place rather than by assigning a fresh material each
+// frame: materials are the renderer's cache key, and handing it a new object 60
+// times a second is how you make a fade allocate.
+const flashColor: [number, number, number, number] = [1, 0.85, 0.45, 1];
+const muzzleNode = addNode(
+  scene,
+  node({
+    parent: gunBody,
+    // A sphere, not a box: unlit means every face is the same flat colour, so
+    // a cube at this size reads as a clipped yellow rectangle rather than as
+    // light. Stretched along the barrel below, it becomes a teardrop.
+    mesh: sphere(0.05, 10, 7),
+    position: MUZZLE_LOCAL,
+    material: { color: flashColor, unlit: true, transparent: true },
+    hidden: true,
+  }),
+);
+
+const qYaw = Quat.create();
+const qPitch = Quat.create();
+
+/** Put the viewmodel where the camera is, and apply the recoil. Called from
+ *  DRAW, so the kick is smooth at the display's rate rather than the step's. */
+function placeViewmodel(): void {
+  const pivot = scene.nodes[gunPivot];
+  // Hidden while there is no body to hold it: a spectator flying through walls
+  // with a rifle floating in front of them is not the look.
+  const armed = phase === "match" && deployed && respawnIn === 0;
+  pivot.hidden = !armed;
+  if (!armed) return;
+  pivot.position.x = player.x;
+  pivot.position.y = player.y;
+  pivot.position.z = player.z;
+  // Yaw about +Y then pitch about −X: that composition maps local −Z onto
+  // `cameraForward` exactly, which is what makes the barrel point where the
+  // crosshair does.
+  Quat.fromAxisAngle(qYaw, 0, 1, 0, camera.yaw);
+  Quat.fromAxisAngle(qPitch, 1, 0, 0, -camera.pitch);
+  Quat.mul(qYaw, qPitch, pivot.rotation);
+
+  // Kick straight back and a little down, so the muzzle rises on screen.
+  const kick = recoil * recoil;
+  const bodyNode = scene.nodes[gunBody];
+  bodyNode.position.z = kick * 0.05;
+  bodyNode.position.y = -kick * 0.012;
+
+  const flash = scene.nodes[muzzleNode];
+  flash.hidden = muzzle <= 0;
+  if (!flash.hidden) {
+    // Grows along the barrel as it fades, which reads as a burst rather than as
+    // a box being switched off.
+    const s = 0.6 + muzzle * 0.7;
+    Vec3.set(flash.scale, s, s, 0.7 + muzzle * 1.4);
+    flashColor[3] = Math.min(1, muzzle * 1.2);
+  }
+}
+
 // ---- player ----------------------------------------------------------------
 
 // `fov` is VERTICAL, and on a 16:9 screen 60° vertical is about 91° across —
@@ -276,6 +403,12 @@ const velocity: Vec3 = { x: 0, y: 0, z: 0 };
 
 const MAG = 12;
 const RELOAD_TIME = 1.1;
+/** Seconds between shots while the trigger is held — ~430 rpm. */
+const FIRE_INTERVAL = 0.14;
+let fireCooldown = 0;
+let dryCooldown = 0;
+/** Distance walked since the last footfall, in metres. */
+let stepDistance = 0;
 let ammo = MAG;
 let reloading = 0;
 let score = 0;
@@ -333,6 +466,9 @@ const settings = {
    *  the other canvas and stays sharp whatever this says. */
   renderScale: 1,
   invertY: false,
+  /** Master output, 0..1. Applied to `Audio.master`, which reaches every bus
+   *  this app owns and nothing another app on the page owns. */
+  volume: 0.8,
   showStats: false,
   showNet: false,
   /** How far in the past remote players are drawn. Read when a match is joined;
@@ -394,18 +530,30 @@ async function enterMatch(code: string, host: boolean): Promise<void> {
           return;
         me.hp = Math.max(0, me.hp - dmg);
         damageFlash = 1;
+        // Lower as it gets worse — the pitch IS the health bar, for a player
+        // who is looking at the crosshair rather than the corner.
+        sfx.hurt.play({ pitch: 0.85 + (me.hp / MAX_HEALTH) * 0.3 });
         if (me.hp === 0) die(from);
       },
       onDeath: (who, by) => {
         if (by === me_id() && who !== me_id()) {
           me.kills++;
           score += 250;
+          // A frag confirm is the hit confirm, a fifth lower and twice as long.
+          sfx.hitTarget.play({ pitch: 0.8, stretch: 1.4 });
           say("FRAG  +250");
         }
+      },
+      onRemoteShot: (distance) => {
+        const volume = atDistance(distance, 0.9);
+        // Out of earshot is skipped, not played at zero — a busy room would
+        // otherwise book a voice per shot per player for nothing.
+        if (volume > 0) sfx.shotFar.play({ volume, pitch: [0.9, 1.1] });
       },
     });
     advertising = host;
     seenResetCount = match.world.resetCount;
+    sfx.join.play();
     // Spectate first, always: dropping straight into a body means spawning
     // before the level has even been seen. The prompt to deploy is on the HUD.
     deployed = false;
@@ -430,6 +578,7 @@ function me_id(): string {
 }
 
 function leaveMatch(): void {
+  sfx.leave.play();
   match?.close();
   match = null;
   advertising = false;
@@ -458,7 +607,9 @@ function deploy(): void {
   ammo = MAG;
   reloading = 0;
   respawnIn = 0;
+  stepDistance = 0;
   match?.reportSpawn();
+  sfx.spawn.play();
   say("DEPLOYED");
 }
 
@@ -468,6 +619,7 @@ function die(by: string): void {
   killedBy = nameOf(by);
   respawnIn = 2.5;
   match?.reportDeath(by);
+  sfx.death.play();
   say(`KILLED BY ${killedBy.toUpperCase()}`);
 }
 
@@ -494,16 +646,52 @@ function wantsLock(): boolean {
   return phase === "match" && !paused;
 }
 
+/** Set while a lock request is outstanding or being retried; counts down in
+ *  `update`. See `grabPointer` for why a retry exists at all. */
+let relockFor = 0;
+/** Whether the lock has ever been granted, which is what separates "this
+ *  browser will not do it" from "not yet". */
+let lockedEver = false;
+
 function grabPointer(): void {
   if (locked || !wantsLock()) return;
   // Chrome returns a promise that REJECTS when the lock is refused — inside a
-  // cross-origin iframe, or in headless. Unhandled, that is a console error on
-  // every click; Safari returns undefined, hence the guard.
+  // cross-origin iframe, in headless, and (the case that matters here) for
+  // about a second after the USER pressed Esc to escape a lock. That cooldown
+  // is deliberate anti-trap behaviour and cannot be waived, so leaving the menu
+  // with Esc has to ask again shortly rather than give up: without the retry,
+  // Esc closes the menu and quietly leaves the mouse free.
+  //
+  // Unhandled, the rejection is also a console error on every click; Safari
+  // returns undefined, hence the guard.
   const p: unknown = game.canvas.requestPointerLock();
-  if (p instanceof Promise) p.catch(() => (lockRefused = true));
+  if (p instanceof Promise) {
+    p.then(
+      () => {
+        lockedEver = true;
+        relockFor = 0;
+      },
+      () => {
+        // Only cry wolf when it has never worked. A cooldown refusal on a page
+        // that was locked a moment ago is not a browser that refuses locks.
+        if (!lockedEver) lockRefused = true;
+      },
+    );
+  }
+}
+
+/** Ask for the lock, and keep asking for a couple of seconds. */
+function grabPointerSoon(): void {
+  relockFor = 2;
+  grabPointer();
 }
 
 game.canvas.addEventListener("click", () => {
+  // A browser will not start an AudioContext without a gesture, and this is the
+  // first one the page ever gets. Doing it here rather than at the first
+  // `play()` is the difference between "the gun is silent for one shot" and
+  // "the gun has always had a sound".
+  Audio.ensureAudio();
   // While the menu is open the pointer belongs to the UI: re-locking on the
   // click that pressed "Invert Y" would shut the menu the player is using.
   grabPointer();
@@ -539,14 +727,29 @@ function say(text: string): void {
 function reload(): void {
   if (reloading > 0 || ammo === MAG) return;
   reloading = RELOAD_TIME;
+  sfx.reloadOut.play({ pitch: [0.95, 1.05] });
 }
 
 function fire(): void {
-  if (reloading > 0 || ammo <= 0 || !deployed || respawnIn > 0) return;
+  if (!deployed || respawnIn > 0) return;
+  if (reloading > 0 || ammo <= 0) {
+    // The trigger still moves on an empty chamber, and hearing that is how a
+    // player learns they are out without reading the HUD. On its own timer,
+    // though: the trigger repeats seven times a second and a dry click at that
+    // rate is a machine gun made of disappointment.
+    if (dryCooldown <= 0) {
+      sfx.dry.play({ pitch: [0.94, 1.06] });
+      dryCooldown = 0.45;
+    }
+    return;
+  }
   ammo--;
   shots++;
   recoil = 1;
   muzzle = 1;
+  // Jittered on both axes: eleven identical shots in a magazine is the tell
+  // that gives synthesized audio away.
+  sfx.shot.play({ pitch: [0.93, 1.07], stretch: [0.92, 1.1] });
   cameraForward(camera, forward);
 
   // Players first, through the shared layer — it owns the lag compensation, so
@@ -555,6 +758,7 @@ function fire(): void {
   if (playerId) {
     hits++;
     hitMarker = 1;
+    sfx.hitPlayer.play();
     say(`HIT ${nameOf(playerId).toUpperCase()}`);
     return;
   }
@@ -578,6 +782,7 @@ function fire(): void {
     hits++;
     score += 100;
     hitMarker = 1;
+    sfx.hitTarget.play();
     say("TARGET DOWN  +100");
   }
 }
@@ -619,9 +824,26 @@ void useBackend("auto");
 
 // ---- frame -----------------------------------------------------------------
 
-/** In reach of the terminal — recomputed each step, read by both the draw and
- *  the fire gate. */
+/** In reach of the terminal — near enough to operate it. Drives the prompt and
+ *  whether the surface gets a pointer at all. */
 let terminalNear = false;
+/** In reach AND the crosshair is on the panel. This, not `terminalNear`, is
+ *  what swallows a shot: being close to the terminal should not disarm you, it
+ *  should only stop you shooting the terminal ITSELF. */
+let aimingAtTerminal = false;
+/** The panel as a collision box. The quad is axis-aligned and faces +Z, so a
+ *  thin AABB is exact rather than an approximation; the height comes from the
+ *  surface's own pixel aspect, so resizing the terminal cannot desync it. */
+const TERMINAL_BOX: Box = {
+  x: TERMINAL_POS.x,
+  y: TERMINAL_POS.y,
+  z: TERMINAL_POS.z,
+  hx: TERMINAL_WORLD_W / 2,
+  hy: (TERMINAL_WORLD_W * (TERMINAL_PX_H / TERMINAL_PX_W)) / 2,
+  hz: 0.08,
+};
+/** Scratch for the aim ray — `forward` is flattened for walking by then. */
+const aimDir: Vec3 = { x: 0, y: 0, z: 0 };
 /** Lobby camera angle: the arena is the lobby's backdrop, seen from above. */
 let lobbyOrbit = 0;
 
@@ -636,7 +858,16 @@ Loop.run({
     if (layer && layer.resolutionScale !== settings.renderScale) {
       layer.setResolutionScale(settings.renderScale);
     }
+    if (Audio.master.volume !== settings.volume) Audio.master.volume = settings.volume;
     stepTargets(dt);
+    dryCooldown = Math.max(0, dryCooldown - dt);
+    // The browser refuses a re-lock for about a second after the USER escaped
+    // one, so leaving the menu with Esc asks again until it takes.
+    if (relockFor > 0) {
+      relockFor -= dt;
+      if (locked || !wantsLock()) relockFor = 0;
+      else grabPointer();
+    }
     recoil = Math.max(0, recoil - dt * 5);
     muzzle = Math.max(0, muzzle - dt * 12);
     hitMarker = Math.max(0, hitMarker - dt * 2.5);
@@ -648,10 +879,15 @@ Loop.run({
       return;
     }
 
-    // Esc while unlocked toggles the menu directly. While LOCKED the browser
-    // eats it to release the pointer, and `pointerlockchange` opens the menu
-    // instead — two paths because there are genuinely two situations.
-    if (Keys.pressed("Escape") && !locked) paused = !paused;
+    // Esc while unlocked closes the menu AND takes the mouse back, which is
+    // the whole point of a pause menu you can leave the way you entered it.
+    // While LOCKED the browser eats the keydown to release the pointer, and
+    // `pointerlockchange` opens the menu instead — two paths because there are
+    // genuinely two situations.
+    if (Keys.pressed("Escape") && !locked) {
+      if (paused) resume();
+      else paused = true;
+    }
 
     if (advertising && lobby && match) {
       lobby.advertise({
@@ -691,28 +927,61 @@ Loop.run({
         if (reloading <= 0) {
           reloading = 0;
           ammo = MAG;
+          // The second half of the reload, landing when the magazine is in
+          // rather than when the animation started.
+          sfx.reloadIn.play({ pitch: [0.97, 1.03] });
           say("RELOADED");
         }
       }
       terminalNear = Math.hypot(player.x - TERMINAL_POS.x, player.z - TERMINAL_POS.z) < 4.5;
+      // A fresh ray: `forward` has been flattened for walking by now, and an
+      // aim test on a horizontal vector would claim you are pointing at the
+      // panel whenever you are level with it, whatever you are looking at.
+      cameraForward(camera, aimDir);
+      aimingAtTerminal = terminalNear && rayBox(player, aimDir, TERMINAL_BOX) < Infinity;
 
-      // Fire on press. When the terminal is in reach the click belongs to IT
-      // instead — a wall panel you accidentally shoot at while trying to press
-      // is worse than one you cannot shoot at all.
+      // HELD, not pressed, and rate-limited. Three reasons, and the first one
+      // is a trap worth naming:
+      //
+      //   `Pointer.framePressed` is the DRAW-phase counterpart of
+      //   `Pointer.pressed` — it is cleared at frame end whether or not an
+      //   update step ran that frame. Reading it from `update`, as this did,
+      //   silently drops clicks: with a 60 Hz step on a 144 Hz display most
+      //   frames run zero steps, so most presses are cleared before any step
+      //   observes them. `pressed` is the one that survives a stepless frame,
+      //   and a LEVEL signal survives regardless.
+      //
+      //   `pad.down` was already level, so the touch FIRE button emptied the
+      //   magazine in a fifth of a second.
+      //
+      //   And an arena shooter wants a fire rate anyway.
+      //
+      // A click belongs to the terminal only when the crosshair is actually ON
+      // it. Gating on PROXIMITY instead — which this did — disarms the player
+      // for a 4.5 m circle around the panel, so a fight that drifts into that
+      // corner is one you cannot shoot back in.
+      //
+      // Only the CLICK is gated, because only the click is overloaded: it both
+      // fires and presses the panel's buttons. F and the pad's FIRE button mean
+      // one thing each, so they shoot whatever you are pointing at, terminal
+      // included.
       // F, not Space: clicking the terminal gives one of its widgets keyboard
       // focus, and Space/Enter is how the UI activates a focused widget. Bind
       // fire to Space and every shot also presses whatever button the player
       // last touched.
-      if (
-        (Pointer.framePressed && locked && !terminalNear) ||
-        Keys.pressed("KeyF") ||
-        pad.down(Buttons.A)
-      ) {
+      fireCooldown -= dt;
+      const holdingFire =
+        ((Pointer.down || Pointer.pressed) && locked && !aimingAtTerminal) ||
+        Keys.down("KeyF") ||
+        pad.down(Buttons.A);
+      if (holdingFire && fireCooldown <= 0) {
         fire();
+        fireCooldown = FIRE_INTERVAL;
       }
       if (ammo === 0 && reloading === 0) reload();
     } else {
       terminalNear = false;
+      aimingAtTerminal = false;
       // Deploy from spectate. Enter and the fire button both do it, because
       // "press to join" should work with whatever the player already has a
       // finger on.
@@ -743,6 +1012,7 @@ Loop.run({
     }
 
     syncAvatars();
+    placeViewmodel();
 
     // The terminal's texture is drawn BEFORE the scene, so what the scene
     // samples is this frame's UI rather than last frame's.
@@ -871,6 +1141,15 @@ function moveStep(dt: number): void {
     resolve(player, PLAYER_RADIUS);
     player.y = EYE_HEIGHT;
     velocity.y = 0;
+    // Footfalls are spaced by DISTANCE, not by time, so a sprint and a walk
+    // have the same stride and the cadence follows the speed for free — which
+    // is also why a player pushing into a wall goes quiet: `resolve` has
+    // already cancelled the movement, so nothing accumulates.
+    stepDistance += Math.hypot(velocity.x, velocity.z) * dt;
+    if (stepDistance >= 1.9) {
+      stepDistance = 0;
+      sfx.step.play({ pitch: [0.85, 1.15] });
+    }
   }
   placeEye(camera, player);
 }
@@ -1009,14 +1288,19 @@ function drawTerminal(): void {
             (world?.ambient ?? true)
           ) {
             match?.toggle("ambient");
+            sfx.click.play();
           }
           if (
             UI.toggle({ label: "Fill light", on: world?.fill ?? true, tabIndex: -1 }) !==
             (world?.fill ?? true)
           ) {
             match?.toggle("fill");
+            sfx.click.play();
           }
-          if (UI.button({ label: "Reset targets", w: 232, tabIndex: -1 })) match?.resetTargets();
+          if (UI.button({ label: "Reset targets", w: 232, tabIndex: -1 })) {
+            match?.resetTargets();
+            sfx.click.play();
+          }
         });
       }),
   );
@@ -1157,16 +1441,8 @@ function drawCrosshair(): void {
     const r = 10 + (1 - hitMarker) * 10;
     Draw.rectStroke(cx - r, cy - r, r * 2, r * 2, `rgba(255,91,91,${hitMarker.toFixed(3)})`, 2);
   }
-  if (muzzle > 0) {
-    // A flash low and right, where a weapon would be.
-    Draw.rect(
-      view.w * 0.66,
-      view.h - 34 - muzzle * 8,
-      44 * muzzle,
-      12 * muzzle,
-      `rgba(255,214,138,${(muzzle * 0.8).toFixed(3)})`,
-    );
-  }
+  // No screen-space flash: it is a child of the barrel now, so it is drawn
+  // with the world and lands on the muzzle by construction.
 }
 
 function drawHud(): void {
@@ -1451,6 +1727,16 @@ function drawPauseMenu(): void {
         color: "dim",
       });
 
+      settings.volume = UI.slider({
+        label: "Volume",
+        value: settings.volume,
+        min: 0,
+        max: 1,
+        step: 0.05,
+        w,
+        format: (v) => (v === 0 ? "muted" : `${Math.round(v * 100)}%`),
+      });
+
       UI.row({ gap: 16, fitCross: true, alignCross: "center" }, () => {
         settings.invertY = UI.toggle("Invert Y", settings.invertY);
         settings.showStats = UI.toggle("GPU stats", settings.showStats);
@@ -1507,7 +1793,7 @@ function drawPauseMenu(): void {
 
 function resume(): void {
   paused = false;
-  grabPointer();
+  grabPointerSoon();
 }
 
 /** Clamp to the −1..1 an axis promises, after summing two input sources. */
@@ -1569,6 +1855,12 @@ Object.defineProperty(window, "fps", {
     },
     get score() {
       return score;
+    },
+    get shots() {
+      return shots;
+    },
+    get terminal() {
+      return { near: terminalNear, aiming: aimingAtTerminal };
     },
     // The three things a headless client genuinely cannot do for itself: aiming
     // needs a locked pointer, firing needs a mouse button, and operating the
