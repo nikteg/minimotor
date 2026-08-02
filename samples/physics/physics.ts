@@ -1,4 +1,4 @@
-import { createPerformanceMonitoring } from "minimotor/performance";
+import { createDebug } from "minimotor/debug";
 // Rigid-body physics: the opt-in Physics2D adapter (planck / Box2D) driven by
 // the fixed-step loop — composed with the ECS. Each body lives in a `Phys`
 // component next to a Sprites.Sprite; a sync system copies the transform
@@ -21,7 +21,7 @@ const ecs = createEcs();
 const game = createApp("game", {
   background: "#12141c",
 });
-createPerformanceMonitoring(game, { world: ecs });
+createDebug(game, { initial: "performance", perf: { world: ecs } });
 const vp = game.viewport;
 const { Draw, Keys, Loop, Pointer } = game;
 const Audio = createAudio(game);

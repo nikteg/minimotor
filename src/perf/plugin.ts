@@ -1,5 +1,4 @@
 import type { App } from "@src/engine/index.js";
-import { pointInRect } from "@src/collision/index.js";
 import { drawPerfHud } from "./hud.js";
 import type { NetMeter } from "./net-meter.js";
 import { createSparkline } from "./sparkline.js";
@@ -12,6 +11,30 @@ import { createPerfTracker } from "./tracker.js";
  *  Subscribed with `app.onFrame` by the feature that owns it. */
 export interface PerfOverlay {
   frame(app: App): void;
+  set3dRenderer(renderer: Perf3DSource | null): void;
+}
+
+/** Per-frame aggregate supplied by a 3D renderer. */
+export interface Perf3DFrameStats {
+  readonly viewports: number;
+  readonly drawCalls: number;
+  readonly triangles: number;
+  readonly culled: number;
+  /** CPU time spent encoding/submitting 3D work, in milliseconds. */
+  readonly cpuMs: number;
+  /** GPU execution time when timestamp queries are supported. */
+  readonly gpuMs?: number;
+}
+
+/** 3D counters displayed by the performance monitor. */
+export interface Perf3DStats extends Perf3DFrameStats {
+  readonly backend: string;
+}
+
+/** A renderer-owned source for aggregate 3D counters. */
+export interface Perf3DSource {
+  readonly backend: string;
+  consumeFrameStats(): Perf3DFrameStats;
 }
 
 export interface PerfOptions {
@@ -25,6 +48,9 @@ export interface PerfOptions {
   /** An ECS world (anything with a numeric `size`) whose live entity count
    *  should be shown. */
   world?: { readonly size: number };
+  /** The initial 3D renderer, if one already exists. Use `set3dRenderer` when
+   *  the renderer is created asynchronously or replaced. */
+  render3d?: Perf3DSource;
   /** Draw history sparklines (frame time; up/down traffic with `net`).
    *  Default true. */
   graphs?: boolean;
@@ -40,7 +66,7 @@ function usedHeapMB(): number | undefined {
 
 /** Internal engine adapter used by `createPerformanceMonitoring`. Each call owns
  *  its tracker state. The HUD draws in the top-right corner by default; pass a
- *  `NetMeter` to also show throughput. Click it to toggle its dim state:
+ *  `NetMeter` to also show throughput:
  *
  *    const Performance = createPerformanceMonitoring(app, { net: room.meter });
  *    Performance.hide(); */
@@ -48,24 +74,38 @@ export function plugin(opts: PerfOptions = {}): PerfOverlay {
   const tick = createPerfTracker();
   const wantGraphs = opts.graphs ?? true;
   const frameSpark = wantGraphs ? createSparkline() : undefined;
+  const render3dSpark = wantGraphs ? createSparkline() : undefined;
+  const render3dGpuSpark = wantGraphs ? createSparkline() : undefined;
   const upSpark = wantGraphs && opts.net ? createSparkline() : undefined;
   const downSpark = wantGraphs && opts.net ? createSparkline() : undefined;
-  const graphs = wantGraphs ? { frame: frameSpark, up: upSpark, down: downSpark } : undefined;
-  let dimmed = false;
-  let box: { x: number; y: number; w: number; h: number } | null = null;
+  const graphs = wantGraphs
+    ? {
+        frame: frameSpark,
+        render3d: render3dSpark,
+        render3dGpu: render3dGpuSpark,
+        up: upSpark,
+        down: downSpark,
+      }
+    : undefined;
+  let render3d = opts.render3d ?? null;
   return {
+    set3dRenderer(renderer) {
+      render3d = renderer;
+    },
     frame(app) {
       const now = performance.now();
       const stats = tick(now);
       const net = opts.net ? opts.net.sample(now) : undefined;
+      const render3dStats = render3d
+        ? { ...render3d.consumeFrameStats(), backend: render3d.backend }
+        : undefined;
       frameSpark?.push(stats.frameMs);
       if (net) {
         upSpark?.push(net.upBps);
         downSpark?.push(net.downBps);
       }
-      // Click the HUD (its rect from the previous frame) to toggle it dim.
-      const p = app.Pointer;
-      if (box && p.frameReleased && pointInRect(p.x, p.y, box)) dimmed = !dimmed;
+      if (render3dStats) render3dSpark?.push(render3dStats.cpuMs);
+      if (render3dStats?.gpuMs !== undefined) render3dGpuSpark?.push(render3dStats.gpuMs);
       const vp = app.viewport;
       const ctx = app.ctx;
       ctx.save();
@@ -73,8 +113,7 @@ export function plugin(opts: PerfOptions = {}): PerfOverlay {
       // space — the perf overlay is a debug HUD, so it sits in the true window
       // top-right corner, unscaled and over the letterbox bars.
       ctx.setTransform(vp.dpr, 0, 0, vp.dpr, 0, 0);
-      if (dimmed) ctx.globalAlpha = 0.12;
-      const winBox = drawPerfHud(ctx, stats, {
+      drawPerfHud(ctx, stats, {
         viewW: app.canvas.width / vp.dpr, // window CSS width
         anchor: opts.anchor ?? "top-right",
         layout: opts.layout,
@@ -82,17 +121,10 @@ export function plugin(opts: PerfOptions = {}): PerfOverlay {
         timings: app.timings,
         entities: opts.world?.size,
         heapMB: usedHeapMB(),
+        render3d: render3dStats,
         graphs,
       });
       ctx.restore();
-      // Map the window-space rect back to logical coords, where the pointer
-      // lives, so next frame's click test matches (works over the bars too).
-      box = winBox && {
-        x: (winBox.x - vp.offsetX) / vp.scale,
-        y: (winBox.y - vp.offsetY) / vp.scale,
-        w: winBox.w / vp.scale,
-        h: winBox.h / vp.scale,
-      };
     },
   };
 }

@@ -154,14 +154,25 @@ export function viewport3d(opts: Viewport3DOptions): Viewport3DState {
     // retina screen. The context transform ALREADY carries the app's DPR and
     // letterbox scale as well as any `UI.scaled` block, so it is the whole
     // answer — multiplying by `viewport.dpr` again would double-count it.
-    opts.renderer.resize(rect.w, rect.h, deviceScale(ctx));
+    opts.renderer.resize(rect.w, rect.h, deviceScale(ctx), { retainBackingStore: true });
     updateWorldMatrices(opts.scene);
     opts.renderer.render(opts.scene, opts.camera);
   }
 
-  // `drawImage` of a canvas whose backing store is larger than the destination
-  // rect downsamples it — which is the point.
-  ctx.drawImage(opts.renderer.canvas, rect.x, rect.y, rect.w, rect.h);
+  // A shared renderer may retain a larger backing store after drawing the hero
+  // view. Crop to the region written by this viewport instead of scaling the
+  // whole canvas, which would include stale pixels from the larger target.
+  ctx.drawImage(
+    opts.renderer.canvas,
+    0,
+    0,
+    opts.renderer.renderWidth,
+    opts.renderer.renderHeight,
+    rect.x,
+    rect.y,
+    rect.w,
+    rect.h,
+  );
 
   if (opts.border) {
     ctx.strokeStyle = opts.border;

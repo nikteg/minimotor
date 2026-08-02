@@ -1,5 +1,5 @@
 import { createAnimation } from "minimotor/animation";
-import { createPerformanceMonitoring } from "minimotor/performance";
+import { createDebug } from "minimotor/debug";
 // Sprite-sheet animation on the ECS.
 // Demonstrates: Sprites.atlas (procedural sprite-sheet baking), Anim.fromGrid
 // (frame slicing + clock-derived playback), the ECS Sprite source-rect
@@ -15,7 +15,7 @@ const ecs = createEcs();
 
 const game = createApp("game", { background: "#12141c" });
 const Anim = createAnimation(game);
-createPerformanceMonitoring(game, { world: ecs });
+createDebug(game, { initial: "performance", perf: { world: ecs } });
 const view = game.viewport;
 const { Draw, Loop, Pointer } = game;
 const UI = createUI(game);

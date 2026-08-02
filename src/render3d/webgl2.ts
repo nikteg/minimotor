@@ -34,7 +34,13 @@ import { triangleCount, vertexCount } from "./mesh.js";
 import type { Camera3D } from "./camera.js";
 import type { MeshData } from "./mesh.js";
 import type { Material, Node3D, Scene3D } from "./scene.js";
-import type { RenderOptions, RenderStats, Renderer3D } from "./renderer.js";
+import type {
+  RenderFrameStats,
+  RenderOptions,
+  RenderStats,
+  Renderer3D,
+  ResizeOptions,
+} from "./renderer.js";
 import type { Vec3 } from "@src/math/vec3.js";
 
 const MAX_LIGHTS = 4;
@@ -94,7 +100,9 @@ void main() {
   if (base.a < 0.002) discard;
 
   if (uUnlit) {
-    fragColor = base;
+    // The canvas is premultiplied-alpha, so premultiply exactly once at the
+    // render boundary. Texture uploads stay straight-alpha below.
+    fragColor = vec4(base.rgb * base.a, base.a);
     return;
   }
 
@@ -116,7 +124,7 @@ void main() {
       spec += uLightColor[i] * uSpecular * pow(max(dot(n, halfway), 0.0), uShininess);
     }
   }
-  fragColor = vec4(base.rgb * lit + spec, base.a);
+  fragColor = vec4((base.rgb * lit + spec) * base.a, base.a);
 }`;
 
 interface GpuMesh {
@@ -153,6 +161,12 @@ export interface WebGL2RendererOptions {
    *  are the single most obvious quality difference, and MSAA is nearly free
    *  compared with supersampling. */
   antialias?: boolean;
+  /** Preserve the default framebuffer after compositing. This is expensive;
+   *  it remains enabled by default for compatibility. */
+  preserveDrawingBuffer?: boolean;
+  /** Collect GPU timer-query samples. Disabled by default because queries add
+   *  instrumentation overhead. */
+  gpuTiming?: boolean;
   /** Initial logical size. */
   width?: number;
   height?: number;
@@ -169,14 +183,52 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     alpha: true,
     antialias: opts.antialias ?? true,
     depth: true,
-    // The UI blits this canvas with `drawImage` AFTER the 3D frame is drawn,
-    // and a browser is free to clear a canvas the moment its frame ends unless
-    // told otherwise. Without this the blit reads an empty canvas — the classic
-    // "it works when devtools is open" bug.
-    preserveDrawingBuffer: true,
+    // The UI normally blits this canvas in the same JS frame. Keeping this
+    // enabled remains the compatibility default, but it is a measurable cost
+    // for a renderer used only as a short-lived canvas source.
+    preserveDrawingBuffer: opts.preserveDrawingBuffer ?? true,
     premultipliedAlpha: true,
   });
   if (!gl) throw new Error("WebGL2 is not available in this browser or context.");
+  const timerExt = opts.gpuTiming ? gl.getExtension("EXT_disjoint_timer_query_webgl2") : null;
+  const pendingGpuQueries: WebGLQuery[] = [];
+  let resolvedGpuMs = 0;
+
+  function pollGpuQueries(): void {
+    if (!timerExt) return;
+    if (gl!.getParameter(timerExt.GPU_DISJOINT_EXT)) {
+      for (const query of pendingGpuQueries) gl!.deleteQuery(query);
+      pendingGpuQueries.length = 0;
+      return;
+    }
+    for (let i = pendingGpuQueries.length - 1; i >= 0; i--) {
+      const query = pendingGpuQueries[i];
+      // In the WebGL2 variant the extension supplies TIME_ELAPSED_EXT and
+      // GPU_DISJOINT_EXT, but the result-query enums are core WebGL2 enums.
+      // Reading them from the extension object returns undefined in browsers
+      // that implement the extension strictly, so the queries would remain
+      // pending forever.
+      if (!gl!.getQueryParameter(query, gl!.QUERY_RESULT_AVAILABLE)) continue;
+      const nanoseconds = gl!.getQueryParameter(query, gl!.QUERY_RESULT) as number;
+      resolvedGpuMs += nanoseconds / 1_000_000;
+      gl!.deleteQuery(query);
+      pendingGpuQueries.splice(i, 1);
+    }
+  }
+
+  function beginGpuQuery(): WebGLQuery | null {
+    if (!timerExt) return null;
+    const query = gl!.createQuery();
+    if (!query) return null;
+    gl!.beginQuery(timerExt.TIME_ELAPSED_EXT, query);
+    return query;
+  }
+
+  function endGpuQuery(query: WebGLQuery | null): void {
+    if (!query || !timerExt) return;
+    gl!.endQuery(timerExt.TIME_ELAPSED_EXT);
+    pendingGpuQueries.push(query);
+  }
 
   const program = link(gl, VERTEX_SHADER, FRAGMENT_SHADER);
   const u: Uniforms = {
@@ -209,16 +261,25 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
   const lightDirs = new Float32Array(MAX_LIGHTS * 3);
   const lightColors = new Float32Array(MAX_LIGHTS * 3);
   const stats: RenderStats = { drawCalls: 0, triangles: 0, culled: 0 };
+  const frameStats: RenderFrameStats = {
+    viewports: 0,
+    drawCalls: 0,
+    triangles: 0,
+    culled: 0,
+    cpuMs: 0,
+  };
   // Reused across frames so sorting a scene allocates nothing per frame.
   const opaque: number[] = [];
   const blended: { index: number; depth: number }[] = [];
 
-  function applyCanvasSize(): void {
+  function applyCanvasSize(retainBackingStore = false): void {
     const bw = Math.max(1, Math.round(width * dpr));
     const bh = Math.max(1, Math.round(height * dpr));
-    if (canvas.width !== bw || canvas.height !== bh) {
-      canvas.width = bw;
-      canvas.height = bh;
+    const nextW = retainBackingStore ? Math.max(canvas.width, bw) : bw;
+    const nextH = retainBackingStore ? Math.max(canvas.height, bh) : bh;
+    if (canvas.width !== nextW || canvas.height !== nextH) {
+      canvas.width = nextW;
+      canvas.height = nextH;
     }
   }
   applyCanvasSize();
@@ -280,7 +341,9 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     if (!tex) throw new Error("WebGL2: could not create a texture.");
     gl!.bindTexture(gl!.TEXTURE_2D, tex);
     gl!.pixelStorei(gl!.UNPACK_FLIP_Y_WEBGL, false);
-    gl!.pixelStorei(gl!.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+    // Keep sampled textures straight-alpha; both backends premultiply once in
+    // their fragment shader when writing to the premultiplied canvas.
+    gl!.pixelStorei(gl!.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     gl!.texImage2D(gl!.TEXTURE_2D, 0, gl!.RGBA, gl!.RGBA, gl!.UNSIGNED_BYTE, source);
     const filter = pixelated ? gl!.NEAREST : gl!.LINEAR;
     gl!.texParameteri(gl!.TEXTURE_2D, gl!.TEXTURE_MIN_FILTER, filter);
@@ -336,26 +399,52 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     canvas,
     clipZeroToOne: false,
     stats,
+    consumeFrameStats() {
+      pollGpuQueries();
+      const snapshot = { ...frameStats, gpuMs: timerExt ? resolvedGpuMs : undefined };
+      frameStats.viewports = 0;
+      frameStats.drawCalls = 0;
+      frameStats.triangles = 0;
+      frameStats.culled = 0;
+      frameStats.cpuMs = 0;
+      resolvedGpuMs = 0;
+      return snapshot;
+    },
     get width() {
       return width;
     },
     get height() {
       return height;
     },
+    get renderWidth() {
+      return Math.max(1, Math.round(width * dpr));
+    },
+    get renderHeight() {
+      return Math.max(1, Math.round(height * dpr));
+    },
 
-    resize(w, h, ratio) {
+    resize(w, h, ratio, options: ResizeOptions = {}) {
       width = Math.max(1, w);
       height = Math.max(1, h);
       if (ratio !== undefined) dpr = ratio;
-      applyCanvasSize();
+      applyCanvasSize(options.retainBackingStore);
     },
 
     render(scene: Scene3D, camera: Camera3D, opts: RenderOptions = {}) {
       stats.drawCalls = 0;
       stats.triangles = 0;
       stats.culled = 0;
+      frameStats.viewports++;
+      const renderStart = performance.now();
+      const gpuQuery = beginGpuQuery();
 
-      gl!.viewport(0, 0, canvas.width, canvas.height);
+      const targetW = Math.max(1, Math.round(width * dpr));
+      const targetH = Math.max(1, Math.round(height * dpr));
+      // WebGL's origin is bottom-left, while the 2D crop in viewport3d reads
+      // from the canvas's top-left. Keep the active render rectangle aligned
+      // with that crop when the backing store is larger than this viewport.
+      const targetY = canvas.height - targetH;
+      gl!.viewport(0, targetY, targetW, targetH);
       gl!.enable(gl!.DEPTH_TEST);
       gl!.depthFunc(gl!.LEQUAL);
       gl!.enable(gl!.CULL_FACE);
@@ -369,11 +458,20 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
         // a light haze over whatever is behind it.
         gl!.clearColor(bg[0] * bg[3], bg[1] * bg[3], bg[2] * bg[3], bg[3]);
         gl!.clearDepth(1);
-        gl!.disable(gl!.SCISSOR_TEST);
+        gl!.enable(gl!.SCISSOR_TEST);
+        gl!.scissor(0, targetY, targetW, targetH);
         gl!.depthMask(true);
         gl!.clear(gl!.COLOR_BUFFER_BIT | gl!.DEPTH_BUFFER_BIT);
+        gl!.disable(gl!.SCISSOR_TEST);
       }
-      if (scene.nodes.length === 0) return;
+      if (scene.nodes.length === 0) {
+        endGpuQuery(gpuQuery);
+        frameStats.drawCalls += stats.drawCalls;
+        frameStats.triangles += stats.triangles;
+        frameStats.culled += stats.culled;
+        frameStats.cpuMs += performance.now() - renderStart;
+        return;
+      }
 
       gl!.useProgram(program);
       viewProjection(camera, width / height, false, viewProj);
@@ -440,6 +538,11 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
         gl!.disable(gl!.BLEND);
       }
       gl!.bindVertexArray(null);
+      endGpuQuery(gpuQuery);
+      frameStats.drawCalls += stats.drawCalls;
+      frameStats.triangles += stats.triangles;
+      frameStats.culled += stats.culled;
+      frameStats.cpuMs += performance.now() - renderStart;
     },
 
     release(mesh: object) {

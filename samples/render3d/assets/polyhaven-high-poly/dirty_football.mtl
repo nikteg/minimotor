@@ -1,0 +1,17 @@
+# File produced by Open Asset Import Library (http://www.assimp.sf.net)
+# (assimp v6.0.0)
+
+newmtl dirty_football
+Kd 1 1 1
+Ks 0 0 0
+Ke 0 0 0
+d 1
+Ni 1.45000005
+illum 1
+map_Kd dirty_football_diff_1k.jpg
+
+newmtl $Material_1
+Kd 1 1 1
+Ke 0 0 0
+d 1
+illum 1

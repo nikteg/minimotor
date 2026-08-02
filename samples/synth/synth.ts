@@ -1,4 +1,4 @@
-import { createPerformanceMonitoring } from "minimotor/performance";
+import { createDebug } from "minimotor/debug";
 // Synth: a playable instrument + a scheduled backing band.
 // Demonstrates: Audio.tone (custom voices on the SFX bus), Audio.Music
 // (look-ahead scheduler: note/kick/noiseHit), and the Audio.Mixer — both buses
@@ -17,7 +17,7 @@ import { installLayoutProbe } from "../shared/layout-probe.ts";
 
 // The viewport is LIVE (mutated on resize) — piano + bars lay out from it.
 const game = createApp("game", { background: "#12141c" });
-createPerformanceMonitoring(game);
+createDebug(game, { initial: "performance" });
 const vp = game.viewport;
 const { Draw, Keys, Loop, Pointer } = game;
 const Audio = createAudio(game);

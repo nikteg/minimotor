@@ -1,4 +1,4 @@
-import { createPerformanceMonitoring } from "minimotor/performance";
+import { createDebug } from "minimotor/debug";
 // Particle system demo: firework sparks on the ECS with the standard Sprite
 // component + renderer.
 // Demonstrates: Sprites.Sprite (position + texture + alpha), Draw.sprites(ecs.dense(Sprite)) —
@@ -13,7 +13,7 @@ const ecs = createEcs();
 // The perf HUD shows this world's live entity count (`ents`).
 // The viewport is LIVE (mutated on resize); the engine owns clearing.
 const game = createApp("game", { background: "#000" });
-createPerformanceMonitoring(game, { world: ecs });
+createDebug(game, { initial: "performance", perf: { world: ecs } });
 const view = game.viewport;
 const { Draw, Loop, Pointer } = game;
 const UI = createUI(game);

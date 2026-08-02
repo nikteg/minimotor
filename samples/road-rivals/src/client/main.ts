@@ -1,4 +1,5 @@
-import { createNetMeter, createPerformanceMonitoring } from "minimotor/performance";
+import { createNetMeter } from "minimotor/performance";
+import { createDebug } from "minimotor/debug";
 import { createCamera } from "minimotor/camera";
 import { createAudio } from "minimotor/audio";
 import { createInput } from "minimotor/input";
@@ -250,7 +251,7 @@ const game = createApp("game", {
   // away mid-match.
   preventNavigation: true,
 });
-createPerformanceMonitoring(game);
+createDebug(game, { initial: "performance" });
 
 // On-screen touch twin-stick pad: LEFT stick moves/steers+throttles, RIGHT stick
 const vp = game.viewport;

@@ -1,0 +1,15 @@
+# File produced by Open Asset Import Library (http://www.assimp.sf.net)
+# (assimp v6.0.0)
+
+newmtl carrot_cake
+Kd 1 1 1
+Ke 0 0 0
+d 1
+illum 1
+map_Kd carrot_cake_diff_1k.jpg
+
+newmtl $Material_1
+Kd 1 1 1
+Ke 0 0 0
+d 1
+illum 1

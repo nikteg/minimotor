@@ -1,5 +1,5 @@
 import { createAnimation } from "minimotor/animation";
-import { createPerformanceMonitoring } from "minimotor/performance";
+import { createDebug } from "minimotor/debug";
 // PIXEL ADVENTURE — a polished mini-platformer on Pixel Frog's CC0 itch.io kit.
 // The headline: the player ships as one PNG PER STATE (idle/run/jump/fall/hit),
 // so it's the poster child for `Anim.fromImages` — the multi-image companion to
@@ -36,7 +36,7 @@ const game = createApp("game", {
   preventNavigation: true,
 });
 const Anim = createAnimation(game);
-createPerformanceMonitoring(game);
+createDebug(game, { initial: "performance" });
 const { Draw, Keys, Loop } = game;
 const Assets = createAssets(game);
 const Audio = createAudio(game);

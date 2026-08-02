@@ -1,5 +1,5 @@
 import { createAnimation } from "minimotor/animation";
-import { createPerformanceMonitoring } from "minimotor/performance";
+import { createDebug } from "minimotor/debug";
 // ASSET QUEST: a tiny playable archive loaded from a manifest at runtime.
 // Focus: Assets.load/progress/json and Anim.fromGrid, with plain JSON level data.
 import { createAssets } from "minimotor/assets";
@@ -27,7 +27,7 @@ const game = createApp("game", {
   preventNavigation: true,
 });
 const Anim = createAnimation(game);
-createPerformanceMonitoring(game);
+createDebug(game, { initial: "performance" });
 const vp = game.viewport;
 const { Draw, Keys, Loop } = game;
 const Assets = createAssets(game);

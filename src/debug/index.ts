@@ -6,7 +6,7 @@ import type { LadderSource, MoverBody, Solid, SolidSource } from "@src/collision
 import type { CameraLens } from "@src/camera/index.js";
 import type { App, Rect } from "@src/engine/index.js";
 import { createInspector, type Inspection } from "./inspector.js";
-import { plugin as perfPlugin, type PerfOptions } from "@src/perf/index.js";
+import { plugin as perfPlugin, type Perf3DSource, type PerfOptions } from "@src/perf/index.js";
 
 export type DebugMode = "off" | "performance" | "collision";
 
@@ -30,6 +30,7 @@ export interface DebugOptions {
 export interface DebugPlugin {
   readonly mode: DebugMode;
   cycle(): DebugMode;
+  set3dRenderer(renderer: Perf3DSource | null): void;
   /** Run once per rendered frame, after `draw`: poll the shortcut and paint the
    *  overlay. `createDebug` subscribes this with `app.onFrame`. */
   frame(app: App): void;
@@ -38,12 +39,14 @@ export interface DebugPlugin {
 export interface DebugApi {
   readonly mode: DebugMode;
   cycle(): DebugMode;
+  /** Attach or replace the renderer reported by the performance mode. */
+  set3dRenderer(renderer: Perf3DSource | null): void;
   watch(name: string, read: () => unknown): () => void;
   snapshot(): Record<string, unknown>;
   readonly entries: readonly Inspection[];
 }
 
-const modes: readonly DebugMode[] = ["off", "performance", "collision"];
+const allModes: readonly DebugMode[] = ["off", "performance", "collision"];
 
 function drawSolid(ctx: CanvasRenderingContext2D, solid: Solid): void {
   ctx.beginPath();
@@ -94,14 +97,22 @@ export function collision(
   for (const body of bodies) ctx.strokeRect(body.x, body.y, body.w, body.h);
 }
 
-/** Install the `?` debug cycle. `KeyboardEvent.key` is used deliberately, so
- * both US Shift+/ and Swedish Shift+Plus produce the same shortcut. Native UI
- * inputs keep the key and never cycle the game overlay. */
-function debugPlugin(opts: DebugOptions): DebugPlugin {
+/** Install the `?`/four-finger debug cycle. `KeyboardEvent.key` is used
+ * deliberately, so both US Shift+/ and Swedish Shift+Plus produce the same
+ * shortcut. Native UI inputs keep the key and never cycle the game overlay.
+ * Four simultaneous touch pointers provide the same shortcut on iPad/iPhone. */
+function debugPlugin(app: App, opts: DebugOptions): DebugPlugin {
   const perf = opts.perf === false ? null : perfPlugin(opts.perf);
   const camera = opts.camera;
-  let index = Math.max(0, modes.indexOf(opts.initial ?? "off"));
+  let render3d: Perf3DSource | null = null;
+  const modes = opts.world && camera ? allModes : allModes.slice(0, 2);
+  const requestedInitial = opts.initial ?? "off";
+  const initialIndex = modes.indexOf(requestedInitial);
+  let index = initialIndex >= 0 ? initialIndex : modes.indexOf("performance");
   let shortcutDown = false;
+  const touchPointers = new Set<number>();
+  let touchCycleFired = false;
+  let firstTouchAt = Number.NEGATIVE_INFINITY;
 
   const cycle = (): DebugMode => {
     index = (index + 1) % modes.length;
@@ -109,11 +120,50 @@ function debugPlugin(opts: DebugOptions): DebugPlugin {
     opts.onModeChange?.(mode);
     return mode;
   };
+  // Pointer events preserve one pointerId per finger even though the app's
+  // public Pointer state intentionally collapses gameplay input to one point.
+  // Keep this gesture private to the debug layer so normal game/UI input does
+  // not acquire multi-touch semantics just for a developer shortcut.
+  const onTouchPointerDown = (event: PointerEvent): void => {
+    if (event.pointerType !== "touch") return;
+    const now = performance.now();
+    if (touchPointers.size === 0) firstTouchAt = now;
+    touchPointers.add(event.pointerId);
+    if (touchPointers.size >= 4 && now - firstTouchAt <= 500 && !touchCycleFired) {
+      touchCycleFired = true;
+      cycle();
+    }
+  };
+  const onTouchPointerEnd = (event: PointerEvent): void => {
+    if (event.pointerType !== "touch") return;
+    touchPointers.delete(event.pointerId);
+    if (touchPointers.size === 0) {
+      firstTouchAt = Number.NEGATIVE_INFINITY;
+      touchCycleFired = false;
+    }
+  };
+  // The guard also keeps the debug plugin usable with lightweight App mocks
+  // in tests and tooling that only exercise the keyboard cycle.
+  const canvas = app.canvas;
+  if (canvas) {
+    canvas.addEventListener("pointerdown", onTouchPointerDown);
+    window.addEventListener("pointerup", onTouchPointerEnd);
+    window.addEventListener("pointercancel", onTouchPointerEnd);
+    app.onDestroy(() => {
+      canvas.removeEventListener("pointerdown", onTouchPointerDown);
+      window.removeEventListener("pointerup", onTouchPointerEnd);
+      window.removeEventListener("pointercancel", onTouchPointerEnd);
+    });
+  }
   return {
     get mode() {
       return modes[index];
     },
     cycle,
+    set3dRenderer(renderer) {
+      render3d = renderer;
+      perf?.set3dRenderer(renderer);
+    },
     frame(app) {
       // The shortcut is edge-detected here rather than in a fixed step so it
       // still works while the loop is paused — `onFrame` runs on paused frames.
@@ -132,13 +182,19 @@ function debugPlugin(opts: DebugOptions): DebugPlugin {
         app.ctx.restore();
       }
       if (modes[index] !== "off") perf?.frame(app);
+      else {
+        // Keep renderer-owned counters bounded while the debug overlay is
+        // hidden. The next visible frame should describe that frame, not the
+        // entire time spent with the overlay disabled.
+        render3d?.consumeFrameStats();
+      }
     },
   };
 }
 
 /** App-owned debug overlays and runtime inspection. */
 export function createDebug(app: App, opts: DebugOptions = {}): DebugApi {
-  const plugin = debugPlugin(opts);
+  const plugin = debugPlugin(app, opts);
   const inspector = createInspector();
   app.onFrame(() => plugin.frame(app));
   return {
@@ -146,6 +202,7 @@ export function createDebug(app: App, opts: DebugOptions = {}): DebugApi {
       return plugin.mode;
     },
     cycle: () => plugin.cycle(),
+    set3dRenderer: (renderer) => plugin.set3dRenderer(renderer),
     watch: inspector.watch,
     snapshot: inspector.snapshot,
     get entries() {

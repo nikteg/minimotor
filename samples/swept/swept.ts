@@ -1,4 +1,4 @@
-import { createPerformanceMonitoring } from "minimotor/performance";
+import { createDebug } from "minimotor/debug";
 // Swept collision demo: why Collision.sweptAABB beats a point-in-time overlap
 // test for fast movers.
 // Demonstrates: Collision.sweptAABB(box, dx, dy, target) vs rectsOverlap. A
@@ -17,7 +17,7 @@ const game = createApp("game", {
   background: "#101418",
   preventNavigation: true,
 });
-createPerformanceMonitoring(game);
+createDebug(game, { initial: "performance" });
 const view = game.viewport;
 const { Draw, Keys, Loop } = game;
 const Audio = createAudio(game);

@@ -1,0 +1,12 @@
+Poly Haven assets
+
+Source: https://polyhaven.com/
+License: CC0 1.0 Universal
+
+The OBJ files in this directory were converted from Poly Haven's 1K glTF
+downloads with Assimp. The diffuse maps were downloaded from the matching
+Poly Haven model packages and retained alongside the converted OBJ files.
+
+Poly Haven asks that products using its live API make the source clear to
+users. These assets were downloaded and included locally, but the source is
+credited here and in the render3d sample.

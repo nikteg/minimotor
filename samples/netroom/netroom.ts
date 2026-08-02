@@ -1,4 +1,4 @@
-import { createPerformanceMonitoring } from "minimotor/performance";
+import { createDebug } from "minimotor/debug";
 import { createInput } from "minimotor/input";
 import { createCamera } from "minimotor/camera";
 import { createNet } from "minimotor/net";
@@ -68,7 +68,7 @@ const coins = net.items(SPAWNS, {
   onTake: (_coin, by) => void (by === net.id && score++),
 });
 
-createPerformanceMonitoring(game, { net: net.meter });
+createDebug(game, { initial: "performance", perf: { net: net.meter } });
 
 const input = Input.map({
   left: ["ArrowLeft", "KeyA"],

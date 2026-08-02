@@ -1,4 +1,4 @@
-import { createPerformanceMonitoring } from "minimotor/performance";
+import { createDebug } from "minimotor/debug";
 // Bounce: a glowing ball ricochets around the walls; every wall hit counts a
 // bounce AND speeds the ball up. Simple on purpose, but juiced — each bounce
 // fires spark particles, a short Camera.shake and a soft synth boop, and the
@@ -11,7 +11,7 @@ import { Collision, Gizmos, Mathf, createApp, Vec2 } from "minimotor";
 
 // The viewport is LIVE (mutated on resize) — wall bounds read it directly.
 const game = createApp("game", { preventNavigation: true });
-createPerformanceMonitoring(game);
+createDebug(game, { initial: "performance" });
 const view = game.viewport;
 const { Clock, Draw, Loop } = game;
 const Audio = createAudio(game);

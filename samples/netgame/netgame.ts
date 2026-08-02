@@ -1,4 +1,5 @@
-import { createPerformanceMonitoring, createNetMeter } from "minimotor/performance";
+import { createNetMeter } from "minimotor/performance";
+import { createDebug } from "minimotor/debug";
 // A real multiplayer game over WebSocket. Open this page in two (or ten) tabs:
 // every tab is a player, relayed through the dev server's /ws-relay endpoint
 // (see vite.config.ts — a dumb broadcaster, no game logic on the server).
@@ -37,7 +38,7 @@ const meter = createNetMeter();
 const game = createApp("game", {
   background: "#14141c",
 });
-createPerformanceMonitoring(game, { net: meter });
+createDebug(game, { initial: "performance", perf: { net: meter } });
 const vp = game.viewport;
 const { Draw, Keys, Loop } = game;
 const Audio = createAudio(game);

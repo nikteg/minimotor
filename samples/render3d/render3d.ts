@@ -13,10 +13,13 @@
 // backend at runtime is one variable, not a rebuild.
 import { createUI } from "minimotor/ui";
 import { createApp } from "minimotor";
+import { createDebug } from "minimotor/debug";
+import { createAssets } from "minimotor/assets";
 import type { Flow } from "minimotor/ui";
 import {
   addNode,
   box,
+  bounds,
   computeNormals,
   createCamera,
   createClip,
@@ -42,9 +45,21 @@ import {
 } from "minimotor/3d";
 
 const game = createApp("game", { background: "#0e1017" });
+let renderer: Renderer3D | null = null;
+// Keep the monitor compact: the default vertical HUD would cover the backend
+// switch in this sample's header. Its draw line includes every viewport
+// renders and the 2D UI, which makes the backend difference easy to compare.
+const Debug = createDebug(game, {
+  initial: "performance",
+  perf: {
+    layout: "horizontal",
+    graphs: true,
+  },
+});
 const view = game.viewport;
 const { Draw, Loop, Pointer } = game;
 const UI = createUI(game);
+const Assets = createAssets(game);
 
 // ---- the catalog -----------------------------------------------------------
 // One list, used twice: it fills the inventory strip AND supplies the hero
@@ -55,6 +70,7 @@ interface Item {
   name: string;
   mesh: MeshData;
   color: [number, number, number, number];
+  texture?: HTMLImageElement;
   note: string;
 }
 
@@ -66,26 +82,6 @@ const items: Item[] = [
     note: "swept circle",
   },
   { name: "Sphere", mesh: sphere(0.5, 32, 22), color: [0.42, 0.65, 1, 1], note: "UV sphere" },
-  { name: "Iron Cube", mesh: box(0.8), color: [0.72, 0.76, 0.82, 1], note: "hard edges" },
-  { name: "Spire", mesh: cylinder(0.5, 0.9, 32, 0), color: [0.72, 0.4, 0.9, 1], note: "cone" },
-  {
-    name: "Ring of Haste",
-    mesh: torus(0.36, 0.11, 28, 14),
-    color: [0.95, 0.82, 0.3, 1],
-    note: "thin torus",
-  },
-  {
-    name: "Gear",
-    mesh: torus(0.34, 0.18, 10, 8),
-    color: [0.85, 0.5, 0.35, 1],
-    note: "faceted torus",
-  },
-  {
-    name: "Flat Stone",
-    mesh: box(0.8, 0.16, 0.6),
-    color: [0.5, 0.55, 0.55, 1],
-    note: "scaled box",
-  },
   {
     name: "Cluster",
     // A merged mesh is still ONE draw call — the reason `mergeMeshes` exists.
@@ -102,17 +98,113 @@ const items: Item[] = [
 ];
 
 let selected = 0;
+let objError: string | null = null;
 
 /** A tiny scene per inventory row — same renderer, same widget, 56px tall. */
-const itemScenes: Scene3D[] = items.map((item) => {
+const itemScenes: Scene3D[] = [];
+function createItemScene(item: Item): Scene3D {
   const scene = createScene({ ambient: [0.35, 0.36, 0.42] });
   addNode(
     scene,
-    node({ mesh: item.mesh, material: { color: item.color, shininess: 40, specular: 0.3 } }),
+    node({
+      mesh: item.mesh,
+      material: {
+        color: item.color,
+        texture: item.texture,
+        pixelated: false,
+        shininess: 40,
+        specular: 0.3,
+      },
+    }),
   );
   return scene;
-});
+}
+for (const item of items) itemScenes.push(createItemScene(item));
 const itemCamera = createCamera({ distance: 1.9, pitch: 0.5, yaw: 0.6 });
+
+// Kenney's Food Kit is CC0 and ships a shared atlas plus standard OBJ files.
+// Poly Haven's CC0 models are denser, textured meshes converted to OBJ+MTL
+// locally from their glTF downloads. The asset store turns each OBJ into the
+// same MeshData used by primitives; the sample supplies each diffuse map
+// explicitly because the importer deliberately keeps MTL parsing out of the
+// core loader.
+const foodAsset = (name: string): string =>
+  new URL(`./assets/kenney-food-kit/${name}`, import.meta.url).href;
+const foodModel = (name: string): `${string}.obj` => foodAsset(`${name}.obj`) as `${string}.obj`;
+const polyhavenAsset = (name: string): string =>
+  new URL(`./assets/polyhaven-high-poly/${name}`, import.meta.url).href;
+const polyhavenModel = (name: string): `${string}.obj` =>
+  polyhavenAsset(`${name}.obj`) as `${string}.obj`;
+void Assets.load({
+  foodAtlas: foodAsset("colormap.png"),
+  apple: foodModel("apple"),
+  banana: foodModel("banana"),
+  broccoli: foodModel("broccoli"),
+  burger: foodModel("burger"),
+  cake: foodModel("cake"),
+  bananas: polyhavenModel("bananas"),
+  bananasTexture: polyhavenAsset("bananas_diff_1k.jpg"),
+  carrotCake: polyhavenModel("carrot_cake"),
+  carrotCakeTexture: polyhavenAsset("carrot_cake_diff_1k.jpg"),
+  dirtyFootball: polyhavenModel("dirty_football"),
+  dirtyFootballTexture: polyhavenAsset("dirty_football_diff_1k.jpg"),
+})
+  .then(
+    ({
+      foodAtlas,
+      apple,
+      banana,
+      broccoli,
+      burger,
+      cake,
+      bananas,
+      bananasTexture,
+      carrotCake,
+      carrotCakeTexture,
+      dirtyFootball,
+      dirtyFootballTexture,
+    }) => {
+      const textured = [
+        { name: "Apple", mesh: apple, texture: foodAtlas, note: "Kenney OBJ · textured" },
+        { name: "Banana", mesh: banana, texture: foodAtlas, note: "Kenney OBJ · textured" },
+        { name: "Broccoli", mesh: broccoli, texture: foodAtlas, note: "Kenney OBJ · textured" },
+        { name: "Burger", mesh: burger, texture: foodAtlas, note: "Kenney OBJ · textured" },
+        { name: "Cake", mesh: cake, texture: foodAtlas, note: "Kenney OBJ · textured" },
+        {
+          name: "Bananas · high poly",
+          mesh: bananas,
+          texture: bananasTexture,
+          note: "Poly Haven OBJ · 46,868 tris",
+        },
+        {
+          name: "Carrot Cake · high poly",
+          mesh: carrotCake,
+          texture: carrotCakeTexture,
+          note: "Poly Haven OBJ · 13,790 tris",
+        },
+        {
+          name: "Dirty Football · high poly",
+          mesh: dirtyFootball,
+          texture: dirtyFootballTexture,
+          note: "Poly Haven OBJ · 19,998 tris",
+        },
+      ];
+      for (const loaded of textured) {
+        const item: Item = {
+          name: loaded.name,
+          mesh: normalizeMesh(loaded.mesh),
+          color: [1, 1, 1, 1],
+          texture: loaded.texture,
+          note: loaded.note,
+        };
+        items.push(item);
+        itemScenes.push(createItemScene(item));
+      }
+    },
+  )
+  .catch((error: unknown) => {
+    objError = error instanceof Error ? error.message : String(error);
+  });
 
 // ---- the hero scene --------------------------------------------------------
 
@@ -190,23 +282,42 @@ let tint: [number, number, number, number] | null = null;
 // ---- the renderer, and switching it at runtime -----------------------------
 // A backend is one object behind one interface, so swapping it is: build the
 // new one, drop the old one, point the variable at it. Nothing that references
-// `renderer` — the eight viewports on this screen — has to know it happened.
+// `renderer` — every viewport on this screen — has to know it happened.
 // The meshes and textures re-upload lazily on first sight in the new context.
 
-let renderer: Renderer3D | null = null;
 let rendererError: string | null = null;
 let switching = false;
 // Synchronous: it only proves `navigator.gpu` exists, not that an adapter can
 // be had — which is exactly the right question for whether to OFFER the button.
 const webgpuOk = isWebGPUAvailable();
 
+function backendFromUrl(): Backend3D | "auto" {
+  const value = new URL(location.href).searchParams.get("backend");
+  return value === "webgl2" || value === "webgpu" ? value : "auto";
+}
+
+function writeBackendToUrl(backend: Backend3D): void {
+  const url = new URL(location.href);
+  url.searchParams.set("backend", backend);
+  history.replaceState(null, "", url);
+}
+
 async function useBackend(want: Backend3D | "auto"): Promise<void> {
   if (switching) return;
   switching = true;
   const previous = renderer;
   try {
-    const next = await createRenderer3D({ antialias: true, backend: want });
+    // Keep the WebGL comparison honest: WebGPU currently has no MSAA path in
+    // this renderer, and the sample blits immediately in the same JS frame.
+    const next = await createRenderer3D({
+      antialias: false,
+      preserveDrawingBuffer: false,
+      gpuTiming: true,
+      backend: want,
+    });
     renderer = next;
+    Debug.set3dRenderer(next);
+    if (want !== "auto") writeBackendToUrl(want);
     rendererError = null;
     // Disposed only AFTER the replacement exists: a failed switch must leave
     // the sample running on the backend it already had, not on nothing.
@@ -220,7 +331,7 @@ async function useBackend(want: Backend3D | "auto"): Promise<void> {
 
 // WebGPU cannot be probed synchronously, so the app starts drawing immediately
 // and the viewports report "starting the GPU" for the frame or two it takes.
-void useBackend("auto");
+void useBackend(backendFromUrl());
 
 // ---- state -----------------------------------------------------------------
 
@@ -243,7 +354,7 @@ Loop.run({
     const hasGround = scene.nodes.includes(ground);
     if (showGround && !hasGround) scene.nodes.push(ground);
     if (!showGround && hasGround) scene.nodes.splice(scene.nodes.indexOf(ground), 1);
-    // Each inventory row turns at its own rate so the strip reads as eight live
+    // Each inventory row turns at its own rate so the strip reads as live
     // views rather than one duplicated eight times.
     itemScenes.forEach((s, i) => {
       s.nodes[0].rotation = yaw(clock * (0.4 + i * 0.11) + i);
@@ -267,7 +378,7 @@ Loop.run({
       // THIS POINT", so a filling child placed BEFORE a fixed-width sibling
       // takes the sibling's space too. Either put the fixed one first — which
       // would put the inventory on the left — or do the subtraction.
-      const INVENTORY_W = 232;
+      const INVENTORY_W = 360;
       const GAP = 14;
       // Both columns take an explicit HEIGHT as well. A col nested in a row
       // auto-measures its own height from its children, so a child calling
@@ -310,7 +421,7 @@ function drawHeader(): void {
   // The backend switch. WebGPU is offered only when the browser actually has
   // it — a button that always fails teaches nothing — and the tooltip says why
   // when it is missing.
-  UI.row({ x: view.w - 24 - 260, y: 26, w: 260, gap: 6, justify: "end" }, () => {
+  UI.row({ x: view.w / 2 - 130, y: 26, w: 260, gap: 6, justify: "center" }, () => {
     UI.text("BACKEND", { size: 11, color: "dim", bold: true });
     for (const backend of ["webgl2", "webgpu"] as const) {
       const on = renderer?.backend === backend;
@@ -389,6 +500,8 @@ function drawStage(flow: Flow): void {
   scene.nodes[heroNode].material = {
     ...scene.nodes[heroNode].material,
     color: tint ?? items[selected].color,
+    texture: items[selected].texture,
+    pixelated: false,
   };
 
   UI.viewport3d({
@@ -412,6 +525,8 @@ function drawStage(flow: Flow): void {
 function drawInventory(flow: Flow): void {
   UI.text("INVENTORY", { size: 11, bold: true, color: "accent" });
   UI.text("click to load into the stage", { size: 10, color: "dim" });
+  if (objError) UI.text(`OBJ error: ${objError}`, { size: 10, color: "#f0603a" });
+  else if (items.length === 3) UI.text("loading textured OBJ meshes…", { size: 10, color: "dim" });
   const area = flow.fill();
   listOffset = UI.list(
     { ...area, rowH: 64, gap: 4, count: items.length, offset: listOffset, id: "inventory" },
@@ -424,6 +539,12 @@ function drawInventory(flow: Flow): void {
         // whole update. The renderer's weak cache uploads the new mesh on first
         // sight and drops the old one when nothing holds it.
         scene.nodes[heroNode].mesh = items[i].mesh;
+        scene.nodes[heroNode].material = {
+          ...scene.nodes[heroNode].material,
+          texture: items[i].texture,
+          color: items[i].color,
+          pixelated: false,
+        };
         // A new item brings its own colour — the swatch tint is a decision
         // about the PREVIOUS shape and should not outlive it.
         tint = null;
@@ -471,6 +592,23 @@ function translated(mesh: MeshData, dx: number, dy: number, dz: number): MeshDat
     mesh.positions[i] += dx;
     mesh.positions[i + 1] += dy;
     mesh.positions[i + 2] += dz;
+  }
+  return mesh;
+}
+
+/** Food Kit models use different authored sizes. Fit them to the same preview
+ *  volume while preserving their UVs, normals, and the original mesh object. */
+function normalizeMesh(mesh: MeshData, size = 0.9): MeshData {
+  const { min, max } = bounds(mesh);
+  const cx = (min.x + max.x) / 2;
+  const cy = (min.y + max.y) / 2;
+  const cz = (min.z + max.z) / 2;
+  const extent = Math.max(max.x - min.x, max.y - min.y, max.z - min.z, 0.000001);
+  const scale = size / extent;
+  for (let i = 0; i < mesh.positions.length; i += 3) {
+    mesh.positions[i] = (mesh.positions[i] - cx) * scale;
+    mesh.positions[i + 1] = (mesh.positions[i + 1] - cy) * scale;
+    mesh.positions[i + 2] = (mesh.positions[i + 2] - cz) * scale;
   }
   return mesh;
 }

@@ -179,6 +179,28 @@ describe("drawPerfHud", () => {
     expect(changed).toEqual(box);
   });
 
+  it("wraps long 3D stats in a narrow horizontal HUD", () => {
+    const { ctx } = recorder();
+    const box = drawPerfHud(ctx, stats, {
+      viewW: 300,
+      layout: "horizontal",
+      render3d: {
+        backend: "webgl2",
+        viewports: 9,
+        drawCalls: 123,
+        triangles: 45678,
+        culled: 3,
+        cpuMs: 1.2,
+        gpuMs: 0.8,
+      },
+    });
+    expect(box.w).toBeLessThanOrEqual(292);
+    expect(box.h).toBeGreaterThan(38);
+    expect(ctx.fillText.mock.calls.filter((call) => String(call[0]).includes("GPU")).length).toBe(
+      1,
+    );
+  });
+
   it("grows the box and draws a labeled strip when a sparkline is attached", () => {
     const plain = recorder();
     drawPerfHud(plain.ctx, stats, { viewW: 800 });
@@ -205,6 +227,24 @@ describe("drawPerfHud", () => {
     const plain = recorder();
     drawPerfHud(plain.ctx, stats, { viewW: 800 });
     expect(plain.ctx.fillText.mock.calls.length).toBe(4);
+  });
+
+  it("shows aggregate 3D counters when supplied", () => {
+    const { ctx } = recorder();
+    drawPerfHud(ctx, stats, {
+      viewW: 800,
+      render3d: {
+        backend: "webgpu",
+        viewports: 9,
+        drawCalls: 11,
+        triangles: 1234,
+        culled: 0,
+        cpuMs: 2.4,
+        gpuMs: 1.8,
+      },
+    });
+    const lines = ctx.fillText.mock.calls.map((c) => c[0] as string);
+    expect(lines).toContain("3d webgpu  9v  11 draws  1.2k tris  0 culled  cpu 2.4 ms  gpu 1.8 ms");
   });
 
   it("shows the engine's update/draw cost when timings are given", () => {

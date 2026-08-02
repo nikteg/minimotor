@@ -22,7 +22,7 @@
 // GRID autotiling, where 16 atlas cells do the job of a 47-cell blob set
 // because each drawn tile is decided by the four cells around a corner.
 // C overlays the MERGED collision rects: runs of solid tiles become one box.
-import { createPerformanceMonitoring } from "minimotor/performance";
+import { createDebug } from "minimotor/debug";
 import { createInput } from "minimotor/input";
 import { createUI } from "minimotor/ui";
 import { Tiles, createApp } from "minimotor";
@@ -32,7 +32,7 @@ import * as Procgen from "minimotor/procgen";
 import type { Solid } from "minimotor";
 
 const game = createApp("game", { background: "#0d1118" });
-createPerformanceMonitoring(game);
+createDebug(game, { initial: "performance" });
 const { Draw, Keys, Loop, viewport } = game;
 const Camera = createCamera(game);
 const Input = createInput(game);

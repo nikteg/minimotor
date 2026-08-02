@@ -1,11 +1,11 @@
-import { createPerformanceMonitoring } from "minimotor/performance";
+import { createDebug } from "minimotor/debug";
 import { createInput } from "minimotor/input";
 import { createOnscreenInput } from "minimotor/onscreen-input";
 import { createUI } from "minimotor/ui";
 import { createApp, Goodies, Gizmos } from "minimotor";
 
 const game = createApp("game", { background: "#0f141a" });
-createPerformanceMonitoring(game);
+createDebug(game, { initial: "performance" });
 const view = game.viewport;
 const { Loop, Draw } = game;
 const Input = createInput(game);

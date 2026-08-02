@@ -1,4 +1,4 @@
-import { createPerformanceMonitoring } from "minimotor/performance";
+import { createDebug } from "minimotor/debug";
 // PARALLAX COURIER: deliver a signal through a huge neon valley.
 // Focus: the game-bound primary camera (follow, dead-zone, zoom,
 // screen↔world mapping via Camera.toWorld) and Camera.layer for stable
@@ -12,7 +12,7 @@ import { createSfx } from "../shared/sfx.ts";
 
 // The viewport is LIVE (mutated on resize); the engine owns clearing.
 const game = createApp("game", { background: "#080b18" });
-createPerformanceMonitoring(game);
+createDebug(game, { initial: "performance" });
 const view = game.viewport;
 const { Draw, Keys, Loop, Pointer } = game;
 const Camera = createCamera(game);

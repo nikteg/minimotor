@@ -22,7 +22,7 @@
 //
 // The pixel font in `pixel-font.ts` is drawn by hand, 5x7, and baked to an
 // atlas with `Sprites.atlas` at startup — no binary assets in this sample.
-import { createPerformanceMonitoring } from "minimotor/performance";
+import { createDebug } from "minimotor/debug";
 import { createInput } from "minimotor/input";
 import { createUI } from "minimotor/ui";
 import { Font, createApp } from "minimotor";
@@ -31,7 +31,7 @@ import { CELL, CHARS, bakeIcons, bakeSheet } from "./pixel-font.ts";
 // `fullscreen` defaults to true; stated here because this sample's index.html
 // mirrors the same rules statically, and the two are meant to be read together.
 const game = createApp("game", { background: "#12141c", fullscreen: true });
-createPerformanceMonitoring(game);
+createDebug(game, { initial: "performance" });
 const { Draw, Loop, viewport } = game;
 const Input = createInput(game);
 const UI = createUI(game, Input);

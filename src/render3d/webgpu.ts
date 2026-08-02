@@ -36,7 +36,7 @@ import { triangleCount, vertexCount } from "./mesh.js";
 import type { Camera3D } from "./camera.js";
 import type { MeshData } from "./mesh.js";
 import type { Material, Node3D, Scene3D } from "./scene.js";
-import type { RenderOptions, RenderStats, Renderer3D } from "./renderer.js";
+import type { RenderFrameStats, RenderOptions, RenderStats, Renderer3D } from "./renderer.js";
 import type { Vec3 } from "@src/math/vec3.js";
 
 const MAX_LIGHTS = 4;
@@ -48,6 +48,8 @@ const FRAME_BYTES = 240;
  *  Padded to the 256-byte minimum dynamic-offset alignment. */
 const DRAW_BYTES = 256;
 const DRAW_FLOATS = DRAW_BYTES / 4;
+const TIMESTAMP_SLOTS = 64;
+const TIMESTAMP_STRIDE = 256;
 
 const SHADER = /* wgsl */ `
 struct Frame {
@@ -156,6 +158,9 @@ export interface WebGPURendererOptions {
    *  both). Default `"high-performance"`; `"low-power"` for a small preview
    *  that is not worth spinning a dGPU up for. */
   powerPreference?: GPUPowerPreference;
+  /** Collect timestamp-query samples. Disabled by default because readback
+   *  instrumentation adds overhead. */
+  gpuTiming?: boolean;
 }
 
 /** Whether this browser exposes WebGPU at all. A synchronous, cheap check —
@@ -174,7 +179,63 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     powerPreference: opts.powerPreference ?? "high-performance",
   });
   if (!adapter) throw new Error("WebGPU: no adapter available.");
-  const device = await adapter.requestDevice();
+  const timestampSupported = opts.gpuTiming === true && adapter.features.has("timestamp-query");
+  const device = await adapter.requestDevice({
+    requiredFeatures: timestampSupported ? ["timestamp-query"] : [],
+  });
+
+  const timestampQuerySet = timestampSupported
+    ? device.createQuerySet({ type: "timestamp", count: TIMESTAMP_SLOTS * 2 })
+    : null;
+  const timestampResolveBuffer = timestampSupported
+    ? device.createBuffer({
+        size: TIMESTAMP_SLOTS * TIMESTAMP_STRIDE,
+        usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC,
+      })
+    : null;
+  const timestampBusy = new Uint8Array(TIMESTAMP_SLOTS);
+  let nextTimestampSlot = 0;
+  let resolvedGpuMs = 0;
+
+  function reserveGpuTimestamp(): number | null {
+    if (!timestampQuerySet) return null;
+    for (let i = 0; i < TIMESTAMP_SLOTS; i++) {
+      const slot = (nextTimestampSlot + i) % TIMESTAMP_SLOTS;
+      if (timestampBusy[slot]) continue;
+      timestampBusy[slot] = 1;
+      nextTimestampSlot = (slot + 1) % TIMESTAMP_SLOTS;
+      return slot;
+    }
+    return null;
+  }
+
+  function finishGpuTimestamp(encoder: GPUCommandEncoder, slot: number): GPUBuffer {
+    const offset = slot * TIMESTAMP_STRIDE;
+    encoder.resolveQuerySet(timestampQuerySet!, slot * 2, 2, timestampResolveBuffer!, offset);
+    const readback = device.createBuffer({
+      size: 16,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+    encoder.copyBufferToBuffer(timestampResolveBuffer!, offset, readback, 0, 16);
+    return readback;
+  }
+
+  function collectGpuTimestamp(slot: number, readback: GPUBuffer): void {
+    void readback
+      .mapAsync(GPUMapMode.READ)
+      .then(() => {
+        const values = new BigUint64Array(readback.getMappedRange());
+        const nanoseconds = Number(values[1] - values[0]);
+        readback.unmap();
+        readback.destroy();
+        timestampBusy[slot] = 0;
+        if (nanoseconds >= 0) resolvedGpuMs += nanoseconds / 1_000_000;
+      })
+      .catch(() => {
+        readback.destroy();
+        timestampBusy[slot] = 0;
+      });
+  }
 
   const canvas = opts.canvas ?? document.createElement("canvas");
   const context = canvas.getContext("webgpu");
@@ -391,7 +452,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       // fixed at creation.
       device.queue.copyExternalImageToTexture(
         { source },
-        { texture: cached.texture, premultipliedAlpha: true },
+        { texture: cached.texture, premultipliedAlpha: false },
         [size.width, size.height],
       );
       cached.version = version;
@@ -406,7 +467,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
         GPUTextureUsage.COPY_DST |
         GPUTextureUsage.RENDER_ATTACHMENT,
     });
-    device.queue.copyExternalImageToTexture({ source }, { texture, premultipliedAlpha: true }, [
+    device.queue.copyExternalImageToTexture({ source }, { texture, premultipliedAlpha: false }, [
       size.width,
       size.height,
     ]);
@@ -432,6 +493,13 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
   const eye: Vec3 = { x: 0, y: 0, z: 0 };
   const frameData = new Float32Array(FRAME_BYTES / 4);
   const stats: RenderStats = { drawCalls: 0, triangles: 0, culled: 0 };
+  const frameStats: RenderFrameStats = {
+    viewports: 0,
+    drawCalls: 0,
+    triangles: 0,
+    culled: 0,
+    cpuMs: 0,
+  };
   const opaque: number[] = [];
   const blended: { index: number; depth: number }[] = [];
 
@@ -459,11 +527,30 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     canvas,
     clipZeroToOne: true,
     stats,
+    consumeFrameStats() {
+      const snapshot = {
+        ...frameStats,
+        gpuMs: timestampSupported ? resolvedGpuMs : undefined,
+      };
+      frameStats.viewports = 0;
+      frameStats.drawCalls = 0;
+      frameStats.triangles = 0;
+      frameStats.culled = 0;
+      frameStats.cpuMs = 0;
+      resolvedGpuMs = 0;
+      return snapshot;
+    },
     get width() {
       return width;
     },
     get height() {
       return height;
+    },
+    get renderWidth() {
+      return canvas.width;
+    },
+    get renderHeight() {
+      return canvas.height;
     },
 
     resize(w, h, ratio) {
@@ -477,6 +564,8 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       stats.drawCalls = 0;
       stats.triangles = 0;
       stats.culled = 0;
+      frameStats.viewports++;
+      const renderStart = performance.now();
       configureSize();
 
       // Partition first: the per-draw buffer is written in one go before the
@@ -532,6 +621,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
 
       const bg = scene.background;
       const encoder = device.createCommandEncoder();
+      const timestampSlot = reserveGpuTimestamp();
       const pass = encoder.beginRenderPass({
         colorAttachments: [
           {
@@ -548,6 +638,14 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
           depthLoadOp: options.clear === false ? "load" : "clear",
           depthStoreOp: "store",
         },
+        timestampWrites:
+          timestampSlot === null
+            ? undefined
+            : {
+                querySet: timestampQuerySet!,
+                beginningOfPassWriteIndex: timestampSlot * 2,
+                endOfPassWriteIndex: timestampSlot * 2 + 1,
+              },
       });
 
       order.forEach((index, slot) => {
@@ -577,7 +675,16 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       });
 
       pass.end();
+      const timestampReadback =
+        timestampSlot === null ? null : finishGpuTimestamp(encoder, timestampSlot);
       device.queue.submit([encoder.finish()]);
+      if (timestampReadback && timestampSlot !== null) {
+        collectGpuTimestamp(timestampSlot, timestampReadback);
+      }
+      frameStats.drawCalls += stats.drawCalls;
+      frameStats.triangles += stats.triangles;
+      frameStats.culled += stats.culled;
+      frameStats.cpuMs += performance.now() - renderStart;
     },
 
     release(mesh: object) {
@@ -596,6 +703,8 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       drawBuffer?.destroy();
       frameBuffer.destroy();
       blankTexture.destroy();
+      timestampQuerySet?.destroy();
+      timestampResolveBuffer?.destroy();
       device.destroy();
     },
   };

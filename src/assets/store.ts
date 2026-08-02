@@ -33,11 +33,14 @@ import {
   type State as AsepriteState,
 } from "@src/aseprite/index.js";
 import { tint as tintSprite, type SpriteCanvas } from "@src/sprites/raster.js";
+import { parseObj } from "@src/render3d/obj.js";
+import type { MeshData } from "@src/render3d/mesh.js";
 
 /** A manifest entry: a plain URL, or a `{ src }` spec that composes the loaded
  *  image into a higher-level resource. Extensions decide the loader:
  *  .png/.jpg/.jpeg/.webp/.gif/.bmp → image; .json/.tmj/.tsj/.ldtk → parsed JSON;
- *  .ogg/.mp3/.wav/.m4a → ArrayBuffer (decoded lazily by `Audio.music`/sfx). */
+ *  .obj → parsed 3D MeshData; .ogg/.mp3/.wav/.m4a → ArrayBuffer (decoded
+ *  lazily by `Audio.music`/sfx). */
 export type AssetSpec =
   | string
   /** Slice the loaded image into a named-state `Sheet` (Anim.fromGrid). */
@@ -53,6 +56,7 @@ export type AssetSpec =
   | { src: string };
 
 type AudioUrl = `${string}.${"ogg" | "mp3" | "wav" | "m4a"}`;
+type ObjUrl = `${string}.obj`;
 type JsonUrl = `${string}.${"json" | "tmj" | "tsj" | "ldtk" | "ldtkl"}`;
 
 /** What a manifest entry loads as — the per-key typing behind
@@ -67,11 +71,13 @@ export type LoadedAsset<S extends AssetSpec> = S extends {
     ? AsepriteSheet<AsepriteState<D>>
     : S extends { tint: string }
       ? SpriteCanvas
-      : S extends JsonUrl | { src: JsonUrl }
-        ? unknown
-        : S extends AudioUrl | { src: AudioUrl }
-          ? ArrayBuffer
-          : HTMLImageElement;
+      : S extends ObjUrl | { src: ObjUrl }
+        ? MeshData
+        : S extends JsonUrl | { src: JsonUrl }
+          ? unknown
+          : S extends AudioUrl | { src: AudioUrl }
+            ? ArrayBuffer
+            : HTMLImageElement;
 
 /** The typed record `load()` resolves with: keys from the manifest, value
  *  types from each spec. `art.herp` is a compile error. */
@@ -85,7 +91,8 @@ export type AssetManifest = Record<string, AssetSpec>;
 /** Called after each asset resolves, with completed and total counts. */
 export type ProgressFn = (loaded: number, total: number) => void;
 
-const IMAGE_EXT = /\.(png|jpe?g|webp|gif|bmp)$/i;
+const IMAGE_EXT = /\.(png|jpe?g|webp|gif|bmp|svg)$/i;
+const OBJ_EXT = /\.obj$/i;
 const JSON_EXT = /\.(json|tmj|tsj|ldtk|ldtkl)$/i;
 const AUDIO_EXT = /\.(ogg|mp3|wav|m4a)$/i;
 
@@ -127,6 +134,14 @@ async function loadJson(url: string): Promise<unknown> {
   return res.json();
 }
 
+async function loadObj(url: string): Promise<MeshData> {
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Minimotor.Assets: failed to load OBJ "${url}" (${res.status})`);
+  }
+  return parseObj(await res.text());
+}
+
 function loadOne(url: string): Promise<unknown> {
   // Bundlers inline small assets as `data:` URIs (e.g. Vite under
   // `assetsInlineLimit`), which carry a MIME type instead of a file extension —
@@ -138,14 +153,16 @@ function loadOne(url: string): Promise<unknown> {
     if (/^data:image\//i.test(url)) return loadImage(url);
     if (/^data:application\/json/i.test(url)) return loadJson(url);
     if (/^data:audio\//i.test(url)) return loadAudio(url);
+    if (/^data:(?:text\/plain|model\/obj)/i.test(url)) return loadObj(url);
     return loadImage(url); // unknown MIME: images are the common inlined case
   }
   if (IMAGE_EXT.test(url)) return loadImage(url);
+  if (OBJ_EXT.test(url)) return loadObj(url);
   if (JSON_EXT.test(url)) return loadJson(url);
   if (AUDIO_EXT.test(url)) return loadAudio(url);
   return Promise.reject(
     new Error(
-      `Minimotor.Assets: unknown asset type for "${url}" (expected image, JSON map, or audio)`,
+      `Minimotor.Assets: unknown asset type for "${url}" (expected image, OBJ, JSON map, or audio)`,
     ),
   );
 }

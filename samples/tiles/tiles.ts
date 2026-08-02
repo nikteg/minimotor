@@ -1,4 +1,4 @@
-import { createPerformanceMonitoring } from "minimotor/performance";
+import { createDebug } from "minimotor/debug";
 // Tilemap demo: Minimotor.Tiles.
 // - The level is an ASCII grid ("g" grass, "d" dirt, "b" brick) built below;
 //   tiles blit from a small procedurally-baked atlas via the skin.
@@ -14,7 +14,7 @@ import { Collision, Mathf, createApp, Tiles } from "minimotor";
 import * as Sprites from "minimotor/sprites";
 
 const game = createApp("game", { background: "#1b2432" });
-createPerformanceMonitoring(game);
+createDebug(game, { initial: "performance" });
 const { Draw, Keys, Loop } = game;
 const Audio = createAudio(game);
 const Camera = createCamera(game);
