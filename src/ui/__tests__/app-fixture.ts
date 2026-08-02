@@ -4,8 +4,21 @@ import { registerUiApp } from "@src/ui/core/state.js";
 const noop = (): void => {};
 const unsubscribe = (): void => {};
 
+/** Frame-end handlers registered by the kernel, per test app — so a test can
+ *  run TWO frames and see per-frame state (the wheel claim, the pointer cache)
+ *  actually reset in between. */
+const frameHandlers = new WeakMap<App, (() => void)[]>();
+
+/** Run one frame boundary for a test app: everything `app.onFrame` collected.
+ *  Without this a test is always inside frame one, and any bug about state
+ *  surviving into frame two is invisible. */
+export function endTestFrame(app: App): void {
+  for (const h of frameHandlers.get(app) ?? []) h();
+}
+
 /** An explicit app boundary for low-level widget tests. */
 export function createTestUiApp(ctx: CanvasRenderingContext2D): App {
+  const handlers: (() => void)[] = [];
   const canvas = (ctx.canvas ?? {
     width: 0,
     height: 0,
@@ -60,8 +73,12 @@ export function createTestUiApp(ctx: CanvasRenderingContext2D): App {
     resetTransform: noop,
     setCursor: noop,
     onStep: () => unsubscribe,
-    onFrame: () => unsubscribe,
+    onFrame: (fn: () => void) => {
+      handlers.push(fn);
+      return unsubscribe;
+    },
   } as unknown as App;
+  frameHandlers.set(app, handlers);
 
   return registerUiApp(app);
 }

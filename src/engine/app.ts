@@ -468,8 +468,15 @@ function buildRuntime(options: RuntimeOptions): Runtime {
     setPointer(e);
     markDoublePress();
   };
+  // `deltaY` is only in PIXELS when `deltaMode` says so. Firefox reports a
+  // mouse notch as 3 LINES and a page key as 1 PAGE; taking the raw number
+  // makes the same gesture ~33× weaker there than in Chrome, which reads as
+  // "the wheel doesn't work" rather than as a units bug. A macOS trackpad
+  // swipe is already pixels — many small deltas — and needs no conversion.
+  const LINE_PX = 16;
   const onWheel = (e: WheelEvent) => {
-    ptr.wheel += e.deltaY;
+    const scale = e.deltaMode === 1 ? LINE_PX : e.deltaMode === 2 ? viewport.h : 1;
+    ptr.wheel += e.deltaY * scale;
   };
   const onPointerUp = (e: PointerEvent) => {
     setPointer(e);

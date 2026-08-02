@@ -1,4 +1,10 @@
-import { ensureWired, isInOverlayPass, isOverlayActive, onFrameEnd } from "./lifecycle.js";
+import {
+  ensureWired,
+  isInOverlayPass,
+  isOverlayActive,
+  lifecycleOnce,
+  onFrameEnd,
+} from "./lifecycle.js";
 import { uiSlot, uiApp } from "./state.js";
 import { pointInRect } from "@src/collision/index.js";
 
@@ -77,6 +83,14 @@ export function clearPointerEdges(): void {
   st().edgesSuppressed = false;
 }
 
+// Split deliberately, the same way `claimPointerGesture` is: registering the
+// hook is idempotent MODULE-wide (the hook looks up per-app state when it
+// runs), but wiring the frame loop is per APP — a second canvas, or a game
+// re-init that replaces the app, needs its own `ensureWired`. Folding both into
+// one `lifecycleOnce` leaves every app after the first with a claim that never
+// clears, which is the bug this whole path exists to prevent.
+const ensureWheelHook = lifecycleOnce(() => onFrameEnd(clearWheelClaim));
+
 /** Clear the per-frame wheel claim — called from a frame-end hook. */
 export function clearWheelClaim(): void {
   st().wheelTaken = false;
@@ -136,6 +150,14 @@ export function clearGestureClaim(): void {
  *  elsewhere, or this region can't move in the wheel's direction (so the wheel
  *  chains onward to a nested region). */
 export function claimWheel(over: boolean, wheel: number, atMin: boolean, atMax: boolean): number {
+  // The reset belongs to whoever CLAIMS, not to whoever happens to scroll.
+  // `lists` used to register it, so a screen with a wheel consumer but no
+  // overflowing scroll region — a `viewport3d` on its own — claimed the wheel
+  // on frame one and never got it back: the first notch zoomed and every notch
+  // after it was silently dropped. Registering here makes the claim's lifetime
+  // the claim's own business.
+  ensureWired();
+  ensureWheelHook();
   const s = st();
   if (s.wheelTaken || !over || wheel === 0) return 0;
   if ((wheel < 0 && atMin) || (wheel > 0 && atMax)) return 0;

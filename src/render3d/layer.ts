@@ -33,6 +33,13 @@ import type { Renderer3D } from "./renderer.js";
 
 /** A live scene layer. */
 export interface SceneLayer {
+  /** Render the scene at a new fraction of the display resolution, effective
+   *  immediately. The 2D HUD on the canvas above is unaffected, which is the
+   *  whole appeal of the knob: a game can drop the world to 0.6 and keep its
+   *  text sharp. */
+  setResolutionScale(scale: number): void;
+  /** The current resolution scale. */
+  readonly resolutionScale: number;
   /** Stop syncing and remove the scene canvas from the document. */
   detach(): void;
 }
@@ -56,7 +63,7 @@ export function attachSceneLayer(
   renderer: Renderer3D,
   opts: SceneLayerOptions = {},
 ): SceneLayer {
-  const scale = Math.max(0.1, opts.resolutionScale ?? 1);
+  let scale = Math.max(0.1, opts.resolutionScale ?? 1);
   const target = app.canvas;
   const layer = renderer.canvas;
 
@@ -87,6 +94,13 @@ export function attachSceneLayer(
   const off = app.onResize(sync);
 
   return {
+    get resolutionScale() {
+      return scale;
+    },
+    setResolutionScale(next: number) {
+      scale = Math.max(0.1, next);
+      sync();
+    },
     detach() {
       off();
       layer.remove();
