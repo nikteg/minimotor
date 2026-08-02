@@ -26,7 +26,10 @@ interface ActiveDrag {
   offsetY: number;
 }
 
-const st = uiSlot<{ drag: ActiveDrag | null }>(() => ({ drag: null }));
+const st = uiSlot<{
+  drag: ActiveDrag | null;
+  targets: Map<string, DropTargetState<unknown>>;
+}>(() => ({ drag: null, targets: new Map() }));
 interface ActiveGesture {
   id: string;
   startX: number;
@@ -49,9 +52,11 @@ const ensureDragHooks = lifecycleOnce(() => {
     // the source and not for the ones before it.
     if (s.drag) holdDragPayload();
     else clearDragPayload();
+    s.targets.clear();
   });
   onReset(() => {
     st().drag = null;
+    st().targets.clear();
     gestureSt().drag = null;
   });
 });
@@ -240,7 +245,15 @@ export function dropTarget<T>(opts: DropTargetOptions<T>): DropTargetState<T> {
     dropped = { sourceId: drag.sourceId, targetId: opts.id, payload: drag.payload as T };
     s.drag = null;
   }
-  return { hovered, canDrop, dropped };
+  const result = { hovered, canDrop, dropped };
+  s.targets.set(opts.id, result as DropTargetState<unknown>);
+  return result;
+}
+
+/** Read a target registered by a layout-aware panel earlier in this frame. */
+export function dropTargetState<T>(id: string): DropTargetState<T> | null {
+  ensureDragHooks();
+  return (st().targets.get(id) as DropTargetState<T> | undefined) ?? null;
 }
 
 /** Current drag data for drawing an icon/stack preview above the UI. */

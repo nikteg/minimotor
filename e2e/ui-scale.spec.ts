@@ -31,10 +31,14 @@ test("the UI-scale slider DRAGS — the value follows the pointer, not just the 
   page,
 }) => {
   await openGallery(page);
-  // The header slider sits in native screen space: x = max(232, w - 236),
-  // w = 212, track center at y = 35 (its slot is y 20, h 30).
-  const trackX = await page.evaluate(() => Math.max(232, window.innerWidth - 236));
-  await page.mouse.move(trackX + 150, 35); // well into the track's right half
+  // The header slider is native screen space, but its width is now the
+  // field's auto-filled header column rather than a hardcoded slot.
+  const scaleSlider = (await getTree(page)).find((e) => e.id === "ui-gallery:ui-scale")!;
+  const trackY = scaleSlider.screenRect.y + scaleSlider.screenRect.h / 2;
+  await page.mouse.move(
+    scaleSlider.screenRect.x + scaleSlider.screenRect.w * 0.8,
+    trackY,
+  );
   await page.mouse.down();
   await expect.poll(() => page.evaluate(() => window.__uiGallery!.getState().uiScale)).not.toBe(1); // the press jumped the value
   const pressed = await page.evaluate(() => window.__uiGallery!.getState().uiScale);
@@ -42,8 +46,11 @@ test("the UI-scale slider DRAGS — the value follows the pointer, not just the 
   // value clamps to the range minimum — the buggy slider dropped its drag after
   // one frame (clipped sliders on the board cleared the shared drag state), so
   // the value would stay frozen at the press value.
-  for (const dx of [110, 60, 20]) {
-    await page.mouse.move(trackX + dx, 35);
+  for (const fraction of [0.55, 0.25, 0.01]) {
+    await page.mouse.move(
+      scaleSlider.screenRect.x + scaleSlider.screenRect.w * fraction,
+      trackY,
+    );
     await page.waitForTimeout(50);
   }
   const dragged = await page.evaluate(() => window.__uiGallery!.getState().uiScale);

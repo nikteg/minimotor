@@ -175,7 +175,7 @@ renderer, so skins can be replaced at runtime without changing widget code.
 
 Theme spacing is shared through `theme.spacing` (`xs`, `sm`, `md`, `lg`, `xl`)
 and is used by layout gaps and widget insets. Individual controls can still
-override it with options such as `pad`, `cellPadX`, and `cellPadY`; a pixel
+override it with options such as `pad` and `cellPadding`; a pixel
 theme can override just the tokens it needs:
 
 ```ts

@@ -234,8 +234,8 @@ Loop.run({
         // slot (FOOTER_H + 8) for the row after it. No rect passed in.
         const res = UI.table<Server>({
           reserve: FOOTER_H + 8,
-          rowH: ROW_H,
-          headerH: 20,
+          rowHeight: ROW_H,
+          headerHeight: 20,
           id: uiId("servers"),
           rows: list,
           sort,

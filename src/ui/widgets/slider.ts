@@ -10,7 +10,7 @@ import {
   focusFromPointer,
   hoverCursor,
   measureWidth,
-  place,
+  placeField,
   rawPointer,
   registerFocusable,
   uiSlot,
@@ -82,7 +82,7 @@ export function slider(
   const ctx = uiCtx();
   const min = opts.min ?? 0;
   const max = opts.max ?? 1;
-  const slot = place(opts, opts.w ?? 140, opts.h ?? 30, "slider");
+  const slot = placeField(opts, opts.w ?? 140, opts.h ?? 30, "slider");
   const stepText = opts.step?.toString() ?? "";
   const stepDecimals = stepText.includes(".") ? stepText.length - stepText.indexOf(".") - 1 : 0;
   const decimals = opts.step !== undefined ? stepDecimals : max - min <= 1 ? 2 : 0;

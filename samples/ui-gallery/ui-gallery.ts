@@ -69,9 +69,7 @@ const {
   atlasDebug,
 } = await createGalleryThemeCatalog(Assets, {
   defineAlternatives: ({ tiny }) => ({
-    "tiny-rpg-mana-soul": [
-      { key: "panel-alt", label: "Panel alt", theme: tiny.panelAlt },
-    ],
+    "tiny-rpg-mana-soul": [{ key: "panel-alt", label: "Panel alt", theme: tiny.panelAlt }],
   }),
 });
 
@@ -121,9 +119,7 @@ interface GalleryHmrState {
 // edit becomes a full PAGE RELOAD, and `hot.data` (with every field persisted
 // into it) is gone before the next instance can read it.
 (import.meta as ImportMeta & { hot?: HotModuleContext }).hot?.accept();
-const galleryHot = HotReload.create(
-  (import.meta as ImportMeta & { hot?: HotModuleContext }).hot,
-);
+const galleryHot = HotReload.create((import.meta as ImportMeta & { hot?: HotModuleContext }).hot);
 const previousGalleryState = galleryHot.restore<GalleryHmrState>("ui-gallery");
 
 // ---- interactive state (the round-trip target for each widget) ----
@@ -245,32 +241,20 @@ const fontOptions = [
   { label: "VT323", value: "vt323", font: '"VT323", monospace' },
 ];
 const storedFont = await Storage.load(FONT_STORAGE_KEY, "theme");
-let currentFont = fontOptions.some((font) => font.value === storedFont)
-  ? storedFont
-  : "theme";
-let currentTheme = themePresets.some(
-  (themePreset) => themePreset.value === storedTheme,
-)
+let currentFont = fontOptions.some((font) => font.value === storedFont) ? storedFont : "theme";
+let currentTheme = themePresets.some((themePreset) => themePreset.value === storedTheme)
   ? storedTheme
   : "visuals"; // drives the Theme select; restored from MiniMotor.Storage
 
 if (previousGalleryState) {
-  if (
-    fontOptions.some((font) => font.value === previousGalleryState.currentFont)
-  )
+  if (fontOptions.some((font) => font.value === previousGalleryState.currentFont))
     currentFont = previousGalleryState.currentFont;
-  if (
-    themePresets.some(
-      (themePreset) => themePreset.value === previousGalleryState.currentTheme,
-    )
-  )
+  if (themePresets.some((themePreset) => themePreset.value === previousGalleryState.currentTheme))
     currentTheme = previousGalleryState.currentTheme;
 }
 
 function galleryTheme(): ThemeOverrides {
-  const chosen = themePresets.find(
-    (themePreset) => themePreset.value === currentTheme,
-  );
+  const chosen = themePresets.find((themePreset) => themePreset.value === currentTheme);
   const selectedFont = fontOptions.find((font) => font.value === currentFont);
   return {
     ...(chosen?.preset ?? themePresets[0].preset),
@@ -288,9 +272,7 @@ function applyTheme(value: string): void {
 }
 
 function applyFont(value: string): void {
-  currentFont = fontOptions.some((font) => font.value === value)
-    ? value
-    : "theme";
+  currentFont = fontOptions.some((font) => font.value === value) ? value : "theme";
   applyTheme(currentTheme);
   void Storage.save(FONT_STORAGE_KEY, currentFont);
 }
@@ -326,9 +308,7 @@ if (previousGalleryState) {
   atlasPan = { ...previousGalleryState.atlasPan };
   tableSort = { ...previousGalleryState.tableSort };
   tableOffset = previousGalleryState.tableOffset;
-  tableSel = previousGalleryState.tableSel
-    ? { ...previousGalleryState.tableSel }
-    : null;
+  tableSel = previousGalleryState.tableSel ? { ...previousGalleryState.tableSel } : null;
   // `??` on the collections, not decoration: a payload saved by an EARLIER
   // build of this module has no key for a field added since, and `[...undefined]`
   // throws right here — at module top level, which loses the whole restore and
@@ -344,13 +324,9 @@ if (previousGalleryState) {
 
 /** Resolve the theme scope a gallery panel should inherit. Panel call sites
  *  ask for a semantic treatment; they do not know which preset supplies it. */
-function getTheme(
-  scope: "default" | "panel-alt" = "default",
-): ThemeOverrides | undefined {
+function getTheme(scope: "default" | "panel-alt" = "default"): ThemeOverrides | undefined {
   if (scope === "default") return undefined;
-  return themeAlternatives[currentTheme]?.find(
-    (alternative) => alternative.key === scope,
-  )?.theme;
+  return themeAlternatives[currentTheme]?.find((alternative) => alternative.key === scope)?.theme;
 }
 
 const uiId = UI.ids("ui-gallery");
@@ -444,6 +420,8 @@ Loop.run({
     UI.col(
       {
         flex: "fill",
+        gap: 0,
+        pad: 8,
       },
       () => {
         UI.col(
@@ -452,6 +430,21 @@ Loop.run({
             fitCross: true,
           },
           () => {
+            // FIXME: This equal-width row is a layout-API smell. The
+            // gallery should not have to know that there are exactly two
+            // fill children just to make sibling panels look balanced.
+            //
+            // TODO: Revisit the equal-distribution primitive in the UI
+            // library. Ideally `row` would discover its direct fill
+            // children automatically, without this count and without
+            // measuring or sizing anything in the sample. A future
+            // solution should also handle bins being added/removed while
+            // preserving immediate-mode input semantics.
+            //
+            // TODO: Also question whether this gallery needs equal-sized
+            // bins at all. Natural auto-sized panels may be the better
+            // demonstration of the library's automatic flow, especially
+            // for themes whose button padding and frame art differ.
             UI.row(
               {
                 id: uiId("header-row"),
@@ -487,8 +480,7 @@ Loop.run({
                       id: uiId("layout-debug"),
                       label: "Show layout bounding boxes",
                       on: layoutDebug,
-                      tooltip:
-                        "Overlay every layout box — containers, padding and gaps",
+                      tooltip: "Overlay every layout box — containers, padding and gaps",
                     });
                     if (debugOn !== layoutDebug) {
                       layoutDebug = debugOn;
@@ -527,7 +519,7 @@ Loop.run({
         UI.col(
           {
             flex: "fill",
-            pad: 0,
+            pad: 8,
             id: uiId("board-slot"),
 
             theme: galleryTheme(),
@@ -556,13 +548,14 @@ Loop.run({
                     UI.row(
                       {
                         wrap: true,
+                        gap: 16,
                         id: uiId("board"),
                       },
                       () => {
                         // ================= COLUMN 1 =================
                         // Flows to its natural height; the WHOLE board scrolls as one (the
                         // wrapping scroll column it sits in), so there's no per-column scroll.
-                        UI.col({ id: uiId("col1") }, () => {
+                        UI.col({ id: uiId("col1"), stretchCross: true }, () => {
                           // Theme picker — a normal group flowing with the rest (its drop-menu
                           // is a frame-end overlay, so it still renders above the panels).
                           UI.panel({ title: "Theme" }, () => {
@@ -645,145 +638,133 @@ Loop.run({
                             });
                           });
 
-                          UI.panel(
-                            { title: "Toggles & Sliders" },
-                            () => {
-                              sound = UI.toggle({
-                                id: uiId("tg-sound"),
-                                label: "Sound enabled",
-                                on: sound,
-                              });
-                              reducedMotion = UI.toggle({
-                                id: uiId("tg-motion"),
-                                label: "Reduced motion",
-                                on: reducedMotion,
-                              });
-                              radio = UI.toggle({
-                                id: uiId("tg-radio"),
-                                label: "Radio appearance",
-                                appearance: "radio",
-                                on: radio,
-                              });
-                              disabledToggle = UI.toggle({
-                                id: uiId("tg-disabled"),
-                                label: "Locked option",
-                                on: disabledToggle,
-                                disabled: true,
-                              });
-                              volume = UI.slider({
-                                id: uiId("sl-volume"),
-                                label: "Vol",
-                                value: volume,
-                                min: 0,
-                                max: 100,
-                                format: (v) => `${Math.round(v)}%`,
-                              });
-                              zoom = UI.slider({
-                                id: uiId("sl-zoom"),
-                                label: "Zoom",
-                                value: zoom,
-                                min: 0.5,
-                                max: 3,
-                                step: 0.25,
-                                format: (v) => `${v.toFixed(2)}x`,
-                              });
-                            },
-                          );
+                          UI.panel({ title: "Toggles & Sliders" }, () => {
+                            sound = UI.toggle({
+                              id: uiId("tg-sound"),
+                              label: "Sound enabled",
+                              on: sound,
+                            });
+                            reducedMotion = UI.toggle({
+                              id: uiId("tg-motion"),
+                              label: "Reduced motion",
+                              on: reducedMotion,
+                            });
+                            radio = UI.toggle({
+                              id: uiId("tg-radio"),
+                              label: "Radio appearance",
+                              appearance: "radio",
+                              on: radio,
+                            });
+                            disabledToggle = UI.toggle({
+                              id: uiId("tg-disabled"),
+                              label: "Locked option",
+                              on: disabledToggle,
+                              disabled: true,
+                            });
+                            volume = UI.slider({
+                              id: uiId("sl-volume"),
+                              label: "Vol",
+                              value: volume,
+                              min: 0,
+                              max: 100,
+                              format: (v) => `${Math.round(v)}%`,
+                            });
+                            zoom = UI.slider({
+                              id: uiId("sl-zoom"),
+                              label: "Zoom",
+                              value: zoom,
+                              min: 0.5,
+                              max: 3,
+                              step: 0.25,
+                              format: (v) => `${v.toFixed(2)}x`,
+                            });
+                          });
 
-                          UI.panel(
-                            { title: "Select & Text input" },
-                            () => {
-                              UI.text("Quality preset", {
-                                color: "dim",
-                                size: 12,
-                              });
-                              quality = UI.select({
-                                id: uiId("select-quality"),
-                                value: quality,
-                                options: [
-                                  { label: "Low", value: "low" },
-                                  { label: "Medium", value: "medium" },
-                                  { label: "High", value: "high" },
-                                  { label: "Ultra", value: "ultra" },
-                                ],
-                                ariaLabel: "Quality preset",
-                              }).value;
-                              // A long option list: the drop menu caps at `maxVisible` rows
-                              // (default 8) and SCROLLS — windowed around the current value,
-                              // with wheel + a scrollbar — instead of running off-screen.
-                              UI.text("City (scrolling menu)", {
-                                color: "dim",
-                                size: 12,
-                              });
-                              city = UI.select({
-                                id: uiId("select-city"),
-                                value: city,
-                                options: [
-                                  "Auckland",
-                                  "Bangkok",
-                                  "Berlin",
-                                  "Cairo",
-                                  "Chicago",
-                                  "Dubai",
-                                  "Helsinki",
-                                  "Istanbul",
-                                  "London",
-                                  "Los Angeles",
-                                  "Madrid",
-                                  "Mumbai",
-                                  "Nairobi",
-                                  "New York",
-                                  "Oslo",
-                                  "Paris",
-                                  "São Paulo",
-                                  "Seoul",
-                                  "Singapore",
-                                  "Stockholm",
-                                  "Sydney",
-                                  "Tokyo",
-                                  "Toronto",
-                                  "Vancouver",
-                                ].map((c) => ({ label: c, value: c })),
-                                ariaLabel: "City",
-                              }).value;
-                              UI.text("Player name", {
-                                color: "dim",
-                                size: 12,
-                              });
-                              name = UI.textInput({
-                                id: uiId("input-name"),
-                                value: name,
-                                placeholder: "Type a name…",
-                                maxLength: 16,
-                                ariaLabel: "Player name",
-                              }).value;
-                              UI.text(
-                                name ? `Hello, ${name}!` : "(nothing entered)",
-                                {
-                                  color: name ? "accent" : "dim",
-                                  size: 12,
-                                },
-                              );
-                              UI.text(
-                                "Notes (multiline — drag to select, ⌘C to copy)",
-                                {
-                                  color: "dim",
-                                  size: 12,
-                                },
-                              );
-                              notes = UI.textInput({
-                                id: uiId("input-notes"),
-                                value: notes,
-                                rows: 3,
-                                placeholder: "Write a few lines…",
-                                ariaLabel: "Notes",
-                              }).value;
-                            },
-                          );
+                          UI.panel({ title: "Select & Text input" }, () => {
+                            UI.text("Quality preset", {
+                              color: "dim",
+                              size: 12,
+                            });
+                            quality = UI.select({
+                              id: uiId("select-quality"),
+                              value: quality,
+                              options: [
+                                { label: "Low", value: "low" },
+                                { label: "Medium", value: "medium" },
+                                { label: "High", value: "high" },
+                                { label: "Ultra", value: "ultra" },
+                              ],
+                              ariaLabel: "Quality preset",
+                            }).value;
+                            // A long option list: the drop menu caps at `maxVisible` rows
+                            // (default 8) and SCROLLS — windowed around the current value,
+                            // with wheel + a scrollbar — instead of running off-screen.
+                            UI.text("City (scrolling menu)", {
+                              color: "dim",
+                              size: 12,
+                            });
+                            city = UI.select({
+                              id: uiId("select-city"),
+                              value: city,
+                              options: [
+                                "Auckland",
+                                "Bangkok",
+                                "Berlin",
+                                "Cairo",
+                                "Chicago",
+                                "Dubai",
+                                "Helsinki",
+                                "Istanbul",
+                                "London",
+                                "Los Angeles",
+                                "Madrid",
+                                "Mumbai",
+                                "Nairobi",
+                                "New York",
+                                "Oslo",
+                                "Paris",
+                                "São Paulo",
+                                "Seoul",
+                                "Singapore",
+                                "Stockholm",
+                                "Sydney",
+                                "Tokyo",
+                                "Toronto",
+                                "Vancouver",
+                              ].map((c) => ({ label: c, value: c })),
+                              ariaLabel: "City",
+                            }).value;
+                            UI.text("Player name", {
+                              color: "dim",
+                              size: 12,
+                            });
+                            name = UI.textInput({
+                              id: uiId("input-name"),
+                              value: name,
+                              placeholder: "Type a name…",
+                              maxLength: 16,
+                              ariaLabel: "Player name",
+                            }).value;
+                            UI.text(name ? `Hello, ${name}!` : "(nothing entered)", {
+                              color: name ? "accent" : "dim",
+                              size: 12,
+                            });
+                            UI.text("Notes (multiline — drag to select, ⌘C to copy)", {
+                              color: "dim",
+                              size: 12,
+                            });
+                            notes = UI.textInput({
+                              id: uiId("input-notes"),
+                              value: notes,
+                              rows: 3,
+                              placeholder: "Write a few lines…",
+                              ariaLabel: "Notes",
+                            }).value;
+                          });
                         });
 
                         // ================= COLUMN 2 =================
-                        UI.col({ id: uiId("col2") }, () => {
+                        UI.col({ id: uiId("col2"), stretchCross: true }, () => {
                           UI.panel(
                             {
                               title: "Tabs",
@@ -796,52 +777,44 @@ Loop.run({
                                 active: tab,
                               });
                               if (tab === 0)
-                                UI.text(
-                                  "A neutral summary of the current session.",
-                                  {
-                                    wrap: true,
-                                  },
-                                );
+                                UI.text("A neutral summary of the current session.", {
+                                  wrap: true,
+                                });
                               else if (tab === 1)
                                 UI.text("Kills 42 · Deaths 17 · Assists 9", {
                                   color: "accent",
                                 });
                               else
-                                UI.text(
-                                  "12:04 joined · 12:07 first blood · 12:31 win",
-                                  {
-                                    color: "dim",
-                                    wrap: true,
-                                  },
-                                );
+                                UI.text("12:04 joined · 12:07 first blood · 12:31 win", {
+                                  color: "dim",
+                                  wrap: true,
+                                });
                             },
                           );
 
-                          UI.panel(
-                            { title: "Progress bar (UI.bar)" },
-                            () => {
-                              progress = UI.slider({
-                                id: uiId("sl-progress"),
-                                label: "Load",
-                                value: progress,
-                                min: 0,
-                                max: 1,
-                                format: (v) => `${Math.round(v * 100)}%`,
-                              });
-                              // bar() auto-flows into the row at the theme's natural size.
-                              UI.row(() => {
-                                UI.bar({ value: progress });
-                              });
-                              busy = UI.toggle({
-                                id: uiId("tg-busy"),
-                                label: "Working…",
-                                on: busy,
-                              });
-                              UI.row(() => {
-                                if (busy) UI.spinner({});
-                              });
-                            },
-                          );
+                          UI.panel({ title: "Progress bar (UI.bar)" }, () => {
+                            progress = UI.slider({
+                              id: uiId("sl-progress"),
+                              label: "Load",
+                              flex: "fill",
+                              value: progress,
+                              min: 0,
+                              max: 1,
+                              format: (v) => `${Math.round(v * 100)}%`,
+                            });
+                            // bar() auto-flows into the row at the theme's natural size.
+                            UI.row(() => {
+                              UI.bar({ value: progress });
+                            });
+                            busy = UI.toggle({
+                              id: uiId("tg-busy"),
+                              label: "Working…",
+                              on: busy,
+                            });
+                            UI.row(() => {
+                              if (busy) UI.spinner({});
+                            });
+                          });
 
                           UI.panel({ title: "Overlays" }, () => {
                             UI.row((st) => {
@@ -888,24 +861,21 @@ Loop.run({
 
                           // A row with overflow: "auto" fills the panel width and scrolls
                           // horizontally when its chips are wider than it.
-                          UI.panel(
-                            { title: "Horizontal scroll" },
-                            () => {
-                              UI.row(
-                                {
-                                  overflow: "auto",
-                                  id: uiId("hscroll"),
-                                },
-                                () => {
-                                  for (let i = 1; i <= 8; i++)
-                                    UI.button({
-                                      id: uiId(`chip-${i}`),
-                                      label: `Tag ${i}`,
-                                    });
-                                },
-                              );
-                            },
-                          );
+                          UI.panel({ title: "Horizontal scroll" }, () => {
+                            UI.row(
+                              {
+                                overflow: "auto",
+                                id: uiId("hscroll"),
+                              },
+                              () => {
+                                for (let i = 1; i <= 8; i++)
+                                  UI.button({
+                                    id: uiId(`chip-${i}`),
+                                    label: `Tag ${i}`,
+                                  });
+                              },
+                            );
+                          });
 
                           // Chat: the `submitted` flag is Enter; `blurOnSubmit: false` keeps
                           // focus; clearing `value` on submit empties the box (works even while
@@ -932,11 +902,11 @@ Loop.run({
                         // ================= COLUMN 3 : List + Table =================
                         // list/table are raw rect widgets — reserve a fixed-height slot from
                         // the flowing column and hand each its slot rect.
-                        UI.col({ id: uiId("col3") }, () => {
+                        UI.col({ id: uiId("col3"), stretchCross: true }, () => {
                           UI.panel({ title: "List" }, (body) => {
                             // Take the panel's own body slot instead of guessing an inset:
                             // how far the title strip reaches down is the THEME's business
-                              // (frame inset + panel.title.height), and a hardcoded offset slides
+                            // (frame inset + panel.title.height), and a hardcoded offset slides
                             // the first row under a taller title.
                             const listArea: Rect = body.next(undefined, 210);
                             listOffset = UI.list(
@@ -968,9 +938,8 @@ Loop.run({
                           UI.panel({ title: "Table" }, (body) => {
                             const res = UI.table<Player>({
                               ...body.next(undefined, 232),
-                              rowH: 26,
-                              cellPadX: 8,
-                              cellPadY: 2,
+                              rowHeight: 26,
+                              cellPadding: { x: 8, y: 2 },
                               id: uiId("table"),
                               rows: players,
                               sort: tableSort,
@@ -1019,381 +988,319 @@ Loop.run({
                         // vertical bins (a horizontal caret between rows) and a grid (a
                         // vertical caret between cells). The panel takes no height — it
                         // auto-sizes, and the bins grow as items pile into them.
-                        UI.col({ id: uiId("col4") }, () => {
-                          UI.panel(
-                            { title: "Drag & drop" },
-                            (body) => {
-                              UI.text(
-                                "Drag between bins, or reorder in place",
-                                {
-                                  color: "dim",
-                                  size: 12,
-                                },
-                              );
-                              // A bin is tall enough for whatever it currently holds. The
-                              // slot has to be reserved BEFORE the bins draw — `dropTarget`
-                              // needs a rect and the panel inside it cannot report one
-                              // until after its children have run — so this is the height
-                              // the sample computes rather than the one it measures.
-                              // What a nested panel spends before its first child: the
-                              // title band, the theme's body inset at both ends, its
-                              // padding at both ends, and ~20px of frame the caller
-                              // cannot measure (a skin's nine-slice inset is not exposed).
-                              // Deliberately NOT a `pad` override — these panels used to
-                              // pass `pad: 6`, which is the whole reason their contents
-                              // sat tighter to the frame than every other panel here.
-                              const padY = th.panel.padding.top ?? th.panel.padding.y ?? 0;
-                              const chrome =
-                                th.panel.title.height +
-                                (th.panel.frameInset.top ?? th.panel.frameInset.y ?? 0) +
-                                (th.panel.frameInset.bottom ?? th.panel.frameInset.y ?? 0) +
-                                padY * 2 +
-                                20;
-                              const rows = Math.max(
-                                binLoadout.length,
-                                binStash.length,
-                                1,
-                              );
-                              const binH = chrome + rows * (th.button.height + 4);
-                              const binsRow = body.next(undefined, binH);
-                              const binW = (binsRow.w - 12) / 2;
-                              const bins: {
-                                id: string;
-                                title: string;
-                                items: string[];
-                              }[] = [
-                                {
-                                  id: "loadout",
-                                  title: "LOADOUT",
-                                  items: binLoadout,
-                                },
-                                {
-                                  id: "stash",
-                                  title: "STASH",
-                                  items: binStash,
-                                },
-                              ];
-                              bins.forEach((bin, bi) => {
-                                const bx = binsRow.x + bi * (binW + 12);
-                                // A bin takes items from the OTHER bin and from itself —
-                                // so the same gesture that moves an item across also
-                                // reorders one in place — but not the inventory's emoji.
-                                // The two collections hold different kinds of thing, and
-                                // `accepts` is where that belongs: refusing at the target
-                                // makes the cursor and the ring say no before the release,
-                                // rather than the drop handler quietly discarding it.
-                                const target = UI.dropTarget<DragItem>({
-                                  id: `bin:${bin.id}`,
-                                  x: bx,
-                                  y: binsRow.y,
-                                  w: binW,
-                                  h: binH,
-                                  accepts: (payload) =>
-                                    payload.from !== "inventory",
-                                });
-                                const insertAt = UI.panel(
-                                  {
-                                    x: bx,
-                                    y: binsRow.y,
-                                    w: binW,
-                                    h: binH,
-                                    title: bin.title,
-                                    // `highlight` rather than `border`: a pixel skin's
-                                    // nine-slice replaces the frame's own stroke, so a
-                                    // border here would answer the pointer under the flat
-                                    // themes and stay silent under the tileset ones. The
-                                    // ring says which bin a release would land in, and
-                                    // says "not this one" when `accepts` has refused.
-                                    highlight: target.canDrop
-                                      ? th.accent
-                                      : target.hovered
-                                        ? th.danger
-                                        : undefined,
-                                  },
-                                  (binBody) => {
-                                    const slots: Rect[] = [];
-                                    bin.items.forEach((item) => {
-                                      // The flow's slot, not a width derived from the
-                                      // bin's OUTER box: the flow already knows what the
-                                      // panel's padding left it, so this stays right
-                                      // whatever `pad` the theme sets.
-                                      const slot = binBody.next(
-                                        undefined,
-                                        th.button.height,
-                                      );
-                                      slots.push(slot);
-                                      UI.button({
-                                        ...slot,
-                                        id: `drag-button:${bin.id}:${item}`,
-                                        label: item,
-                                        variant: "ghost",
-                                      });
-                                      UI.dragSource({
-                                        id: `item:${bin.id}:${item}`,
-                                        ...slot,
-                                        payload: { item, from: bin.id },
-                                      });
-                                    });
-                                    // Drawn AFTER the items so the caret sits over them,
-                                    // and `silent` on every bin but the hovered one — a
-                                    // payload is in flight for both. An empty bin has no
-                                    // slot to sit against, so it offers the body origin
-                                    // (`extent` with nothing placed) instead.
-                                    return UI.dropIndicator({
-                                      items: slots,
-                                      axis: "y",
-                                      empty: {
-                                        ...binBody.extent,
-                                        w: binW,
-                                        h: 0,
-                                      },
-                                      silent: !target.canDrop,
-                                    });
-                                  },
-                                );
-                                // Apply a completed drop: move the item across, or reorder
-                                // it inside its own bin. Removing first shifts everything
-                                // after the item down one, so an insertion point past it
-                                // has to come back by one to stay where the caret was.
-                                if (target.dropped) {
-                                  const { item, from } = target.dropped.payload;
-                                  const sameBin = from === bin.id;
-                                  if (from === "loadout")
-                                    binLoadout = binLoadout.filter(
-                                      (x) => x !== item,
-                                    );
-                                  else
-                                    binStash = binStash.filter(
-                                      (x) => x !== item,
-                                    );
-                                  const removedBefore =
-                                    sameBin &&
-                                    bin.items.indexOf(item) < insertAt;
-                                  const at = insertAt - (removedBefore ? 1 : 0);
-                                  const dest =
-                                    bin.id === "loadout"
-                                      ? [...binLoadout]
-                                      : [...binStash];
-                                  dest.splice(at, 0, item);
-                                  if (bin.id === "loadout") binLoadout = dest;
-                                  else binStash = dest;
-                                }
-                              });
-
-                              // UI.grid — even 2-D cells, here a 4x2 emoji inventory in a
-                              // panel of its own. Same mechanic turned ninety degrees: ONE
-                              // drop target over the whole grid, because a reorder lands
-                              // BETWEEN cells and which gap it lands in is `dropIndicator`'s
-                              // job, not the hit test's.
-                              //
-                              // 22px is the emoji's own size, so a cell twice that reads as a
-                              // slot around it. That only sizes the RESERVED box — the cells
-                              // themselves come out of `fill()`, so they end up dividing
-                              // exactly whatever interior the skin leaves.
-                              const invH = chrome + 22 * 2 * 2 + 6;
-                              const invBox = body.next(undefined, invH);
-                              const slot = UI.dropTarget<DragItem>({
-                                id: uiId("inv-grid"),
-                                ...invBox,
-                                accepts: (payload) =>
-                                  payload.from === "inventory",
-                              });
-                              const cellRects: Rect[] = [];
-                              const invAt = UI.panel(
-                                {
-                                  ...invBox,
-                                  title: "INVENTORY",
-                                  highlight: slot.canDrop
-                                    ? th.accent
-                                    : slot.hovered
-                                      ? th.danger
-                                      : undefined,
-                                },
-                                (invBody) => {
-                                  const cells = invBody.fill();
-                                  UI.grid(
+                        UI.col({ id: uiId("col4"), stretchCross: true }, () => {
+                          UI.panel({ title: "Drag & drop", stretchCross: true }, (body) => {
+                            UI.text("Drag between bins, or reorder in place", {
+                              color: "dim",
+                              size: 12,
+                            });
+                            const bins: {
+                              id: string;
+                              title: string;
+                              items: string[];
+                            }[] = [
+                              {
+                                id: "loadout",
+                                title: "LOADOUT",
+                                items: binLoadout,
+                              },
+                              {
+                                id: "stash",
+                                title: "STASH",
+                                items: binStash,
+                              },
+                            ];
+                            UI.row(
+                              {
+                                gap: 12,
+                                fitCross: true,
+                                fillChildren: bins.length,
+                              },
+                              () => {
+                                bins.forEach((bin) => {
+                                  let target = UI.dropTargetState<DragItem>(`bin:${bin.id}`);
+                                  let insertAt = 0;
+                                  // A bin takes items from the OTHER bin and from itself —
+                                  // so the same gesture that moves an item across also
+                                  // reorders one in place — but not the inventory's emoji.
+                                  // The two collections hold different kinds of thing, and
+                                  // `accepts` is where that belongs: refusing at the target
+                                  // makes the cursor and the ring say no before the release,
+                                  // rather than the drop handler quietly discarding it.
+                                  UI.panel<unknown, DragItem>(
                                     {
-                                      ...cells,
-                                      cols: 4,
-                                      count: invSlots.length,
+                                      flex: "fill",
+                                      title: bin.title,
+                                      dropTarget: {
+                                        id: `bin:${bin.id}`,
+                                        accepts: (payload) => payload.from !== "inventory",
+                                      },
                                     },
-                                    (r, i) => {
-                                      cellRects.push(r);
-                                      UI.listItem({
-                                        id: uiId(`slot-${i}`),
-                                        ...r,
+                                    (binBody) => {
+                                      const slots: Rect[] = [];
+                                      bin.items.forEach((item) => {
+                                        // Let the button reserve its natural themed width;
+                                        // an explicit slot here would override a skin's
+                                        // button minimum and make the item paint outside
+                                        // the auto-sized bin panel.
+                                        UI.button({
+                                          at: binBody,
+                                          id: `drag-button:${bin.id}:${item}`,
+                                          label: item,
+                                          variant: "ghost",
+                                        });
+                                        const slot = UI.lastRect();
+                                        if (!slot) return;
+                                        slots.push(slot);
+                                        UI.dragSource({
+                                          id: `item:${bin.id}:${item}`,
+                                          ...slot,
+                                          payload: { item, from: bin.id },
+                                        });
                                       });
-                                      UI.text(invSlots[i] ?? "", {
-                                        ...r,
-                                        align: "center",
-                                        size: 22,
-                                      });
-                                      UI.dragSource({
-                                        id: uiId(`inv-drag-${i}`),
-                                        ...r,
-                                        payload: {
-                                          item: invSlots[i] ?? "",
-                                          from: "inventory",
+                                      // Drawn AFTER the items so the caret sits over them,
+                                      // and `silent` on every bin but the hovered one — a
+                                      // payload is in flight for both. An empty bin has no
+                                      // slot to sit against, so it offers the body origin
+                                      // (`extent` with nothing placed) instead.
+                                      target = UI.dropTargetState<DragItem>(`bin:${bin.id}`);
+                                      insertAt = UI.dropIndicator({
+                                        items: slots,
+                                        axis: "y",
+                                        empty: {
+                                          ...binBody.extent,
+                                          h: 0,
                                         },
+                                        silent: !target?.canDrop,
                                       });
                                     },
                                   );
-                                  // `axis: "x"` in a row-major grid: the caret is a vertical
-                                  // rule between two cells, and because the nearest INSERTION
-                                  // SEGMENT wins (not the nearest cell centre on one axis),
-                                  // the end of a row and the start of the next stay distinct.
-                                  return UI.dropIndicator({
-                                    items: cellRects,
-                                    axis: "x",
-                                    empty: { ...cells, w: 0 },
-                                    silent: !slot.canDrop,
-                                  });
-                                },
-                              );
-                              // Reorder only — `accepts` has already turned everything
-                              // else away, so the item is always one of these.
-                              if (slot.dropped) {
-                                const { item } = slot.dropped.payload;
-                                const was = invSlots.indexOf(item);
-                                const next = invSlots.filter(
-                                  (_, i) => i !== was,
+                                  // Apply a completed drop: move the item across, or reorder
+                                  // it inside its own bin. Removing first shifts everything
+                                  // after the item down one, so an insertion point past it
+                                  // has to come back by one to stay where the caret was.
+                                  if (target?.dropped) {
+                                    const { item, from } = target.dropped.payload;
+                                    const sameBin = from === bin.id;
+                                    if (from === "loadout")
+                                      binLoadout = binLoadout.filter((x) => x !== item);
+                                    else binStash = binStash.filter((x) => x !== item);
+                                    const removedBefore =
+                                      sameBin && bin.items.indexOf(item) < insertAt;
+                                    const at = insertAt - (removedBefore ? 1 : 0);
+                                    const dest =
+                                      bin.id === "loadout" ? [...binLoadout] : [...binStash];
+                                    dest.splice(at, 0, item);
+                                    if (bin.id === "loadout") binLoadout = dest;
+                                    else binStash = dest;
+                                  }
+                                });
+                              },
+                            );
+
+                            // UI.grid — even 2-D cells, here a 4x2 emoji inventory in a
+                            // panel of its own. Same mechanic turned ninety degrees: ONE
+                            // drop target over the whole grid, because a reorder lands
+                            // BETWEEN cells and which gap it lands in is `dropIndicator`'s
+                            // job, not the hit test's.
+                            //
+                            // 22px is the emoji's own size, so a cell twice that reads as a
+                            // slot around it. That only sizes the RESERVED box — the cells
+                            // themselves come out of `fill()`, so they end up dividing
+                            // exactly whatever interior the skin leaves.
+                            const chrome =
+                              th.panel.title.height +
+                              (th.panel.frameInset.top ?? th.panel.frameInset.y ?? 0) +
+                              (th.panel.frameInset.bottom ?? th.panel.frameInset.y ?? 0) +
+                              (th.panel.padding.top ?? th.panel.padding.y ?? 0) * 2 +
+                              20;
+                            const invH = chrome + 22 * 2 * 2 + 6;
+                            const invBox = body.next(undefined, invH);
+                            const slot = UI.dropTarget<DragItem>({
+                              id: uiId("inv-grid"),
+                              ...invBox,
+                              accepts: (payload) => payload.from === "inventory",
+                            });
+                            const cellRects: Rect[] = [];
+                            const invAt = UI.panel(
+                              {
+                                ...invBox,
+                                title: "INVENTORY",
+                                highlight: slot.canDrop
+                                  ? th.accent
+                                  : slot.hovered
+                                    ? th.danger
+                                    : undefined,
+                              },
+                              (invBody) => {
+                                const cells = invBody.fill();
+                                UI.grid(
+                                  {
+                                    ...cells,
+                                    cols: 4,
+                                    count: invSlots.length,
+                                  },
+                                  (r, i) => {
+                                    cellRects.push(r);
+                                    UI.listItem({
+                                      id: uiId(`slot-${i}`),
+                                      ...r,
+                                    });
+                                    UI.text(invSlots[i] ?? "", {
+                                      ...r,
+                                      align: "center",
+                                      size: 22,
+                                    });
+                                    UI.dragSource({
+                                      id: uiId(`inv-drag-${i}`),
+                                      ...r,
+                                      payload: {
+                                        item: invSlots[i] ?? "",
+                                        from: "inventory",
+                                      },
+                                    });
+                                  },
                                 );
-                                next.splice(
-                                  was < invAt ? invAt - 1 : invAt,
-                                  0,
-                                  item,
-                                );
-                                invSlots = next;
-                              }
-                            },
-                          );
+                                // `axis: "x"` in a row-major grid: the caret is a vertical
+                                // rule between two cells, and because the nearest INSERTION
+                                // SEGMENT wins (not the nearest cell centre on one axis),
+                                // the end of a row and the start of the next stay distinct.
+                                return UI.dropIndicator({
+                                  items: cellRects,
+                                  axis: "x",
+                                  empty: { ...cells, w: 0 },
+                                  silent: !slot.canDrop,
+                                });
+                              },
+                            );
+                            // Reorder only — `accepts` has already turned everything
+                            // else away, so the item is always one of these.
+                            if (slot.dropped) {
+                              const { item } = slot.dropped.payload;
+                              const was = invSlots.indexOf(item);
+                              const next = invSlots.filter((_, i) => i !== was);
+                              next.splice(was < invAt ? invAt - 1 : invAt, 0, item);
+                              invSlots = next;
+                            }
+                          });
                         });
 
                         // ================= COLUMN 5 : Layout & regions =================
                         // The clipped scrollbar viewport intentionally uses a fixed
                         // region. The flow-cursor and spacer demos are ordinary auto-flowing
                         // panels, so their height comes from their children.
-                        UI.col({ id: uiId("col5") }, () => {
+                        UI.col({ id: uiId("col5"), stretchCross: true }, () => {
                           // UI.flow — the low-level layout cursor (what row/col use inside).
-                          // Here an `align: "end"` cursor lays two auto-width buttons out
-                          // right-to-left for a right-anchored toolbar.
-                          UI.panel(
-                            { title: "Flow cursor (toolbar)" },
-                            (body) => {
-                              const row = body.next(undefined, 30);
-                              UI.text("History", {
-                                x: row.x,
-                                y: row.y,
-                                h: row.h,
-                                color: "dim",
-                              });
-                              const bar = UI.flow({
-                                x: row.x + row.w - 12,
-                                y: row.y,
-                                dir: "row",
-                                align: "end",
-                              });
-                              if (
-                                UI.button({
-                                  at: bar,
-                                  id: uiId("st-redo"),
-                                  label: "Redo",
-                                })
-                              )
-                                UI.floatText("redo", row.x + row.w - 40, row.y);
-                              if (
-                                UI.button({
-                                  at: bar,
-                                  id: uiId("st-undo"),
-                                  label: "Undo",
-                                })
-                              )
-                                UI.floatText(
-                                  "undo",
-                                  row.x + row.w - 100,
-                                  row.y,
-                                );
-                            },
-                          );
+                          // Here one cursor lays the label and two auto-width buttons out
+                          // in sequence, so its finished extent is the panel's content.
+                          UI.panel({ title: "Flow cursor (toolbar)" }, (body) => {
+                            const origin = body.extent;
+                            const bar = UI.flow({
+                              x: origin.x,
+                              y: origin.y,
+                              dir: "row",
+                              gap: th.spacing.md,
+                            });
+                            UI.text("History", { at: bar, color: "dim" });
+                            if (
+                              UI.button({
+                                at: bar,
+                                id: uiId("st-redo"),
+                                label: "Redo",
+                              })
+                            )
+                              UI.floatText(
+                                "redo",
+                                bar.last?.x ?? origin.x,
+                                bar.last?.y ?? origin.y,
+                              );
+                            if (
+                              UI.button({
+                                at: bar,
+                                id: uiId("st-undo"),
+                                label: "Undo",
+                              })
+                            )
+                              UI.floatText(
+                                "undo",
+                                bar.last?.x ?? origin.x,
+                                bar.last?.y ?? origin.y,
+                              );
+                            // `UI.flow` is an independent low-level cursor, so its
+                            // buttons do not automatically contribute to the panel
+                            // body's extent. Include the finished toolbar explicitly;
+                            // the panel can then grow to contain it.
+                            body.include(bar.extent);
+                          });
 
                           // UI.spacer — a fixed gap inserted before the next child; sized from
                           // the row cursor's `remaining` space, it pushes the button flush to
                           // the right edge (a manual alternative to a flex spacer).
-                          UI.panel(
-                            { title: "Spacer (align right)" },
-                            () => {
-                              UI.row((rst) => {
-                                UI.text("v1.4.2", { color: "dim" });
-                                // The spacer has to know the button's width before the
-                                // button exists, and `76` was a guess that only suited the
-                                // default theme — a skin with wide decorative end caps got
-                                // its label squeezed between them. `buttonWidth` asks the
-                                // theme what this label will actually measure.
-                                const saveW = UI.buttonWidth("Save");
-                                UI.spacer(Math.max(0, rst.remaining - saveW));
-                                if (
-                                  UI.button({
-                                    id: uiId("sp-save"),
-                                    label: "Save",
-                                    variant: "primary",
-                                  })
-                                )
-                                  UI.floatText(
-                                    "saved",
-                                    UI.lastRect()?.x ?? 0,
-                                    UI.lastRect()?.y ?? 0,
-                                  );
-                              });
-                            },
-                          );
+                          UI.panel({ title: "Spacer (align right)" }, () => {
+                            UI.row((rst) => {
+                              UI.text("v1.4.2", { color: "dim" });
+                              // The spacer has to know the button's width before the
+                              // button exists, and `76` was a guess that only suited the
+                              // default theme — a skin with wide decorative end caps got
+                              // its label squeezed between them. `buttonWidth` asks the
+                              // theme what this label will actually measure.
+                              const saveW = UI.buttonWidth("Save");
+                              UI.spacer(Math.max(0, rst.remaining - saveW));
+                              if (
+                                UI.button({
+                                  id: uiId("sp-save"),
+                                  label: "Save",
+                                  variant: "primary",
+                                })
+                              )
+                                UI.floatText("saved", UI.lastRect()?.x ?? 0, UI.lastRect()?.y ?? 0);
+                            });
+                          });
 
                           // UI.clip + UI.scrollbar — a clipped viewport masks tall content
                           // (drawn at a scrolled offset), and an EXPLICIT scrollbar bound to
                           // the content/view extents drives that offset (thumb, track and
                           // wheel). Distinct from the implicit overflow:"auto" columns above.
-                          UI.panel(
-                            { title: "Clip + scrollbar" },
-                            (body) => {
-                              // The viewport is the panel's own body slot, minus a gutter
-                              // for the scrollbar beside it. Hand-positioning it from
-                              // `clipBox.y + 40` put the first credit line under any skin
-                              // whose title strip reaches further down than the default
-                              // theme's — how far that is belongs to the theme (frame
-                              // inset + `panel.title.height`), not to this sample.
-                              const area = body.next(undefined, 168);
-                              // Same gutter the implicit `overflow: "auto"` containers take
-                              // out of their own width, from the same theme tokens — a skin
-                              // with a wide scrollbar rail widens both together.
-                              const th = UI.getTheme();
-                              const gutter = th.scrollbarW + th.scrollbarGap;
-                              const vpRect: Rect = {
-                                ...area,
-                                w: area.w - gutter,
-                              };
-                              const lineH = 22;
-                              const content = creditLines.length * lineH;
-                              UI.clip(vpRect, () => {
-                                for (let i = 0; i < creditLines.length; i++)
-                                  UI.text(creditLines[i], {
-                                    x: vpRect.x + 4,
-                                    y: vpRect.y - clipOffset + i * lineH,
-                                    h: lineH,
-                                    size: 13,
-                                    color: i === 0 ? "accent" : undefined,
-                                  });
-                              });
-                              clipOffset = UI.scrollbar({
-                                x: vpRect.x + vpRect.w + th.scrollbarGap,
-                                y: vpRect.y,
-                                h: vpRect.h,
-                                view: vpRect.h,
-                                content,
-                                offset: clipOffset,
-                                wheelArea: vpRect,
-                                id: uiId("clip-sb"),
-                              });
-                            },
-                          );
+                          UI.panel({ title: "Clip + scrollbar" }, (body) => {
+                            // The viewport is the panel's own body slot, minus a gutter
+                            // for the scrollbar beside it. Hand-positioning it from
+                            // `clipBox.y + 40` put the first credit line under any skin
+                            // whose title strip reaches further down than the default
+                            // theme's — how far that is belongs to the theme (frame
+                            // inset + `panel.title.height`), not to this sample.
+                            const area = body.next(undefined, 168);
+                            // Same gutter the implicit `overflow: "auto"` containers take
+                            // out of their own width, from the same theme tokens — a skin
+                            // with a wide scrollbar rail widens both together.
+                            const th = UI.getTheme();
+                            const gutter = th.scrollbarW + th.scrollbarGap;
+                            const vpRect: Rect = {
+                              ...area,
+                              w: area.w - gutter,
+                            };
+                            const lineH = 22;
+                            const content = creditLines.length * lineH;
+                            UI.clip(vpRect, () => {
+                              for (let i = 0; i < creditLines.length; i++)
+                                UI.text(creditLines[i], {
+                                  x: vpRect.x + 4,
+                                  y: vpRect.y - clipOffset + i * lineH,
+                                  h: lineH,
+                                  size: 13,
+                                  color: i === 0 ? "accent" : undefined,
+                                });
+                            });
+                            clipOffset = UI.scrollbar({
+                              x: vpRect.x + vpRect.w + th.scrollbarGap,
+                              y: vpRect.y,
+                              h: vpRect.h,
+                              view: vpRect.h,
+                              content,
+                              offset: clipOffset,
+                              wheelArea: vpRect,
+                              id: uiId("clip-sb"),
+                            });
+                          });
                         });
                       },
                     );
@@ -1446,8 +1353,7 @@ Loop.run({
                       size: 12,
                       wrap: true,
                     });
-                    if (UI.button({ id: uiId("pop-close"), label: "Close" }))
-                      popClose = true;
+                    if (UI.button({ id: uiId("pop-close"), label: "Close" })) popClose = true;
                   },
                 );
                 if (popClose) popoverOpen = false;
@@ -1455,29 +1361,23 @@ Loop.run({
                 // Modal — the CHILDREN form: dim + centered panel whose contents lay
                 // themselves out and whose height shrink-wraps them (no `h`, no rect math).
                 if (modalOpen) {
-                  UI.modal(
-                    { title: "Modal", id: uiId("modal") },
-                    () => {
-                      UI.text("A centered dialog over a dimmed backdrop.", {
-                        wrap: true,
-                      });
-                      // `justify: "end"` measures the content run from the container's
-                      // cache, so the row needs an id to right-align from the first frame.
-                      UI.row(
-                        { justify: "end", id: uiId("modal-actions") },
-                        () => {
-                          if (
-                            UI.button({
-                              id: uiId("modal-ok"),
-                              label: "Got it",
-                              variant: "primary",
-                            })
-                          )
-                            modalOpen = false;
-                        },
-                      );
-                    },
-                  );
+                  UI.modal({ title: "Modal", id: uiId("modal") }, () => {
+                    UI.text("A centered dialog over a dimmed backdrop.", {
+                      wrap: true,
+                    });
+                    // `justify: "end"` measures the content run from the container's
+                    // cache, so the row needs an id to right-align from the first frame.
+                    UI.row({ justify: "end", id: uiId("modal-actions") }, () => {
+                      if (
+                        UI.button({
+                          id: uiId("modal-ok"),
+                          label: "Got it",
+                          variant: "primary",
+                        })
+                      )
+                        modalOpen = false;
+                    });
+                  });
                 }
 
                 // Confirm: a whole dialog in one declarative call.
@@ -1485,10 +1385,7 @@ Loop.run({
                   const hit = UI.confirm({
                     id: uiId("confirm"),
                     title: "Delete save?",
-                    lines: [
-                      "This cannot be undone.",
-                      "Your progress will be lost.",
-                    ],
+                    lines: ["This cannot be undone.", "Your progress will be lost."],
                     buttons: ["Cancel", "Delete"],
                     variants: ["default", "danger"],
                   });
@@ -1527,27 +1424,17 @@ Loop.run({
                       id: uiId("atlas-modal"),
                     });
                     const views = [atlas, ...(atlas.variants ?? [])];
-                    atlasVariant = Math.max(
-                      0,
-                      Math.min(atlasVariant, views.length - 1),
-                    );
+                    atlasVariant = Math.max(0, Math.min(atlasVariant, views.length - 1));
                     const view = views[atlasVariant];
-                    const overlayColors = [
-                      "#ff4ecb",
-                      "#35d9ff",
-                      "#a7f542",
-                      "#ffad42",
-                    ];
+                    const overlayColors = ["#ff4ecb", "#35d9ff", "#a7f542", "#ffad42"];
                     const overlayFills = [
                       "rgba(255,78,203,0.18)",
                       "rgba(53,217,255,0.18)",
                       "rgba(167,245,66,0.18)",
                       "rgba(255,173,66,0.18)",
                     ];
-                    const overlayColor =
-                      overlayColors[atlasVariant % overlayColors.length];
-                    const overlayFill =
-                      overlayFills[atlasVariant % overlayFills.length];
+                    const overlayColor = overlayColors[atlasVariant % overlayColors.length];
+                    const overlayFill = overlayFills[atlasVariant % overlayFills.length];
                     const source = view.image as {
                       width?: number;
                       height?: number;
@@ -1563,18 +1450,12 @@ Loop.run({
                       w: modal.w - legendW - 28,
                       h: modal.h - 78,
                     };
-                    const fitScale = Math.min(
-                      1,
-                      viewport.w / sourceW,
-                      viewport.h / sourceH,
-                    );
+                    const fitScale = Math.min(1, viewport.w / sourceW, viewport.h / sourceH);
                     const scale = fitScale * atlasZoom;
                     const imageW = sourceW * scale;
                     const imageH = sourceH * scale;
-                    const centeredImageX =
-                      viewport.x + (viewport.w - imageW) / 2;
-                    const centeredImageY =
-                      viewport.y + (viewport.h - imageH) / 2;
+                    const centeredImageX = viewport.x + (viewport.w - imageW) / 2;
+                    const centeredImageY = viewport.y + (viewport.h - imageH) / 2;
                     const atlasDrag = UI.dragGesture({
                       id: uiId("atlas-pan"),
                       x: viewport.x,
@@ -1624,32 +1505,15 @@ Loop.run({
                       const y = imageY + r.sy * scale;
                       const w = r.sw * scale;
                       const h = r.sh * scale;
-                      const nineSlice =
-                        entry.mapping === "nine-slice" && entry.insets;
+                      const nineSlice = entry.mapping === "nine-slice" && entry.insets;
                       const cols = nineSlice ? 3 : (entry.split?.cols ?? 1);
                       const rows = nineSlice ? 3 : (entry.split?.rows ?? 1);
                       const sourceXs = nineSlice
-                        ? [
-                            0,
-                            entry.insets!.left,
-                            r.sw - entry.insets!.right,
-                            r.sw,
-                          ]
-                        : Array.from(
-                            { length: cols + 1 },
-                            (_, edge) => (r.sw / cols) * edge,
-                          );
+                        ? [0, entry.insets!.left, r.sw - entry.insets!.right, r.sw]
+                        : Array.from({ length: cols + 1 }, (_, edge) => (r.sw / cols) * edge);
                       const sourceYs = nineSlice
-                        ? [
-                            0,
-                            entry.insets!.top,
-                            r.sh - entry.insets!.bottom,
-                            r.sh,
-                          ]
-                        : Array.from(
-                            { length: rows + 1 },
-                            (_, edge) => (r.sh / rows) * edge,
-                          );
+                        ? [0, entry.insets!.top, r.sh - entry.insets!.bottom, r.sh]
+                        : Array.from({ length: rows + 1 }, (_, edge) => (r.sh / rows) * edge);
                       for (let row = 0; row < rows; row++) {
                         for (let col = 0; col < cols; col++) {
                           const sourceX = sourceXs[col];
@@ -1681,28 +1545,11 @@ Loop.run({
                               sourceW,
                               sourceH,
                             };
-                            Draw.rect(
-                              cellX,
-                              cellY,
-                              cellW,
-                              cellH,
-                              "rgba(255,255,255,0.20)",
-                            );
+                            Draw.rect(cellX, cellY, cellW, cellH, "rgba(255,255,255,0.20)");
                           }
                           const cellName =
-                            entry.mapping === "auto9" ||
-                            entry.mapping === "nine-slice"
-                              ? [
-                                  "TL",
-                                  "T",
-                                  "TR",
-                                  "L",
-                                  "C",
-                                  "R",
-                                  "BL",
-                                  "B",
-                                  "BR",
-                                ][row * cols + col]
+                            entry.mapping === "auto9" || entry.mapping === "nine-slice"
+                              ? ["TL", "T", "TR", "L", "C", "R", "BL", "B", "BR"][row * cols + col]
                               : `${row * cols + col}`;
                           if (cellW >= 12 && cellH >= 10)
                             Draw.text(cellName, {
@@ -1715,14 +1562,7 @@ Loop.run({
                       }
                       ctx.save();
                       ctx.globalCompositeOperation = "difference";
-                      Draw.rectStroke(
-                        x,
-                        y,
-                        w,
-                        h,
-                        "#fff",
-                        Math.max(1, 2 * scale),
-                      );
+                      Draw.rectStroke(x, y, w, h, "#fff", Math.max(1, 2 * scale));
                       for (let col = 1; col < sourceXs.length - 1; col++)
                         if (sourceXs[col] > 0 && sourceXs[col] < r.sw)
                           Draw.line(
@@ -1754,24 +1594,18 @@ Loop.run({
                     ctx.restore();
                     const legendX = viewport.x + viewport.w + 10;
                     const legendCols = view.entries.length > 42 ? 2 : 1;
-                    const legendColW =
-                      (modal.x + modal.w - legendX - 10) / legendCols;
+                    const legendColW = (modal.x + modal.w - legendX - 10) / legendCols;
                     const legendLineH = 14;
-                    const rowsPerCol = Math.ceil(
-                      view.entries.length / legendCols,
-                    );
+                    const rowsPerCol = Math.ceil(view.entries.length / legendCols);
                     view.entries.forEach((entry, index) => {
                       const col = Math.floor(index / rowsPerCol);
                       const row = index % rowsPerCol;
-                      Draw.text(
-                        `${index + 1}. ${entry.label} · ${entry.mapping}`,
-                        {
-                          x: legendX + col * legendColW,
-                          y: viewport.y + row * legendLineH,
-                          size: 9,
-                          color: overlayColor,
-                        },
-                      );
+                      Draw.text(`${index + 1}. ${entry.label} · ${entry.mapping}`, {
+                        x: legendX + col * legendColW,
+                        y: viewport.y + row * legendLineH,
+                        size: 9,
+                        color: overlayColor,
+                      });
                     });
 
                     const hovered = hoveredCell as {
@@ -1790,8 +1624,7 @@ Loop.run({
                       const { entry, col, row, cols } = hovered;
                       const cellIndex = row * cols + col;
                       const cellName =
-                        entry.mapping === "auto9" ||
-                        entry.mapping === "nine-slice"
+                        entry.mapping === "auto9" || entry.mapping === "nine-slice"
                           ? [
                               "top-left",
                               "top",
@@ -1814,10 +1647,8 @@ Loop.run({
                       const tipH = 12 + lines.length * 15;
                       let tipX = pointer.x + 14;
                       let tipY = pointer.y + 14;
-                      if (tipX + tipW > viewport.x + viewport.w)
-                        tipX = pointer.x - tipW - 14;
-                      if (tipY + tipH > viewport.y + viewport.h)
-                        tipY = pointer.y - tipH - 14;
+                      if (tipX + tipW > viewport.x + viewport.w) tipX = pointer.x - tipW - 14;
+                      if (tipY + tipH > viewport.y + viewport.h) tipY = pointer.y - tipH - 14;
                       tipX = Math.max(
                         viewport.x + 4,
                         Math.min(tipX, viewport.x + viewport.w - tipW - 4),

@@ -57,8 +57,7 @@ function renderOrder(opts: {
   columns?: TableColumn<Server>[];
   w?: number;
   h?: number;
-  cellPadX?: number;
-  cellPadY?: number;
+  cellPadding?: { x?: number; y?: number };
 }): { order: Server[]; cellRects: Record<string, { x: number; w: number }[]> } {
   const order: Server[] = [];
   const cellRects: Record<string, { x: number; w: number }[]> = {};
@@ -88,13 +87,12 @@ function renderOrder(opts: {
     y: 0,
     w: opts.w ?? 200,
     h: opts.h ?? 300,
-    rowH: 20,
+    rowHeight: 20,
     columns,
     rows: opts.rows,
     sort: opts.sort,
     offset: 0,
-    cellPadX: opts.cellPadX ?? 0,
-    cellPadY: opts.cellPadY ?? 0,
+    cellPadding: opts.cellPadding ?? { x: 0, y: 0 },
     id: "t",
   });
   return { order, cellRects };
@@ -148,11 +146,21 @@ describe("UI.table", () => {
       rows: servers(),
       sort: { key: "ping", dir: 1 },
       w: 200,
-      cellPadX: 8,
-      cellPadY: 2,
+      cellPadding: { x: 8, y: 2 },
     });
     expect(cellRects.name[0]).toEqual({ x: 8, w: 114 });
     expect(cellRects.ping[0]).toEqual({ x: 138, w: 54 });
+  });
+
+  it("accepts independent cell-padding edges", () => {
+    const { cellRects } = renderOrder({
+      rows: servers(),
+      sort: { key: "ping", dir: 1 },
+      w: 200,
+      cellPadding: { left: 4, right: 10, top: 1, bottom: 3 },
+    });
+    expect(cellRects.name[0]).toEqual({ x: 4, w: 116 });
+    expect(cellRects.ping[0]).toEqual({ x: 134, w: 56 });
   });
 
   it("draws each header label with a sort arrow on the active column only", () => {
@@ -163,7 +171,7 @@ describe("UI.table", () => {
       y: 0,
       w: 200,
       h: 300,
-      rowH: 20,
+      rowHeight: 20,
       rows: servers(),
       sort: { key: "ping", dir: 1 },
       offset: 0,
@@ -185,7 +193,7 @@ describe("UI.table", () => {
       y: 0,
       w: 200,
       h: 300,
-      rowH: 20,
+      rowHeight: 20,
       rows,
       sort: { key: "ping", dir: -1 },
       offset: 0,

@@ -65,6 +65,7 @@ export function createUI(app: App, { gamepads }: Partial<Pick<InputApi, "gamepad
     drawTips: bind(UiModule.drawTips),
     dropIndicator: bind(UiModule.dropIndicator),
     dropTarget: bind(UiModule.dropTarget),
+    dropTargetState: bind(UiModule.dropTargetState),
     floatText: bind(UiModule.floatText),
     flow: bind(UiModule.flow),
     focus: bind(UiModule.focus),

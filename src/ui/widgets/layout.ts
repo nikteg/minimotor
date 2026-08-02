@@ -35,6 +35,7 @@ import {
   withTheme,
 } from "@src/ui/core/index.js";
 import { dragScroll, scrollbar, scrollbarFade, wheelScroll } from "./lists.js";
+import { dropTarget, type DropTargetState } from "./dragdrop.js";
 import { anchorViewport } from "@src/ui/core/index.js";
 import { pointInRect } from "@src/collision/index.js";
 import { clamp } from "@src/math/mathf.js";
@@ -142,8 +143,19 @@ function scrollable<R>(
   // `w` (vertical) / `h` (horizontal) wins, so a vertical column keeps its
   // declared width and never derives it from content.
   const naturalCross = (horiz ? top + bottom : 0) + (contentCross ?? 0) + gutter;
+  // A nested vertical viewport fills its parent's horizontal cross axis so its
+  // content can reflow to the available width. Shrink-wrapping that axis to
+  // last frame's content makes a scaled wrapping row keep the old wide width.
+  // Horizontal viewports retain their content-derived height, and root
+  // vertical viewports still shrink-wrap when no width was supplied.
+  const crossExplicit = horiz ? opts.h : opts.w;
   const boxCross =
-    (horiz ? opts.h : opts.w) ?? (contentCross !== undefined ? naturalCross : undefined);
+    crossExplicit ??
+    (dir === "col" && !isRootContainer(opts)
+      ? undefined
+      : contentCross !== undefined
+        ? naturalCross
+        : undefined);
   // Main size for the box: explicit, else `undefined` so a nested parent fills
   // it (a root falls back to the fit estimate).
   const mainForRect = explicitMain ?? (isRootContainer(opts) ? fitMain : undefined);
@@ -239,9 +251,9 @@ function scrollable<R>(
   return result;
 }
 
-// A ROOT container (pinned x/y) shrink-wraps any axis the caller omits; the
-// cross axis (a col's width, a row's height) is shrink-wrapped via `fitCross`
-// so children take their natural cross size instead of filling.
+// Auto containers shrink-wrap omitted axes by default. `fitCross` remains the
+// explicit opt-out/opt-in switch for callers that need the flex-style stretch
+// behavior, while `flex: "fill"` always wins for a deliberate fill slot.
 const isRootContainer = (opts: LayoutOptions): boolean =>
   opts.x !== undefined && opts.y !== undefined;
 
@@ -264,15 +276,17 @@ export function row<R>(
   const [opts, children] = layoutArgs(optsOrChildren, maybeChildren);
   return withTheme(opts.theme, () => {
     const wrap = opts.wrap ?? false;
-    // a row's cross is height; wrapping children take their natural height so lines
-    // measure correctly, and `fitCross` asks for that explicitly.
-    const fitCross = opts.fitCross ?? (wrap || (isRootContainer(opts) && opts.h === undefined));
+    // A row's cross axis is height. Wrapping children take their natural height
+    // so lines measure correctly; ordinary auto rows do the same by default.
+    const fitCross =
+      opts.fitCross ?? (wrap || (opts.h === undefined && opts.flex !== "fill"));
     const cfg = {
       pad: opts.pad ?? 0,
       gap: opts.gap ?? theme.spacing.md,
       justify: opts.justify ?? "start",
       reverse: opts.reverse ?? false,
       fitCross,
+      stretchCross: opts.stretchCross,
       alignCross: opts.alignCross,
       wrap,
     };
@@ -292,15 +306,17 @@ export function col<R>(
   const [opts, children] = layoutArgs(optsOrChildren, maybeChildren);
   return withTheme(opts.theme, () => {
     const wrap = opts.wrap ?? false;
-    // a col's cross is width; wrapping children take their natural width, and
-    // `fitCross` asks for that explicitly.
-    const fitCross = opts.fitCross ?? (wrap || (isRootContainer(opts) && opts.w === undefined));
+    // A col's cross axis is width. Wrapping children take their natural width;
+    // ordinary auto columns do the same by default.
+    const fitCross =
+      opts.fitCross ?? (wrap || (opts.w === undefined && opts.flex !== "fill"));
     const cfg = {
       pad: opts.pad ?? 0,
       gap: opts.gap ?? theme.spacing.md,
       justify: opts.justify ?? "start",
       reverse: opts.reverse ?? false,
       fitCross,
+      stretchCross: opts.stretchCross,
       alignCross: opts.alignCross,
       wrap,
     };
@@ -312,7 +328,7 @@ export function col<R>(
 
 /** A bordered/optionally-titled box that also LAYS OUT its children (a column by
  *  default, a row via `dir`) — the framed container. */
-export interface PanelOptions extends LayoutOptions {
+export interface PanelOptions<T = unknown> extends LayoutOptions {
   /** Optional title, drawn in the frame's title strip. */
   title?: string;
   /** Body layout axis. Default `"col"`. */
@@ -325,12 +341,18 @@ export interface PanelOptions extends LayoutOptions {
    *  (a drop target, a validation error) under a pixel skin, whose nine-slice
    *  art replaces `border`. Omit for none. */
   highlight?: string;
+  /** Register a drop target over the panel's resolved frame. The state is
+   *  available to children through `dropTargetState(id)`. */
+  dropTarget?: {
+    id: string;
+    accepts?: (payload: T, sourceId: string) => boolean;
+  };
 }
 
 /** Keep an explicitly sized titled pixel panel from placing its first standard
  *  control inside the skin's fixed bottom edge. Auto-sized panels already get
  *  this space from their measured children. */
-function panelWithSafeMinimumHeight(opts: PanelOptions): PanelOptions {
+function panelWithSafeMinimumHeight<T>(opts: PanelOptions<T>): PanelOptions<T> {
   const frameBottom = theme.skin?.frames.panel?.insets.bottom ?? 0;
   if (!opts.title || !frameBottom) return opts;
   // Panel top inset + title band + 2px title border + the theme's own body
@@ -354,7 +376,7 @@ function panelWithSafeMinimumHeight(opts: PanelOptions): PanelOptions {
  *  theme's `panel.frameInset` on the horizontal edges. Vertical inset is spent on
  *  `cfg.top` / `cfg.bottom`, so it stacks with the title band instead of being
  *  mirrored around the whole body. */
-function panelPadding(opts: PanelOptions): {
+function panelPadding<T>(opts: PanelOptions<T>): {
   top: number;
   right: number;
   bottom: number;
@@ -380,14 +402,15 @@ function panelPadding(opts: PanelOptions): {
  *    UI.panel({ anchor: "center", w: 260, title: "PAUSED" }, () => {
  *      if (UI.button({ label: "Resume" })) resume();
  *    }); */
-export function panel<R>(opts: PanelOptions, children: LayoutChildren<R>): R {
+export function panel<R, T = unknown>(opts: PanelOptions<T>, children: LayoutChildren<R>): R {
   return withTheme(opts.theme, () => {
     const safeOpts = panelWithSafeMinimumHeight(opts);
     const dir = safeOpts.dir ?? "col";
     const fitCross =
       safeOpts.fitCross ??
-      (isRootContainer(safeOpts) &&
-        (dir === "col" ? safeOpts.w === undefined : safeOpts.h === undefined));
+      (dir === "col"
+        ? safeOpts.w === undefined && safeOpts.flex !== "fill"
+        : safeOpts.h === undefined && safeOpts.flex !== "fill");
     // The title area includes the panel's top frame inset plus the theme's
     // title band. Reserve a matching 2px below for the bottom border.
     // The panel inset is the gap a skin needs between its frame art and any
@@ -399,10 +422,14 @@ export function panel<R>(opts: PanelOptions, children: LayoutChildren<R>): R {
       justify: safeOpts.justify ?? "start",
       reverse: safeOpts.reverse ?? false,
       fitCross,
+      stretchCross: safeOpts.stretchCross,
       alignCross: safeOpts.alignCross,
       top: (safeOpts.title ? panelTitleBodyOffset() : 0) + panelInset.top,
       bottom: (safeOpts.title ? 2 : 0) + panelInset.bottom,
-      box: (rect) =>
+      box: (rect) => {
+        const target = safeOpts.dropTarget
+          ? dropTarget({ ...safeOpts.dropTarget, ...rect })
+          : (null as DropTargetState<T> | null);
         paintFrame(uiCtx(), {
           x: rect.x,
           y: rect.y,
@@ -411,8 +438,13 @@ export function panel<R>(opts: PanelOptions, children: LayoutChildren<R>): R {
           title: safeOpts.title,
           bg: safeOpts.bg,
           border: safeOpts.border,
-          highlight: safeOpts.highlight,
-        }),
+          highlight: target?.canDrop
+            ? theme.accent
+            : target?.hovered
+              ? theme.danger
+              : safeOpts.highlight,
+        });
+      },
     };
     // With overflow the frame + title stay fixed and only the body scrolls.
     if (safeOpts.overflow && safeOpts.overflow !== "visible")

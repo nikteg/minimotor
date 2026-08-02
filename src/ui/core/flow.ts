@@ -14,6 +14,7 @@ import {
   recordLayout,
   refreshLayoutRect,
 } from "./layout-capture.js";
+import { currentUiScale, uiHeight, uiWidth } from "./input.js";
 import { ANCHOR_H, ANCHOR_V, anchorViewport, type TextAnchor } from "./text.js";
 import { uiSlot } from "./state.js";
 import { theme, themeKey } from "@src/ui/theme.js";
@@ -75,6 +76,10 @@ export interface FlowOptions {
    *  flow (a col's width, a row's height) instead of filling it. Set by an
    *  auto-sized container so it can measure its content. Default false. */
   fitCross?: boolean;
+  /** After the first natural measurement, stretch children across the
+   *  container's measured cross size. Useful for an auto-width column whose
+   *  panels should all match its widest panel. */
+  stretchCross?: boolean;
   /** Where a slot SMALLER than the cross axis sits across it — flexbox's
    *  `align-items`. Only bites on a slot with its own cross size (an 8px
    *  swatch in a row of text); a slot that fills the cross axis has no slack
@@ -85,6 +90,24 @@ export interface FlowOptions {
    *  new line (rows wrap downward, cols wrap sideways) offset by the tallest/
    *  widest slot of the line just finished. Needs `length`. Default false. */
   wrap?: boolean;
+  /**
+   * FIXME: This is not a good long-term equal-layout API. Requiring the
+   * caller to know the number of future `flex: "fill"` children leaks the
+   * implementation detail of a one-pass immediate-mode callback into the
+   * layout description. It also makes dynamic child lists awkward and leaves
+   * the caller choosing between a magic count and hand-written widths.
+   *
+   * TODO: Replace this with a genuinely automatic distribution primitive, or
+   * redesign container children so the row can collect/measure its direct
+   * children before assigning equal slots without invoking user callbacks
+   * twice. The eventual API should let callers say “distribute fill children
+   * equally” and should derive the count itself, including when children are
+   * added or removed during normal immediate-mode rendering.
+   */
+  fillChildren?: number;
+  /** Internal layout-space scale. Closure containers set this to the active
+   *  UI transform so a scaled boundary is not applied twice. */
+  layoutScale?: number;
 }
 
 /** A slot handed out before its size is known — the mechanism that lets an
@@ -114,10 +137,15 @@ export interface Flow {
   /** True when the container shrink-wraps its cross axis — widgets should
    *  place at their natural cross size rather than filling. `place` reads it. */
   readonly fitCross: boolean;
+  /** True after an auto container has measured its cross axis and now stretches
+   *  children across that measured size. */
+  readonly stretchCross: boolean;
   /** True when the container flex-wraps its children onto new lines. Nested
    *  containers read it (via `containerRect`) to reserve a NATURAL cross size
    *  so line breaks measure correctly. */
   readonly wrap: boolean;
+  /** Scale already accounted for by this cursor's dimensions. */
+  readonly layoutScale: number;
   /** Reserve the next slot and advance. For rows pass the width (height
    *  defaults from the flow); for columns pass the height as the second
    *  argument (width defaults from the flow). */
@@ -130,10 +158,15 @@ export interface Flow {
   reserve(w?: number, h?: number): DeferredSlot | null;
   /** Reserve a slot that fills the remaining main-axis space, minus `reserve`
    *  (leave room for later fixed slots — e.g. a footer's height + gap). Needs
-   *  `length` set on the flow; the closure containers set it for you. */
-  fill(reserve?: number): { x: number; y: number; w: number; h: number };
+   *  `length` set on the flow; the closure containers set it for you. `cross`
+   *  optionally supplies the other axis. */
+  fill(reserve?: number, cross?: number): { x: number; y: number; w: number; h: number };
   /** Extra spacing before the next slot. */
   gap(px: number): void;
+  /** Include an independently positioned drawing in this container's measured
+   *  extent without moving the flow cursor. Useful for low-level `UI.flow`
+   *  toolbars drawn inside an auto-sized panel. */
+  include(rect: { x: number; y: number; w: number; h: number }): void;
   /** Main-axis space left before the container's end (needs `length`). */
   readonly remaining: number;
   /** The most recently handed-out slot — anchor popovers/spinners to it. */
@@ -175,6 +208,7 @@ export function flow(opts: FlowOptions): Flow {
   const wrapping = (opts.wrap ?? false) && !back && opts.length !== undefined;
   let lineCross = 0; // tallest (row) / widest (col) slot in the current line
   let crossMax = 0; // largest cross size any slot ASKED for — see `crossExtent`
+  let fillChildren = Math.max(0, Math.floor(opts.fillChildren ?? 0));
   const crossFactor =
     opts.alignCross === "center" ? 0.5 : opts.alignCross === "end" ? 1 : /* start */ 0;
 
@@ -254,7 +288,9 @@ export function flow(opts: FlowOptions): Flow {
     dir,
     crossSize: dir === "col" ? opts.w : opts.h,
     fitCross: opts.fitCross ?? false,
+    stretchCross: opts.stretchCross ?? false,
     wrap: wrapping,
+    layoutScale: opts.layoutScale ?? 1,
     next: advance,
     reserve(w, h) {
       // Wrapping needs the main size to decide the line break, and an
@@ -274,13 +310,32 @@ export function flow(opts: FlowOptions): Flow {
         },
       };
     },
-    fill(reserve = 0) {
-      const avail = Math.max(0, remaining() - reserve);
-      return dir === "row" ? advance(avail) : advance(undefined, avail);
+    fill(reserve = 0, cross) {
+      const slots = fillChildren > 0 ? fillChildren : 1;
+      const distributedGap = fillChildren > 0 ? gapPx * (slots - 1) : 0;
+      const avail = Math.max(0, remaining() - reserve - distributedGap);
+      const main = fillChildren > 0 ? avail / slots : avail;
+      if (fillChildren > 0) fillChildren--;
+      return dir === "row" ? advance(main, cross) : advance(cross, main);
     },
     gap(px) {
       if (dir === "row") cx += (back ? -1 : 1) * px;
       else cy += (back ? -1 : 1) * px;
+    },
+    include(rect) {
+      crossMax = Math.max(
+        crossMax,
+        dir === "row" ? rect.y + rect.h - (opts.y ?? rect.y) : rect.x + rect.w - (opts.x ?? rect.x),
+      );
+      if (!ext) ext = { ...rect };
+      else {
+        const x2 = Math.max(ext.x + ext.w, rect.x + rect.w);
+        const y2 = Math.max(ext.y + ext.h, rect.y + rect.h);
+        ext.x = Math.min(ext.x, rect.x);
+        ext.y = Math.min(ext.y, rect.y);
+        ext.w = x2 - ext.x;
+        ext.h = y2 - ext.y;
+      }
     },
     get remaining() {
       return remaining();
@@ -329,6 +384,9 @@ export interface Flowable {
   w?: number;
   /** Height in px (see `w`). */
   h?: number;
+  /** Fill the available parent space: remaining width in a row, or the
+   *  parent's width when flowing in a column. Explicit `w`/`h` still win. */
+  flex?: "fill";
   /** Flow into THIS cursor instead of the ambient layout. */
   at?: Flow;
 }
@@ -341,6 +399,10 @@ export interface Fillable extends Flowable {
    *  footer row): the widget fills the remaining main axis minus this. Default
    *  0 (fill all remaining). */
   reserve?: number;
+  /** Minimum natural width reported to an auto-sized parent. The widget still
+   *  fills the parent's current slot; this only prevents the parent from
+   *  shrink-wrapping narrower than the widget's content needs. */
+  minW?: number;
 }
 
 // ---------- Last placed widget (anchor rect) ----------
@@ -371,6 +433,15 @@ export function fillRect(
   const rect = layout
     ? layout.fill(opts.reserve ?? 0)
     : { x: opts.x ?? 0, y: opts.y ?? 0, w: opts.w ?? 0, h: opts.h ?? 0 };
+  if (opts.minW !== undefined) {
+    const measureLayout = opts.at ?? currentLayout();
+    measureLayout?.include({
+      x: rect.x,
+      y: rect.y,
+      w: Math.max(rect.w, opts.minW),
+      h: rect.h,
+    });
+  }
   lastRectSlot().rect = rect;
   if (layoutCaptureActive) {
     recordLayout(kind, (opts as { id?: string }).id, rect, { pinned: !layout });
@@ -399,7 +470,14 @@ export function place(
     // Cross axis: fill the container (pass undefined) UNLESS it shrink-wraps
     // (`fitCross`), where the widget's natural cross size is used instead.
     if (st.dir === "row") {
-      rect = st.next(opts.w ?? autoW, opts.h ?? (st.fitCross ? defaultH : undefined));
+      if (opts.flex === "fill" && opts.w === undefined) {
+        rect = st.fill(0, opts.h ?? (st.fitCross && !st.stretchCross ? defaultH : undefined));
+      } else {
+        rect = st.next(
+          opts.w ?? autoW,
+          opts.h ?? (st.fitCross && !st.stretchCross ? defaultH : undefined),
+        );
+      }
     } else {
       // In a COLUMN, height is the main axis and an undated slot falls back to
       // the flow's generic row height (`theme.button.height`). `intrinsicH` widgets
@@ -407,7 +485,8 @@ export function place(
       // into a button-sized slot squashes the frame. Rows are unaffected —
       // there height is the CROSS axis and filling the row is still right.
       rect = st.next(
-        opts.w ?? (st.fitCross ? autoW : undefined),
+        opts.w ??
+          (opts.flex === "fill" ? undefined : st.fitCross && !st.stretchCross ? autoW : undefined),
         opts.h ?? (intrinsicH ? defaultH : undefined),
       );
     }
@@ -417,6 +496,24 @@ export function place(
   lastRectSlot().rect = rect;
   if (layoutCaptureActive) recordLayout(kind, (opts as { id?: string }).id, rect, { pinned });
   return rect;
+}
+
+/** Place a field-like widget. In a column, omitted field widths fill the
+ *  column by default; rows and pinned widgets retain their natural size.
+ *  Explicit `w` and `flex` always win. */
+export function placeField(
+  opts: Flowable,
+  autoW: number,
+  defaultH: number,
+  kind = "field",
+  intrinsicH = false,
+): { x: number; y: number; w: number; h: number } {
+  const layout = opts.at ?? (opts.x === undefined ? currentLayout() : null);
+  const fieldOpts =
+    opts.flex === undefined && opts.w === undefined && layout?.dir === "col"
+      ? { ...opts, flex: "fill" as const }
+      : opts;
+  return place(fieldOpts, autoW, defaultH, kind, intrinsicH);
 }
 
 /** Options shared by the closure containers. */
@@ -436,6 +533,8 @@ export interface LayoutOptions {
   h?: number;
   /** Minimum height in px; auto-sized containers grow to at least this value. */
   minH?: number;
+  /** Minimum width in px; auto-sized containers grow to at least this value. */
+  minW?: number;
   /** Stable id for the auto-height cache. Optional: falls back to the
    *  `idScope` call-order, then to a position-derived key for pinned
    *  containers. Set it when several unpinned containers would otherwise
@@ -460,9 +559,9 @@ export interface LayoutOptions {
    *
    *  It only moves a child that has a cross size of its own, because only that
    *  child has slack: an 8px colour swatch beside a line of text centres,
-   *  while the text — which fills the cross axis — has nowhere to go. Pair it
-   *  with `fitCross` to get the flexbox default, a row that hugs its tallest
-   *  child with everything centred on one line:
+   *  while the text — which fills the cross axis — has nowhere to go. Auto
+   *  containers already shrink-wrap omitted cross axes; use `fitCross: false`
+   *  when you explicitly want stretch behavior:
    *
    *    UI.row({ gap: 8, fitCross: true, alignCross: "center" }, () => {
    *      UI.bar({ value: 1, w: 8, h: 8, fill: color, bg: color });
@@ -476,12 +575,14 @@ export interface LayoutOptions {
    *  the container, and the container then hugs the tallest of them. CSS's
    *  `align-items: flex-start` on a `height: fit-content` box.
    *
-   *  Off by default, which is flexbox's `stretch`: children fill the cross
-   *  axis, so a row of controls all share one height. Turn it on for a compact
-   *  line — a roster entry, a legend, an inline badge — where the row should be
-   *  as tall as its text and no taller. A ROOT container along its free axis
-   *  hugs regardless; this is how a nested one opts in. */
+   *  Defaults to true when the cross axis is omitted, so a row/column hugs its
+   *  children. Set it to false to get flexbox-style stretching. `flex: "fill"`
+   *  is an explicit fill request and therefore remains stretching. */
   fitCross?: boolean;
+  /** After measuring an omitted cross axis, stretch every child across that
+   *  measured size. This is useful for an auto-width column whose panels should
+   *  all match its widest panel. */
+  stretchCross?: boolean;
   /** Lay children in reverse ORDER (last-drawn first) — position is unchanged
    *  (see `justify`). Default false. `justify:"end"` + `reverse:true` together
    *  give the old right-to-left `align:"end"` behavior. NOTE: only the VISUAL
@@ -503,6 +604,12 @@ export interface LayoutOptions {
    *  line's tallest/widest child. Needs a bounded main axis (`w` for a row, `h`
    *  for a col) to know where to break. Default false. */
   wrap?: boolean;
+  /**
+   * FIXME: Count-based equal distribution is an interim API. A row should be
+   * able to discover its fill children automatically; see the longer FIXME on
+   * `FlowOptions.fillChildren`.
+   */
+  fillChildren?: number;
   /** Place this (root) container in the VIEWPORT — `"center"` for a dialog,
    *  `"bottomRight"` for a HUD cluster, etc. — instead of pinning `x`/`y`. `w`/`h`
    *  become the PREFERRED size, clamped to the viewport minus `margin`; `x`/`y`
@@ -525,9 +632,11 @@ export function runContainer<R>(
   reverse: boolean,
   children: (layout: Flow) => R,
   fitCross = false,
+  stretchCross = false,
   wrap = false,
   contentMain?: number,
   alignCross: "start" | "center" | "end" = "start",
+  fillChildren = 0,
 ): R {
   const padding = resolvePadding(pad);
   const inner = {
@@ -563,9 +672,12 @@ export function runContainer<R>(
     w: dir === "col" ? inner.w : undefined,
     // Main-axis length enables fill()/remaining inside the callback.
     length: innerMain,
+    layoutScale: currentUiScale(),
     fitCross,
+    stretchCross,
     alignCross,
     wrap,
+    fillChildren,
   });
   layoutStack.push(st);
   try {
@@ -687,7 +799,8 @@ export function containerRect(
   opts: LayoutOptions,
   auto?: ContentSize,
 ): { x: number; y: number; w: number; h: number } {
-  const w = opts.w ?? auto?.w;
+  const requestedW = opts.w ?? auto?.w;
+  const w = requestedW === undefined ? undefined : Math.max(requestedW, opts.minW ?? 0);
   const requestedH = opts.h ?? auto?.h;
   const h = requestedH === undefined ? undefined : Math.max(requestedH, opts.minH ?? 0);
   if (opts.anchor) {
@@ -709,30 +822,35 @@ export function containerRect(
     return {
       x: opts.x,
       y: opts.y,
-      w: w ?? 120,
+      w: w ?? Math.max(120, opts.minW ?? 0),
       h: Math.max(h ?? (dir === "row" ? 34 : 40), opts.minH ?? 0),
     };
   }
   const parent = currentLayout();
   if (!parent) {
     if (opts.flex === "fill") {
-      const viewport = anchorViewport();
       return {
         x: opts.x ?? 0,
         y: opts.y ?? 0,
-        w: w ?? viewport.w,
-        h: Math.max(h ?? viewport.h, opts.minH ?? 0),
+        w: opts.w ?? uiWidth(),
+        h: Math.max(opts.h ?? uiHeight(), opts.minH ?? 0),
       };
     }
     throw new Error("Minimotor.UI: a root row/col/group needs explicit x/y");
   }
   if (opts.flex === "fill") {
     const slot = parent.fill();
+    // A scaled block can begin inside an unscaled flow. The parent slot is in
+    // outer coordinates, while the child container lays out in scaled
+    // reference space. Closure containers mark their own cursors with the
+    // active scale, so only the first fill crossing the boundary is reduced.
+    const scale = parent.layoutScale === currentUiScale() ? 1 : currentUiScale();
+    const logical = (value: number): number => value / scale;
     return {
       x: slot.x,
       y: slot.y,
-      w: parent.dir === "row" ? slot.w : (w ?? slot.w),
-      h: parent.dir === "col" ? slot.h : (h ?? slot.h),
+      w: parent.dir === "row" ? logical(slot.w) : (opts.w ?? logical(slot.w)),
+      h: parent.dir === "col" ? logical(slot.h) : (opts.h ?? auto?.h ?? logical(slot.h)),
     };
   }
   // Nested: reserve a slot from the parent. Size along the PARENT's main axis
@@ -786,6 +904,9 @@ export function runAutoSized<R>(
   contentMain?: number,
   reservation?: Reservation | null,
   alignCross: "start" | "center" | "end" = "start",
+  stretchCross = false,
+  minW = 0,
+  fillChildren = 0,
 ): R {
   return runContainer(
     dir,
@@ -802,6 +923,7 @@ export function runAutoSized<R>(
       try {
         const r = children(st);
         const measured = measuredContainerSize(st, outer.x, outer.y, pad);
+        measured.w = Math.max(measured.w, minW);
         storeContentSize(key, measured);
         // The children are placed and drawn; their extent is this container's
         // true size. A deferred slot writes it back into the rect the parent is
@@ -828,9 +950,11 @@ export function runAutoSized<R>(
       }
     },
     fitCross,
+    stretchCross,
     wrap,
     contentMain,
     alignCross,
+    fillChildren,
   );
 }
 
@@ -847,6 +971,8 @@ export interface AutoContainerConfig {
   /** Shrink-wrap the cross axis (a root container along its free axis, or an
    *  explicit `fitCross` on the caller's options). */
   fitCross: boolean;
+  /** Stretch children across the measured cross axis after the first pass. */
+  stretchCross?: boolean;
   /** Cross-axis alignment for children with slack (see `LayoutOptions`). */
   alignCross?: "start" | "center" | "end";
   /** Flex-wrap children onto new lines when they overflow the main axis. */
@@ -885,10 +1011,11 @@ export interface AutoContainerConfig {
 //
 // The conditions below are the ones that can't work either way:
 //
-//   NO BACKDROP. `cfg.box` paints under the children, so it has to run first,
-//     at a size we would not have. `row`/`col` have no box; `panel`/`group`/
-//     `popover` do, and keep the cache. (This is Dear ImGui's split exactly: a
-//     window auto-resizes a frame late, a layout group never does.)
+//   BACKDROP PAINTING. `cfg.box` still paints under the children, so the frame
+//     itself uses the provisional/cached rect. The layout slot can nevertheless
+//     be deferred: children use the panel's fitCross flow, the measured size is
+//     committed to the parent, and the next frame's frame art is exact. Roots
+//     and pinned containers have no slot to hold open, so they keep the cache.
 //   START-JUSTIFIED, FORWARD. `justify: "end"` and `reverse` position the
 //     content block FROM the size, so they need it up front.
 //   NO WRAP, NO EXPLICIT SIZE ON THE DEFERRED AXIS. Wrapping needs the size to
@@ -907,8 +1034,7 @@ function tryReserve(
   cfg: AutoContainerConfig,
   cached: ContentSize | undefined,
 ): Reservation | null {
-  if (cfg.box || cfg.wrap || cfg.reverse || cfg.justify !== "start" || opts.flex === "fill")
-    return null;
+  if (cfg.wrap || cfg.reverse || cfg.justify !== "start" || opts.flex === "fill") return null;
   // Roots (anchored, or pinned x/y) don't take a slot from anyone.
   if (opts.anchor !== undefined || (opts.x !== undefined && opts.y !== undefined)) return null;
   const parent = currentLayout();
@@ -923,11 +1049,12 @@ function tryReserve(
   const provisionalH =
     axis === "h" ? Math.max(cached?.h ?? 0, opts.minH ?? 0) || undefined : (opts.h ?? opts.minH);
   const slot = parent.reserve(provisionalW, provisionalH);
+  const cross = axis === "w" ? "h" : "w";
   return slot
     ? {
         slot,
         axis,
-        crossAxis: parent.fitCross ? (axis === "w" ? "h" : "w") : undefined,
+        crossAxis: parent.fitCross && opts[cross] === undefined ? cross : undefined,
       }
     : null;
 }
@@ -948,6 +1075,7 @@ export function autoContainer<R>(
   const key = containerKey(opts, kind);
   const cached = cachedContentSize(key);
   const reservation = tryReserve(dir, opts, cfg, cached);
+  const parent = currentLayout();
   const rect = reservation ? reservation.slot.rect : containerRect(dir, opts, cached);
   const recorded = layoutCaptureActive ? recordLayout(kind, opts.id, rect) : -1;
   cfg.box?.(rect);
@@ -960,6 +1088,10 @@ export function autoContainer<R>(
   // edge, so it stays stable as the block moves (a span would oscillate).
   // Undefined on the first frame (positions settle next frame).
   const contentMain = cached ? (dir === "row" ? cached.ew : cached.eh) : undefined;
+  // The first pass must hug children so an auto-width column can discover its
+  // widest child. Once that size is cached, the same column can stretch every
+  // child across the measured cross axis without changing its own width.
+  const stretchingCross = cfg.stretchCross === true && cached !== undefined;
   const result = runAutoSized(
     key,
     rect,
@@ -969,16 +1101,31 @@ export function autoContainer<R>(
     cfg.pad,
     cfg.justify,
     cfg.reverse,
-    cfg.fitCross,
+    stretchingCross ? false : cfg.fitCross,
     children,
     cfg.wrap ?? false,
     contentMain,
     reservation,
     cfg.alignCross ?? "start",
+    stretchingCross,
+    opts.minW ?? 0,
+    opts.fillChildren ?? 0,
   );
+  // A filled container in a row knows its width up front, but its height is
+  // still auto-sized by its children. Feed that measured cross-axis size back
+  // into the parent flow before the parent places its next sibling. Without
+  // this, a row of filled panels reports only the provisional row height and
+  // the following widget can overlap the panels.
+  if (opts.flex === "fill" && opts.h === undefined && parent?.dir === "row") {
+    const measured = cachedContentSize(key);
+    if (measured) {
+      rect.h = Math.max(rect.h, measured.h);
+      parent.include(rect);
+    }
+  }
   if (recorded >= 0) {
     // `slot.commit` resized `rect` after the entry above was recorded from it.
-    if (reservation) refreshLayoutRect(recorded, rect);
+    if (reservation || opts.flex === "fill") refreshLayoutRect(recorded, rect);
     // What the box was worth against what it turned out to hold. A deferred
     // container is measured in-frame and is 0 by construction; the ones that
     // fell back to the cache are where a pop can still come from, and this is

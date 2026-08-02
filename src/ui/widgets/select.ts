@@ -28,7 +28,7 @@ import {
   onFrameEnd,
   onOverlayPass,
   onReset,
-  place,
+  placeField,
   pointerGestureOwned,
   popUiTransform,
   pushUiTransform,
@@ -331,7 +331,7 @@ export function select<T>(opts: SelectOptions<T>): SelectResult<T> {
   const resolvedOpts: ResolvedSelectOptions<T> = { ...opts, id, options };
   const s = st();
   s.seen.add(id);
-  const rect = place(opts, opts.w ?? 180, opts.h ?? theme.inputH, "select", true);
+  const rect = placeField(opts, opts.w ?? 180, opts.h ?? theme.inputH, "select", true);
   const currentIndex = options.findIndex((option) => Object.is(option.value, opts.value));
   const keyboardFocused = registerFocusable(ctx, {
     id,
