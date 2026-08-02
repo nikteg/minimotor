@@ -771,9 +771,6 @@ function wantsLock(): boolean {
   return phase === "match" && !paused && !document.hidden;
 }
 
-/** Set while a lock request is outstanding or being retried; counts down in
- *  `update`. See `grabPointer` for why a retry exists at all. */
-let relockFor = 0;
 /** Whether the lock has ever been granted, which is what separates "this
  *  browser will not do it" from "not yet". */
 let lockedEver = false;
@@ -783,17 +780,13 @@ let lockedEver = false;
  *  the player has moved on. */
 let lockPending = false;
 
+/** Ask for the pointer lock. MUST be called from a user gesture — see
+ *  `resume` for what happens when it is not. */
 function grabPointer(): void {
   if (locked || lockPending || !wantsLock()) return;
-  // Chrome returns a promise that REJECTS when the lock is refused — inside a
-  // cross-origin iframe, in headless, and (the case that matters here) for
-  // about a second after the USER pressed Esc to escape a lock. That cooldown
-  // is deliberate anti-trap behaviour and cannot be waived, so leaving the menu
-  // with Esc has to ask again shortly rather than give up: without the retry,
-  // Esc closes the menu and quietly leaves the mouse free.
-  //
-  // Unhandled, the rejection is also a console error on every click; Safari
-  // returns undefined, hence the guard.
+  // Chrome returns a promise that REJECTS when the lock is refused; unhandled,
+  // that is also a console error on every click. Safari returns undefined,
+  // hence the guard.
   const p: unknown = game.canvas.requestPointerLock();
   // Safari returns undefined and locks synchronously off the gesture, so there
   // is nothing to await and nothing to guard against.
@@ -803,21 +796,14 @@ function grabPointer(): void {
     () => {
       lockedEver = true;
       lockPending = false;
-      relockFor = 0;
     },
     () => {
       lockPending = false;
-      // Only cry wolf when it has never worked. A cooldown refusal on a page
-      // that was locked a moment ago is not a browser that refuses locks.
+      // Only cry wolf when it has never worked. A refusal on a page that was
+      // locked a moment ago is not a browser that refuses locks.
       if (!lockedEver) lockRefused = true;
     },
   );
-}
-
-/** Ask for the lock, and keep asking for a couple of seconds. */
-function grabPointerSoon(): void {
-  relockFor = 2;
-  grabPointer();
 }
 
 game.canvas.addEventListener("click", () => {
@@ -831,19 +817,17 @@ game.canvas.addEventListener("click", () => {
   grabPointer();
 });
 
-// Losing the tab drops the pointer lock too, and that is not a pause request.
-// The two events fire in either order depending on the browser, so a timestamp
-// is more reliable than reading `document.hidden` at the moment of the drop.
-let hiddenAt = -1e9;
-const hiddenRecently = (): boolean => performance.now() - hiddenAt < 600;
-document.addEventListener("visibilitychange", () => {
-  if (document.hidden) hiddenAt = performance.now();
-});
-
 /** When the menu was opened by the lock being lost. Escape's own keydown can
  *  arrive in the SAME step, and without this it would immediately close the
  *  menu it just opened — the "sometimes it does not pause" half of the bug. */
 let menuOpenedAt = -1e9;
+
+/** When the lock was lost during a match, with the reason not yet decided;
+ *  −1 when there is nothing pending. Resolved in `update`. */
+let lockLostAt = -1;
+/** How long to wait before ruling on why the lock was lost. Long enough for a
+ *  focus or visibility change to land, short enough not to read as lag. */
+const PAUSE_DECISION_MS = 150;
 
 document.addEventListener("pointerlockchange", () => {
   const was = locked;
@@ -852,20 +836,19 @@ document.addEventListener("pointerlockchange", () => {
   if (locked) {
     // A grant can land AFTER the player has paused again — the request was
     // already in flight. Taking it would leave the menu up with the mouse
-    // captured, and the next Esc would then "reopen" a menu that never closed,
-    // which is exactly what that looked like from the outside.
+    // captured, and the next Esc would then "reopen" a menu that never closed.
     if (paused) document.exitPointerLock();
     return;
   }
   if (!was || phase !== "match") return;
   // Esc is the browser's own way out of a pointer lock and the keydown is not
-  // delivered, so the LOSS of the lock is the Esc press. But it is not the only
-  // thing that drops a lock: switching tabs and alt-tabbing do too, and coming
-  // back to a pause menu you never asked for is worse than coming back to a
-  // game that simply wants its mouse again.
-  if (document.hidden || hiddenRecently()) return;
-  paused = true;
-  menuOpenedAt = performance.now();
+  // delivered, so the LOSS of the lock is USUALLY the Esc press. But switching
+  // tabs and alt-tabbing drop it too, and coming back to a pause menu you never
+  // asked for is worse than coming back to a game that just wants its mouse.
+  //
+  // Which one it was CANNOT be known here: the events that would say so can
+  // arrive after this one. So only note the time, and let `update` rule on it.
+  lockLostAt = performance.now();
 });
 document.addEventListener("mousemove", (e) => {
   if (!locked) return;
@@ -1036,12 +1019,20 @@ Loop.run({
     if (Audio.master.volume !== settings.volume) Audio.master.volume = settings.volume;
     stepTargets(dt);
     dryCooldown = Math.max(0, dryCooldown - dt);
-    // The browser refuses a re-lock for about a second after the USER escaped
-    // one, so leaving the menu with Esc asks again until it takes.
-    if (relockFor > 0) {
-      relockFor -= dt;
-      if (locked || !wantsLock()) relockFor = 0;
-      else grabPointer();
+    // Rule on a lock that was lost a moment ago (see the `pointerlockchange`
+    // handler). The question that separates Esc from leaving is not "is the tab
+    // hidden" — alt-tabbing to another APPLICATION leaves the tab visible and
+    // fires no `visibilitychange` at all, which is why watching that event
+    // alone still popped the menu. `hasFocus` covers both, and asking a beat
+    // late means it has settled whichever order the events arrived in.
+    if (lockLostAt >= 0) {
+      if (document.hidden || !document.hasFocus() || phase !== "match") {
+        lockLostAt = -1;
+      } else if (performance.now() - lockLostAt >= PAUSE_DECISION_MS) {
+        lockLostAt = -1;
+        paused = true;
+        menuOpenedAt = performance.now();
+      }
     }
     recoil = Math.max(0, recoil - dt * 5);
     muzzle = Math.max(0, muzzle - dt * 12);
@@ -1054,8 +1045,8 @@ Loop.run({
       return;
     }
 
-    // Esc while unlocked closes the menu AND takes the mouse back, which is
-    // the whole point of a pause menu you can leave the way you entered it.
+    // Esc while unlocked closes the menu; taking the mouse back needs a click
+    // the browser will accept, which `resume` explains.
     // While LOCKED the browser eats the keydown to release the pointer, and
     // `pointerlockchange` opens the menu instead — two paths because there are
     // genuinely two situations.
@@ -1219,7 +1210,10 @@ Loop.run({
       Draw.rect(0, 0, view.w, view.h, `rgba(190,30,40,${(damageFlash * 0.32).toFixed(3)})`);
     }
     drawNameplates();
-    if (!paused && deployed && respawnIn === 0) drawCrosshair();
+    if (!paused && deployed && respawnIn === 0) {
+      drawCrosshair();
+      drawCaptureHint();
+    }
     drawHud();
     if (showingBoard()) drawScoreboard();
     if (paused) drawPauseMenu();
@@ -1638,6 +1632,16 @@ function drawCrosshair(): void {
   // with the world and lands on the muzzle by construction.
 }
 
+/** Playing, but the mouse is free — after Esc, after a tab switch, or before
+ *  the first click. Only a real click can take the pointer back, so say so
+ *  rather than leaving the player waggling a mouse that does nothing. */
+function drawCaptureHint(): void {
+  if (locked || lockRefused || OnscreenInput.visible(pad)) return;
+  const text = "Click to capture the mouse";
+  const y = view.h / 2 + 52;
+  UI.text(text, { x: view.w / 2, y, align: "center", size: 13, color: "rgba(235,240,255,0.8)" });
+}
+
 function drawHud(): void {
   const inset = 24;
   // The sticks own the bottom corners when touch is live, so the bottom HUD
@@ -1957,7 +1961,12 @@ function drawPauseMenu(): void {
       if (rendererError) UI.text(rendererError, { size: 11, color: "#f0603a" });
 
       UI.row({ gap: 8 }, () => {
-        if (UI.button({ label: "Resume", w: (w - 8) / 2, variant: "primary" })) resume();
+        if (UI.button({ label: "Resume", w: (w - 8) / 2, variant: "primary" })) {
+          resume();
+          // A click is still within its activation window here, so unlike Esc
+          // this one is allowed to take the mouse back.
+          grabPointer();
+        }
         if (UI.button({ label: "Reset run", w: (w - 8) / 2 })) {
           match?.resetTargets();
           score = 0;
@@ -1984,9 +1993,23 @@ function drawPauseMenu(): void {
   });
 }
 
+/** Close the menu and hand the game back.
+ *
+ *  It does not itself re-take the mouse, because whether it CAN depends on how
+ *  it was called. `requestPointerLock` needs transient activation, which a real
+ *  click grants for a few seconds — so the Resume BUTTON can re-lock, and does,
+ *  by calling `grabPointer` next to this. Escape cannot: it is one of the keys
+ *  specifically excluded from granting activation, so a request made off it is
+ *  refused, always. The version before this one asked sixty times a second for
+ *  two seconds after Esc and was refused all 120 times; the mouse never came
+ *  back, and the player pressing Esc again to find out why simply reopened the
+ *  menu. That is the "Esc resume is buggy, the menu reappears" report.
+ *
+ *  So Esc resumes unlocked and `drawCaptureHint` asks for the one click that is
+ *  allowed to work. The game stays playable meanwhile — arrows look, F fires,
+ *  locked or not. */
 function resume(): void {
   paused = false;
-  grabPointerSoon();
 }
 
 /** Clamp to the −1..1 an axis promises, after summing two input sources. */
