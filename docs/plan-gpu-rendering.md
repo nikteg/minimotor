@@ -277,6 +277,7 @@ the GPU. Both can proceed independently; neither blocks the other.
 | `render3d/webgl2`, `render3d/webgpu`  | Two backends behind one `Renderer3D`. Blinn-Phong, up to four directional lights, depth buffer, sorted transparency.                   |
 | `ui/widgets/viewport3d`               | A 3D view as a UI widget.                                                                                                              |
 | `render3d/ui-surface`                 | The UI as a texture on a quad in the scene.                                                                                            |
+| `render3d/layer`                      | The scene canvas stacked UNDER the app's, for a full-screen world with a 2D HUD — Stage 0's two-canvas sketch, built.                   |
 
 ### Why two backends rather than "WebGPU when ready"
 
@@ -288,10 +289,11 @@ hard-coded constant, discovered years later as "WebGPU renders nothing".
 `createRenderer3D` prefers WebGPU and falls back to WebGL2 silently; callers
 that care read `renderer.backend`.
 
-### The two directions 3D and the UI meet
+### The three ways 3D and the UI meet
 
 This is the part worth understanding before building anything on it, because
-the two look similar and solve opposite problems.
+they look similar and solve opposite problems. Each is the wrong answer to the
+other two's question.
 
 **`UI.viewport3d` — 3D inside the UI.** The renderer draws into its own canvas
 at the widget's device-pixel size and the widget blits it in with one
@@ -308,7 +310,22 @@ it is on a plane. A panel can hang on a wall in world space, angle away from
 the viewer, and have a 3D object pass in **front** of it. The limit is the
 mirror image of the other: it cannot be clipped by a scrolling list.
 
-The non-obvious part of the second is input. Hit-testing a UI on a quad is a
+**`attachSceneLayer` — the two stacked canvases from Stage 0.** The GL canvas
+goes directly behind the app's own, which stays transparent because the app was
+created with no `background`. The browser composites: no blit, no upload, and
+the HUD renders at native DPR rather than through a perspective divide. This is
+the right shape for a full-screen 3D game with screen-space UI, and it is what
+`samples/fps` uses for its HUD — with a `createUiSurface` wall terminal beside
+it, because a panel you walk up to and press is a different job from a HUD. The
+limit, again the mirror: the scene is always UNDER every UI element, which for a
+HUD is exactly what you want and for an in-world panel is useless.
+
+One trap worth writing down, because it presents as a font bug rather than a
+composition one: "the engine leaves the play area alone" cuts both ways. With no
+`background` it does not clear the 2D canvas either, so a HUD has to erase
+itself each frame or every frame's text stacks on the last one's.
+
+The non-obvious part of `createUiSurface` is input. Hit-testing a UI on a quad is a
 ray cast — unproject through the camera, intersect the plane, convert to uv —
 which the UI's existing scale-plus-offset transform cannot express. So the
 kernel gained one small seam, `pushPointerOverride`, that replaces the pointer's

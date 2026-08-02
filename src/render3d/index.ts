@@ -7,6 +7,8 @@
 //   camera.ts    an orbit camera and its matrices
 //   animation.ts keyframe tracks over node transforms
 //   ui-surface.ts the UI drawn onto a quad IN the scene
+//   layer.ts     the scene canvas stacked UNDER the app's, for a full-screen
+//                world with a 2D HUD
 //   renderer.ts  the backend-agnostic interface
 //   webgl2.ts    the WebGL2 backend
 //   webgpu.ts    the WebGPU backend
@@ -40,6 +42,8 @@ import type { WebGL2RendererOptions } from "./webgl2.js";
 export * from "./mesh.js";
 export * from "./scene.js";
 export * from "./camera.js";
+export { attachSceneLayer } from "./layer.js";
+export type { SceneLayer, SceneLayerOptions } from "./layer.js";
 export * from "./animation.js";
 export {
   createUiSurface,

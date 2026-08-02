@@ -31,12 +31,23 @@ import { cameraPosition, projectionMatrix, viewMatrix } from "./camera.js";
 import { plane } from "./mesh.js";
 import { popPointerOverride, pushPointerOverride } from "@src/ui/core/input.js";
 import { popUiSurface, pushUiSurface } from "@src/ui/core/context.js";
+import { withUiApp } from "@src/ui/core/state.js";
+import type { App } from "@src/engine/index.js";
 import type { Camera3D } from "./camera.js";
 import type { Material } from "./scene.js";
 import type { MeshData } from "./mesh.js";
 
 /** How to build a UI surface. */
 export interface UiSurfaceOptions {
+  /** The app this surface belongs to — the same one `createUI` was given.
+   *
+   *  `draw` places the pointer BEFORE it runs `build`, and the pointer is
+   *  per-app state, so it has to know which app before a single bound widget
+   *  function has had a chance to say. Omitting this works only when `draw` is
+   *  itself called from inside a bound UI call (a `UI.viewport3d` render
+   *  callback, say); called from a bare `Loop.draw` it throws "no active app".
+   *  Pass it and the surface works anywhere. */
+  app?: App;
   /** Surface size in UI pixels — the coordinate space widgets lay out in, and
    *  the texture's resolution before `pixelRatio`. */
   width: number;
@@ -113,8 +124,11 @@ export function createUiSurface(opts: UiSurfaceOptions): UiSurface {
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(width * ratio);
   canvas.height = Math.round(height * ratio);
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("UI surface: could not get a 2D context.");
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("UI surface: could not get a 2D context.");
+  // Re-bound to a non-null const: `drawSurface` below is hoisted past the
+  // guard, so TypeScript's narrowing of `context` does not reach into it.
+  const ctx: CanvasRenderingContext2D = context;
 
   const worldWidth = opts.worldWidth ?? 1;
   const worldHeight = (worldWidth * height) / width;
@@ -147,39 +161,40 @@ export function createUiSurface(opts: UiSurfaceOptions): UiSurface {
     hitTest,
 
     draw(drawOpts, build) {
-      const hit = drawOpts.pointer
-        ? hitTest(
-            drawOpts.model,
-            drawOpts.camera,
-            pointerRay(drawOpts.camera, drawOpts.pointer, ray),
-          )
-        : null;
-
-      ctx.save();
-      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-      if (opts.background === null || opts.background === undefined) {
-        ctx.clearRect(0, 0, width, height);
-      } else {
-        ctx.clearRect(0, 0, width, height);
-        ctx.fillStyle = opts.background;
-        ctx.fillRect(0, 0, width, height);
-      }
-
-      const prevPointer = pushPointerOverride(hit?.x ?? 0, hit?.y ?? 0, hit === null);
-      pushUiSurface(ctx);
-      try {
-        build();
-      } finally {
-        // Unbalanced, this would leave every widget on the page drawing into
-        // an offscreen canvas — a failure that looks like the UI disappearing
-        // rather than like an error, so it is worth the `finally`.
-        popUiSurface();
-        popPointerOverride(prevPointer);
-        ctx.restore();
-      }
-      material.textureVersion = ++version;
+      // Everything below touches per-app state, so it all has to run under one
+      // selection rather than letting each bound widget pick its own.
+      if (opts.app) return withUiApp(opts.app, () => drawSurface(drawOpts, build));
+      return drawSurface(drawOpts, build);
     },
   };
+
+  function drawSurface(drawOpts: UiSurfaceDrawOptions, build: () => void): void {
+    const hit = drawOpts.pointer
+      ? hitTest(drawOpts.model, drawOpts.camera, pointerRay(drawOpts.camera, drawOpts.pointer, ray))
+      : null;
+
+    ctx.save();
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+    if (opts.background != null) {
+      ctx.fillStyle = opts.background;
+      ctx.fillRect(0, 0, width, height);
+    }
+
+    const prevPointer = pushPointerOverride(hit?.x ?? 0, hit?.y ?? 0, hit === null);
+    pushUiSurface(ctx);
+    try {
+      build();
+    } finally {
+      // Unbalanced, this would leave every widget on the page drawing into an
+      // offscreen canvas — a failure that looks like the UI disappearing rather
+      // than like an error, so it is worth the `finally`.
+      popUiSurface();
+      popPointerOverride(prevPointer);
+      ctx.restore();
+    }
+    material.textureVersion = ++version;
+  }
 }
 
 const invModel = Mat4.create();

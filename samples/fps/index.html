@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FPS with a UI HUD - Minimotor</title>
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+        /* The scene canvas is inserted BEHIND #game, so the page background is
+           only ever seen for the frame or two before the GPU comes up. Matching
+           the scene's clear colour keeps that from flashing. */
+        background: #0d0f18;
+        cursor: crosshair;
+      }
+      canvas {
+        display: block;
+      }
+      /* Both canvases are stacked and absolutely positioned by
+         `attachSceneLayer`; mirroring the fullscreen end state here avoids the
+         300x150 default-canvas pop before the module runs. */
+      #game {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="game"></canvas>
+    <script type="module" src="./fps.ts"></script>
+  </body>
+</html>

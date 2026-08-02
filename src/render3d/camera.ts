@@ -113,6 +113,59 @@ export function viewProjection(
 
 const scratchView = Mat4.create();
 
+/** The direction the camera is looking, as a unit vector. */
+export function cameraForward(cam: Camera3D, out?: Vec3): Vec3 {
+  const o = out ?? { x: 0, y: 0, z: 0 };
+  const cp = Math.cos(cam.pitch);
+  // The negative of the orbit offset: the eye sits BACK along this from the
+  // target, so looking is the other way.
+  o.x = -Math.sin(cam.yaw) * cp;
+  o.y = -Math.sin(cam.pitch);
+  o.z = -Math.cos(cam.yaw) * cp;
+  return o;
+}
+
+/** The camera's right vector, level with the horizon — pitch deliberately
+ *  ignored, because strafing while looking up should not lift you off the
+ *  ground. */
+export function cameraRight(cam: Camera3D, out?: Vec3): Vec3 {
+  const o = out ?? { x: 0, y: 0, z: 0 };
+  o.x = Math.cos(cam.yaw);
+  o.y = 0;
+  o.z = -Math.sin(cam.yaw);
+  return o;
+}
+
+/** Put the camera's EYE at `position`, keeping its current yaw and pitch.
+ *
+ *  `Camera3D` is written as an orbit — a target plus a distance — because that
+ *  is what a model viewer wants. A first-person camera is the same thing with
+ *  the roles reversed: this moves the TARGET so that the derived eye lands
+ *  where you asked. Everything downstream (`viewMatrix`, `pointerRay`, the
+ *  renderer) is unchanged, so one camera type serves both and there is no
+ *  second code path to keep in sync.
+ *
+ *  `distance` only sets how far ahead the target sits; it does not affect the
+ *  view. Keep it around 1 — a very small value loses precision in `lookAt`,
+ *  and a very large one makes the orbit controls useless if you ever switch. */
+export function placeEye(cam: Camera3D, position: Vec3, distance = 1): Camera3D {
+  cam.distance = distance;
+  cameraForward(cam, cam.target);
+  cam.target.x = position.x + cam.target.x * distance;
+  cam.target.y = position.y + cam.target.y * distance;
+  cam.target.z = position.z + cam.target.z * distance;
+  return cam;
+}
+
+/** Turn a first-person camera by a mouse delta in PIXELS. Same sensitivity
+ *  convention as `orbit`, and the opposite sign — dragging a model turns the
+ *  model, moving a mouse turns the head. */
+export function look(cam: Camera3D, dxPixels: number, dyPixels: number, sensitivity = 0.0022): void {
+  const limit = cam.pitchLimit ?? DEFAULT_PITCH_LIMIT;
+  cam.yaw -= dxPixels * sensitivity;
+  cam.pitch = Math.min(limit, Math.max(-limit, cam.pitch - dyPixels * sensitivity));
+}
+
 /** Orbit by a pointer delta in PIXELS. Taking pixels rather than radians keeps
  *  the sensitivity in one place, so every viewport drags at the same rate
  *  regardless of its size. Pitch is clamped, yaw wraps freely. */
