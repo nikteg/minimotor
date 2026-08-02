@@ -477,7 +477,132 @@ const settings = {
   interpDelayMs: DEFAULT_DELAY_MS,
 };
 
-let playerName = `Player ${1 + Math.floor(Math.random() * 89)}`;
+// ---- names -----------------------------------------------------------------
+// `Player 47` is a placeholder pretending to be a name, and in a scoreboard of
+// them nobody can tell who shot them. Two words from two lists gives ~2600
+// combinations, which is plenty for a room of eight and short enough to fit a
+// nameplate at range — the constraint that ruled out anything longer.
+
+const CALLSIGN_FIRST = [
+  "Rusty",
+  "Feral",
+  "Velvet",
+  "Grim",
+  "Turbo",
+  "Neon",
+  "Salty",
+  "Radiant",
+  "Cosmic",
+  "Wired",
+  "Hollow",
+  "Brisk",
+  "Molten",
+  "Silent",
+  "Crooked",
+  "Vivid",
+  "Frosty",
+  "Ragged",
+  "Lucky",
+  "Sombre",
+  "Jagged",
+  "Placid",
+  "Static",
+  "Copper",
+  "Wayward",
+  "Humble",
+  "Restless",
+  "Gilded",
+  "Blunt",
+  "Nimble",
+  "Weary",
+  "Bold",
+  "Wicked",
+  "Prime",
+  "Hushed",
+  "Zesty",
+  "Bitter",
+  "Stray",
+  "Prompt",
+  "Woolly",
+];
+
+const CALLSIGN_SECOND = [
+  "Otter",
+  "Pylon",
+  "Comet",
+  "Wrench",
+  "Magpie",
+  "Signal",
+  "Kettle",
+  "Falcon",
+  "Bramble",
+  "Sprocket",
+  "Heron",
+  "Anvil",
+  "Pixel",
+  "Marmot",
+  "Beacon",
+  "Thistle",
+  "Cobra",
+  "Lantern",
+  "Badger",
+  "Piston",
+  "Nettle",
+  "Vulture",
+  "Gasket",
+  "Puffin",
+  "Compass",
+  "Walrus",
+  "Turbine",
+  "Ferret",
+  "Harpoon",
+  "Gannet",
+  "Bobcat",
+  "Kraken",
+  "Rivet",
+  "Osprey",
+  "Hornet",
+  "Quasar",
+  "Dingo",
+  "Mantis",
+  "Griffin",
+  "Ember",
+  "Weasel",
+  "Cutlass",
+  "Narwhal",
+  "Bishop",
+  "Talon",
+  "Cinder",
+  "Jackal",
+  "Sable",
+  "Wombat",
+  "Cyclone",
+  "Raven",
+  "Bandit",
+  "Locust",
+  "Tundra",
+  "Viper",
+  "Pelican",
+  "Gecko",
+  "Meteor",
+  "Shrike",
+  "Basalt",
+  "Wolfhound",
+  "Corvid",
+  "Onyx",
+  "Stoat",
+];
+
+const pick = <T>(list: readonly T[]): T => list[Math.floor(Math.random() * list.length)];
+
+/** A two-word callsign. Occasionally numbered, because a squad with a Cobra and
+ *  a Cobra-2 in it reads as a real roster rather than a word generator. */
+function randomName(): string {
+  const name = `${pick(CALLSIGN_FIRST)} ${pick(CALLSIGN_SECOND)}`;
+  return Math.random() < 0.12 ? `${name}-${2 + Math.floor(Math.random() * 8)}` : name;
+}
+
+let playerName = randomName();
 
 // ---- session ---------------------------------------------------------------
 // Three phases and one flag. `deployed` is the spectate/play split: a player in
@@ -643,7 +768,7 @@ let lockRefused = false;
 /** The mouse belongs to the game only while a match is on screen and no menu
  *  is up. In the lobby it belongs to the browser's own widgets. */
 function wantsLock(): boolean {
-  return phase === "match" && !paused;
+  return phase === "match" && !paused && !document.hidden;
 }
 
 /** Set while a lock request is outstanding or being retried; counts down in
@@ -653,8 +778,13 @@ let relockFor = 0;
  *  browser will not do it" from "not yet". */
 let lockedEver = false;
 
+/** A request is in flight. The retry below runs every step, and firing a second
+ *  request before the first settles is how a grant ends up arriving long after
+ *  the player has moved on. */
+let lockPending = false;
+
 function grabPointer(): void {
-  if (locked || !wantsLock()) return;
+  if (locked || lockPending || !wantsLock()) return;
   // Chrome returns a promise that REJECTS when the lock is refused — inside a
   // cross-origin iframe, in headless, and (the case that matters here) for
   // about a second after the USER pressed Esc to escape a lock. That cooldown
@@ -665,19 +795,23 @@ function grabPointer(): void {
   // Unhandled, the rejection is also a console error on every click; Safari
   // returns undefined, hence the guard.
   const p: unknown = game.canvas.requestPointerLock();
-  if (p instanceof Promise) {
-    p.then(
-      () => {
-        lockedEver = true;
-        relockFor = 0;
-      },
-      () => {
-        // Only cry wolf when it has never worked. A cooldown refusal on a page
-        // that was locked a moment ago is not a browser that refuses locks.
-        if (!lockedEver) lockRefused = true;
-      },
-    );
-  }
+  // Safari returns undefined and locks synchronously off the gesture, so there
+  // is nothing to await and nothing to guard against.
+  if (!(p instanceof Promise)) return;
+  lockPending = true;
+  p.then(
+    () => {
+      lockedEver = true;
+      lockPending = false;
+      relockFor = 0;
+    },
+    () => {
+      lockPending = false;
+      // Only cry wolf when it has never worked. A cooldown refusal on a page
+      // that was locked a moment ago is not a browser that refuses locks.
+      if (!lockedEver) lockRefused = true;
+    },
+  );
 }
 
 /** Ask for the lock, and keep asking for a couple of seconds. */
@@ -697,13 +831,41 @@ game.canvas.addEventListener("click", () => {
   grabPointer();
 });
 
+// Losing the tab drops the pointer lock too, and that is not a pause request.
+// The two events fire in either order depending on the browser, so a timestamp
+// is more reliable than reading `document.hidden` at the moment of the drop.
+let hiddenAt = -1e9;
+const hiddenRecently = (): boolean => performance.now() - hiddenAt < 600;
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) hiddenAt = performance.now();
+});
+
+/** When the menu was opened by the lock being lost. Escape's own keydown can
+ *  arrive in the SAME step, and without this it would immediately close the
+ *  menu it just opened — the "sometimes it does not pause" half of the bug. */
+let menuOpenedAt = -1e9;
+
 document.addEventListener("pointerlockchange", () => {
   const was = locked;
   locked = document.pointerLockElement === game.canvas;
-  // Esc is the browser's own way out of a pointer lock, and the keydown never
-  // reaches the page. So the LOSS of the lock is the Esc press — that is the
-  // only signal there is, and it is a reliable one.
-  if (was && !locked && phase === "match") paused = true;
+
+  if (locked) {
+    // A grant can land AFTER the player has paused again — the request was
+    // already in flight. Taking it would leave the menu up with the mouse
+    // captured, and the next Esc would then "reopen" a menu that never closed,
+    // which is exactly what that looked like from the outside.
+    if (paused) document.exitPointerLock();
+    return;
+  }
+  if (!was || phase !== "match") return;
+  // Esc is the browser's own way out of a pointer lock and the keydown is not
+  // delivered, so the LOSS of the lock is the Esc press. But it is not the only
+  // thing that drops a lock: switching tabs and alt-tabbing do too, and coming
+  // back to a pause menu you never asked for is worse than coming back to a
+  // game that simply wants its mouse again.
+  if (document.hidden || hiddenRecently()) return;
+  paused = true;
+  menuOpenedAt = performance.now();
 });
 document.addEventListener("mousemove", (e) => {
   if (!locked) return;
@@ -724,10 +886,23 @@ function say(text: string): void {
   messageAge = 0;
 }
 
+/** The reload, as four things happening at four times rather than one sound
+ *  played once. Seconds from the start of a `RELOAD_TIME` reload; the last one
+ *  lands just before the magazine is actually usable, which is what makes the
+ *  bolt feel like the thing that finished it. */
+const RELOAD_STAGES: readonly { at: number; play: () => void }[] = [
+  { at: 0, play: () => sfx.magOut.play({ pitch: [0.96, 1.05] }) },
+  { at: 0.24, play: () => sfx.magDrop.play({ pitch: [0.9, 1.12], stretch: [0.9, 1.15] }) },
+  { at: 0.62, play: () => sfx.magIn.play({ pitch: [0.96, 1.04] }) },
+  { at: 0.88, play: () => sfx.boltRack.play({ pitch: [0.97, 1.06] }) },
+];
+/** How many stages have fired for the reload in progress. */
+let reloadStage = 0;
+
 function reload(): void {
   if (reloading > 0 || ammo === MAG) return;
   reloading = RELOAD_TIME;
-  sfx.reloadOut.play({ pitch: [0.95, 1.05] });
+  reloadStage = 0;
 }
 
 function fire(): void {
@@ -885,8 +1060,14 @@ Loop.run({
     // `pointerlockchange` opens the menu instead — two paths because there are
     // genuinely two situations.
     if (Keys.pressed("Escape") && !locked) {
-      if (paused) resume();
-      else paused = true;
+      // Not within a few frames of the lock being lost: that same Esc is what
+      // released it, and the release already opened the menu.
+      if (!paused) {
+        paused = true;
+        menuOpenedAt = performance.now();
+      } else if (performance.now() - menuOpenedAt > 250) {
+        resume();
+      }
     }
 
     if (advertising && lobby && match) {
@@ -924,12 +1105,17 @@ Loop.run({
       if (Keys.pressed("KeyR") || pad.pressed(Buttons.B)) reload();
       if (reloading > 0) {
         reloading -= dt;
+        // Fire every stage the elapsed time has passed. A `while` rather than
+        // an `if` because a long frame can step over two of them, and a bolt
+        // that never racked because the tab stuttered is a reload that sounds
+        // unfinished.
+        const elapsed = RELOAD_TIME - Math.max(0, reloading);
+        while (reloadStage < RELOAD_STAGES.length && elapsed >= RELOAD_STAGES[reloadStage].at) {
+          RELOAD_STAGES[reloadStage++].play();
+        }
         if (reloading <= 0) {
           reloading = 0;
           ammo = MAG;
-          // The second half of the reload, landing when the magazine is in
-          // rather than when the animation started.
-          sfx.reloadIn.play({ pitch: [0.97, 1.03] });
           say("RELOADED");
         }
       }
@@ -1330,15 +1516,22 @@ function drawLobby(): void {
         playerName = UI.textInput({
           id: "name",
           value: playerName,
-          w: 200,
-          maxLength: 16,
-          placeholder: "your name",
+          w: 180,
+          // Long enough for the longest pair the generator can roll
+          // ("Restless Wolfhound-2"), and no longer — a nameplate has to stay
+          // readable across the arena.
+          maxLength: 22,
+          placeholder: "your callsign",
         }).value;
+        if (UI.button({ id: "reroll", label: "⟳", w: 36, tooltip: "roll a new callsign" })) {
+          playerName = randomName();
+          sfx.click.play();
+        }
         if (
           UI.button({
             id: "host",
             label: "Host a match",
-            w: 200,
+            w: 196,
             variant: "primary",
             disabled: phase !== "lobby",
           })
@@ -1811,6 +2004,9 @@ Object.defineProperty(window, "fps", {
     get deployed() {
       return deployed;
     },
+    get paused() {
+      return paused;
+    },
     get code() {
       return match?.code ?? null;
     },
@@ -1858,6 +2054,10 @@ Object.defineProperty(window, "fps", {
     },
     get shots() {
       return shots;
+    },
+    rollName: () => randomName(),
+    get reload() {
+      return { active: reloading > 0, stage: reloadStage, ammo };
     },
     get terminal() {
       return { near: terminalNear, aiming: aimingAtTerminal };

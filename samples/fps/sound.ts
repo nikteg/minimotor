@@ -31,8 +31,11 @@ export interface Sounds {
   shotFar: SfxHandle;
   /** The trigger on an empty chamber. */
   dry: SfxHandle;
-  reloadOut: SfxHandle;
-  reloadIn: SfxHandle;
+  /** The four beats of a reload — see `RELOAD_STAGES` in `fps.ts`. */
+  magOut: SfxHandle;
+  magDrop: SfxHandle;
+  magIn: SfxHandle;
+  boltRack: SfxHandle;
   /** Confirms a hit on a player. */
   hitPlayer: SfxHandle;
   /** Confirms a hit on a range target. */
@@ -91,22 +94,80 @@ export function createSounds(Audio: AudioApi): Sounds {
       volume: 0.16,
       filter: { type: "bandpass", freq: 2600, q: 3 },
     },
-    // Two halves, played a beat apart by the reload timer rather than as one
-    // long sound — so the second click lands when the magazine is actually in.
-    reloadOut: {
+    // A reload is FOUR events, not one, and hearing them separately is what
+    // makes it read as a mechanism rather than as a noise: the catch releases,
+    // the empty magazine falls and bounces, a fresh one seats, and the bolt is
+    // racked. They are played by the reload timer at the moments they happen
+    // (see `RELOAD_STAGES`), so the sound is the animation — a player learns
+    // exactly how far through they are without looking at the bar.
+
+    // 1. The catch. Small, sharp, mechanical; the sound of a button, not a gun.
+    magOut: {
       noise: true,
-      ms: 70,
+      ms: 55,
       attackMs: 0,
-      volume: 0.18,
-      filter: { type: "bandpass", freq: 1100, q: 2.5 },
+      volume: 0.2,
+      filter: { type: "bandpass", freq: 1900, q: 4 },
+      layers: [{ shape: "square", freq: 620, ms: 28, attackMs: 0, volume: 0.07 }],
     },
-    reloadIn: {
+    // 2. The empty magazine falling clear — hollow, and it BOUNCES, which is
+    // the detail that makes it sound like an object rather than a sample.
+    magDrop: {
       noise: true,
-      ms: 110,
+      ms: 120,
       attackMs: 0,
-      volume: 0.24,
-      filter: { type: "lowpass", freq: { from: 2600, to: 500 }, q: 1.5 },
-      layers: [{ shape: "square", freq: { from: 260, to: 150 }, ms: 70, volume: 0.1, delayMs: 30 }],
+      volume: 0.17,
+      filter: { type: "lowpass", freq: { from: 2200, to: 380 }, q: 1.4 },
+      layers: [
+        { shape: "triangle", freq: { from: 300, to: 190 }, ms: 90, attackMs: 0, volume: 0.09 },
+        {
+          noise: true,
+          ms: 70,
+          attackMs: 0,
+          volume: 0.08,
+          delayMs: 85,
+          filter: { type: "bandpass", freq: 1500, q: 2 },
+        },
+      ],
+    },
+    // 3. A fresh one seated. The heaviest of the four: low, solid, no ring.
+    magIn: {
+      noise: true,
+      ms: 130,
+      attackMs: 0,
+      volume: 0.26,
+      filter: { type: "lowpass", freq: { from: 2400, to: 300 }, q: 1.6 },
+      layers: [
+        { shape: "square", freq: { from: 240, to: 120 }, ms: 90, attackMs: 0, volume: 0.13 },
+      ],
+    },
+    // 4. The bolt: pulled back, then released to slam forward 70 ms later. Two
+    // metallic transients in quick succession is the whole character of it, and
+    // one of them alone just sounds like another click.
+    boltRack: {
+      noise: true,
+      ms: 65,
+      attackMs: 0,
+      volume: 0.19,
+      filter: { type: "bandpass", freq: { from: 2400, to: 3400 }, q: 3 },
+      layers: [
+        {
+          noise: true,
+          ms: 95,
+          attackMs: 0,
+          volume: 0.24,
+          delayMs: 70,
+          filter: { type: "bandpass", freq: { from: 3200, to: 900 }, q: 2.2 },
+        },
+        {
+          shape: "square",
+          freq: { from: 420, to: 170 },
+          ms: 70,
+          attackMs: 0,
+          volume: 0.1,
+          delayMs: 70,
+        },
+      ],
     },
     // Short, bright and ABOVE the gunshot's band, so it survives being played
     // 40 ms into the shot that caused it.
