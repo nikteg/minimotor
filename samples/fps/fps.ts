@@ -37,6 +37,7 @@ import { Buttons, createInput } from "minimotor/input";
 import { createOnscreenInput } from "minimotor/onscreen-input";
 import { createNet } from "minimotor/net";
 import { createAudio } from "minimotor/audio";
+import { createDebug } from "minimotor/debug";
 import { Quat, Vec3, createApp } from "minimotor";
 import {
   addNode,
@@ -629,6 +630,47 @@ let codeField = "";
  *  exactly once — including one that joined after it happened. */
 let seenResetCount = 0;
 
+// ---- debug monitoring ------------------------------------------------------
+// The engine's own overlay, on `?` (Shift+/ on a US layout, Shift++ on a
+// Swedish one — it matches on the CHARACTER, so both work). Off → performance
+// → performance again: the third step is the collision view, which needs a 2D
+// `SolidSource` and a 2D camera, and this arena is neither. The 3D equivalent
+// would be a real feature, not a wiring job, so it is left out rather than
+// faked.
+//
+// This is deliberately NOT the same thing as the pause menu's stats/net lines.
+// Those are part of the game's own HUD and are styled to sit in it; this is the
+// engine's instrument, identical across every sample, and worth having here for
+// exactly that reason — a frame-time graph you already know how to read.
+
+// The meter is NOT passed here. It does not exist yet — it belongs to a match,
+// which is opened later and replaced on every rejoin — so `joinMatch` hands it
+// over with `setNetMeter` and `leaveMatch` takes it back.
+const Debug = createDebug(game, { perf: { layout: "horizontal" } });
+
+// `watch` entries are not drawn — they are what `Debug.snapshot()` returns, so
+// one call from the console (or from a test) dumps the whole session state
+// without reaching into module locals. Everything here is a live read.
+Debug.watch("phase", () => phase);
+Debug.watch("mode", () => (deployed ? "playing" : spectating ? "free camera" : "watching"));
+Debug.watch("paused", () => paused);
+Debug.watch("pointerLock", () => (lockRefused ? "refused" : locked ? "held" : "free"));
+Debug.watch("room", () => match?.code ?? null);
+Debug.watch("peers", () => match?.others.length ?? 0);
+Debug.watch("hosting", () => advertising);
+Debug.watch("renderDelayMs", () => settings.interpDelayMs);
+Debug.watch("backend", () => renderer?.backend ?? "none");
+Debug.watch("scene", () => (renderer ? { ...renderer.stats } : null));
+Debug.watch("score", () => ({ score, kills: me.kills, deaths: me.deaths, shots, hits }));
+Debug.watch("body", () => ({
+  hp: me.hp,
+  ammo,
+  reloading: reloading > 0,
+  x: +player.x.toFixed(2),
+  y: +player.y.toFixed(2),
+  z: +player.z.toFixed(2),
+}));
+
 void (async () => {
   lobby = await openLobby(Net, LOBBY_ROOM);
   if (phase === "connecting") phase = "lobby";
@@ -685,6 +727,7 @@ async function enterMatch(code: string, host: boolean): Promise<void> {
     });
     advertising = host;
     seenResetCount = match.world.resetCount;
+    Debug.setNetMeter(match.net.meter);
     sfx.join.play();
     // Spectate first, always: dropping straight into a body means spawning
     // before the level has even been seen. The prompt to deploy is on the HUD.
@@ -714,6 +757,7 @@ function leaveMatch(): void {
   sfx.leave.play();
   match?.close();
   match = null;
+  Debug.setNetMeter(null);
   advertising = false;
   deployed = false;
   spectating = false;
@@ -2034,6 +2078,7 @@ function drawPauseMenu(): void {
         // stops, the peers see us time out, and the lobby room is re-opened.
         if (UI.button({ label: "Disconnect", w: (w - 8) / 2 })) leaveMatch();
       });
+      UI.text("? cycles the engine's debug overlay", { size: 10, color: "dim" });
       UI.text("Click Resume or the backdrop to close · Esc cannot re-lock the mouse", {
         size: 10,
         color: "dim",
@@ -2168,6 +2213,9 @@ Object.defineProperty(window, "fps", {
     pause: (on: boolean) => (paused = on),
     board: (on: boolean) => (boardPin = on),
     backend: (b: Backend3D) => useBackend(b),
+    debug: () => Debug.snapshot(),
+    debugMode: () => Debug.mode,
+    debugCycle: () => Debug.cycle(),
     layoutCapture: (on: boolean) => UI.layoutCapture(on),
     layoutTree: () => UI.layoutTree(),
     layoutIssues: () => UI.layoutIssues(),
