@@ -1,5 +1,6 @@
-// A small first-person shooter: WASD + mouse look, hitscan fire, and a HUD
-// drawn entirely with the ordinary minimotor UI.
+// A small multiplayer first-person shooter: a lobby browser, WASD + mouse look,
+// hitscan fire, free-flying spectate, a Tab scoreboard, and a HUD drawn
+// entirely with the ordinary minimotor UI.
 //
 // THE COMPOSITION, which is the point of this sample. Three ways exist to put
 // 3D and the UI together, and this uses two of them, for two different jobs:
@@ -15,19 +16,27 @@
 //   the terminal   `createUiSurface` — a real, clickable minimotor UI drawn
 //                  onto a quad standing in the level. Use this when being IN
 //                  the world is the point; a wall panel you walk up to and
-//                  press is not a HUD.
+//                  press is not a HUD. Its switches are SHARED: everyone in the
+//                  room sees the lights change, because the terminal is backed
+//                  by host-authoritative state rather than by two booleans.
 //
 // The third, `UI.viewport3d`, is absent because nothing here is a 3D view
 // inside a panel. `samples/render3d` is the one that shows that.
 //
-// Everything else is ordinary engine work: the level is boxes, collision
-// pushes a circle out of them, and firing is a ray/AABB test. It is a sample,
-// not a shooter — there is no gravity beyond a floor clamp and no enemy AI
-// beyond bobbing in place.
-import { createUI } from "minimotor/ui";
+// The networking lives in `netplay.ts`, which opens with the four decisions it
+// makes and why. The short version: every player owns their own body, remote
+// players are drawn ~90 ms in the past so they are always blended between two
+// states that really happened, and the shooter decides the hit — which is
+// lag-compensated for free, because what it tests against is exactly what was
+// drawn. Read that header before changing anything here that touches `match`.
+//
+// The level is boxes, collision pushes a circle out of them, and firing is a
+// ray/AABB test. It is a sample, not a shooter.
+import { createUI, type Flow } from "minimotor/ui";
 import { Buttons, createInput } from "minimotor/input";
 import { createOnscreenInput } from "minimotor/onscreen-input";
-import { Vec3, createApp } from "minimotor";
+import { createNet } from "minimotor/net";
+import { Quat, Vec3, createApp } from "minimotor";
 import {
   addNode,
   attachSceneLayer,
@@ -36,30 +45,66 @@ import {
   cameraRight,
   createCamera,
   createRenderer3D,
-  createScene,
   createUiSurface,
+  cylinder,
   isWebGPUAvailable,
   look,
   node,
   placeEye,
-  plane,
   sphere,
   updateWorldMatrices,
+  worldToScreen,
   type Backend3D,
   type Renderer3D,
   type SceneLayer,
 } from "minimotor/3d";
+import {
+  EYE_HEIGHT,
+  PLAYER_RADIUS,
+  rayBox,
+  resolve,
+  revive,
+  scene,
+  solid,
+  spawnFor,
+  stepTargets,
+  targets,
+  wallDistance,
+} from "./arena.js";
+import {
+  DEFAULT_DELAY_MS,
+  MAX_HEALTH,
+  joinMatch,
+  openLobby,
+  plausible,
+  type Lobby,
+  type Match,
+  type MatchAd,
+  type PlayerState,
+  type RemotePlayer,
+} from "./netplay.js";
 
 // No `background`: the engine then leaves the play area unpainted, so the 2D
 // canvas stays transparent and the scene layer shows through it. Passing one
 // here would hide the entire 3D world behind an opaque fill — the first thing
 // to check if a scene layer renders black.
-const game = createApp("game");
+//
+// `preventKeys` adds Tab to the engine's defaults. Tab is the scoreboard, and
+// its untouched browser behaviour is to walk the focus ring off the canvas —
+// after which the keyboard is driving the page, not the game.
+const game = createApp("game", {
+  preventKeys: ["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Tab"],
+});
 const view = game.viewport;
 const { Draw, Keys, Loop, Pointer } = game;
 const Input = createInput(game);
 const UI = createUI(game, Input);
 const OnscreenInput = createOnscreenInput(game, Input, UI);
+const Net = createNet(game);
+
+/** The well-known room every client meets in. Not a server feature — see
+ *  `netplay.ts` §1. */
+const LOBBY_ROOM = "fps-lobby";
 
 // ---- touch controls --------------------------------------------------------
 // A twin-stick pad, which is what a first-person game is on a touchscreen: the
@@ -80,126 +125,14 @@ const pad = OnscreenInput.gamepad({
     // from the BOTTOM, so "out of the way" here means high above the left
     // stick rather than in a top corner.
     { anchor: { side: "left", x: 60, y: 250 }, r: 24, label: "II", onTap: () => (paused = true) },
+    {
+      anchor: { side: "right", x: 60, y: 250 },
+      r: 24,
+      label: "TAB",
+      onTap: () => (boardPin = !boardPin),
+    },
   ],
 });
-
-// ---- the level -------------------------------------------------------------
-
-const EYE_HEIGHT = 1.7;
-const PLAYER_RADIUS = 0.35;
-
-interface Box {
-  /** Centre. */
-  x: number;
-  y: number;
-  z: number;
-  /** Half-extents. */
-  hx: number;
-  hy: number;
-  hz: number;
-}
-
-const walls: Box[] = [];
-
-const scene = createScene({
-  ambient: [0.22, 0.24, 0.32],
-  lights: [
-    { direction: { x: -0.4, y: -1, z: -0.35 }, color: [1, 0.95, 0.85], intensity: 0.95 },
-    { direction: { x: 0.7, y: -0.25, z: 0.6 }, color: [0.35, 0.5, 0.95], intensity: 0.5 },
-  ],
-  background: [0.05, 0.06, 0.09, 1],
-});
-
-/** Add a solid box to both the scene and the collision list. */
-function solid(b: Box, color: readonly [number, number, number, number]): void {
-  addNode(
-    scene,
-    node({
-      mesh: box(b.hx * 2, b.hy * 2, b.hz * 2),
-      position: { x: b.x, y: b.y, z: b.z },
-      material: { color, shininess: 20, specular: 0.1 },
-    }),
-  );
-  walls.push(b);
-}
-
-// The floor is a plane rather than a box, so the player never stands inside a
-// collider.
-addNode(
-  scene,
-  node({
-    mesh: plane(40, 40, 1),
-    material: { color: [0.13, 0.14, 0.19, 1] },
-  }),
-);
-
-const WALL: readonly [number, number, number, number] = [0.2, 0.22, 0.3, 1];
-const CRATE: readonly [number, number, number, number] = [0.45, 0.34, 0.2, 1];
-
-// An arena, walled on four sides.
-for (const [x, z, hx, hz] of [
-  [0, -14, 14, 0.5],
-  [0, 14, 14, 0.5],
-  [-14, 0, 0.5, 14],
-  [14, 0, 0.5, 14],
-] as const) {
-  solid({ x, y: 1.6, z, hx, hy: 1.6, hz }, WALL);
-}
-// Cover to hide behind and shoot around. Nothing sits on x ≈ 0: the player
-// spawns at (0, 8) facing the terminal at (0, −13.4), and a crate in that lane
-// means the sample opens with you jammed against a box.
-for (const [x, z, s] of [
-  [-5, -6, 1.1],
-  [4, -8, 0.9],
-  [7, 3, 1.3],
-  [-6, 6, 1],
-  [3.2, 1, 0.7],
-  [-9, -1, 0.8],
-] as const) {
-  solid({ x, y: s, z, hx: s, hy: s, hz: s }, CRATE);
-}
-
-// ---- targets ---------------------------------------------------------------
-
-interface Target {
-  node: number;
-  box: Box;
-  alive: boolean;
-  /** Seconds since it was hit; 0 while alive. Drives the sink-and-respawn. */
-  dying: number;
-  bob: number;
-}
-
-/** Height every target floats at. Close to the 1.7 eye height on purpose: the
- *  camera starts level, and a target centred much lower is missed by a
- *  horizontal shot at the top of its bob. */
-const BASE_Y = 1.5;
-
-const targets: Target[] = [];
-for (const [x, z, phase] of [
-  [-8, -9, 0],
-  [6, -11, 0.9],
-  [10, 6, 1.8],
-  [-10, 8, 2.7],
-  [2, 9, 3.6],
-  [-2, -4, 4.5],
-  [9, -3, 5.4],
-] as const) {
-  targets.push({
-    node: addNode(
-      scene,
-      node({
-        mesh: sphere(0.55, 20, 14),
-        position: { x, y: BASE_Y, z },
-        material: { color: [0.92, 0.3, 0.34, 1], shininess: 60, specular: 0.4 },
-      }),
-    ),
-    box: { x, y: BASE_Y, z, hx: 0.55, hy: 0.55, hz: 0.55 },
-    alive: true,
-    dying: 0,
-    bob: phase,
-  });
-}
 
 // ---- the in-world terminal -------------------------------------------------
 // A real minimotor UI on a quad, standing in the level. Walk up to it and
@@ -215,7 +148,7 @@ const terminal = createUiSurface({
   // This one draws straight from `Loop.draw`, so the surface has to be told.
   app: game,
   width: 260,
-  height: 190,
+  height: 210,
   worldWidth: 2.2,
   background: "rgba(10,14,24,0.92)",
 });
@@ -232,7 +165,7 @@ const terminalNode = addNode(
 addNode(
   scene,
   node({
-    mesh: box(2.5, 1.85, 0.12),
+    mesh: box(2.5, 1.95, 0.12),
     position: { x: TERMINAL_POS.x, y: TERMINAL_POS.y, z: TERMINAL_POS.z - 0.1 },
     material: { color: [0.16, 0.18, 0.24, 1], shininess: 30, specular: 0.15 },
   }),
@@ -247,8 +180,86 @@ solid(
   [0.18, 0.2, 0.26, 1],
 );
 
-let brightAmbient = true;
-let fillLight = true;
+// ---- remote player avatars -------------------------------------------------
+// A fixed pool, assigned to whoever is present this frame. Growing the scene's
+// node array as players come and go would work, but nodes are never removed
+// from a `Scene3D` (indices are handles), so a long session would leak one
+// avatar per join.
+
+const MAX_AVATARS = 8;
+
+interface Avatar {
+  pivot: number;
+  head: number;
+  /** Recoloured per seat the first time it is handed out. */
+  seat: number;
+}
+
+const avatars: Avatar[] = [];
+for (let i = 0; i < MAX_AVATARS; i++) {
+  const pivot = addNode(scene, node({ name: `avatar-${i}`, hidden: true }));
+  addNode(
+    scene,
+    node({
+      parent: pivot,
+      mesh: cylinder(0.32, 1.2, 12),
+      position: { x: 0, y: -0.35, z: 0 },
+      material: { color: [0.6, 0.6, 0.7, 1], shininess: 20, specular: 0.15 },
+    }),
+  );
+  const head = addNode(
+    scene,
+    node({
+      parent: pivot,
+      mesh: sphere(0.26, 16, 12),
+      position: { x: 0, y: 0.45, z: 0 },
+      material: { color: [0.9, 0.9, 0.95, 1], shininess: 60, specular: 0.4 },
+    }),
+  );
+  // A stub barrel, so which way someone is facing is readable at range. Local
+  // −Z is forward, matching the camera convention.
+  addNode(
+    scene,
+    node({
+      parent: pivot,
+      mesh: box(0.1, 0.1, 0.7),
+      position: { x: 0.2, y: 0.15, z: -0.45 },
+      material: { color: [0.2, 0.21, 0.26, 1] },
+    }),
+  );
+  avatars.push({ pivot, head, seat: -1 });
+}
+
+/** The hue `Net.playerColor` assigns a seat: the golden angle, so neighbouring
+ *  slots never look alike. Repeated here because the avatar needs the number,
+ *  not the CSS string. */
+const seatHue = (index: number): number => (index * 137.508 + 320) % 360;
+
+/** The seat colour as CSS, with an alpha the nameplates fade on. */
+function seatCss(index: number, alpha: number): string {
+  return `hsla(${seatHue(index).toFixed(1)}, 90%, 65%, ${alpha.toFixed(3)})`;
+}
+
+/** The same colour as the renderer wants it: `[r, g, b, a]` in 0..1. */
+function seatRgb(index: number): [number, number, number, number] {
+  const hue = seatHue(index) / 60;
+  const c = 0.62;
+  const x = c * (1 - Math.abs((hue % 2) - 1));
+  const [r, g, b] =
+    hue < 1
+      ? [c, x, 0]
+      : hue < 2
+        ? [x, c, 0]
+        : hue < 3
+          ? [0, c, x]
+          : hue < 4
+            ? [0, x, c]
+            : hue < 5
+              ? [x, 0, c]
+              : [c, 0, x];
+  const m = 0.28;
+  return [r + m, g + m, b + m, 1];
+}
 
 // ---- player ----------------------------------------------------------------
 
@@ -273,19 +284,43 @@ let hits = 0;
 let recoil = 0;
 let hitMarker = 0;
 let muzzle = 0;
+let damageFlash = 0;
 let message = "";
 let messageAge = 99;
-/** Set once the player moves, looks or fires — dismisses the instructions. */
-let playing = false;
 /** The Esc menu is open. While it is, the world is frozen and the UI has the
  *  pointer. */
 let paused = false;
+/** Held-Tab scoreboard, and the touch button's latch for the same thing. */
+let boardPin = false;
+
+/** What everyone else receives. Rewritten in place each step and sampled by the
+ *  share at 20 Hz — see `netplay.ts` for the shape and why it is not packed. */
+const me: PlayerState = {
+  x: player.x,
+  y: player.y,
+  z: player.z,
+  vx: 0,
+  vz: 0,
+  yaw: 0,
+  pitch: 0,
+  live: 0,
+  hp: MAX_HEALTH,
+  kills: 0,
+  deaths: 0,
+  name: "",
+};
+
+/** Seconds until we come back. 0 while alive. */
+let respawnIn = 0;
+/** Who put us here, for the death message. */
+let killedBy = "";
 
 // ---- settings --------------------------------------------------------------
 // Every one of these is a live knob on something the engine already exposes, so
-// the menu is a tour of the 3D API rather than a screenshot of one: the FOV is
-// the camera's, the render scale is the scene layer's, and the backend is the
-// whole renderer being rebuilt underneath a running game.
+// the menu is a tour of the API rather than a screenshot of one: the FOV is the
+// camera's, the render scale is the scene layer's, the interpolation delay is
+// the snapshot buffer's, and the backend is the whole renderer being rebuilt
+// underneath a running game.
 
 const settings = {
   /** HORIZONTAL field of view in degrees — the number players know. The camera
@@ -299,7 +334,148 @@ const settings = {
   renderScale: 1,
   invertY: false,
   showStats: false,
+  showNet: false,
+  /** How far in the past remote players are drawn. Read when a match is joined;
+   *  the label says so, because a slider that silently does nothing is worse
+   *  than one that explains itself. */
+  interpDelayMs: DEFAULT_DELAY_MS,
 };
+
+let playerName = `Player ${1 + Math.floor(Math.random() * 89)}`;
+
+// ---- session ---------------------------------------------------------------
+// Three phases and one flag. `deployed` is the spectate/play split: a player in
+// a match who has not deployed flies through the level with no body, is not
+// shootable, and cannot shoot.
+
+type Phase = "connecting" | "lobby" | "joining" | "match";
+let phase: Phase = "connecting";
+let lobby: Lobby | null = null;
+let match: Match | null = null;
+/** We are the one advertising this match, so we hold the lobby room open. */
+let advertising = false;
+let deployed = false;
+let joinError: string | null = null;
+let codeField = "";
+/** Last `resetCount` we acted on, so a host's reset reaches every client
+ *  exactly once — including one that joined after it happened. */
+let seenResetCount = 0;
+
+void (async () => {
+  lobby = await openLobby(Net, LOBBY_ROOM);
+  if (phase === "connecting") phase = "lobby";
+})();
+
+function newCode(): string {
+  return Math.random().toString(36).slice(2, 6).toUpperCase();
+}
+
+async function enterMatch(code: string, host: boolean): Promise<void> {
+  if (phase === "joining") return;
+  phase = "joining";
+  joinError = null;
+  try {
+    match = await joinMatch(Net, {
+      code,
+      name: playerName,
+      local: () => me,
+      delayMs: () => settings.interpDelayMs,
+      onHit: (from, dmg) => {
+        if (!deployed || respawnIn > 0) return;
+        // Advisory in a peer mesh, and `netplay.ts` says why — but this is the
+        // line that moves to the server in a client/server build, so it is
+        // written down rather than assumed.
+        if (
+          !plausible(
+            player,
+            match?.others.find((o) => o.id === from),
+          )
+        )
+          return;
+        me.hp = Math.max(0, me.hp - dmg);
+        damageFlash = 1;
+        if (me.hp === 0) die(from);
+      },
+      onDeath: (who, by) => {
+        if (by === me_id() && who !== me_id()) {
+          me.kills++;
+          score += 250;
+          say("FRAG  +250");
+        }
+      },
+    });
+    advertising = host;
+    seenResetCount = match.world.resetCount;
+    // Spectate first, always: dropping straight into a body means spawning
+    // before the level has even been seen. The prompt to deploy is on the HUD.
+    deployed = false;
+    me.live = 0;
+    me.hp = MAX_HEALTH;
+    me.name = playerName;
+    if (!host) {
+      // A guest has no reason to stay in the lobby mesh — see `netplay.ts` §1.
+      lobby?.close();
+      lobby = null;
+    }
+    phase = "match";
+  } catch (err: unknown) {
+    joinError = err instanceof Error ? err.message : String(err);
+    phase = "lobby";
+  }
+}
+
+/** Our room id, or a stable placeholder before a match exists. */
+function me_id(): string {
+  return match?.net.id ?? "";
+}
+
+function leaveMatch(): void {
+  match?.close();
+  match = null;
+  advertising = false;
+  deployed = false;
+  paused = false;
+  phase = lobby ? "lobby" : "connecting";
+  if (!lobby) {
+    void (async () => {
+      lobby = await openLobby(Net, LOBBY_ROOM);
+      if (phase === "connecting") phase = "lobby";
+    })();
+  }
+}
+
+function deploy(): void {
+  const spawn = spawnFor(match?.net.index ?? 0);
+  player.x = spawn.x;
+  player.z = spawn.z;
+  player.y = EYE_HEIGHT;
+  Vec3.set(velocity, 0, 0, 0);
+  camera.yaw = spawn.yaw;
+  camera.pitch = 0;
+  deployed = true;
+  me.live = 1;
+  me.hp = MAX_HEALTH;
+  ammo = MAG;
+  reloading = 0;
+  respawnIn = 0;
+  match?.reportSpawn();
+  say("DEPLOYED");
+}
+
+function die(by: string): void {
+  me.deaths++;
+  me.live = 0;
+  killedBy = nameOf(by);
+  respawnIn = 2.5;
+  match?.reportDeath(by);
+  say(`KILLED BY ${killedBy.toUpperCase()}`);
+}
+
+function nameOf(id: string): string {
+  if (id === me_id()) return playerName;
+  const other = match?.others.find((o) => o.id === id);
+  return other?.name || `P${(other?.index ?? 0) + 1}`;
+}
 
 // ---- mouse look ------------------------------------------------------------
 // Pointer lock gives movementX/Y DELTAS, which the engine's polled `Pointer`
@@ -310,11 +486,16 @@ const settings = {
 let lockDx = 0;
 let lockDy = 0;
 let locked = false;
-
 let lockRefused = false;
 
+/** The mouse belongs to the game only while a match is on screen and no menu
+ *  is up. In the lobby it belongs to the browser's own widgets. */
+function wantsLock(): boolean {
+  return phase === "match" && !paused;
+}
+
 function grabPointer(): void {
-  if (locked) return;
+  if (locked || !wantsLock()) return;
   // Chrome returns a promise that REJECTS when the lock is refused — inside a
   // cross-origin iframe, or in headless. Unhandled, that is a console error on
   // every click; Safari returns undefined, hence the guard.
@@ -325,7 +506,7 @@ function grabPointer(): void {
 game.canvas.addEventListener("click", () => {
   // While the menu is open the pointer belongs to the UI: re-locking on the
   // click that pressed "Invert Y" would shut the menu the player is using.
-  if (!paused) grabPointer();
+  grabPointer();
 });
 
 document.addEventListener("pointerlockchange", () => {
@@ -334,7 +515,7 @@ document.addEventListener("pointerlockchange", () => {
   // Esc is the browser's own way out of a pointer lock, and the keydown never
   // reaches the page. So the LOSS of the lock is the Esc press — that is the
   // only signal there is, and it is a reliable one.
-  if (was && !locked && playing) paused = true;
+  if (was && !locked && phase === "match") paused = true;
 });
 document.addEventListener("mousemove", (e) => {
   if (!locked) return;
@@ -344,50 +525,7 @@ document.addEventListener("mousemove", (e) => {
   lockDy += e.movementY;
 });
 
-// ---- collision -------------------------------------------------------------
-
-/** Push the player (a circle, seen from above) out of every wall it overlaps.
- *  Resolving on the axis of LEAST penetration is what makes sliding along a
- *  wall feel right instead of sticking to it. */
-function resolve(p: Vec3, radius: number): void {
-  for (const w of walls) {
-    const dx = p.x - w.x;
-    const dz = p.z - w.z;
-    const ox = w.hx + radius - Math.abs(dx);
-    const oz = w.hz + radius - Math.abs(dz);
-    if (ox <= 0 || oz <= 0) continue;
-    if (ox < oz) p.x += Math.sign(dx || 1) * ox;
-    else p.z += Math.sign(dz || 1) * oz;
-  }
-}
-
-/** Distance along a ray to an AABB, or Infinity for a miss. The slab method:
- *  clip the ray against each axis's pair of planes and see whether an interval
- *  survives. */
-function rayBox(origin: Vec3, dir: Vec3, b: Box): number {
-  let near = 0;
-  let far = Infinity;
-  const o = [origin.x, origin.y, origin.z];
-  const d = [dir.x, dir.y, dir.z];
-  const c = [b.x, b.y, b.z];
-  const h = [b.hx, b.hy, b.hz];
-  for (let i = 0; i < 3; i++) {
-    if (Math.abs(d[i]) < 1e-9) {
-      // Parallel to this slab: a miss unless the origin is already between its
-      // planes.
-      if (Math.abs(o[i] - c[i]) > h[i]) return Infinity;
-      continue;
-    }
-    const inv = 1 / d[i];
-    let t0 = (c[i] - h[i] - o[i]) * inv;
-    let t1 = (c[i] + h[i] - o[i]) * inv;
-    if (t0 > t1) [t0, t1] = [t1, t0];
-    near = Math.max(near, t0);
-    far = Math.min(far, t1);
-    if (near > far) return Infinity;
-  }
-  return near;
-}
+// ---- shooting --------------------------------------------------------------
 
 const forward: Vec3 = { x: 0, y: 0, z: 0 };
 const right: Vec3 = { x: 0, y: 0, z: 0 };
@@ -404,18 +542,28 @@ function reload(): void {
 }
 
 function fire(): void {
-  if (reloading > 0 || ammo <= 0) return;
+  if (reloading > 0 || ammo <= 0 || !deployed || respawnIn > 0) return;
   ammo--;
   shots++;
   recoil = 1;
   muzzle = 1;
-  playing = true;
   cameraForward(camera, forward);
 
-  // Nearest target, but only if no wall is nearer — otherwise you shoot through
-  // cover, which is the bug every first hitscan has.
-  let bestT = Infinity;
-  let bestTarget: Target | null = null;
+  // Players first, through the shared layer — it owns the lag compensation, so
+  // this file must not second-guess which positions to test.
+  const playerId = match?.shoot(player, forward) ?? null;
+  if (playerId) {
+    hits++;
+    hitMarker = 1;
+    say(`HIT ${nameOf(playerId).toUpperCase()}`);
+    return;
+  }
+
+  // Then the gallery. Nearest target, but only if no wall is nearer —
+  // otherwise you shoot through cover, which is the bug every first hitscan
+  // has.
+  let bestT = wallDistance(player, forward);
+  let bestTarget: (typeof targets)[number] | null = null;
   for (const t of targets) {
     if (!t.alive) continue;
     const d = rayBox(player, forward, t.box);
@@ -424,10 +572,7 @@ function fire(): void {
       bestTarget = t;
     }
   }
-  let wallT = Infinity;
-  for (const w of walls) wallT = Math.min(wallT, rayBox(player, forward, w));
-
-  if (bestTarget && bestT < wallT) {
+  if (bestTarget) {
     bestTarget.alive = false;
     bestTarget.dying = 1e-6;
     hits++;
@@ -435,14 +580,6 @@ function fire(): void {
     hitMarker = 1;
     say("TARGET DOWN  +100");
   }
-}
-
-function revive(t: Target): void {
-  const n = scene.nodes[t.node];
-  t.alive = true;
-  t.dying = 0;
-  Vec3.set(n.scale, 1, 1, 1);
-  n.hidden = false;
 }
 
 // ---- renderer --------------------------------------------------------------
@@ -485,15 +622,12 @@ void useBackend("auto");
 /** In reach of the terminal — recomputed each step, read by both the draw and
  *  the fire gate. */
 let terminalNear = false;
+/** Lobby camera angle: the arena is the lobby's backdrop, seen from above. */
+let lobbyOrbit = 0;
 
 Loop.run({
   update() {
     const dt = Loop.step / 1000;
-
-    // Esc while unlocked toggles the menu directly. While LOCKED the browser
-    // eats it to release the pointer, and `pointerlockchange` opens the menu
-    // instead — two paths because there are genuinely two situations.
-    if (Keys.pressed("Escape") && !locked) paused = !paused;
 
     // Applied BEFORE the pause gate, and every step: these are the knobs the
     // pause menu owns, and a FOV slider you can only judge after closing the
@@ -502,130 +636,99 @@ Loop.run({
     if (layer && layer.resolutionScale !== settings.renderScale) {
       layer.setResolutionScale(settings.renderScale);
     }
+    stepTargets(dt);
+    recoil = Math.max(0, recoil - dt * 5);
+    muzzle = Math.max(0, muzzle - dt * 12);
+    hitMarker = Math.max(0, hitMarker - dt * 2.5);
+    damageFlash = Math.max(0, damageFlash - dt * 2);
+    messageAge += dt;
+
+    if (phase !== "match") {
+      lobbyStep(dt);
+      return;
+    }
+
+    // Esc while unlocked toggles the menu directly. While LOCKED the browser
+    // eats it to release the pointer, and `pointerlockchange` opens the menu
+    // instead — two paths because there are genuinely two situations.
+    if (Keys.pressed("Escape") && !locked) paused = !paused;
+
+    if (advertising && lobby && match) {
+      lobby.advertise({
+        code: match.code,
+        title: `${playerName}'s arena`,
+        players: match.net.count,
+        max: MAX_AVATARS,
+        since: match.net.now,
+      });
+    }
+
+    // The shared switches. Read every step rather than on an event, so a client
+    // that joined after the change still lands on the right lighting.
+    const world = match!.world;
+    scene.lights[1].intensity = world.fill ? 0.5 : 0;
+    scene.ambient = world.ambient ? [0.22, 0.24, 0.32] : [0.08, 0.09, 0.13];
+    if (world.resetCount !== seenResetCount) {
+      seenResetCount = world.resetCount;
+      for (const t of targets) revive(t);
+      say("TARGETS RESET");
+    }
 
     if (paused) {
       lockDx = 0;
       lockDy = 0;
+      publish();
       return;
     }
 
-    // Invert is applied to the DELTA rather than passed to `look`: it is a
-    // player preference, not a property of the camera, and the engine has no
-    // business having an opinion about it.
-    if (locked) {
-      look(camera, lockDx, settings.invertY ? -lockDy : lockDy, LOOK_BASE * settings.sensitivity);
-    }
-    lockDx = 0;
-    lockDy = 0;
-    // Arrow keys look too, always. Pointer lock is refused inside a
-    // cross-origin iframe and on some embedded browsers, and a first-person
-    // sample that simply cannot be turned in those is no sample at all. The
-    // rate is in the same pixel units `look` takes, scaled by the step.
-    // The right stick looks. Its units are −1..1 per STEP, so it is scaled to
-    // the same pixel-delta units `look` takes; `turn` is what a held arrow key
-    // is worth over one step, which makes stick and keyboard turn at one rate.
-    const turn = 900 * dt;
-    if (pad.axis(2) !== 0 || pad.axis(3) !== 0) {
-      look(
-        camera,
-        pad.axis(2) * turn,
-        pad.axis(3) * turn * (settings.invertY ? -1 : 1),
-        LOOK_BASE * settings.sensitivity,
-      );
-    }
-    look(
-      camera,
-      ((Keys.down("ArrowRight") ? 1 : 0) - (Keys.down("ArrowLeft") ? 1 : 0)) * turn,
-      ((Keys.down("ArrowDown") ? 1 : 0) - (Keys.down("ArrowUp") ? 1 : 0)) *
-        turn *
-        (settings.invertY ? -1 : 1),
-      LOOK_BASE * settings.sensitivity,
-    );
+    lookStep(dt);
+    moveStep(dt);
 
-    // Movement in the camera's own frame, normalized so diagonals are not
-    // faster — the oldest bug in first-person movement.
-    cameraForward(camera, forward);
-    forward.y = 0;
-    Vec3.normalize(forward);
-    cameraRight(camera, right);
+    if (deployed && respawnIn === 0) {
+      if (Keys.pressed("KeyR") || pad.pressed(Buttons.B)) reload();
+      if (reloading > 0) {
+        reloading -= dt;
+        if (reloading <= 0) {
+          reloading = 0;
+          ammo = MAG;
+          say("RELOADED");
+        }
+      }
+      terminalNear = Math.hypot(player.x - TERMINAL_POS.x, player.z - TERMINAL_POS.z) < 4.5;
 
-    // Keys and the pad's left stick sum, then clamp: a player using both at
-    // once should not go twice as fast.
-    const ahead = clamp1((Keys.down("KeyW") ? 1 : 0) - (Keys.down("KeyS") ? 1 : 0) - pad.axis(1));
-    const side = clamp1((Keys.down("KeyD") ? 1 : 0) - (Keys.down("KeyA") ? 1 : 0) + pad.axis(0));
-    const speed = Keys.down("ShiftLeft") || pad.down(Buttons.X) ? 9 : 5.5;
-    Vec3.set(wish, forward.x * ahead + right.x * side, 0, forward.z * ahead + right.z * side);
-    if (wish.x !== 0 || wish.z !== 0) {
-      Vec3.normalize(wish);
-      playing = true;
-    }
-
-    // `1 - e^(-k·dt)` is the frame-rate-independent form of exponential
-    // smoothing; the naive `v += (want - v) * k` changes feel with the step.
-    const accel = 1 - Math.exp(-18 * dt);
-    velocity.x += (wish.x * speed - velocity.x) * accel;
-    velocity.z += (wish.z * speed - velocity.z) * accel;
-    player.x += velocity.x * dt;
-    player.z += velocity.z * dt;
-    resolve(player, PLAYER_RADIUS);
-    player.y = EYE_HEIGHT;
-    placeEye(camera, player);
-
-    if (Keys.pressed("KeyR") || pad.pressed(Buttons.B)) reload();
-    if (reloading > 0) {
-      reloading -= dt;
-      if (reloading <= 0) {
-        reloading = 0;
-        ammo = MAG;
-        say("RELOADED");
+      // Fire on press. When the terminal is in reach the click belongs to IT
+      // instead — a wall panel you accidentally shoot at while trying to press
+      // is worse than one you cannot shoot at all.
+      // F, not Space: clicking the terminal gives one of its widgets keyboard
+      // focus, and Space/Enter is how the UI activates a focused widget. Bind
+      // fire to Space and every shot also presses whatever button the player
+      // last touched.
+      if (
+        (Pointer.framePressed && locked && !terminalNear) ||
+        Keys.pressed("KeyF") ||
+        pad.down(Buttons.A)
+      ) {
+        fire();
+      }
+      if (ammo === 0 && reloading === 0) reload();
+    } else {
+      terminalNear = false;
+      // Deploy from spectate. Enter and the fire button both do it, because
+      // "press to join" should work with whatever the player already has a
+      // finger on.
+      const asked = Keys.pressed("Enter") || Keys.pressed("Space") || pad.pressed(Buttons.A);
+      if (respawnIn > 0) {
+        respawnIn -= dt;
+        if (respawnIn <= 0) {
+          respawnIn = 0;
+          deploy();
+        }
+      } else if (asked) {
+        deploy();
       }
     }
 
-    terminalNear = Math.hypot(player.x - TERMINAL_POS.x, player.z - TERMINAL_POS.z) < 4.5;
-
-    // Fire on press. When the terminal is in reach the click belongs to IT
-    // instead — a wall panel you accidentally shoot at while trying to press is
-    // worse than one you cannot shoot at all.
-    // F, not Space: clicking the terminal gives one of its widgets keyboard
-    // focus, and Space/Enter is how the UI activates a focused widget. Bind
-    // fire to Space and every shot also presses whatever button the player
-    // last touched — which here silently reset the score.
-    if (
-      (Pointer.framePressed && locked && !terminalNear) ||
-      Keys.pressed("KeyF") ||
-      pad.down(Buttons.A)
-    ) {
-      fire();
-    }
-    if (ammo === 0 && reloading === 0) reload();
-
-    recoil = Math.max(0, recoil - dt * 5);
-    muzzle = Math.max(0, muzzle - dt * 12);
-    hitMarker = Math.max(0, hitMarker - dt * 2.5);
-    messageAge += dt;
-
-    for (const t of targets) {
-      const n = scene.nodes[t.node];
-      t.bob += dt * 1.6;
-      if (t.alive) {
-        // The hit box bobs WITH the art. Leaving it at the base height is the
-        // classic "I shot it and nothing happened" — invisible, and only at the
-        // extremes of the animation.
-        n.position.y = BASE_Y + Math.sin(t.bob) * 0.16;
-        t.box.y = n.position.y;
-        continue;
-      }
-      t.dying += dt;
-      // Sink and shrink, then come back — a sample wants targets that respawn.
-      const k = Math.min(1, t.dying / 0.5);
-      n.position.y = BASE_Y - k * 1.4;
-      Vec3.set(n.scale, 1 - k, 1 - k, 1 - k);
-      n.hidden = k >= 1;
-      if (t.dying > 3) revive(t);
-    }
-
-    scene.lights[1].intensity = fillLight ? 0.5 : 0;
-    scene.ambient = brightAmbient ? [0.22, 0.24, 0.32] : [0.08, 0.09, 0.13];
+    publish();
   },
 
   draw() {
@@ -639,6 +742,8 @@ Loop.run({
       return;
     }
 
+    syncAvatars();
+
     // The terminal's texture is drawn BEFORE the scene, so what the scene
     // samples is this frame's UI rather than last frame's.
     updateWorldMatrices(scene);
@@ -648,15 +753,42 @@ Loop.run({
     // the whole of the 3D draw — nothing is blitted into the 2D context.
     renderer.render(scene, camera);
 
+    if (phase !== "match") {
+      drawLobby();
+      return;
+    }
+
     // And the HUD, ordinary screen-space UI on the transparent 2D canvas.
-    if (!paused) drawCrosshair();
+    if (damageFlash > 0) {
+      Draw.rect(0, 0, view.w, view.h, `rgba(190,30,40,${(damageFlash * 0.32).toFixed(3)})`);
+    }
+    drawNameplates();
+    if (!paused && deployed && respawnIn === 0) drawCrosshair();
     drawHud();
+    if (showingBoard()) drawScoreboard();
     if (paused) drawPauseMenu();
     // Last, so the sticks sit above the HUD they overlap — and skipped while
     // paused, where the menu owns the pointer.
     if (!paused) OnscreenInput.drawControls(pad);
   },
 });
+
+/** Push this step's position and aim into the shared state. One place, called
+ *  at the end of every step including a paused one — a player who opens the
+ *  menu should keep existing on everyone else's screen. */
+function publish(): void {
+  me.x = player.x;
+  me.y = player.y;
+  me.z = player.z;
+  me.vx = velocity.x;
+  me.vz = velocity.z;
+  me.yaw = camera.yaw;
+  me.pitch = camera.pitch;
+  me.live = deployed && respawnIn === 0 ? 1 : 0;
+  me.name = playerName;
+}
+
+const showingBoard = (): boolean => Keys.down("Tab") || boardPin;
 
 /** The camera stores a VERTICAL fov; players think in horizontal. The
  *  conversion needs the aspect ratio, which is why the menu keeps the
@@ -666,9 +798,167 @@ function verticalFov(fovXDegrees: number): number {
   return 2 * Math.atan(Math.tan((fovXDegrees * Math.PI) / 360) / aspect);
 }
 
+// ---- look and move ---------------------------------------------------------
+
+function lookStep(dt: number): void {
+  // Invert is applied to the DELTA rather than passed to `look`: it is a
+  // player preference, not a property of the camera, and the engine has no
+  // business having an opinion about it.
+  if (locked) {
+    look(camera, lockDx, settings.invertY ? -lockDy : lockDy, LOOK_BASE * settings.sensitivity);
+  }
+  lockDx = 0;
+  lockDy = 0;
+  // Arrow keys look too, always. Pointer lock is refused inside a cross-origin
+  // iframe and on some embedded browsers, and a first-person sample that simply
+  // cannot be turned in those is no sample at all. The right stick looks on the
+  // same terms; its units are −1..1 per STEP, so both are scaled to the pixel
+  // deltas `look` takes, and `turn` is what a held arrow key is worth over one
+  // step — which makes stick and keyboard turn at one rate.
+  const turn = 900 * dt;
+  const invert = settings.invertY ? -1 : 1;
+  if (pad.axis(2) !== 0 || pad.axis(3) !== 0) {
+    look(camera, pad.axis(2) * turn, pad.axis(3) * turn * invert, LOOK_BASE * settings.sensitivity);
+  }
+  look(
+    camera,
+    ((Keys.down("ArrowRight") ? 1 : 0) - (Keys.down("ArrowLeft") ? 1 : 0)) * turn,
+    ((Keys.down("ArrowDown") ? 1 : 0) - (Keys.down("ArrowUp") ? 1 : 0)) * turn * invert,
+    LOOK_BASE * settings.sensitivity,
+  );
+}
+
+function moveStep(dt: number): void {
+  // Movement in the camera's own frame, normalized so diagonals are not
+  // faster — the oldest bug in first-person movement.
+  cameraForward(camera, forward);
+  const flying = !deployed || respawnIn > 0;
+  // A spectator flies: forward means where you are LOOKING, including up. A
+  // deployed player walks, so the same vector is flattened.
+  if (!flying) forward.y = 0;
+  Vec3.normalize(forward);
+  cameraRight(camera, right);
+
+  // Keys and the pad's left stick sum, then clamp: a player using both at once
+  // should not go twice as fast.
+  const ahead = clamp1((Keys.down("KeyW") ? 1 : 0) - (Keys.down("KeyS") ? 1 : 0) - pad.axis(1));
+  const side = clamp1((Keys.down("KeyD") ? 1 : 0) - (Keys.down("KeyA") ? 1 : 0) + pad.axis(0));
+  const lift = flying ? (Keys.down("KeyE") ? 1 : 0) - (Keys.down("KeyQ") ? 1 : 0) : 0;
+  const fast = Keys.down("ShiftLeft") || pad.down(Buttons.X);
+  const speed = flying ? (fast ? 22 : 11) : fast ? 9 : 5.5;
+  Vec3.set(
+    wish,
+    forward.x * ahead + right.x * side,
+    forward.y * ahead + lift,
+    forward.z * ahead + right.z * side,
+  );
+  if (wish.x !== 0 || wish.y !== 0 || wish.z !== 0) Vec3.normalize(wish);
+
+  // `1 - e^(-k·dt)` is the frame-rate-independent form of exponential
+  // smoothing; the naive `v += (want - v) * k` changes feel with the step.
+  const accel = 1 - Math.exp(-(flying ? 10 : 18) * dt);
+  velocity.x += (wish.x * speed - velocity.x) * accel;
+  velocity.z += (wish.z * speed - velocity.z) * accel;
+  velocity.y += ((flying ? wish.y * speed : 0) - velocity.y) * accel;
+  player.x += velocity.x * dt;
+  player.z += velocity.z * dt;
+
+  if (flying) {
+    // No collision while spectating: flying through the walls to look at the
+    // arena from outside is the point of a free camera.
+    player.y = Math.max(0.4, Math.min(24, player.y + velocity.y * dt));
+  } else {
+    resolve(player, PLAYER_RADIUS);
+    player.y = EYE_HEIGHT;
+    velocity.y = 0;
+  }
+  placeEye(camera, player);
+}
+
+/** The lobby's own camera: a slow high orbit of the arena, so the browser has
+ *  something behind it that is the actual level rather than a colour. */
+function lobbyStep(dt: number): void {
+  lobbyOrbit += dt * 0.08;
+  const r = 20;
+  player.x = Math.sin(lobbyOrbit) * r;
+  player.z = Math.cos(lobbyOrbit) * r;
+  player.y = 11;
+  // Look back at the middle. `cameraForward` is
+  // `(-sin yaw · cos pitch, -sin pitch, -cos yaw · cos pitch)`, so aiming at the
+  // origin from `(sin o · r, ·, cos o · r)` needs yaw = o — NOT o + π, which
+  // points at the sky outside the arena — and looking DOWN needs a POSITIVE
+  // pitch, because that y term is negated.
+  camera.yaw = lobbyOrbit;
+  camera.pitch = 0.42;
+  placeEye(camera, player);
+  scene.lights[1].intensity = 0.5;
+  scene.ambient = [0.22, 0.24, 0.32];
+}
+
+// ---- avatars ---------------------------------------------------------------
+
+/** Hand the avatar pool out to whoever is present, and park the rest. Runs in
+ *  DRAW rather than update, because what it positions is the interpolated
+ *  state — which is a function of the wall clock, not of the fixed step. */
+function syncAvatars(): void {
+  const others = phase === "match" && match ? match.others : [];
+  let i = 0;
+  for (const other of others) {
+    if (i >= avatars.length) break;
+    // A spectator has no body, so there is nothing to draw and nothing to shoot.
+    if (other.live !== 1) continue;
+    const avatar = avatars[i++];
+    const pivot = scene.nodes[avatar.pivot];
+    pivot.hidden = false;
+    pivot.position.x = other.x;
+    // The shared `y` is the EYE height; the pivot sits at the chest.
+    pivot.position.y = other.y - 0.55;
+    pivot.position.z = other.z;
+    Quat.fromAxisAngle(pivot.rotation, 0, 1, 0, other.yaw);
+    if (avatar.seat !== other.index) {
+      avatar.seat = other.index;
+      const colour = seatRgb(other.index);
+      scene.nodes[avatar.head].material = { color: colour, shininess: 60, specular: 0.4 };
+    }
+    // Fade toward the floor as they die — cheap, and it reads at any range.
+    const hurt = Math.max(0, Math.min(1, other.hp / MAX_HEALTH));
+    Vec3.set(pivot.scale, 1, 0.6 + hurt * 0.4, 1);
+  }
+  for (; i < avatars.length; i++) scene.nodes[avatars[i].pivot].hidden = true;
+}
+
+/** A name and a health number over each visible player.
+ *
+ *  `UI.worldLabel` is the 2D engine's version of this and takes a 2D camera, so
+ *  it is the wrong tool here; `worldToScreen` is the 3D one, and it returns
+ *  null behind the eye — which is the cull that stops a player standing behind
+ *  you having their name mirrored onto the far side of the screen. */
+function drawNameplates(): void {
+  if (!match) return;
+  const head: Vec3 = { x: 0, y: 0, z: 0 };
+  for (const other of match.others) {
+    if (other.live !== 1) continue;
+    Vec3.set(head, other.x, other.y + 0.55, other.z);
+    const at = worldToScreen(camera, head, view.w, view.h);
+    if (!at || at.depth > 34) continue;
+    // Fade with distance so a crowded arena does not become a wall of text.
+    const alpha = Math.max(0.25, Math.min(1, 1.4 - at.depth / 34));
+    UI.text(`${other.name || `P${other.index + 1}`}  ${Math.max(0, Math.round(other.hp))}`, {
+      x: at.x - 100,
+      y: at.y - 8,
+      w: 200,
+      align: "center",
+      size: 11,
+      bold: true,
+      color: seatCss(other.index, alpha),
+    });
+  }
+}
+
 // ---- the terminal's UI -----------------------------------------------------
 
 function drawTerminal(): void {
+  const world = match?.world;
   terminal.draw(
     {
       model: scene.nodes[terminalNode].world!,
@@ -677,10 +967,10 @@ function drawTerminal(): void {
       // the centre of the screen. That substitution is the whole trick that
       // makes a world-space panel usable in a first-person game. Unlocked, the
       // real cursor is a position again and is used as one.
-      // Frozen while the menu is up: the pointer belongs to the menu, and a
+      // Frozen while a menu is up: the pointer belongs to the menu, and a
       // crosshair that is not being aimed should not be hovering a wall panel.
       pointer:
-        !terminalNear || paused
+        !terminalNear || paused || showingBoard()
           ? null
           : locked
             ? { x: view.w / 2, y: view.h / 2, viewW: view.w, viewH: view.h }
@@ -689,9 +979,17 @@ function drawTerminal(): void {
     () =>
       UI.idScope("terminal", () => {
         UI.text("ARENA CONTROL", { x: 14, y: 12, size: 14, bold: true, color: "accent" });
+        UI.text(
+          !match
+            ? "offline"
+            : match.net.hosting
+              ? "you own this panel"
+              : `owned by the host · ${match.net.count} in room`,
+          { x: 14, y: 32, size: 10, color: "dim" },
+        );
         UI.text(terminalNear ? "aim and click to operate" : "step closer", {
           x: 14,
-          y: 34,
+          y: 48,
           size: 11,
           color: "dim",
         });
@@ -700,19 +998,143 @@ function drawTerminal(): void {
         // swallows the keys the game is using — Space and Enter activate the
         // focused widget, the arrows traverse between them. Without this,
         // walking up to the terminal once quietly disables looking around.
-        UI.col({ x: 14, y: 58, w: 232, gap: 8 }, () => {
-          brightAmbient = UI.toggle({ label: "Ambient light", on: brightAmbient, tabIndex: -1 });
-          fillLight = UI.toggle({ label: "Fill light", on: fillLight, tabIndex: -1 });
-          if (UI.button({ label: "Reset targets", w: 232, tabIndex: -1 })) {
-            for (const t of targets) revive(t);
-            score = 0;
-            shots = 0;
-            hits = 0;
-            say("TARGETS RESET");
+        //
+        // These are not local booleans. A click sends a REQUEST to the host,
+        // which owns the record and broadcasts it back; the toggle shows what
+        // the room agreed on, not what this client wishes. On a lossy link that
+        // means a switch can visibly lag its own press, and that is honest.
+        UI.col({ x: 14, y: 74, w: 232, gap: 8 }, () => {
+          if (
+            UI.toggle({ label: "Ambient light", on: world?.ambient ?? true, tabIndex: -1 }) !==
+            (world?.ambient ?? true)
+          ) {
+            match?.toggle("ambient");
           }
+          if (
+            UI.toggle({ label: "Fill light", on: world?.fill ?? true, tabIndex: -1 }) !==
+            (world?.fill ?? true)
+          ) {
+            match?.toggle("fill");
+          }
+          if (UI.button({ label: "Reset targets", w: 232, tabIndex: -1 })) match?.resetTargets();
         });
       }),
   );
+}
+
+// ---- the lobby screen ------------------------------------------------------
+
+function drawLobby(): void {
+  Draw.rect(0, 0, view.w, view.h, "rgba(6,8,14,0.62)");
+
+  UI.panel({ anchor: "center", w: 560, title: "ARENA · LOBBY", pad: 18 }, () => {
+    UI.col({ gap: 12 }, () => {
+      UI.text(
+        phase === "connecting"
+          ? "finding the relay…"
+          : phase === "joining"
+            ? "joining…"
+            : lobby?.online
+              ? `connected · ${lobby.here} here`
+              : "no relay answered — you can still host and play solo",
+        { size: 11, color: lobby?.online === false ? "#ffb347" : "dim" },
+      );
+      if (joinError) UI.text(joinError, { size: 11, color: "#f0603a", wrap: true });
+
+      UI.row({ gap: 10, fitCross: true, alignCross: "center" }, () => {
+        UI.text("NAME", { size: 11, bold: true, color: "dim", w: 52 });
+        playerName = UI.textInput({
+          id: "name",
+          value: playerName,
+          w: 200,
+          maxLength: 16,
+          placeholder: "your name",
+        }).value;
+        if (
+          UI.button({
+            id: "host",
+            label: "Host a match",
+            w: 200,
+            variant: "primary",
+            disabled: phase !== "lobby",
+          })
+        ) {
+          void enterMatch(newCode(), true);
+        }
+      });
+
+      UI.row({ gap: 10, fitCross: true, alignCross: "center" }, () => {
+        UI.text("CODE", { size: 11, bold: true, color: "dim", w: 52 });
+        const field = UI.textInput({
+          id: "code",
+          value: codeField,
+          w: 200,
+          maxLength: 6,
+          placeholder: "e.g. K3QP",
+        });
+        codeField = field.value.toUpperCase();
+        const go = codeField.trim().length > 0 && phase === "lobby";
+        if (
+          UI.button({ id: "connect", label: "Connect", w: 200, disabled: !go }) ||
+          (field.submitted && go)
+        ) {
+          void enterMatch(codeField.trim(), false);
+        }
+      });
+
+      UI.text("OPEN MATCHES", { size: 11, bold: true, color: "dim" });
+      drawMatchList();
+
+      UI.text(
+        "A match is just a room. Hosting advertises its code in this lobby; joining by code needs no lobby at all — which is why it still works with nothing listening.",
+        { size: 10, color: "dim", wrap: true, w: 524 },
+      );
+    });
+  });
+}
+
+let listOffset = 0;
+const ROW_H = 40;
+const ROW_GAP = 3;
+
+function drawMatchList(): void {
+  const matches: MatchAd[] = lobby?.matches ?? [];
+  if (matches.length === 0) {
+    UI.text(
+      phase === "connecting" ? "…" : "nothing advertised yet — host one, or open this page twice",
+      { size: 11, color: "dim" },
+    );
+    return;
+  }
+  // The list is placed by the FLOW, not by `w`/`h`: with `x`/`y` omitted it
+  // auto-flows and fills its container, and `w`/`h` are ignored. That is the
+  // right behaviour and the wrong shape for a panel that hugs its content —
+  // "fill" inside an auto-height column has nothing to fill, so the list grows
+  // to thousands of pixels and drags the panel off the screen with it. Bounding
+  // the fill with one fixed-height column is the fix; the cap keeps a busy
+  // lobby scrolling instead of growing.
+  const rows = Math.min(4, matches.length);
+  UI.col({ w: 524, h: rows * ROW_H + (rows - 1) * ROW_GAP }, () => {
+    listOffset = UI.list(
+      { rowH: ROW_H, gap: ROW_GAP, count: matches.length, offset: listOffset, id: "matches" },
+      drawMatchRow,
+    );
+  });
+
+  function drawMatchRow(i: number, r: { x: number; y: number; w: number; h: number }): void {
+    const ad = matches[i];
+    if (UI.listItem({ ...r, id: `match-${i}` }) && phase === "lobby") {
+      void enterMatch(ad.code, false);
+    }
+    UI.row(
+      { x: r.x + 10, y: r.y + 6, w: r.w - 20, gap: 10, fitCross: true, alignCross: "center" },
+      () => {
+        UI.text(ad.code, { size: 14, bold: true, color: "accent", w: 60 });
+        UI.text(ad.title, { size: 12, w: 300 });
+        UI.text(`${ad.players}/${ad.max}`, { size: 11, color: "dim" });
+      },
+    );
+  }
 }
 
 // ---- HUD -------------------------------------------------------------------
@@ -753,13 +1175,26 @@ function drawHud(): void {
   // lifts above them. `visible` is the same signal the controls fade on, so
   // the two move together instead of the HUD guessing at the device.
   const lift = OnscreenInput.visible(pad) ? 170 : 0;
+  const net = match?.net;
 
-  // Score, top left.
-  UI.col({ x: inset, y: inset, w: 360, gap: 2 }, () => {
+  // Score and connection, top left.
+  UI.col({ x: inset, y: inset, w: 420, gap: 2 }, () => {
     UI.text(`SCORE ${score}`, { size: 20, bold: true });
     UI.text(
-      `${hits}/${shots} hits · ${shots ? Math.round((hits / shots) * 100) : 0}% · ${renderer?.backend ?? "starting…"}`,
+      `${me.kills}K / ${me.deaths}D · ${hits}/${shots} hits · ${shots ? Math.round((hits / shots) * 100) : 0}%`,
       { size: 11, color: "dim" },
+    );
+    UI.text(
+      net
+        ? `${match!.code} · ${net.count} player${net.count === 1 ? "" : "s"} · ` +
+            (net.online
+              ? net.hosting
+                ? "host"
+                : `${Math.round(net.rttMs)} ms`
+              : "solo — no relay answered") +
+            ` · ${renderer?.backend ?? "…"}`
+        : (renderer?.backend ?? "starting…"),
+      { size: 11, color: net?.online === false ? "#ffb347" : "dim" },
     );
     if (settings.showStats && renderer) {
       const st = renderer.stats;
@@ -768,35 +1203,56 @@ function drawHud(): void {
         { size: 11, color: "dim" },
       );
     }
+    if (settings.showNet && net) {
+      // The meter accumulates; `sample` is what turns it into rates, and it
+      // wants calling once a frame — which this is.
+      const s = net.meter.sample(performance.now());
+      UI.text(
+        `${settings.interpDelayMs} ms render delay · ${match!.others.length} remote · ` +
+          `${(s.downBps / 1024).toFixed(1)}↓ ${(s.upBps / 1024).toFixed(1)}↑ KiB/s · ` +
+          `${Math.round(s.downMsgs)}↓ ${Math.round(s.upMsgs)}↑ msg/s`,
+        { size: 11, color: "#8be0d0" },
+      );
+    }
   });
 
-  // Health, bottom left. Nothing shoots back in a range, so this is here to
-  // show the widget rather than to threaten anyone.
+  // Health, bottom left.
   UI.col({ x: inset, y: view.h - 78 - lift, w: 240, gap: 6 }, () => {
-    UI.text("HEALTH", { size: 11, color: "dim", bold: true });
-    UI.bar({ value: 1, w: 240, h: 14, fill: "#4ade80" });
+    UI.text(deployed && respawnIn === 0 ? "HEALTH" : "SPECTATING", {
+      size: 11,
+      color: "dim",
+      bold: true,
+    });
+    UI.bar({
+      value: deployed && respawnIn === 0 ? me.hp / MAX_HEALTH : 0,
+      w: 240,
+      h: 14,
+      fill: me.hp > 34 ? "#4ade80" : "#f0603a",
+    });
   });
 
   // Ammo, bottom right — hand-drawn, because a magazine reads as a row of
   // rounds rather than as a number.
-  const rowW = MAG * 17 - 6;
-  const ammoX = view.w - inset - rowW;
-  UI.text(reloading > 0 ? "RELOADING" : "AMMO", {
-    x: ammoX,
-    y: view.h - 78 - lift,
-    w: rowW,
-    align: "right",
-    size: 11,
-    bold: true,
-    color: reloading > 0 ? "#ffb347" : "dim",
-  });
-  const rowY = view.h - 56 - lift;
-  if (reloading > 0) {
-    Draw.rect(ammoX, rowY, rowW, 22, "rgba(255,255,255,0.08)");
-    Draw.rect(ammoX, rowY, rowW * (1 - reloading / RELOAD_TIME), 22, "#ffb347");
-  } else {
-    for (let i = 0; i < MAG; i++) {
-      Draw.rect(ammoX + i * 17, rowY, 11, 22, i < ammo ? "#e8ecf6" : "rgba(232,236,246,0.14)");
+  if (deployed && respawnIn === 0) {
+    const rowW = MAG * 17 - 6;
+    const ammoX = view.w - inset - rowW;
+    UI.text(reloading > 0 ? "RELOADING" : "AMMO", {
+      x: ammoX,
+      y: view.h - 78 - lift,
+      w: rowW,
+      align: "right",
+      size: 11,
+      bold: true,
+      color: reloading > 0 ? "#ffb347" : "dim",
+    });
+    const rowY = view.h - 56 - lift;
+    if (reloading > 0) {
+      Draw.rect(ammoX, rowY, rowW, 22, "rgba(255,255,255,0.08)");
+      Draw.rect(ammoX, rowY, rowW * (1 - reloading / RELOAD_TIME), 22, "#ffb347");
+    } else {
+      for (let i = 0; i < MAG; i++) {
+        Draw.rect(ammoX + i * 17, rowY, 11, 22, i < ammo ? "#e8ecf6" : "rgba(232,236,246,0.14)");
+      }
     }
   }
 
@@ -814,37 +1270,21 @@ function drawHud(): void {
     });
   }
 
-  // The instructions cover the middle of the screen, so they go away the moment
-  // the player does anything — including on a browser that refused the lock,
-  // where waiting for `locked` would leave them up forever.
-  if (!locked && !playing) {
-    const touch = OnscreenInput.visible(pad);
-    UI.panel({ anchor: "center", w: 420, title: touch ? "TAP TO PLAY" : "CLICK TO PLAY" }, () => {
-      if (touch) {
-        UI.text("Left stick moves · right stick looks", { size: 12 });
-        UI.text("FIRE · RELOAD · RUN · II for settings", { size: 12 });
-      } else {
-        UI.text("WASD move · Shift sprint · mouse look", { size: 12 });
-        UI.text("Click fire · R reload · Esc for settings", { size: 12 });
-      }
-      // Pointer lock is a mouse concern; on touch the sticks already are the
-      // answer and the warning would be noise.
-      if (!touch) {
-        UI.text(
-          lockRefused
-            ? "This browser refused the pointer lock — arrows look, F fires."
-            : "No mouse? Arrows look and F fires, locked or not.",
-          { size: 11, color: lockRefused ? "#ffb347" : "dim" },
-        );
-      }
-      UI.text(`Walk to the wall terminal and ${touch ? "tap" : "click"}: that panel is a real`, {
-        size: 11,
-        color: "dim",
-      });
-      UI.text("minimotor UI living on a quad inside the level.", { size: 11, color: "dim" });
+  if (!deployed || respawnIn > 0) {
+    drawSpectatePrompt();
+  } else if (terminalNear) {
+    UI.text("aim at the terminal and click to operate it", {
+      x: 0,
+      y: view.h - 140,
+      w: view.w,
+      align: "center",
+      size: 12,
+      color: "dim",
     });
-  } else if (!locked && !OnscreenInput.visible(pad)) {
-    UI.text("click the view to lock the mouse · arrows look · F fires", {
+  }
+
+  if (!locked && !OnscreenInput.visible(pad) && !paused) {
+    UI.text("click the view to lock the mouse · arrows look · F fires · Tab scores", {
       x: 0,
       y: view.h - 108,
       w: view.w,
@@ -853,14 +1293,99 @@ function drawHud(): void {
       color: "dim",
     });
   }
-  if (terminalNear) {
-    UI.text("aim at the terminal and click to operate it", {
-      x: 0,
-      y: view.h - 140,
-      w: view.w,
-      align: "center",
-      size: 12,
-      color: "dim",
+}
+
+/** The spectate overlay — the "press to join" the player is waiting behind, and
+ *  the respawn countdown, which is the same screen with the prompt disabled. */
+function drawSpectatePrompt(): void {
+  const touch = OnscreenInput.visible(pad);
+  const dead = respawnIn > 0;
+  UI.panel({ anchor: "center", w: 440, title: dead ? "DOWN" : "SPECTATING", pad: 16 }, () => {
+    UI.col({ gap: 8 }, () => {
+      if (dead) {
+        UI.text(`${killedBy} got you.`, { size: 13 });
+        UI.text(`back in ${respawnIn.toFixed(1)}s`, { size: 20, bold: true, color: "accent" });
+      } else {
+        UI.text("Free camera. Fly the arena, then drop in when you're ready.", {
+          size: 12,
+          wrap: true,
+          w: 404,
+        });
+        UI.text(
+          touch
+            ? "Left stick flies · right stick looks"
+            : "WASD flies · Q/E down and up · Shift boosts",
+          { size: 11, color: "dim" },
+        );
+        // Pointer lock is a mouse concern; on touch the sticks already are
+        // the answer and the warning would be noise.
+        if (!touch) {
+          UI.text(
+            lockRefused
+              ? "This browser refused the pointer lock — arrows look, F fires."
+              : "No mouse? Arrows look and F fires, locked or not.",
+            { size: 11, color: lockRefused ? "#ffb347" : "dim" },
+          );
+        }
+        if (
+          UI.button({
+            label: touch ? "TAP TO DEPLOY" : "DEPLOY  (Enter)",
+            w: 404,
+            variant: "primary",
+          })
+        ) {
+          deploy();
+        }
+      }
+      UI.text("Tab shows the scoreboard · Esc for settings and leaving", {
+        size: 10,
+        color: "dim",
+      });
+    });
+  });
+}
+
+// ---- the scoreboard --------------------------------------------------------
+
+function drawScoreboard(): void {
+  if (!match) return;
+  Draw.rect(0, 0, view.w, view.h, "rgba(6,8,14,0.5)");
+  const roster = match.roster;
+  UI.panel({ anchor: "center", w: 520, title: `SCOREBOARD · ${match.code}`, pad: 16 }, () => {
+    UI.col({ gap: 4 }, () => {
+      row("", "PLAYER", "K", "D", "PING", true);
+      for (const p of roster) row(...line(p));
+    });
+  });
+
+  function line(p: RemotePlayer): [string, string, string, string, string, boolean] {
+    const mine = p.id === me_id();
+    return [
+      `${p.index + 1}`,
+      `${p.name || `P${p.index + 1}`}${mine ? " · you" : ""}${p.id === match!.net.room.hostId ? " · host" : ""}`,
+      `${p.kills}`,
+      `${p.deaths}`,
+      // Only our own round trip is measured — a peer's ping to a third peer is
+      // not ours to report, and inventing one would be worse than a dash.
+      mine ? `${Math.round(match!.net.rttMs)}` : "–",
+      mine,
+    ];
+  }
+
+  function row(
+    seat: string,
+    name: string,
+    kills: string,
+    deaths: string,
+    ping: string,
+    strong: boolean,
+  ): void {
+    UI.row({ gap: 10, fitCross: true, alignCross: "center" }, () => {
+      UI.text(seat, { size: 12, w: 24, color: "dim" });
+      UI.text(name, { size: 13, w: 280, bold: strong, color: strong ? "accent" : undefined });
+      UI.text(kills, { size: 13, w: 44, align: "right", bold: strong });
+      UI.text(deaths, { size: 13, w: 44, align: "right", color: "dim" });
+      UI.text(ping, { size: 12, w: 56, align: "right", color: "dim" });
     });
   }
 }
@@ -875,15 +1400,19 @@ function drawPauseMenu(): void {
   // one filled rect and touches nothing about the scene.
   Draw.rect(0, 0, view.w, view.h, "rgba(6,8,14,0.55)");
 
-  UI.panel({ anchor: "center", w: 420, title: "PAUSED", pad: 18 }, () => {
-    UI.col({ gap: 10 }, () => {
+  UI.panel({ anchor: "center", w: 440, title: "PAUSED", pad: 18 }, (flow: Flow) => {
+    // The panel's inner width, after its padding — the sliders and the button
+    // pairs are sized from it rather than from a copy of `440 − 2 × 18` that
+    // would go stale the moment either number moved.
+    const w = flow.crossSize ?? 384;
+    UI.col({ w, gap: 10 }, () => {
       settings.fovX = UI.slider({
         label: "FOV",
         value: settings.fovX,
         min: 60,
         max: 120,
         step: 1,
-        w: 384,
+        w,
         format: (v) => `${v | 0}° wide`,
       });
       settings.sensitivity = UI.slider({
@@ -892,7 +1421,7 @@ function drawPauseMenu(): void {
         min: 0.25,
         max: 3,
         step: 0.05,
-        w: 384,
+        w,
         format: (v) => `${v.toFixed(2)}×`,
       });
       settings.renderScale = UI.slider({
@@ -901,13 +1430,31 @@ function drawPauseMenu(): void {
         min: 0.4,
         max: 1,
         step: 0.05,
-        w: 384,
+        w,
         format: (v) => `${Math.round(v * 100)}% (HUD stays sharp)`,
+      });
+      settings.interpDelayMs = UI.slider({
+        label: "Interp delay",
+        value: settings.interpDelayMs,
+        min: 0,
+        max: 250,
+        step: 10,
+        w,
+        // The caveat is its own line rather than part of the value: a long
+        // format string squeezes the slider's own track to a stub.
+        format: (v) => `${v} ms`,
+      });
+      // The buffer is built when the match is joined, so moving the slider now
+      // arms the NEXT one. Saying so beats a control that appears to do nothing.
+      UI.text("Render delay for other players · applies on the next match", {
+        size: 10,
+        color: "dim",
       });
 
       UI.row({ gap: 16, fitCross: true, alignCross: "center" }, () => {
         settings.invertY = UI.toggle("Invert Y", settings.invertY);
-        settings.showStats = UI.toggle("Show GPU stats", settings.showStats);
+        settings.showStats = UI.toggle("GPU stats", settings.showStats);
+        settings.showNet = UI.toggle("Net stats", settings.showNet);
       });
 
       UI.row({ gap: 8, fitCross: true, alignCross: "center" }, () => {
@@ -928,14 +1475,12 @@ function drawPauseMenu(): void {
           }
         }
       });
-      if (rendererError) {
-        UI.text(rendererError, { size: 11, color: "#f0603a" });
-      }
+      if (rendererError) UI.text(rendererError, { size: 11, color: "#f0603a" });
 
       UI.row({ gap: 8 }, () => {
-        if (UI.button({ label: "Resume", w: 188, variant: "primary" })) resume();
-        if (UI.button({ label: "Reset run", w: 188 })) {
-          for (const t of targets) revive(t);
+        if (UI.button({ label: "Resume", w: (w - 8) / 2, variant: "primary" })) resume();
+        if (UI.button({ label: "Reset run", w: (w - 8) / 2 })) {
+          match?.resetTargets();
           score = 0;
           shots = 0;
           hits = 0;
@@ -944,10 +1489,18 @@ function drawPauseMenu(): void {
           say("RUN RESET");
         }
       });
-      UI.text("Esc closes · click the view to re-lock the mouse", {
-        size: 10,
-        color: "dim",
+      UI.row({ gap: 8 }, () => {
+        if (UI.button({ label: "Back to spectate", w: (w - 8) / 2, disabled: !deployed })) {
+          deployed = false;
+          respawnIn = 0;
+          me.live = 0;
+          paused = false;
+        }
+        // Leaving is the room being CLOSED, not a screen change: the share
+        // stops, the peers see us time out, and the lobby room is re-opened.
+        if (UI.button({ label: "Disconnect", w: (w - 8) / 2 })) leaveMatch();
       });
+      UI.text("Esc closes · click the view to re-lock the mouse", { size: 10, color: "dim" });
     });
   });
 }
@@ -961,3 +1514,82 @@ function resume(): void {
 function clamp1(v: number): number {
   return v < -1 ? -1 : v > 1 ? 1 : v;
 }
+
+// Exposed so the end-to-end tests can assert on real session state rather than
+// pixels — a sample is also a testbed.
+Object.defineProperty(window, "fps", {
+  value: {
+    get phase() {
+      return phase;
+    },
+    get deployed() {
+      return deployed;
+    },
+    get code() {
+      return match?.code ?? null;
+    },
+    get count() {
+      return match?.net.count ?? 0;
+    },
+    get online() {
+      return match?.net.online ?? false;
+    },
+    get hosting() {
+      return match?.net.hosting ?? false;
+    },
+    get world() {
+      return match ? { ...match.world } : null;
+    },
+    /** Everyone else as DRAWN — the interpolated read, not the newest packet.
+     *  A test that asserts on this is asserting on what a player sees. */
+    get remotes() {
+      return (match?.others ?? []).map((o) => ({
+        id: o.id,
+        x: +o.x.toFixed(2),
+        y: +o.y.toFixed(2),
+        z: +o.z.toFixed(2),
+        yaw: +o.yaw.toFixed(3),
+        hp: o.hp,
+        live: o.live,
+      }));
+    },
+    get roster() {
+      return (match?.roster ?? []).map((p) => ({
+        id: p.id,
+        name: p.name,
+        kills: p.kills,
+        deaths: p.deaths,
+      }));
+    },
+    get lobby() {
+      return { online: lobby?.online ?? false, matches: lobby?.matches ?? [] };
+    },
+    get me() {
+      return { x: player.x, y: player.y, z: player.z, hp: me.hp, live: me.live };
+    },
+    get score() {
+      return score;
+    },
+    // The three things a headless client genuinely cannot do for itself: aiming
+    // needs a locked pointer, firing needs a mouse button, and operating the
+    // terminal needs a ray cast from a body standing in front of it.
+    aim: (yaw: number, pitch = 0) => {
+      camera.yaw = yaw;
+      camera.pitch = pitch;
+      placeEye(camera, player);
+      publish();
+    },
+    fire: () => fire(),
+    toggle: (key: "ambient" | "fill") => match?.toggle(key),
+    host: () => enterMatch(newCode(), true),
+    join: (code: string) => enterMatch(code, false),
+    deploy: () => deploy(),
+    leave: () => leaveMatch(),
+    pause: (on: boolean) => (paused = on),
+    board: (on: boolean) => (boardPin = on),
+    backend: (b: Backend3D) => useBackend(b),
+    layoutCapture: (on: boolean) => UI.layoutCapture(on),
+    layoutTree: () => UI.layoutTree(),
+    layoutIssues: () => UI.layoutIssues(),
+  },
+});
