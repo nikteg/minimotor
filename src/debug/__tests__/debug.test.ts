@@ -4,7 +4,7 @@ import { createDebug } from "@src/debug/index.js";
 import type { App } from "@src/engine/index.js";
 
 describe("createDebug", () => {
-  it("cycles off → performance → collision → off from layout-aware key state", () => {
+  it("cycles off → performance → off when no collision source is configured", () => {
     let down = false;
     // createDebug subscribes its overlay with app.onFrame; capture the handler
     // so the test can drive frames itself.
@@ -31,8 +31,8 @@ describe("createDebug", () => {
     frame?.();
     down = true;
     frame?.();
-    expect(debug.mode).toBe("collision");
-    expect(debug.cycle()).toBe("off");
+    expect(debug.mode).toBe("off");
+    expect(debug.cycle()).toBe("performance");
   });
 
   it("unsubscribes nothing on its own — the app owns the handler's lifetime", () => {
@@ -47,6 +47,43 @@ describe("createDebug", () => {
     createDebug(game, { perf: false });
     expect(handlers).toHaveLength(1);
   });
+
+  it("cycles from four simultaneous touch pointers", () => {
+    const canvas = document.createElement("canvas");
+    document.body.appendChild(canvas);
+    const game = {
+      Keys: { keyDown: () => false },
+      canvas,
+      onFrame: () => () => {},
+      onDestroy: () => () => {},
+    } as unknown as App;
+    const debug = createDebug(game, { perf: false });
+
+    const pointer = (type: string, pointerId: number) => {
+      const event = new Event(type, { bubbles: true }) as PointerEvent;
+      Object.defineProperties(event, {
+        pointerId: { value: pointerId },
+        pointerType: { value: "touch" },
+      });
+      canvas.dispatchEvent(event);
+    };
+
+    pointer("pointerdown", 1);
+    pointer("pointerdown", 2);
+    pointer("pointerdown", 3);
+    pointer("pointerdown", 4);
+    expect(debug.mode).toBe("performance");
+
+    pointer("pointerup", 1);
+    pointer("pointerup", 2);
+    pointer("pointerup", 3);
+    pointer("pointerup", 4);
+    pointer("pointerdown", 5);
+    pointer("pointerdown", 6);
+    pointer("pointerdown", 7);
+    pointer("pointerdown", 8);
+    expect(debug.mode).toBe("off");
+  });
 });
 
 // The meter a game monitors does not exist when its overlay is installed — the
@@ -58,8 +95,9 @@ describe("createDebug setNetMeter", () => {
       Keys: { keyDown: () => false },
       Pointer: { x: -1, y: -1, frameReleased: false },
       timings: { updateMs: 0, drawMs: 0, steps: 1 },
-      canvas: { width: 800, height: 600 },
+      canvas: Object.assign(document.createElement("canvas"), { width: 800, height: 600 }),
       viewport: { dpr: 1, scale: 1, offsetX: 0, offsetY: 0 },
+      onDestroy: () => () => {},
       ctx: {
         save: () => {},
         restore: () => {},

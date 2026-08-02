@@ -1,4 +1,4 @@
-import { createPerformanceMonitoring } from "minimotor/performance";
+import { createDebug } from "minimotor/debug";
 // A full GUI screen built from the immediate-mode UI kit — the kind of menu a
 // multiplayer game puts in front of Net.connect. Everything redraws every
 // frame; there is no widget tree and no DOM.
@@ -32,7 +32,7 @@ const game = createApp("game", {
   background: "#0b0e14",
   preventNavigation: true,
 });
-createPerformanceMonitoring(game);
+createDebug(game, { initial: "performance" });
 const { Clock, Keys, Loop } = game;
 const UI = createUI(game);
 installLayoutProbe(UI);

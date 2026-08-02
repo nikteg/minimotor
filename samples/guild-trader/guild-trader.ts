@@ -1,4 +1,4 @@
-import { createPerformanceMonitoring } from "minimotor/performance";
+import { createDebug } from "minimotor/debug";
 // GUILD TRADER: RPG inventory drag/drop, stack merging, dialogue and loot recipes.
 import { createUI } from "minimotor/ui";
 import { Gizmos, Goodies, createApp } from "minimotor";
@@ -24,7 +24,7 @@ const game = createApp("game", {
   background: "#101722",
   preventNavigation: true,
 });
-createPerformanceMonitoring(game);
+createDebug(game, { initial: "performance" });
 const vp = game.viewport;
 const { Draw, Loop, Pointer } = game;
 const UI = createUI(game);

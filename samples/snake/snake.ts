@@ -1,4 +1,4 @@
-import { createPerformanceMonitoring } from "minimotor/performance";
+import { createDebug } from "minimotor/debug";
 // Snake: classic grid-based snake with growing tail and self-collision
 // Demonstrates: game loop, input, UI, storage and Goodies.wrap grid movement
 import { createAudio } from "minimotor/audio";
@@ -10,7 +10,7 @@ import { createOverlays } from "../shared/overlays.ts";
 
 // The viewport is LIVE (mutated on resize) — grid sizing reacts in onResize.
 const game = createApp("game", { preventNavigation: true });
-createPerformanceMonitoring(game);
+createDebug(game, { initial: "performance" });
 const view = game.viewport;
 const { Draw, Keys, Loop } = game;
 const { drawGameOver } = createOverlays(Draw);

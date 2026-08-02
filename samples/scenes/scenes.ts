@@ -1,4 +1,4 @@
-import { createPerformanceMonitoring } from "minimotor/performance";
+import { createDebug } from "minimotor/debug";
 // Scenes: menu -> play -> game over, with a pause overlay pushed on top.
 // Demonstrates: Scenes.create typed map + Loop.run(scenes), go/push/pop,
 // enter/exit lifecycle, stacked draw, transitions — fade into play, wipe down
@@ -12,7 +12,7 @@ import { Collision, Gizmos, Mathf, createApp, Transitions } from "minimotor";
 import { DrawTextOptions } from "minimotor";
 
 const game = createApp("game", { background: "#12141c" });
-createPerformanceMonitoring(game);
+createDebug(game, { initial: "performance" });
 const view = game.viewport;
 const { Draw, Keys, Loop } = game;
 const Audio = createAudio(game);

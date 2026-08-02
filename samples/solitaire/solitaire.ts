@@ -1,5 +1,5 @@
 import { createAnimation } from "minimotor/animation";
-import { createPerformanceMonitoring } from "minimotor/performance";
+import { createDebug } from "minimotor/debug";
 // SOLITAIRE: classic Klondike built with a broad sweep of Minimotor primitives.
 // Demonstrates: createApp / Loop / Pointer / Draw, Scenes.create + Transitions,
 // UI immediate-mode widgets + drag/drop, Input.map, Audio.Sfx, Storage,
@@ -120,7 +120,7 @@ const game = createApp("game", {
 });
 const Anim = createAnimation(game);
 const Signals = createSignals();
-createPerformanceMonitoring(game);
+createDebug(game, { initial: "performance" });
 const vp = game.viewport;
 const { Clock, Draw, Loop, Pointer } = game;
 const Audio = createAudio(game);

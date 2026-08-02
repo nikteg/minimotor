@@ -1,4 +1,4 @@
-import { createPerformanceMonitoring } from "minimotor/performance";
+import { createDebug } from "minimotor/debug";
 // Breakout on Scenes + ECS.
 // - Blocks are ECS entities (spawned per wave, queried for collision + render,
 //   despawned on hit). Ball and paddle stay plain objects — single instances,
@@ -39,7 +39,7 @@ const game = createApp("game", {
   barColor: "#0a0a0a",
   preventNavigation: true,
 });
-createPerformanceMonitoring(game, { world: ecs });
+createDebug(game, { initial: "performance", perf: { world: ecs } });
 const { Draw, Keys, Loop } = game;
 const { drawGameOver } = createOverlays(Draw);
 const Audio = createAudio(game);

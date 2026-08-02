@@ -217,6 +217,9 @@ export type {
 } from "./particles/index.js";
 export type {
   PerfStats,
+  Perf3DSource,
+  Perf3DFrameStats,
+  Perf3DStats,
   PerfTracker,
   NetStats,
   NetMeter,

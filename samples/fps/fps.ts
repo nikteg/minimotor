@@ -632,11 +632,13 @@ let seenResetCount = 0;
 
 // ---- debug monitoring ------------------------------------------------------
 // The engine's own overlay, on `?` (Shift+/ on a US layout, Shift++ on a
-// Swedish one — it matches on the CHARACTER, so both work). Off → performance
-// → performance again: the third step is the collision view, which needs a 2D
-// `SolidSource` and a 2D camera, and this arena is neither. The 3D equivalent
-// would be a real feature, not a wiring job, so it is left out rather than
-// faked.
+// Swedish one — it matches on the CHARACTER, so both work), or four fingers on
+// a touchscreen. The cycle here is off → performance, with no collision step:
+// that view wants a 2D `SolidSource` and a 2D camera, this arena is neither, so
+// `createDebug` leaves the mode out rather than offering a blank one.
+//
+// The renderer is handed over by `useBackend`, the net meter by `joinMatch` —
+// neither exists yet at this point, and both are replaced during a session.
 //
 // This is deliberately NOT the same thing as the pause menu's stats/net lines.
 // Those are part of the game's own HUD and are styled to sit in it; this is the
@@ -660,7 +662,6 @@ Debug.watch("peers", () => match?.others.length ?? 0);
 Debug.watch("hosting", () => advertising);
 Debug.watch("renderDelayMs", () => settings.interpDelayMs);
 Debug.watch("backend", () => renderer?.backend ?? "none");
-Debug.watch("scene", () => (renderer ? { ...renderer.stats } : null));
 Debug.watch("score", () => ({ score, kills: me.kills, deaths: me.deaths, shots, hits }));
 Debug.watch("body", () => ({
   hp: me.hp,
@@ -1016,10 +1017,11 @@ async function useBackend(want: Backend3D | "auto"): Promise<void> {
   const prevRenderer = renderer;
   const prevLayer = layer;
   try {
-    const next = await createRenderer3D({ antialias: true, backend: want });
+    const next = await createRenderer3D({ antialias: true, gpuTiming: true, backend: want });
     prevLayer?.detach();
     prevRenderer?.dispose();
     renderer = next;
+    Debug.set3dRenderer(next);
     layer = attachSceneLayer(game, next, { resolutionScale: settings.renderScale });
     rendererError = null;
   } catch (err: unknown) {
@@ -2078,7 +2080,10 @@ function drawPauseMenu(): void {
         // stops, the peers see us time out, and the lobby room is re-opened.
         if (UI.button({ label: "Disconnect", w: (w - 8) / 2 })) leaveMatch();
       });
-      UI.text("? cycles the engine's debug overlay", { size: 10, color: "dim" });
+      UI.text("? (or four fingers) toggles the engine's debug overlay", {
+        size: 10,
+        color: "dim",
+      });
       UI.text("Click Resume or the backdrop to close · Esc cannot re-lock the mouse", {
         size: 10,
         color: "dim",

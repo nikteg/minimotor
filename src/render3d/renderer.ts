@@ -30,6 +30,12 @@ export interface RenderOptions {
   clear?: boolean;
 }
 
+/** Resize behavior for a renderer serving several UI viewports. */
+export interface ResizeOptions {
+  /** Keep a larger backing store instead of reallocating it smaller. */
+  retainBackingStore?: boolean;
+}
+
 /** A GPU-backed 3D renderer over its own canvas. */
 export interface Renderer3D {
   /** Which backend this is. */
@@ -43,9 +49,13 @@ export interface Renderer3D {
   readonly width: number;
   /** Logical height in CSS pixels. */
   readonly height: number;
+  /** Physical width written by the most recent render. */
+  readonly renderWidth: number;
+  /** Physical height written by the most recent render. */
+  readonly renderHeight: number;
   /** Resize the canvas. Cheap and idempotent when nothing changed, so it is
    *  safe to call every frame from a widget whose rect may move. */
-  resize(width: number, height: number, dpr?: number): void;
+  resize(width: number, height: number, dpr?: number, options?: ResizeOptions): void;
   /** Draw a scene. Call `updateWorldMatrices` first — the renderer reads
    *  `node.world` and does not compute it, so that a caller animating a
    *  hierarchy pays for the walk once even when drawing it several times. */
@@ -59,6 +69,9 @@ export interface Renderer3D {
   /** Counts from the LAST `render` call. The same object every frame — read
    *  it, don't retain it. */
   readonly stats: RenderStats;
+  /** Aggregate counters for all renders since the last `consumeFrameStats`.
+   *  The performance monitor consumes these after the app draw completes. */
+  consumeFrameStats(): RenderFrameStats;
 }
 
 /** Counts from the last frame — what to put on a debug HUD when a scene is
@@ -70,4 +83,15 @@ export interface RenderStats {
   triangles: number;
   /** Nodes skipped because they, or a parent, were hidden. */
   culled: number;
+}
+
+/** Aggregate counters for one app frame. A shared renderer may render several
+ *  UI viewports before the frame ends, so this is distinct from `RenderStats`. */
+export interface RenderFrameStats extends RenderStats {
+  /** Number of viewport/scene render calls. */
+  viewports: number;
+  /** CPU time spent encoding/submitting those renders, in milliseconds. */
+  cpuMs: number;
+  /** GPU execution time when timestamp queries are supported. */
+  gpuMs?: number;
 }

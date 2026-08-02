@@ -40,6 +40,7 @@ import type { Backend3D, Renderer3D } from "./renderer.js";
 import type { WebGL2RendererOptions } from "./webgl2.js";
 
 export * from "./mesh.js";
+export * from "./obj.js";
 export * from "./scene.js";
 export * from "./camera.js";
 export { attachSceneLayer } from "./layer.js";
@@ -54,7 +55,14 @@ export {
   type UiSurfaceDrawOptions,
   type UiSurfaceOptions,
 } from "./ui-surface.js";
-export type { Backend3D, RenderOptions, RenderStats, Renderer3D } from "./renderer.js";
+export type {
+  Backend3D,
+  RenderFrameStats,
+  RenderOptions,
+  RenderStats,
+  Renderer3D,
+  ResizeOptions,
+} from "./renderer.js";
 export { createWebGL2Renderer } from "./webgl2.js";
 export type { WebGL2RendererOptions } from "./webgl2.js";
 export { createWebGPURenderer, isWebGPUAvailable } from "./webgpu.js";

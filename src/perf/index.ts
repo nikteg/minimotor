@@ -5,7 +5,7 @@
 
 import type { App } from "@src/engine/app.js";
 import type { NetMeter } from "./net-meter.js";
-import { plugin, type PerfOptions } from "./plugin.js";
+import { plugin, type Perf3DSource, type PerfOptions } from "./plugin.js";
 
 export { createNetMeter } from "./net-meter.js";
 export { createPerfTracker } from "./tracker.js";
@@ -13,10 +13,12 @@ export { createSparkline } from "./sparkline.js";
 export type { NetMeter, NetStats } from "./net-meter.js";
 export type { PerfStats, PerfTracker } from "./tracker.js";
 export type { Sparkline } from "./sparkline.js";
-export type { PerfOptions } from "./plugin.js";
+export type { Perf3DFrameStats, Perf3DSource, Perf3DStats, PerfOptions } from "./plugin.js";
 
 export interface PerformanceMonitoringApi {
   readonly visible: boolean;
+  /** Attach or replace the active 3D renderer used by the HUD. */
+  set3dRenderer(renderer: Perf3DSource | null): void;
   show(): void;
   hide(): void;
   toggle(): boolean;
@@ -41,6 +43,9 @@ export function createPerformanceMonitoring(
   return {
     get visible() {
       return visible;
+    },
+    set3dRenderer(renderer) {
+      monitor.set3dRenderer(renderer);
     },
     show() {
       visible = true;

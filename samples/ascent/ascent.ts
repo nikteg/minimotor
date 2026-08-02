@@ -1,5 +1,5 @@
 import { createAnimation } from "minimotor/animation";
-import { createPerformanceMonitoring } from "minimotor/performance";
+import { createDebug } from "minimotor/debug";
 // Ascent — a Celeste-style precision platformer built from Minimotor
 // primitives, dressed in the "Lore" pixel-art set (CC assets under
 // ./assets). Three hand-built rooms, Madeline-style movement:
@@ -33,7 +33,7 @@ import { AnimationCursor, SpriteLike } from "minimotor";
 
 const game = createApp("game", { preventNavigation: true });
 const Anim = createAnimation(game);
-createPerformanceMonitoring(game);
+createDebug(game, { initial: "performance" });
 const vp = game.viewport;
 const { Clock, Draw, Keys, Loop } = game;
 const Assets = createAssets(game);

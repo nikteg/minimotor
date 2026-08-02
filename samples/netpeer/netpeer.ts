@@ -1,4 +1,5 @@
-import { createPerformanceMonitoring, createNetMeter } from "minimotor/performance";
+import { createNetMeter } from "minimotor/performance";
+import { createDebug } from "minimotor/debug";
 // Peer-to-peer demo: a real WebRTC data channel, both ends in one page.
 // Demonstrates: Net.createPeer — onSignal / applySignal handshake,
 // transport.sendJson / onMessage, and transport.state.
@@ -25,7 +26,7 @@ const meter = createNetMeter();
 const game = createApp("game", {
   background: "#0e1116",
 });
-createPerformanceMonitoring(game, { net: meter });
+createDebug(game, { initial: "performance", perf: { net: meter } });
 const vp = game.viewport;
 const { Draw, Keys, Loop, Pointer } = game;
 const Net = createNet(game);

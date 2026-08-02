@@ -52,6 +52,22 @@ describe("Assets", () => {
     expect(a.json<{ level: number }>("map")).toEqual({ level: 1 });
   });
 
+  it("loads OBJ files as typed MeshData", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        text: async () => "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n",
+      })),
+    );
+    const a = createAssets();
+    const result = await a.load({ model: "model.obj" });
+    expect(result.model.positions).toBeInstanceOf(Float32Array);
+    expect(result.model.indices).toEqual(new Uint16Array([0, 1, 2]));
+    expect(a.get<typeof result.model>("model")).toBe(result.model);
+  });
+
   it("recognizes Tiled and LDtk JSON extensions", async () => {
     const fetch = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({}) }));
     vi.stubGlobal("fetch", fetch);

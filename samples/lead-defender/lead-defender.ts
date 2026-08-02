@@ -1,4 +1,4 @@
-import { createPerformanceMonitoring } from "minimotor/performance";
+import { createDebug } from "minimotor/debug";
 // LEAD DEFENDER: predictive aiming, angle steering, wave scaling and radial spawns.
 import { createParticles } from "minimotor/particles";
 import { createUI } from "minimotor/ui";
@@ -25,7 +25,7 @@ const game = createApp("game", {
   background: "#080d18",
   preventNavigation: true,
 });
-createPerformanceMonitoring(game);
+createDebug(game, { initial: "performance" });
 const vp = game.viewport;
 const { Draw, Keys, Loop } = game;
 const Particles = createParticles(game);

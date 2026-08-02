@@ -28,14 +28,14 @@
 // save/translate/rotate/restore around the same blit. A batcher collapses that
 // difference entirely, so the gap between the two modes is itself an estimate
 // of what stage 2 buys.
-import { createPerformanceMonitoring } from "minimotor/performance";
+import { createDebug } from "minimotor/debug";
 import { createUI } from "minimotor/ui";
 import { createApp } from "minimotor";
 import * as Sprites from "minimotor/sprites";
 import type { DrawSprite } from "minimotor";
 
 const game = createApp("game", { background: "#0b0e14" });
-createPerformanceMonitoring(game);
+createDebug(game, { initial: "performance" });
 const view = game.viewport;
 const { Draw, Loop } = game;
 const UI = createUI(game);

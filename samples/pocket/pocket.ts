@@ -1,4 +1,4 @@
-import { createPerformanceMonitoring } from "minimotor/performance";
+import { createDebug } from "minimotor/debug";
 // POCKET ASTEROIDS: a complete vector arcade loop in a fixed 16:9 viewport.
 // Focus: createApp fullscreen + `resolution` letterbox, Goodies torus helpers,
 // Input.map with pad bindings.
@@ -22,7 +22,7 @@ const game = createApp("game", {
   background: "#080d1b",
   barColor: "#03050c",
 });
-createPerformanceMonitoring(game);
+createDebug(game, { initial: "performance" });
 const { Clock, Draw, Loop } = game;
 const Audio = createAudio(game);
 const Sfx = createSfx(Audio);

@@ -1,5 +1,5 @@
 import { createAnimation } from "minimotor/animation";
-import { createPerformanceMonitoring } from "minimotor/performance";
+import { createDebug } from "minimotor/debug";
 // CLOCKWORK: a tiny arcade garden where everything is scheduled, animated and
 // decoupled by engine services. Focus: Clock, Anim motions and Signals.
 import { createParticles } from "minimotor/particles";
@@ -10,7 +10,7 @@ import { createSfx } from "../shared/sfx.ts";
 const game = createApp("game", { background: "#0b1020" });
 const Anim = createAnimation(game);
 const Signals = createSignals();
-createPerformanceMonitoring(game);
+createDebug(game, { initial: "performance" });
 const vp = game.viewport;
 const { Clock, Draw, Keys, Loop, Pointer } = game;
 const Audio = createAudio(game);

@@ -1,4 +1,4 @@
-import { createPerformanceMonitoring } from "minimotor/performance";
+import { createDebug } from "minimotor/debug";
 // Juice demo: impact feedback with the engine's Particles, Camera.shake and
 // Input.vibrate (plus Mathf randoms for variety).
 // Demonstrates: Particles.createSystem() + fx.burst (CPU emitter, clock-derived),
@@ -12,7 +12,7 @@ import { createUI } from "minimotor/ui";
 import { Mathf, createApp } from "minimotor";
 
 const game = createApp("game", { background: "#14141c" });
-createPerformanceMonitoring(game);
+createDebug(game, { initial: "performance" });
 const view = game.viewport;
 const { Draw, Loop, Pointer } = game;
 const Audio = createAudio(game);

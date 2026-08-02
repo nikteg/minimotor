@@ -1,4 +1,4 @@
-import { createPerformanceMonitoring } from "minimotor/performance";
+import { createDebug } from "minimotor/debug";
 // CHECKPOINT RALLY: drive a rigid-body car around a long winding circuit,
 // hitting the numbered gates in order to complete laps and chasing your best
 // lap time. A Physics2D (planck/Box2D) world integrates the car body while a
@@ -19,7 +19,7 @@ const game = createApp("game", {
   background: "#12161f",
   preventNavigation: true,
 });
-createPerformanceMonitoring(game);
+createDebug(game, { initial: "performance" });
 const view = game.viewport;
 const { Draw, Keys, Loop } = game;
 const Audio = createAudio(game);
