@@ -51,6 +51,8 @@ export interface Sounds {
   /** Joining or leaving a room. */
   join: SfxHandle;
   leave: SfxHandle;
+  /** The standings board's one and only feature. */
+  fart: SfxHandle;
 }
 
 export function createSounds(Audio: AudioApi): Sounds {
@@ -218,6 +220,40 @@ export function createSounds(Audio: AudioApi): Sounds {
       attackMs: 0,
       volume: 0.12,
       filter: { type: "highpass", freq: 4200 },
+    },
+    // A fart is a low sawtooth whose pitch SAGS and whose filter closes, with a
+    // noise layer over it for the splutter. The sag is the whole thing: a
+    // steady tone at this frequency is a bass note, and the same tone falling
+    // away is unmistakably rude. `pitch` and `stretch` are wide on purpose —
+    // no two should be alike, or the joke dies on the second press.
+    fart: {
+      shape: "sawtooth",
+      freq: { from: 175, to: 62 },
+      ms: 460,
+      attackMs: 8,
+      volume: 0.34,
+      filter: { type: "lowpass", freq: { from: 900, to: 130 }, q: 6 },
+      layers: [
+        // The splutter, gated well down so it textures the tone rather than
+        // replacing it with static.
+        {
+          noise: true,
+          ms: 420,
+          attackMs: 4,
+          volume: 0.13,
+          filter: { type: "bandpass", freq: { from: 420, to: 150 }, q: 1.4 },
+        },
+        // A short second puff. Nothing sells it like an afterthought.
+        {
+          shape: "sawtooth",
+          freq: { from: 130, to: 70 },
+          ms: 150,
+          attackMs: 6,
+          volume: 0.16,
+          delayMs: 400,
+          filter: { type: "lowpass", freq: 320, q: 4 },
+        },
+      ],
     },
     join: { shape: "sine", freq: { from: 520, to: 780 }, ms: 200, volume: 0.16 },
     leave: { shape: "sine", freq: { from: 780, to: 400 }, ms: 240, volume: 0.16 },

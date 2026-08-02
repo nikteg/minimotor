@@ -139,6 +139,11 @@ export type FpsProtocol = {
      *  shooter's interpolated position, and a shot you hear should come from
      *  where you last SAW them rather than from a truer place you cannot see. */
     shot: Record<string, never>;
+    /** A player pressing the button next to someone's name on the standings
+     *  board. Carries the TARGET rather than being sent only to them, because
+     *  the joke does not work in private: everyone near the victim should hear
+     *  it coming out of the victim. */
+    fart: { to: string };
   };
   requests: {
     /** Flip one terminal switch. The host owns the record; this asks it to. */
@@ -263,6 +268,9 @@ export interface MatchOptions {
   onDeath(who: string, by: string): void;
   /** Someone else fired, at `distance` metres from us. */
   onRemoteShot(distance: number): void;
+  /** `to` has been farted at by `from`. `distance` is to the VICTIM — the sound
+   *  belongs to whoever it came out of — or 0 when that victim is us. */
+  onFart(from: string, to: string, distance: number): void;
 }
 
 export interface Match {
@@ -278,6 +286,8 @@ export interface Match {
   toggle(key: "ambient" | "fill"): void;
   /** Ask the host to reset the gallery. */
   resetTargets(): void;
+  /** Fart at `id`. Costs nothing and settles nothing. */
+  fart(id: string): void;
   /** Fire a ray and tell the victim, if there is one. Returns the id hit, or
    *  null. Tests against the INTERPOLATED positions — see §4 up top. */
   shoot(origin: Vec3, dir: Vec3): string | null;
@@ -335,6 +345,17 @@ export async function joinMatch(Net: NetApi, opts: MatchOptions): Promise<Match>
     opts.onRemoteShot(Math.hypot(shooter.x - me.x, shooter.y - me.y, shooter.z - me.z));
   });
 
+  net.events.on("fart", ({ to }, from) => {
+    const me = opts.local();
+    // Distance to the VICTIM, not to the sender: the sound is the victim's.
+    // Zero when the victim is us, which is the one case that plays at full
+    // volume — being farted at should be unmissable.
+    if (to === net.id) return opts.onFart(from, to, 0);
+    const victim = [...others].find((o) => o.id === to);
+    if (!victim) return;
+    opts.onFart(from, to, Math.hypot(victim.x - me.x, victim.y - me.y, victim.z - me.z));
+  });
+
   const bodyBox: Box = { x: 0, y: 0, z: 0, ...PLAYER_HALF };
 
   return {
@@ -355,6 +376,19 @@ export async function joinMatch(Net: NetApi, opts: MatchOptions): Promise<Match>
     },
     toggle(key) {
       net.events.request("toggle", { key });
+    },
+    fart(id) {
+      net.events.emit("fart", { to: id });
+      // The sender's own emit does not come back to them, so play it here.
+      // Same path as everyone else's: the victim is somewhere out there, so it
+      // is heard at the victim's distance, not at zero.
+      const me = opts.local();
+      const victim = [...others].find((o) => o.id === id);
+      opts.onFart(
+        net.id,
+        id,
+        victim ? Math.hypot(victim.x - me.x, victim.y - me.y, victim.z - me.z) : 0,
+      );
     },
     resetTargets() {
       net.events.request("resetTargets", {});

@@ -48,6 +48,8 @@ import {
   createCamera,
   createRenderer3D,
   createUiSurface,
+  pointerRay,
+  type Ray,
   cylinder,
   isWebGPUAvailable,
   look,
@@ -186,6 +188,49 @@ addNode(
 // accurate at.
 solid(
   { x: TERMINAL_POS.x, y: 0.5, z: TERMINAL_POS.z + 2, hx: 1.4, hy: 0.5, hz: 0.5 },
+  [0.18, 0.2, 0.26, 1],
+);
+
+// ---- the standings board ---------------------------------------------------
+// A second surface, left of the control panel: the same live scoreboard Tab
+// shows, standing in the world.
+//
+// It is clickable, because next to every name is a button that farts at that
+// player. That makes it a second thing the crosshair must not shoot THROUGH:
+// `aimingAtPanel` tests both boards, so a click meant for a button is swallowed
+// instead of also discharging the gun into the wall behind it.
+
+const STATS_PX_W = 260;
+const STATS_PX_H = 210;
+const STATS_WORLD_W = 2.2;
+/** Left of the control panel, far enough that the two frames do not touch. */
+const STATS_POS = { x: TERMINAL_POS.x - 2.85, y: TERMINAL_POS.y, z: TERMINAL_POS.z };
+const statsPanel = createUiSurface({
+  app: game,
+  width: STATS_PX_W,
+  height: STATS_PX_H,
+  worldWidth: STATS_WORLD_W,
+  background: "rgba(10,14,24,0.92)",
+});
+const statsNode = addNode(
+  scene,
+  node({
+    name: "standings",
+    mesh: statsPanel.mesh,
+    material: statsPanel.material,
+    position: STATS_POS,
+  }),
+);
+addNode(
+  scene,
+  node({
+    mesh: box(2.5, 1.95, 0.12),
+    position: { x: STATS_POS.x, y: STATS_POS.y, z: STATS_POS.z - 0.1 },
+    material: { color: [0.16, 0.18, 0.24, 1], shininess: 30, specular: 0.15 },
+  }),
+);
+solid(
+  { x: STATS_POS.x, y: 0.5, z: STATS_POS.z + 2, hx: 1.4, hy: 0.5, hz: 0.5 },
   [0.18, 0.2, 0.26, 1],
 );
 
@@ -725,6 +770,15 @@ async function enterMatch(code: string, host: boolean): Promise<void> {
         // otherwise book a voice per shot per player for nothing.
         if (volume > 0) sfx.shotFar.play({ volume, pitch: [0.9, 1.1] });
       },
+      onFart: (from, to, distance) => {
+        const mine = to === me_id();
+        // At zero distance `atDistance` is 1, so being the victim is full
+        // volume by construction rather than by a special case.
+        const volume = atDistance(distance, mine ? 1 : 0.85);
+        if (volume <= 0) return;
+        sfx.fart.play({ volume, pitch: [0.72, 1.35], stretch: [0.85, 1.3] });
+        if (mine) say(`${nameOf(from).toUpperCase()} FARTED AT YOU`);
+      },
     });
     advertising = host;
     seenResetCount = match.world.resetCount;
@@ -863,6 +917,25 @@ function grabPointer(): void {
   );
 }
 
+/** Is the FREE cursor over one of the wall panels right now? Only meaningful
+ *  while unlocked — locked, the crosshair is the pointer and `aimingAtPanel`
+ *  answers the same question against the same boxes.
+ *
+ *  This exists because clicking a panel button with a free cursor used to
+ *  STEAL the click: the canvas listener grabbed the pointer, and by the time
+ *  the UI ran in the draw the cursor had become the crosshair, so the button
+ *  under it never saw the release. You pressed FART and captured the mouse. */
+function cursorOverPanel(): boolean {
+  if (!Pointer.inside) return false;
+  const at = { x: Pointer.x, y: Pointer.y, viewW: view.w, viewH: view.h };
+  pointerRay(camera, at, cursorRay);
+  return (
+    !!terminal.hitTest(scene.nodes[terminalNode].world!, camera, cursorRay) ||
+    !!statsPanel.hitTest(scene.nodes[statsNode].world!, camera, cursorRay)
+  );
+}
+const cursorRay: Ray = { origin: { x: 0, y: 0, z: 0 }, direction: { x: 0, y: 0, z: 0 } };
+
 game.canvas.addEventListener("click", () => {
   // A browser will not start an AudioContext without a gesture, and this is the
   // first one the page ever gets. Doing it here rather than at the first
@@ -871,6 +944,9 @@ game.canvas.addEventListener("click", () => {
   Audio.ensureAudio();
   // While the menu is open the pointer belongs to the UI: re-locking on the
   // click that pressed "Invert Y" would shut the menu the player is using.
+  // Same for the wall panels — a click aimed at one of their buttons is aimed
+  // at the button, not at the game.
+  if (terminalNear && cursorOverPanel()) return;
   grabPointer();
 });
 
@@ -1038,21 +1114,28 @@ void useBackend("auto");
 /** In reach of the terminal — near enough to operate it. Drives the prompt and
  *  whether the surface gets a pointer at all. */
 let terminalNear = false;
-/** In reach AND the crosshair is on the panel. This, not `terminalNear`, is
- *  what swallows a shot: being close to the terminal should not disarm you, it
- *  should only stop you shooting the terminal ITSELF. */
-let aimingAtTerminal = false;
-/** The panel as a collision box. The quad is axis-aligned and faces +Z, so a
+/** In reach AND the crosshair is on ONE OF the panels. This, not
+ *  `terminalNear`, is what swallows a shot: standing near the panels should not
+ *  disarm you, it should only stop you shooting the panels THEMSELVES. */
+let aimingAtPanel = false;
+/** A panel as a collision box. The quads are axis-aligned and face +Z, so a
  *  thin AABB is exact rather than an approximation; the height comes from the
- *  surface's own pixel aspect, so resizing the terminal cannot desync it. */
-const TERMINAL_BOX: Box = {
-  x: TERMINAL_POS.x,
-  y: TERMINAL_POS.y,
-  z: TERMINAL_POS.z,
-  hx: TERMINAL_WORLD_W / 2,
-  hy: (TERMINAL_WORLD_W * (TERMINAL_PX_H / TERMINAL_PX_W)) / 2,
+ *  surface's own pixel aspect, so resizing a panel cannot desync it. */
+const panelBox = (
+  pos: { x: number; y: number; z: number },
+  worldW: number,
+  pxW: number,
+  pxH: number,
+): Box => ({
+  x: pos.x,
+  y: pos.y,
+  z: pos.z,
+  hx: worldW / 2,
+  hy: (worldW * (pxH / pxW)) / 2,
   hz: 0.08,
-};
+});
+const TERMINAL_BOX = panelBox(TERMINAL_POS, TERMINAL_WORLD_W, TERMINAL_PX_W, TERMINAL_PX_H);
+const STATS_BOX = panelBox(STATS_POS, STATS_WORLD_W, STATS_PX_W, STATS_PX_H);
 /** Scratch for the aim ray — `forward` is flattened for walking by then. */
 const aimDir: Vec3 = { x: 0, y: 0, z: 0 };
 /** Lobby camera angle: the arena is the lobby's backdrop, seen from above. */
@@ -1153,12 +1236,21 @@ Loop.run({
           say("RELOADED");
         }
       }
-      terminalNear = Math.hypot(player.x - TERMINAL_POS.x, player.z - TERMINAL_POS.z) < 4.5;
+      // One reach test for the pair of them — they are one fixture, and
+      // standing between them should light both up.
+      terminalNear =
+        Math.min(
+          Math.hypot(player.x - TERMINAL_POS.x, player.z - TERMINAL_POS.z),
+          Math.hypot(player.x - STATS_POS.x, player.z - STATS_POS.z),
+        ) < 4.5;
       // A fresh ray: `forward` has been flattened for walking by now, and an
       // aim test on a horizontal vector would claim you are pointing at the
       // panel whenever you are level with it, whatever you are looking at.
       cameraForward(camera, aimDir);
-      aimingAtTerminal = terminalNear && rayBox(player, aimDir, TERMINAL_BOX) < Infinity;
+      aimingAtPanel =
+        terminalNear &&
+        (rayBox(player, aimDir, TERMINAL_BOX) < Infinity ||
+          rayBox(player, aimDir, STATS_BOX) < Infinity);
 
       // HELD, not pressed, and rate-limited. Three reasons, and the first one
       // is a trap worth naming:
@@ -1191,7 +1283,7 @@ Loop.run({
       // last touched.
       fireCooldown -= dt;
       const holdingFire =
-        ((Pointer.down || Pointer.pressed) && locked && !aimingAtTerminal) ||
+        ((Pointer.down || Pointer.pressed) && locked && !aimingAtPanel) ||
         Keys.down("KeyF") ||
         pad.down(Buttons.A);
       if (holdingFire && fireCooldown <= 0) {
@@ -1201,7 +1293,7 @@ Loop.run({
       if (ammo === 0 && reloading === 0) reload();
     } else {
       terminalNear = false;
-      aimingAtTerminal = false;
+      aimingAtPanel = false;
       // Deploy from spectate. Enter and the fire button both do it, because
       // "press to join" should work with whatever the player already has a
       // finger on.
@@ -1238,6 +1330,7 @@ Loop.run({
     // samples is this frame's UI rather than last frame's.
     updateWorldMatrices(scene);
     drawTerminal();
+    drawStandings();
 
     // The world. The scene canvas is stacked underneath this one, so this is
     // the whole of the 3D draw — nothing is blitted into the 2D context.
@@ -1543,6 +1636,64 @@ function drawTerminal(): void {
             match?.resetTargets();
             sfx.click.play();
           }
+        });
+      }),
+  );
+}
+
+/** The standings board: the Tab scoreboard, standing in the world, with a
+ *  button per opponent that does nothing to the score and everything for
+ *  morale. Same surface machinery and the same crosshair-as-pointer trick as
+ *  the control panel — see `drawTerminal`. */
+function drawStandings(): void {
+  const roster = match?.roster ?? [];
+  statsPanel.draw(
+    {
+      model: scene.nodes[statsNode].world!,
+      camera,
+      pointer:
+        !terminalNear || paused || showingBoard()
+          ? null
+          : locked
+            ? { x: view.w / 2, y: view.h / 2, viewW: view.w, viewH: view.h }
+            : { x: Pointer.x, y: Pointer.y, viewW: view.w, viewH: view.h },
+    },
+    () =>
+      UI.idScope("standings", () => {
+        UI.text("STANDINGS", { x: 14, y: 12, size: 14, bold: true, color: "accent" });
+        UI.text(match ? `${roster.length} in room · K / D` : "offline", {
+          x: 14,
+          y: 32,
+          size: 10,
+          color: "dim",
+        });
+        UI.col({ x: 14, y: 52, w: 232, gap: 4 }, () => {
+          for (const p of roster) {
+            const mine = p.id === me_id();
+            UI.row({ gap: 6, fitCross: true, alignCross: "center" }, () => {
+              UI.text(`${p.name || `P${p.index + 1}`}${mine ? " (you)" : ""}`, {
+                size: 11,
+                w: 124,
+                bold: mine,
+                color: mine ? "accent" : undefined,
+              });
+              UI.text(`${p.kills}/${p.deaths}`, { size: 11, w: 32, align: "right", color: "dim" });
+              // `tabIndex: -1` for the reason the control panel gives: a
+              // diegetic widget that takes keyboard focus eats the keys the
+              // game is flying on. Disabled on your own row — farting at
+              // yourself is not a feature, it is a bug report.
+              if (
+                // No `tooltip`: tooltips paint in a DEFERRED pass that replays
+                // into the block they were requested from, and this block is a
+                // texture rather than the screen. The label is the whole
+                // instruction anyway.
+                UI.button({ label: "FART", w: 56, tabIndex: -1, disabled: mine || !match })
+              ) {
+                match?.fart(p.id);
+              }
+            });
+          }
+          if (!roster.length) UI.text("nobody here yet", { size: 11, color: "dim" });
         });
       }),
   );
@@ -2142,6 +2293,10 @@ Object.defineProperty(window, "fps", {
       return locked;
     },
     spectate: startSpectating,
+    get message() {
+      return message;
+    },
+    fart: (id: string) => match?.fart(id),
     get paused() {
       return paused;
     },
@@ -2198,7 +2353,7 @@ Object.defineProperty(window, "fps", {
       return { active: reloading > 0, stage: reloadStage, ammo };
     },
     get terminal() {
-      return { near: terminalNear, aiming: aimingAtTerminal };
+      return { near: terminalNear, aiming: aimingAtPanel };
     },
     // The three things a headless client genuinely cannot do for itself: aiming
     // needs a locked pointer, firing needs a mouse button, and operating the
