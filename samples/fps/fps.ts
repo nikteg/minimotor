@@ -1906,6 +1906,12 @@ function drawScoreboard(): void {
 // see `resume`.
 
 function drawPauseMenu(): void {
+  // Normally the lock is already gone — losing it is what opened this menu. But
+  // anything that sets `paused` without going through Escape (the debug hook,
+  // a future hotkey) would leave the pointer captured, and a captured pointer
+  // has no position, so every button here would be unclickable.
+  if (locked) document.exitPointerLock();
+
   UI.modal({ w: 440, title: "PAUSED", pad: 18, onClickOutside: resumeByClick }, (flow: Flow) => {
     // The panel's inner width, after its padding — the sliders and the button
     // pairs are sized from it rather than from a copy of `440 − 2 × 18` that
@@ -2018,8 +2024,11 @@ function drawPauseMenu(): void {
             resumeByClick();
           }
         } else if (UI.button({ label: "Enter match", w: (w - 8) / 2, variant: "primary" })) {
-          deployByClick();
+          // `resume` FIRST. `grabPointer` refuses while `paused` is set — the
+          // menu is meant to own the mouse — so closing the menu after asking
+          // for the lock means never asking for it at all.
           resume();
+          deployByClick();
         }
         // Leaving is the room being CLOSED, not a screen change: the share
         // stops, the peers see us time out, and the lobby room is re-opened.
