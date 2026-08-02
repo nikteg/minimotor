@@ -420,6 +420,8 @@ Loop.run({
     UI.col(
       {
         flex: "fill",
+        gap: 0,
+        pad: 8,
       },
       () => {
         UI.col(
@@ -428,6 +430,21 @@ Loop.run({
             fitCross: true,
           },
           () => {
+            // FIXME: This equal-width row is a layout-API smell. The
+            // gallery should not have to know that there are exactly two
+            // fill children just to make sibling panels look balanced.
+            //
+            // TODO: Revisit the equal-distribution primitive in the UI
+            // library. Ideally `row` would discover its direct fill
+            // children automatically, without this count and without
+            // measuring or sizing anything in the sample. A future
+            // solution should also handle bins being added/removed while
+            // preserving immediate-mode input semantics.
+            //
+            // TODO: Also question whether this gallery needs equal-sized
+            // bins at all. Natural auto-sized panels may be the better
+            // demonstration of the library's automatic flow, especially
+            // for themes whose button padding and frame art differ.
             UI.row(
               {
                 id: uiId("header-row"),
@@ -502,7 +519,7 @@ Loop.run({
         UI.col(
           {
             flex: "fill",
-            pad: 0,
+            pad: 8,
             id: uiId("board-slot"),
 
             theme: galleryTheme(),
@@ -531,13 +548,14 @@ Loop.run({
                     UI.row(
                       {
                         wrap: true,
+                        gap: 16,
                         id: uiId("board"),
                       },
                       () => {
                         // ================= COLUMN 1 =================
                         // Flows to its natural height; the WHOLE board scrolls as one (the
                         // wrapping scroll column it sits in), so there's no per-column scroll.
-                        UI.col({ id: uiId("col1") }, () => {
+                        UI.col({ id: uiId("col1"), stretchCross: true }, () => {
                           // Theme picker — a normal group flowing with the rest (its drop-menu
                           // is a frame-end overlay, so it still renders above the panels).
                           UI.panel({ title: "Theme" }, () => {
@@ -746,7 +764,7 @@ Loop.run({
                         });
 
                         // ================= COLUMN 2 =================
-                        UI.col({ id: uiId("col2") }, () => {
+                        UI.col({ id: uiId("col2"), stretchCross: true }, () => {
                           UI.panel(
                             {
                               title: "Tabs",
@@ -778,6 +796,7 @@ Loop.run({
                             progress = UI.slider({
                               id: uiId("sl-progress"),
                               label: "Load",
+                              flex: "fill",
                               value: progress,
                               min: 0,
                               max: 1,
@@ -883,7 +902,7 @@ Loop.run({
                         // ================= COLUMN 3 : List + Table =================
                         // list/table are raw rect widgets — reserve a fixed-height slot from
                         // the flowing column and hand each its slot rect.
-                        UI.col({ id: uiId("col3") }, () => {
+                        UI.col({ id: uiId("col3"), stretchCross: true }, () => {
                           UI.panel({ title: "List" }, (body) => {
                             // Take the panel's own body slot instead of guessing an inset:
                             // how far the title strip reaches down is the THEME's business
@@ -919,9 +938,8 @@ Loop.run({
                           UI.panel({ title: "Table" }, (body) => {
                             const res = UI.table<Player>({
                               ...body.next(undefined, 232),
-                              rowH: 26,
-                              cellPadX: 8,
-                              cellPadY: 2,
+                              rowHeight: 26,
+                              cellPadding: { x: 8, y: 2 },
                               id: uiId("table"),
                               rows: players,
                               sort: tableSort,
@@ -970,35 +988,12 @@ Loop.run({
                         // vertical bins (a horizontal caret between rows) and a grid (a
                         // vertical caret between cells). The panel takes no height — it
                         // auto-sizes, and the bins grow as items pile into them.
-                        UI.col({ id: uiId("col4") }, () => {
-                          UI.panel({ title: "Drag & drop" }, (body) => {
+                        UI.col({ id: uiId("col4"), stretchCross: true }, () => {
+                          UI.panel({ title: "Drag & drop", stretchCross: true }, (body) => {
                             UI.text("Drag between bins, or reorder in place", {
                               color: "dim",
                               size: 12,
                             });
-                            // A bin is tall enough for whatever it currently holds. The
-                            // slot has to be reserved BEFORE the bins draw — `dropTarget`
-                            // needs a rect and the panel inside it cannot report one
-                            // until after its children have run — so this is the height
-                            // the sample computes rather than the one it measures.
-                            // What a nested panel spends before its first child: the
-                            // title band, the theme's body inset at both ends, its
-                            // padding at both ends, and ~20px of frame the caller
-                            // cannot measure (a skin's nine-slice inset is not exposed).
-                            // Deliberately NOT a `pad` override — these panels used to
-                            // pass `pad: 6`, which is the whole reason their contents
-                            // sat tighter to the frame than every other panel here.
-                            const padY = th.panel.padding.top ?? th.panel.padding.y ?? 0;
-                            const chrome =
-                              th.panel.title.height +
-                              (th.panel.frameInset.top ?? th.panel.frameInset.y ?? 0) +
-                              (th.panel.frameInset.bottom ?? th.panel.frameInset.y ?? 0) +
-                              padY * 2 +
-                              20;
-                            const rows = Math.max(binLoadout.length, binStash.length, 1);
-                            const binH = chrome + rows * (th.button.height + 4);
-                            const binsRow = body.next(undefined, binH);
-                            const binW = (binsRow.w - 12) / 2;
                             const bins: {
                               id: string;
                               title: string;
@@ -1015,98 +1010,93 @@ Loop.run({
                                 items: binStash,
                               },
                             ];
-                            bins.forEach((bin, bi) => {
-                              const bx = binsRow.x + bi * (binW + 12);
-                              // A bin takes items from the OTHER bin and from itself —
-                              // so the same gesture that moves an item across also
-                              // reorders one in place — but not the inventory's emoji.
-                              // The two collections hold different kinds of thing, and
-                              // `accepts` is where that belongs: refusing at the target
-                              // makes the cursor and the ring say no before the release,
-                              // rather than the drop handler quietly discarding it.
-                              const target = UI.dropTarget<DragItem>({
-                                id: `bin:${bin.id}`,
-                                x: bx,
-                                y: binsRow.y,
-                                w: binW,
-                                h: binH,
-                                accepts: (payload) => payload.from !== "inventory",
-                              });
-                              const insertAt = UI.panel(
-                                {
-                                  x: bx,
-                                  y: binsRow.y,
-                                  w: binW,
-                                  h: binH,
-                                  title: bin.title,
-                                  // `highlight` rather than `border`: a pixel skin's
-                                  // nine-slice replaces the frame's own stroke, so a
-                                  // border here would answer the pointer under the flat
-                                  // themes and stay silent under the tileset ones. The
-                                  // ring says which bin a release would land in, and
-                                  // says "not this one" when `accepts` has refused.
-                                  highlight: target.canDrop
-                                    ? th.accent
-                                    : target.hovered
-                                      ? th.danger
-                                      : undefined,
-                                },
-                                (binBody) => {
-                                  const slots: Rect[] = [];
-                                  bin.items.forEach((item) => {
-                                    // The flow's slot, not a width derived from the
-                                    // bin's OUTER box: the flow already knows what the
-                                    // panel's padding left it, so this stays right
-                                    // whatever `pad` the theme sets.
-                                    const slot = binBody.next(undefined, th.button.height);
-                                    slots.push(slot);
-                                    UI.button({
-                                      ...slot,
-                                      id: `drag-button:${bin.id}:${item}`,
-                                      label: item,
-                                      variant: "ghost",
-                                    });
-                                    UI.dragSource({
-                                      id: `item:${bin.id}:${item}`,
-                                      ...slot,
-                                      payload: { item, from: bin.id },
-                                    });
-                                  });
-                                  // Drawn AFTER the items so the caret sits over them,
-                                  // and `silent` on every bin but the hovered one — a
-                                  // payload is in flight for both. An empty bin has no
-                                  // slot to sit against, so it offers the body origin
-                                  // (`extent` with nothing placed) instead.
-                                  return UI.dropIndicator({
-                                    items: slots,
-                                    axis: "y",
-                                    empty: {
-                                      ...binBody.extent,
-                                      w: binW,
-                                      h: 0,
+                            UI.row(
+                              {
+                                gap: 12,
+                                fitCross: true,
+                                fillChildren: bins.length,
+                              },
+                              () => {
+                                bins.forEach((bin) => {
+                                  let target = UI.dropTargetState<DragItem>(`bin:${bin.id}`);
+                                  let insertAt = 0;
+                                  // A bin takes items from the OTHER bin and from itself —
+                                  // so the same gesture that moves an item across also
+                                  // reorders one in place — but not the inventory's emoji.
+                                  // The two collections hold different kinds of thing, and
+                                  // `accepts` is where that belongs: refusing at the target
+                                  // makes the cursor and the ring say no before the release,
+                                  // rather than the drop handler quietly discarding it.
+                                  UI.panel<unknown, DragItem>(
+                                    {
+                                      flex: "fill",
+                                      title: bin.title,
+                                      dropTarget: {
+                                        id: `bin:${bin.id}`,
+                                        accepts: (payload) => payload.from !== "inventory",
+                                      },
                                     },
-                                    silent: !target.canDrop,
-                                  });
-                                },
-                              );
-                              // Apply a completed drop: move the item across, or reorder
-                              // it inside its own bin. Removing first shifts everything
-                              // after the item down one, so an insertion point past it
-                              // has to come back by one to stay where the caret was.
-                              if (target.dropped) {
-                                const { item, from } = target.dropped.payload;
-                                const sameBin = from === bin.id;
-                                if (from === "loadout")
-                                  binLoadout = binLoadout.filter((x) => x !== item);
-                                else binStash = binStash.filter((x) => x !== item);
-                                const removedBefore = sameBin && bin.items.indexOf(item) < insertAt;
-                                const at = insertAt - (removedBefore ? 1 : 0);
-                                const dest = bin.id === "loadout" ? [...binLoadout] : [...binStash];
-                                dest.splice(at, 0, item);
-                                if (bin.id === "loadout") binLoadout = dest;
-                                else binStash = dest;
-                              }
-                            });
+                                    (binBody) => {
+                                      const slots: Rect[] = [];
+                                      bin.items.forEach((item) => {
+                                        // Let the button reserve its natural themed width;
+                                        // an explicit slot here would override a skin's
+                                        // button minimum and make the item paint outside
+                                        // the auto-sized bin panel.
+                                        UI.button({
+                                          at: binBody,
+                                          id: `drag-button:${bin.id}:${item}`,
+                                          label: item,
+                                          variant: "ghost",
+                                        });
+                                        const slot = UI.lastRect();
+                                        if (!slot) return;
+                                        slots.push(slot);
+                                        UI.dragSource({
+                                          id: `item:${bin.id}:${item}`,
+                                          ...slot,
+                                          payload: { item, from: bin.id },
+                                        });
+                                      });
+                                      // Drawn AFTER the items so the caret sits over them,
+                                      // and `silent` on every bin but the hovered one — a
+                                      // payload is in flight for both. An empty bin has no
+                                      // slot to sit against, so it offers the body origin
+                                      // (`extent` with nothing placed) instead.
+                                      target = UI.dropTargetState<DragItem>(`bin:${bin.id}`);
+                                      insertAt = UI.dropIndicator({
+                                        items: slots,
+                                        axis: "y",
+                                        empty: {
+                                          ...binBody.extent,
+                                          h: 0,
+                                        },
+                                        silent: !target?.canDrop,
+                                      });
+                                    },
+                                  );
+                                  // Apply a completed drop: move the item across, or reorder
+                                  // it inside its own bin. Removing first shifts everything
+                                  // after the item down one, so an insertion point past it
+                                  // has to come back by one to stay where the caret was.
+                                  if (target?.dropped) {
+                                    const { item, from } = target.dropped.payload;
+                                    const sameBin = from === bin.id;
+                                    if (from === "loadout")
+                                      binLoadout = binLoadout.filter((x) => x !== item);
+                                    else binStash = binStash.filter((x) => x !== item);
+                                    const removedBefore =
+                                      sameBin && bin.items.indexOf(item) < insertAt;
+                                    const at = insertAt - (removedBefore ? 1 : 0);
+                                    const dest =
+                                      bin.id === "loadout" ? [...binLoadout] : [...binStash];
+                                    dest.splice(at, 0, item);
+                                    if (bin.id === "loadout") binLoadout = dest;
+                                    else binStash = dest;
+                                  }
+                                });
+                              },
+                            );
 
                             // UI.grid — even 2-D cells, here a 4x2 emoji inventory in a
                             // panel of its own. Same mechanic turned ninety degrees: ONE
@@ -1118,6 +1108,12 @@ Loop.run({
                             // slot around it. That only sizes the RESERVED box — the cells
                             // themselves come out of `fill()`, so they end up dividing
                             // exactly whatever interior the skin leaves.
+                            const chrome =
+                              th.panel.title.height +
+                              (th.panel.frameInset.top ?? th.panel.frameInset.y ?? 0) +
+                              (th.panel.frameInset.bottom ?? th.panel.frameInset.y ?? 0) +
+                              (th.panel.padding.top ?? th.panel.padding.y ?? 0) * 2 +
+                              20;
                             const invH = chrome + 22 * 2 * 2 + 6;
                             const invBox = body.next(undefined, invH);
                             const slot = UI.dropTarget<DragItem>({
@@ -1193,24 +1189,19 @@ Loop.run({
                         // The clipped scrollbar viewport intentionally uses a fixed
                         // region. The flow-cursor and spacer demos are ordinary auto-flowing
                         // panels, so their height comes from their children.
-                        UI.col({ id: uiId("col5") }, () => {
+                        UI.col({ id: uiId("col5"), stretchCross: true }, () => {
                           // UI.flow — the low-level layout cursor (what row/col use inside).
-                          // Here an `align: "end"` cursor lays two auto-width buttons out
-                          // right-to-left for a right-anchored toolbar.
+                          // Here one cursor lays the label and two auto-width buttons out
+                          // in sequence, so its finished extent is the panel's content.
                           UI.panel({ title: "Flow cursor (toolbar)" }, (body) => {
-                            const row = body.next(undefined, 30);
-                            UI.text("History", {
-                              x: row.x,
-                              y: row.y,
-                              h: row.h,
-                              color: "dim",
-                            });
+                            const origin = body.extent;
                             const bar = UI.flow({
-                              x: row.x + row.w - 12,
-                              y: row.y,
+                              x: origin.x,
+                              y: origin.y,
                               dir: "row",
-                              align: "end",
+                              gap: th.spacing.md,
                             });
+                            UI.text("History", { at: bar, color: "dim" });
                             if (
                               UI.button({
                                 at: bar,
@@ -1218,7 +1209,11 @@ Loop.run({
                                 label: "Redo",
                               })
                             )
-                              UI.floatText("redo", row.x + row.w - 40, row.y);
+                              UI.floatText(
+                                "redo",
+                                bar.last?.x ?? origin.x,
+                                bar.last?.y ?? origin.y,
+                              );
                             if (
                               UI.button({
                                 at: bar,
@@ -1226,7 +1221,16 @@ Loop.run({
                                 label: "Undo",
                               })
                             )
-                              UI.floatText("undo", row.x + row.w - 100, row.y);
+                              UI.floatText(
+                                "undo",
+                                bar.last?.x ?? origin.x,
+                                bar.last?.y ?? origin.y,
+                              );
+                            // `UI.flow` is an independent low-level cursor, so its
+                            // buttons do not automatically contribute to the panel
+                            // body's extent. Include the finished toolbar explicitly;
+                            // the panel can then grow to contain it.
+                            body.include(bar.extent);
                           });
 
                           // UI.spacer — a fixed gap inserted before the next child; sized from

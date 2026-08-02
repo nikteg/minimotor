@@ -2,12 +2,12 @@
 // converged one frame per nesting level and everything drawn after a stale
 // container was shifted for that frame — the "one-frame layout pop" documented
 // in AGENTS.md. `Flow.reserve` lets the parent hold its cursor open while the
-// child runs, so the child is measured IN the frame it draws.
+// child runs, so the child is measured IN the frame it draws. Nested backdrop
+// containers use the same path; only roots/pinned boxes lack a parent slot.
 //
 // These tests pin the guarantee (frame 1 == frame 2, at depth) and the exact
-// boundary of it: containers that genuinely cannot be measured in-frame — a
-// backdrop that paints under the children, an axis crossing, end-justification
-// — must still fall back to the cache rather than lay out wrong.
+// boundary of it: roots/pinned backdrops, axis crossings and end-justification
+// still use the cache where no parent slot can be held open.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   _reset,
@@ -193,6 +193,30 @@ describe("in-frame container measurement", () => {
     expect(containerRectOf("row", "controls")!.h).toBe(26);
   });
 
+  it("lets nested panels contribute their natural width to a flowing column", () => {
+    const build = () =>
+      row({ x: 0, y: 0, w: 600, id: "board" }, () => {
+        col({ id: "cards", stretchCross: true }, () => {
+          panel({ id: "short", title: "SHORT" }, () =>
+            button({ id: "shortButton", label: "S" }),
+          );
+          panel({ id: "wide", title: "WIDE" }, () =>
+            button({ id: "wideButton", label: "A much wider button" }),
+          );
+        });
+      });
+    const first = frame(build);
+    frame(build);
+    expect(first.shortButton.w).toBeGreaterThan(0);
+    expect(first.wideButton.w).toBeGreaterThan(first.shortButton.w);
+    expect(containerRectOf("col", "cards")!.w).toBe(
+      containerRectOf("panel", "wide")!.w,
+    );
+    expect(containerRectOf("panel", "short")!.w).toBe(
+      containerRectOf("panel", "wide")!.w,
+    );
+  });
+
   it("is unaffected by a same-shaped sibling drawn before it (no key collision)", () => {
     // Two anonymous columns of DIFFERENT length at the same structural position
     // in successive frames. Under the old cache this is the AGENTS.md screen-
@@ -212,10 +236,9 @@ describe("in-frame container measurement", () => {
 });
 
 describe("what still falls back to the cache", () => {
-  // A backdrop paints UNDER the children, so it has to run before them at a
-  // size we would not yet have. Panels keep the one-frame cache deliberately —
-  // this test exists so that stays a decision rather than a regression.
-  it("a panel is still measured from the previous frame", () => {
+  // A pinned backdrop paints UNDER the children and has no parent slot to hold
+  // open. Its frame still uses the cache deliberately.
+  it("a pinned panel is still measured from the previous frame", () => {
     const build = (n: number) =>
       panel({ x: 0, y: 0, w: 300, id: "p" }, () => {
         for (let i = 0; i < n; i++) button({ id: `b${i}`, label: `B${i}` });
@@ -237,7 +260,7 @@ describe("what still falls back to the cache", () => {
   it("a child filling a deferred cross axis is still a frame behind", () => {
     const build = () =>
       row({ x: 0, y: 0, w: 600, id: "r" }, () => {
-        col({ id: "left" }, () => {
+        col({ id: "left", fitCross: false }, () => {
           button({ id: "wide", label: "W", w: 400 }); // sets the column's width
           button({ id: "fills", label: "F" }); // takes it as its cross axis
         });

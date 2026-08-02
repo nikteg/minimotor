@@ -7,7 +7,17 @@
 // one sits at the row's top edge. `samples/netroom`'s player roster was exactly
 // that, and is the case these tests are drawn from.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { _reset, bar, button, col, layoutCapture, layoutTree, row, text } from "@src/ui/api.js";
+import {
+  _reset,
+  bar,
+  button,
+  col,
+  layoutCapture,
+  layoutTree,
+  row,
+  slider,
+  text,
+} from "@src/ui/api.js";
 import { registerUiApp, selectUiApp } from "@src/ui/core/state.js";
 import type { App } from "@src/engine/index.js";
 
@@ -34,6 +44,7 @@ function mockCtx() {
     closePath: vi.fn(),
     moveTo: vi.fn(),
     lineTo: vi.fn(),
+    arc: vi.fn(),
     arcTo: vi.fn(),
     rect: vi.fn(),
     roundRect: vi.fn(),
@@ -129,7 +140,7 @@ const roster = (opts: Record<string, unknown>) =>
 
 describe("fitCross", () => {
   it("hugs the tallest child instead of the standard control height", () => {
-    const stretched = settled(() => roster({}));
+    const stretched = settled(() => roster({ fitCross: false }));
     _reset();
     const fixture = testApp(mockCtx());
     selectUiApp(fixture.app);
@@ -137,18 +148,42 @@ describe("fitCross", () => {
       fixture.endFrame();
       selectUiApp(fixture.app);
     };
-    const hugged = settled(() => roster({ fitCross: true }));
+    const hugged = settled(() => roster({}));
     // The label's own line height, not the theme's button height.
     expect(hugged.seat.h).toBeLessThan(stretched.seat.h);
     expect(hugged.seat.h).toBe(hugged.label.h);
   });
 
   it("leaves the child's natural cross size alone", () => {
-    const r = settled(() => roster({ fitCross: true }));
+    const r = settled(() => roster({}));
     expect(r.swatch.h).toBe(8);
     // Stretched, the label would be as tall as the row; hugging, the row is as
     // tall as the label.
     expect(r.label.h).toBe(r.seat.h);
+  });
+
+  it("lets a flowing widget fill a column's width explicitly", () => {
+    const r = settled(() =>
+      col({ x: 0, y: 0, w: 260, fitCross: true, id: "fill-column" }, () => {
+        button({ id: "natural", label: "N" });
+        button({ id: "filled", label: "F", flex: "fill" });
+      }),
+    );
+    expect(r.natural.w).toBeLessThan(260);
+    expect(r.filled.w).toBe(260);
+  });
+
+  it("defaults field controls to fill columns, but not rows", () => {
+    const r = settled(() => {
+      row({ x: 0, y: 0, w: 300, id: "field-row" }, () => {
+        slider({ id: "row-field", value: 0.5 });
+      });
+      col({ x: 0, y: 60, w: 300, id: "field-col" }, () => {
+        slider({ id: "col-field", value: 0.5 });
+      });
+    });
+    expect(r["row-field"].w).toBe(140);
+    expect(r["col-field"].w).toBe(300);
   });
 });
 

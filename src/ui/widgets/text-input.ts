@@ -21,7 +21,7 @@ import {
   lifecycleOnce,
   onFrameEnd,
   onReset,
-  place,
+  placeField,
   rawPointer,
   registerFocusable,
   requiredWidgetId,
@@ -406,7 +406,7 @@ export function textInput(opts: TextInputOptions): TextInputResult {
   // multiline field would collapse to the column's default row height and never
   // show its rows.
   const boxH = opts.h ?? (multiline ? rows * (theme.fontSize + 6) + 12 : theme.inputH);
-  const rect = place({ ...opts, h: boxH }, opts.w ?? 180, boxH, "textInput");
+  const rect = placeField({ ...opts, h: boxH }, opts.w ?? 180, boxH, "textInput");
   // Register this field with the native press listener (mobile keyboards need
   // a synchronous in-gesture focus — see `pressTargets`). Rect + clip stored in
   // SCREEN space so the raw pointer can hit-test them next frame.

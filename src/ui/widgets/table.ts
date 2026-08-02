@@ -1,5 +1,13 @@
 import { listItem } from "./lists.js";
-import { Fillable, fillRect, text, theme } from "@src/ui/core/index.js";
+import {
+  Fillable,
+  fillRect,
+  resolveThemePadding,
+  text,
+  textWidth,
+  theme,
+  type UiPadding,
+} from "@src/ui/core/index.js";
 import { list } from "./lists.js";
 
 // Last sorted copy per input array (weak — dropped with the data). Re-sorts
@@ -63,21 +71,20 @@ export interface TableOptions<Row> extends Fillable {
   /** Current scroll offset (px) — pass in, assign the result's `offset` back. */
   offset: number;
   /** Row height in px. */
-  rowH: number;
+  rowHeight: number;
   /** Header strip height in px. Default 24. */
-  headerH?: number;
+  headerHeight?: number;
   /** Vertical gap between rows. Default 0. */
-  gap?: number;
-  /** Horizontal inset for header and cell content. Default theme.spacing.sm. */
-  cellPadX?: number;
-  /** Vertical inset for header and cell content. Default theme.spacing.xs. */
-  cellPadY?: number;
+  rowGap?: number;
+  /** Inset around header and cell content. Defaults to `{ x: spacing.sm,
+   *  y: spacing.xs }`; explicit edges are supported. */
+  cellPadding?: UiPadding;
   /** The selected row (by identity) to highlight; assign the result's
    *  `selected` back. Omit the field for a non-selectable table. */
   selected?: Row | null;
-  /** Scrollbar width when the list overflows. Defaults to the theme's
-   *  `scrollbarW`. */
-  scrollW?: number;
+  /** Scrollbar width when the list overflows. Defaults to the theme scrollbar
+   *  width. */
+  scrollbarWidth?: number;
   /** Stable prefix for the header, row, list and scrollbar widget ids. */
   id?: string;
 }
@@ -103,7 +110,7 @@ export interface TableResult<Row> {
  *  server-browser / leaderboard boilerplate in one call.
  *
  *    state = UI.table({
- *      x, y, w, h, rowH: 28, id: "servers",
+ *      x, y, w, h, rowHeight: 28, id: "servers",
  *      rows: servers, sort: state.sort, offset: state.offset, selected: state.selected,
  *      columns: [
  *        { key: "name", label: "NAME", value: (s) => s.name },   // flex
@@ -112,21 +119,38 @@ export interface TableResult<Row> {
  *      ],
  *    }); */
 export function table<Row>(opts: TableOptions<Row>): TableResult<Row> {
+  const padding = resolveThemePadding(opts.cellPadding, {
+    x: theme.spacing.sm,
+    y: theme.spacing.xs,
+  });
+  const flexNatural = opts.columns
+    .filter((c) => c.width === undefined)
+    .map((c) => {
+      const values = c.value ? opts.rows.map((row) => String(c.value!(row))) : [];
+      const widest = Math.max(0, textWidth(c.label), ...values.map((value) => textWidth(value)));
+      return Math.ceil(widest) + padding.left + padding.right;
+    })
+    .reduce((sum, width) => sum + width, 0);
+  const intrinsicFixed = opts.columns.reduce((sum, c) => sum + (c.width ?? 0), 0);
+  const intrinsicW = intrinsicFixed + flexNatural;
   // Explicit x/y place it by hand; otherwise auto-flow — fill the ambient (or
   // `at`) layout, leaving `reserve` px for siblings drawn after the table.
-  const rect = fillRect(opts, "table");
-  const headerH = opts.headerH ?? 24;
-  const gap = opts.gap ?? 0;
-  const cellPadX = Math.max(0, opts.cellPadX ?? theme.spacing.sm);
-  const cellPadY = Math.max(0, opts.cellPadY ?? theme.spacing.xs);
-  const rowH = opts.rowH;
-  const scrollW = opts.scrollW ?? theme.scrollbarW;
+  const rect = fillRect({ ...opts, minW: Math.max(opts.minW ?? 0, intrinsicW) }, "table");
+  const headerHeight = opts.headerHeight ?? 24;
+  const rowGap = opts.rowGap ?? 0;
+  const left = Math.max(0, padding.left);
+  const right = Math.max(0, padding.right);
+  const top = Math.max(0, padding.top);
+  const bottom = Math.max(0, padding.bottom);
+  const rowHeight = opts.rowHeight;
+  const scrollbarWidth = opts.scrollbarWidth ?? theme.scrollbarW;
 
   // Does the list overflow → is a scrollbar gutter reserved? Match `list`'s own
   // formula so the header columns line up with the row cells (both drop it).
-  const listH = rect.h - headerH;
-  const content = opts.rows.length * (rowH + gap) - (opts.rows.length > 0 ? gap : 0);
-  const barW = content > listH ? scrollW + theme.scrollbarGap : 0;
+  const listH = rect.h - headerHeight;
+  const content =
+    opts.rows.length * (rowHeight + rowGap) - (opts.rows.length > 0 ? rowGap : 0);
+  const barW = content > listH ? scrollbarWidth + theme.scrollbarGap : 0;
   const contentW = rect.w - barW;
 
   // Column x-layout: fixed widths first, the remainder split among flex columns.
@@ -182,7 +206,7 @@ export function table<Row>(opts: TableOptions<Row>): TableResult<Row> {
         x: r.x,
         y: rect.y,
         w: r.w,
-        h: headerH,
+        h: headerHeight,
       });
       if (hit) {
         sort = activeCol ? { key: c.key, dir: sort.dir === 1 ? -1 : 1 } : { key: c.key, dir: 1 };
@@ -190,16 +214,14 @@ export function table<Row>(opts: TableOptions<Row>): TableResult<Row> {
     }
     const arrow = activeCol ? (sort.dir === 1 ? " ▲" : " ▼") : "";
     text(c.label + arrow, {
-      x: r.x,
-      y: rect.y,
-      w: r.w,
-      h: headerH,
       size: 12,
       bold: true,
       align: c.align ?? "left",
       color: activeCol ? "accent" : "dim",
-      padX: cellPadX,
-      padY: cellPadY,
+      x: r.x + left,
+      y: rect.y + top,
+      w: Math.max(0, r.w - left - right),
+      h: Math.max(0, headerHeight - top - bottom),
     });
   });
 
@@ -208,14 +230,14 @@ export function table<Row>(opts: TableOptions<Row>): TableResult<Row> {
   const offset = list(
     {
       x: rect.x,
-      y: rect.y + headerH,
+      y: rect.y + headerHeight,
       w: rect.w,
       h: listH,
-      rowH,
-      gap,
+      rowH: rowHeight,
+      gap: rowGap,
       count: rows.length,
       offset: opts.offset,
-      scrollW,
+      scrollW: scrollbarWidth,
       id: opts.id ? `${opts.id}:list` : undefined,
       // Rows are keyboard-navigable: the list registers every row's id (so Tab
       // reaches all of them) and auto-scrolls to the focused one. The per-row
@@ -232,16 +254,16 @@ export function table<Row>(opts: TableOptions<Row>): TableResult<Row> {
         x: rowRect.x,
         y: rowRect.y,
         w: rowRect.w,
-        h: rowH,
+        h: rowHeight,
         selected: isSel,
       });
       if (clicked) selected = rowData;
       opts.columns.forEach((c, ci) => {
         const cellRect = {
-          x: rects[ci].x + cellPadX,
-          y: rowRect.y + cellPadY,
-          w: Math.max(0, rects[ci].w - cellPadX * 2),
-          h: Math.max(0, rowH - cellPadY * 2),
+          x: rects[ci].x + left,
+          y: rowRect.y + top,
+          w: Math.max(0, rects[ci].w - left - right),
+          h: Math.max(0, rowHeight - top - bottom),
         };
         if (c.cell) c.cell(rowData, cellRect);
         else if (c.value) text(String(c.value(rowData)), { ...cellRect, align: c.align ?? "left" });

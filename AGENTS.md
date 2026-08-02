@@ -154,11 +154,12 @@ parent's cursor advances by the real one).
 `tryReserve` lists the cases that cannot work at all, and they are the only
 ones that can still pop:
 
-1. **A container with a backdrop** — `panel`, `group`, `popover`. `cfg.box`
-   paints _under_ the children, so it has to run before them, at a size that
-   isn't known yet. These keep last frame's measurement, deliberately. It is
-   Dear ImGui's split exactly: a window auto-resizes a frame late, a layout
-   group never does. `UI.layoutLag()` reports them with a nonzero `off`.
+1. **A root/pinned container with a backdrop** — `panel`, `group`, `popover`.
+   `cfg.box` paints _under_ the children, so the frame itself uses the
+   provisional/cached rect. Nested backdrop containers can still hold their
+   parent's slot open and commit their measured size in-frame; the frame art
+   is exact on the next draw. Roots have no slot to hold open, so they keep the
+   cache and `UI.layoutLag()` reports their stale frame with a nonzero `off`.
 
 2. **`justify: "end"`, `reverse`, `wrap`** — all three position content _from_
    the size, so they need it up front.
@@ -166,18 +167,23 @@ ones that can still pop:
 3. **Children that FILL a deferred cross axis.** A col inside a row has its
    width deferred; a button inside it fills that width, so it draws at the
    provisional width for one frame even though the col's own slot is right.
-   Two ways out, and which one you want depends on the intent: `fitCross: true`
-   if the container should HUG its children (they then take their natural cross
-   size and nothing fills), or an explicit cross size if the children should
-   share one. `samples/fonts` pins `COL` for the second reason;
+   Auto containers now HUG their children on an omitted cross axis by default.
+   Use `fitCross: false` when the children should share the parent's cross size,
+   or give the container an explicit cross size. `samples/fonts` pins `COL` for
+   the second reason;
    `samples/netroom`'s roster line uses the first.
 
 Related, and the reason a compact line used to need a magic height:
 `alignCross` (`"start"` / `"center"` / `"end"`) is flexbox's `align-items`, and
 only moves a child that has a cross size of its own — a child that fills the
-cross axis has no slack. `fitCross` + `alignCross: "center"` is the flexbox
-default shape: a row as tall as its tallest child, everything centred on one
-line.
+cross axis has no slack. The default auto-container shape is the flexbox
+`fit-content` equivalent: a row as tall as its tallest child. Add
+`alignCross: "center"` when those children should be centred on that row.
+
+For an auto-width column whose children should share the width of its widest
+child, use `stretchCross: true`. The first pass measures naturally; subsequent
+passes stretch the children across the measured cross axis. This is useful for
+columns of panels and does not require a guessed width.
 
 **A `sharedKey` in the report is a different bug.** Without an explicit `id`,
 `containerKey` falls back to `` `${parent.key}>${kind}#${parent.children++}` ``
