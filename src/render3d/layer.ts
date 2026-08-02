@@ -78,7 +78,23 @@ export function attachSceneLayer(
   layer.style.pointerEvents = "none"; // every event belongs to the UI canvas
   // Explicit and adjacent, so the ordering does not depend on document order
   // or on whatever a sample's stylesheet happens to say.
-  layer.style.zIndex = String((Number(computed.zIndex) || 0) - 1);
+  //
+  // The scene goes UNDER the app canvas by raising the app canvas, never by
+  // sinking the scene below it. A negative z-index does not mean "one layer
+  // further back": it drops the element behind its stacking context's own
+  // BACKGROUND, so any page with a `body { background }` — which is every
+  // sample, to stop the pre-script flash — paints straight over the 3D. The
+  // symptom is a scene that renders perfectly and is never seen: the loop runs,
+  // the HUD draws, the GL canvas reads back the right pixels, and switching
+  // backend changes nothing, because both are equally hidden.
+  const base = Number(computed.zIndex) || 0;
+  const restoreZ = target.style.zIndex;
+  const restorePos = target.style.position;
+  layer.style.zIndex = String(base);
+  target.style.zIndex = String(base + 1);
+  // `z-index` is ignored on a statically positioned element, so a page that
+  // laid its canvas out in normal flow would get the stacking silently undone.
+  if (computed.position === "static") target.style.position = "relative";
   target.parentNode?.insertBefore(layer, target);
 
   function sync(): void {
@@ -104,6 +120,10 @@ export function attachSceneLayer(
     detach() {
       off();
       layer.remove();
+      // Put the app canvas back as it was found — a backend switch detaches and
+      // re-attaches, and each round would otherwise ratchet the z-index up.
+      target.style.zIndex = restoreZ;
+      target.style.position = restorePos;
     },
   };
 }
