@@ -14,7 +14,7 @@
 // Offline is not a special case: with no relay reachable you get the same
 // object back with `online === false`, one player, and every call still valid.
 
-import { syncBody, type BodyState, type SyncBody } from "./body-state.js";
+import { syncBody, type BodyState, type SyncBody, type SyncBodyOptions } from "./body-state.js";
 import { events, type Events } from "./events.js";
 import { join, localRoom, sync, type PeerStates, type Room, type RoomStatus } from "./room.js";
 import { socketRoom } from "./socket-room.js";
@@ -96,7 +96,7 @@ export interface SharedStates<T> extends Iterable<Shared<T>> {
 }
 
 /** Options for `share`. */
-export interface ShareOptions {
+export interface ShareOptions<T = never> {
   /** Updates per second. Default 60. */
   hz?: number;
   /** Force the wire format. By default a body-shaped state (`x`/`y` plus
@@ -105,6 +105,24 @@ export interface ShareOptions {
    *  else travels as JSON. Set it explicitly when your state happens to look
    *  like a body but is not one. */
   packed?: boolean;
+  /** How far in the past to render remote copies, in ms, or `"auto"` to size
+   *  the buffer from observed jitter. `"auto"` is right for most games; a
+   *  shooter usually pins it, because a render delay that moves is a lead you
+   *  cannot learn. */
+  delayMs?: number | "auto";
+  /** Blend two snapshots. The default lerps every numeric field, which is
+   *  wrong for ANGLES: a player turning past ±π has their yaw blended the long
+   *  way round and spins on every other screen. Supply a shortest-arc blend
+   *  for any state carrying one. */
+  lerp?: (a: T, b: T, t: number) => T;
+  /** Cover a late or lost snapshot by projecting past the newest pair. `t`
+   *  arrives greater than 1. Bounded by `maxExtrapolationMs`, which must also
+   *  be set — projection is off by default. */
+  extrapolate?: (a: T, b: T, t: number) => T;
+  /** How far `extrapolate` may reach, in ms. Default 0, meaning no projection.
+   *  One or two snapshot intervals is the usual budget; further than that and
+   *  a stopped player keeps walking. */
+  maxExtrapolationMs?: number;
 }
 
 /** A joined multiplayer game. */
@@ -137,9 +155,9 @@ export interface NetGame<P = unknown> {
    *  getter when the instance is replaced on respawn. */
   share<B extends SyncBody>(
     body: B | (() => B),
-    options?: ShareOptions,
+    options?: ShareOptions<BodyState<B>>,
   ): SharedStates<BodyState<B>>;
-  share<T extends object>(state: () => T, options?: ShareOptions): SharedStates<T>;
+  share<T extends object>(state: () => T, options?: ShareOptions<T>): SharedStates<T>;
   /** The stable slot of any player id. */
   indexOf(id: string): number;
   /** A host-authoritative, respawning collection shared by the room: coins,
@@ -209,15 +227,25 @@ export async function game<P = unknown>(options: GameOptions = {}): Promise<NetG
 
   function share<T extends object>(
     state: T | (() => T),
-    shareOptions: ShareOptions = {},
+    shareOptions: ShareOptions<T> = {},
   ): SharedStates<T> {
     const read = (typeof state === "function" ? state : () => state) as () => T;
-    const hz = shareOptions.hz ?? 60;
-    const packed = shareOptions.packed ?? looksLikeBody(read());
+    const { hz = 60, packed = looksLikeBody(read()), ...blend } = shareOptions;
+    // `blend` is delayMs/lerp/extrapolate/maxExtrapolationMs, and BOTH paths
+    // take them: `syncBody` only defaults the ones it is not given, so a body
+    // keeps its packed codec and its rotation-aware blend unless this overrides
+    // them explicitly.
     const peers = (
       packed
-        ? syncBody(room, read as unknown as () => SyncBody, { hz })
-        : sync(room, { hz, state: read })
+        ? // `T` is only known to be an object here, so the blend callbacks
+          // cannot be proven to take a `BodyState`. The overloads above are
+          // what make that true at every call site; this is the one cast that
+          // erasure costs.
+          syncBody(room, read as unknown as () => SyncBody, {
+            ...(blend as SyncBodyOptions<SyncBody>),
+            hz,
+          })
+        : sync(room, { ...blend, hz, state: read })
     ) as PeerStates<T>;
 
     const withSlot = (value: T & { id: string }): Shared<T> =>

@@ -112,6 +112,39 @@ export function viewProjection(
 }
 
 const scratchView = Mat4.create();
+const scratchVP = Mat4.create();
+
+/** Where a world point lands on a `w`×`h` viewport, in the SAME logical pixels
+ *  the 2D canvas draws in — so a nameplate, a damage number or a waypoint can
+ *  be an ordinary `UI.text` at the returned x/y.
+ *
+ *  Returns null when the point is at or behind the eye, which is not an error:
+ *  it is the cull every screen-space marker needs, and the alternative is a
+ *  label mirrored to the opposite side of the screen. `depth` is the clip-space
+ *  w — distance along the view axis — which is what to sort overlapping markers
+ *  by and what to fade distant ones on.
+ *
+ *  Uses the WebGL depth convention internally; the choice cancels out of x/y,
+ *  so the result is the same on either backend. */
+export function worldToScreen(
+  cam: Camera3D,
+  point: Vec3,
+  w: number,
+  h: number,
+): { x: number; y: number; depth: number } | null {
+  const m = viewProjection(cam, w / Math.max(1, h), false, scratchVP);
+  // Column-major: element (row r, col c) is m[c * 4 + r].
+  const cw = m[3] * point.x + m[7] * point.y + m[11] * point.z + m[15];
+  if (cw <= 1e-6) return null;
+  const cx = m[0] * point.x + m[4] * point.y + m[8] * point.z + m[12];
+  const cy = m[1] * point.x + m[5] * point.y + m[9] * point.z + m[13];
+  return {
+    x: ((cx / cw) * 0.5 + 0.5) * w,
+    // Clip space is +Y up, the canvas is +Y down.
+    y: (0.5 - (cy / cw) * 0.5) * h,
+    depth: cw,
+  };
+}
 
 /** The direction the camera is looking, as a unit vector. */
 export function cameraForward(cam: Camera3D, out?: Vec3): Vec3 {
@@ -160,7 +193,12 @@ export function placeEye(cam: Camera3D, position: Vec3, distance = 1): Camera3D 
 /** Turn a first-person camera by a mouse delta in PIXELS. Same sensitivity
  *  convention as `orbit`, and the opposite sign — dragging a model turns the
  *  model, moving a mouse turns the head. */
-export function look(cam: Camera3D, dxPixels: number, dyPixels: number, sensitivity = 0.0022): void {
+export function look(
+  cam: Camera3D,
+  dxPixels: number,
+  dyPixels: number,
+  sensitivity = 0.0022,
+): void {
   const limit = cam.pitchLimit ?? DEFAULT_PITCH_LIMIT;
   cam.yaw -= dxPixels * sensitivity;
   cam.pitch = Math.min(limit, Math.max(-limit, cam.pitch - dyPixels * sensitivity));

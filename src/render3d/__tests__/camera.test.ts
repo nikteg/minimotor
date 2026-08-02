@@ -6,9 +6,11 @@ import {
   dolly,
   frameMesh,
   orbit,
+  placeEye,
   projectionMatrix,
   viewMatrix,
   viewProjection,
+  worldToScreen,
 } from "../camera.js";
 import { box, sphere } from "../mesh.js";
 import type { Vec3 } from "@src/math/vec3.js";
@@ -192,5 +194,81 @@ describe("frameMesh", () => {
     const cam = createCamera({ distance: 3 });
     frameMesh(cam, { positions: new Float32Array([1, 1, 1]), indices: new Uint16Array(0) });
     expect(cam.distance).toBe(3);
+  });
+});
+
+describe("worldToScreen", () => {
+  /** A camera at the origin looking down −Z, which is the convention every
+   *  first-person game in this repo uses. */
+  const fp = () =>
+    createCamera({
+      target: { x: 0, y: 0, z: -1 },
+      distance: 1,
+      yaw: 0,
+      pitch: 0,
+      fov: Math.PI / 3,
+    });
+
+  it("puts a point straight ahead in the middle of the viewport", () => {
+    const at = worldToScreen(fp(), { x: 0, y: 0, z: -10 }, 800, 600);
+    expect(at).not.toBeNull();
+    expect(at!.x).toBeCloseTo(400, 3);
+    expect(at!.y).toBeCloseTo(300, 3);
+    // Depth is distance along the view axis, so 10 units ahead reads as 10.
+    expect(at!.depth).toBeCloseTo(10, 3);
+  });
+
+  it("maps +X right and +Y up — the canvas flips Y, clip space does not", () => {
+    const cam = fp();
+    const right = worldToScreen(cam, { x: 2, y: 0, z: -10 }, 800, 600)!;
+    const above = worldToScreen(cam, { x: 0, y: 2, z: -10 }, 800, 600)!;
+    expect(right.x).toBeGreaterThan(400);
+    expect(right.y).toBeCloseTo(300, 3);
+    expect(above.y).toBeLessThan(300); // up the screen is a SMALLER y
+    expect(above.x).toBeCloseTo(400, 3);
+  });
+
+  it("returns null behind the eye rather than a mirrored label", () => {
+    // Without the w cull this lands at (400 + something) on the WRONG side —
+    // the classic nameplate that follows a player who walked behind you.
+    expect(worldToScreen(fp(), { x: 2, y: 0, z: 10 }, 800, 600)).toBeNull();
+    expect(worldToScreen(fp(), { x: 0, y: 0, z: 0 }, 800, 600)).toBeNull();
+  });
+
+  it("agrees with the projection it is derived from", () => {
+    const cam = fp();
+    const p: Vec3 = { x: 1.3, y: -0.7, z: -6 };
+    const m = viewProjection(cam, 800 / 600, false, Mat4.create());
+    const clip = Mat4.transformPoint(m, { ...p });
+    const at = worldToScreen(cam, p, 800, 600)!;
+    expect(at.x).toBeCloseTo((clip.x * 0.5 + 0.5) * 800, 3);
+    expect(at.y).toBeCloseTo((0.5 - clip.y * 0.5) * 600, 3);
+  });
+
+  it("reads the same on both depth conventions", () => {
+    // x/y must not depend on whether the backend wants 0..1 or −1..1 depth: a
+    // HUD marker cannot move when the renderer is swapped underneath it.
+    const cam = fp();
+    const p: Vec3 = { x: -2, y: 1.1, z: -7 };
+    const at = worldToScreen(cam, p, 1280, 720)!;
+    const gpu = projectionMatrix(cam, 1280 / 720, true, Mat4.create());
+    Mat4.mul(gpu, viewMatrix(cam, Mat4.create()), gpu);
+    const clip = Mat4.transformPoint(gpu, { ...p });
+    expect(at.x).toBeCloseTo((clip.x * 0.5 + 0.5) * 1280, 3);
+    expect(at.y).toBeCloseTo((0.5 - clip.y * 0.5) * 720, 3);
+  });
+
+  it("tracks the camera turning, with the eye held in place", () => {
+    const cam = fp();
+    const eye = { x: 0, y: 0, z: 0 };
+    const target = { x: 0, y: 0, z: -10 };
+    expect(worldToScreen(cam, target, 800, 600)!.x).toBeCloseTo(400, 3);
+    // Turn left. `placeEye` re-derives the orbit target from the new yaw while
+    // keeping the eye at the origin, which is what a first-person turn is.
+    cam.yaw = 0.3;
+    placeEye(cam, eye);
+    expect(cameraPosition(cam).x).toBeCloseTo(0, 6);
+    // Looking left puts what was dead ahead over to the RIGHT of the screen.
+    expect(worldToScreen(cam, target, 800, 600)!.x).toBeGreaterThan(400);
   });
 });
