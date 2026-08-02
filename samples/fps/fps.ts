@@ -88,7 +88,7 @@ import {
   type PlayerState,
   type RemotePlayer,
 } from "./netplay.js";
-import { atDistance, createSounds } from "./sound.js";
+import { atDistance, createSample, createSounds } from "./sound.js";
 
 // No `background`: the engine then leaves the play area unpainted, so the 2D
 // canvas stays transparent and the scene layer shows through it. Passing one
@@ -109,6 +109,10 @@ const OnscreenInput = createOnscreenInput(game, Input, UI);
 const Net = createNet(game);
 const Audio = createAudio(game);
 const sfx = createSounds(Audio);
+/** The one sampled sound in the game, and the only one with a reverb send —
+ *  see `createSample`. Vite resolves the URL, so it is hashed and copied on
+ *  build rather than being a path that only works in dev. */
+const fartSample = createSample(Audio, new URL("./assets/fart.wav", import.meta.url).href);
 
 /** The well-known room every client meets in. Not a server feature — see
  *  `netplay.ts` §1. */
@@ -200,11 +204,14 @@ solid(
 // `aimingAtPanel` tests both boards, so a click meant for a button is swallowed
 // instead of also discharging the gun into the wall behind it.
 
-const STATS_PX_W = 260;
+// Wider than the control panel, in pixels and in the world. Four columns and a
+// button do not fit a name in 260px, and truncating the names is the one thing
+// a board of names must not do.
+const STATS_PX_W = 300;
 const STATS_PX_H = 210;
-const STATS_WORLD_W = 2.2;
+const STATS_WORLD_W = 2.5;
 /** Left of the control panel, far enough that the two frames do not touch. */
-const STATS_POS = { x: TERMINAL_POS.x - 2.85, y: TERMINAL_POS.y, z: TERMINAL_POS.z };
+const STATS_POS = { x: TERMINAL_POS.x - 3.1, y: TERMINAL_POS.y, z: TERMINAL_POS.z };
 const statsPanel = createUiSurface({
   app: game,
   width: STATS_PX_W,
@@ -224,7 +231,7 @@ const statsNode = addNode(
 addNode(
   scene,
   node({
-    mesh: box(2.5, 1.95, 0.12),
+    mesh: box(2.8, 2, 0.12),
     position: { x: STATS_POS.x, y: STATS_POS.y, z: STATS_POS.z - 0.1 },
     material: { color: [0.16, 0.18, 0.24, 1], shininess: 30, specular: 0.15 },
   }),
@@ -486,6 +493,8 @@ const me: PlayerState = {
   hp: MAX_HEALTH,
   kills: 0,
   deaths: 0,
+  shots: 0,
+  hits: 0,
   name: "",
 };
 
@@ -770,14 +779,12 @@ async function enterMatch(code: string, host: boolean): Promise<void> {
         // otherwise book a voice per shot per player for nothing.
         if (volume > 0) sfx.shotFar.play({ volume, pitch: [0.9, 1.1] });
       },
-      onFart: (from, to, distance) => {
-        const mine = to === me_id();
-        // At zero distance `atDistance` is 1, so being the victim is full
-        // volume by construction rather than by a special case.
-        const volume = atDistance(distance, mine ? 1 : 0.85);
-        if (volume <= 0) return;
-        sfx.fart.play({ volume, pitch: [0.72, 1.35], stretch: [0.85, 1.3] });
-        if (mine) say(`${nameOf(from).toUpperCase()} FARTED AT YOU`);
+      onFart: (from, to, at) => {
+        // No volume curve: the panner owns distance AND direction now, so this
+        // just says where it happened. One rate knob does pitch and length
+        // together, which is how a real one varies — 0.8 is lower AND longer.
+        fartSample.playAt(at, 1, 0.78 + Math.random() * 0.55);
+        if (to === me_id()) say(`${nameOf(from).toUpperCase()} FARTED AT YOU`);
       },
     });
     advertising = host;
@@ -1323,6 +1330,19 @@ Loop.run({
       return;
     }
 
+    // The ears follow the camera, every frame. Cheap, and skipping it is the
+    // classic spatial-audio bug: sources pan correctly until the player turns,
+    // after which everything is judged against a listener still facing −Z.
+    cameraForward(camera, forward);
+    fartSample.listen({
+      x: player.x,
+      y: player.y,
+      z: player.z,
+      fx: forward.x,
+      fy: forward.y,
+      fz: forward.z,
+    });
+
     syncAvatars();
     placeViewmodel();
 
@@ -1369,8 +1389,23 @@ function publish(): void {
   me.yaw = camera.yaw;
   me.pitch = camera.pitch;
   me.live = deployed && respawnIn === 0 ? 1 : 0;
+  me.shots = shots;
+  me.hits = hits;
   me.name = playerName;
 }
+
+// Tab TOGGLES the board; it does not hold it open, and that is forced rather
+// than chosen. Once the canvas has focus — i.e. for the whole of normal play —
+// this browser does not deliver Tab's KEYDOWN to the page at all. It is
+// reserved for focus navigation and swallowed before dispatch, so
+// `Keys.down("Tab")` is never true and the hold-to-show scoreboard every other
+// shooter has simply never appeared. (`preventKeys` cannot help: there is no
+// event to prevent.) The KEYUP does arrive, in every state, locked or not — so
+// the toggle is built on the half of the pair we are actually given.
+document.addEventListener("keyup", (e) => {
+  if (e.code !== "Tab" || phase !== "match") return;
+  boardPin = !boardPin;
+});
 
 const showingBoard = (): boolean => Keys.down("Tab") || boardPin;
 
@@ -1465,6 +1500,11 @@ function moveStep(dt: number): void {
   velocity.x += (wish.x * speed - velocity.x) * accel;
   velocity.z += (wish.z * speed - velocity.z) * accel;
   velocity.y += ((flying ? wish.y * speed : 0) - velocity.y) * accel;
+  // Captured BEFORE the move, so `moved` below is the whole displacement.
+  // Taking it after leaves only `resolve`'s correction, which is zero in the
+  // open and non-zero against a wall — exactly inverted, and audibly so.
+  const wasX = player.x;
+  const wasZ = player.z;
   player.x += velocity.x * dt;
   player.z += velocity.z * dt;
 
@@ -1477,10 +1517,16 @@ function moveStep(dt: number): void {
     player.y = EYE_HEIGHT;
     velocity.y = 0;
     // Footfalls are spaced by DISTANCE, not by time, so a sprint and a walk
-    // have the same stride and the cadence follows the speed for free — which
-    // is also why a player pushing into a wall goes quiet: `resolve` has
-    // already cancelled the movement, so nothing accumulates.
-    stepDistance += Math.hypot(velocity.x, velocity.z) * dt;
+    // have the same stride and the cadence follows the speed for free.
+    //
+    // The distance is how far the body ACTUALLY travelled this step: the
+    // position after `resolve` against the position before the move. Not
+    // `velocity`, which is what this used to use and why the old comment here
+    // claimed walking into a wall went quiet. It did not — `resolve` pushes the
+    // body out of the wall but leaves the velocity alone, so a player holding W
+    // against a wall kept a full walking speed on the books and jogged on the
+    // spot, audibly, forever.
+    stepDistance += Math.hypot(player.x - wasX, player.z - wasZ);
     if (stepDistance >= 1.9) {
       stepDistance = 0;
       sfx.step.play({ pitch: [0.85, 1.15] });
@@ -1661,23 +1707,33 @@ function drawStandings(): void {
     () =>
       UI.idScope("standings", () => {
         UI.text("STANDINGS", { x: 14, y: 12, size: 14, bold: true, color: "accent" });
-        UI.text(match ? `${roster.length} in room · K / D` : "offline", {
+        UI.text(match ? `${roster.length} in room · K/D · accuracy` : "offline", {
           x: 14,
           y: 32,
           size: 10,
           color: "dim",
         });
-        UI.col({ x: 14, y: 52, w: 232, gap: 4 }, () => {
+        UI.col({ x: 14, y: 52, w: 272, gap: 4 }, () => {
           for (const p of roster) {
             const mine = p.id === me_id();
             UI.row({ gap: 6, fitCross: true, alignCross: "center" }, () => {
               UI.text(`${p.name || `P${p.index + 1}`}${mine ? " (you)" : ""}`, {
                 size: 11,
-                w: 124,
+                w: 132,
                 bold: mine,
                 color: mine ? "accent" : undefined,
               });
-              UI.text(`${p.kills}/${p.deaths}`, { size: 11, w: 32, align: "right", color: "dim" });
+              UI.text(`${p.kills}/${p.deaths}`, { size: 11, w: 34, align: "right", color: "dim" });
+              // Hit rate, not a raw hit count: "31" means nothing without the
+              // shots behind it, and there is no room on a 260px panel for
+              // both. A dash until they have actually fired — 0% before the
+              // first shot reads as "terrible" rather than "no data".
+              UI.text(p.shots ? `${Math.round((p.hits / p.shots) * 100)}%` : "–", {
+                size: 11,
+                w: 36,
+                align: "right",
+                color: "dim",
+              });
               // `tabIndex: -1` for the reason the control panel gives: a
               // diegetic widget that takes keyboard focus eats the keys the
               // game is flying on. Disabled on your own row — farting at
@@ -1687,7 +1743,7 @@ function drawStandings(): void {
                 // into the block they were requested from, and this block is a
                 // texture rather than the screen. The label is the whole
                 // instruction anyway.
-                UI.button({ label: "FART", w: 56, tabIndex: -1, disabled: mine || !match })
+                UI.button({ label: "FART", w: 52, tabIndex: -1, disabled: mine || !match })
               ) {
                 match?.fart(p.id);
               }
@@ -2293,6 +2349,8 @@ Object.defineProperty(window, "fps", {
       return locked;
     },
     spectate: startSpectating,
+    sample: fartSample,
+    sfxStep: sfx.step,
     get message() {
       return message;
     },
@@ -2334,6 +2392,8 @@ Object.defineProperty(window, "fps", {
         name: p.name,
         kills: p.kills,
         deaths: p.deaths,
+        shots: p.shots,
+        hits: p.hits,
       }));
     },
     get lobby() {
@@ -2371,6 +2431,9 @@ Object.defineProperty(window, "fps", {
     deploy: () => deploy(),
     leave: () => leaveMatch(),
     pause: (on: boolean) => (paused = on),
+    get boardShown() {
+      return showingBoard();
+    },
     board: (on: boolean) => (boardPin = on),
     backend: (b: Backend3D) => useBackend(b),
     debug: () => Debug.snapshot(),

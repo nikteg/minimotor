@@ -99,6 +99,13 @@ export interface PlayerState {
   hp: number;
   kills: number;
   deaths: number;
+  /** Shots fired and shots that connected, so accuracy is a shared statistic
+   *  rather than a private one. Carried in the snapshot because the standings
+   *  board shows everyone's, and there is no other channel that would tell a
+   *  peer how a peer is shooting. Cheap: two more numbers at the snapshot rate,
+   *  and both are monotonic so a dropped packet costs nothing. */
+  shots: number;
+  hits: number;
   name: string;
 }
 
@@ -268,9 +275,11 @@ export interface MatchOptions {
   onDeath(who: string, by: string): void;
   /** Someone else fired, at `distance` metres from us. */
   onRemoteShot(distance: number): void;
-  /** `to` has been farted at by `from`. `distance` is to the VICTIM — the sound
-   *  belongs to whoever it came out of — or 0 when that victim is us. */
-  onFart(from: string, to: string, distance: number): void;
+  /** `to` has been farted at by `from`, at world position `at` — the VICTIM's
+   *  position, because the sound belongs to whoever it came out of, and our own
+   *  when the victim is us. A point rather than a distance: the audio is
+   *  genuinely spatialised, so it needs to know WHERE, not just how far. */
+  onFart(from: string, to: string, at: { x: number; y: number; z: number }): void;
 }
 
 export interface Match {
@@ -346,14 +355,12 @@ export async function joinMatch(Net: NetApi, opts: MatchOptions): Promise<Match>
   });
 
   net.events.on("fart", ({ to }, from) => {
-    const me = opts.local();
-    // Distance to the VICTIM, not to the sender: the sound is the victim's.
-    // Zero when the victim is us, which is the one case that plays at full
-    // volume — being farted at should be unmissable.
-    if (to === net.id) return opts.onFart(from, to, 0);
-    const victim = [...others].find((o) => o.id === to);
-    if (!victim) return;
-    opts.onFart(from, to, Math.hypot(victim.x - me.x, victim.y - me.y, victim.z - me.z));
+    // Positioned on the VICTIM, for everyone, including the victim themselves
+    // (whose own head is then the source — unmissable, by geometry rather than
+    // by a special case) and the sender (who hears it come out of someone
+    // across the room, which is most of the fun).
+    const at = to === net.id ? opts.local() : [...others].find((o) => o.id === to);
+    if (at) opts.onFart(from, to, at);
   });
 
   const bodyBox: Box = { x: 0, y: 0, z: 0, ...PLAYER_HALF };
@@ -379,16 +386,10 @@ export async function joinMatch(Net: NetApi, opts: MatchOptions): Promise<Match>
     },
     fart(id) {
       net.events.emit("fart", { to: id });
-      // The sender's own emit does not come back to them, so play it here.
-      // Same path as everyone else's: the victim is somewhere out there, so it
-      // is heard at the victim's distance, not at zero.
-      const me = opts.local();
+      // An emit does not come back to its sender, so play our own copy here —
+      // by the same rule as everyone else's, positioned on the victim.
       const victim = [...others].find((o) => o.id === id);
-      opts.onFart(
-        net.id,
-        id,
-        victim ? Math.hypot(victim.x - me.x, victim.y - me.y, victim.z - me.z) : 0,
-      );
+      if (victim) opts.onFart(net.id, id, victim);
     },
     resetTargets() {
       net.events.request("resetTargets", {});
