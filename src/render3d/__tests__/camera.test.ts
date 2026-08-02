@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { Mat4 } from "@src/math/mat4.js";
 import {
+  cameraForward,
   cameraPosition,
   createCamera,
   dolly,
   frameMesh,
+  look,
   orbit,
   placeEye,
   projectionMatrix,
@@ -270,5 +272,62 @@ describe("worldToScreen", () => {
     expect(cameraPosition(cam).x).toBeCloseTo(0, 6);
     // Looking left puts what was dead ahead over to the RIGHT of the screen.
     expect(worldToScreen(cam, target, 800, 600)!.x).toBeGreaterThan(400);
+  });
+});
+
+describe("look", () => {
+  /** A first-person camera at the origin, level, looking down −Z. */
+  const fp = () => createCamera({ target: { x: 0, y: 0, z: -1 }, distance: 1, yaw: 0, pitch: 0 });
+
+  it("mouse DOWN looks down", () => {
+    // The regression. `look` subtracted dy, which inverted the Y axis of every
+    // first-person camera in the engine out of the box.
+    const cam = fp();
+    look(cam, 0, 100);
+    expect(cameraForward(cam).y).toBeLessThan(0);
+  });
+
+  it("mouse UP looks up", () => {
+    const cam = fp();
+    look(cam, 0, -100);
+    expect(cameraForward(cam).y).toBeGreaterThan(0);
+  });
+
+  it("mouse RIGHT looks right", () => {
+    // +X is right when looking down −Z, and this axis was always correct —
+    // pinned so that fixing pitch cannot quietly flip yaw too.
+    const cam = fp();
+    look(cam, 100, 0);
+    expect(cameraForward(cam).x).toBeGreaterThan(0);
+  });
+
+  it("agrees with orbit on what pitch MEANS", () => {
+    // Both parameterisations read a larger pitch as "further down": the orbit
+    // eye rises above its target, and the first-person forward tips downward.
+    // That is why `look` and `orbit` share the sign, however much the
+    // drag-the-model / turn-the-head framing suggests they should not.
+    const orbiting = createCamera({ yaw: 0, pitch: 0, distance: 5 });
+    const looking = fp();
+    orbit(orbiting, 0, 100, 0.0022);
+    look(looking, 0, 100);
+    expect(orbiting.pitch).toBeCloseTo(looking.pitch, 9);
+    expect(cameraPosition(orbiting).y).toBeGreaterThan(0); // eye rose: looking down
+    expect(cameraForward(looking).y).toBeLessThan(0); // and so is this one
+  });
+
+  it("clamps pitch short of the pole in both directions", () => {
+    const cam = fp();
+    look(cam, 0, 1e6);
+    expect(cam.pitch).toBeLessThan(Math.PI / 2);
+    look(cam, 0, -1e6);
+    expect(cam.pitch).toBeGreaterThan(-Math.PI / 2);
+    // Still a usable basis at the limit, not the identity fallback.
+    expect(Mat4.equals(viewMatrix(cam), Mat4.create())).toBe(false);
+  });
+
+  it("takes pixels, so sensitivity is one number across viewports", () => {
+    const cam = fp();
+    look(cam, 100, 0, 0.01);
+    expect(cam.yaw).toBeCloseTo(-1, 9);
   });
 });

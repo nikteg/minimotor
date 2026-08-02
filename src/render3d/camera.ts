@@ -190,9 +190,19 @@ export function placeEye(cam: Camera3D, position: Vec3, distance = 1): Camera3D 
   return cam;
 }
 
-/** Turn a first-person camera by a mouse delta in PIXELS. Same sensitivity
- *  convention as `orbit`, and the opposite sign — dragging a model turns the
- *  model, moving a mouse turns the head. */
+/** Turn a first-person camera by a mouse delta in PIXELS, with the same
+ *  sensitivity convention as `orbit`.
+ *
+ *  Both axes take the SAME sign as `orbit`, which is worth stating because the
+ *  intuition says otherwise — dragging a model turns the model, moving a mouse
+ *  turns the head, so one expects a flip somewhere. There isn't one, because
+ *  `pitch` already means the same thing to both: raising it lifts the ORBIT eye
+ *  above the target (`cameraPosition`) and tilts the FIRST-PERSON forward
+ *  vector down (`cameraForward` negates the term). Either way, more pitch is
+ *  looking further down.
+ *
+ *  So `pitch += dy`: mouse down, look down. Subtracting it — which this did —
+ *  is a camera that is inverted out of the box, on every game that uses it. */
 export function look(
   cam: Camera3D,
   dxPixels: number,
@@ -201,7 +211,7 @@ export function look(
 ): void {
   const limit = cam.pitchLimit ?? DEFAULT_PITCH_LIMIT;
   cam.yaw -= dxPixels * sensitivity;
-  cam.pitch = Math.min(limit, Math.max(-limit, cam.pitch - dyPixels * sensitivity));
+  cam.pitch = Math.min(limit, Math.max(-limit, cam.pitch + dyPixels * sensitivity));
 }
 
 /** Orbit by a pointer delta in PIXELS. Taking pixels rather than radians keeps
