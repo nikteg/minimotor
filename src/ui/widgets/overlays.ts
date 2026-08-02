@@ -10,6 +10,7 @@ import {
   enterOverlay,
   flow,
   hasActiveNavPad,
+  lastContainerRect,
   lastWidgetRect,
   measureWidth,
   rawPointer,
@@ -178,6 +179,20 @@ export interface ModalOptions {
   /** Close action for the conventional gamepad B / keyboard Escape gesture.
    * Omit for a non-dismissible modal. */
   onDismiss?: () => void;
+  /** Fired when a click is RELEASED on the dimmed backdrop rather than on the
+   *  dialog — the "click away to close" gesture. Omit and the backdrop simply
+   *  swallows clicks, which is right for a dialog that demands an answer.
+   *
+   *  Separate from `onDismiss` on purpose: this one is caused by a real click,
+   *  so it still carries the browser's transient activation. That is the
+   *  difference between a handler that may call `requestPointerLock`,
+   *  `play()` on an audio element or open a window, and one that may not —
+   *  Escape grants no activation, so `onDismiss` cannot do any of it.
+   *
+   *  A release that began INSIDE the dialog (a slider dragged past its edge,
+   *  a scroll gesture) is not a click away and does not fire this, and neither
+   *  does the very click that opened the modal. */
+  onClickOutside?: () => void;
   /** Show focus on the first enabled control when the modal opens. By default
    * the control is focused logically, but its ring is shown only when a
    * gamepad is active. Set explicitly to override that behavior. */
@@ -202,7 +217,12 @@ export interface ModalOptions {
  *  While a modal is up, every widget drawn BEFORE it in the frame ignores the
  *  pointer, so clicks can't land through the backdrop; widgets drawn after (the
  *  dialog's own) work normally. Call it LAST in your draw. For the common
- *  title/lines/buttons dialog, `confirm()` does all of this for you. */
+ *  title/lines/buttons dialog, `confirm()` does all of this for you.
+ *
+ *  `onClickOutside` turns the backdrop into a close button; `onDismiss` handles
+ *  Escape and gamepad B. They are separate because only the first is caused by
+ *  a real click, and so only the first may do the things a browser allows only
+ *  from one — see its own note. */
 export function modal(opts: ModalOptions): { x: number; y: number; w: number; h: number };
 export function modal<R>(opts: ModalOptions, children: LayoutChildren<R>): R;
 export function modal<R>(
@@ -218,24 +238,30 @@ export function modal<R>(
   ctx.fillStyle = theme.dim;
   ctx.fillRect(0, 0, vp.w, vp.h);
   ctx.restore();
+  const id = opts.id ?? `modal:${opts.title ?? ""}`;
   if (children) {
     // The dialog IS a panel: centered by the anchor, auto-sized on the axis
     // left unspecified, and laying its children out like any container.
     const margin = opts.margin ?? 12;
-    return panel(
+    const result = panel(
       {
         anchor: "center",
         w: opts.w ?? 360,
         h: opts.h,
         margin,
         title: opts.title,
-        id: opts.id ?? `modal:${opts.title ?? ""}`,
+        id,
         dir: opts.dir,
         gap: opts.gap,
         pad: opts.pad,
       },
       children,
     );
+    // AFTER the panel: an auto-sized dialog does not know its own height until
+    // its children have run, and clicking just below a shrink-wrapped dialog
+    // must not count as clicking away from it.
+    clickAway(opts, id, lastContainerRect());
+    return result;
   }
   const h = opts.h ?? 0;
   const margin = opts.margin ?? 12;
@@ -244,7 +270,33 @@ export function modal<R>(
   const x = Math.round((vp.w - w) / 2);
   const y = Math.round((vp.h - clampedH) / 2);
   paintFrame(ctx, { x, y, w, h: clampedH, title: opts.title });
-  return { x, y, w, h: clampedH };
+  const rect = { x, y, w, h: clampedH };
+  clickAway(opts, id, rect);
+  return rect;
+}
+
+// Whether each modal was up LAST frame. The release that OPENS a modal lands
+// on the backdrop of the modal it just opened, and would close it again on the
+// same click. Swept, so a modal that stops being drawn drops out by itself.
+const modalWasOpen = sweptCache<boolean>();
+
+function clickAway(
+  opts: ModalOptions,
+  id: string,
+  dialog: { x: number; y: number; w: number; h: number } | null,
+): void {
+  if (!opts.onClickOutside) return;
+  const was = modalWasOpen.get(id) ?? false;
+  modalWasOpen.set(id, true);
+  if (!was || !dialog) return;
+  // Raw pointer: the modal IS the overlay, so `uiPointer` is dead everywhere
+  // outside the dialog — which is precisely the region being tested. The raw
+  // one is in SCREEN coords and `dialog` is in the current space, so map it out
+  // before comparing (the dialog may be inside a `UI.scaled` block).
+  const tl = uiToScreen(dialog.x, dialog.y);
+  const br = uiToScreen(dialog.x + dialog.w, dialog.y + dialog.h);
+  const screenRect = { x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y };
+  if (dismissedByOutsideRelease(rawPointer(), screenRect)) opts.onClickOutside();
 }
 
 // ---------- Confirm (declarative dialog) ----------

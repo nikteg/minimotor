@@ -422,6 +422,32 @@ export function lastWidgetRect(): { x: number; y: number; w: number; h: number }
   return lastRectSlot().rect;
 }
 
+// A container's own rect, as COMMITTED — after its children have run and any
+// auto-sizing has resized it. Separate from `lastRectSlot` because that one is
+// written at PLACEMENT, so by the time a container closes its children have
+// overwritten it. Deliberately not folded into `lastWidgetRect`: anchoring a
+// popover to the last leaf widget is the behaviour that call site wants.
+const lastContainerSlot = uiSlot<{ rect: { x: number; y: number; w: number; h: number } | null }>(
+  () => ({ rect: null }),
+);
+
+/** The committed rect of the container that most recently CLOSED. Read it
+ *  immediately after an `autoContainer` call (`panel`, `col`, `row`, …) to get
+ *  the box it actually occupied, auto-sizing included — which is not knowable
+ *  before its children have run. Null before any container has drawn.
+ *
+ *  Nesting resolves the way you want: an inner container closes first, so the
+ *  outer one overwrites it and the value after the outermost call is the
+ *  outermost box. */
+export function lastContainerRect(): { x: number; y: number; w: number; h: number } | null {
+  return lastContainerSlot().rect;
+}
+
+/** @internal Called by `autoContainer` as it closes. */
+export function noteContainerRect(rect: { x: number; y: number; w: number; h: number }): void {
+  lastContainerSlot().rect = rect;
+}
+
 /** Resolve a `Fillable`'s rect: an explicit `x`/`y` wins; otherwise fill the
  *  ambient (or `at`) layout, leaving `reserve` px for later siblings. `kind`
  *  labels the rect in a layout capture (see `layoutCapture`). */
@@ -1137,5 +1163,6 @@ export function autoContainer<R>(
       h: measured && opts.h === undefined ? rect.h - measured.h : 0,
     });
   }
+  noteContainerRect(rect);
   return result;
 }
