@@ -605,9 +605,14 @@ function randomName(): string {
 let playerName = randomName();
 
 // ---- session ---------------------------------------------------------------
-// Three phases and one flag. `deployed` is the spectate/play split: a player in
-// a match who has not deployed flies through the level with no body, is not
-// shootable, and cannot shoot.
+// Three phases and two flags. Neither flag set is the WATCH screen you land on
+// when you join: the arena on a slow fixed orbit, and a choice of two ways in.
+// `spectating` is the free camera — flying the level with no body, unshootable
+// and unable to shoot. `deployed` is playing. They are separate because being
+// dropped straight into a free camera is disorienting when what you wanted was
+// to play, and being forced into a body is worse when what you wanted was to
+// watch. The watch screen is also the only one of the three where the mouse
+// stays free, because it is the only one with something to click.
 
 type Phase = "connecting" | "lobby" | "joining" | "match";
 let phase: Phase = "connecting";
@@ -616,6 +621,8 @@ let match: Match | null = null;
 /** We are the one advertising this match, so we hold the lobby room open. */
 let advertising = false;
 let deployed = false;
+/** Free camera. Only meaningful while `deployed` is false. */
+let spectating = false;
 let joinError: string | null = null;
 let codeField = "";
 /** Last `resetCount` we acted on, so a host's reset reaches every client
@@ -682,6 +689,7 @@ async function enterMatch(code: string, host: boolean): Promise<void> {
     // Spectate first, always: dropping straight into a body means spawning
     // before the level has even been seen. The prompt to deploy is on the HUD.
     deployed = false;
+    spectating = false;
     me.live = 0;
     me.hp = MAX_HEALTH;
     me.name = playerName;
@@ -708,6 +716,7 @@ function leaveMatch(): void {
   match = null;
   advertising = false;
   deployed = false;
+  spectating = false;
   paused = false;
   phase = lobby ? "lobby" : "connecting";
   if (!lobby) {
@@ -727,6 +736,7 @@ function deploy(): void {
   camera.yaw = spawn.yaw;
   camera.pitch = 0;
   deployed = true;
+  spectating = false;
   me.live = 1;
   me.hp = MAX_HEALTH;
   ammo = MAG;
@@ -765,10 +775,12 @@ let lockDy = 0;
 let locked = false;
 let lockRefused = false;
 
-/** The mouse belongs to the game only while a match is on screen and no menu
- *  is up. In the lobby it belongs to the browser's own widgets. */
+/** The mouse belongs to the game only while a match is on screen, no menu is
+ *  up, and the player has chosen a way in. In the lobby and on the watch
+ *  screen it belongs to the browser's own widgets — a screen whose whole
+ *  content is two buttons must not eat the pointer that presses them. */
 function wantsLock(): boolean {
-  return phase === "match" && !paused && !document.hidden;
+  return phase === "match" && !paused && !document.hidden && !watching();
 }
 
 /** Whether the lock has ever been granted, which is what separates "this
@@ -816,11 +828,6 @@ game.canvas.addEventListener("click", () => {
   // click that pressed "Invert Y" would shut the menu the player is using.
   grabPointer();
 });
-
-/** When the menu was opened by the lock being lost. Escape's own keydown can
- *  arrive in the SAME step, and without this it would immediately close the
- *  menu it just opened — the "sometimes it does not pause" half of the bug. */
-let menuOpenedAt = -1e9;
 
 /** When the lock was lost during a match, with the reason not yet decided;
  *  −1 when there is nothing pending. Resolved in `update`. */
@@ -1031,7 +1038,6 @@ Loop.run({
       } else if (performance.now() - lockLostAt >= PAUSE_DECISION_MS) {
         lockLostAt = -1;
         paused = true;
-        menuOpenedAt = performance.now();
       }
     }
     recoil = Math.max(0, recoil - dt * 5);
@@ -1045,21 +1051,11 @@ Loop.run({
       return;
     }
 
-    // Esc while unlocked closes the menu; taking the mouse back needs a click
-    // the browser will accept, which `resume` explains.
-    // While LOCKED the browser eats the keydown to release the pointer, and
-    // `pointerlockchange` opens the menu instead — two paths because there are
-    // genuinely two situations.
-    if (Keys.pressed("Escape") && !locked) {
-      // Not within a few frames of the lock being lost: that same Esc is what
-      // released it, and the release already opened the menu.
-      if (!paused) {
-        paused = true;
-        menuOpenedAt = performance.now();
-      } else if (performance.now() - menuOpenedAt > 250) {
-        resume();
-      }
-    }
+    // No Escape handling here, deliberately. Escape pauses only by way of the
+    // pointer lock it releases (see the `pointerlockchange` handler), so it
+    // pauses exactly when the mouse was captured — and when it was not, it does
+    // nothing at all rather than toggling a menu the player cannot leave the
+    // same way. `resume` has the rest.
 
     if (advertising && lobby && match) {
       lobby.advertise({
@@ -1090,7 +1086,8 @@ Loop.run({
     }
 
     lookStep(dt);
-    moveStep(dt);
+    if (watching()) watchStep(dt);
+    else moveStep(dt);
 
     if (deployed && respawnIn === 0) {
       if (Keys.pressed("KeyR") || pad.pressed(Buttons.B)) reload();
@@ -1210,10 +1207,8 @@ Loop.run({
       Draw.rect(0, 0, view.w, view.h, `rgba(190,30,40,${(damageFlash * 0.32).toFixed(3)})`);
     }
     drawNameplates();
-    if (!paused && deployed && respawnIn === 0) {
-      drawCrosshair();
-      drawCaptureHint();
-    }
+    if (!paused && deployed && respawnIn === 0) drawCrosshair();
+    if (!paused && !watching()) drawCaptureHint();
     drawHud();
     if (showingBoard()) drawScoreboard();
     if (paused) drawPauseMenu();
@@ -1276,6 +1271,27 @@ function lookStep(dt: number): void {
     ((Keys.down("ArrowDown") ? 1 : 0) - (Keys.down("ArrowUp") ? 1 : 0)) * turn * invert,
     LOOK_BASE * settings.sensitivity,
   );
+}
+
+/** On the watch screen: joined, but neither playing nor flying. */
+function watching(): boolean {
+  return phase === "match" && !deployed && !spectating && respawnIn === 0;
+}
+
+/** The watch screen's camera — the same slow high orbit the lobby browser sits
+ *  behind, so joining a room does not change what you are looking at, only what
+ *  you can do about it. Lighting is left alone: in a match it belongs to the
+ *  shared switches, not to the camera. */
+function watchStep(dt: number): void {
+  lobbyOrbit += dt * 0.08;
+  const r = 20;
+  player.x = Math.sin(lobbyOrbit) * r;
+  player.z = Math.cos(lobbyOrbit) * r;
+  player.y = 11;
+  Vec3.set(velocity, 0, 0, 0);
+  camera.yaw = lobbyOrbit;
+  camera.pitch = 0.42;
+  placeEye(camera, player);
 }
 
 function moveStep(dt: number): void {
@@ -1691,7 +1707,7 @@ function drawHud(): void {
 
   // Health, bottom left.
   UI.col({ x: inset, y: view.h - 78 - lift, w: 240, gap: 6 }, () => {
-    UI.text(deployed && respawnIn === 0 ? "HEALTH" : "SPECTATING", {
+    UI.text(deployed && respawnIn === 0 ? "HEALTH" : spectating ? "FREE CAMERA" : "WATCHING", {
       size: 11,
       color: "dim",
       bold: true,
@@ -1743,8 +1759,8 @@ function drawHud(): void {
     });
   }
 
-  if (!deployed || respawnIn > 0) {
-    drawSpectatePrompt();
+  if (watching() || respawnIn > 0) {
+    drawWatchScreen();
   } else if (terminalNear) {
     UI.text("aim at the terminal and click to operate it", {
       x: 0,
@@ -1756,7 +1772,9 @@ function drawHud(): void {
     });
   }
 
-  if (!locked && !OnscreenInput.visible(pad) && !paused) {
+  // Not on the watch screen: there the free mouse is the point, and telling
+  // the player to give it up is telling them to lose the buttons.
+  if (!locked && !watching() && !OnscreenInput.visible(pad) && !paused) {
     UI.text("click the view to lock the mouse · arrows look · F fires · Tab scores", {
       x: 0,
       y: view.h - 108,
@@ -1768,46 +1786,46 @@ function drawHud(): void {
   }
 }
 
-/** The spectate overlay — the "press to join" the player is waiting behind, and
- *  the respawn countdown, which is the same screen with the prompt disabled. */
-function drawSpectatePrompt(): void {
+/** The screen you land on when you join: the arena turning behind two ways in.
+ *  Also the respawn countdown, which is the same panel with the choice removed
+ *  — you are going back to the same body either way. */
+function drawWatchScreen(): void {
   const touch = OnscreenInput.visible(pad);
   const dead = respawnIn > 0;
-  UI.panel({ anchor: "center", w: 440, title: dead ? "DOWN" : "SPECTATING", pad: 16 }, () => {
+  UI.panel({ anchor: "center", w: 440, title: dead ? "DOWN" : "IN THE ROOM", pad: 16 }, () => {
     UI.col({ gap: 8 }, () => {
       if (dead) {
         UI.text(`${killedBy} got you.`, { size: 13 });
         UI.text(`back in ${respawnIn.toFixed(1)}s`, { size: 20, bold: true, color: "accent" });
       } else {
-        UI.text("Free camera. Fly the arena, then drop in when you're ready.", {
+        UI.text("Drop in and fight, or take the camera and watch first.", {
           size: 12,
           wrap: true,
           w: 404,
         });
-        UI.text(
-          touch
-            ? "Left stick flies · right stick looks"
-            : "WASD flies · Q/E down and up · Shift boosts",
-          { size: 11, color: "dim" },
-        );
-        // Pointer lock is a mouse concern; on touch the sticks already are
-        // the answer and the warning would be noise.
-        if (!touch) {
-          UI.text(
-            lockRefused
-              ? "This browser refused the pointer lock — arrows look, F fires."
-              : "No mouse? Arrows look and F fires, locked or not.",
-            { size: 11, color: lockRefused ? "#ffb347" : "dim" },
-          );
-        }
         if (
           UI.button({
-            label: touch ? "TAP TO DEPLOY" : "DEPLOY  (Enter)",
+            label: touch ? "ENTER MATCH" : "ENTER MATCH  (Enter)",
             w: 404,
             variant: "primary",
           })
         ) {
-          deploy();
+          deployByClick();
+        }
+        if (UI.button({ label: "SPECTATE", w: 404 })) startSpectating();
+        UI.text(
+          touch
+            ? "Spectating: left stick flies · right stick looks"
+            : "Spectating: WASD flies · Q/E down and up · Shift boosts",
+          { size: 11, color: "dim" },
+        );
+        // Pointer lock is a mouse concern; on touch the sticks already are
+        // the answer and the warning would be noise.
+        if (!touch && lockRefused) {
+          UI.text("This browser refused the pointer lock — arrows look, F fires.", {
+            size: 11,
+            color: "#ffb347",
+          });
         }
       }
       UI.text("Tab shows the scoreboard · Esc for settings and leaving", {
@@ -1816,6 +1834,19 @@ function drawSpectatePrompt(): void {
       });
     });
   });
+}
+
+/** Both ways off the watch screen are BUTTONS, so both are clicks — which is
+ *  what lets them take the pointer on the same gesture. See `resume`. */
+function deployByClick(): void {
+  deploy();
+  grabPointer();
+}
+
+function startSpectating(): void {
+  spectating = true;
+  say("FREE CAMERA");
+  grabPointer();
 }
 
 // ---- the scoreboard --------------------------------------------------------
@@ -1864,16 +1895,18 @@ function drawScoreboard(): void {
 }
 
 // ---- the pause menu --------------------------------------------------------
-// An ordinary `UI.panel`. It draws on the SAME transparent canvas as the HUD,
-// above the scene layer, so the frozen world shows through behind it — no
-// render target, no blur pass, no second camera.
+// A `UI.modal`. It draws on the SAME transparent canvas as the HUD, above the
+// scene layer, so the frozen world shows through the dim behind it — no render
+// target, no blur pass, no second camera.
+//
+// `onClickOutside` rather than `onDismiss`, and that is the whole reason this
+// is a modal instead of a panel: clicking the backdrop is a real click, so it
+// still carries transient activation and is allowed to take the pointer back.
+// Escape is not, so there is deliberately no Escape route out of this menu —
+// see `resume`.
 
 function drawPauseMenu(): void {
-  // Dim the world so the menu reads as modal. On the 2D canvas, so it costs
-  // one filled rect and touches nothing about the scene.
-  Draw.rect(0, 0, view.w, view.h, "rgba(6,8,14,0.55)");
-
-  UI.panel({ anchor: "center", w: 440, title: "PAUSED", pad: 18 }, (flow: Flow) => {
+  UI.modal({ w: 440, title: "PAUSED", pad: 18, onClickOutside: resumeByClick }, (flow: Flow) => {
     // The panel's inner width, after its padding — the sliders and the button
     // pairs are sized from it rather than from a copy of `440 − 2 × 18` that
     // would go stale the moment either number moved.
@@ -1961,12 +1994,7 @@ function drawPauseMenu(): void {
       if (rendererError) UI.text(rendererError, { size: 11, color: "#f0603a" });
 
       UI.row({ gap: 8 }, () => {
-        if (UI.button({ label: "Resume", w: (w - 8) / 2, variant: "primary" })) {
-          resume();
-          // A click is still within its activation window here, so unlike Esc
-          // this one is allowed to take the mouse back.
-          grabPointer();
-        }
+        if (UI.button({ label: "Resume", w: (w - 8) / 2, variant: "primary" })) resumeByClick();
         if (UI.button({ label: "Reset run", w: (w - 8) / 2 })) {
           match?.resetTargets();
           score = 0;
@@ -1978,38 +2006,56 @@ function drawPauseMenu(): void {
         }
       });
       UI.row({ gap: 8 }, () => {
-        if (UI.button({ label: "Back to spectate", w: (w - 8) / 2, disabled: !deployed })) {
-          deployed = false;
-          respawnIn = 0;
-          me.live = 0;
-          paused = false;
+        // The two directions between playing and watching. Only one of them is
+        // ever available, so this is one slot with two labels rather than a
+        // pair where one is always dead.
+        if (deployed) {
+          if (UI.button({ label: "Back to spectate", w: (w - 8) / 2 })) {
+            deployed = false;
+            spectating = true;
+            respawnIn = 0;
+            me.live = 0;
+            resumeByClick();
+          }
+        } else if (UI.button({ label: "Enter match", w: (w - 8) / 2, variant: "primary" })) {
+          deployByClick();
+          resume();
         }
         // Leaving is the room being CLOSED, not a screen change: the share
         // stops, the peers see us time out, and the lobby room is re-opened.
         if (UI.button({ label: "Disconnect", w: (w - 8) / 2 })) leaveMatch();
       });
-      UI.text("Esc closes · click the view to re-lock the mouse", { size: 10, color: "dim" });
+      UI.text("Click Resume or the backdrop to close · Esc cannot re-lock the mouse", {
+        size: 10,
+        color: "dim",
+      });
     });
   });
 }
 
 /** Close the menu and hand the game back.
  *
- *  It does not itself re-take the mouse, because whether it CAN depends on how
- *  it was called. `requestPointerLock` needs transient activation, which a real
- *  click grants for a few seconds — so the Resume BUTTON can re-lock, and does,
- *  by calling `grabPointer` next to this. Escape cannot: it is one of the keys
- *  specifically excluded from granting activation, so a request made off it is
- *  refused, always. The version before this one asked sixty times a second for
- *  two seconds after Esc and was refused all 120 times; the mouse never came
- *  back, and the player pressing Esc again to find out why simply reopened the
- *  menu. That is the "Esc resume is buggy, the menu reappears" report.
+ *  There is no Escape route out of the pause menu, which reads as an omission
+ *  and is not one. `requestPointerLock` needs transient activation, and Escape
+ *  is one of the keys specifically excluded from granting it — so a re-lock
+ *  asked for off an Esc is refused, always. The version before this one asked
+ *  sixty times a second for two seconds and was refused all 120 times; the
+ *  mouse never came back, and the player pressing Esc again to find out why
+ *  simply reopened the menu. That was the "Esc resume is buggy, the menu
+ *  reappears" report, and no amount of retrying fixes it.
  *
- *  So Esc resumes unlocked and `drawCaptureHint` asks for the one click that is
- *  allowed to work. The game stays playable meanwhile — arrows look, F fires,
- *  locked or not. */
+ *  A CLICK does carry activation, so both ways out of this menu are clicks:
+ *  the Resume button and the backdrop. Both go through `resumeByClick`, and
+ *  both get the mouse back on the same gesture that closed the menu — which is
+ *  what Esc was only ever pretending to do. */
 function resume(): void {
   paused = false;
+}
+
+/** Resume from a real click, and take the pointer back on the strength of it. */
+function resumeByClick(): void {
+  resume();
+  grabPointer();
 }
 
 /** Clamp to the −1..1 an axis promises, after summing two input sources. */
@@ -2027,6 +2073,16 @@ Object.defineProperty(window, "fps", {
     get deployed() {
       return deployed;
     },
+    get spectating() {
+      return spectating;
+    },
+    get watching() {
+      return watching();
+    },
+    get locked() {
+      return locked;
+    },
+    spectate: startSpectating,
     get paused() {
       return paused;
     },
