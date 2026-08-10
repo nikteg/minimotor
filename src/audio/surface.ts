@@ -646,6 +646,109 @@ export interface MusicHandle {
   readonly playing: boolean;
 }
 
+/** Per-play controls for a decoded sample. Samples are intentionally generic:
+ * the engine does not attach meaning to the bytes or the event that requests
+ * them. Games can use the same primitive for impacts, UI clicks, footsteps,
+ * voices, or any other short recorded sound. */
+export interface SamplePlayOptions {
+  /** Per-play gain under the selected bus. Default 1. */
+  volume?: number;
+  /** Playback-rate multiplier. Values above 1 shorten and raise the sample. */
+  pitch?: number;
+  /** Output bus. Defaults to `Audio.buses.sfx`. */
+  bus?: BusHandle;
+}
+
+/** A decoded, reusable sample. `play` may overlap previous plays. */
+export interface SampleHandle {
+  /** Start one instance of the sample. Pre-unlock calls are dropped. */
+  play(options?: SamplePlayOptions): void;
+  /** Stop all active instances and discard pending decode plays. */
+  stop(): void;
+}
+
+/** Build a reusable recorded sound from an encoded audio buffer. Decoding is
+ * lazy and happens once; subsequent plays create cheap independent buffer
+ * sources so rapid impacts do not cut each other off. */
+export function sample(data: ArrayBuffer, opts: { bus?: BusHandle } = {}): SampleHandle {
+  wireUnlock();
+  const defaultBus = opts.bus ?? buses.sfx;
+  let decoded: AudioBuffer | null = null;
+  let decoding: Promise<AudioBuffer | null> | null = null;
+  let pending: SamplePlayOptions[] = [];
+  const active = new Set<AudioBufferSourceNode>();
+
+  async function decode(): Promise<AudioBuffer | null> {
+    if (decoded) return decoded;
+    if (!decoding) {
+      decoding = (async () => {
+        try {
+          const result = await ensureAudio().decodeAudioData(data.slice(0));
+          decoded = result;
+          return result;
+        } catch {
+          return null;
+        } finally {
+          decoding = null;
+        }
+      })();
+    }
+    return decoding;
+  }
+
+  function start(buffer: AudioBuffer, options: SamplePlayOptions): void {
+    try {
+      const ctx = ensureAudio();
+      const busName = (options.bus ?? defaultBus).name;
+      const gain = ctx.createGain();
+      gain.gain.value = Math.max(0, options.volume ?? 1);
+      gain.connect(Mixer.bus(busName).input);
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.playbackRate.value = Math.max(0.05, options.pitch ?? 1);
+      source.connect(gain);
+      active.add(source);
+      source.onended = () => {
+        active.delete(source);
+        try {
+          gain.disconnect();
+        } catch {
+          /* already disconnected */
+        }
+      };
+      source.start();
+      fireDucks(busName);
+    } catch {
+      /* A missing or blocked audio device must never stop the game loop. */
+    }
+  }
+
+  function flush(buffer: AudioBuffer | null): void {
+    const plays = pending;
+    pending = [];
+    if (buffer) for (const options of plays) start(buffer, options);
+  }
+
+  return {
+    play(options = {}) {
+      if (!isUnlocked()) return;
+      pending.push(options);
+      void decode().then(flush);
+    },
+    stop() {
+      pending = [];
+      for (const source of active) {
+        try {
+          source.stop();
+        } catch {
+          /* already stopped */
+        }
+      }
+      active.clear();
+    },
+  };
+}
+
 /** A music track from a loaded asset (`Assets.load` audio entries are
  *  ArrayBuffers, decoded lazily here). */
 export function music(data: ArrayBuffer, opts: MusicOptions = {}): MusicHandle {

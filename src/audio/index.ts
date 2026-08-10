@@ -26,6 +26,7 @@ import type {
   EngineOptions,
   MusicHandle,
   MusicOptions,
+  SampleHandle,
   SfxHandle,
   SfxSpec,
 } from "./surface.js";
@@ -53,6 +54,7 @@ export type AudioApi = Omit<
   ): Record<K, SfxHandle>;
   engine(options?: EngineOptions): EngineHandle;
   music(data: ArrayBuffer, options?: MusicOptions): MusicHandle;
+  sample(data: ArrayBuffer, options?: { bus?: BusHandle }): SampleHandle;
   destroy(): void;
 };
 
@@ -134,6 +136,11 @@ export function createAudio(app: App): AudioApi {
     },
     music(data, { bus = musicBus, ...options } = {}) {
       const handle = AudioModule.music(data, { ...options, bus });
+      stoppable.add(handle);
+      return handle;
+    },
+    sample(data, { bus = sfxBus } = {}) {
+      const handle = AudioModule.sample(data, { bus });
       stoppable.add(handle);
       return handle;
     },

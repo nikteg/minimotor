@@ -13,6 +13,7 @@ describe("minimotor/audio under Node", () => {
     const mod = await import("@src/audio/index.js");
     expect(typeof mod.createAudio).toBe("function");
     expect(typeof mod.createMusicChannel).toBe("function");
+    expect(typeof mod.sample).toBe("function");
   });
 
   it("exposes the pure pieces a non-browser caller wants", async () => {

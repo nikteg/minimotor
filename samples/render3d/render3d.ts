@@ -26,7 +26,6 @@ import {
   createRenderer3D,
   createScene,
   createUiSurface,
-  cylinder,
   frameMesh,
   isWebGPUAvailable,
   mergeMeshes,
@@ -228,16 +227,6 @@ const heroNode = addNode(
     material: { color: items[selected].color, shininess: 48, specular: 0.35 },
   }),
 );
-addNode(
-  scene,
-  node({
-    name: "plinth",
-    mesh: cylinder(0.62, 0.1, 40),
-    position: { x: 0, y: -0.45, z: 0 },
-    material: { color: [0.16, 0.18, 0.25, 1], shininess: 24, specular: 0.12 },
-  }),
-);
-
 const camera = createCamera({ distance: 2.6, pitch: 0.35, yaw: 0.7 });
 const spin: Clip = createClip("spin", [spinTrack(pivot, 6)]);
 
@@ -269,7 +258,7 @@ const surfaceNode = addNode(
     name: "wall-panel",
     mesh: surface.mesh,
     material: surface.material,
-    // Behind and above the plinth, facing the viewer.
+    // Behind and above the model, facing the viewer.
     position: { x: 0, y: 0.45, z: -0.95 },
   }),
 );
