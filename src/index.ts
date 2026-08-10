@@ -9,7 +9,7 @@
 //   BOUND TO AN APP — it is created with `create*(app)` and owns per-app state
 //   and lifecycle. Every one of these is subpath-only, with no exceptions:
 //   animation, assets, audio, autosave, camera, capture, debug, input, net,
-//   onscreen-input, particles, performance, physics2d, portals, scenes,
+//   onscreen-input, particles, performance, physics2d, physics3d, portals, scenes,
 //   storage, timers, ui.
 //
 //   USEFUL WITHOUT A CANVAS — it is pure, but you would reasonably import it

@@ -1,7 +1,7 @@
 {
   "name": "minimotor",
   "version": "0.2.0",
-  "description": "Minimal 2D canvas framework \u2014 fixed-step loop, drawing, input, collision, audio \u2014 for small games and playful apps",
+  "description": "Minimal game framework — fixed-step loop, drawing, input, collision, audio, 3D rendering, and optional physics — for small games and playful apps",
   "homepage": "https://github.com/nikteg/minimotor#readme",
   "bugs": "https://github.com/nikteg/minimotor/issues",
   "license": "MIT",
@@ -117,6 +117,10 @@
       "types": "./build/physics2d/index.d.ts",
       "default": "./build/physics2d/index.js"
     },
+    "./physics3d": {
+      "types": "./build/physics3d/index.d.ts",
+      "default": "./build/physics3d/index.js"
+    },
     "./performance": {
       "types": "./build/perf/index.d.ts",
       "default": "./build/perf/index.js"
@@ -182,6 +186,7 @@
     "verify": "pnpm build && pnpm run --parallel \"/^verify:.+$/\""
   },
   "dependencies": {
+    "@dimforge/rapier3d-compat": "0.19.3",
     "ajv": "^8.20.0",
     "ws": "^8.21.1"
   },

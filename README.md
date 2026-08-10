@@ -41,8 +41,8 @@ is imported and created only when the app uses it.
   the ECS is archetype-free, and levels/transitions/sprites are values you pass
   around.
 - **Pay for what you import.** The core bundle is dependency-free. Rigid-body
-  physics (the one module with a dependency, `planck`) and the Node server
-  half live behind their own entry points.
+  physics (`planck` for 2D and Rapier for 3D) and the Node server half live
+  behind their own entry points.
 - **Canvas coordinates everywhere.** Pixels, y down — including the physics
   adapter, which converts to Box2D meters at the boundary.
 
@@ -66,6 +66,8 @@ is imported and created only when the app uses it.
 | `minimotor/ui`             | `createUI(app, Input?)` — immediate-mode UI isolated to one canvas, with optional all-pad navigation.       |
 | `minimotor/net`            | `createNet(app)` — multiplayer sessions and app-owned sync utilities.                                       |
 | `minimotor/physics2d`      | `createPhysics2D(app)` — rigid-body physics over planck/Box2D.                                              |
+| `minimotor/physics3d`      | `createPhysics3D(options)` — generic Rapier bodies, colliders, and fixed-step worlds.                     |
+| `minimotor/3d`             | Meshes, scenes, cameras, renderers, animation, and a JSON glTF loader.                                     |
 | `minimotor/performance`    | `createPerformanceMonitoring(app)` plus standalone measurement utilities.                                   |
 | `minimotor/platformer`     | Standalone platformer animation-state helpers (idle/run/jump/fall from a body).                             |
 | `minimotor/rng`            | `createRng(seed)` — a stateful seeded random stream with integer and choice helpers.                        |
