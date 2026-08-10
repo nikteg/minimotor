@@ -62,6 +62,15 @@ export interface Material {
   pixelated?: boolean;
 }
 
+/** A glTF-compatible linear blend skin. Joint indices refer to nodes in the
+ *  same flat scene array, and inverse bind matrices are column-major 4×4
+ *  matrices, one per joint. `matrices` is filled by `updateWorldMatrices`. */
+export interface Skin3D {
+  joints: readonly number[];
+  inverseBindMatrices: Float32Array;
+  matrices?: Float32Array;
+}
+
 /** One thing in the scene: a transform, optionally a mesh to draw with a
  *  material, optionally parented to an earlier node. */
 export interface Node3D {
@@ -79,6 +88,8 @@ export interface Node3D {
   mesh?: MeshData;
   /** How to draw it. */
   material?: Material;
+  /** Optional skeletal skin used by `mesh.joints` and `mesh.weights`. */
+  skin?: Skin3D;
   /** Index of the parent node in the same array, which MUST be smaller than
    *  this node's own index. */
   parent?: number;
@@ -172,6 +183,38 @@ export function updateWorldMatrices(scene: Scene3D): void {
       const parent = scene.nodes[n.parent].world;
       // The parent was resolved earlier in this same loop.
       if (parent) Mat4.mul(parent, local, n.world);
+    }
+  }
+
+  // A joint matrix transforms a vertex from mesh space to the current joint
+  // pose: inverse(meshWorld) × jointWorld × inverseBind. Keeping these on the
+  // scene node makes animation and rendering independent of a particular GPU
+  // backend, and is also useful to a CPU renderer or an exporter.
+  const inverseMesh = Mat4.create();
+  const jointPose = Mat4.create();
+  const jointMatrix = Mat4.create();
+  for (const n of scene.nodes) {
+    const skin = n.skin;
+    if (!skin) continue;
+    const count = skin.joints.length;
+    if (skin.inverseBindMatrices.length < count * 16) {
+      throw new Error(`Skin3D needs ${count} inverse bind matrices.`);
+    }
+    if (!skin.matrices || skin.matrices.length !== count * 16) {
+      skin.matrices = new Float32Array(count * 16);
+    }
+    const meshInverse = n.world && Mat4.invert(n.world, inverseMesh);
+    for (let i = 0; i < count; i++) {
+      const joint = scene.nodes[skin.joints[i]];
+      const destination = skin.matrices.subarray(i * 16, i * 16 + 16);
+      if (!joint?.world || !meshInverse) {
+        Mat4.identity(destination);
+        continue;
+      }
+      const bind = skin.inverseBindMatrices.subarray(i * 16, i * 16 + 16);
+      Mat4.mul(joint.world, bind, jointPose);
+      Mat4.mul(meshInverse, jointPose, jointMatrix);
+      destination.set(jointMatrix);
     }
   }
 }

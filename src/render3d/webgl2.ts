@@ -44,6 +44,7 @@ import type {
 import type { Vec3 } from "@src/math/vec3.js";
 
 const MAX_LIGHTS = 4;
+const MAX_JOINTS = 64;
 
 const VERTEX_SHADER = `#version 300 es
 precision highp float;
@@ -52,10 +53,14 @@ layout(location = 0) in vec3 aPosition;
 layout(location = 1) in vec3 aNormal;
 layout(location = 2) in vec2 aUv;
 layout(location = 3) in vec4 aColor;
+layout(location = 4) in uvec4 aJoints;
+layout(location = 5) in vec4 aWeights;
 
 uniform mat4 uViewProj;
 uniform mat4 uModel;
 uniform mat3 uNormalMat;
+uniform bool uHasSkin;
+uniform mat4 uJointMatrices[${MAX_JOINTS}];
 
 out vec3 vWorldPos;
 out vec3 vNormal;
@@ -63,10 +68,21 @@ out vec2 vUv;
 out vec4 vColor;
 
 void main() {
-  vec4 world = uModel * vec4(aPosition, 1.0);
+  vec4 localPosition = vec4(aPosition, 1.0);
+  vec3 localNormal = aNormal;
+  if (uHasSkin) {
+    mat4 skin =
+      aWeights.x * uJointMatrices[int(aJoints.x)] +
+      aWeights.y * uJointMatrices[int(aJoints.y)] +
+      aWeights.z * uJointMatrices[int(aJoints.z)] +
+      aWeights.w * uJointMatrices[int(aJoints.w)];
+    localPosition = skin * localPosition;
+    localNormal = mat3(skin) * localNormal;
+  }
+  vec4 world = uModel * localPosition;
   vWorldPos = world.xyz;
   // The inverse-transpose, so a non-uniformly scaled mesh still lights right.
-  vNormal = uNormalMat * aNormal;
+  vNormal = uNormalMat * localNormal;
   vUv = aUv;
   vColor = aColor;
   gl_Position = uViewProj * world;
@@ -150,6 +166,8 @@ interface Uniforms {
   unlit: WebGLUniformLocation | null;
   hasTexture: WebGLUniformLocation | null;
   texture: WebGLUniformLocation | null;
+  hasSkin: WebGLUniformLocation | null;
+  jointMatrices: WebGLUniformLocation | null;
 }
 
 /** How to build a WebGL2 renderer. */
@@ -246,6 +264,8 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     unlit: gl.getUniformLocation(program, "uUnlit"),
     hasTexture: gl.getUniformLocation(program, "uHasTexture"),
     texture: gl.getUniformLocation(program, "uTexture"),
+    hasSkin: gl.getUniformLocation(program, "uHasSkin"),
+    jointMatrices: gl.getUniformLocation(program, "uJointMatrices"),
   };
 
   const meshes = new WeakMap<object, GpuMesh>();
@@ -310,6 +330,14 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     attach(1, mesh.normals ?? defaultNormals(n), 3);
     attach(2, mesh.uvs ?? new Float32Array(n * 2), 2);
     attach(3, mesh.colors ?? filled(n * 4, 1), 4);
+    const jointBuffer = gl!.createBuffer();
+    if (!jointBuffer) throw new Error("WebGL2: could not create a joint buffer.");
+    buffers.push(jointBuffer);
+    gl!.bindBuffer(gl!.ARRAY_BUFFER, jointBuffer);
+    gl!.bufferData(gl!.ARRAY_BUFFER, mesh.joints ?? defaultJoints(n), gl!.STATIC_DRAW);
+    gl!.enableVertexAttribArray(4);
+    gl!.vertexAttribIPointer(4, 4, gl!.UNSIGNED_SHORT, 0, 0);
+    attach(5, mesh.weights ?? defaultWeights(n), 4);
 
     const indexBuffer = gl!.createBuffer();
     if (!indexBuffer) throw new Error("WebGL2: could not create an index buffer.");
@@ -366,6 +394,12 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     // dropping the node.
     const nm = Mat4.normalMatrix(node.world, normalMat);
     gl!.uniformMatrix3fv(u.normalMat, false, nm ?? IDENTITY3);
+    const skin = node.skin?.matrices;
+    if (skin && skin.length > MAX_JOINTS * 16) {
+      throw new Error(`WebGL2 supports at most ${MAX_JOINTS} skin joints per node.`);
+    }
+    gl!.uniform1i(u.hasSkin, skin ? 1 : 0);
+    gl!.uniformMatrix4fv(u.jointMatrices, false, skin ?? IDENTITY_JOINTS);
 
     const color = material.color ?? WHITE;
     gl!.uniform4f(u.baseColor, color[0], color[1], color[2], color[3]);
@@ -567,6 +601,13 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
 const WHITE = [1, 1, 1, 1] as const;
 const WHITE3 = [1, 1, 1] as const;
 const IDENTITY3 = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+const IDENTITY_JOINTS = new Float32Array(MAX_JOINTS * 16);
+for (let i = 0; i < MAX_JOINTS; i++) {
+  IDENTITY_JOINTS[i * 16] = 1;
+  IDENTITY_JOINTS[i * 16 + 5] = 1;
+  IDENTITY_JOINTS[i * 16 + 10] = 1;
+  IDENTITY_JOINTS[i * 16 + 15] = 1;
+}
 
 function filled(n: number, value: number): Float32Array {
   const a = new Float32Array(n);
@@ -577,6 +618,18 @@ function filled(n: number, value: number): Float32Array {
 function defaultNormals(n: number): Float32Array {
   const a = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) a[i * 3 + 1] = 1;
+  return a;
+}
+
+function defaultJoints(n: number): Uint16Array {
+  const a = new Uint16Array(n * 4);
+  for (let i = 0; i < n; i++) a[i * 4] = 0;
+  return a;
+}
+
+function defaultWeights(n: number): Float32Array {
+  const a = new Float32Array(n * 4);
+  for (let i = 0; i < n; i++) a[i * 4] = 1;
   return a;
 }
 

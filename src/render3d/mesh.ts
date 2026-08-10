@@ -31,9 +31,20 @@ export interface MeshData {
   uvs?: Float32Array;
   /** `[r, g, b, a]` per vertex, 0..1. Multiplied with the material colour. */
   colors?: Float32Array;
+  /** Four joint indices per vertex, used by a glTF-style skin. */
+  joints?: Uint16Array;
+  /** Four normalized joint weights per vertex. Each group of four should sum
+   *  to one; loaders normalize them so authored files do not have to be
+   *  perfect. */
+  weights?: Float32Array;
   /** Triangle indices, three per face, counter-clockwise when seen from the
    *  front. */
   indices: Uint16Array | Uint32Array;
+}
+
+/** Whether a mesh carries the attributes needed for GPU skinning. */
+export function isSkinned(mesh: MeshData): boolean {
+  return mesh.joints !== undefined && mesh.weights !== undefined;
 }
 
 /** Number of vertices in a mesh. */

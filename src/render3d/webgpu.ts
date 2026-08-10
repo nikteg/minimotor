@@ -40,13 +40,14 @@ import type { RenderFrameStats, RenderOptions, RenderStats, Renderer3D } from ".
 import type { Vec3 } from "@src/math/vec3.js";
 
 const MAX_LIGHTS = 4;
+const MAX_JOINTS = 64;
 /** Frame uniforms: viewProj(64) + cameraPos(16) + ambient(16) + lightCount(16)
  *  + dir[4](64) + colour[4](64). Every field is vec4-aligned because WGSL's
  *  std140-like rules round a vec3 up to 16 bytes anyway. */
 const FRAME_BYTES = 240;
 /** Per-draw: model(64) + normalMat as 3×vec4(48) + baseColor(16) + params(16).
  *  Padded to the 256-byte minimum dynamic-offset alignment. */
-const DRAW_BYTES = 256;
+const DRAW_BYTES = 4352;
 const DRAW_FLOATS = DRAW_BYTES / 4;
 const TIMESTAMP_SLOTS = 64;
 const TIMESTAMP_STRIDE = 256;
@@ -71,6 +72,8 @@ struct DrawData {
   baseColor : vec4f,
   // x: shininess, y: unlit, z: hasTexture, w: specular strength
   params    : vec4f,
+  skinParams: vec4f,
+  jointMatrices: array<mat4x4f, ${MAX_JOINTS}>,
 };
 
 @group(0) @binding(0) var<uniform> frame : Frame;
@@ -92,12 +95,24 @@ fn vs(
   @location(1) normal   : vec3f,
   @location(2) uv       : vec2f,
   @location(3) color    : vec4f,
+  @location(4) joints   : vec4u,
+  @location(5) weights  : vec4f,
 ) -> VsOut {
   var out : VsOut;
-  let world = draw.model * vec4f(position, 1.0);
+  var local = vec4f(position, 1.0);
+  var localNormal = normal;
+  if (draw.skinParams.x > 0.5) {
+    let skin = weights.x * draw.jointMatrices[joints.x] +
+      weights.y * draw.jointMatrices[joints.y] +
+      weights.z * draw.jointMatrices[joints.z] +
+      weights.w * draw.jointMatrices[joints.w];
+    local = skin * local;
+    localNormal = mat3x3f(skin[0].xyz, skin[1].xyz, skin[2].xyz) * localNormal;
+  }
+  let world = draw.model * local;
   out.worldPos = world.xyz;
   let nm = mat3x3f(draw.normal0.xyz, draw.normal1.xyz, draw.normal2.xyz);
-  out.normal = nm * normal;
+  out.normal = nm * localNormal;
   out.uv = uv;
   out.color = color;
   out.clip = frame.viewProj * world;
@@ -142,6 +157,8 @@ interface GpuMesh {
   normals: GPUBuffer;
   uvs: GPUBuffer;
   colors: GPUBuffer;
+  joints: GPUBuffer;
+  weights: GPUBuffer;
   indices: GPUBuffer;
   count: number;
   format: GPUIndexFormat;
@@ -277,6 +294,8 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     { arrayStride: 12, attributes: [{ shaderLocation: 1, offset: 0, format: "float32x3" }] },
     { arrayStride: 8, attributes: [{ shaderLocation: 2, offset: 0, format: "float32x2" }] },
     { arrayStride: 16, attributes: [{ shaderLocation: 3, offset: 0, format: "float32x4" }] },
+    { arrayStride: 8, attributes: [{ shaderLocation: 4, offset: 0, format: "uint16x4" }] },
+    { arrayStride: 16, attributes: [{ shaderLocation: 5, offset: 0, format: "float32x4" }] },
   ];
 
   const pipelines = new Map<string, GPURenderPipeline>();
@@ -429,6 +448,8 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       normals: buffer(mesh.normals ?? defaultNormals(n), GPUBufferUsage.VERTEX),
       uvs: buffer(mesh.uvs ?? new Float32Array(n * 2), GPUBufferUsage.VERTEX),
       colors: buffer(mesh.colors ?? filled(n * 4, 1), GPUBufferUsage.VERTEX),
+      joints: buffer(mesh.joints ?? defaultJoints(n), GPUBufferUsage.VERTEX),
+      weights: buffer(mesh.weights ?? defaultWeights(n), GPUBufferUsage.VERTEX),
       indices: buffer(mesh.indices, GPUBufferUsage.INDEX),
       count: mesh.indices.length,
       format: mesh.indices instanceof Uint32Array ? "uint32" : "uint16",
@@ -520,6 +541,12 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     drawData[at + 33] = material.unlit ? 1 : 0;
     drawData[at + 34] = material.texture ? 1 : 0;
     drawData[at + 35] = material.specular ?? 0.25;
+    const skin = node.skin?.matrices;
+    if (skin && skin.length > MAX_JOINTS * 16) {
+      throw new Error(`WebGPU supports at most ${MAX_JOINTS} skin joints per node.`);
+    }
+    drawData[at + 36] = skin ? 1 : 0;
+    drawData.set(skin ?? IDENTITY_JOINTS, at + 40);
   }
 
   const renderer: Renderer3D = {
@@ -668,6 +695,8 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
         pass.setVertexBuffer(1, gpu.normals);
         pass.setVertexBuffer(2, gpu.uvs);
         pass.setVertexBuffer(3, gpu.colors);
+        pass.setVertexBuffer(4, gpu.joints);
+        pass.setVertexBuffer(5, gpu.weights);
         pass.setIndexBuffer(gpu.indices, gpu.format);
         pass.drawIndexed(gpu.count);
         stats.drawCalls++;
@@ -694,6 +723,8 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       gpu.normals.destroy();
       gpu.uvs.destroy();
       gpu.colors.destroy();
+      gpu.joints.destroy();
+      gpu.weights.destroy();
       gpu.indices.destroy();
       meshes.delete(mesh);
     },
@@ -714,6 +745,13 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
 const WHITE = [1, 1, 1, 1] as const;
 const WHITE3 = [1, 1, 1] as const;
 const IDENTITY3 = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+const IDENTITY_JOINTS = new Float32Array(MAX_JOINTS * 16);
+for (let i = 0; i < MAX_JOINTS; i++) {
+  IDENTITY_JOINTS[i * 16] = 1;
+  IDENTITY_JOINTS[i * 16 + 5] = 1;
+  IDENTITY_JOINTS[i * 16 + 10] = 1;
+  IDENTITY_JOINTS[i * 16 + 15] = 1;
+}
 
 function alignTo4(bytes: number): number {
   return (bytes + 3) & ~3;
@@ -728,6 +766,16 @@ function filled(n: number, value: number): Float32Array {
 function defaultNormals(n: number): Float32Array {
   const a = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) a[i * 3 + 1] = 1;
+  return a;
+}
+
+function defaultJoints(n: number): Uint16Array {
+  return new Uint16Array(n * 4);
+}
+
+function defaultWeights(n: number): Float32Array {
+  const a = new Float32Array(n * 4);
+  for (let i = 0; i < n; i++) a[i * 4] = 1;
   return a;
 }
 
