@@ -84,10 +84,18 @@ export type Collider3DShape =
        *  duplicate vertices are merged and the mesh knows who its neighbours
        *  are; that is why the flag it exposes bundles the two.
        *
+       *  It also makes the mesh ONE-SIDED, which is worth knowing before a
+       *  level goes quietly wrong. A plain trimesh has no front and no back:
+       *  it collides from either direction, so a floor whose triangles are
+       *  wound facing down still holds a ball up and nobody finds out. Once the
+       *  pseudo-normals exist the same floor is a hole. Winding is load-bearing
+       *  here in a way it is not anywhere else in the physics API.
+       *
        *  On by default, because a floor that bounces is a bug in every game
        *  that has one. Turn it off for a mesh where the preprocessing is not
-       *  worth it — a wall nothing slides along — or one whose surface really
-       *  is meant to be faceted. */
+       *  worth it — a wall nothing slides along — for one whose surface really
+       *  is meant to be faceted, or for one that has to be walked on from both
+       *  sides. */
       fixInternalEdges?: boolean;
     }
   /** The convex hull of a point cloud — the dynamic-body counterpart to
