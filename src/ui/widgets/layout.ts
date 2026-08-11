@@ -49,6 +49,11 @@ const scrollOffsets = sweptCache<number>();
 // The focus-reveal epoch each region last scrolled for — so one Tab produces
 // one scroll, and the user can wheel away afterwards without being dragged back.
 const revealSeen = sweptCache<number>();
+// The furthest each `stickToEnd` region could scroll last frame. Comparing this
+// frame's offset against LAST frame's max is the whole trick: the moment new
+// content arrives the max grows, and a reader who was at the old end is still
+// sitting on it, which is what marks them as following the tail.
+const stickMax = sweptCache<number>();
 
 /** How far this scroll region must move to bring the keyboard-focused widget
  *  into `bodyRect` (0 when it's already visible, nothing is focused, or this
@@ -182,6 +187,15 @@ function scrollable<R>(
   const innerH = horiz ? bodyRect.h - gutter : bodyRect.h;
   const sbId = `${key ?? `scroll@${rect.x}:${rect.y}`}:sb`;
   let offset = clamp(scrollOffsets.get(sbId) ?? 0, 0, max);
+
+  // Follow the tail, but only for a reader who is already at it. A region seen
+  // for the first time counts as at the end, so a log that opens with a backlog
+  // opens on the newest line rather than the oldest.
+  if (opts.stickToEnd && !clipOnly) {
+    const previous = stickMax.get(sbId);
+    if (previous === undefined || offset >= previous - 0.5) offset = max;
+    stickMax.set(sbId, max);
+  }
 
   // Swipe / body-drag runs BEFORE the children (so the offset applies to this
   // frame's draw and the press-claim beats child widgets). On the press frame

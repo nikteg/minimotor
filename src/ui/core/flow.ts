@@ -628,6 +628,18 @@ export interface LayoutOptions {
    *  with a scrollbar + wheel; a titled `group` keeps its title fixed and scrolls
    *  only the body. `"hidden"` clips to the box without scrolling. */
   overflow?: "visible" | "hidden" | "auto" | "scroll";
+  /** Keep a scrolling region pinned to the END of its content — the bottom of a
+   *  column, the right of a row — as that content grows. For a feed that is
+   *  appended to (a chat, an event log, a console) this is the difference
+   *  between the newest line arriving on screen and it arriving just below the
+   *  fold.
+   *
+   *  Pinned is a state, not a mode: the region follows the tail only while it is
+   *  ALREADY at the tail, so scrolling back to read something older stops the
+   *  region jumping away under you, and scrolling to the end again resumes the
+   *  follow. A region that starts life with more content than it can show starts
+   *  pinned. Only meaningful with `overflow: "auto"` or `"scroll"`. */
+  stickToEnd?: boolean;
   /** Fill the remaining main-axis space in the parent flow. This is the
    *  container equivalent of Flow.fill(); only meaningful when nested. */
   flex?: "fill";
