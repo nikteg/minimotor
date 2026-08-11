@@ -4,8 +4,9 @@ import {
   isOverlayActive,
   lifecycleOnce,
   onFrameEnd,
+  onStep,
 } from "./lifecycle.js";
-import { uiSlot, uiApp } from "./state.js";
+import { hasUiApp, uiSlot, uiApp } from "./state.js";
 import { pointInRect } from "@src/collision/index.js";
 
 export const DEAD_POINTER = {
@@ -53,6 +54,13 @@ interface InputState {
   wheelTaken: boolean;
   /** A drag-and-drop payload is in flight — see `holdDragPayload`. */
   dragHeld: boolean;
+  /** A UI surface covered the pointer during the frame being drawn, and
+   *  during the one before it. See `pointerOverUi`. */
+  overUi: boolean;
+  overUiLast: boolean;
+  /** Where the pointer last went down, in SCREEN-logical coords, or null
+   *  before the first press of the session. See `pressOrigin`. */
+  press: { x: number; y: number } | null;
   transform: UiTransform | null;
   transformStack: (UiTransform | null)[];
   /** Active clip rects (innermost last), in SCREEN-logical coords. */
@@ -65,6 +73,9 @@ const st = uiSlot<InputState>(() => ({
   gestureOwned: false,
   wheelTaken: false,
   dragHeld: false,
+  overUi: false,
+  overUiLast: false,
+  press: null,
   transform: null,
   transformStack: [],
   clips: [],
@@ -112,6 +123,85 @@ export function dragPayloadHeld(): boolean {
 export function clearDragPayload(): void {
   st().dragHeld = false;
 }
+
+/** Report that a UI surface covers the pointer right now — a widget's hit-area
+ *  (`buttonState` does this for you), a panel's frame, or an overlay taking the
+ *  whole screen. What it buys is `pointerOverUi`. */
+export function markPointerOverUi(): void {
+  // `buttonState` is a pure helper as well as a widget's hit test, and callers
+  // are free to run it on a rect of their own outside any frame. There is no
+  // app to book the claim against then, and nothing to read it either.
+  if (!hasUiApp()) return;
+  ensureWired();
+  ensureOverUiHook();
+  st().overUi = true;
+}
+
+const ensureOverUiHook = lifecycleOnce(() => onFrameEnd(rollPointerOverUi));
+
+/** Whether the UI has the pointer, for a game drawn UNDER its own HUD.
+ *
+ *  A world that reads the pointer directly — an orbit drag, a click that picks
+ *  something out of the scene — has to leave alone the presses the interface
+ *  is already using, or every button doubles as a handle on the world behind
+ *  it. This is that question, and the answer covers every widget with a hit
+ *  area, every panel, and the whole screen while a modal or popover is up.
+ *
+ *  It reports the frame just drawn as well as the one being drawn, because the
+ *  two orders both happen: an immediate-mode HUD is usually drawn AFTER the
+ *  world it sits over, so at the moment the world reads the pointer this
+ *  frame's widgets do not exist yet. The cost is that the answer stays true
+ *  for one frame after the pointer leaves the UI, which is invisible next to
+ *  the alternative of a click landing in both places at once.
+ *
+ *  It answers where the pointer IS, not what it is doing: a gesture that
+ *  starts on a button and drags out over the world stops being over the UI
+ *  halfway through. Whoever owns the gesture should latch this on the press
+ *  and hold it until the release. */
+export function pointerOverUi(): boolean {
+  const s = st();
+  return s.overUi || s.overUiLast;
+}
+
+/** Frame-end housekeeping: this frame's answer becomes last frame's. */
+export function rollPointerOverUi(): void {
+  const s = st();
+  s.overUiLast = s.overUi;
+  s.overUi = false;
+}
+
+/** Where the gesture in flight began, in the CURRENT transform's coords, or
+ *  null before the first press of the session.
+ *
+ *  A click is a press and a release on the same thing. Without this the release
+ *  is the whole of it, so a drag that starts anywhere at all — on the world
+ *  behind the HUD, on a different button, on nothing — fires whatever happens
+ *  to be under the pointer when it comes up. `buttonState` gates on it.
+ *
+ *  Recorded in a fixed step rather than at frame end: the press edge is one
+ *  update step long and the draw that reads it comes after. It is never
+ *  cleared, only overwritten by the next press, because on the release frame
+ *  the pointer is already up — clearing on "not down" would wipe the origin
+ *  in the same step that needs it. */
+export function pressOrigin(): { x: number; y: number } | null {
+  if (!hasUiApp()) return null;
+  ensureWired();
+  ensurePressHook();
+  const s = st();
+  if (!s.press) return null;
+  const t = s.transform;
+  if (!t) return s.press;
+  return { x: (s.press.x - t.ox) / t.scale, y: (s.press.y - t.oy) / t.scale };
+}
+
+/** Fixed-step housekeeping for `pressOrigin`. The pointer is read defensively
+ *  because a headless host may not have one. */
+export function trackPressOrigin(): void {
+  const p = uiApp().Pointer as { x: number; y: number; pressed: boolean } | undefined;
+  if (p?.pressed) st().press = { x: p.x, y: p.y };
+}
+
+const ensurePressHook = lifecycleOnce(() => onStep(trackPressOrigin));
 
 /** A widget that DRAGS with the pointer (slider knob, scrollbar thumb, a
  *  drag-and-drop source, a text-selection drag) calls this every frame while
@@ -541,11 +631,21 @@ export function hoverCursor(hover: boolean): void {
 
 /** The interaction state `button()` derives from a pointer. Pure — exported
  *  for tests and for custom-drawn buttons that want the logic without the
- *  default look. */
+ *  default look.
+ *
+ *  A click needs the press AND the release: `origin` defaults to
+ *  `pressOrigin()`, and a release whose press began somewhere else is not this
+ *  widget's click. A press that leaves the widget and comes back still is,
+ *  which is what every other toolkit does too. Pass `origin` explicitly to test
+ *  the rule, or `null` to opt out of it — null is also what a session that has
+ *  never seen a press reports, and there is no gesture to attribute then. */
 export function buttonState(
   rect: { x: number; y: number; w: number; h: number },
   pointer: { x: number; y: number; down: boolean; released: boolean },
+  origin: { x: number; y: number } | null = pressOrigin(),
 ): { hover: boolean; active: boolean; clicked: boolean } {
   const hover = pointInRect(pointer.x, pointer.y, rect);
-  return { hover, active: hover && pointer.down, clicked: hover && pointer.released };
+  if (hover) markPointerOverUi();
+  const started = origin === null || pointInRect(origin.x, origin.y, rect);
+  return { hover, active: hover && pointer.down, clicked: hover && pointer.released && started };
 }

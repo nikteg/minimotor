@@ -29,6 +29,7 @@ import {
   theme,
   uiCtx,
   uiHeight,
+  markPointerOverUi,
   uiPointer,
   uiToScreen,
   uiWidth,
@@ -278,8 +279,7 @@ export function row<R>(
     const wrap = opts.wrap ?? false;
     // A row's cross axis is height. Wrapping children take their natural height
     // so lines measure correctly; ordinary auto rows do the same by default.
-    const fitCross =
-      opts.fitCross ?? (wrap || (opts.h === undefined && opts.flex !== "fill"));
+    const fitCross = opts.fitCross ?? (wrap || (opts.h === undefined && opts.flex !== "fill"));
     const cfg = {
       pad: opts.pad ?? 0,
       gap: opts.gap ?? theme.spacing.md,
@@ -308,8 +308,7 @@ export function col<R>(
     const wrap = opts.wrap ?? false;
     // A col's cross axis is width. Wrapping children take their natural width;
     // ordinary auto columns do the same by default.
-    const fitCross =
-      opts.fitCross ?? (wrap || (opts.w === undefined && opts.flex !== "fill"));
+    const fitCross = opts.fitCross ?? (wrap || (opts.w === undefined && opts.flex !== "fill"));
     const cfg = {
       pad: opts.pad ?? 0,
       gap: opts.gap ?? theme.spacing.md,
@@ -430,6 +429,11 @@ export function panel<R, T = unknown>(opts: PanelOptions<T>, children: LayoutChi
         const target = safeOpts.dropTarget
           ? dropTarget({ ...safeOpts.dropTarget, ...rect })
           : (null as DropTargetState<T> | null);
+        // A panel is a surface, not a hole: a drag started on the empty part
+        // of a HUD drawer belongs to the drawer, not to whatever the game is
+        // drawing behind it. See `pointerOverUi`.
+        const p = uiPointer();
+        if (pointInRect(p.x, p.y, rect)) markPointerOverUi();
         paintFrame(uiCtx(), {
           x: rect.x,
           y: rect.y,

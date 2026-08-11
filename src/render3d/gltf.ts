@@ -7,12 +7,40 @@ interface GltfDocument {
   scenes?: { nodes?: number[] }[];
   nodes?: GltfNode[];
   meshes?: { primitives?: GltfPrimitive[] }[];
-  materials?: { pbrMetallicRoughness?: { baseColorFactor?: number[] } }[];
+  materials?: GltfMaterial[];
+  images?: { uri?: string; bufferView?: number; mimeType?: string }[];
+  textures?: { source?: number; sampler?: number }[];
+  samplers?: { magFilter?: number; wrapS?: number; wrapT?: number }[];
   skins?: { joints: number[]; inverseBindMatrices?: number }[];
   animations?: GltfAnimation[];
   buffers?: { uri?: string; byteLength: number }[];
   bufferViews?: { buffer: number; byteOffset?: number; byteLength: number; byteStride?: number }[];
   accessors?: GltfAccessor[];
+}
+
+/** A glTF texture reference, plus the `KHR_texture_transform` scale and offset
+ *  that a tiling detail map needs. Rotation is not supported: the renderer's
+ *  uv transform is a scale and an offset, and a rotated tiling map is rare
+ *  enough that silently ignoring the angle would be worse than not reading it. */
+interface GltfTextureRef {
+  index?: number;
+  scale?: number;
+  extensions?: { KHR_texture_transform?: { offset?: number[]; scale?: number[] } };
+}
+
+interface GltfMaterial {
+  doubleSided?: boolean;
+  alphaMode?: string;
+  normalTexture?: GltfTextureRef;
+  pbrMetallicRoughness?: {
+    baseColorFactor?: number[];
+    metallicFactor?: number;
+    roughnessFactor?: number;
+    baseColorTexture?: GltfTextureRef;
+  };
+  /** The format's own escape hatch, used here to carry the material knobs glTF
+   *  cannot express: `uvProjection`, `textureBlend` and `rimAlpha`. */
+  extras?: { uvProjection?: string; textureBlend?: string; rimAlpha?: number[] };
 }
 
 interface GltfNode {
@@ -23,6 +51,9 @@ interface GltfNode {
   translation?: number[];
   rotation?: number[];
   scale?: number[];
+  /** Whatever the exporter needed to say and glTF has no field for. Carried
+   *  through untouched — see `LoadedGltf.extras`. */
+  extras?: Record<string, unknown>;
 }
 
 interface GltfPrimitive {
@@ -50,23 +81,35 @@ interface GltfAnimation {
 export interface LoadedGltf {
   scene: Scene3D;
   clips: Clip[];
+  /** Node `extras`, keyed by the scene node they became.
+   *
+   * A pipeline usually has a little to say that glTF has no field for — which
+   * nodes a level's logic owns, which are spawn points, which belong to a
+   * moving platform. The loader has no opinion on any of it and simply hands
+   * the objects back attached to the nodes they came in on; nodes without
+   * extras are absent from the map rather than present and empty. */
+  extras: Map<number, Record<string, unknown>>;
 }
 
-/** Load the useful, renderer-facing part of a glTF 2.0 file. Textures are
- * intentionally left as material metadata for the first port: geometry,
- * hierarchy, skins and transform animation are the parts that make Cocos
- * scenes executable, while image decoding belongs in the asset manifest. */
+/** Load the useful, renderer-facing part of a glTF 2.0 file: geometry,
+ * hierarchy, skins, transform animation, materials and their base-colour and
+ * normal textures.
+ *
+ * An image that fails to decode is skipped rather than failing the load — a
+ * missing texture should cost you a texture, not the whole scene. */
 export async function loadGltf(url: string): Promise<LoadedGltf> {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`glTF request failed (${response.status}): ${url}`);
   const document = (await response.json()) as GltfDocument;
   const buffers = await loadBuffers(document, url);
+  const images = await loadImages(document, buffers, url);
   const scene = createScene({ background: [0, 0, 0, 0] });
   const nodes = document.nodes ?? [];
   const meshes = document.meshes ?? [];
   const originalToPivot = new Map<number, number>();
   const visualNodes = new Map<number, number[]>();
   const visiting = new Set<number>();
+  const extras = new Map<number, Record<string, unknown>>();
 
   const buildNode = (originalIndex: number, parent?: number): number => {
     if (visiting.has(originalIndex)) throw new Error("glTF node hierarchy contains a cycle.");
@@ -84,6 +127,7 @@ export async function loadGltf(url: string): Promise<LoadedGltf> {
       }),
     );
     originalToPivot.set(originalIndex, pivot);
+    if (source.extras) extras.set(pivot, source.extras);
 
     const visuals: number[] = [];
     const mesh = source.mesh === undefined ? undefined : meshes[source.mesh];
@@ -97,7 +141,7 @@ export async function loadGltf(url: string): Promise<LoadedGltf> {
             name: `${source.name ?? originalIndex}:primitive-${primitiveIndex}`,
             parent: pivot,
             mesh: meshData,
-            material: materialFor(document, primitive.material),
+            material: materialFor(document, images, primitive.material),
           }),
         ),
       );
@@ -126,7 +170,7 @@ export async function loadGltf(url: string): Promise<LoadedGltf> {
     }
   }
 
-  return { scene, clips: readAnimations(document, buffers, originalToPivot) };
+  return { scene, clips: readAnimations(document, buffers, originalToPivot), extras };
 }
 
 function readPrimitive(
@@ -185,11 +229,131 @@ function readAnimations(
   });
 }
 
-function materialFor(document: GltfDocument, index: number | undefined): Material {
-  const factor = document.materials?.[index ?? -1]?.pbrMetallicRoughness?.baseColorFactor;
-  return {
+function materialFor(
+  document: GltfDocument,
+  images: (TexImageSource | undefined)[],
+  index: number | undefined,
+): Material {
+  const source = document.materials?.[index ?? -1];
+  const pbr = source?.pbrMetallicRoughness;
+  const factor = pbr?.baseColorFactor;
+  const material: Material = {
     color: [factor?.[0] ?? 0.85, factor?.[1] ?? 0.9, factor?.[2] ?? 0.95, factor?.[3] ?? 1],
   };
+  if (source?.doubleSided) material.doubleSided = true;
+  // Only `BLEND` maps. `MASK` is an alpha test, which this renderer has no
+  // equivalent for, and treating it as blending would turn a cutout leaf into
+  // a depth-write-free surface that sorts against everything else in the scene
+  // — a worse wrong answer than leaving it opaque.
+  if (source?.alphaMode === "BLEND") material.transparent = true;
+  const rim = source?.extras?.rimAlpha;
+  if (rim?.length === 3 && rim.every((value) => Number.isFinite(value))) {
+    material.rimAlpha = [rim[0]!, rim[1]!, rim[2]!];
+  }
+
+  const base = pbr?.baseColorTexture;
+  const normal = source?.normalTexture;
+  const baseImage = imageFor(document, images, base);
+  const normalImage = imageFor(document, images, normal);
+  if (baseImage) material.texture = baseImage;
+  if (normalImage) {
+    material.normalMap = normalImage;
+    if (normal?.scale !== undefined) material.normalScale = normal.scale;
+  }
+  if (baseImage || normalImage) {
+    // A glTF texture is photographic by default; the engine's nearest-neighbour
+    // default is for pixel art, which a loaded document is usually not.
+    material.pixelated = false;
+    const sampler =
+      document.samplers?.[document.textures?.[(base ?? normal)?.index ?? -1]?.sampler ?? -1];
+    if (sampler?.magFilter === NEAREST) material.pixelated = true;
+    if (sampler?.wrapS === REPEAT || sampler?.wrapT === REPEAT) material.repeat = true;
+    const transform = (base ?? normal)?.extensions?.KHR_texture_transform;
+    if (transform?.scale) {
+      material.uvScale = [transform.scale[0] ?? 1, transform.scale[1] ?? 1];
+      // A tiling transform is pointless against a clamped sampler, and an
+      // exporter that writes one usually leaves the sampler at its default.
+      if (material.uvScale[0] !== 1 || material.uvScale[1] !== 1) material.repeat = true;
+    }
+    if (transform?.offset) material.uvOffset = [transform.offset[0] ?? 0, transform.offset[1] ?? 0];
+    // glTF has no vocabulary for either of these, and `extras` is the slot the
+    // format reserves for exactly that. Unknown values fall through to the
+    // material defaults rather than throwing: extras are advisory by design.
+    const extras = source?.extras;
+    if (extras?.uvProjection === "planarXZ") material.uvProjection = "planarXZ";
+    if (extras?.textureBlend === "over") material.textureBlend = "over";
+  }
+  // glTF describes a microfacet surface and this renderer shades Blinn-Phong,
+  // so the two roughness/exponent parameterisations have to be bridged. The
+  // textbook `2/α² − 2` maps a polished surface to an exponent in the
+  // thousands, which on a low-poly scene reads as a single blown-out pixel;
+  // the exponential curve below spans the range the engine's own materials
+  // are authored in (a rough surface near 2, a polished one near 256) and
+  // keeps the ordering roughness implies.
+  if (pbr?.roughnessFactor !== undefined) {
+    const roughness = Math.min(1, Math.max(0, pbr.roughnessFactor));
+    material.shininess = 2 ** (7 * (1 - roughness) + 1);
+  }
+  // Metalness is not highlight strength, but it is the only "how much does
+  // this surface reflect" signal a metallic-roughness document carries, and
+  // without a strength term every lit face bleaches toward white.
+  if (pbr?.metallicFactor !== undefined) {
+    material.specular = Math.min(1, Math.max(0, pbr.metallicFactor));
+  }
+  return material;
+}
+
+const NEAREST = 9728;
+const REPEAT = 10497;
+
+/** The image behind a texture reference, or undefined when the reference, the
+ * texture or the decode is missing. */
+function imageFor(
+  document: GltfDocument,
+  images: (TexImageSource | undefined)[],
+  ref: GltfTextureRef | undefined,
+): TexImageSource | undefined {
+  if (ref?.index === undefined) return undefined;
+  const source = document.textures?.[ref.index]?.source;
+  return source === undefined ? undefined : images[source];
+}
+
+/** Decode every image the document declares, in parallel.
+ *
+ * `createImageBitmap` is the only decode path that works off the main thread
+ * and in a worker, and it is what both backends upload from. A decode failure
+ * yields `undefined` rather than rejecting: one unreadable texture should not
+ * take a whole scene down with it. */
+async function loadImages(
+  document: GltfDocument,
+  buffers: ArrayBuffer[],
+  url: string,
+): Promise<(TexImageSource | undefined)[]> {
+  if (!document.images?.length) return [];
+  if (typeof createImageBitmap !== "function") return document.images.map(() => undefined);
+  return Promise.all(
+    document.images.map(async (image) => {
+      try {
+        if (image.bufferView !== undefined) {
+          const view = document.bufferViews?.[image.bufferView];
+          if (!view) return undefined;
+          const bytes = new Uint8Array(buffers[view.buffer], view.byteOffset ?? 0, view.byteLength);
+          // Copy: the blob must not alias a buffer the mesh readers still use.
+          return await createImageBitmap(
+            new Blob([bytes.slice()], { type: image.mimeType ?? "image/png" }),
+          );
+        }
+        if (!image.uri) return undefined;
+        const response = await fetch(
+          image.uri.startsWith("data:") ? image.uri : resolveSibling(image.uri, url),
+        );
+        if (!response.ok) return undefined;
+        return await createImageBitmap(await response.blob());
+      } catch {
+        return undefined;
+      }
+    }),
+  );
 }
 
 async function loadBuffers(document: GltfDocument, url: string): Promise<ArrayBuffer[]> {
@@ -198,11 +362,24 @@ async function loadBuffers(document: GltfDocument, url: string): Promise<ArrayBu
       if (!buffer.uri)
         throw new Error("Binary .glb buffers are not supported by the JSON loader yet.");
       if (buffer.uri.startsWith("data:")) return decodeDataUri(buffer.uri);
-      const response = await fetch(new URL(buffer.uri, url));
+      const response = await fetch(resolveSibling(buffer.uri, url));
       if (!response.ok) throw new Error(`glTF buffer request failed (${response.status}).`);
       return response.arrayBuffer();
     }),
   );
+}
+
+/** Resolve a glTF's `.bin` against the document it came from. `url` is often
+ * relative (`assets/level.gltf`), which is not a valid `URL` base on its own,
+ * so fall back to the document's own base before giving up on a plain join. */
+function resolveSibling(uri: string, url: string): string {
+  const base = globalThis.document?.baseURI;
+  try {
+    return new URL(uri, new URL(url, base)).href;
+  } catch {
+    const directory = url.slice(0, url.lastIndexOf("/") + 1);
+    return `${directory}${uri}`;
+  }
 }
 
 function readAccessor(document: GltfDocument, buffers: ArrayBuffer[], index: number): Float32Array {

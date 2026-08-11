@@ -53,6 +53,12 @@ export function currentUiApp(): App {
   return current;
 }
 
+/** Whether any app is selected — for kernel bookkeeping that a caller may
+ *  reach outside a frame, where there is nothing to book against. */
+export function hasUiApp(): boolean {
+  return current !== null;
+}
+
 /** Select an app; returns the previous selection. */
 export function selectUiApp(app: App): App | null {
   const prev = current;

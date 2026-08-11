@@ -133,6 +133,40 @@ describe("drawPerfHud", () => {
     expect(rects[0][0]).toBe(4);
   });
 
+  it("widens the box to fit the 3D line rather than letting it run off screen", () => {
+    // The 3D line is the widest thing in the HUD and its width is not known in
+    // advance — backend name, six counts, two millisecond figures. A fixed box
+    // meant the tail left the screen entirely, because the box is anchored to
+    // the RIGHT edge: overflow goes outward, not inward.
+    const { ctx, rects } = recorder();
+    const render3d = {
+      backend: "webgpu",
+      viewports: 2,
+      drawCalls: 1489,
+      triangles: 2680858,
+      culled: 128,
+      cpuMs: 1.04,
+      gpuMs: 2.41,
+    };
+    const box = drawPerfHud(ctx, stats, { viewW: 800, render3d });
+    const line = ctx.fillText.mock.calls.at(-1)?.[0] as string;
+    // The recorder measures 6px a character, which is what 11px monospace is.
+    expect(line.length * 6).toBeGreaterThan(390);
+    expect(box.w).toBeGreaterThanOrEqual(line.length * 6);
+    expect(rects[0][0] + box.w, "and the box still ends inside the viewport").toBeLessThanOrEqual(
+      800,
+    );
+  });
+
+  it("keeps the 390 floor for a 3D line that happens to be short", () => {
+    const { ctx } = recorder();
+    const box = drawPerfHud(ctx, stats, {
+      viewW: 900,
+      render3d: { backend: "gl", viewports: 1, drawCalls: 1, triangles: 2, culled: 0, cpuMs: 0 },
+    });
+    expect(box.w).toBe(390);
+  });
+
   it("adds two network lines and a wider box when net stats are given", () => {
     const { ctx, rects } = recorder();
     const base = recorder();

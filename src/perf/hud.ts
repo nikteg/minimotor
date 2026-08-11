@@ -224,7 +224,22 @@ export function drawPerfHud(
   const render3d = opts.render3d;
   const anchor = opts.anchor ?? "top-right";
   const lineH = 14;
-  const boxW = render3d ? 390 : net ? 176 : 148;
+  // The 3D line is the widest thing here and its width is not knowable in
+  // advance — a backend name, six counts and two millisecond figures, any of
+  // which can grow a digit. Build it first and measure it, or the box is a
+  // guess that the text runs out of: anchored right, the overflow leaves the
+  // screen entirely. The font has to be set before measuring, so it is set
+  // here rather than after the background is filled.
+  ctx.save();
+  ctx.font = "11px monospace";
+  const render3dLine = render3d
+    ? `3d ${render3d.backend}  ${render3d.viewports}v  ${render3d.drawCalls} draws  ${compact(render3d.triangles)} tris  ${render3d.culled} culled  cpu ${render3d.cpuMs.toFixed(1)} ms  gpu ${render3d.gpuMs === undefined ? "—" : `${render3d.gpuMs.toFixed(1)} ms`}`
+    : "";
+  const boxW = render3d
+    ? Math.max(390, Math.ceil(ctx.measureText(render3dLine).width) + 12)
+    : net
+      ? 176
+      : 148;
   const memLine = opts.entities !== undefined || opts.heapMB !== undefined;
   const rows = 4 + (timings ? 1 : 0) + (memLine ? 1 : 0) + (render3d ? 1 : 0) + (net ? 2 : 0);
   const frameSpark = opts.graphs?.frame;
@@ -248,14 +263,12 @@ export function drawPerfHud(
   const x = bgX + 4;
   const y = 8;
 
-  // The HUD changes font/baseline/align/fillStyle; restore so no state leaks
-  // into the next frame's user draw (a leaked textBaseline shifts every
-  // fillText in the whole app).
-  ctx.save();
+  // The HUD changes font/baseline/align/fillStyle; the `save` above pairs with
+  // the `restore` below so no state leaks into the next frame's user draw (a
+  // leaked textBaseline shifts every fillText in the whole app).
   ctx.fillStyle = "rgba(0,0,0,0.55)";
   ctx.fillRect(bgX, bgY, boxW, boxH);
 
-  ctx.font = "11px monospace";
   ctx.textBaseline = "top";
   ctx.textAlign = "left";
 
@@ -286,11 +299,7 @@ export function drawPerfHud(
 
   if (render3d) {
     ctx.fillStyle = "#8be0d0";
-    ctx.fillText(
-      `3d ${render3d.backend}  ${render3d.viewports}v  ${render3d.drawCalls} draws  ${compact(render3d.triangles)} tris  ${render3d.culled} culled  cpu ${render3d.cpuMs.toFixed(1)} ms  gpu ${render3d.gpuMs === undefined ? "—" : `${render3d.gpuMs.toFixed(1)} ms`}`,
-      x,
-      y + lineH * row++,
-    );
+    ctx.fillText(render3dLine, x, y + lineH * row++);
   }
 
   if (net) {

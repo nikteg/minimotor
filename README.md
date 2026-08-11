@@ -66,8 +66,8 @@ is imported and created only when the app uses it.
 | `minimotor/ui`             | `createUI(app, Input?)` — immediate-mode UI isolated to one canvas, with optional all-pad navigation.       |
 | `minimotor/net`            | `createNet(app)` — multiplayer sessions and app-owned sync utilities.                                       |
 | `minimotor/physics2d`      | `createPhysics2D(app)` — rigid-body physics over planck/Box2D.                                              |
-| `minimotor/physics3d`      | `createPhysics3D(options)` — generic Rapier bodies, colliders, and fixed-step worlds.                     |
-| `minimotor/3d`             | Meshes, scenes, cameras, renderers, animation, and a JSON glTF loader.                                     |
+| `minimotor/physics3d`      | `createPhysics3D(options)` — generic Rapier bodies, colliders, and fixed-step worlds.                       |
+| `minimotor/3d`             | Meshes, scenes, cameras, renderers, animation, and a JSON glTF loader.                                      |
 | `minimotor/performance`    | `createPerformanceMonitoring(app)` plus standalone measurement utilities.                                   |
 | `minimotor/platformer`     | Standalone platformer animation-state helpers (idle/run/jump/fall from a body).                             |
 | `minimotor/rng`            | `createRng(seed)` — a stateful seeded random stream with integer and choice helpers.                        |

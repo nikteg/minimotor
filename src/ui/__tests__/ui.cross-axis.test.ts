@@ -233,3 +233,33 @@ describe("alignCross", () => {
     expect(r.narrow.x + r.narrow.w / 2).toBeCloseTo(r.c.x + r.c.w / 2, 1);
   });
 });
+
+describe("wrap", () => {
+  /** Four buttons that only fit two to a line, and something after them. */
+  const ballot = () =>
+    col({ x: 0, y: 0, w: 240, gap: 10, id: "panel" }, () => {
+      row({ id: "options", gap: 8, wrap: true, w: 220 }, () => {
+        for (const name of ["one", "two", "three", "four"]) {
+          button({ id: name, label: name.toUpperCase(), w: 100, h: 40 });
+        }
+      });
+      button({ id: "after", label: "AFTER" });
+    });
+
+  it("measures a wrapped row over every line, not just the tallest child", () => {
+    const out = settled(ballot);
+    // Two lines of 40px with a 8px gap between them.
+    expect(out.three!.y).toBeGreaterThan(out.one!.y);
+    expect(out.options!.h).toBeGreaterThanOrEqual(88);
+    // The whole point: what follows clears the wrapped run instead of
+    // landing on top of its second line.
+    expect(out.after!.y).toBeGreaterThanOrEqual(out.three!.y + out.three!.h);
+  });
+
+  it("settles instead of creeping taller every frame", () => {
+    const four = settled(ballot, 4);
+    const eight = settled(ballot, 8);
+    expect(eight.options!.h).toBe(four.options!.h);
+    expect(eight.after!.y).toBe(four.after!.y);
+  });
+});

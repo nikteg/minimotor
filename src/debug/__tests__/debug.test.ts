@@ -179,3 +179,82 @@ describe("createDebug setNetMeter", () => {
     expect(() => frame?.()).not.toThrow();
   });
 });
+
+describe("debug panels", () => {
+  function panelHarness(opts: Record<string, unknown> = {}) {
+    let frame: (() => void) | undefined;
+    let down = false;
+    const game = {
+      Keys: { keyDown: (key: string) => key === "?" && down },
+      onFrame(handler: () => void) {
+        frame = handler;
+        return () => {};
+      },
+    } as unknown as App;
+    const debug = createDebug(game, { perf: false, ...opts });
+    return {
+      debug,
+      game,
+      frame: () => frame?.(),
+      toggle: () => {
+        down = true;
+        frame?.();
+        down = false;
+      },
+    };
+  }
+
+  it("draws nothing while the overlay is off, and every panel once it is on", () => {
+    const seen: string[] = [];
+    const h = panelHarness({ panels: [() => seen.push("a"), () => seen.push("b")] });
+    h.frame();
+    expect(seen, "off means off — a panel is not a thing you pay for").toEqual([]);
+    h.toggle();
+    expect(seen).toEqual(["a", "b"]);
+    h.frame();
+    expect(seen).toEqual(["a", "b", "a", "b"]);
+  });
+
+  it("passes the app and the mode the overlay is in", () => {
+    const calls: unknown[][] = [];
+    const h = panelHarness({ panels: [(app: unknown, mode: unknown) => calls.push([app, mode])] });
+    h.toggle();
+    expect(calls).toEqual([[h.game, "performance"]]);
+  });
+
+  it("adds and removes panels after construction", () => {
+    let count = 0;
+    const h = panelHarness();
+    const remove = h.debug.panel(() => count++);
+    h.toggle();
+    expect(count).toBe(1);
+    remove();
+    h.frame();
+    expect(count).toBe(1);
+  });
+
+  it("draws once for a frame the game drew the panels itself", () => {
+    // A game whose draw ends with something that must sit ON TOP of the panels
+    // — a UI kit's deferred tooltip pass — asks for them mid-draw instead. The
+    // automatic pass must then not draw them a second time.
+    let count = 0;
+    const h = panelHarness({ panels: [() => count++] });
+    h.toggle();
+    expect(count).toBe(1);
+    h.debug.drawPanels(h.game);
+    expect(count).toBe(2);
+    h.debug.drawPanels(h.game);
+    expect(count, "twice in one frame is still one draw").toBe(2);
+    h.frame();
+    expect(count, "the automatic pass stood down").toBe(2);
+    h.frame();
+    expect(count, "and is back the next frame").toBe(3);
+  });
+
+  it("refuses a manual draw while the overlay is off", () => {
+    let count = 0;
+    const h = panelHarness({ panels: [() => count++] });
+    h.debug.drawPanels(h.game);
+    expect(count).toBe(0);
+  });
+});

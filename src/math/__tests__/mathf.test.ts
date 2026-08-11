@@ -7,6 +7,8 @@ import {
   pulse,
   wave,
   linear,
+  backIn,
+  backOut,
   easeIn,
   easeOut,
   easeInOut,
@@ -48,10 +50,16 @@ describe("Mathf", () => {
   });
 
   it("easings hit the 0 and 1 endpoints", () => {
-    for (const e of [linear, easeIn, easeOut, easeInOut]) {
+    for (const e of [linear, easeIn, easeOut, easeInOut, backIn, backOut]) {
       expect(e(0)).toBeCloseTo(0);
       expect(e(1)).toBeCloseTo(1);
     }
+  });
+
+  it("the back easings overshoot outside 0..1, which is the point of them", () => {
+    // A caller that clamps the result gets an ordinary ease and no snap.
+    expect(backOut(0.7)).toBeGreaterThan(1);
+    expect(backIn(0.3)).toBeLessThan(0);
   });
 
   it("easing shapes differ at the midpoint", () => {

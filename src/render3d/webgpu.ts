@@ -19,8 +19,8 @@
 //     why the 144 bytes of per-draw data occupy 256.
 //   - **Pipeline state is immutable.** WebGL toggles `CULL_FACE` and blending
 //     between draws; here each combination is a separate pipeline, created on
-//     demand and cached. There are exactly four (blend × double-sided), so the
-//     cache never grows unbounded.
+//     demand and cached. There are exactly eight (blend × double-sided ×
+//     depth-test), so the cache never grows unbounded.
 //   - **The depth buffer is an explicit texture** that must be resized with
 //     the canvas, and leaking one on every resize is the classic WebGPU memory
 //     bug. `configureSize` destroys the old one.
@@ -31,7 +31,7 @@
 
 import { Mat4 } from "@src/math/mat4.js";
 import { cameraPosition, viewProjection } from "./camera.js";
-import { isVisible } from "./scene.js";
+import { fogUniform, isVisible } from "./scene.js";
 import { triangleCount, vertexCount } from "./mesh.js";
 import type { Camera3D } from "./camera.js";
 import type { MeshData } from "./mesh.js";
@@ -42,11 +42,13 @@ import type { Vec3 } from "@src/math/vec3.js";
 const MAX_LIGHTS = 4;
 const MAX_JOINTS = 64;
 /** Frame uniforms: viewProj(64) + cameraPos(16) + ambient(16) + lightCount(16)
- *  + dir[4](64) + colour[4](64). Every field is vec4-aligned because WGSL's
- *  std140-like rules round a vec3 up to 16 bytes anyway. */
-const FRAME_BYTES = 240;
-/** Per-draw: model(64) + normalMat as 3×vec4(48) + baseColor(16) + params(16).
- *  Padded to the 256-byte minimum dynamic-offset alignment. */
+ *  + fogParams(16) + fogColor(16) + dir[4](64) + colour[4](64). Every field is
+ *  vec4-aligned because WGSL's std140-like rules round a vec3 up to 16 bytes
+ *  anyway. */
+const FRAME_BYTES = 272;
+/** Per-draw: model(64) + normalMat as 3×vec4(48) + baseColor(16) + params(16)
+ *  + skinParams(16) + uvTransform(16) + rimAlpha(16) + joints. Padded to the
+ *  256-byte minimum dynamic-offset alignment. */
 const DRAW_BYTES = 4352;
 const DRAW_FLOATS = DRAW_BYTES / 4;
 const TIMESTAMP_SLOTS = 64;
@@ -58,6 +60,10 @@ struct Frame {
   cameraPos  : vec4f,
   ambient    : vec4f,
   lightCount : vec4f,
+  // xyz: see fogUniform() in scene.ts, w: mode (-1 off, 0 linear, 1 exp,
+  // 2 exp squared, 3 layered)
+  fogParams  : vec4f,
+  fogColor   : vec4f,
   lightDir   : array<vec4f, ${MAX_LIGHTS}>,
   lightColor : array<vec4f, ${MAX_LIGHTS}>,
 };
@@ -70,9 +76,15 @@ struct DrawData {
   normal1   : vec4f,
   normal2   : vec4f,
   baseColor : vec4f,
-  // x: shininess, y: unlit, z: hasTexture, w: specular strength
+  // x: shininess, y: unlit, z: texture blend (0 none, 1 multiply, 2 over),
+  // w: specular strength
   params    : vec4f,
+  // x: skinned, y: hasNormalMap, z: normal map strength, w: planar-XZ uvs
   skinParams: vec4f,
+  // xy: uv scale, zw: uv offset
+  uvTransform: vec4f,
+  // xyz: rim alpha bias/scale/power, w unused
+  rimAlpha  : vec4f,
   jointMatrices: array<mat4x4f, ${MAX_JOINTS}>,
 };
 
@@ -80,6 +92,7 @@ struct DrawData {
 @group(0) @binding(1) var<uniform> draw  : DrawData;
 @group(1) @binding(0) var samp : sampler;
 @group(1) @binding(1) var tex  : texture_2d<f32>;
+@group(1) @binding(2) var normalTex : texture_2d<f32>;
 
 struct VsOut {
   @builtin(position) clip     : vec4f,
@@ -119,11 +132,85 @@ fn vs(
   return out;
 }
 
+/** Tangent frame rebuilt from screen-space derivatives — see the WebGL2
+ *  backend for why no TANGENT attribute is involved. */
+/** Visibility in 0..1 — 1 is clear air. A ground-hugging slab needs the fog
+ *  density integrated along the view ray, otherwise the layer slides with the
+ *  camera instead of staying put in the world. */
+fn fogVisibility(world : vec3f, eye : vec3f) -> f32 {
+  let mode = frame.fogParams.w;
+  if (mode < 0.5) {
+    return clamp((frame.fogParams.y - distance(eye, world)) / (frame.fogParams.y - frame.fogParams.x), 0.0, 1.0);
+  }
+  if (mode < 2.5) {
+    let d = max(distance(eye, world) - frame.fogParams.x, 0.0) / frame.fogParams.z * 4.0 * frame.fogParams.y;
+    return select(exp(-d * d), exp(-d), mode < 1.5);
+  }
+  let top = frame.fogParams.x;
+  let range = frame.fogParams.y;
+  let deltaD = distance(world.xz, eye.xz) / frame.fogParams.z * 2.0;
+  var deltaY = 0.0;
+  var integral = 0.0;
+  if (eye.y > top) {
+    deltaY = select(0.0, (top - world.y) / range * 2.0, world.y < top);
+    integral = deltaY * deltaY * 0.5;
+  } else if (world.y < top) {
+    let a = (top - eye.y) / range * 2.0;
+    let b = (top - world.y) / range * 2.0;
+    deltaY = abs(a - b);
+    integral = abs(a * a * 0.5 - b * b * 0.5);
+  } else {
+    deltaY = abs(top - eye.y) / range * 2.0;
+    integral = abs(deltaY * deltaY * 0.5);
+  }
+  if (deltaY == 0.0) { return 1.0; }
+  let ratio = deltaD / deltaY;
+  return exp(-sqrt(1.0 + ratio * ratio) * integral);
+}
+
+fn applyNormalMap(n : vec3f, worldPos : vec3f, uv : vec2f, scale : f32) -> vec3f {
+  // Sampled up front, BEFORE the degenerate-uv guard below. textureSample
+  // picks its mip from implicit derivatives, which WGSL only permits in
+  // uniform control flow, and the guard branches on a dpdx result — so a
+  // sample placed after it fails to compile even though every lane would take
+  // the same path in practice.
+  var sampled = textureSample(normalTex, samp, uv).xyz * 2.0 - 1.0;
+  sampled = vec3f(sampled.xy * scale, sampled.z);
+  let dPosX = dpdx(worldPos);
+  let dPosY = dpdy(worldPos);
+  let dUvX = dpdx(uv);
+  let dUvY = dpdy(uv);
+  let det = dUvX.x * dUvY.y - dUvY.x * dUvX.y;
+  if (abs(det) < 1e-12) { return n; }
+  var tangent = normalize((dPosX * dUvY.y - dPosY * dUvX.y) / det);
+  let bitangent = normalize(cross(n, tangent));
+  tangent = cross(bitangent, n);
+  return normalize(mat3x3f(tangent, bitangent, n) * sampled);
+}
+
 @fragment
 fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec4f {
+  let source = select(in.uv, in.worldPos.xz, draw.skinParams.w > 0.5);
+  let uv = source * draw.uvTransform.xy + draw.uvTransform.zw;
   var base = draw.baseColor * in.color;
   if (draw.params.z > 0.5) {
-    base = base * textureSample(tex, samp, in.uv);
+    let texel = textureSample(tex, samp, uv);
+    // Blend 2 keeps the base colour's own alpha: the texture decides colour
+    // where it is opaque, not whether the surface is there at all.
+    if (draw.params.z > 1.5) {
+      base = vec4f(mix(base.rgb, texel.rgb, texel.a), base.a);
+    } else {
+      base = base * texel;
+    }
+  }
+  // Ahead of the cutoff and of the unlit branch, because the ramp is what
+  // decides the final alpha: a bias of zero means the face-on fragments are
+  // the ones with nothing left to draw, and both paths below want that answer.
+  if (draw.rimAlpha.y != 0.0) {
+    var facing = normalize(in.normal);
+    if (!frontFacing) { facing = -facing; }
+    let grazing = max(1.0 - dot(normalize(frame.cameraPos.xyz - in.worldPos), facing), 0.0);
+    base.a = base.a * clamp(draw.rimAlpha.x + draw.rimAlpha.y * pow(grazing, draw.rimAlpha.z), 0.0, 1.0);
   }
   if (base.a < 0.002) { discard; }
   if (draw.params.y > 0.5) {
@@ -133,6 +220,9 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
 
   var n = normalize(in.normal);
   if (!frontFacing) { n = -n; }
+  if (draw.skinParams.y > 0.5) {
+    n = applyNormalMap(n, in.worldPos, uv, draw.skinParams.z);
+  }
   let view = normalize(frame.cameraPos.xyz - in.worldPos);
 
   var lit = frame.ambient.rgb;
@@ -148,7 +238,10 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
       spec = spec + frame.lightColor[i].rgb * draw.params.w * pow(max(dot(n, halfway), 0.0), draw.params.x);
     }
   }
-  let rgb = base.rgb * lit + spec;
+  var rgb = base.rgb * lit + spec;
+  if (frame.fogParams.w >= 0.0) {
+    rgb = mix(frame.fogColor.rgb, rgb, clamp(fogVisibility(in.worldPos, frame.cameraPos.xyz), 0.0, 1.0));
+  }
   return vec4f(rgb * base.a, base.a);
 }`;
 
@@ -283,6 +376,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     entries: [
       { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
       { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+      { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: {} },
     ],
   });
   const pipelineLayout = device.createPipelineLayout({
@@ -299,8 +393,8 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
   ];
 
   const pipelines = new Map<string, GPURenderPipeline>();
-  function pipelineFor(blend: boolean, doubleSided: boolean): GPURenderPipeline {
-    const key = `${blend}:${doubleSided}`;
+  function pipelineFor(blend: boolean, doubleSided: boolean, overlay: boolean): GPURenderPipeline {
+    const key = `${blend}:${doubleSided}:${overlay}`;
     const cached = pipelines.get(key);
     if (cached) return cached;
     const pipeline = device.createRenderPipeline({
@@ -333,7 +427,9 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
         // Transparent geometry tests against depth but does not write it, so
         // two blended surfaces do not occlude each other.
         depthWriteEnabled: !blend,
-        depthCompare: "less-equal",
+        // An overlay ignores the scene's depth but still writes its own, so a
+        // stack of them occludes itself in draw order.
+        depthCompare: overlay ? "always" : "less-equal",
       },
     });
     pipelines.set(key, pipeline);
@@ -370,8 +466,26 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     });
   }
 
-  const sampler = device.createSampler({ magFilter: "nearest", minFilter: "nearest" });
-  const smoothSampler = device.createSampler({ magFilter: "linear", minFilter: "linear" });
+  // Four samplers rather than one per material: nearest/linear × clamp/repeat
+  // covers every combination the Material type can ask for.
+  const samplers = new Map<string, GPUSampler>();
+  const samplerFor = (pixelated: boolean, repeat: boolean): GPUSampler => {
+    const key = `${pixelated}|${repeat}`;
+    let found = samplers.get(key);
+    if (!found) {
+      const filter = pixelated ? "nearest" : "linear";
+      const address = repeat ? "repeat" : "clamp-to-edge";
+      found = device.createSampler({
+        magFilter: filter,
+        minFilter: filter,
+        addressModeU: address,
+        addressModeV: address,
+      });
+      samplers.set(key, found);
+    }
+    return found;
+  };
+  const sampler = samplerFor(true, false);
   // A 1×1 opaque white texture stands in when a material has none, so the
   // shader keeps one code path and the bind group is never left unbound.
   const blankTexture = device.createTexture({
@@ -390,13 +504,15 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     entries: [
       { binding: 0, resource: sampler },
       { binding: 1, resource: blankTexture.createView() },
+      { binding: 2, resource: blankTexture.createView() },
     ],
   });
 
   const meshes = new WeakMap<object, GpuMesh>();
-  const textureGroups = new WeakMap<
+  const textureGroups = new WeakMap<object, Map<string, GPUBindGroup>>();
+  const textures = new WeakMap<
     object,
-    { group: GPUBindGroup; texture: GPUTexture; version: number; width: number; height: number }
+    { texture: GPUTexture; version: number; width: number; height: number }
   >();
 
   let width = opts.width ?? 300;
@@ -459,25 +575,22 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     return gpu;
   }
 
-  function textureGroupFor(
-    source: TexImageSource,
-    pixelated: boolean,
-    version: number,
-  ): GPUBindGroup {
+  /** Upload one image and return its GPU texture, reusing the existing one
+   *  when only the pixels changed — a resize has to rebuild, since a
+   *  GPUTexture's size is fixed at creation. */
+  function textureFor(source: TexImageSource, version: number): GPUTexture {
     const size = sourceSize(source);
-    const cached = textureGroups.get(source as object);
+    const cached = textures.get(source as object);
     if (cached && cached.width === size.width && cached.height === size.height) {
-      if (cached.version === version) return cached.group;
-      // Same dimensions: copy into the existing texture and keep the bind
-      // group. A resize has to rebuild both, since a GPUTexture's size is
-      // fixed at creation.
-      device.queue.copyExternalImageToTexture(
-        { source },
-        { texture: cached.texture, premultipliedAlpha: false },
-        [size.width, size.height],
-      );
-      cached.version = version;
-      return cached.group;
+      if (cached.version !== version) {
+        device.queue.copyExternalImageToTexture(
+          { source },
+          { texture: cached.texture, premultipliedAlpha: false },
+          [size.width, size.height],
+        );
+        cached.version = version;
+      }
+      return cached.texture;
     }
     cached?.texture.destroy();
     const texture = device.createTexture({
@@ -492,20 +605,43 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       size.width,
       size.height,
     ]);
+    textures.set(source as object, { texture, version, width: size.width, height: size.height });
+    return texture;
+  }
+
+  /** One bind group per (base texture, normal map, sampler) combination. The
+   *  group has to name both textures at once, so it cannot be cached against
+   *  the base image alone. */
+  function textureGroupFor(material: Material): GPUBindGroup {
+    const base = material.texture;
+    const normal = material.normalMap;
+    if (!base && !normal) return blankBindGroup;
+    const baseKey = (base ?? blankTexture) as object;
+    const samplerKey = `${material.pixelated ?? true}|${material.repeat ?? false}|${identity(normal)}`;
+    let byCombination = textureGroups.get(baseKey);
+    if (!byCombination) {
+      byCombination = new Map();
+      textureGroups.set(baseKey, byCombination);
+    }
+    const baseTexture = base ? textureFor(base, material.textureVersion ?? 0) : blankTexture;
+    // A normal map is a vector field, so it is always sampled smoothly.
+    const normalTexture = normal
+      ? textureFor(normal, material.normalMapVersion ?? 0)
+      : blankTexture;
+    // A rebuilt texture invalidates every view of it, so the cached group has
+    // to be dropped whenever either upload replaced its GPUTexture.
+    const stamp = `${identity(baseTexture)}|${identity(normalTexture)}|${samplerKey}`;
+    const existing = byCombination.get(stamp);
+    if (existing) return existing;
     const group = device.createBindGroup({
       layout: textureLayout,
       entries: [
-        { binding: 0, resource: pixelated ? sampler : smoothSampler },
-        { binding: 1, resource: texture.createView() },
+        { binding: 0, resource: samplerFor(material.pixelated ?? true, material.repeat ?? false) },
+        { binding: 1, resource: baseTexture.createView() },
+        { binding: 2, resource: normalTexture.createView() },
       ],
     });
-    textureGroups.set(source as object, {
-      group,
-      texture,
-      version,
-      width: size.width,
-      height: size.height,
-    });
+    byCombination.set(stamp, group);
     return group;
   }
 
@@ -523,6 +659,8 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
   };
   const opaque: number[] = [];
   const blended: { index: number; depth: number }[] = [];
+  /** `depthTest: false` nodes, drawn last against a depth test that passes. */
+  const overlay: number[] = [];
 
   /** Pack one node's per-draw uniforms at slot `slot`. */
   function writeDrawData(node: Node3D, material: Material, slot: number): void {
@@ -539,14 +677,31 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     drawData.set(color, at + 28);
     drawData[at + 32] = material.shininess ?? 0;
     drawData[at + 33] = material.unlit ? 1 : 0;
-    drawData[at + 34] = material.texture ? 1 : 0;
+    drawData[at + 34] = material.texture ? (material.textureBlend === "over" ? 2 : 1) : 0;
     drawData[at + 35] = material.specular ?? 0.25;
     const skin = node.skin?.matrices;
     if (skin && skin.length > MAX_JOINTS * 16) {
       throw new Error(`WebGPU supports at most ${MAX_JOINTS} skin joints per node.`);
     }
     drawData[at + 36] = skin ? 1 : 0;
-    drawData.set(skin ?? IDENTITY_JOINTS, at + 40);
+    drawData[at + 37] = material.normalMap ? 1 : 0;
+    drawData[at + 38] = material.normalScale ?? 1;
+    drawData[at + 39] = material.uvProjection === "planarXZ" ? 1 : 0;
+    const uvScale = material.uvScale ?? UNIT_UV;
+    const uvOffset = material.uvOffset ?? ZERO_UV;
+    drawData[at + 40] = uvScale[0];
+    drawData[at + 41] = uvScale[1];
+    drawData[at + 42] = uvOffset[0];
+    drawData[at + 43] = uvOffset[1];
+    // `[1, 0, 1]` is the identity ramp: bias 1 with no grazing term leaves the
+    // alpha exactly as authored, and the shader's own `scale != 0` test skips
+    // the pow() entirely.
+    const rim = material.rimAlpha;
+    drawData[at + 44] = rim?.[0] ?? 1;
+    drawData[at + 45] = rim?.[1] ?? 0;
+    drawData[at + 46] = rim?.[2] ?? 1;
+    drawData[at + 47] = 0;
+    drawData.set(skin ?? IDENTITY_JOINTS, at + 48);
   }
 
   const renderer: Renderer3D = {
@@ -600,6 +755,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       // write.
       opaque.length = 0;
       blended.length = 0;
+      overlay.length = 0;
       cameraPosition(camera, eye);
       scene.nodes.forEach((n, i) => {
         if (!n.mesh || !n.world) return;
@@ -607,7 +763,11 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
           stats.culled++;
           return;
         }
-        if (n.material?.transparent) {
+        // `depthTest: false` opts out of the scene's depth entirely, so it
+        // cannot share a pass with geometry that is still sorting against it.
+        if (n.material?.depthTest === false) {
+          overlay.push(i);
+        } else if (n.material?.transparent) {
           const dx = n.world[12] - eye.x;
           const dy = n.world[13] - eye.y;
           const dz = n.world[14] - eye.z;
@@ -618,7 +778,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       });
       blended.sort((a, b) => b.depth - a.depth);
 
-      const total = opaque.length + blended.length;
+      const total = opaque.length + blended.length + overlay.length;
       ensureDrawCapacity(Math.max(1, total));
 
       viewProjection(camera, width / height, true, viewProj);
@@ -627,17 +787,23 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       frameData.set([scene.ambient[0], scene.ambient[1], scene.ambient[2], 0], 20);
       const lights = scene.lights.slice(0, MAX_LIGHTS);
       frameData[24] = lights.length;
+      const fog = scene.fog ? fogUniform(scene.fog) : undefined;
+      frameData.set(fog ? [...fog.params, fog.mode] : [0, 0, 0, -1], 28);
+      frameData.set(
+        scene.fog ? [scene.fog.color[0], scene.fog.color[1], scene.fog.color[2], 1] : [0, 0, 0, 0],
+        32,
+      );
       lights.forEach((light, i) => {
         const d = light.direction;
         const l = Math.hypot(d.x, d.y, d.z) || 1;
-        frameData.set([d.x / l, d.y / l, d.z / l, 0], 28 + i * 4);
+        frameData.set([d.x / l, d.y / l, d.z / l, 0], 36 + i * 4);
         const c = light.color ?? WHITE3;
         const k = light.intensity ?? 1;
-        frameData.set([c[0] * k, c[1] * k, c[2] * k, 0], 44 + i * 4);
+        frameData.set([c[0] * k, c[1] * k, c[2] * k, 0], 52 + i * 4);
       });
       device.queue.writeBuffer(frameBuffer, 0, frameData);
 
-      const order = [...opaque, ...blended.map((b) => b.index)];
+      const order = [...opaque, ...blended.map((b) => b.index), ...overlay];
       order.forEach((index, slot) => {
         const n = scene.nodes[index];
         writeDrawData(n, n.material ?? {}, slot);
@@ -679,18 +845,11 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
         const n = scene.nodes[index];
         const material = n.material ?? {};
         const gpu = uploadMesh(n.mesh!);
-        pass.setPipeline(pipelineFor(!!material.transparent, !!material.doubleSided));
-        pass.setBindGroup(0, frameBindGroup!, [slot * DRAW_BYTES]);
-        pass.setBindGroup(
-          1,
-          material.texture
-            ? textureGroupFor(
-                material.texture,
-                material.pixelated ?? true,
-                material.textureVersion ?? 0,
-              )
-            : blankBindGroup,
+        pass.setPipeline(
+          pipelineFor(!!material.transparent, !!material.doubleSided, material.depthTest === false),
         );
+        pass.setBindGroup(0, frameBindGroup!, [slot * DRAW_BYTES]);
+        pass.setBindGroup(1, textureGroupFor(material));
         pass.setVertexBuffer(0, gpu.positions);
         pass.setVertexBuffer(1, gpu.normals);
         pass.setVertexBuffer(2, gpu.uvs);
@@ -744,6 +903,22 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
 
 const WHITE = [1, 1, 1, 1] as const;
 const WHITE3 = [1, 1, 1] as const;
+const UNIT_UV = [1, 1] as const;
+const ZERO_UV = [0, 0] as const;
+
+/** A stable per-object id, so a bind-group cache key can name two textures
+ *  without holding them alive in a string. */
+const identities = new WeakMap<object, number>();
+let nextIdentity = 1;
+function identity(value: object | undefined): number {
+  if (!value) return 0;
+  let id = identities.get(value);
+  if (id === undefined) {
+    id = nextIdentity++;
+    identities.set(value, id);
+  }
+  return id;
+}
 const IDENTITY3 = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
 const IDENTITY_JOINTS = new Float32Array(MAX_JOINTS * 16);
 for (let i = 0; i < MAX_JOINTS; i++) {

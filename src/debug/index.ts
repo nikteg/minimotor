@@ -11,6 +11,15 @@ import type { NetMeter } from "@src/perf/net-meter.js";
 
 export type DebugMode = "off" | "performance" | "collision";
 
+/** Extra content drawn while the overlay is visible.
+ *
+ *  The perf HUD answers "is the engine keeping up". A game usually has its own
+ *  questions — which volume the player is standing in, what the AI thinks it is
+ *  doing, a row of buttons that force a state — and those belong to the game,
+ *  not here. What they should SHARE is the toggle: one shortcut turning
+ *  everything development-only on and off, rather than a key per tool. */
+export type DebugPanel = (app: App, mode: DebugMode) => void;
+
 export interface DebugWorld extends SolidSource, Partial<LadderSource> {}
 
 export interface DebugOptions {
@@ -24,6 +33,9 @@ export interface DebugOptions {
   camera?: CameraLens;
   /** Initial mode. Default `"off"`. */
   initial?: DebugMode;
+  /** Panels to draw while the overlay is visible, in order. More can be added
+   *  later with `DebugApi.panel`. */
+  panels?: readonly DebugPanel[];
   /** Called after the mode changes, including shortcut-driven changes. */
   onModeChange?(mode: DebugMode): void;
 }
@@ -33,6 +45,8 @@ export interface DebugPlugin {
   cycle(): DebugMode;
   set3dRenderer(renderer: Perf3DSource | null): void;
   setNetMeter(meter: NetMeter | null): void;
+  panel(draw: DebugPanel): () => void;
+  drawPanels(app: App): void;
   /** Run once per rendered frame, after `draw`: poll the shortcut and paint the
    *  overlay. `createDebug` subscribes this with `app.onFrame`. */
   frame(app: App): void;
@@ -48,6 +62,16 @@ export interface DebugApi {
    *  and every rejoin makes a new meter — so, like `set3dRenderer`, this is a
    *  setter rather than a constructor argument. No-op with `perf: false`. */
   setNetMeter(meter: NetMeter | null): void;
+  /** Add a panel to the overlay. Returns a function that removes it again. */
+  panel(draw: DebugPanel): () => void;
+  /** Draw the panels NOW, and skip the automatic pass for this frame.
+   *
+   *  Panels are drawn from `onFrame`, which runs after `draw` — the right place
+   *  for something that must sit on top of the finished frame. A game whose own
+   *  draw ends with something that must sit on top of the PANELS, such as a UI
+   *  kit's deferred tooltip pass, calls this at the point in its draw where the
+   *  panels belong instead. Calling it more than once in a frame draws once. */
+  drawPanels(app: App): void;
   watch(name: string, read: () => unknown): () => void;
   snapshot(): Record<string, unknown>;
   readonly entries: readonly Inspection[];
@@ -117,6 +141,13 @@ function debugPlugin(app: App, opts: DebugOptions): DebugPlugin {
   const initialIndex = modes.indexOf(requestedInitial);
   let index = initialIndex >= 0 ? initialIndex : modes.indexOf("performance");
   let shortcutDown = false;
+  const panels: DebugPanel[] = [...(opts.panels ?? [])];
+  // Set by `drawPanels` and cleared by the automatic pass, so a game that draws
+  // its panels itself gets them once rather than twice. The two calls are
+  // ordered by the frame itself — `drawPanels` happens inside `draw`, the
+  // automatic pass in the `onFrame` that follows it — so one flag is enough
+  // and no frame counter is needed.
+  let panelsDrawn = false;
   const touchPointers = new Set<number>();
   let touchCycleFired = false;
   let firstTouchAt = Number.NEGATIVE_INFINITY;
@@ -174,6 +205,18 @@ function debugPlugin(app: App, opts: DebugOptions): DebugPlugin {
     setNetMeter(meter) {
       perf?.setNet(meter);
     },
+    panel(draw) {
+      panels.push(draw);
+      return () => {
+        const at = panels.indexOf(draw);
+        if (at >= 0) panels.splice(at, 1);
+      };
+    },
+    drawPanels(app) {
+      if (panelsDrawn || modes[index] === "off") return;
+      panelsDrawn = true;
+      for (const draw of panels) draw(app, modes[index]);
+    },
     frame(app) {
       // The shortcut is edge-detected here rather than in a fixed step so it
       // still works while the loop is paused — `onFrame` runs on paused frames.
@@ -191,8 +234,14 @@ function debugPlugin(app: App, opts: DebugOptions): DebugPlugin {
         });
         app.ctx.restore();
       }
-      if (modes[index] !== "off") perf?.frame(app);
-      else {
+      if (modes[index] !== "off") {
+        perf?.frame(app);
+        // After the HUD, so a panel can sit under it rather than fight it, and
+        // only if the game did not already ask for them during its own draw.
+        if (!panelsDrawn) for (const draw of panels) draw(app, modes[index]);
+        panelsDrawn = false;
+      } else {
+        panelsDrawn = false;
         // Keep renderer-owned counters bounded while the debug overlay is
         // hidden. The next visible frame should describe that frame, not the
         // entire time spent with the overlay disabled.
@@ -214,6 +263,8 @@ export function createDebug(app: App, opts: DebugOptions = {}): DebugApi {
     cycle: () => plugin.cycle(),
     set3dRenderer: (renderer) => plugin.set3dRenderer(renderer),
     setNetMeter: (meter) => plugin.setNetMeter(meter),
+    panel: (draw) => plugin.panel(draw),
+    drawPanels: (target) => plugin.drawPanels(target),
     watch: inspector.watch,
     snapshot: inspector.snapshot,
     get entries() {

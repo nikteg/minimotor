@@ -189,6 +189,8 @@ export interface RuntimeOptions {
 // DOUBLE_CLICK_SLOP logical px of the first.
 const DOUBLE_PRESS_MS = 300;
 const DOUBLE_CLICK_SLOP = 24;
+/** `PointerEvent.button` for the right mouse button. Touches report 0. */
+const SECONDARY_BUTTON = 2;
 
 /** Spiral-of-death guard: the most simulated time one frame may spend catching
  *  up; any further backlog is dropped (better a one-off slow-motion hitch than
@@ -337,6 +339,9 @@ function buildRuntime(options: RuntimeOptions): Runtime {
     frameReleased: false,
     framePressed: false,
     wheel: 0,
+    secondaryDown: false,
+    secondaryPressed: false,
+    secondaryReleased: false,
   };
   let lastPointerDownAt = Number.NEGATIVE_INFINITY;
   let lastPointerDownX = 0;
@@ -374,6 +379,17 @@ function buildRuntime(options: RuntimeOptions): Runtime {
     },
     get wheel() {
       return ptr.wheel;
+    },
+    secondary: {
+      get down() {
+        return ptr.secondaryDown;
+      },
+      get pressed() {
+        return ptr.secondaryPressed;
+      },
+      get released() {
+        return ptr.secondaryReleased;
+      },
     },
   };
 
@@ -444,6 +460,14 @@ function buildRuntime(options: RuntimeOptions): Runtime {
   };
   const onPointerDown = (e: PointerEvent) => {
     setPointer(e);
+    // The right button is its own gesture. Letting it mint a primary press
+    // means every UI button fires on right-click and every drag handler starts
+    // on one, which is never what an app wants.
+    if (e.button === SECONDARY_BUTTON) {
+      if (!ptr.secondaryDown) ptr.secondaryPressed = true;
+      ptr.secondaryDown = true;
+      return;
+    }
     const t = performance.now();
     // Fast-path / touch double-tap: a second press within DOUBLE_PRESS_MS and
     // close to the first. The native `dblclick` listener below additionally
@@ -480,6 +504,11 @@ function buildRuntime(options: RuntimeOptions): Runtime {
   };
   const onPointerUp = (e: PointerEvent) => {
     setPointer(e);
+    if (e.button === SECONDARY_BUTTON) {
+      if (ptr.secondaryDown) ptr.secondaryReleased = true;
+      ptr.secondaryDown = false;
+      return;
+    }
     ptr.down = false;
     ptr.released = true;
     ptr.frameReleased = true; // survives the steps; cleared at frame end
@@ -491,6 +520,7 @@ function buildRuntime(options: RuntimeOptions): Runtime {
   // event's coordinates are unreliable per spec, so the position stays put.
   const onPointerCancel = () => {
     ptr.down = false;
+    ptr.secondaryDown = false;
   };
   // iOS runs its own zoom/selection gestures even under `touch-action:none`:
   // pinch (`gesturestart`/`change`/`end`), double-tap zoom (the second tap's
@@ -515,6 +545,10 @@ function buildRuntime(options: RuntimeOptions): Runtime {
     lastTouchEndAt = now;
   };
   canvas.addEventListener("pointerdown", onPointerDown);
+  // A right-drag on the canvas belongs to the app, and the native menu popping
+  // up on press cancels it before the first move arrives. Canvas only — the
+  // rest of the page keeps its menu.
+  canvas.addEventListener("contextmenu", stopGesture);
   canvas.addEventListener("dblclick", onDblClick);
   window.addEventListener("pointermove", setPointer);
   canvas.addEventListener("wheel", onWheel, { passive: true });
@@ -540,6 +574,8 @@ function buildRuntime(options: RuntimeOptions): Runtime {
     ptr.pressed = false;
     ptr.released = false;
     ptr.doublePressed = false;
+    ptr.secondaryPressed = false;
+    ptr.secondaryReleased = false;
   }
 
   const stepHandlers = new Set<() => void>();
@@ -758,6 +794,7 @@ function buildRuntime(options: RuntimeOptions): Runtime {
       window.removeEventListener("orientationchange", handleOrient);
       screen.orientation?.removeEventListener?.("change", handleOrient);
       canvas.removeEventListener("pointerdown", onPointerDown);
+      canvas.removeEventListener("contextmenu", stopGesture);
       canvas.removeEventListener("dblclick", onDblClick);
       canvas.removeEventListener("wheel", onWheel);
       for (const type of ["gesturestart", "gesturechange", "gestureend"]) {

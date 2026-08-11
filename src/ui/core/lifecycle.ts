@@ -1,6 +1,6 @@
 import { focusEndFrame, markFocusTrap, padNav, wireFocusKeyboard } from "./focus.js";
 import { sweepCaches } from "./frame-cache.js";
-import { clearPointerCache, resetUiScale } from "./input.js";
+import { clearPointerCache, markPointerOverUi, resetUiScale } from "./input.js";
 import {
   allUiApps,
   clearUiApp,
@@ -59,6 +59,10 @@ export function isInOverlayPass(): boolean {
 export function captureOverlay(focusVisible = false): void {
   const o = overlay();
   o.seen = true;
+  // An overlay owns the whole screen, not just its own box: the background is
+  // dead to the pointer while it is up, and a game drawn under the UI has to
+  // treat the pointer as spoken for wherever it is. See `pointerOverUi`.
+  markPointerOverUi();
   markFocusTrap(focusVisible);
 }
 

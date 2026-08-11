@@ -46,6 +46,35 @@ export interface Material {
    *  ones, back to front; see `Renderer3D` for the ordering rule and its
    *  limits. */
   transparent?: boolean;
+  /** Draw over everything, whatever is in front. Set false and the surface
+   *  skips the depth test entirely and is drawn last, after both the opaque
+   *  and the blended pass.
+   *
+   *  This is for geometry that is IN the world but is really a readout of it:
+   *  an aiming guide, a range ring, a selection outline, a waypoint marker.
+   *  Such a thing has a world position and wants perspective and occlusion
+   *  from nothing — burying it behind the hill it is measuring makes it
+   *  useless exactly when it matters. The alternative, nudging it towards the
+   *  camera until it clears, breaks as soon as the terrain is steeper than the
+   *  nudge.
+   *
+   *  It still writes depth unless `transparent` is also set, so two overlay
+   *  surfaces occlude each other in the order you would expect while both
+   *  ignore the scene. Default is the ordinary depth-tested behaviour. */
+  depthTest?: boolean;
+  /** A view-angle alpha ramp as `[bias, scale, power]`, multiplied into the
+   *  surface's own alpha:
+   *
+   *      a *= clamp(bias + scale * (1 - dot(view, normal))ᵖᵒʷᵉʳ, 0, 1)
+   *
+   *  A face turned towards the viewer contributes only `bias`; one seen edge-on
+   *  reaches `bias + scale`. That is what makes a hollow shape read as glass
+   *  rather than as a flat wash — the silhouette stays solid while the front
+   *  wall goes see-through, so whatever is inside shows through it.
+   *
+   *  Needs `transparent` to be set as well; on its own it computes an alpha
+   *  nothing blends with. */
+  rimAlpha?: readonly [number, number, number];
   /** Blinn-Phong specular EXPONENT — how tight the highlight is. 0 disables
    *  it. Low values are not a subtle effect: an exponent of 8 spreads the
    *  highlight over most of the surface, so it reads as "this object is
@@ -60,6 +89,84 @@ export interface Material {
   /** Nearest-neighbour texture sampling — the pixel-art default the rest of
    *  the engine assumes. Set false for a photographic texture. */
   pixelated?: boolean;
+  /** Tangent-space normal map, sampled with the same uv as `texture`. RGB is
+   *  the usual `xyz * 0.5 + 0.5` encoding; the blue channel points out of the
+   *  surface, which is why an unmodified normal map looks lilac.
+   *
+   *  No TANGENT vertex attribute is needed: the basis is rebuilt per pixel
+   *  from screen-space derivatives of the position and uv. That costs a few
+   *  ALU ops and, unlike a baked tangent, cannot disagree with the uvs the
+   *  mesh actually ships. It does need real uvs — a mesh without them gets a
+   *  degenerate basis, so the map is ignored. */
+  normalMap?: TexImageSource;
+  /** Bump when the normal map's PIXELS change, as with `textureVersion`. */
+  normalMapVersion?: number;
+  /** How far the normal map tilts the surface, 0..1+ where 1 is the map's own
+   *  strength and 0 is flat. Default 1. */
+  normalScale?: number;
+  /** Multiply uvs by this before sampling — how a small detail texture tiles
+   *  across a large surface. Default `[1, 1]`. */
+  uvScale?: readonly [number, number];
+  /** Added to the uvs after `uvScale`. Default `[0, 0]`. */
+  uvOffset?: readonly [number, number];
+  /** Repeat the texture outside 0..1 instead of clamping to its edge pixels.
+   *  Required for anything that tiles; off by default because clamping is what
+   *  an atlas or a sprite needs and wrapping one bleeds its neighbour in. */
+  repeat?: boolean;
+  /** Where the uvs come from before `uvScale`/`uvOffset` apply.
+   *
+   *  `mesh` (the default) reads the mesh's own TEXCOORD_0. `planarXZ` drops
+   *  the world position straight down the Y axis instead, so one tiling
+   *  texture runs continuously across a whole environment and no mesh in it
+   *  has to be unwrapped — the standard trick for ground. The seams show on
+   *  vertical faces, which is why it is per-material rather than global. */
+  uvProjection?: "mesh" | "planarXZ";
+  /** How `texture` combines with `color`.
+   *
+   *  `multiply` (the default) tints: the texture darkens the base colour and a
+   *  transparent texel makes the surface transparent. `over` composites the
+   *  texture on top using its own alpha, leaving the base colour showing
+   *  through where the texture is clear — what a decal or line sheet painted
+   *  over a solid colour needs. */
+  textureBlend?: "multiply" | "over";
+}
+
+/** How fog thickens with distance. `layered` is the odd one out: it is a
+ *  ground-hugging slab rather than a uniform medium, so a hill pokes out of it
+ *  while the valley behind stays white. */
+export type FogMode = "linear" | "exponential" | "exponentialSquared" | "layered";
+
+/** Atmosphere that keeps a large scene from ending in a hard silhouette
+ *  against the background. Every mode produces a *visibility* factor `f` in
+ *  0..1 which the shader uses as `mix(color, shaded, f)` — 1 is clear air.
+ *
+ *      linear              f = clamp((end - d) / (end - start), 0, 1)
+ *      exponential         f = exp(-D * density),        D = max(d - start, 0) / attenuation * 4
+ *      exponentialSquared  f = exp(-(D * density)²)
+ *      layered             a slab below `height`, `range` thick, integrated
+ *                          along the view ray and attenuated horizontally
+ *
+ *  where `d` is the distance from the camera. The layered integral is what
+ *  makes the slab hold still as the camera moves through it instead of
+ *  sliding with the near plane. */
+export interface Fog3D {
+  /** Fog colour as `[r, g, b]`, each 0..1. Usually close to the background. */
+  color: readonly [number, number, number];
+  /** Which falloff curve to use. Default `exponential`. */
+  mode?: FogMode;
+  /** Distance at which fog begins. `linear` and both exponentials only. */
+  start?: number;
+  /** Distance at which `linear` fog reaches full strength. Default 300. */
+  end?: number;
+  /** Thickness multiplier for both exponentials. Default 0.3. */
+  density?: number;
+  /** Horizontal distance scale for the exponentials and for `layered`.
+   *  Larger means the fog takes longer to build up. Default 5. */
+  attenuation?: number;
+  /** World Y of the top of a `layered` slab. Default 0. */
+  height?: number;
+  /** Depth of the `layered` slab below `height`. Default 1.2. */
+  range?: number;
 }
 
 /** A glTF-compatible linear blend skin. Joint indices refer to nodes in the
@@ -127,6 +234,32 @@ export interface Scene3D {
    *  the 3D viewport show through — which is how a model sits on a UI panel
    *  without a box of sky around it. */
   background: readonly [number, number, number, number];
+  /** Optional distance fog. Unlit materials are left alone: a gizmo or a
+   *  nameplate that opted out of lighting has opted out of atmosphere too. */
+  fog?: Fog3D;
+}
+
+/** The fog mode as the shaders see it. Resolved here rather than in each
+ *  backend so WebGL2 and WebGPU cannot drift apart, and so the guards against
+ *  a divide-by-zero live in one place. `params` means `(start, end, unused)`
+ *  for linear, `(start, density, attenuation)` for the exponentials and
+ *  `(height, range, attenuation)` for layered. */
+export function fogUniform(fog: Fog3D): { mode: number; params: [number, number, number] } {
+  const attenuation = Math.max(fog.attenuation ?? 5, 1e-3);
+  switch (fog.mode ?? "exponential") {
+    case "linear": {
+      const start = fog.start ?? 0;
+      // An end at or before the start is a zero-width ramp; nudge it so the
+      // shader's division stays finite and the fog reads as a hard cut.
+      return { mode: 0, params: [start, Math.max(fog.end ?? 300, start + 1e-3), 0] };
+    }
+    case "exponentialSquared":
+      return { mode: 2, params: [fog.start ?? 0, fog.density ?? 0.3, attenuation] };
+    case "layered":
+      return { mode: 3, params: [fog.height ?? 0, Math.max(fog.range ?? 1.2, 1e-3), attenuation] };
+    default:
+      return { mode: 1, params: [fog.start ?? 0, fog.density ?? 0.3, attenuation] };
+  }
 }
 
 /** A node with sane defaults: identity transform, no mesh. Spread over it to

@@ -277,7 +277,7 @@ the GPU. Both can proceed independently; neither blocks the other.
 | `render3d/webgl2`, `render3d/webgpu`  | Two backends behind one `Renderer3D`. Blinn-Phong, up to four directional lights, depth buffer, sorted transparency.                   |
 | `ui/widgets/viewport3d`               | A 3D view as a UI widget.                                                                                                              |
 | `render3d/ui-surface`                 | The UI as a texture on a quad in the scene.                                                                                            |
-| `render3d/layer`                      | The scene canvas stacked UNDER the app's, for a full-screen world with a 2D HUD — Stage 0's two-canvas sketch, built.                   |
+| `render3d/layer`                      | The scene canvas stacked UNDER the app's, for a full-screen world with a 2D HUD — Stage 0's two-canvas sketch, built.                  |
 
 ### Why two backends rather than "WebGPU when ready"
 

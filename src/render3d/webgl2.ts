@@ -29,7 +29,7 @@
 
 import { Mat4 } from "@src/math/mat4.js";
 import { cameraPosition, viewProjection } from "./camera.js";
-import { isVisible } from "./scene.js";
+import { fogUniform, isVisible } from "./scene.js";
 import { triangleCount, vertexCount } from "./mesh.js";
 import type { Camera3D } from "./camera.js";
 import type { MeshData } from "./mesh.js";
@@ -105,14 +105,91 @@ uniform vec3 uCameraPos;
 uniform float uShininess;
 uniform float uSpecular;
 uniform bool uUnlit;
-uniform bool uHasTexture;
+uniform int uTextureBlend; // 0 none, 1 multiply, 2 over
+uniform bool uUvPlanar;
 uniform sampler2D uTexture;
+uniform bool uHasNormalMap;
+uniform sampler2D uNormalMap;
+uniform float uNormalScale;
+uniform vec3 uRimAlpha; // bias, scale, power — see Material.rimAlpha
+uniform vec4 uUvTransform;
+uniform int uFogMode; // -1 off, 0 linear, 1 exp, 2 exp squared, 3 layered
+uniform vec3 uFogColor;
+uniform vec3 uFogParams; // see fogUniform() in scene.ts
 
 out vec4 fragColor;
 
+/** Visibility in 0..1 — 1 is clear air. A ground-hugging slab needs the fog
+ *  density integrated along the view ray, otherwise the layer slides with the
+ *  camera instead of staying put in the world. */
+float fogVisibility(vec3 world, vec3 eye) {
+  if (uFogMode == 0) {
+    return clamp((uFogParams.y - distance(eye, world)) / (uFogParams.y - uFogParams.x), 0.0, 1.0);
+  }
+  if (uFogMode == 1 || uFogMode == 2) {
+    float d = max(distance(eye, world) - uFogParams.x, 0.0) / uFogParams.z * 4.0 * uFogParams.y;
+    return exp(uFogMode == 1 ? -d : -d * d);
+  }
+  float top = uFogParams.x;
+  float range = uFogParams.y;
+  float deltaD = distance(world.xz, eye.xz) / uFogParams.z * 2.0;
+  float deltaY;
+  float integral;
+  if (eye.y > top) {
+    deltaY = world.y < top ? (top - world.y) / range * 2.0 : 0.0;
+    integral = deltaY * deltaY * 0.5;
+  } else if (world.y < top) {
+    float a = (top - eye.y) / range * 2.0;
+    float b = (top - world.y) / range * 2.0;
+    deltaY = abs(a - b);
+    integral = abs(a * a * 0.5 - b * b * 0.5);
+  } else {
+    deltaY = abs(top - eye.y) / range * 2.0;
+    integral = abs(deltaY * deltaY * 0.5);
+  }
+  if (deltaY == 0.0) return 1.0;
+  float ratio = deltaD / deltaY;
+  return exp(-sqrt(1.0 + ratio * ratio) * integral);
+}
+
+/** Tangent frame rebuilt from screen-space derivatives, so a normal map works
+ *  on any mesh with uvs and no TANGENT attribute has to exist or agree. */
+vec3 applyNormalMap(vec3 n, vec2 uv) {
+  vec3 dPosX = dFdx(vWorldPos);
+  vec3 dPosY = dFdy(vWorldPos);
+  vec2 dUvX = dFdx(uv);
+  vec2 dUvY = dFdy(uv);
+  float det = dUvX.x * dUvY.y - dUvY.x * dUvX.y;
+  // A degenerate uv patch has no basis to build from; leave the face alone
+  // rather than tilting it by a divide-by-zero.
+  if (abs(det) < 1e-12) return n;
+  vec3 tangent = normalize((dPosX * dUvY.y - dPosY * dUvX.y) / det);
+  vec3 bitangent = normalize(cross(n, tangent));
+  tangent = cross(bitangent, n);
+  vec3 sampled = texture(uNormalMap, uv).xyz * 2.0 - 1.0;
+  sampled.xy *= uNormalScale;
+  return normalize(mat3(tangent, bitangent, n) * sampled);
+}
+
 void main() {
+  vec2 source = uUvPlanar ? vWorldPos.xz : vUv;
+  vec2 uv = source * uUvTransform.xy + uUvTransform.zw;
   vec4 base = uBaseColor * vColor;
-  if (uHasTexture) base *= texture(uTexture, vUv);
+  if (uTextureBlend > 0) {
+    vec4 texel = texture(uTexture, uv);
+    // Blend 2 keeps the base colour's own alpha: the texture decides colour
+    // where it is opaque, not whether the surface is there at all.
+    base = uTextureBlend == 2 ? vec4(mix(base.rgb, texel.rgb, texel.a), base.a) : base * texel;
+  }
+  // Ahead of the cutoff and of the unlit branch, because the ramp is what
+  // decides the final alpha: a bias of zero means the face-on fragments are
+  // the ones with nothing left to draw, and both paths below want that answer.
+  if (uRimAlpha.y != 0.0) {
+    vec3 facing = normalize(vNormal);
+    if (!gl_FrontFacing) facing = -facing;
+    float grazing = max(1.0 - dot(normalize(uCameraPos - vWorldPos), facing), 0.0);
+    base.a *= clamp(uRimAlpha.x + uRimAlpha.y * pow(grazing, uRimAlpha.z), 0.0, 1.0);
+  }
   if (base.a < 0.002) discard;
 
   if (uUnlit) {
@@ -126,6 +203,7 @@ void main() {
   // material is lit rather than black on its reverse.
   vec3 n = normalize(vNormal);
   if (!gl_FrontFacing) n = -n;
+  if (uHasNormalMap) n = applyNormalMap(n, uv);
   vec3 view = normalize(uCameraPos - vWorldPos);
 
   vec3 lit = uAmbient;
@@ -140,7 +218,11 @@ void main() {
       spec += uLightColor[i] * uSpecular * pow(max(dot(n, halfway), 0.0), uShininess);
     }
   }
-  fragColor = vec4((base.rgb * lit + spec) * base.a, base.a);
+  vec3 shaded = base.rgb * lit + spec;
+  if (uFogMode >= 0) {
+    shaded = mix(uFogColor, shaded, clamp(fogVisibility(vWorldPos, uCameraPos), 0.0, 1.0));
+  }
+  fragColor = vec4(shaded * base.a, base.a);
 }`;
 
 interface GpuMesh {
@@ -164,8 +246,17 @@ interface Uniforms {
   shininess: WebGLUniformLocation | null;
   specular: WebGLUniformLocation | null;
   unlit: WebGLUniformLocation | null;
-  hasTexture: WebGLUniformLocation | null;
+  textureBlend: WebGLUniformLocation | null;
+  uvPlanar: WebGLUniformLocation | null;
   texture: WebGLUniformLocation | null;
+  hasNormalMap: WebGLUniformLocation | null;
+  normalMap: WebGLUniformLocation | null;
+  normalScale: WebGLUniformLocation | null;
+  rimAlpha: WebGLUniformLocation | null;
+  uvTransform: WebGLUniformLocation | null;
+  fogMode: WebGLUniformLocation | null;
+  fogColor: WebGLUniformLocation | null;
+  fogParams: WebGLUniformLocation | null;
   hasSkin: WebGLUniformLocation | null;
   jointMatrices: WebGLUniformLocation | null;
 }
@@ -262,14 +353,26 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     shininess: gl.getUniformLocation(program, "uShininess"),
     specular: gl.getUniformLocation(program, "uSpecular"),
     unlit: gl.getUniformLocation(program, "uUnlit"),
-    hasTexture: gl.getUniformLocation(program, "uHasTexture"),
+    textureBlend: gl.getUniformLocation(program, "uTextureBlend"),
+    uvPlanar: gl.getUniformLocation(program, "uUvPlanar"),
     texture: gl.getUniformLocation(program, "uTexture"),
+    hasNormalMap: gl.getUniformLocation(program, "uHasNormalMap"),
+    normalMap: gl.getUniformLocation(program, "uNormalMap"),
+    normalScale: gl.getUniformLocation(program, "uNormalScale"),
+    rimAlpha: gl.getUniformLocation(program, "uRimAlpha"),
+    uvTransform: gl.getUniformLocation(program, "uUvTransform"),
+    fogMode: gl.getUniformLocation(program, "uFogMode"),
+    fogColor: gl.getUniformLocation(program, "uFogColor"),
+    fogParams: gl.getUniformLocation(program, "uFogParams"),
     hasSkin: gl.getUniformLocation(program, "uHasSkin"),
     jointMatrices: gl.getUniformLocation(program, "uJointMatrices"),
   };
 
   const meshes = new WeakMap<object, GpuMesh>();
-  const textures = new WeakMap<object, { texture: WebGLTexture; version: number }>();
+  const textures = new WeakMap<
+    object,
+    { texture: WebGLTexture; version: number; repeat: boolean }
+  >();
 
   let width = opts.width ?? 300;
   let height = opts.height ?? 150;
@@ -291,6 +394,8 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
   // Reused across frames so sorting a scene allocates nothing per frame.
   const opaque: number[] = [];
   const blended: { index: number; depth: number }[] = [];
+  /** `depthTest: false` nodes, drawn last against a depth test that passes. */
+  const overlay: number[] = [];
 
   function applyCanvasSize(retainBackingStore = false): void {
     const bw = Math.max(1, Math.round(width * dpr));
@@ -360,9 +465,10 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     source: TexImageSource,
     pixelated: boolean,
     version: number,
+    repeat: boolean,
   ): WebGLTexture {
     const cached = textures.get(source as object);
-    if (cached && cached.version === version) return cached.texture;
+    if (cached && cached.version === version && cached.repeat === repeat) return cached.texture;
     // Re-uploading into the SAME texture object rather than making a new one:
     // a live surface would otherwise leak one texture per frame.
     const tex = cached?.texture ?? gl!.createTexture();
@@ -376,11 +482,13 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     const filter = pixelated ? gl!.NEAREST : gl!.LINEAR;
     gl!.texParameteri(gl!.TEXTURE_2D, gl!.TEXTURE_MIN_FILTER, filter);
     gl!.texParameteri(gl!.TEXTURE_2D, gl!.TEXTURE_MAG_FILTER, filter);
-    // CLAMP, not REPEAT: a non-power-of-two texture is legal in WebGL2 but
-    // wrapping one bleeds the opposite edge into a uv that lands exactly on 1.
-    gl!.texParameteri(gl!.TEXTURE_2D, gl!.TEXTURE_WRAP_S, gl!.CLAMP_TO_EDGE);
-    gl!.texParameteri(gl!.TEXTURE_2D, gl!.TEXTURE_WRAP_T, gl!.CLAMP_TO_EDGE);
-    textures.set(source as object, { texture: tex, version });
+    // CLAMP by default, not REPEAT: a non-power-of-two texture is legal in
+    // WebGL2 but wrapping one bleeds the opposite edge into a uv that lands
+    // exactly on 1. A material that tiles asks for REPEAT explicitly.
+    const wrap = repeat ? gl!.REPEAT : gl!.CLAMP_TO_EDGE;
+    gl!.texParameteri(gl!.TEXTURE_2D, gl!.TEXTURE_WRAP_S, wrap);
+    gl!.texParameteri(gl!.TEXTURE_2D, gl!.TEXTURE_WRAP_T, wrap);
+    textures.set(source as object, { texture: tex, version, repeat });
     return tex;
   }
 
@@ -407,17 +515,45 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     gl!.uniform1f(u.specular, material.specular ?? 0.25);
     gl!.uniform1i(u.unlit, material.unlit ? 1 : 0);
 
+    const pixelated = material.pixelated ?? true;
+    const repeat = material.repeat ?? false;
+    const uvScale = material.uvScale ?? UNIT_UV;
+    const uvOffset = material.uvOffset ?? ZERO_UV;
+    gl!.uniform4f(u.uvTransform, uvScale[0], uvScale[1], uvOffset[0], uvOffset[1]);
+    gl!.uniform1i(u.uvPlanar, material.uvProjection === "planarXZ" ? 1 : 0);
+
     if (material.texture) {
       gl!.activeTexture(gl!.TEXTURE0);
       gl!.bindTexture(
         gl!.TEXTURE_2D,
-        uploadTexture(material.texture, material.pixelated ?? true, material.textureVersion ?? 0),
+        uploadTexture(material.texture, pixelated, material.textureVersion ?? 0, repeat),
       );
       gl!.uniform1i(u.texture, 0);
-      gl!.uniform1i(u.hasTexture, 1);
+      gl!.uniform1i(u.textureBlend, material.textureBlend === "over" ? 2 : 1);
     } else {
-      gl!.uniform1i(u.hasTexture, 0);
+      gl!.uniform1i(u.textureBlend, 0);
     }
+
+    if (material.normalMap) {
+      gl!.activeTexture(gl!.TEXTURE1);
+      gl!.bindTexture(
+        gl!.TEXTURE_2D,
+        // A normal map is a vector field, so it is always filtered smoothly —
+        // nearest-sampling one turns a smooth surface into faceted steps.
+        uploadTexture(material.normalMap, false, material.normalMapVersion ?? 0, repeat),
+      );
+      gl!.uniform1i(u.normalMap, 1);
+      gl!.uniform1i(u.hasNormalMap, 1);
+      gl!.uniform1f(u.normalScale, material.normalScale ?? 1);
+    } else {
+      gl!.uniform1i(u.hasNormalMap, 0);
+    }
+
+    // `[1, 0, 1]` is the identity ramp: bias 1 with no grazing term leaves the
+    // alpha exactly as authored, and the shader's own `scale != 0` test skips
+    // the pow() entirely.
+    const rim = material.rimAlpha;
+    gl!.uniform3f(u.rimAlpha, rim?.[0] ?? 1, rim?.[1] ?? 0, rim?.[2] ?? 1);
 
     if (material.doubleSided) gl!.disable(gl!.CULL_FACE);
     else gl!.enable(gl!.CULL_FACE);
@@ -531,6 +667,16 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
       gl!.uniform3fv(u.lightColor, lightColors);
       gl!.uniform1i(u.lightCount, lights.length);
 
+      const fog = scene.fog;
+      if (fog) {
+        const { mode, params } = fogUniform(fog);
+        gl!.uniform1i(u.fogMode, mode);
+        gl!.uniform3f(u.fogColor, fog.color[0], fog.color[1], fog.color[2]);
+        gl!.uniform3f(u.fogParams, params[0], params[1], params[2]);
+      } else {
+        gl!.uniform1i(u.fogMode, -1);
+      }
+
       // Split opaque from transparent. Transparency in a depth-buffered
       // renderer has no exact answer; the standard approximation is to draw
       // opaque geometry first with depth writes on, then blended geometry
@@ -539,13 +685,18 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
       // meshes, and that is a known limit rather than a bug to chase.
       opaque.length = 0;
       blended.length = 0;
+      overlay.length = 0;
       scene.nodes.forEach((n, i) => {
         if (!n.mesh || !n.world) return;
         if (!isVisible(scene, i)) {
           stats.culled++;
           return;
         }
-        if (n.material?.transparent) {
+        // `depthTest: false` opts out of the scene's depth entirely, so it
+        // cannot share a pass with geometry that is still sorting against it.
+        if (n.material?.depthTest === false) {
+          overlay.push(i);
+        } else if (n.material?.transparent) {
           const dx = n.world[12] - eye.x;
           const dy = n.world[13] - eye.y;
           const dz = n.world[14] - eye.z;
@@ -570,6 +721,32 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
         }
         gl!.depthMask(true);
         gl!.disable(gl!.BLEND);
+      }
+
+      if (overlay.length > 0) {
+        // Last, and against a depth function that always passes. The mask
+        // stays on for an opaque overlay so two of them still occlude each
+        // other in draw order, which is what makes a stack of them readable.
+        gl!.depthFunc(gl!.ALWAYS);
+        for (const i of overlay) {
+          const material = scene.nodes[i].material ?? {};
+          if (material.transparent) {
+            gl!.enable(gl!.BLEND);
+            gl!.blendFuncSeparate(
+              gl!.ONE,
+              gl!.ONE_MINUS_SRC_ALPHA,
+              gl!.ONE,
+              gl!.ONE_MINUS_SRC_ALPHA,
+            );
+            gl!.depthMask(false);
+          }
+          drawNode(scene.nodes[i], material);
+          if (material.transparent) {
+            gl!.depthMask(true);
+            gl!.disable(gl!.BLEND);
+          }
+        }
+        gl!.depthFunc(gl!.LEQUAL);
       }
       gl!.bindVertexArray(null);
       endGpuQuery(gpuQuery);
@@ -600,6 +777,8 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
 
 const WHITE = [1, 1, 1, 1] as const;
 const WHITE3 = [1, 1, 1] as const;
+const UNIT_UV = [1, 1] as const;
+const ZERO_UV = [0, 0] as const;
 const IDENTITY3 = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
 const IDENTITY_JOINTS = new Float32Array(MAX_JOINTS * 16);
 for (let i = 0; i < MAX_JOINTS; i++) {

@@ -127,3 +127,23 @@ export function easeOut(t: number): number {
 export function easeInOut(t: number): number {
   return t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
 }
+
+/** The overshoot constant every implementation of the back easings uses. It
+ *  is not derived from anything — 1.70158 makes the curve overshoot by about
+ *  10%, and it became the shared value because the original Penner easings
+ *  picked it. */
+const BACK = 1.70158;
+
+/** Wind up below zero, then shoot to the target. Something arriving with
+ *  `backOut` reads as *placed*; the same motion with `easeOut` reads as
+ *  merely stopping. Note the output leaves 0..1 — do not use it where the
+ *  value is clamped, such as a colour channel. */
+export function backOut(t: number): number {
+  const s = t - 1;
+  return s * s * ((BACK + 1) * s + BACK) + 1;
+}
+/** Overshoot past the target, then settle back. The mirror of `backOut`, for
+ *  something leaving rather than arriving. */
+export function backIn(t: number): number {
+  return t * t * ((BACK + 1) * t - BACK);
+}

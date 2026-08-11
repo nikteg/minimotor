@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { Mat4 } from "@src/math/mat4.js";
 import { Quat } from "@src/math/quat.js";
-import { addNode, createScene, findNode, isVisible, node, updateWorldMatrices } from "../scene.js";
+import {
+  addNode,
+  createScene,
+  findNode,
+  fogUniform,
+  isVisible,
+  node,
+  updateWorldMatrices,
+} from "../scene.js";
 import { box } from "../mesh.js";
 import type { Vec3 } from "@src/math/vec3.js";
 
@@ -152,5 +160,41 @@ describe("createScene", () => {
     const clone = JSON.parse(JSON.stringify({ ...scene, nodes: scene.nodes })) as typeof scene;
     expect(clone.nodes[0].position).toEqual({ x: 1, y: 2, z: 3 });
     expect(clone.nodes[0].rotation).toEqual({ x: 0, y: 0, z: 0, w: 1 });
+  });
+});
+
+describe("fogUniform", () => {
+  it("defaults to exponential, so `{ color }` alone is usable fog", () => {
+    expect(fogUniform({ color: [1, 1, 1] })).toEqual({ mode: 1, params: [0, 0.3, 5] });
+  });
+
+  it("numbers the modes the way both shaders switch on them", () => {
+    const color = [1, 1, 1] as const;
+    expect(fogUniform({ color, mode: "linear" }).mode).toBe(0);
+    expect(fogUniform({ color, mode: "exponentialSquared" }).mode).toBe(2);
+    expect(fogUniform({ color, mode: "layered" }).mode).toBe(3);
+  });
+
+  it("packs layered fog as (height, range, attenuation)", () => {
+    const fog = fogUniform({
+      color: [1, 1, 1],
+      mode: "layered",
+      height: 4,
+      range: 20,
+      attenuation: 800,
+    });
+    expect(fog.params).toEqual([4, 20, 800]);
+  });
+
+  it("keeps a linear ramp non-degenerate when end is at or before start", () => {
+    // The shader divides by (end - start); a zero there would fog everything.
+    const fog = fogUniform({ color: [1, 1, 1], mode: "linear", start: 50, end: 10 });
+    expect(fog.params[1]).toBeGreaterThan(fog.params[0]);
+  });
+
+  it("keeps attenuation and range positive, whatever the caller passes", () => {
+    const fog = fogUniform({ color: [1, 1, 1], mode: "layered", range: 0, attenuation: 0 });
+    expect(fog.params[1]).toBeGreaterThan(0);
+    expect(fog.params[2]).toBeGreaterThan(0);
   });
 });

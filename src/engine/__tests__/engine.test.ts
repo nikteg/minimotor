@@ -365,6 +365,69 @@ describe("input", () => {
     expect(releasedFrames).not.toContain(true);
   });
 
+  it("keeps the right button off the primary press entirely", () => {
+    // A right-drag is its own gesture. If it minted a primary press, every UI
+    // button would fire on right-click and every drag handler would start.
+    const { game, canvas } = build("secondary-button");
+    game.Loop.run({ update: vi.fn(), draw: vi.fn() });
+    tick(16);
+
+    canvas.dispatchEvent(new MouseEvent("pointerdown", { clientX: 5, clientY: 5, button: 2 }));
+    expect(game.Pointer.down).toBe(false);
+    expect(game.Pointer.secondary.down).toBe(true);
+    tick(34);
+    expect(game.Pointer.secondary.down).toBe(true);
+
+    window.dispatchEvent(new MouseEvent("pointerup", { clientX: 5, clientY: 5, button: 2 }));
+    expect(game.Pointer.secondary.down).toBe(false);
+    expect(game.Pointer.released).toBe(false);
+  });
+
+  it("gives the right button its own one-step press and release edges", () => {
+    const { game, canvas } = build("secondary-edges");
+    const presses: boolean[] = [];
+    const releases: boolean[] = [];
+    game.Loop.run({
+      update: () => {
+        presses.push(game.Pointer.secondary.pressed);
+        releases.push(game.Pointer.secondary.released);
+      },
+      draw: vi.fn(),
+    });
+    tick(16);
+
+    canvas.dispatchEvent(new MouseEvent("pointerdown", { clientX: 5, clientY: 5, button: 2 }));
+    tick(34);
+    expect(presses.filter(Boolean)).toHaveLength(1);
+
+    // Held across frames: the edge does not fire again.
+    tick(52);
+    expect(presses.filter(Boolean)).toHaveLength(1);
+    expect(game.Pointer.secondary.down).toBe(true);
+
+    window.dispatchEvent(new MouseEvent("pointerup", { clientX: 5, clientY: 5, button: 2 }));
+    tick(70);
+    expect(releases.filter(Boolean)).toHaveLength(1);
+    tick(88);
+    expect(releases.filter(Boolean)).toHaveLength(1);
+  });
+
+  it("drops the right button on a canceled gesture and swallows the canvas menu", () => {
+    const { game, canvas } = build("secondary-cancel");
+    game.Loop.run({ update: vi.fn(), draw: vi.fn() });
+    tick(16);
+    canvas.dispatchEvent(new MouseEvent("pointerdown", { clientX: 5, clientY: 5, button: 2 }));
+    expect(game.Pointer.secondary.down).toBe(true);
+    window.dispatchEvent(new Event("pointercancel"));
+    expect(game.Pointer.secondary.down).toBe(false);
+
+    // The native menu opening on press would cancel the drag before its first
+    // move arrives, so the canvas keeps it to itself.
+    const menu = new Event("contextmenu", { cancelable: true });
+    canvas.dispatchEvent(menu);
+    expect(menu.defaultPrevented).toBe(true);
+  });
+
   it("normalizes window mouse movement through a CSS-scaled canvas rect", () => {
     const { game } = build();
     vi.spyOn(game.canvas, "getBoundingClientRect").mockReturnValue({

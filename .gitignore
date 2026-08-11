@@ -22,3 +22,6 @@ test-results/
 !samples/**/*.js
 .claude/settings.local.json
 .minimotor/
+
+# Agent worktrees; each is its own checkout of this repo.
+.claude/worktrees/

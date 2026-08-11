@@ -197,9 +197,7 @@ describe("in-frame container measurement", () => {
     const build = () =>
       row({ x: 0, y: 0, w: 600, id: "board" }, () => {
         col({ id: "cards", stretchCross: true }, () => {
-          panel({ id: "short", title: "SHORT" }, () =>
-            button({ id: "shortButton", label: "S" }),
-          );
+          panel({ id: "short", title: "SHORT" }, () => button({ id: "shortButton", label: "S" }));
           panel({ id: "wide", title: "WIDE" }, () =>
             button({ id: "wideButton", label: "A much wider button" }),
           );
@@ -209,12 +207,8 @@ describe("in-frame container measurement", () => {
     frame(build);
     expect(first.shortButton.w).toBeGreaterThan(0);
     expect(first.wideButton.w).toBeGreaterThan(first.shortButton.w);
-    expect(containerRectOf("col", "cards")!.w).toBe(
-      containerRectOf("panel", "wide")!.w,
-    );
-    expect(containerRectOf("panel", "short")!.w).toBe(
-      containerRectOf("panel", "wide")!.w,
-    );
+    expect(containerRectOf("col", "cards")!.w).toBe(containerRectOf("panel", "wide")!.w);
+    expect(containerRectOf("panel", "short")!.w).toBe(containerRectOf("panel", "wide")!.w);
   });
 
   it("is unaffected by a same-shaped sibling drawn before it (no key collision)", () => {

@@ -89,6 +89,8 @@ export function createUI(app: App, { gamepads }: Partial<Pick<InputApi, "gamepad
     minimap: bind(UiModule.minimap),
     modal: bind(UiModule.modal),
     panel: bind(UiModule.panel),
+    pointerOverUi: bind(UiModule.pointerOverUi),
+    pressOrigin: bind(UiModule.pressOrigin),
     popover: bind(UiModule.popover),
     row: bind(UiModule.row),
     scaled: bind(UiModule.scaled),

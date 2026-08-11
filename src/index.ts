@@ -132,6 +132,7 @@ export type {
   // re-export infers a type that can't be written down outside node_modules.
   Keys,
   Pointer,
+  SecondaryButton,
   LoopApi,
   FrameTimings,
   AppCallbacks,

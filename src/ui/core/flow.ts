@@ -181,7 +181,12 @@ export interface Flow {
    *  the very offset it is used to compute — the container creeps a fraction
    *  taller every frame and never settles. Sizing from what the children
    *  ASKED for breaks that loop: alignment moves things inside the box without
-   *  changing how big the box is. */
+   *  changing how big the box is.
+   *
+   *  A WRAPPING flow is the exception, and has to be: the tallest child in a
+   *  three-line run says nothing about how tall the run is. `alignCross` is
+   *  disabled while wrapping, so there is no offset to feed back and the
+   *  extent can be read directly. */
   readonly crossExtent: number;
   /** Where the cross axis starts — the flow's `y` for a row, `x` for a col. */
   readonly crossStart: number;
@@ -347,7 +352,8 @@ export function flow(opts: FlowOptions): Flow {
       return ext ?? { x: opts.x, y: opts.y, w: 0, h: 0 };
     },
     get crossExtent() {
-      return crossMax;
+      if (!wrapping || !ext) return crossMax;
+      return dir === "row" ? ext.y + ext.h - opts.y : ext.x + ext.w - opts.x;
     },
     crossStart: dir === "row" ? opts.y : opts.x,
   };

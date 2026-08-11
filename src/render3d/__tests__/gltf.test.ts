@@ -1,0 +1,291 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { loadGltf } from "../gltf.js";
+
+/** The smallest document that still produces one drawable primitive. */
+function documentWith(extra: Record<string, unknown>): Record<string, unknown> {
+  return {
+    asset: { version: "2.0" },
+    scene: 0,
+    scenes: [{ nodes: [0] }],
+    nodes: [{ mesh: 0 }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0, TEXCOORD_0: 1 }, material: 0 }] }],
+    accessors: [
+      { bufferView: 0, componentType: 5126, count: 3, type: "VEC3" },
+      { bufferView: 1, componentType: 5126, count: 3, type: "VEC2" },
+    ],
+    bufferViews: [
+      { buffer: 0, byteOffset: 0, byteLength: 36 },
+      { buffer: 0, byteOffset: 36, byteLength: 24 },
+    ],
+    buffers: [{ byteLength: 60, uri: "geometry.bin" }],
+    ...extra,
+  };
+}
+
+/** Two drawable nodes, one per material, so a pair of cases can be compared in
+ * one load. */
+function twoMaterials(
+  first: Record<string, unknown>,
+  second: Record<string, unknown>,
+): Record<string, unknown> {
+  return documentWith({
+    scenes: [{ nodes: [0, 1] }],
+    nodes: [{ mesh: 0 }, { mesh: 1 }],
+    meshes: [
+      { primitives: [{ attributes: { POSITION: 0, TEXCOORD_0: 1 }, material: 0 }] },
+      { primitives: [{ attributes: { POSITION: 0, TEXCOORD_0: 1 }, material: 1 }] },
+    ],
+    materials: [first, second],
+  });
+}
+
+const GEOMETRY = new ArrayBuffer(60);
+
+/** Serve the document, its buffer and any image by path. */
+function serve(document: Record<string, unknown>, images: string[] = []): void {
+  vi.stubGlobal("fetch", async (input: string) => {
+    const url = String(input);
+    if (url.endsWith(".gltf")) return new Response(JSON.stringify(document));
+    if (url.endsWith(".bin")) return new Response(GEOMETRY);
+    if (images.some((name) => url.endsWith(name)))
+      return new Response(new Blob([new Uint8Array(4)]));
+    return new Response(null, { status: 404 });
+  });
+}
+
+/** Stand in for the browser decoder; the renderer only ever hands the result
+ * to the GPU, so a tagged object is enough to assert wiring. */
+function stubDecoder(): { calls: number } {
+  const state = { calls: 0 };
+  vi.stubGlobal("createImageBitmap", async () => {
+    state.calls++;
+    return { width: 2, height: 2, close() {} } as unknown as ImageBitmap;
+  });
+  return state;
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe("loadGltf materials", () => {
+  it("bridges metallic-roughness onto the renderer's Blinn-Phong terms", async () => {
+    serve(
+      documentWith({
+        materials: [
+          {
+            doubleSided: true,
+            pbrMetallicRoughness: {
+              baseColorFactor: [0.2, 0.4, 0.6, 1],
+              roughnessFactor: 0,
+              metallicFactor: 0.5,
+            },
+          },
+        ],
+      }),
+    );
+
+    const { scene } = await loadGltf("assets/level.gltf");
+    const material = scene.nodes.find((n) => n.material?.doubleSided)?.material;
+    expect(material?.color).toEqual([0.2, 0.4, 0.6, 1]);
+    // A mirror-smooth surface takes the tight end of the exponent range, and
+    // metalness becomes the highlight's strength.
+    expect(material?.shininess).toBe(256);
+    expect(material?.specular).toBe(0.5);
+  });
+
+  it("leaves the exponent unset when the document says nothing about roughness", async () => {
+    serve(
+      documentWith({ materials: [{ pbrMetallicRoughness: { baseColorFactor: [1, 1, 1, 1] } }] }),
+    );
+
+    const { scene } = await loadGltf("assets/level.gltf");
+    const material = scene.nodes.find((n) => n.mesh)?.material;
+    expect(material?.shininess).toBeUndefined();
+    expect(material?.specular).toBeUndefined();
+  });
+
+  it("loads base-colour and normal textures and marks them photographic", async () => {
+    const decoder = stubDecoder();
+    serve(
+      documentWith({
+        materials: [
+          {
+            pbrMetallicRoughness: { baseColorTexture: { index: 0 } },
+            normalTexture: { index: 1, scale: 0.5 },
+          },
+        ],
+        textures: [{ source: 0 }, { source: 1 }],
+        images: [{ uri: "detail.png" }, { uri: "normal.png" }],
+      }),
+      ["detail.png", "normal.png"],
+    );
+
+    const { scene } = await loadGltf("assets/level.gltf");
+    const material = scene.nodes.find((n) => n.mesh)?.material;
+    expect(decoder.calls).toBe(2);
+    expect(material?.texture).toBeDefined();
+    expect(material?.normalMap).toBeDefined();
+    expect(material?.normalScale).toBe(0.5);
+    // Nearest-neighbour is the engine's pixel-art default, not a glTF's.
+    expect(material?.pixelated).toBe(false);
+  });
+
+  it("turns a KHR_texture_transform scale into uv tiling and enables repeat", async () => {
+    stubDecoder();
+    serve(
+      documentWith({
+        materials: [
+          {
+            pbrMetallicRoughness: {
+              baseColorTexture: {
+                index: 0,
+                extensions: { KHR_texture_transform: { scale: [8, 4], offset: [0.5, 0] } },
+              },
+            },
+          },
+        ],
+        textures: [{ source: 0 }],
+        images: [{ uri: "detail.png" }],
+      }),
+      ["detail.png"],
+    );
+
+    const { scene } = await loadGltf("assets/level.gltf");
+    const material = scene.nodes.find((n) => n.mesh)?.material;
+    expect(material?.uvScale).toEqual([8, 4]);
+    expect(material?.uvOffset).toEqual([0.5, 0]);
+    expect(material?.repeat).toBe(true);
+  });
+
+  it("reads the two knobs glTF has no vocabulary for out of material extras", async () => {
+    stubDecoder();
+    serve(
+      documentWith({
+        materials: [
+          {
+            extras: { uvProjection: "planarXZ", textureBlend: "over" },
+            pbrMetallicRoughness: { baseColorTexture: { index: 0 } },
+          },
+        ],
+        textures: [{ source: 0 }],
+        images: [{ uri: "detail.png" }],
+      }),
+      ["detail.png"],
+    );
+
+    const { scene } = await loadGltf("assets/level.gltf");
+    const material = scene.nodes.find((n) => n.mesh)?.material;
+    expect(material?.uvProjection).toBe("planarXZ");
+    expect(material?.textureBlend).toBe("over");
+  });
+
+  it("ignores extras it does not recognise rather than failing the load", async () => {
+    stubDecoder();
+    serve(
+      documentWith({
+        materials: [
+          {
+            extras: { uvProjection: "triplanar", textureBlend: "screen" },
+            pbrMetallicRoughness: { baseColorTexture: { index: 0 } },
+          },
+        ],
+        textures: [{ source: 0 }],
+        images: [{ uri: "detail.png" }],
+      }),
+      ["detail.png"],
+    );
+
+    const { scene } = await loadGltf("assets/level.gltf");
+    const material = scene.nodes.find((n) => n.mesh)?.material;
+    expect(material?.uvProjection).toBeUndefined();
+    expect(material?.textureBlend).toBeUndefined();
+  });
+
+  it("blends a BLEND material and leaves a MASK one opaque", async () => {
+    serve(
+      twoMaterials(
+        { alphaMode: "BLEND", pbrMetallicRoughness: { baseColorFactor: [0, 0, 0, 0.35] } },
+        { alphaMode: "MASK", pbrMetallicRoughness: { baseColorFactor: [1, 1, 1, 1] } },
+      ),
+    );
+
+    const [blended, masked] = (await loadGltf("assets/level.gltf")).scene.nodes.filter(
+      (n) => n.mesh,
+    );
+    expect(blended?.material?.transparent).toBe(true);
+    expect(masked?.material?.transparent).toBeUndefined();
+  });
+
+  it("reads a rim-alpha ramp out of extras and rejects a malformed one", async () => {
+    serve(
+      twoMaterials(
+        { alphaMode: "BLEND", extras: { rimAlpha: [0.27, 1, 0.93] } },
+        { alphaMode: "BLEND", extras: { rimAlpha: [0.27, 1] } },
+      ),
+    );
+
+    const [ramped, malformed] = (await loadGltf("assets/level.gltf")).scene.nodes.filter(
+      (n) => n.mesh,
+    );
+    expect(ramped?.material?.rimAlpha).toEqual([0.27, 1, 0.93]);
+    expect(malformed?.material?.rimAlpha).toBeUndefined();
+  });
+
+  it("keeps the scene when an image cannot be fetched", async () => {
+    stubDecoder();
+    serve(
+      documentWith({
+        materials: [{ pbrMetallicRoughness: { baseColorTexture: { index: 0 } } }],
+        textures: [{ source: 0 }],
+        images: [{ uri: "missing.png" }],
+      }),
+    );
+
+    const { scene } = await loadGltf("assets/level.gltf");
+    const material = scene.nodes.find((n) => n.mesh)?.material;
+    expect(material?.texture).toBeUndefined();
+    expect(scene.nodes.some((n) => n.mesh)).toBe(true);
+  });
+
+  it("decodes an image embedded in a buffer view", async () => {
+    const decoder = stubDecoder();
+    serve(
+      documentWith({
+        materials: [{ pbrMetallicRoughness: { baseColorTexture: { index: 0 } } }],
+        textures: [{ source: 0 }],
+        images: [{ bufferView: 2, mimeType: "image/png" }],
+        bufferViews: [
+          { buffer: 0, byteOffset: 0, byteLength: 36 },
+          { buffer: 0, byteOffset: 36, byteLength: 24 },
+          { buffer: 0, byteOffset: 0, byteLength: 8 },
+        ],
+      }),
+    );
+
+    const { scene } = await loadGltf("assets/level.gltf");
+    expect(decoder.calls).toBe(1);
+    expect(scene.nodes.find((n) => n.mesh)?.material?.texture).toBeDefined();
+  });
+});
+
+describe("loadGltf node extras", () => {
+  it("hands node extras back keyed by the scene node they landed on", async () => {
+    serve(
+      documentWith({
+        scenes: [{ nodes: [0, 1] }],
+        nodes: [
+          { name: "static" },
+          { name: "platform", mesh: 0, extras: { mover: 3, tags: ["solid"] } },
+        ],
+      }),
+    );
+
+    const { scene, extras } = await loadGltf("assets/level.gltf");
+    const platform = scene.nodes.findIndex((node) => node.name === "platform");
+    expect(extras.get(platform)).toEqual({ mover: 3, tags: ["solid"] });
+    // The node's own primitives are children of it, so moving the pivot moves
+    // them; only the pivot carries the annotation.
+    expect([...extras.keys()]).toEqual([platform]);
+  });
+});

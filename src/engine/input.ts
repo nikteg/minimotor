@@ -61,4 +61,23 @@ export interface Pointer {
   /** Wheel scroll this frame in logical px (positive = down). Accumulated
    *  across the frame's wheel events, cleared at frame end. */
   readonly wheel: number;
+  /** The SECONDARY (right) mouse button, tracked apart from `down`/`pressed`
+   *  so a right-drag can mean something other than a left one — orbiting a
+   *  camera, a context action — without the UI seeing a click.
+   *
+   *  `down`/`pressed`/`released` above are the primary button and every touch;
+   *  the right button sets only these. Nothing on a touchscreen produces them.
+   *  The canvas swallows its own `contextmenu`, so a right-drag that starts on
+   *  it is the app's to use. */
+  readonly secondary: SecondaryButton;
+}
+
+/** The right mouse button's own edges, mirroring `Pointer`'s primary ones. */
+export interface SecondaryButton {
+  /** True while the right button is held. */
+  readonly down: boolean;
+  /** True for one update step when the right press begins. */
+  readonly pressed: boolean;
+  /** True for one update step when the right press ends. */
+  readonly released: boolean;
 }

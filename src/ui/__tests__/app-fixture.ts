@@ -8,6 +8,9 @@ const unsubscribe = (): void => {};
  *  run TWO frames and see per-frame state (the wheel claim, the pointer cache)
  *  actually reset in between. */
 const frameHandlers = new WeakMap<App, (() => void)[]>();
+/** Fixed-step handlers, the counterpart of `frameHandlers`. Anything that reads
+ *  a one-step-long input edge — the press origin, gamepad nav — runs here. */
+const stepHandlers = new WeakMap<App, (() => void)[]>();
 
 /** Run one frame boundary for a test app: everything `app.onFrame` collected.
  *  Without this a test is always inside frame one, and any bug about state
@@ -16,9 +19,17 @@ export function endTestFrame(app: App): void {
   for (const h of frameHandlers.get(app) ?? []) h();
 }
 
+/** Run one fixed step for a test app, which is where the kernel samples input
+ *  edges. A test that sets `app.Pointer.pressed` and never calls this is
+ *  describing a press the UI never saw. */
+export function stepTestApp(app: App): void {
+  for (const h of stepHandlers.get(app) ?? []) h();
+}
+
 /** An explicit app boundary for low-level widget tests. */
 export function createTestUiApp(ctx: CanvasRenderingContext2D): App {
   const handlers: (() => void)[] = [];
+  const steps: (() => void)[] = [];
   const canvas = (ctx.canvas ?? {
     width: 0,
     height: 0,
@@ -72,13 +83,17 @@ export function createTestUiApp(ctx: CanvasRenderingContext2D): App {
     },
     resetTransform: noop,
     setCursor: noop,
-    onStep: () => unsubscribe,
+    onStep: (fn: () => void) => {
+      steps.push(fn);
+      return unsubscribe;
+    },
     onFrame: (fn: () => void) => {
       handlers.push(fn);
       return unsubscribe;
     },
   } as unknown as App;
   frameHandlers.set(app, handlers);
+  stepHandlers.set(app, steps);
 
   return registerUiApp(app);
 }

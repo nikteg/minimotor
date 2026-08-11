@@ -35,10 +35,7 @@ test("the UI-scale slider DRAGS — the value follows the pointer, not just the 
   // field's auto-filled header column rather than a hardcoded slot.
   const scaleSlider = (await getTree(page)).find((e) => e.id === "ui-gallery:ui-scale")!;
   const trackY = scaleSlider.screenRect.y + scaleSlider.screenRect.h / 2;
-  await page.mouse.move(
-    scaleSlider.screenRect.x + scaleSlider.screenRect.w * 0.8,
-    trackY,
-  );
+  await page.mouse.move(scaleSlider.screenRect.x + scaleSlider.screenRect.w * 0.8, trackY);
   await page.mouse.down();
   await expect.poll(() => page.evaluate(() => window.__uiGallery!.getState().uiScale)).not.toBe(1); // the press jumped the value
   const pressed = await page.evaluate(() => window.__uiGallery!.getState().uiScale);
@@ -47,10 +44,7 @@ test("the UI-scale slider DRAGS — the value follows the pointer, not just the 
   // one frame (clipped sliders on the board cleared the shared drag state), so
   // the value would stay frozen at the press value.
   for (const fraction of [0.55, 0.25, 0.01]) {
-    await page.mouse.move(
-      scaleSlider.screenRect.x + scaleSlider.screenRect.w * fraction,
-      trackY,
-    );
+    await page.mouse.move(scaleSlider.screenRect.x + scaleSlider.screenRect.w * fraction, trackY);
     await page.waitForTimeout(50);
   }
   const dragged = await page.evaluate(() => window.__uiGallery!.getState().uiScale);

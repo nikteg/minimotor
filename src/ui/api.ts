@@ -58,6 +58,8 @@ export {
   layoutTree,
   measureWidth,
   metrics as textMetrics,
+  pointerOverUi,
+  pressOrigin,
   setBaseSize,
   setCursor,
   setNavPad,

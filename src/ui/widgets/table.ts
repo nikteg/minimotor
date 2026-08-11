@@ -148,8 +148,7 @@ export function table<Row>(opts: TableOptions<Row>): TableResult<Row> {
   // Does the list overflow → is a scrollbar gutter reserved? Match `list`'s own
   // formula so the header columns line up with the row cells (both drop it).
   const listH = rect.h - headerHeight;
-  const content =
-    opts.rows.length * (rowHeight + rowGap) - (opts.rows.length > 0 ? rowGap : 0);
+  const content = opts.rows.length * (rowHeight + rowGap) - (opts.rows.length > 0 ? rowGap : 0);
   const barW = content > listH ? scrollbarWidth + theme.scrollbarGap : 0;
   const contentW = rect.w - barW;
 
