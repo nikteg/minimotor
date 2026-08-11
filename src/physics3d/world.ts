@@ -66,7 +66,30 @@ export type Collider3DShape =
   | { type: "cylinder"; halfHeight: number; radius: number }
   /** An arbitrary triangle mesh. Static geometry only: a trimesh has no
    *  interior, so a dynamic body built from one tunnels and never rests. */
-  | { type: "trimesh"; vertices: Float32Array; indices: Uint32Array }
+  | {
+      type: "trimesh";
+      vertices: Float32Array;
+      indices: Uint32Array;
+      /** Whether to weld the mesh and derive per-edge pseudo-normals so that
+       *  contacts along a shared edge report the surface's normal instead of
+       *  the edge's.
+       *
+       *  A trimesh is a bag of independent triangles: nothing in it says that
+       *  two triangles meeting along an edge are one flat floor. A body sliding
+       *  across that edge can be given a contact normal pointing out of the
+       *  edge rather than out of the floor, and the solver duly launches it —
+       *  a ball rolling over a perfectly flat but triangulated surface pops
+       *  into the air for no visible reason. Rapier fixes this by consulting
+       *  the neighbouring triangles' normals, which it can only do once the
+       *  duplicate vertices are merged and the mesh knows who its neighbours
+       *  are; that is why the flag it exposes bundles the two.
+       *
+       *  On by default, because a floor that bounces is a bug in every game
+       *  that has one. Turn it off for a mesh where the preprocessing is not
+       *  worth it — a wall nothing slides along — or one whose surface really
+       *  is meant to be faceted. */
+      fixInternalEdges?: boolean;
+    }
   /** The convex hull of a point cloud — the dynamic-body counterpart to
    *  `trimesh`, and much cheaper to collide against. */
   | { type: "convexHull"; points: Float32Array };
@@ -273,7 +296,11 @@ function createColliderDescriptor(shape: Collider3DShape): RAPIER.ColliderDesc {
     case "cylinder":
       return RAPIER.ColliderDesc.cylinder(shape.halfHeight, shape.radius);
     case "trimesh":
-      return RAPIER.ColliderDesc.trimesh(shape.vertices, shape.indices);
+      return RAPIER.ColliderDesc.trimesh(
+        shape.vertices,
+        shape.indices,
+        shape.fixInternalEdges === false ? undefined : RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES,
+      );
     case "convexHull": {
       const descriptor = RAPIER.ColliderDesc.convexHull(shape.points);
       if (!descriptor) throw new Error("convexHull needs at least four non-coplanar points.");
