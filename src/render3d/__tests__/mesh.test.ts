@@ -11,6 +11,7 @@ import {
   torus,
   triangleCount,
   vertexCount,
+  wireframe,
 } from "../mesh.js";
 import type { MeshData } from "../mesh.js";
 
@@ -342,5 +343,46 @@ describe("cylinder", () => {
     const cone = cylinder(0.5, 1, 12, 0, true);
     const open = cylinder(0.5, 1, 12, 0, false);
     expect(triangleCount(cone)).toBe(triangleCount(open) + 12);
+  });
+});
+
+describe("wireframe", () => {
+  it("draws each shared edge once", () => {
+    // Two triangles sharing the diagonal 1-2: five distinct edges, not six.
+    const quad: MeshData = {
+      positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 1]),
+      indices: new Uint16Array([0, 1, 2, 1, 3, 2]),
+    };
+    const wire = wireframe(quad);
+    expect(wire.topology).toBe("lines");
+    expect(wire.indices.length).toBe(5 * 2);
+    const edges = new Set<string>();
+    for (let i = 0; i < wire.indices.length; i += 2) {
+      const [a, b] = [wire.indices[i], wire.indices[i + 1]].sort((x, y) => x - y);
+      edges.add(`${a}-${b}`);
+    }
+    expect([...edges].sort()).toEqual(["0-1", "0-2", "1-2", "1-3", "2-3"]);
+  });
+
+  it("keeps the source positions and drops the surface attributes", () => {
+    const wire = wireframe(computeNormals(plane(2, 2, 1)));
+    expect([...wire.positions]).toEqual([...plane(2, 2, 1).positions]);
+    expect(wire.normals).toBeUndefined();
+    expect(wire.uvs).toBeUndefined();
+  });
+
+  it("has no triangles to report", () => {
+    // Frame stats count triangles; a wireframe contributes none, and its
+    // segment count divided by three would be a lie in the overlay.
+    expect(triangleCount(wireframe(box(1)))).toBe(0);
+  });
+
+  it("survives a merge, and refuses to be merged into a surface", () => {
+    const merged = mergeMeshes([wireframe(box(1)), wireframe(box(1))]);
+    expect(merged.topology).toBe("lines");
+    expect(merged.indices.length).toBe(wireframe(box(1)).indices.length * 2);
+    // The second half's indices point at the second box's own vertices.
+    expect(vertexCount(merged)).toBe(vertexCount(box(1)) * 2);
+    expect(() => mergeMeshes([wireframe(box(1)), box(1)])).toThrow(/line/);
   });
 });

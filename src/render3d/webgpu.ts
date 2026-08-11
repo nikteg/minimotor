@@ -393,8 +393,13 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
   ];
 
   const pipelines = new Map<string, GPURenderPipeline>();
-  function pipelineFor(blend: boolean, doubleSided: boolean, overlay: boolean): GPURenderPipeline {
-    const key = `${blend}:${doubleSided}:${overlay}`;
+  function pipelineFor(
+    blend: boolean,
+    doubleSided: boolean,
+    overlay: boolean,
+    lines: boolean,
+  ): GPURenderPipeline {
+    const key = `${blend}:${doubleSided}:${overlay}:${lines}`;
     const cached = pipelines.get(key);
     if (cached) return cached;
     const pipeline = device.createRenderPipeline({
@@ -418,8 +423,10 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
         ],
       },
       primitive: {
-        topology: "triangle-list",
-        cullMode: doubleSided ? "none" : "back",
+        topology: lines ? "line-list" : "triangle-list",
+        // A segment has no front and no back, and WebGPU rejects a cull mode on
+        // a line topology outright.
+        cullMode: lines || doubleSided ? "none" : "back",
         frontFace: "ccw",
       },
       depthStencil: {
@@ -846,7 +853,12 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
         const material = n.material ?? {};
         const gpu = uploadMesh(n.mesh!);
         pass.setPipeline(
-          pipelineFor(!!material.transparent, !!material.doubleSided, material.depthTest === false),
+          pipelineFor(
+            !!material.transparent,
+            !!material.doubleSided,
+            material.depthTest === false,
+            n.mesh!.topology === "lines",
+          ),
         );
         pass.setBindGroup(0, frameBindGroup!, [slot * DRAW_BYTES]);
         pass.setBindGroup(1, textureGroupFor(material));

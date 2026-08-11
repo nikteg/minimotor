@@ -37,9 +37,24 @@ export interface MeshData {
    *  to one; loaders normalize them so authored files do not have to be
    *  perfect. */
   weights?: Float32Array;
-  /** Triangle indices, three per face, counter-clockwise when seen from the
-   *  front. */
+  /** Indices into the vertex arrays. Three per face for `"triangles"`, two per
+   *  segment for `"lines"` — see `topology`. Triangles are counter-clockwise
+   *  when seen from the front. */
   indices: Uint16Array | Uint32Array;
+  /** What the indices describe. `"triangles"` (the default) is surfaces;
+   *  `"lines"` is a list of independent segments, two indices each.
+   *
+   *  Lines are for geometry that is a READOUT rather than a surface — a
+   *  collider outline, a path, a grid, an axis gizmo, a normal. Nothing is
+   *  filled, so nothing occludes what you are trying to see through it, which
+   *  is the whole reason to reach for them. Pair them with `unlit` on the
+   *  material: a segment has no facing and lighting it is meaningless.
+   *
+   *  Both backends draw a segment one pixel wide. That is a hardware floor, not
+   *  a policy — WebGPU has no line width at all and WebGL2 drivers almost
+   *  universally clamp `lineWidth` to 1 — so a thick line has to be built out
+   *  of triangles instead. */
+  topology?: "triangles" | "lines";
 }
 
 /** Whether a mesh carries the attributes needed for GPU skinning. */
@@ -52,9 +67,10 @@ export function vertexCount(mesh: MeshData): number {
   return mesh.positions.length / 3;
 }
 
-/** Number of triangles in a mesh. */
+/** Number of triangles in a mesh. A line mesh has none, and reporting its
+ *  segments as thirds of triangles would only corrupt the frame stats. */
 export function triangleCount(mesh: MeshData): number {
-  return mesh.indices.length / 3;
+  return mesh.topology === "lines" ? 0 : mesh.indices.length / 3;
 }
 
 /** Area-weighted smooth vertex normals, computed in place and returned. Shared
@@ -121,6 +137,44 @@ export function flipWinding(mesh: MeshData): MeshData {
   return mesh;
 }
 
+/** The edges of a triangle mesh as a line mesh — every triangle's three sides,
+ *  each drawn once no matter how many faces share it.
+ *
+ *  This is how you SEE geometry that is otherwise invisible or in the way: a
+ *  collider that has no renderable of its own, a level's collision hull over
+ *  the art it is supposed to match, a mesh whose winding you suspect. Nothing
+ *  is filled, so the thing behind it stays readable, which is the entire point.
+ *
+ *  Only positions carry over. Normals and uvs describe a surface and there is
+ *  no surface left, so pair the result with an `unlit` material. Vertices are
+ *  shared with the source mesh's own numbering rather than re-welded, so a mesh
+ *  with split vertices — a hard-edged box, say — draws each seam once per copy
+ *  of it. That is a faithful picture of what the mesh actually is. */
+export function wireframe(mesh: MeshData): MeshData {
+  const idx = mesh.indices;
+  const verts = vertexCount(mesh);
+  const seen = new Set<number>();
+  const out: number[] = [];
+  const edge = (a: number, b: number): void => {
+    // Order-independent key, so a shared edge is not drawn twice — the two
+    // faces meeting along it disagree about the direction.
+    const key = a < b ? a * verts + b : b * verts + a;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(a, b);
+  };
+  for (let i = 0; i + 2 < idx.length; i += 3) {
+    edge(idx[i], idx[i + 1]);
+    edge(idx[i + 1], idx[i + 2]);
+    edge(idx[i + 2], idx[i]);
+  }
+  return {
+    positions: new Float32Array(mesh.positions),
+    indices: verts > 65535 ? new Uint32Array(out) : new Uint16Array(out),
+    topology: "lines",
+  };
+}
+
 /** The axis-aligned bounds of a mesh, as `min`/`max` corners. Used to frame a
  *  camera on an unfamiliar model — see `Camera3D.frame`. */
 export function bounds(mesh: MeshData): { min: Vec3; max: Vec3 } {
@@ -147,15 +201,23 @@ export function bounds(mesh: MeshData): { min: Vec3; max: Vec3 } {
  *  normal, a zero uv, opaque white). */
 export function mergeMeshes(meshes: readonly MeshData[]): MeshData {
   const verts = meshes.reduce((n, m) => n + vertexCount(m), 0);
-  const tris = meshes.reduce((n, m) => n + triangleCount(m), 0);
+  const idxs = meshes.reduce((n, m) => n + m.indices.length, 0);
   const anyNormals = meshes.some((m) => m.normals);
   const anyUvs = meshes.some((m) => m.uvs);
   const anyColors = meshes.some((m) => m.colors);
+  // Topology is a property of the draw call, so one merged mesh can only have
+  // one. Mixing would silently reinterpret one input's indices as the other's
+  // — three-at-a-time segments, or pairs read as triangles — so refuse instead.
+  const lines = meshes.some((m) => m.topology === "lines");
+  if (lines && meshes.some((m) => m.topology !== "lines")) {
+    throw new Error("mergeMeshes: cannot merge line meshes with triangle meshes");
+  }
 
   const out: MeshData = {
     positions: new Float32Array(verts * 3),
-    indices: verts > 65535 ? new Uint32Array(tris * 3) : new Uint16Array(tris * 3),
+    indices: verts > 65535 ? new Uint32Array(idxs) : new Uint16Array(idxs),
   };
+  if (lines) out.topology = "lines";
   if (anyNormals) out.normals = new Float32Array(verts * 3);
   if (anyUvs) out.uvs = new Float32Array(verts * 2);
   if (anyColors) out.colors = new Float32Array(verts * 4);

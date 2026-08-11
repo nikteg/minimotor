@@ -35,6 +35,37 @@ describe("createDebug", () => {
     expect(debug.cycle()).toBe("performance");
   });
 
+  it("keeps the collision stop for a game that draws its own", () => {
+    // A 3D game has no 2D `world` for the overlay to draw, but it still has
+    // collision worth looking at — so it asks for the stop and fills it from a
+    // panel, which is handed the mode.
+    let frame: (() => void) | undefined;
+    const modes: string[] = [];
+    const game = {
+      Keys: { keyDown: () => false },
+      onFrame(handler: () => void) {
+        frame = handler;
+        return () => {};
+      },
+    } as unknown as App;
+    const debug = createDebug(game, {
+      perf: false,
+      collisionMode: true,
+      panels: [(_app, mode) => modes.push(mode)],
+    });
+
+    expect(debug.cycle()).toBe("performance");
+    frame?.();
+    expect(debug.cycle()).toBe("collision");
+    frame?.();
+    expect(debug.cycle()).toBe("off");
+    frame?.();
+    expect(modes, "the panel is told which stop it is drawing for").toEqual([
+      "performance",
+      "collision",
+    ]);
+  });
+
   it("unsubscribes nothing on its own — the app owns the handler's lifetime", () => {
     const handlers: Array<() => void> = [];
     const game = {

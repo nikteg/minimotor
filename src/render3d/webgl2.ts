@@ -559,7 +559,12 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     else gl!.enable(gl!.CULL_FACE);
 
     gl!.bindVertexArray(gpu.vao);
-    gl!.drawElements(gl!.TRIANGLES, gpu.count, gpu.type, 0);
+    gl!.drawElements(
+      node.mesh.topology === "lines" ? gl!.LINES : gl!.TRIANGLES,
+      gpu.count,
+      gpu.type,
+      0,
+    );
     stats.drawCalls++;
     stats.triangles += triangleCount(node.mesh);
   }

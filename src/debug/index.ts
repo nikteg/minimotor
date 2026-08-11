@@ -31,6 +31,15 @@ export interface DebugOptions {
   perf?: PerfOptions | false;
   /** Camera used to draw/query world collision. */
   camera?: CameraLens;
+  /** Keep the `"collision"` mode in the cycle with no 2D `world` to draw from.
+   *
+   *  The mode is a SLOT — the state that means "show me what the physics thinks
+   *  is there" — and `world` + `camera` is only one way to fill it. A 3D game's
+   *  collision lives in a physics world this module knows nothing about, so it
+   *  fills the slot itself from a `panel`, which is handed the current mode. Set
+   *  this and the cycle grows a third stop that the overlay itself draws
+   *  nothing into. */
+  collisionMode?: boolean;
   /** Initial mode. Default `"off"`. */
   initial?: DebugMode;
   /** Panels to draw while the overlay is visible, in order. More can be added
@@ -136,7 +145,7 @@ function debugPlugin(app: App, opts: DebugOptions): DebugPlugin {
   const perf = opts.perf === false ? null : perfPlugin(opts.perf);
   const camera = opts.camera;
   let render3d: Perf3DSource | null = null;
-  const modes = opts.world && camera ? allModes : allModes.slice(0, 2);
+  const modes = (opts.world && camera) || opts.collisionMode ? allModes : allModes.slice(0, 2);
   const requestedInitial = opts.initial ?? "off";
   const initialIndex = modes.indexOf(requestedInitial);
   let index = initialIndex >= 0 ? initialIndex : modes.indexOf("performance");
