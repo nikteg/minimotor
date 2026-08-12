@@ -174,6 +174,38 @@ float fogVisibility(vec3 world, vec3 eye) {
   return exp(-sqrt(1.0 + ratio * ratio) * integral);
 }
 
+/** The mobile GGX distribution the physical model's highlight is shaped by.
+ *  Only reached under tone mapping; the direct model keeps Blinn-Phong. */
+float ggxMobile(float roughness, float noh, vec3 h, vec3 n) {
+  vec3 nxh = cross(n, h);
+  float oneMinusNohSqr = dot(nxh, nxh);
+  float a = roughness * roughness;
+  float k = noh * a;
+  float p = a / max(1e-6, oneMinusNohSqr + k * k);
+  return p * p;
+}
+
+/** Karis' analytic environment BRDF, which scales f0 by how much of the lobe
+ *  actually leaves the surface at this angle and roughness. Without it a rough
+ *  dielectric keeps its full head-on reflectance at every grazing angle. */
+vec3 brdfApprox(vec3 f0, float roughness, float nov) {
+  const vec4 c0 = vec4(-1.0, -0.0275, -0.572, 0.022);
+  const vec4 c1 = vec4(1.0, 0.0425, 1.04, -0.04);
+  vec4 r = roughness * c0 + c1;
+  float a004 = min(r.x * r.x, exp2(-9.28 * nov)) * r.x + r.y;
+  vec2 ab = vec2(-1.04, 1.04) * a004 + r.zw;
+  ab.y *= clamp(50.0 * f0.g, 0.0, 1.0);
+  return max(vec3(0.0), f0 * ab.x + ab.y);
+}
+
+/** Roughness back out of a Blinn exponent, the exact inverse of the mapping
+ *  the glTF loader uses going the other way. A material that came from a
+ *  document round-trips; one whose exponent was set by hand gets the roughness
+ *  that exponent stands for, which is the same ordering either way. */
+float roughnessOf(float shininess) {
+  return clamp(1.0 - (log2(max(shininess, 1e-6)) - 1.0) / 7.0, 0.0, 1.0);
+}
+
 /** Tangent frame rebuilt from screen-space derivatives, so a normal map works
  *  on any mesh with uvs and no TANGENT attribute has to exist or agree. */
 vec3 applyNormalMap(vec3 n, vec2 uv) {
@@ -251,18 +283,24 @@ void main() {
   float diffuseScale = uToneMap ? 0.31830988 : 1.0;
   // Under tone mapping the highlight has to be energy-plausible, because it is
   // now being multiplied by an illuminance rather than by a number near 1.
-  // Three things change and all three are the metal/rough convention:
+  // Everything here is the metal/rough convention and none of it is reached by
+  // the direct model:
   //   - it is TINTED. A white sheen on a saturated surface lifts whichever
   //     channel the surface has least of, which reads as the colour draining
-  //     out. Metals reflect their own colour; dielectrics reflect 4%.
-  //   - the lobe is NORMALIZED by (n + 8) / 8pi, so a low exponent spreads the
-  //     same energy wider instead of adding more of it.
-  //   - it is multiplied by N·L, because a face the light does not reach has
-  //     no highlight to show.
-  // uSpecular is read as metalness here, which is what the glTF loader puts
-  // in it. Everything above is skipped in the direct model.
+  //     out. Metals reflect their own colour; dielectrics reflect 8% of
+  //     uSpecular, which is a real material property and NOT metalness.
+  //   - the lobe is GGX, not Blinn-Phong, so its width and its height both
+  //     come from one roughness rather than from an exponent that only sets
+  //     the width. A Blinn lobe normalized by (n + 8) / 8pi stood in for this
+  //     and was close at high roughness and much too hot in the middle.
+  //   - f0 goes through the environment BRDF, which is what keeps a rough
+  //     surface from reflecting its full head-on strength edge-on.
+  //   - the whole thing is multiplied by N·L, because a face the light does
+  //     not reach has no highlight to show.
+  float roughness = roughnessOf(uShininess);
   vec3 f0 = mix(vec3(0.08 * uSpecular), base.rgb, uMetallic);
-  float lobe = (uShininess + 8.0) * 0.039788736;
+  vec3 reflectance = uToneMap ? brdfApprox(f0, roughness, max(abs(dot(n, view)), 0.0)) : f0;
+  float lobeScale = roughness * 0.25 + 0.25;
   for (int i = 0; i < ${MAX_LIGHTS}; i++) {
     if (i >= uLightCount) break;
     vec3 toLight = -uLightDir[i];
@@ -270,11 +308,10 @@ void main() {
     lit += uLightColor[i] * ndl * diffuseScale;
     if (uShininess > 0.0 && ndl > 0.0) {
       vec3 halfway = normalize(toLight + view);
-      float blinn = pow(max(dot(n, halfway), 0.0), uShininess);
+      float noh = max(dot(n, halfway), 0.0);
       spec += uToneMap
-        ? uLightColor[i] * f0 * (lobe * blinn * ndl)
-        : uLightColor[i] * uSpecular * blinn;
-
+        ? uLightColor[i] * ndl * reflectance * (lobeScale * ggxMobile(roughness, noh, halfway, n))
+        : uLightColor[i] * uSpecular * pow(noh, uShininess);
     }
   }
   // A metal has no diffuse: what it does not reflect, it absorbs.

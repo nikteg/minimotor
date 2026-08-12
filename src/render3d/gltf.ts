@@ -39,8 +39,15 @@ interface GltfMaterial {
     baseColorTexture?: GltfTextureRef;
   };
   /** The format's own escape hatch, used here to carry the material knobs glTF
-   *  cannot express: `uvProjection`, `textureBlend` and `rimAlpha`. */
-  extras?: { uvProjection?: string; textureBlend?: string; rimAlpha?: number[] };
+   *  cannot express: `uvProjection`, `textureBlend`, `rimAlpha` and
+   *  `specular` — the dielectric reflectance, which core metallic-roughness
+   *  simply has no field for. */
+  extras?: {
+    uvProjection?: string;
+    textureBlend?: string;
+    rimAlpha?: number[];
+    specular?: number;
+  };
 }
 
 interface GltfNode {
@@ -304,6 +311,13 @@ function materialFor(
     // lit face bleaches toward white. So it goes in both, and the field that
     // means metalness is the one the physical path reads.
     material.specular = metallic;
+  }
+  // …unless the document says otherwise. Core metallic-roughness has no
+  // dielectric reflectance term at all, so an exporter that knows the real one
+  // has nowhere to put it but `extras`, and standing metalness in for it is a
+  // guess this should defer to. Read after `metallicFactor` so it overrides.
+  if (typeof source?.extras?.specular === "number" && Number.isFinite(source.extras.specular)) {
+    material.specular = Math.max(0, source.extras.specular);
   }
   return material;
 }

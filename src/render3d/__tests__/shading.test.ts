@@ -50,22 +50,40 @@ describe("the two backends' shading maths", () => {
     expect(source).toMatch(/mix\(\s*(?:u|frame\.)[Aa]mbient(?:\.rgb)?,\s*(?:u|frame\.)?[Aa]mbientGround(?:\.rgb)?,\s*max\(1e-6, 0\.5 - n\.y \* 0\.5\)\)/);
   });
 
-  it.each(backends)("%s gives the tone-mapped specular all three fixes", (_name, source) => {
-    // A white, unnormalized, N·L-free highlight is survivable when a light's
-    // intensity is near 1 and ruinous when it is an illuminance: it lays a flat
-    // sheen over the frame and drains the colour out of anything saturated.
-    // Tinted, by METALNESS and not by the highlight-strength term…
+  it.each(backends)("%s gives the tone-mapped specular all four fixes", (_name, source) => {
+    // A white, unnormalized, N·L-free Blinn highlight is survivable when a
+    // light's intensity is near 1 and ruinous when it is an illuminance: it
+    // lays a flat sheen over the frame and drains the colour out of anything
+    // saturated. Tinted, by METALNESS and not by the reflectance term…
     expect(source).toMatch(
       /mix\(vec3f?\(0\.08 \* (?:uSpecular|draw\.params\.w)\), base\.rgb, (?:uMetallic|draw\.rimAlpha\.w)\)/,
     );
-    // …normalized by (n + 8) / 8pi…
-    expect(source).toContain("0.039788736");
+    // …shaped by GGX rather than by an exponent…
+    expect(source).toMatch(/ggxMobile\(roughness, noh, halfway, n\)/);
+    expect(source).toContain("roughness * 0.25 + 0.25");
+    // …run through the environment BRDF, all five of whose constants matter…
+    for (const constant of ["-0.0275", "-0.572", "0.022", "0.0425", "-9.28"]) {
+      expect(source).toContain(constant);
+    }
     // …and gated on N·L, which is the term that was missing entirely.
-    expect(source).toMatch(/lobe \* blinn \* ndl/);
+    expect(source).toMatch(/ndl \* reflectance/);
     // A metal has no diffuse — again keyed on metalness, which is the whole
     // reason the two fields are separate: a hand-authored material that set
     // `specular` to mean "shiny" must not lose its diffuse for saying so.
     expect(source).toMatch(/1\.0 - (?:uMetallic|draw\.rimAlpha\.w)/);
+  });
+
+  it.each(backends)("%s inverts the loader's roughness mapping exactly", (_name, source) => {
+    // `shininess = 2 ** (7 * (1 - roughness) + 1)` in `gltf.ts`, so the way
+    // back is `1 - (log2(s) - 1) / 7`. If the two drift, a document's
+    // roughness stops being the roughness the lobe is built from.
+    expect(source).toMatch(/1\.0 - \(log2\(max\(shininess, 1e-6\)\) - 1\.0\) \/ 7\.0/);
+  });
+
+  it.each(backends)("%s keeps Blinn-Phong on the direct model", (_name, source) => {
+    // The GGX lobe is opt-in with the rest of the physical mode. Every scene
+    // that never asked for tone mapping shades exactly as it did.
+    expect(source).toMatch(/pow\(noh, (?:uShininess|draw\.params\.x)\)/);
   });
 
   it("keeps the 1/pi off the direct model", () => {

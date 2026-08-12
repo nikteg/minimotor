@@ -187,6 +187,34 @@ fn fogVisibility(world : vec3f, eye : vec3f) -> f32 {
   return exp(-sqrt(1.0 + ratio * ratio) * integral);
 }
 
+/** The mobile GGX distribution the physical model's highlight is shaped by.
+ *  Only reached under tone mapping; the direct model keeps Blinn-Phong. */
+fn ggxMobile(roughness : f32, noh : f32, h : vec3f, n : vec3f) -> f32 {
+  let nxh = cross(n, h);
+  let oneMinusNohSqr = dot(nxh, nxh);
+  let a = roughness * roughness;
+  let k = noh * a;
+  let p = a / max(1e-6, oneMinusNohSqr + k * k);
+  return p * p;
+}
+
+/** Karis' analytic environment BRDF. See the WebGL2 backend. */
+fn brdfApprox(f0 : vec3f, roughness : f32, nov : f32) -> vec3f {
+  let c0 = vec4f(-1.0, -0.0275, -0.572, 0.022);
+  let c1 = vec4f(1.0, 0.0425, 1.04, -0.04);
+  let r = roughness * c0 + c1;
+  let a004 = min(r.x * r.x, exp2(-9.28 * nov)) * r.x + r.y;
+  var ab = vec2f(-1.04, 1.04) * a004 + r.zw;
+  ab.y = ab.y * clamp(50.0 * f0.g, 0.0, 1.0);
+  return max(vec3f(0.0), f0 * ab.x + ab.y);
+}
+
+/** Roughness back out of a Blinn exponent, the exact inverse of the mapping
+ *  the glTF loader uses going the other way. */
+fn roughnessOf(shininess : f32) -> f32 {
+  return clamp(1.0 - (log2(max(shininess, 1e-6)) - 1.0) / 7.0, 0.0, 1.0);
+}
+
 fn applyNormalMap(n : vec3f, worldPos : vec3f, uv : vec2f, scale : f32) -> vec3f {
   // Sampled up front, BEFORE the degenerate-uv guard below. textureSample
   // picks its mip from implicit derivatives, which WGSL only permits in
@@ -269,12 +297,13 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
   let diffuseScale = select(1.0, 0.31830988, toneMap);
   // Under tone mapping the highlight has to be energy-plausible, because it is
   // now being multiplied by an illuminance rather than by a number near 1.
-  // Tinted so it stops draining the colour out of saturated surfaces,
-  // normalized by (n + 8) / 8pi so a low exponent spreads the same energy
-  // instead of adding more, and gated on N·L. See the WebGL2 backend, which
-  // has the long version of this comment.
+  // Tinted so it stops draining the colour out of saturated surfaces, shaped
+  // by a GGX lobe rather than a Blinn one, run through the environment BRDF,
+  // and gated on N·L. See the WebGL2 backend, which has the long version.
+  let roughness = roughnessOf(draw.params.x);
   let f0 = mix(vec3f(0.08 * draw.params.w), base.rgb, draw.rimAlpha.w);
-  let lobe = (draw.params.x + 8.0) * 0.039788736;
+  let reflectance = select(f0, brdfApprox(f0, roughness, max(abs(dot(n, view)), 0.0)), toneMap);
+  let lobeScale = roughness * 0.25 + 0.25;
   for (var i = 0; i < ${MAX_LIGHTS}; i = i + 1) {
     if (i >= count) { break; }
     let toLight = -frame.lightDir[i].xyz;
@@ -282,9 +311,10 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
     lit = lit + frame.lightColor[i].rgb * ndl * diffuseScale;
     if (draw.params.x > 0.0 && ndl > 0.0) {
       let halfway = normalize(toLight + view);
-      let blinn = pow(max(dot(n, halfway), 0.0), draw.params.x);
-      let physical = frame.lightColor[i].rgb * f0 * (lobe * blinn * ndl);
-      let direct = frame.lightColor[i].rgb * draw.params.w * blinn;
+      let noh = max(dot(n, halfway), 0.0);
+      let physical = frame.lightColor[i].rgb * ndl * reflectance
+        * (lobeScale * ggxMobile(roughness, noh, halfway, n));
+      let direct = frame.lightColor[i].rgb * draw.params.w * pow(noh, draw.params.x);
       spec = spec + select(direct, physical, toneMap);
     }
   }
