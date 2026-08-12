@@ -10,7 +10,7 @@
 // object with mutable rot/vx/vy/spin (handy for tests, or a custom integrator).
 //
 //    const body = phys.box(x, y, 40, 22, { type: "dynamic" }); // Physics2D
-//    const car  = Minimotor.Gizmos.car(body, { acceleration: 920, grip: 8 });
+//    const car  = Gizmos.car(body, { acceleration: 920, grip: 8 });
 //    // each fixed step:
 //    car.drive({ throttle, steer, handbrake }, dt);
 //    phys.step(dt); // solver resolves walls & car-to-car contacts

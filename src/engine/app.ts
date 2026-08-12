@@ -31,12 +31,13 @@ export interface Rect {
 /** The live canvas surface: element, 2D context, logical size, DPR, safe-area
  *  insets, and the base letterbox transform. */
 export interface Viewport {
-  /** The backing canvas element (sized to the full window × `dpr`). */
+  /** The backing canvas element (sized to the window × `dpr`, or to the
+   *  element's CSS box when `fullscreen` is false). */
   canvas: HTMLCanvasElement;
   /** The canvas 2D context, pre-set to the base logical→device transform. */
   ctx: CanvasRenderingContext2D;
-  /** Logical width. Fills the window, or the fixed `resolution.w` when the
-   *  stage is letterboxed. */
+  /** Logical width. Fills the window (or the canvas CSS box when not
+   *  fullscreen), or the fixed `resolution.w` when the stage is letterboxed. */
   w: number;
   /** Logical height (see `w`). */
   h: number;
@@ -217,9 +218,12 @@ export interface RuntimeOptions {
    *  fraction of it that was drawn. */
   maxDrawFps?: number;
   /** Scene backend. `"canvas"` (default) is the existing Canvas2D path with
-   *  no extra canvas. `"webgl"` requires WebGL2 and draws `Draw.sprites` /
-   *  `Draw.tiles` / `Draw.particles` on a stacked scene canvas. `"auto"` tries
-   *  WebGL2 and falls back to canvas silently. */
+   *  no extra canvas. `"webgl"` requires WebGL2 and draws `Draw.sprite` /
+   *  `Draw.sprites` / `Draw.tiles` / `Draw.particles` on a stacked scene canvas.
+   *  `"auto"` tries WebGL2 and falls back to canvas silently. The 2D WebGL
+   *  canvas and a 3D `attachSceneLayer` do not compose — two WebGL contexts,
+   *  undefined z-order. Pick one GL canvas as the scene, or keep HUD sprites
+   *  on Canvas2D. */
   renderer?: "canvas" | "webgl" | "auto";
 }
 
@@ -248,7 +252,7 @@ function resolveCanvas(canvas: string | HTMLCanvasElement): HTMLCanvasElement {
   return el as HTMLCanvasElement;
 }
 
-function buildRuntime(options: RuntimeOptions): Runtime {
+function buildRuntime(options: RuntimeOptions & { fitWindow?: boolean }): Runtime {
   const pauseOnPortrait = options.pauseOnPortrait ?? false;
   const fps = options.fps ?? 60;
   if (!Number.isFinite(fps) || fps <= 0) {
@@ -261,9 +265,10 @@ function buildRuntime(options: RuntimeOptions): Runtime {
   let sinceDraw = 0;
   const maxCatchupSteps = Math.max(1, Math.round(MAX_CATCHUP_MS / stepMs));
   const canvas = resolveCanvas(options.canvas);
+  const fitWindow = options.fitWindow !== false;
   // The viewport is a LIVE object: same identity forever, fields mutated in
   // place on resize — holders never go stale.
-  const viewport = readViewport(canvas, options.resolution);
+  const viewport = readViewport(canvas, options.resolution, fitWindow);
   const ctx = viewport.ctx;
 
   const background = options.background ?? null;
@@ -780,7 +785,7 @@ function buildRuntime(options: RuntimeOptions): Runtime {
   const applyResize = () => {
     if (!resizeDirty) return;
     resizeDirty = false;
-    Object.assign(viewport, readViewport(canvas, options.resolution)); // live: mutate in place
+    Object.assign(viewport, readViewport(canvas, options.resolution, fitWindow)); // live: mutate in place
     canvasRect = null;
     sceneRenderer?.resize();
     for (const h of resizeHandlers) h(viewport);
@@ -801,6 +806,13 @@ function buildRuntime(options: RuntimeOptions): Runtime {
   };
   window.addEventListener("orientationchange", handleOrient);
   screen.orientation?.addEventListener?.("change", handleOrient);
+  // Embedded canvases (`fullscreen: false`) follow the element's CSS box, which
+  // can change without a window resize. Window resize still re-reads.
+  let boxObserver: ResizeObserver | null = null;
+  if (!fitWindow && typeof ResizeObserver === "function") {
+    boxObserver = new ResizeObserver(handleResize);
+    boxObserver.observe(canvas);
+  }
 
   let portraitMq: MediaQueryList | null = null;
   let portraitApply: (() => void) | null = null;
@@ -995,6 +1007,7 @@ function buildRuntime(options: RuntimeOptions): Runtime {
       window.removeEventListener("resize", handleResize);
       window.removeEventListener("orientationchange", handleOrient);
       screen.orientation?.removeEventListener?.("change", handleOrient);
+      boxObserver?.disconnect();
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("contextmenu", stopGesture);
       canvas.removeEventListener("dblclick", onDblClick);
@@ -1020,18 +1033,35 @@ function buildRuntime(options: RuntimeOptions): Runtime {
   return app;
 }
 
-function readViewport(canvas: HTMLCanvasElement, resolution?: { w: number; h: number }): Viewport {
-  const winW = window.innerWidth;
-  const winH = window.innerHeight;
+function readViewport(
+  canvas: HTMLCanvasElement,
+  resolution?: { w: number; h: number },
+  fitWindow = true,
+): Viewport {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  // Reassigning canvas.width/height reallocates (and clears) the backing
-  // store even when the value is unchanged — skip it when nothing moved.
-  const deviceW = Math.round(winW * dpr);
-  const deviceH = Math.round(winH * dpr);
+  let cssW: number;
+  let cssH: number;
+  if (fitWindow) {
+    cssW = window.innerWidth;
+    cssH = window.innerHeight;
+    // Reassigning canvas.width/height reallocates (and clears) the backing
+    // store even when the value is unchanged — skip it when nothing moved.
+    canvas.style.width = cssW + "px";
+    canvas.style.height = cssH + "px";
+  } else {
+    cssW = canvas.clientWidth;
+    cssH = canvas.clientHeight;
+    if (cssW <= 0 || cssH <= 0) {
+      // Not laid out yet (jsdom, hidden): fall back to the window so tests and
+      // a canvas that has not received a CSS box still get a usable surface.
+      cssW = window.innerWidth;
+      cssH = window.innerHeight;
+    }
+  }
+  const deviceW = Math.round(cssW * dpr);
+  const deviceH = Math.round(cssH * dpr);
   if (canvas.width !== deviceW) canvas.width = deviceW;
   if (canvas.height !== deviceH) canvas.height = deviceH;
-  canvas.style.width = winW + "px";
-  canvas.style.height = winH + "px";
   const ctx = canvas.getContext("2d")!;
 
   // Safe-area insets (from fullscreenCSS's `--sai-*` custom properties; non-zero
@@ -1060,14 +1090,14 @@ function readViewport(canvas: HTMLCanvasElement, resolution?: { w: number; h: nu
   // The notch-free rectangle, in CSS px — the letterbox fits INSIDE this.
   const availX = safeLeft;
   const availY = safeTop;
-  const availW = Math.max(1, winW - safeLeft - safeRight);
-  const availH = Math.max(1, winH - safeTop - safeBottom);
+  const availW = Math.max(1, cssW - safeLeft - safeRight);
+  const availH = Math.max(1, cssH - safeTop - safeBottom);
 
   // Letterbox: a fixed logical resolution fitted (uniform, centered) into the
-  // SAFE rectangle; otherwise the logical size IS the full window (apps inset
-  // their own HUD using the reported safe insets).
-  let w = winW;
-  let h = winH;
+  // SAFE rectangle; otherwise the logical size IS the CSS box (the window when
+  // fullscreen, the element's layout size when not).
+  let w = cssW;
+  let h = cssH;
   let scale = 1;
   let offsetX = 0;
   let offsetY = 0;
@@ -1121,7 +1151,7 @@ export interface App {
   readonly Pointer: Pointer;
   readonly Mouse: Pointer;
   /** Which scene path this app bound. `"canvas"` is the default 2D path;
-   *  `"webgl"` means sprites/tiles/particles draw on the stacked GL canvas. */
+   *  `"webgl"` means sprite/sprites/tiles/particles draw on the stacked GL canvas. */
   readonly renderer: "canvas" | "webgl";
   readonly visible: boolean;
   readonly focused: boolean;
@@ -1161,6 +1191,8 @@ export interface AppOptions extends Omit<RuntimeOptions, "canvas"> {
    *
    *  Pass `false` when the page already owns its layout — a game with DOM
    *  overlays and its own stylesheet, or a canvas embedded in a larger page.
+   *  The backing store then follows the canvas element's CSS box
+   *  (`clientWidth`/`clientHeight`) instead of `innerWidth`/`innerHeight`.
    *  The rules are injected into `<head>` at construction, i.e. after a linked
    *  stylesheet, so at equal specificity they would win. `applyFullscreen()` is
    *  exported for applying them yourself, later or conditionally. */
@@ -1191,7 +1223,7 @@ export function createApp(
 ): App {
   if (fullscreen) applyFullscreen();
   if (navigation) preventNavigation(true);
-  const runtime = buildRuntime({ canvas, ...runtimeOptions });
+  const runtime = buildRuntime({ canvas, ...runtimeOptions, fitWindow: fullscreen });
   let visible = typeof document === "undefined" || document.visibilityState !== "hidden";
   let focused = typeof document === "undefined" || document.hasFocus();
   const app = {

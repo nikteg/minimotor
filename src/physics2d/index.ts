@@ -4,7 +4,7 @@ import { Phys, attach, world, type Physics2DOptions, type Physics2DWorld } from 
 // The subpath entry: the app-bound factory plus the pure module it binds.
 export * from "./world.js";
 
-/** Namespace-style export, matching `Minimotor.*` ergonomics:
+/** Namespace-style export, matching the PascalCase service style:
  *  `import { Physics2D } from "minimotor/physics2d"` → `Physics2D.world()`. */
 export interface Physics2DFeatureOptions extends Physics2DOptions {
   /** Advance automatically on this app's fixed loop. Default true. */

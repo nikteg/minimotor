@@ -9,7 +9,7 @@
 // forward by the number of fixed steps elapsed since the last read. Dropped
 // cameras cost nothing and GC away with their owning app or standalone lens.
 
-import { type DrawApi, type Rect } from "@src/engine/index.js";
+import { type DrawApi, type DrawSceneClip, type Rect } from "@src/engine/index.js";
 import { lazySteps } from "@src/clock/lazySteps.js";
 import type { Vec2 } from "@src/math/vec2.js";
 import { clamp } from "@src/math/mathf.js";
@@ -39,8 +39,8 @@ export interface CameraOptions {
   view: { w: number; h: number };
   /** Fixed-step source — injectable for tests and standalone lenses. */
   steps: () => number;
-  /** Renderer used by `render`/`layer`. */
-  draw: DrawApi;
+  /** Renderer used by `render`/`layer`. Scene clip is Camera-owned. */
+  draw: DrawApi & DrawSceneClip;
 }
 
 /** Options for `Camera.render` — the screen sub-rect (`into`) the lens maps onto. */

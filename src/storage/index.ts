@@ -69,7 +69,7 @@ export function createStorage<const S extends Record<string, StorageBackend>>(
     const existing = areas.get(name);
     if (existing) return existing;
     const backend = options.stores[name];
-    if (!backend) throw new Error(`Minimotor.Storage: no store named "${name}"`);
+    if (!backend) throw new Error(`createStorage: no store named "${name}"`);
     const key = (value: string) => `${prefix}${name}:${value}`;
     const result: StorageArea = {
       async load<T>(item: string, fallback: T): Promise<T> {

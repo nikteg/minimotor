@@ -362,7 +362,7 @@ export function join<Msg = unknown>(url: string, opts: RoomOptions = {}): Promis
       if (!settled) {
         settled = true;
         room.close();
-        reject(new Error("Minimotor.Net: relay never answered"));
+        reject(new Error("createNet: relay never answered"));
       }
     }, opts.timeoutMs ?? 8000);
 
@@ -407,7 +407,7 @@ export function join<Msg = unknown>(url: string, opts: RoomOptions = {}): Promis
         settled = true;
         clearTimeout(timer);
         setStatus("closed");
-        reject(new Error("Minimotor.Net: relay unreachable"));
+        reject(new Error("createNet: relay unreachable"));
         return;
       }
       if (!reconnectOn) {

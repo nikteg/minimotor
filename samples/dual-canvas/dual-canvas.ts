@@ -12,7 +12,7 @@ declare global {
 }
 window.__dual = counters;
 
-const main = createApp("game", { background: "#1a1a2e" });
+const main = createApp("game", { background: "#1a1a2e", fullscreen: false });
 const { Draw: MainDraw, Loop: MainLoop } = main;
 const MainUI = createUI(main);
 
@@ -43,7 +43,7 @@ MainLoop.run({
 });
 
 // ---------- Game 2: an isolated game on its own canvas ----------
-const second = createApp("game2", { background: "#16321f" });
+const second = createApp("game2", { background: "#16321f", fullscreen: false });
 const { Draw: SecondDraw, Loop: SecondLoop } = second;
 const SecondUI = createUI(second);
 

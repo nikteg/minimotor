@@ -6,7 +6,11 @@ export * from "./lens.js";
 
 /** Create the primary camera namespace for one explicit app. */
 export function createCamera(app: App): CameraApi {
-  const base = { view: app.viewport, steps: () => app.Loop.steps, draw: app.Draw };
+  const base = {
+    view: app.viewport,
+    steps: () => app.Loop.steps,
+    draw: app.Draw as CameraOptions["draw"],
+  };
   const lens = createLens(base);
   return {
     follow: lens.follow.bind(lens),

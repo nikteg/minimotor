@@ -10,6 +10,8 @@ type Point = { x: number; y: number };
 interface DrawTarget {
   readonly ctx: CanvasRenderingContext2D;
   readonly spriteScratch: DrawSprite[];
+  readonly spriteOne: DrawSprite;
+  readonly spriteOneList: DrawSprite[];
   readonly scene: SceneRenderer | null;
   readonly recorder: DrawRecorder | null;
 }
@@ -437,9 +439,9 @@ export interface DrawSpriteOptions {
  *  `Anim.fromGrid`/`Anim.fromImages` cursor), `at` is the destination `Rect`. Anchored
  *  bottom-center (feet planted). `opts`: `flipX`/`flipY`, `scaleX`/`scaleY`
  *  (squash & stretch), `rot`, `alpha`. For many ECS sprites at once use
- *  `Draw.sprites`. */
+ *  `Draw.sprites`. When a scene renderer is attached, this is the same GPU
+ *  path as `Draw.sprites` — not a Canvas2D overlay blit. */
 function sprite(this: DrawTarget, spr: SpriteLike, at: Rect, opts: DrawSpriteOptions = {}): void {
-  const ctx = this.ctx;
   const r = spr.rect;
   const sourceW = r.sourceW ?? r.sw;
   const sourceH = r.sourceH ?? r.sh;
@@ -447,6 +449,35 @@ function sprite(this: DrawTarget, spr: SpriteLike, at: Rect, opts: DrawSpriteOpt
   const dh = (r.sh / sourceH) * at.h;
   const dx = ((r.offsetX ?? 0) / sourceW) * at.w;
   const dy = ((r.offsetY ?? 0) / sourceH) * at.h;
+  if (this.scene) {
+    this.scene.setTransform(readTransform(this.ctx));
+    const scaleX = opts.scaleX ?? 1;
+    const scaleY = opts.scaleY ?? 1;
+    const one = this.spriteOne;
+    one.img = spr.sheet.image as DrawSprite["img"];
+    one.x = at.x + at.w / 2;
+    one.y = at.y + at.h;
+    one.w = dw * Math.abs(scaleX);
+    one.h = dh * Math.abs(scaleY);
+    one.ax = dw === 0 ? 0.5 : (at.w / 2 - dx) / dw;
+    one.ay = dh === 0 ? 1 : (at.h - dy) / dh;
+    one.rot = opts.rot ?? 0;
+    one.scale = 1;
+    one.flipX = !!opts.flipX !== scaleX < 0;
+    one.flipY = !!opts.flipY !== scaleY < 0;
+    one.alpha = opts.alpha ?? 1;
+    one.sx = r.sx;
+    one.sy = r.sy;
+    one.sw = r.sw;
+    one.sh = r.sh;
+    one.visible = true;
+    one.z = 0;
+    one.px = undefined;
+    one.py = undefined;
+    this.scene.sprites(this.spriteOneList);
+    return;
+  }
+  const ctx = this.ctx;
   // Fast path: no flip/squash/rotation/alpha means the transform below is
   // identity apart from position (translate to the bottom-center anchor, then
   // blit back up-left by the same amounts) — one direct drawImage, no
@@ -810,24 +841,37 @@ export interface DrawApi {
   tiles(level: SkinlessTilesLike): void;
   tiles<S>(level: TilesLike<S>, skin: S, opts?: DrawTilesOptions): void;
   particles(sys: ParticleLike): void;
-  /** Clip subsequent scene-layer draws (`sprites` / `tiles` / `particles`) to
-   *  `rect` in the current overlay space. Overlay Canvas2D clip is separate —
-   *  `Camera.render({ into })` drives both. Pass `null` to disable. */
+}
+
+/** Scene-layer clip. `Camera.render` owns this — it is not on the public
+ *  `Draw` type so a game cannot scissor the scene without clipping the overlay
+ *  (or the reverse). */
+export interface DrawSceneClip {
+  /** Clip subsequent scene-layer draws (`sprite` / `sprites` / `tiles` /
+   *  `particles`) to `rect` in the current overlay space. Overlay Canvas2D
+   *  clip is separate. Pass `null` to disable. */
   clipScene(rect: Rect | null): void;
 }
 
 /** Create a renderer permanently bound to one app/context. When `scene` is
- *  present, `sprites` / `tiles` / `particles` go there; everything else stays
- *  on the overlay 2D context. */
+ *  present, `sprite` / `sprites` / `tiles` / `particles` go there; everything
+ *  else stays on the overlay 2D context. */
 export function createDraw(
   host: { readonly ctx: CanvasRenderingContext2D },
   scene?: SceneRenderer | null,
-): DrawApi {
+): DrawApi & DrawSceneClip {
+  const spriteOne: DrawSprite = {
+    x: 0,
+    y: 0,
+    img: { width: 1, height: 1 } as DrawSprite["img"],
+  };
   const target: DrawTarget = {
     get ctx() {
       return host.ctx;
     },
     spriteScratch: [],
+    spriteOne,
+    spriteOneList: [spriteOne],
     scene: scene ?? null,
     recorder: scene ? createDrawRecorder() : null,
   };

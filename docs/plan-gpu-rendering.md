@@ -4,38 +4,43 @@ Status: stages 1–3 and 4a are implemented (`createApp({ renderer: "webgl" | "a
 dual-canvas WebGL2 sprite batcher, tiles/particles via a recording 2D context,
 `scratchCanvas` for bakes). Stage 4b (scene on a worker) is still a proposal.
 
-The shipped shape is a `SceneRenderer` for `Draw.sprites` / `Draw.tiles` /
-`Draw.particles` only — not a full `RenderTarget` for every primitive. Overlay
-Canvas2D still owns UI, text, and `Draw.rect`. See `src/engine/render/`.
+The shipped shape is a `SceneRenderer` for `Draw.sprite` / `Draw.sprites` /
+`Draw.tiles` / `Draw.particles` — not a full `RenderTarget` for every primitive.
+Overlay Canvas2D still owns UI, text, and `Draw.rect`. See `src/engine/render/`.
 
 ## Why
 
-minimotor is Canvas2D only — no `WebGL`, `WebGL2`, `WebGPU` or `OffscreenCanvas`
-appears anywhere in `src`. Every sprite ends in a `drawImage`, every tile in a
-`drawImage`, every particle in a `drawImage` of a pre-baked dot
-(`src/particles/system.ts:225`). Pixi, Phaser and Kaplay all batch on the GPU.
+The 2D GPU path has shipped: `createApp({ renderer: "webgl" | "auto" })` stacks a
+WebGL2 scene canvas under the overlay and batches `Draw.sprite` / `Draw.sprites` /
+`Draw.tiles` / `Draw.particles` there. Bake sites use `OffscreenCanvas` via
+`scratchCanvas`. Overlay Canvas2D still owns UI, text, and `Draw.rect`.
 
-That was a defensible scope decision when the engine was small, and the
-question is whether it still is: the engine ships snapshot interpolation,
-rigid-body physics, WFC level generation and a 9.5k-line UI, and then caps you
-at whatever Canvas2D can push.
+This document started when minimotor was Canvas2D only — no `WebGL` / `WebGPU` /
+`OffscreenCanvas` in `src`. That is no longer true. The remaining 2D work is
+**consumers** (samples that actually set `renderer: "webgl"`) and keeping the
+batcher honest, not another backend. Stage 4b (scene on a worker) stays a
+proposal.
 
-**That cap has since been measured — see the last section, and read it before
-the rest of this document.** The headline: ~15,500 unrotated sprites at 60fps
-even under software rasterisation, but only ~4,500 once they rotate. The first
-number is high enough that the throughput argument for stages 2–3 is weaker
-than this section originally assumed; the second is the one that actually
-justifies a batcher.
+Two separate wins were on the table and they are **not** the same project:
 
-Two separate wins are on the table and they are **not** the same project:
-
-- **WebGL** raises the sprite/tile/particle ceiling by an order of magnitude.
+- **WebGL** raises the sprite/tile/particle ceiling — shipped as the dual-canvas
+  batcher.
 - **OffscreenCanvas** moves work off the main thread, which is a _latency_ win
   (input responsiveness, no jank from GC or a slow `update`) — it does not make
-  drawing faster.
+  drawing faster. 4a (offscreen bakes) shipped; 4b (the scene on a worker) did
+  not, on purpose.
 
-Do them in that order. WebGL is the bigger win and OffscreenCanvas is much
-easier once the renderer is already an abstraction rather than a raw `ctx`.
+**That cap was measured before the batcher shipped — see the last section.**
+The headline on Canvas2D: ~15,500 unrotated sprites at 60fps even under software
+rasterisation, but only ~4,500 once they rotate. `samples/bench-sprites` now
+defaults to the GL path (`?renderer=canvas` is the 2D baseline) so the same
+harness can compare backends.
+
+The 2D WebGL canvas and a 3D `attachSceneLayer` do **not** compose. Combining
+both is two WebGL contexts, two stacking helpers, undefined z-order. If a sample
+ever wants both, pick one GL canvas as the scene and blit the other, or keep HUD
+sprites on Canvas2D. `samples/fps` never hits this because it never opts the 2D
+renderer on.
 
 ## What makes this tractable
 
@@ -335,9 +340,9 @@ Worth being as explicit about this as the original version of this section was:
 
 - **No shadows.** Directional lights with no shadow map. A ground-plane blob or
   a baked texture is the current answer.
-- **No skinning.** Animation drives node transforms, so a hierarchy of rigid
-  parts animates; a deforming character does not.
-- **No model loading.** No glTF importer. Geometry is built in code.
+- **Skinning and glTF are there.** `loadGltf` is exported from `minimotor/3d`
+  and has tests. WebGPU skins deforming characters; the WebGL 3D path uploads
+  joint matrices too. Do not add another importer.
 - **No material/shader API.** One Blinn-Phong shader with uniform switches.
   Still out of scope for the same reason as before: how a game ships a custom
   shader, and how that degrades across two backends, is a design question of
@@ -349,6 +354,8 @@ Worth being as explicit about this as the original version of this section was:
   `Vec3` is still deliberately NOT interchangeable with `Vec2`: structural
   typing would let one slip into the 2D renderer and have its `z` silently
   dropped.
+
+Stage 4b (scene on a worker) is still a proposal, not a next ticket.
 
 ## The measurement to take before starting any of it
 
@@ -375,16 +382,18 @@ Cost is linear in N on the blit path — 0.5 ms at 1k, 8.6 ms at 10k, 39.1 ms at
 
 Two things to read off this:
 
-1. **15k unrotated sprites is a lot.** For most games the engine is aimed at,
-   stages 2–3 are indeed premature, exactly as this section suspected. The
-   number that would change that verdict is a real game hitting it.
-2. **Rotation costs 3.4×**, and that is the most interesting figure here. The
-   gap is the `save`/`translate`/`rotate`/`restore` around each blit
+1. **15k unrotated sprites is a lot on Canvas2D.** For most games the engine is
+   aimed at, the 2D path is enough. The number that changes the verdict is a
+   real game hitting it — which is why `samples/sprites`, `samples/particles`,
+   and `samples/pixel-adventure` now opt into `renderer: "webgl"`.
+2. **Rotation costs 3.4× on Canvas2D**, and that is the most interesting figure
+   here. The gap is the `save`/`translate`/`rotate`/`restore` around each blit
    (`src/engine/draw.ts`), and a batcher erases it — four corners through a 2×3
    matrix is the same handful of multiplies whether or not there is a rotation
-   in it. So the honest pitch for stage 2 is not "10× more sprites", it is
+   in it. So the honest pitch for the GL path is not "10× more sprites", it is
    "rotation and scale stop costing anything", which matters for exactly the
-   bullet-hell/particle case that motivated the plan.
+   bullet-hell/particle case that motivated the plan. Run
+   `samples/bench-sprites` (GL by default) and `?renderer=canvas` to compare.
 
 Caveat on the harness: the cull comparison is currently meaningless, because
 every sprite is spawned on screen and so nothing is culled. Measuring the cull

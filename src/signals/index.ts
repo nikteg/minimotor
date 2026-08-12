@@ -74,7 +74,7 @@ export function createSignals(): SignalBus {
           h(payload);
         } catch (err) {
           // A listener must never break the emitter or the loop.
-          console.error(`Minimotor.Signals: handler for "${event}" threw`, err);
+          console.error(`createSignals: handler for "${event}" threw`, err);
         }
       }
     },

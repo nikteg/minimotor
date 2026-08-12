@@ -191,3 +191,61 @@ describe("physics3d joints", () => {
     world.dispose();
   });
 });
+
+describe("physics3d contacts", () => {
+  it("fires onContact with the wrapped bodies and honors unsubscribe", async () => {
+    const world = await physics({ gravity: { x: 0, y: -30, z: 0 } });
+    const floor = world.createBody({ type: "fixed", position: { x: 0, y: -1, z: 0 } });
+    world.createCollider(floor, { type: "cuboid", halfExtents: { x: 10, y: 1, z: 10 } });
+    const box = world.createBody({ type: "dynamic", position: { x: 0, y: 4, z: 0 } });
+    world.createCollider(box, { type: "cuboid", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } });
+    const seen: unknown[] = [];
+    const off = world.onContact((left, right) => {
+      seen.push(left, right);
+    });
+    for (let i = 0; i < 120; i++) world.step();
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen).toContain(floor);
+    expect(seen).toContain(box);
+
+    off();
+    const before = seen.length;
+    for (let i = 0; i < 30; i++) world.step();
+    expect(seen.length).toBe(before);
+    world.dispose();
+  });
+
+  it("fires onContactEnd when two bodies separate", async () => {
+    const world = await physics({ gravity: { x: 0, y: 0, z: 0 } });
+    const floor = world.createBody({ type: "fixed", position: { x: 0, y: -1, z: 0 } });
+    world.createCollider(floor, { type: "cuboid", halfExtents: { x: 10, y: 1, z: 10 } });
+    const box = world.createBody({
+      type: "dynamic",
+      position: { x: 0, y: 0.5, z: 0 },
+    });
+    world.createCollider(
+      box,
+      { type: "cuboid", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } },
+      { restitution: 0.9 },
+    );
+    let begins = 0;
+    let ends = 0;
+    world.onContact(() => begins++);
+    const off = world.onContactEnd(() => ends++);
+    world.step();
+    expect(begins).toBeGreaterThan(0);
+
+    box.setPosition({ x: 0, y: 8, z: 0 });
+    world.step();
+    expect(ends).toBeGreaterThan(0);
+
+    const wasEnds = ends;
+    off();
+    box.setPosition({ x: 0, y: 0.5, z: 0 });
+    world.step();
+    box.setPosition({ x: 0, y: 8, z: 0 });
+    world.step();
+    expect(ends).toBe(wasEnds);
+    world.dispose();
+  });
+});

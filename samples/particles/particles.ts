@@ -12,7 +12,7 @@ const ecs = createEcs();
 
 // The perf HUD shows this world's live entity count (`ents`).
 // The viewport is LIVE (mutated on resize); the engine owns clearing.
-const game = createApp("game", { background: "#000" });
+const game = createApp("game", { background: "#000", renderer: "webgl" });
 createDebug(game, { initial: "performance", perf: { world: ecs } });
 const view = game.viewport;
 const { Draw, Loop, Pointer } = game;

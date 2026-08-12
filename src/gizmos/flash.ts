@@ -24,7 +24,7 @@ export interface Flash {
  *  damage, a button on press. `ease` shapes the fade; lives in game time
  *  unless given another clock.
  *
- *    const flash = Minimotor.Gizmos.flash(120);
+ *    const flash = Gizmos.flash(120);
  *    // on damage: flash.hit();
  *    // vector art:  draw normally, then overlay white at `flash.value` alpha.
  *    // sprite art:  ctx.globalAlpha = flash.value;

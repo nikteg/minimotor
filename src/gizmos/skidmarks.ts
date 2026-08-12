@@ -9,7 +9,7 @@
 // independent. Feed it the car's pose each fixed step; draw it in WORLD space
 // (inside your camera block, under the car).
 //
-//    const skids = Minimotor.Gizmos.skidmarks();
+//    const skids = Gizmos.skidmarks();
 //    // each fixed step:
 //    skids.trace(body.x, body.y, body.rot, { marking: car.tireSlip > 40 }, dt);
 //    // in draw, world space, before the car:

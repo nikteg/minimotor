@@ -13,7 +13,7 @@ import { component, createEcs } from "minimotor/ecs";
 
 const ecs = createEcs();
 
-const game = createApp("game", { background: "#12141c" });
+const game = createApp("game", { background: "#12141c", renderer: "webgl" });
 const Anim = createAnimation(game);
 createDebug(game, { initial: "performance", perf: { world: ecs } });
 const view = game.viewport;

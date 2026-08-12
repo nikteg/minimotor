@@ -1,5 +1,5 @@
 import { createDebug } from "minimotor/debug";
-// Tilemap demo: Minimotor.Tiles.
+// Tilemap demo: Tiles.
 // - The level is an ASCII grid ("g" grass, "d" dirt, "b" brick) built below;
 //   tiles blit from a small procedurally-baked atlas via the skin.
 // - Collision.moveAndSlide drives the platformer collision: it sweeps the

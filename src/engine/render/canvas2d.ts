@@ -1,8 +1,8 @@
 // ---------- Canvas2D scene adapter ----------
-// The default renderer has no separate scene layer: `Draw.sprites` / `tiles` /
-// `particles` keep their original Canvas2D loops in `draw.ts`. This no-op
-// exists so the `SceneRenderer` interface has a canvas-side inhabitant; it is
-// not wired by `createApp`.
+// The default renderer has no separate scene layer: `Draw.sprite` / `sprites` /
+// `tiles` / `particles` keep their original Canvas2D loops in `draw.ts`. This
+// no-op exists so the `SceneRenderer` interface has a canvas-side inhabitant; it
+// is not wired by `createApp`.
 
 import type { SceneRenderer } from "./target.js";
 import type { Affine } from "./math.js";

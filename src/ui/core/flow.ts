@@ -945,7 +945,7 @@ export function containerRect(
         h: Math.max(opts.h ?? uiHeight(), opts.minH ?? 0),
       };
     }
-    throw new Error("Minimotor.UI: a root row/col/group needs explicit x/y");
+    throw new Error("createUI: a root row/col/group needs explicit x/y");
   }
   if (opts.flex === "fill") {
     const slot = parent.fill();

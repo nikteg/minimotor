@@ -5,6 +5,7 @@
 import { lruCache, type LruCache } from "@src/cache/lruCache.js";
 import { scratchCanvas, scratchContext, type ScratchCanvas } from "@src/engine/offscreen.js";
 export type { ScratchCanvas };
+export { bumpScratch, scratchGeneration } from "@src/engine/offscreen.js";
 // ECS integration lives in `ecs.ts`; this file is rendering/atlas-only.
 
 /** An offscreen canvas pre-rendered for blitting, tagged with its `logicalSize`. */
