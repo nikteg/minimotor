@@ -50,7 +50,13 @@ export type BillboardMode =
   | "stretched"
   /** Flat in the XZ plane, facing straight up. For something that reads as
    *  lying ON the ground: a scorch, a ripple, a shadow puddle. */
-  | "horizontal";
+  | "horizontal"
+  /** Upright: turns to face the camera about the Y axis and no further, so its
+   *  top stays the world's top however far the camera looks down. For anything
+   *  that stands IN the scene — smoke, a flame, a dust column. A plain
+   *  `billboard` seen from above lies over towards the camera and stops
+   *  reading as standing up. */
+  | "vertical";
 
 export interface SpriteSheet {
   /** Frames across and down the texture. */
@@ -283,6 +289,23 @@ export function createEmitter(opts: EmitterOptions): Emitter {
       up.x = 0;
       up.y = 0;
       up.z = 1;
+    } else if (mode === "vertical") {
+      // Yaw only: the horizontal perpendicular to the view, and world up.
+      // Taken per particle rather than from one camera basis, so a card close
+      // to the camera turns to face IT rather than to face the way the camera
+      // is pointing — the same thing at any distance, and better up close.
+      right.x = -toView.z;
+      right.y = 0;
+      right.z = toView.x;
+      if (Math.hypot(right.x, right.z) < 1e-6) {
+        // Directly above or below: no yaw resolves it, so pick one.
+        right.x = 1;
+        right.z = 0;
+      }
+      Vec3.normalize(right, right);
+      up.x = 0;
+      up.y = 1;
+      up.z = 0;
     } else if (mode === "stretched" && Math.hypot(vx[slot], vy[slot], vz[slot]) > 1e-6) {
       const speedNow = Math.hypot(vx[slot], vy[slot], vz[slot]);
       along.x = vx[slot] / speedNow;

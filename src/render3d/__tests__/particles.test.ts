@@ -201,6 +201,27 @@ describe("the mesh it writes", () => {
     expect(Math.max(...widths) - Math.min(...widths)).toBeCloseTo(2, 4);
   });
 
+  it("keeps a vertical quad upright and only yaws it", () => {
+    // The difference from `billboard` only shows from above: a plain billboard
+    // lies over towards a camera looking down and stops reading as standing
+    // up, which is wrong for smoke or a flame.
+    const emitter = createEmitter({
+      rate: 1000,
+      lifetime: 10,
+      capacity: 1,
+      mode: "vertical",
+      size: { x: 2, y: 2 },
+      random: middle,
+    });
+    emitter.update(1 / 60, { x: 0, y: 80, z: 30 });
+    const corners = quadOf(emitter.mesh, 0);
+    // Two corners a unit up and two a unit down, whatever the pitch — a
+    // billboard under the same camera would have spread them over Y and Z.
+    expect(corners.map(([, y]) => y).sort()).toEqual([-1, -1, 1, 1]);
+    // And the width is horizontal, so the card has no lean at all.
+    expect(corners.every(([, , z]) => Math.abs(z) < 1e-6)).toBe(true);
+  });
+
   it("runs a stretched quad's U axis down the trail, head first", () => {
     // The orientation is not a free choice. A streak texture is drawn the way
     // a streak reads — left to right along the image — so its frames are wide
