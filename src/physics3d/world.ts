@@ -178,6 +178,21 @@ export interface Physics3DJoint {
   destroy(): void;
 }
 
+/** What touched, handed to an `onContact` listener.
+ *
+ *  Valid only for the duration of the call: the record is reused and the Rapier
+ *  colliders it names may be destroyed by the next step. Copy anything you keep. */
+export interface Contact3D {
+  /** The collider on `a` that touched, and the one on `b`. One body can carry
+   *  many — a whole static level is often a single fixed body — so this is
+   *  what says which part was hit. */
+  colliderA: RAPIER.Collider;
+  colliderB: RAPIER.Collider;
+  /** Unit contact normal in world space, pointing from `a`'s surface towards
+   *  `b`. Zero on the rare pair that reports a start with no manifold yet. */
+  normal: Vec3;
+}
+
 export interface Physics3DWorld {
   readonly raw: RAPIER.World;
   createBody(options?: RigidBody3DOptions): Physics3DBody;
@@ -210,7 +225,7 @@ export interface Physics3DWorld {
   /** Weld two bodies at a world-space point, locking the current relative pose. */
   fixed(a: Physics3DBody, b: Physics3DBody, anchor: Vec3): Physics3DJoint;
   /** Called when two bodies begin touching. Returns an unsubscribe. */
-  onContact(cb: (a: Physics3DBody, b: Physics3DBody) => void): () => void;
+  onContact(cb: (a: Physics3DBody, b: Physics3DBody, contact: Contact3D) => void): () => void;
   /** Called when two bodies stop touching — the exit half of `onContact`.
    *  A body destroyed mid-overlap does not report a separation, so treat
    *  destruction as its own exit. Returns an unsubscribe. */
@@ -258,10 +273,17 @@ export async function createPhysics3D(options: Physics3DOptions): Promise<Physic
     max: rapier.CoefficientCombineRule.Max,
   };
   const bodies = new Map<number, Physics3DBody>();
-  type ContactCb = (a: Physics3DBody, b: Physics3DBody) => void;
-  const beginCbs = new Set<ContactCb>();
-  const endCbs = new Set<ContactCb>();
+  const beginCbs = new Set<(a: Physics3DBody, b: Physics3DBody, contact: Contact3D) => void>();
+  const endCbs = new Set<(a: Physics3DBody, b: Physics3DBody) => void>();
   const events = new rapier.EventQueue(true);
+
+  // One record reused for every contact: a busy world raises hundreds a second,
+  // and a listener is expected to read what it wants before returning.
+  const contact = { colliderA: undefined, colliderB: undefined, normal: { x: 0, y: 0, z: 0 } } as unknown as {
+    colliderA: RAPIER.Collider;
+    colliderB: RAPIER.Collider;
+    normal: { x: number; y: number; z: number };
+  };
 
   return {
     raw,
@@ -408,8 +430,30 @@ export async function createPhysics3D(options: Physics3DOptions): Promise<Physic
         const a = bodies.get(p1.handle);
         const b = bodies.get(p2.handle);
         if (!a || !b) return;
-        const cbs = started ? beginCbs : endCbs;
-        for (const cb of cbs) cb(a, b);
+        if (!started) {
+          for (const cb of endCbs) cb(a, b);
+          return;
+        }
+        // Which collider touched is the only way to know what was hit when a
+        // body carries several, and the normal is the only way to tell a
+        // vertical surface from a horizontal one. Rapier has both, but only
+        // until the next step, so they are read here rather than left for the
+        // listener to fetch later.
+        contact.colliderA = c1;
+        contact.colliderB = c2;
+        contact.normal.x = 0;
+        contact.normal.y = 0;
+        contact.normal.z = 0;
+        raw.contactPair(c1, c2, (manifold, flipped) => {
+          const n = manifold.normal();
+          // `flipped` means Rapier built the manifold the other way round, so
+          // its normal points from `b` towards `a`.
+          const sign = flipped ? -1 : 1;
+          contact.normal.x = n.x * sign;
+          contact.normal.y = n.y * sign;
+          contact.normal.z = n.z * sign;
+        });
+        for (const cb of beginCbs) cb(a, b, contact);
       });
     },
     dispose() {

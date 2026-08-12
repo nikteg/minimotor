@@ -215,6 +215,39 @@ describe("physics3d contacts", () => {
     world.dispose();
   });
 
+  it("hands onContact the colliders that met and a normal pointing a to b", async () => {
+    const world = await physics({ gravity: { x: 0, y: -30, z: 0 } });
+    const floor = world.createBody({ type: "fixed", position: { x: 0, y: -1, z: 0 } });
+    const floorCollider = world.createCollider(floor, {
+      type: "cuboid",
+      halfExtents: { x: 10, y: 1, z: 10 },
+    });
+    const box = world.createBody({ type: "dynamic", position: { x: 0, y: 4, z: 0 } });
+    const boxCollider = world.createCollider(box, {
+      type: "cuboid",
+      halfExtents: { x: 0.5, y: 0.5, z: 0.5 },
+    });
+    let hit: { floorFirst: boolean; normal: Vec3 } | null = null;
+    world.onContact((a, b, contact) => {
+      if (hit) return;
+      const floorFirst = a === floor;
+      expect(b).toBe(floorFirst ? box : floor);
+      expect(contact.colliderA).toBe(floorFirst ? floorCollider : boxCollider);
+      expect(contact.colliderB).toBe(floorFirst ? boxCollider : floorCollider);
+      hit = { floorFirst, normal: { ...contact.normal } };
+    });
+    for (let i = 0; i < 120 && !hit; i++) world.step();
+
+    expect(hit).not.toBeNull();
+    const seen = hit as unknown as { floorFirst: boolean; normal: Vec3 };
+    // Landing on a flat floor: straight up when the floor is `a`, straight down
+    // when the box is.
+    expect(seen.normal.y).toBeCloseTo(seen.floorFirst ? 1 : -1, 3);
+    expect(seen.normal.x).toBeCloseTo(0, 3);
+    expect(seen.normal.z).toBeCloseTo(0, 3);
+    world.dispose();
+  });
+
   it("fires onContactEnd when two bodies separate", async () => {
     const world = await physics({ gravity: { x: 0, y: 0, z: 0 } });
     const floor = world.createBody({ type: "fixed", position: { x: 0, y: -1, z: 0 } });
