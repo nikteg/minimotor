@@ -23,7 +23,9 @@
 //     depth-test), so the cache never grows unbounded.
 //   - **The depth buffer is an explicit texture** that must be resized with
 //     the canvas, and leaking one on every resize is the classic WebGPU memory
-//     bug. `configureSize` destroys the old one.
+//     bug. `configureSize` destroys the old one. Multisampling adds a second
+//     such texture: WebGL2 gets it from a context attribute, here the pass
+//     owns a 4x colour target and resolves it into the swap chain.
 //
 // Y-flip: WGSL's texture coordinates put v = 0 at the TOP, which is already
 // the convention `MeshData.uvs` uses, so unlike the GL path there is nothing
@@ -353,6 +355,10 @@ export interface WebGPURendererOptions {
   width?: number;
   height?: number;
   dpr?: number;
+  /** Multisampling. On by default, matching the WebGL2 backend — a context
+   *  attribute there, four explicit objects here: the pass draws into an
+   *  offscreen 4x colour texture and resolves it into the swap chain. */
+  antialias?: boolean;
   /** Ask for a high-performance adapter (the discrete GPU on a laptop that has
    *  both). Default `"high-performance"`; `"low-power"` for a small preview
    *  that is not worth spinning a dGPU up for. */
@@ -447,6 +453,11 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     alphaMode: "premultiplied",
   });
 
+  /** 4x or none. Four is the one multisampled count WebGPU guarantees for a
+   *  renderable format, so it needs no capability check; anything else is an
+   *  optional feature this backend does not ask for. */
+  const sampleCount = opts.antialias === false ? 1 : 4;
+
   const module = device.createShaderModule({ code: SHADER, label: "render3d" });
 
   // Group 0 holds both uniform buffers; the per-draw one is bound with a
@@ -527,6 +538,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
         // stack of them occludes itself in draw order.
         depthCompare: overlay ? "always" : "less-equal",
       },
+      multisample: { count: sampleCount },
     });
     pipelines.set(key, pipeline);
     return pipeline;
@@ -615,6 +627,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
   let height = opts.height ?? 150;
   let dpr = opts.dpr ?? 1;
   let depthTexture: GPUTexture | null = null;
+  let colorTexture: GPUTexture | null = null;
 
   function configureSize(): void {
     const bw = Math.max(1, Math.round(width * dpr));
@@ -628,8 +641,24 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     depthTexture = device.createTexture({
       size: [bw, bh],
       format: "depth24plus",
+      sampleCount,
       usage: GPUTextureUsage.RENDER_ATTACHMENT,
     });
+    // The multisampled colour target the pass draws into, resolved into the
+    // swap chain at the end of it. A swap-chain texture is single-sampled and
+    // cannot be attached to a multisampled pass, so with antialiasing on there
+    // is no way round owning this one. Four times the pixels and the same
+    // per-resize leak, hence the same destroy.
+    colorTexture?.destroy();
+    colorTexture =
+      sampleCount === 1
+        ? null
+        : device.createTexture({
+            size: [bw, bh],
+            format,
+            sampleCount,
+            usage: GPUTextureUsage.RENDER_ATTACHMENT,
+          });
   }
   configureSize();
 
@@ -919,7 +948,13 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       const pass = encoder.beginRenderPass({
         colorAttachments: [
           {
-            view: context!.getCurrentTexture().createView(),
+            // Multisampled: draw into the offscreen target and let the pass
+            // resolve it down into the frame the compositor shows. `storeOp`
+            // stays `"store"` rather than the usual `"discard"`, because a
+            // caller that renders a second layer with `clear: false` needs the
+            // samples this pass wrote, not just their average.
+            view: (colorTexture ?? context!.getCurrentTexture()).createView(),
+            resolveTarget: colorTexture ? context!.getCurrentTexture().createView() : undefined,
             // Premultiplied clear, matching the canvas alpha mode.
             clearValue: { r: bg[0] * bg[3], g: bg[1] * bg[3], b: bg[2] * bg[3], a: bg[3] },
             loadOp: options.clear === false ? "load" : "clear",
@@ -996,6 +1031,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
 
     dispose() {
       depthTexture?.destroy();
+      colorTexture?.destroy();
       drawBuffer?.destroy();
       frameBuffer.destroy();
       blankTexture.destroy();

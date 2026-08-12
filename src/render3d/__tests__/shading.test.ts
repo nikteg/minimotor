@@ -108,6 +108,24 @@ describe("the two backends' shading maths", () => {
   });
 });
 
+describe("the two backends' framebuffers", () => {
+  it("antialiases by default in both", () => {
+    // Same weak-but-targeted trick as the shading checks above, for the same
+    // reason: the difference between an antialiased frame and a hard-edged one
+    // is one of the most visible ways the two backends can drift apart, and
+    // WebGL2 gets it from a single context attribute while WebGPU has to build
+    // it out of four agreeing pieces. Miss any one and the pass either fails
+    // validation or quietly stops resolving.
+    expect(webgl2).toContain("antialias: opts.antialias ?? true");
+    expect(webgpu).toMatch(/sampleCount = opts\.antialias === false \? 1 : 4/);
+    expect(webgpu).toContain("multisample: { count: sampleCount }");
+    expect(webgpu).toMatch(/resolveTarget: colorTexture \?/);
+    // The colour target and the depth target, which a pass rejects unless they
+    // agree.
+    expect(webgpu.match(/^ +sampleCount,$/gm) ?? []).toHaveLength(2);
+  });
+});
+
 describe("Scene3D's shading fields", () => {
   it("leaves a fresh scene on the direct model", () => {
     // Opting in is the whole point: every scene that existed before this
