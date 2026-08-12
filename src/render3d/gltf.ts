@@ -294,11 +294,16 @@ function materialFor(
     const roughness = Math.min(1, Math.max(0, pbr.roughnessFactor));
     material.shininess = 2 ** (7 * (1 - roughness) + 1);
   }
-  // Metalness is not highlight strength, but it is the only "how much does
-  // this surface reflect" signal a metallic-roughness document carries, and
-  // without a strength term every lit face bleaches toward white.
   if (pbr?.metallicFactor !== undefined) {
-    material.specular = Math.min(1, Math.max(0, pbr.metallicFactor));
+    const metallic = Math.min(1, Math.max(0, pbr.metallicFactor));
+    material.metallic = metallic;
+    // Metalness is not highlight strength, and `Material.metallic` above is
+    // where it belongs. It is still the only "how much does this surface
+    // reflect" signal a metallic-roughness document carries, though, and the
+    // direct model has nowhere else to get one — without a strength term every
+    // lit face bleaches toward white. So it goes in both, and the field that
+    // means metalness is the one the physical path reads.
+    material.specular = metallic;
   }
   return material;
 }

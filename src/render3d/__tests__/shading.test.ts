@@ -50,6 +50,24 @@ describe("the two backends' shading maths", () => {
     expect(source).toMatch(/mix\(\s*(?:u|frame\.)[Aa]mbient(?:\.rgb)?,\s*(?:u|frame\.)?[Aa]mbientGround(?:\.rgb)?,\s*max\(1e-6, 0\.5 - n\.y \* 0\.5\)\)/);
   });
 
+  it.each(backends)("%s gives the tone-mapped specular all three fixes", (_name, source) => {
+    // A white, unnormalized, N·L-free highlight is survivable when a light's
+    // intensity is near 1 and ruinous when it is an illuminance: it lays a flat
+    // sheen over the frame and drains the colour out of anything saturated.
+    // Tinted, by METALNESS and not by the highlight-strength term…
+    expect(source).toMatch(
+      /mix\(vec3f?\(0\.08 \* (?:uSpecular|draw\.params\.w)\), base\.rgb, (?:uMetallic|draw\.rimAlpha\.w)\)/,
+    );
+    // …normalized by (n + 8) / 8pi…
+    expect(source).toContain("0.039788736");
+    // …and gated on N·L, which is the term that was missing entirely.
+    expect(source).toMatch(/lobe \* blinn \* ndl/);
+    // A metal has no diffuse — again keyed on metalness, which is the whole
+    // reason the two fields are separate: a hand-authored material that set
+    // `specular` to mean "shiny" must not lose its diffuse for saying so.
+    expect(source).toMatch(/1\.0 - (?:uMetallic|draw\.rimAlpha\.w)/);
+  });
+
   it("keeps the 1/pi off the direct model", () => {
     // The scale is selected on the tone-mapping flag in both backends rather
     // than applied unconditionally. Without this, turning tone mapping OFF

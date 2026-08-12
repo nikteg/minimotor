@@ -104,6 +104,7 @@ uniform int uLightCount;
 uniform vec3 uCameraPos;
 uniform float uShininess;
 uniform float uSpecular;
+uniform float uMetallic;
 uniform bool uUnlit;
 uniform int uTextureBlend; // 0 none, 1 multiply, 2 over
 uniform bool uUvPlanar;
@@ -222,11 +223,13 @@ void main() {
     // Unlit skips the lighting, not the output curve: an unlit gizmo beside a
     // lit surface has to have come through the same shoulder, or it reads as
     // belonging to a different scene.
-    vec3 flat = base.rgb;
-    if (uToneMap) flat = linearToSrgb(acesToneMap(flat));
+    // A backtick would end this template literal, so: flat is a reserved
+    // interpolation qualifier in GLSL, which is why this is called plain.
+    vec3 plain = base.rgb;
+    if (uToneMap) plain = linearToSrgb(acesToneMap(plain));
     // The canvas is premultiplied-alpha, so premultiply exactly once at the
     // render boundary. Texture uploads stay straight-alpha below.
-    fragColor = vec4(flat * base.a, base.a);
+    fragColor = vec4(plain * base.a, base.a);
     return;
   }
 
@@ -246,6 +249,20 @@ void main() {
   // illuminance. Only under tone mapping: applying it to the direct model
   // would darken every existing scene by the same third.
   float diffuseScale = uToneMap ? 0.31830988 : 1.0;
+  // Under tone mapping the highlight has to be energy-plausible, because it is
+  // now being multiplied by an illuminance rather than by a number near 1.
+  // Three things change and all three are the metal/rough convention:
+  //   - it is TINTED. A white sheen on a saturated surface lifts whichever
+  //     channel the surface has least of, which reads as the colour draining
+  //     out. Metals reflect their own colour; dielectrics reflect 4%.
+  //   - the lobe is NORMALIZED by (n + 8) / 8pi, so a low exponent spreads the
+  //     same energy wider instead of adding more of it.
+  //   - it is multiplied by N·L, because a face the light does not reach has
+  //     no highlight to show.
+  // uSpecular is read as metalness here, which is what the glTF loader puts
+  // in it. Everything above is skipped in the direct model.
+  vec3 f0 = mix(vec3(0.08 * uSpecular), base.rgb, uMetallic);
+  float lobe = (uShininess + 8.0) * 0.039788736;
   for (int i = 0; i < ${MAX_LIGHTS}; i++) {
     if (i >= uLightCount) break;
     vec3 toLight = -uLightDir[i];
@@ -253,10 +270,16 @@ void main() {
     lit += uLightColor[i] * ndl * diffuseScale;
     if (uShininess > 0.0 && ndl > 0.0) {
       vec3 halfway = normalize(toLight + view);
-      spec += uLightColor[i] * uSpecular * pow(max(dot(n, halfway), 0.0), uShininess);
+      float blinn = pow(max(dot(n, halfway), 0.0), uShininess);
+      spec += uToneMap
+        ? uLightColor[i] * f0 * (lobe * blinn * ndl)
+        : uLightColor[i] * uSpecular * blinn;
+
     }
   }
-  vec3 shaded = base.rgb * lit + spec;
+  // A metal has no diffuse: what it does not reflect, it absorbs.
+  vec3 albedo = uToneMap ? base.rgb * (1.0 - uMetallic) : base.rgb;
+  vec3 shaded = albedo * lit + spec;
   // Fog before the curve, not after: the fog colour is a colour in the scene
   // like any other, and a distant surface that has faded most of the way into
   // it should reach the shoulder with it rather than be mixed into an
@@ -289,6 +312,7 @@ interface Uniforms {
   cameraPos: WebGLUniformLocation | null;
   shininess: WebGLUniformLocation | null;
   specular: WebGLUniformLocation | null;
+  metallic: WebGLUniformLocation | null;
   unlit: WebGLUniformLocation | null;
   textureBlend: WebGLUniformLocation | null;
   uvPlanar: WebGLUniformLocation | null;
@@ -398,6 +422,7 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     cameraPos: gl.getUniformLocation(program, "uCameraPos"),
     shininess: gl.getUniformLocation(program, "uShininess"),
     specular: gl.getUniformLocation(program, "uSpecular"),
+    metallic: gl.getUniformLocation(program, "uMetallic"),
     unlit: gl.getUniformLocation(program, "uUnlit"),
     textureBlend: gl.getUniformLocation(program, "uTextureBlend"),
     uvPlanar: gl.getUniformLocation(program, "uUvPlanar"),
@@ -561,6 +586,7 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     gl!.uniform4f(u.baseColor, color[0], color[1], color[2], color[3]);
     gl!.uniform1f(u.shininess, material.shininess ?? 0);
     gl!.uniform1f(u.specular, material.specular ?? 0.25);
+    gl!.uniform1f(u.metallic, material.metallic ?? 0);
     gl!.uniform1i(u.unlit, material.unlit ? 1 : 0);
 
     const pixelated = material.pixelated ?? true;

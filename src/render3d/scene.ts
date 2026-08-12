@@ -86,6 +86,22 @@ export interface Material {
    *  a first-attempt Blinn-Phong surface looks bleached: without a strength
    *  term the highlight adds a full white on top of the base colour. */
   specular?: number;
+  /** Metalness, 0..1. Default 0, which is every non-metal.
+   *
+   *  Only `toneMapping: "aces"` reads it, and there it does the two things
+   *  metalness does: the highlight takes the surface's own colour instead of
+   *  the light's, and the diffuse goes away, because what a metal does not
+   *  reflect it absorbs. Both are wrong for a dielectric and both matter — a
+   *  white highlight on a saturated surface lifts whichever channel the
+   *  surface has least of, which reads as the colour draining out.
+   *
+   *  Kept separate from `specular` on purpose. They were briefly the same
+   *  field, because a glTF document's `metallicFactor` was the only
+   *  reflectivity signal the direct model had anywhere to put; then the
+   *  physical path started reading it as metalness and every hand-authored
+   *  material that had set `specular` to mean "shiny" turned into a metal and
+   *  went dark. */
+  metallic?: number;
   /** Nearest-neighbour texture sampling — the pixel-art default the rest of
    *  the engine assumes. Set false for a photographic texture. */
   pixelated?: boolean;

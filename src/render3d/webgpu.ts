@@ -87,7 +87,7 @@ struct DrawData {
   skinParams: vec4f,
   // xy: uv scale, zw: uv offset
   uvTransform: vec4f,
-  // xyz: rim alpha bias/scale/power, w unused
+  // xyz: rim alpha bias/scale/power, w: metalness
   rimAlpha  : vec4f,
   jointMatrices: array<mat4x4f, ${MAX_JOINTS}>,
 };
@@ -243,10 +243,11 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
     // Unlit skips the lighting, not the output curve: an unlit gizmo beside a
     // lit surface has to have come through the same shoulder, or it reads as
     // belonging to a different scene.
-    var flat = base.rgb;
-    if (toneMap) { flat = linearToSrgb(acesToneMap(flat)); }
+    // Named to match the WebGL2 backend, where flat is a reserved word.
+    var plain = base.rgb;
+    if (toneMap) { plain = linearToSrgb(acesToneMap(plain)); }
     // Unlit output is premultiplied to match the canvas alpha mode.
-    return vec4f(flat * base.a, base.a);
+    return vec4f(plain * base.a, base.a);
   }
 
   var n = normalize(in.normal);
@@ -266,6 +267,14 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
   // illuminance. Only under tone mapping: applying it to the direct model
   // would darken every existing scene by the same third.
   let diffuseScale = select(1.0, 0.31830988, toneMap);
+  // Under tone mapping the highlight has to be energy-plausible, because it is
+  // now being multiplied by an illuminance rather than by a number near 1.
+  // Tinted so it stops draining the colour out of saturated surfaces,
+  // normalized by (n + 8) / 8pi so a low exponent spreads the same energy
+  // instead of adding more, and gated on N·L. See the WebGL2 backend, which
+  // has the long version of this comment.
+  let f0 = mix(vec3f(0.08 * draw.params.w), base.rgb, draw.rimAlpha.w);
+  let lobe = (draw.params.x + 8.0) * 0.039788736;
   for (var i = 0; i < ${MAX_LIGHTS}; i = i + 1) {
     if (i >= count) { break; }
     let toLight = -frame.lightDir[i].xyz;
@@ -273,10 +282,15 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
     lit = lit + frame.lightColor[i].rgb * ndl * diffuseScale;
     if (draw.params.x > 0.0 && ndl > 0.0) {
       let halfway = normalize(toLight + view);
-      spec = spec + frame.lightColor[i].rgb * draw.params.w * pow(max(dot(n, halfway), 0.0), draw.params.x);
+      let blinn = pow(max(dot(n, halfway), 0.0), draw.params.x);
+      let physical = frame.lightColor[i].rgb * f0 * (lobe * blinn * ndl);
+      let direct = frame.lightColor[i].rgb * draw.params.w * blinn;
+      spec = spec + select(direct, physical, toneMap);
     }
   }
-  var rgb = base.rgb * lit + spec;
+  // A metal has no diffuse: what it does not reflect, it absorbs.
+  let albedo = select(base.rgb, base.rgb * (1.0 - draw.rimAlpha.w), toneMap);
+  var rgb = albedo * lit + spec;
   // Fog before the curve, not after: the fog colour is a colour in the scene
   // like any other, and a distant surface that has faded most of the way into
   // it should reach the shoulder with it rather than be mixed into an
@@ -752,7 +766,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     drawData[at + 44] = rim?.[0] ?? 1;
     drawData[at + 45] = rim?.[1] ?? 0;
     drawData[at + 46] = rim?.[2] ?? 1;
-    drawData[at + 47] = 0;
+    drawData[at + 47] = material.metallic ?? 0;
     drawData.set(skin ?? IDENTITY_JOINTS, at + 48);
   }
 
