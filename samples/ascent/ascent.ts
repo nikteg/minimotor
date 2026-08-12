@@ -28,6 +28,7 @@ import { createTimers } from "minimotor/timers";
 import { createUI } from "minimotor/ui";
 import { Fsm, Gizmos, Mathf, createApp } from "minimotor";
 import * as Sprites from "minimotor/sprites";
+import type { ScratchCanvas } from "minimotor/sprites";
 import { component, createEcs, type Entity } from "minimotor/ecs";
 import type { SpriteLike } from "minimotor";
 import type { AnimationCursor } from "minimotor/animation";
@@ -389,7 +390,7 @@ const texBase: Record<string, number> = {}; // real opaque base fraction per pro
 // like any loaded sprite sheet — no per-frame path drawing.
 const CRYSTAL_FR = 16; // rotation frames
 const CRYSTAL_FS = 40; // baked frame size (px, includes glow)
-let crystalSheet!: HTMLCanvasElement; // the cached canvas
+let crystalSheet!: ScratchCanvas; // the cached canvas
 let crystalAnim!: AnimationCursor<"spin">; // shared cursor over the "ready" row (drives sx)
 const orbWorld = createEcs();
 interface OrbData {
@@ -419,7 +420,7 @@ function drawCursor(
 // frames per row × 2 rows (row 0 = "ready" cyan + glow, row 1 = "spent" grey).
 // origin: "center" translates to each cell's centre, so the diamond rotates
 // in place.
-function bakeCrystalSheet(): HTMLCanvasElement {
+function bakeCrystalSheet(): ScratchCanvas {
   const s = 8;
   return Sprites.atlas(
     CRYSTAL_FS,
@@ -497,7 +498,7 @@ function buildAnimations(): void {
 
   // Each state is a single-state cursor over its own strip. fall/dash/dead need
   // a specific jump frame, so bake a 1-frame strip of exactly that frame.
-  const oneState = (sheet: HTMLCanvasElement, frames: number, fps: number) =>
+  const oneState = (sheet: ScratchCanvas, frames: number, fps: number) =>
     Anim.fromGrid(sheet, {
       frame: { w: FRAME, h: FRAME },
       states: { s: { row: 0, frames, fps } },

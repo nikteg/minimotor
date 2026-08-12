@@ -96,6 +96,50 @@ export function snapDest(
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
+/** GL scissor rect in integer backing-store pixels, origin bottom-left. */
+export interface Scissor {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** Axis-aligned clip rect in user space → GL scissor (y-up). Null when the
+ *  transformed rect misses the canvas entirely. */
+export function scissorFromRect(
+  m: Affine,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  canvasW: number,
+  canvasH: number,
+): Scissor | null {
+  const x0 = m.a * x + m.c * y + m.e;
+  const y0 = m.b * x + m.d * y + m.f;
+  const x1 = m.a * (x + w) + m.c * y + m.e;
+  const y1 = m.b * (x + w) + m.d * y + m.f;
+  const x2 = m.a * x + m.c * (y + h) + m.e;
+  const y2 = m.b * x + m.d * (y + h) + m.f;
+  const x3 = m.a * (x + w) + m.c * (y + h) + m.e;
+  const y3 = m.b * (x + w) + m.d * (y + h) + m.f;
+  const minX = Math.min(x0, x1, x2, x3);
+  const maxX = Math.max(x0, x1, x2, x3);
+  const minY = Math.min(y0, y1, y2, y3);
+  const maxY = Math.max(y0, y1, y2, y3);
+  const sx = Math.round(minX);
+  const syTop = Math.round(minY);
+  const sw = Math.round(maxX) - sx;
+  const sh = Math.round(maxY) - syTop;
+  const glY = canvasH - (syTop + sh);
+  const cx = Math.max(0, sx);
+  const cy = Math.max(0, glY);
+  const cw = Math.min(canvasW, sx + sw) - cx;
+  const ch = Math.min(canvasH, glY + sh) - cy;
+  if (cw <= 0 || ch <= 0) return null;
+  return { x: cx, y: cy, w: cw, h: ch };
+}
+
 /** Device-space (y-down) → clip space (y-up). */
 export function toClipSpace(
   x: number,

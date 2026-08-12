@@ -39,5 +39,8 @@ export interface SceneRenderer {
   /** Solid quad in the current transform — colour-skin tiles and the particle
    *  `arc`/`fill` fallback. */
   fillQuad(dx: number, dy: number, dw: number, dh: number, rgba: Rgba): void;
+  /** Axis-aligned clip in the current transform's user space. Pass `null` to
+   *  disable. Replaces any previous clip (does not intersect). */
+  setClip(rect: { x: number; y: number; w: number; h: number } | null): void;
   destroy(): void;
 }

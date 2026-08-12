@@ -10,6 +10,7 @@
 // trimming measures, and why the sample can show monospaced and proportional
 // side by side from one sheet.
 import * as Sprites from "minimotor/sprites";
+import type { ScratchCanvas } from "minimotor/sprites";
 
 /** Rows are separated by "/", "#" is an inked pixel. */
 const GLYPHS: Record<string, string> = {
@@ -74,7 +75,7 @@ const COLS = 16;
 /** Bake the glyphs into one atlas canvas. White on transparent, because
  *  `color` and `outline` tint the art — a sheet drawn in its final colour
  *  could only ever be that colour. */
-export function bakeSheet(): HTMLCanvasElement {
+export function bakeSheet(): ScratchCanvas {
   const rows = Object.values(GLYPHS);
   return Sprites.atlas(
     CELL.w,
@@ -93,7 +94,7 @@ export function bakeSheet(): HTMLCanvasElement {
 /** A four-glyph icon sheet for the `Font.glyphs` demo: characters that are
  *  pictures. Cells are 7x7 and deliberately NOT a regular charset — the point
  *  is that a font can be any rects you can name. */
-export function bakeIcons(): HTMLCanvasElement {
+export function bakeIcons(): ScratchCanvas {
   const art = [
     // heart
     ".##.##./#######/#######/.#####./..###../...#.../.......",

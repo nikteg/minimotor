@@ -275,6 +275,7 @@ export function createLens(options: CameraOptions): CameraLens {
       ctx.beginPath();
       ctx.rect(into.x, into.y, into.w, into.h);
       ctx.clip();
+      draw.clipScene(into);
     }
     const m = mapping(into, scratchMap);
     ctx.translate(m.tx, m.ty);
@@ -289,6 +290,7 @@ export function createLens(options: CameraOptions): CameraLens {
     try {
       fn();
     } finally {
+      draw.clipScene(null);
       ctx.restore();
     }
   }

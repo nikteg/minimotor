@@ -3,6 +3,7 @@
 // in this file runs while drawing.
 
 import type { FontImage, Glyph } from "./types.js";
+import { scratchCanvas, scratchContext } from "@src/engine/offscreen.js";
 
 /** Printable ASCII, `space` through `~`, in code-point order. The layout
  *  virtually every pixel-font sheet on itch.io ships with — 95 cells, usually
@@ -18,10 +19,8 @@ export function alphaMap(image: FontImage): { data: Uint8ClampedArray; w: number
   const w = Math.max(1, Math.ceil(image.width));
   const h = Math.max(1, Math.ceil(image.height));
   try {
-    const cv = document.createElement("canvas");
-    cv.width = w;
-    cv.height = h;
-    const ctx = cv.getContext("2d");
+    const cv = scratchCanvas(w, h);
+    const ctx = scratchContext(cv);
     if (!ctx) return null;
     ctx.drawImage(image, 0, 0);
     const pixels = ctx.getImageData(0, 0, w, h).data;

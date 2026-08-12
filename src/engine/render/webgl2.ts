@@ -20,6 +20,7 @@ import {
   imageSize,
   prepareSprites,
   resolveSprite,
+  scissorFromRect,
   spriteCorners,
   writeQuad,
   writeQuadCorners,
@@ -209,6 +210,7 @@ export function createWebGL2Renderer(
   let canvasW = 1;
   let canvasH = 1;
   let destroyed = false;
+  let clipOn = false;
 
   const clearColor = opts.background ? parseRgba(opts.background) : ([0, 0, 0, 0] as Rgba);
   const unstack = stackUnder(overlay, scene);
@@ -339,6 +341,10 @@ export function createWebGL2Renderer(
     kind: "webgl",
     beginFrame() {
       if (destroyed) return;
+      if (clipOn) {
+        gl.disable(gl.SCISSOR_TEST);
+        clipOn = false;
+      }
       gl.viewport(0, 0, canvasW, canvasH);
       gl.clearColor(clearColor[0], clearColor[1], clearColor[2], clearColor[3]);
       gl.clear(gl.COLOR_BUFFER_BIT);
@@ -439,6 +445,25 @@ export function createWebGL2Renderer(
     fillQuad(dx, dy, dw, dh, rgba) {
       if (destroyed || rgba[3] <= 0) return;
       pushQuad(whiteTex, dx, dy, dw, dh, 0, 0, 1, 1, rgba[0], rgba[1], rgba[2], rgba[3]);
+    },
+    setClip(rect) {
+      if (destroyed) return;
+      flush();
+      if (!rect) {
+        if (clipOn) {
+          gl.disable(gl.SCISSOR_TEST);
+          clipOn = false;
+        }
+        return;
+      }
+      const s = scissorFromRect(transform, rect.x, rect.y, rect.w, rect.h, canvasW, canvasH);
+      gl.enable(gl.SCISSOR_TEST);
+      clipOn = true;
+      if (!s) {
+        gl.scissor(0, 0, 0, 0);
+        return;
+      }
+      gl.scissor(s.x, s.y, s.w, s.h);
     },
     destroy() {
       if (destroyed) return;

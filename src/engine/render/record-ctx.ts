@@ -3,7 +3,9 @@
 // into when the WebGL scene layer is active. It implements the subset those
 // modules actually call (`drawImage` 3/5/9-arg, `fillRect`, path `arc`+`fill`,
 // the transform stack, `globalAlpha`) and forwards blits to the batcher.
-// `clip` is a documented no-op.
+// `clip` is an axis-aligned scissor from the last `rect()`; `save`/`restore`
+// only push that scissor when `clip()` actually ran, so a Camera.into clip
+// on the scene is not wiped by a tile bake's save/restore.
 
 import type { SceneRenderer } from "./target.js";
 import {
@@ -27,6 +29,7 @@ interface StackFrame {
   alpha: number;
   fillStyle: string;
   smoothing: boolean;
+  clip: { x: number; y: number; w: number; h: number } | null;
 }
 
 export interface DrawRecorder {
@@ -42,6 +45,9 @@ export function createDrawRecorder(): DrawRecorder {
   let fillStyle: string | CanvasGradient | CanvasPattern = "#000";
   let smoothing = false;
   let lastArc: Arc | null = null;
+  let lastRect: { x: number; y: number; w: number; h: number } | null = null;
+  let clipRect: { x: number; y: number; w: number; h: number } | null = null;
+  let clipUsed = false;
   let canvasRef: { width: number; height: number } = { width: 1, height: 1 };
 
   function syncTransform(): void {
@@ -80,6 +86,7 @@ export function createDrawRecorder(): DrawRecorder {
         alpha,
         fillStyle: typeof fillStyle === "string" ? fillStyle : "#000",
         smoothing,
+        clip: clipRect,
       });
     },
     restore() {
@@ -89,6 +96,11 @@ export function createDrawRecorder(): DrawRecorder {
       alpha = f.alpha;
       fillStyle = f.fillStyle;
       smoothing = f.smoothing;
+      clipRect = f.clip;
+      if (clipUsed && scene) {
+        syncTransform();
+        scene.setClip(clipRect);
+      }
     },
     translate(x: number, y: number) {
       postMultiply({ a: 1, b: 0, c: 0, d: 1, e: x, f: y });
@@ -136,12 +148,21 @@ export function createDrawRecorder(): DrawRecorder {
     },
     beginPath() {
       lastArc = null;
+      lastRect = null;
     },
     arc(x: number, y: number, r: number) {
       lastArc = { x, y, r };
     },
-    rect(_x: number, _y: number, _w: number, _h: number) {},
-    clip() {},
+    rect(x: number, y: number, w: number, h: number) {
+      lastRect = { x, y, w, h };
+    },
+    clip() {
+      if (!scene || !lastRect) return;
+      clipRect = lastRect;
+      clipUsed = true;
+      syncTransform();
+      scene.setClip(clipRect);
+    },
     fill() {
       if (!scene || !lastArc) return;
       const col = parseRgba(typeof fillStyle === "string" ? fillStyle : "#fff");
@@ -192,6 +213,9 @@ export function createDrawRecorder(): DrawRecorder {
       fillStyle = "#000";
       smoothing = false;
       lastArc = null;
+      lastRect = null;
+      clipRect = null;
+      clipUsed = false;
     },
   };
 }

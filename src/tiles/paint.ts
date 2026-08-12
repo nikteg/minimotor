@@ -8,6 +8,7 @@
 // the level through its public queries.
 
 import { blitPixelAligned, fillPixelAligned } from "@src/engine/pixel-raster.js";
+import { scratchCanvas, scratchContext, type ScratchCanvas } from "@src/engine/offscreen.js";
 import type { DrawTilesOptions } from "@src/engine/index.js";
 import type { Cell, DualLayer, Level, SelectorCell, Skin, SkinValue } from "./types.js";
 import { blitCell, isDualLayer } from "./cells.js";
@@ -161,7 +162,7 @@ export function createPainter<C extends string>(
   // one. `set()` and `invalidate()` drop it.
   const BAKE_MAX_PX = 4096; // device-px cap per axis for the offscreen canvas
   const BAKE_MAX_SCALE = 2; // bake resolution cap (device px per world px)
-  let baked: { canvas: HTMLCanvasElement; scale: number; skinRef: unknown } | null = null;
+  let baked: { canvas: ScratchCanvas; scale: number; skinRef: unknown } | null = null;
   let bakeDisabled = false; // level too large — warned once, live path forever
 
   /** Bake ALL cells (no culling) into an offscreen canvas at device scale
@@ -176,13 +177,11 @@ export function createPainter<C extends string>(
       console.warn(`Tiles: level too large to bake (${w}x${h} device px); drawing per-tile`);
       return null;
     }
-    let canvas: HTMLCanvasElement;
+    let canvas: ScratchCanvas;
     let bctx: CanvasRenderingContext2D | null;
     try {
-      canvas = document.createElement("canvas");
-      canvas.width = w;
-      canvas.height = h;
-      bctx = canvas.getContext("2d");
+      canvas = scratchCanvas(w, h);
+      bctx = scratchContext(canvas);
     } catch {
       return null;
     }

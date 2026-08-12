@@ -131,5 +131,7 @@ These still hold:
 `createApp(canvas, { renderer: "webgl" | "auto" })` stacks a WebGL2 scene
 canvas under the overlay. `Draw.sprites` / `Draw.tiles` / `Draw.particles` batch
 there; UI, text, and `Draw.rect` stay on Canvas2D. Default is `"canvas"`.
-OffscreenCanvas (plan stages 4a/4b) is still a proposal — see
-`docs/plan-gpu-rendering.md`.
+Bake sites (atlases, tile layers, particle dots, font alpha maps) use
+`OffscreenCanvas` when the environment can rasterise it — see
+`src/engine/offscreen.ts`. Offscreen *rendering* on a worker (plan stage 4b)
+is still a proposal — `docs/plan-gpu-rendering.md`.

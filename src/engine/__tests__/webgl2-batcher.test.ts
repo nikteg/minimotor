@@ -3,6 +3,7 @@ import { createApp } from "@src/engine/index.js";
 import {
   FLOATS_PER_QUAD,
   IDENTITY,
+  scissorFromRect,
   sortSpritesByZAndTexture,
   toClipSpace,
   transformPoint,
@@ -65,6 +66,7 @@ function stubWebGL2(canvas: HTMLCanvasElement): WebGL2RenderingContext {
     UNPACK_PREMULTIPLY_ALPHA_WEBGL: 37441,
     DEPTH_TEST: 2929,
     CULL_FACE: 2884,
+    SCISSOR_TEST: 3089,
     createShader: () => shader,
     shaderSource: vi.fn(),
     compileShader: vi.fn(),
@@ -102,6 +104,7 @@ function stubWebGL2(canvas: HTMLCanvasElement): WebGL2RenderingContext {
     clear: vi.fn(),
     enable: vi.fn(),
     disable: vi.fn(),
+    scissor: vi.fn(),
     blendFunc: vi.fn(),
     drawElements: vi.fn(),
     getExtension: (name: string) =>
@@ -244,5 +247,21 @@ describe("batcher CPU math", () => {
   it("identity affine is a no-op on a point", () => {
     const p = transformPoint(IDENTITY, 7, 9, { x: 0, y: 0 });
     expect(p).toEqual({ x: 7, y: 9 });
+  });
+
+  it("converts a user-space clip rect to a y-up GL scissor", () => {
+    const m: Affine = { a: 2, b: 0, c: 0, d: 2, e: 10, f: 20 };
+    // rect (0,0,10,5) → device (10,20)-(30,30); canvas 100×80
+    // GL y = 80 - 30 = 50, size 20×10
+    expect(scissorFromRect(m, 0, 0, 10, 5, 100, 80)).toEqual({
+      x: 10,
+      y: 50,
+      w: 20,
+      h: 10,
+    });
+  });
+
+  it("returns null when the clip misses the canvas", () => {
+    expect(scissorFromRect(IDENTITY, 200, 0, 10, 10, 100, 100)).toBeNull();
   });
 });

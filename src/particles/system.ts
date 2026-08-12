@@ -19,6 +19,7 @@
 import { lruCache } from "@src/cache/lruCache.js";
 import type { ClockHandle } from "@src/clock/index.js";
 import { lazySteps } from "@src/clock/lazySteps.js";
+import { scratchCanvas, scratchContext, type ScratchCanvas } from "@src/engine/offscreen.js";
 
 interface Particle {
   x: number;
@@ -30,7 +31,7 @@ interface Particle {
   size: number;
   color: string;
   gravity: number;
-  dot: HTMLCanvasElement | null; // pre-baked circle, resolved once at spawn
+  dot: ScratchCanvas | null; // pre-baked circle, resolved once at spawn
 }
 
 /** One full-shape literal so every particle shares a single hidden class. */
@@ -111,16 +112,15 @@ function sample(r: Range, rng: () => number): number {
 // churn). LRU-bounded so dynamic color strings can't grow it forever — but
 // per-frame-computed colors still churn re-bakes, so prefer a fixed set.
 const DOT_R = 16;
-const dotCache = lruCache<HTMLCanvasElement | null>(64);
+const dotCache = lruCache<ScratchCanvas | null>(64);
 
-function dotFor(color: string): HTMLCanvasElement | null {
+function dotFor(color: string): ScratchCanvas | null {
   let dot = dotCache.get(color);
   if (dot === undefined) {
     dot = null;
     try {
-      const c = document.createElement("canvas");
-      c.width = c.height = DOT_R * 2;
-      const g = c.getContext("2d");
+      const c = scratchCanvas(DOT_R * 2, DOT_R * 2);
+      const g = scratchContext(c);
       if (g) {
         g.fillStyle = color;
         g.beginPath();

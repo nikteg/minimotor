@@ -19,6 +19,7 @@ export function createCanvas2DRenderer(): SceneRenderer {
     sprites(_list: Iterable<DrawSprite>, _opts?: DrawSpritesOptions) {},
     blitImage() {},
     fillQuad(_dx: number, _dy: number, _dw: number, _dh: number, _rgba: Rgba) {},
+    setClip() {},
     destroy() {},
   };
 }

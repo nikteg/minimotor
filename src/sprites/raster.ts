@@ -3,13 +3,15 @@
 // offscreen canvas once, then blit with drawImage each frame.
 
 import { lruCache, type LruCache } from "@src/cache/lruCache.js";
+import { scratchCanvas, scratchContext, type ScratchCanvas } from "@src/engine/offscreen.js";
+export type { ScratchCanvas };
 // ECS integration lives in `ecs.ts`; this file is rendering/atlas-only.
 
 /** An offscreen canvas pre-rendered for blitting, tagged with its `logicalSize`. */
-export interface SpriteCanvas extends HTMLCanvasElement {
+export type SpriteCanvas = ScratchCanvas & {
   /** Logical size in CSS pixels (the backing store is DPR × logicalSize) */
   logicalSize: number;
-}
+};
 
 // Both caches have an OPEN key space — size, dpr and any caller-supplied
 // discriminator fold into the key — so both are bounded. Baking at a size
@@ -17,7 +19,7 @@ export interface SpriteCanvas extends HTMLCanvasElement {
 // would otherwise pile up offscreen canvases forever. Sprites are small, so
 // they get a roomy cap; layers are full-size, so only the recent few.
 const cache = lruCache<SpriteCanvas>(128);
-const layerCache = lruCache<HTMLCanvasElement>(16);
+const layerCache = lruCache<ScratchCanvas>(16);
 // Tints per source image. The outer WeakMap dies with the image; the inner
 // per-color cache is bounded for the same reason as above (a tint color
 // computed per frame is a plausible mistake).
@@ -61,11 +63,9 @@ export function getSprite(
   cacheKey += "@" + size + "@" + dpr;
   let sprite = cache.get(cacheKey);
   if (!sprite) {
-    sprite = document.createElement("canvas") as SpriteCanvas;
-    sprite.width = Math.ceil(size * dpr);
-    sprite.height = Math.ceil(size * dpr);
+    sprite = scratchCanvas(Math.ceil(size * dpr), Math.ceil(size * dpr)) as SpriteCanvas;
     sprite.logicalSize = size;
-    const ctx = sprite.getContext("2d")!;
+    const ctx = scratchContext(sprite)!;
     ctx.scale(dpr, dpr);
     ctx.translate(size / 2, size / 2);
     draw(ctx);
@@ -92,15 +92,13 @@ export function getLayer(
   h: number,
   dpr: number,
   draw: (ctx: CanvasRenderingContext2D) => void,
-): HTMLCanvasElement {
+): ScratchCanvas {
   sweepOtherDpr(dpr);
   cacheKey += "@" + dpr;
   let layer = layerCache.get(cacheKey); // an LRU get refreshes recency
   if (!layer) {
-    layer = document.createElement("canvas");
-    layer.width = Math.max(1, Math.ceil(w * dpr));
-    layer.height = Math.max(1, Math.ceil(h * dpr));
-    const ctx = layer.getContext("2d")!;
+    layer = scratchCanvas(Math.max(1, Math.ceil(w * dpr)), Math.max(1, Math.ceil(h * dpr)));
+    const ctx = scratchContext(layer)!;
     ctx.scale(dpr, dpr);
     draw(ctx);
     layerCache.set(cacheKey, layer); // evicts the oldest bake beyond the cap
@@ -112,7 +110,7 @@ export function getLayer(
  *  font atlases `Font.atlas` tints. */
 export type TintSource = CanvasImageSource & { width: number; height: number };
 
-const tintCache = new WeakMap<object, LruCache<HTMLCanvasElement>>();
+const tintCache = new WeakMap<object, LruCache<ScratchCanvas>>();
 
 /** A solid-`color` silhouette of `source` — the same opaque shape, flat-filled.
  *  Draw it over the original at a fading alpha for a hit "white flash" (pair
@@ -124,7 +122,7 @@ const tintCache = new WeakMap<object, LruCache<HTMLCanvasElement>>();
  *    ctx.globalAlpha = flash.value;
  *    ctx.drawImage(Sprites.tint(frame, "#fff"), x, y); // same dest rect as `frame`
  *    ctx.globalAlpha = 1; */
-export function tint(source: TintSource, color: string): HTMLCanvasElement {
+export function tint(source: TintSource, color: string): ScratchCanvas {
   const w = Math.max(1, Math.ceil("naturalWidth" in source ? source.naturalWidth : source.width));
   const h = Math.max(
     1,
@@ -132,16 +130,14 @@ export function tint(source: TintSource, color: string): HTMLCanvasElement {
   );
   let byColor = tintCache.get(source);
   if (!byColor) {
-    byColor = lruCache<HTMLCanvasElement>(TINTS_PER_SOURCE);
+    byColor = lruCache<ScratchCanvas>(TINTS_PER_SOURCE);
     tintCache.set(source, byColor);
   }
   const key = `${color}@${w}x${h}`;
   let out = byColor.get(key);
   if (!out) {
-    out = document.createElement("canvas");
-    out.width = w;
-    out.height = h;
-    const ctx = out.getContext("2d")!;
+    out = scratchCanvas(w, h);
+    const ctx = scratchContext(out)!;
     ctx.drawImage(source, 0, 0, w, h);
     // Keep only the pixels the sprite already covers, recolored flat.
     ctx.globalCompositeOperation = "source-in";
@@ -209,15 +205,13 @@ export function atlas(
   count: number,
   draw: (ctx: CanvasRenderingContext2D, index: number) => void,
   opts: AtlasOptions = {},
-): HTMLCanvasElement {
+): ScratchCanvas {
   const cols = Math.max(1, opts.cols ?? count);
   const rows = Math.max(1, Math.ceil(count / cols));
   const offX = opts.origin === "center" ? fw / 2 : 0;
   const offY = opts.origin === "center" ? fh / 2 : 0;
-  const cv = document.createElement("canvas");
-  cv.width = fw * cols;
-  cv.height = fh * rows;
-  const ctx = cv.getContext("2d")!;
+  const cv = scratchCanvas(fw * cols, fh * rows);
+  const ctx = scratchContext(cv)!;
   for (let i = 0; i < count; i++) {
     ctx.save();
     ctx.translate((i % cols) * fw + offX, Math.floor(i / cols) * fh + offY);
@@ -239,7 +233,7 @@ export function atlas(
 export function packAtlas(
   images: Array<CanvasImageSource & { width: number; height: number }>,
   opts: { cols?: number; fw?: number; fh?: number } = {},
-): HTMLCanvasElement {
+): ScratchCanvas {
   if (images.length === 0) throw new Error("Sprites.packAtlas: no frames");
   const fw = opts.fw ?? images[0].width;
   const fh = opts.fh ?? images[0].height;
@@ -259,10 +253,8 @@ export function contentBounds(
 ): { x: number; y: number; w: number; h: number } {
   const w = source.width;
   const h = source.height;
-  const cv = document.createElement("canvas");
-  cv.width = w;
-  cv.height = h;
-  const ctx = cv.getContext("2d")!;
+  const cv = scratchCanvas(w, h);
+  const ctx = scratchContext(cv)!;
   ctx.drawImage(source, 0, 0);
   const data = ctx.getImageData(0, 0, w, h).data;
   let minX = w;

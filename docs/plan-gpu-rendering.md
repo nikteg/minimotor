@@ -1,8 +1,8 @@
 # Plan: a GPU path and OffscreenCanvas for minimotor
 
-Status: stages 1–3 are implemented (`createApp({ renderer: "webgl" | "auto" })`,
-dual-canvas WebGL2 sprite batcher, tiles/particles via a recording 2D context).
-Stages 4a/4b (OffscreenCanvas) are still a proposal.
+Status: stages 1–3 and 4a are implemented (`createApp({ renderer: "webgl" | "auto" })`,
+dual-canvas WebGL2 sprite batcher, tiles/particles via a recording 2D context,
+`scratchCanvas` for bakes). Stage 4b (scene on a worker) is still a proposal.
 
 The shipped shape is a `SceneRenderer` for `Draw.sprites` / `Draw.tiles` /
 `Draw.particles` only — not a full `RenderTarget` for every primitive. Overlay
@@ -153,8 +153,8 @@ texture atlas binding point.
   before. Write the test first: render a known 8×8 sprite at 4× and compare
   against the Canvas2D output pixel for pixel.
 
-**Acceptance**: `samples/particles` and `samples/sprites` render identically
-under both backends (pixel-diff in a Playwright test), and `samples/bench-sprites`
+**Acceptance**: `samples/gpu-blit` renders identically under both backends
+(pixel-diff in `e2e/gpu-blit.spec.ts`), and `samples/bench-sprites`
 reports a 60fps wall on the GL path well above the measured 2D baseline — with
 the **rotated** mode as the headline, since that is where the 2D path is weakest
 (~4,500) and where a batcher's advantage is structural rather than incremental.
@@ -187,22 +187,12 @@ with no `document` dependency in its hot path.
 
 Two independent uses, and they should be kept separate:
 
-**4a. Offscreen for the bakes (easy, ship it early — it does not need any of
-the above).** Nine sites call `document.createElement("canvas")` purely to rasterise
-something: `src/sprites/raster.ts` (×5), `src/tiles/tileset.ts`,
-`src/tiles/paint.ts`, `src/particles/system.ts`, `src/font/slice.ts`. Every one
-of them is a pure "make a bitmap" operation with no DOM involvement. Switching
-them to `new OffscreenCanvas(w, h)` behind one helper:
-
-```ts
-// src/engine/offscreen.ts
-export function scratchCanvas(w: number, h: number): OffscreenCanvas | HTMLCanvasElement;
-```
-
-...keeps them out of the document entirely, which avoids layout/style cost on
-creation and — more importantly — makes those functions callable from a worker
-and from Node with a polyfill. `Sprites.atlas` becoming worker-safe is what
-makes 4b possible at all. Low risk, immediate benefit, no API change.
+**4a. Offscreen for the bakes — shipped.** `scratchCanvas` / `scratchContext`
+in `src/engine/offscreen.ts` prefer `OffscreenCanvas` and fall back to a
+detached HTML canvas when that constructor is missing or cannot rasterise
+(jsdom, older browsers). Call sites: `src/sprites/raster.ts`,
+`src/tiles/tileset.ts`, `src/tiles/paint.ts`, `src/particles/system.ts`,
+`src/font/slice.ts`.
 
 **4b. Rendering on a worker (the real one).** `canvas.transferControlToOffscreen()`
 hands the canvas to a worker; the worker owns the render loop and the main
@@ -253,7 +243,7 @@ responsive to clicks.
 | 1 — `RenderTarget` interface   | —          | yes             | low, pure refactor         |
 | 2 — WebGL2 sprite batcher      | 1          | yes             | medium, pixel-art fidelity |
 | 3 — tiles + particles          | 2          | yes             | low                        |
-| 4a — OffscreenCanvas for bakes | —          | yes             | low                        |
+| 4a — OffscreenCanvas for bakes | —          | yes (done)      | low                        |
 | 4b — scene on a worker         | 1, 2, 4a   | yes             | high, threading model      |
 
 4a can go first; it is independent of everything and improves the current

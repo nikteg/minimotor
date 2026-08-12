@@ -810,6 +810,10 @@ export interface DrawApi {
   tiles(level: SkinlessTilesLike): void;
   tiles<S>(level: TilesLike<S>, skin: S, opts?: DrawTilesOptions): void;
   particles(sys: ParticleLike): void;
+  /** Clip subsequent scene-layer draws (`sprites` / `tiles` / `particles`) to
+   *  `rect` in the current overlay space. Overlay Canvas2D clip is separate —
+   *  `Camera.render({ into })` drives both. Pass `null` to disable. */
+  clipScene(rect: Rect | null): void;
 }
 
 /** Create a renderer permanently bound to one app/context. When `scene` is
@@ -846,5 +850,10 @@ export function createDraw(
     sprites: sprites.bind(target),
     tiles: tiles.bind(target) as DrawApi["tiles"],
     particles: particles.bind(target),
+    clipScene(rect) {
+      if (!target.scene) return;
+      target.scene.setTransform(readTransform(target.ctx));
+      target.scene.setClip(rect);
+    },
   };
 }

@@ -14,6 +14,7 @@ import type {
 } from "./types.js";
 import type { ClockHandle } from "@src/clock/index.js";
 import { cellHash, orient } from "./cells.js";
+import { scratchCanvas, scratchContext } from "@src/engine/offscreen.js";
 
 /** Slice a tileset image into named cells + selector factories — the
  *  space-indexed cousin of `Anim.fromGrid`. Named cells are fixed `Cell`s; the
@@ -202,13 +203,11 @@ export function recolor(
     map.set((fr << 16) | (fg << 8) | fb, (ta << 24) | (tr << 16) | (tg << 8) | tb);
   }
 
-  let canvas: HTMLCanvasElement;
+  let canvas: ReturnType<typeof scratchCanvas>;
   let ctx: CanvasRenderingContext2D | null;
   try {
-    canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
-    ctx = canvas.getContext("2d");
+    canvas = scratchCanvas(w, h);
+    ctx = scratchContext(canvas);
     if (!ctx) return image;
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(image, 0, 0);
