@@ -209,6 +209,12 @@ export interface Physics3DWorld {
   spherical(a: Physics3DBody, b: Physics3DBody, anchor: Vec3): Physics3DJoint;
   /** Weld two bodies at a world-space point, locking the current relative pose. */
   fixed(a: Physics3DBody, b: Physics3DBody, anchor: Vec3): Physics3DJoint;
+  /** Called when two bodies begin touching. Returns an unsubscribe. */
+  onContact(cb: (a: Physics3DBody, b: Physics3DBody) => void): () => void;
+  /** Called when two bodies stop touching — the exit half of `onContact`.
+   *  A body destroyed mid-overlap does not report a separation, so treat
+   *  destruction as its own exit. Returns an unsubscribe. */
+  onContactEnd(cb: (a: Physics3DBody, b: Physics3DBody) => void): () => void;
   step(): void;
   dispose(): void;
 }
@@ -251,13 +257,20 @@ export async function createPhysics3D(options: Physics3DOptions): Promise<Physic
     multiply: rapier.CoefficientCombineRule.Multiply,
     max: rapier.CoefficientCombineRule.Max,
   };
+  const bodies = new Map<number, Physics3DBody>();
+  type ContactCb = (a: Physics3DBody, b: Physics3DBody) => void;
+  const beginCbs = new Set<ContactCb>();
+  const endCbs = new Set<ContactCb>();
+  const events = new rapier.EventQueue(true);
 
   return {
     raw,
     createBody(bodyOptions = {}) {
       const descriptor = createRigidBodyDescriptor(rapier, bodyOptions);
       const body = raw.createRigidBody(descriptor);
-      return wrapBody(body);
+      const wrapped = wrapBody(body);
+      bodies.set(body.handle, wrapped);
+      return wrapped;
     },
     createCollider(body, shape, colliderOptions = {}) {
       const descriptor = createColliderDescriptor(rapier, shape);
@@ -275,6 +288,7 @@ export async function createPhysics3D(options: Physics3DOptions): Promise<Physic
       }
       if (colliderOptions.density !== undefined) descriptor.setDensity(colliderOptions.density);
       if (colliderOptions.sensor !== undefined) descriptor.setSensor(colliderOptions.sensor);
+      descriptor.setActiveEvents(rapier.ActiveEvents.COLLISION_EVENTS);
       return raw.createCollider(descriptor, body.raw);
     },
     raycast(origin, direction, rayOptions = {}) {
@@ -374,11 +388,34 @@ export async function createPhysics3D(options: Physics3DOptions): Promise<Physic
       );
       return jointHandle(raw, raw.createImpulseJoint(params, a.raw, b.raw, true));
     },
+    onContact(cb) {
+      beginCbs.add(cb);
+      return () => beginCbs.delete(cb);
+    },
+    onContactEnd(cb) {
+      endCbs.add(cb);
+      return () => endCbs.delete(cb);
+    },
     step() {
-      raw.step();
+      raw.step(events);
+      if (beginCbs.size === 0 && endCbs.size === 0) return;
+      events.drainCollisionEvents((handle1, handle2, started) => {
+        const c1 = raw.getCollider(handle1);
+        const c2 = raw.getCollider(handle2);
+        const p1 = c1?.parent();
+        const p2 = c2?.parent();
+        if (!p1 || !p2) return;
+        const a = bodies.get(p1.handle);
+        const b = bodies.get(p2.handle);
+        if (!a || !b) return;
+        const cbs = started ? beginCbs : endCbs;
+        for (const cb of cbs) cb(a, b);
+      });
     },
     dispose() {
+      events.free();
       raw.free();
+      bodies.clear();
     },
   };
 }

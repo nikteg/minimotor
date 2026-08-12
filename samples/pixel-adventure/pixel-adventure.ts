@@ -35,6 +35,7 @@ const game = createApp("game", {
   // letterbox fitting inside them.
   fullscreen: true,
   preventNavigation: true,
+  renderer: "webgl",
 });
 const Anim = createAnimation(game);
 createDebug(game, { initial: "performance" });

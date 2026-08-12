@@ -25,6 +25,7 @@ function stub2d(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
     beginPath: vi.fn(),
     rect: vi.fn(),
     clip: vi.fn(),
+    drawImage: vi.fn(),
     canvas,
   } as unknown as CanvasRenderingContext2D;
 }
@@ -263,5 +264,82 @@ describe("batcher CPU math", () => {
 
   it("returns null when the clip misses the canvas", () => {
     expect(scissorFromRect(IDENTITY, 200, 0, 10, 10, 100, 100)).toBeNull();
+  });
+});
+
+describe("Draw.sprite and scratch uploads", () => {
+  function glApp(): {
+    app: ReturnType<typeof createApp>;
+    texImage2D: ReturnType<typeof vi.fn>;
+    overlay: CanvasRenderingContext2D;
+  } {
+    let texImage2D: ReturnType<typeof vi.fn> = vi.fn();
+    let overlay: CanvasRenderingContext2D | null = null;
+    HTMLCanvasElement.prototype.getContext = function (type: string) {
+      if (type === "2d") {
+        const ctx = stub2d(this);
+        if (!overlay) overlay = ctx;
+        return ctx;
+      }
+      if (type === "webgl2") {
+        const gl = stubWebGL2(this);
+        texImage2D = gl.texImage2D as ReturnType<typeof vi.fn>;
+        return gl;
+      }
+      return origGc.call(this, type);
+    };
+    const canvas = document.createElement("canvas");
+    document.body.appendChild(canvas);
+    const app = createApp(canvas, { renderer: "webgl", fullscreen: false });
+    return { app, texImage2D, overlay: overlay! };
+  }
+
+  it("routes Draw.sprite through the scene renderer, not the overlay", () => {
+    const { app, texImage2D, overlay } = glApp();
+    const img = { width: 8, height: 8 } as HTMLImageElement;
+    const before = texImage2D.mock.calls.length;
+    app.Draw.sprite(
+      { sheet: { image: img }, rect: { sx: 0, sy: 0, sw: 8, sh: 8 } },
+      { x: 10, y: 20, w: 8, h: 8 },
+    );
+    expect(texImage2D.mock.calls.length).toBeGreaterThan(before);
+    expect(overlay.drawImage).not.toHaveBeenCalled();
+    app.destroy();
+  });
+
+  it("re-uploads an engine scratch only after bumpScratch", async () => {
+    const { scratchCanvas, bumpScratch } = await import("@src/engine/offscreen.js");
+    const { app, texImage2D } = glApp();
+    const scratch = scratchCanvas(8, 8);
+    const sprite = {
+      x: 0,
+      y: 0,
+      img: scratch as DrawSprite["img"],
+      w: 8,
+      h: 8,
+      ax: 0,
+      ay: 0,
+    };
+    app.Draw.sprites([sprite]);
+    const afterFirst = texImage2D.mock.calls.length;
+    app.Draw.sprites([sprite]);
+    expect(texImage2D.mock.calls.length).toBe(afterFirst);
+    bumpScratch(scratch);
+    app.Draw.sprites([sprite]);
+    expect(texImage2D.mock.calls.length).toBeGreaterThan(afterFirst);
+    app.destroy();
+  });
+
+  it("re-uploads a game-handed canvas every blit", () => {
+    const { app, texImage2D } = glApp();
+    const live = document.createElement("canvas");
+    live.width = 8;
+    live.height = 8;
+    const sprite = { x: 0, y: 0, img: live as DrawSprite["img"], w: 8, h: 8, ax: 0, ay: 0 };
+    app.Draw.sprites([sprite]);
+    const afterFirst = texImage2D.mock.calls.length;
+    app.Draw.sprites([sprite]);
+    expect(texImage2D.mock.calls.length).toBeGreaterThan(afterFirst);
+    app.destroy();
   });
 });

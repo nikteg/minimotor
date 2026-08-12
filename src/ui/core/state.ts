@@ -48,7 +48,7 @@ export function registerUiApp(app: App, gamepads: () => readonly GamepadState[] 
 /** The app selected by `withUiApp` or `selectUiApp`. */
 export function currentUiApp(): App {
   if (!current) {
-    throw new Error("Minimotor.UI: no active app; create UI with createUI(app)");
+    throw new Error("createUI: no active app; create UI with createUI(app)");
   }
   return current;
 }

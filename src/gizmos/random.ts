@@ -10,8 +10,8 @@ import { clamp } from "@src/math/mathf.js";
  *  `weightedPick`, `shuffleBag`, `rollDice` and `damageRoll`. Same seed → same
  *  stream, which is what makes a run replayable or a daily seed shareable.
  *
- *    const rng = Minimotor.Gizmos.seedRng(1234);
- *    const bag = Minimotor.Gizmos.shuffleBag(cards, rng); // deterministic */
+ *    const rng = Gizmos.seedRng(1234);
+ *    const bag = Gizmos.shuffleBag(cards, rng); // deterministic */
 export function seedRng(seed: number): () => number {
   let a = seed >>> 0;
   return () => {

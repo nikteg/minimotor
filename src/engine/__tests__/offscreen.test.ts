@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { scratchCanvas, scratchContext } from "@src/engine/offscreen.js";
+import {
+  bumpScratch,
+  scratchCanvas,
+  scratchContext,
+  scratchGeneration,
+} from "@src/engine/offscreen.js";
 
 describe("scratchCanvas", () => {
   it("returns a w×h surface that can take a 2d context in jsdom", () => {
@@ -22,5 +27,16 @@ describe("scratchCanvas", () => {
     const ctx = scratchContext(c);
     // jsdom's real getContext is null; engine tests that bake pixels mock it.
     expect(ctx === null || typeof ctx === "object").toBe(true);
+  });
+
+  it("tracks a generation that bumpScratch advances", () => {
+    const c = scratchCanvas(4, 4);
+    expect(scratchGeneration(c)).toBe(0);
+    bumpScratch(c);
+    expect(scratchGeneration(c)).toBe(1);
+    const foreign = document.createElement("canvas");
+    expect(scratchGeneration(foreign)).toBeUndefined();
+    bumpScratch(foreign);
+    expect(scratchGeneration(foreign)).toBeUndefined();
   });
 });

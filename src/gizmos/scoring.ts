@@ -29,7 +29,7 @@ export interface Combo {
  *  success; read `count`/`multiplier`. Decays on its clock (default
  *  `Clock.world`, so it freezes on pause).
  *
- *    const combo = Minimotor.Gizmos.combo({ windowMs: 2000 });
+ *    const combo = Gizmos.combo({ windowMs: 2000 });
  *    // on hit: combo.hit(); score += points * combo.multiplier; */
 export function combo(options: {
   windowMs?: number;
@@ -98,7 +98,7 @@ export interface ScoreTracker {
  *  best rather than throwing. Like every Gizmo it takes its collaborators
  *  directly, not the app — pass `store` to scope the key to a game or slot.
  *
- *    const scores = Minimotor.Gizmos.scoreTracker("snake_best");
+ *    const scores = Gizmos.scoreTracker("snake_best");
  *    scores.add(10);   // score 10, best follows if exceeded */
 export function scoreTracker(storageKey: string, store: ScoreStore = Storage): ScoreTracker {
   let _score = 0;

@@ -184,7 +184,7 @@ function looksLikeBody(value: unknown): boolean {
 
 function defaultUrl(): string {
   if (typeof location === "undefined") {
-    throw new Error("Minimotor.Net: no page origin to infer a relay URL from — pass `url`");
+    throw new Error("createNet: no page origin to infer a relay URL from — pass `url`");
   }
   return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws-signal`;
 }

@@ -717,14 +717,55 @@ describe("input", () => {
 });
 
 describe("live viewport & background", () => {
+  function mockBox(canvas: HTMLCanvasElement, w: number, h: number): void {
+    Object.defineProperty(canvas, "clientWidth", { configurable: true, get: () => w });
+    Object.defineProperty(canvas, "clientHeight", { configurable: true, get: () => h });
+  }
+
   it("keeps viewport identity across resize, mutating fields in place", () => {
-    const { game } = build();
+    const canvas = document.createElement("canvas");
+    const game = createApp(canvas, { fullscreen: true });
     const vp = game.viewport;
     Object.defineProperty(window, "innerWidth", { value: 999, configurable: true });
     window.dispatchEvent(new Event("resize"));
     tick(0); // resize is coalesced — applied at most once per animation frame
     expect(game.viewport).toBe(vp); // same object — holders never go stale
     expect(vp.w).toBe(999);
+    game.destroy();
+  });
+
+  it("sizes from the canvas CSS box when fullscreen is false", () => {
+    const canvas = document.createElement("canvas");
+    Object.defineProperty(canvas, "clientWidth", { configurable: true, get: () => 320 });
+    Object.defineProperty(canvas, "clientHeight", { configurable: true, get: () => 180 });
+    const game = createApp(canvas, { fullscreen: false });
+    expect(game.viewport.w).toBe(320);
+    expect(game.viewport.h).toBe(180);
+    expect(canvas.style.width).toBe("");
+    game.destroy();
+  });
+
+  it("re-reads the CSS box on resize when fullscreen is false", () => {
+    const canvas = document.createElement("canvas");
+    let w = 320;
+    Object.defineProperty(canvas, "clientWidth", { configurable: true, get: () => w });
+    Object.defineProperty(canvas, "clientHeight", { configurable: true, get: () => 180 });
+    const game = createApp(canvas, { fullscreen: false });
+    w = 480;
+    window.dispatchEvent(new Event("resize"));
+    tick(0);
+    expect(game.viewport.w).toBe(480);
+    game.destroy();
+  });
+
+  it("sizes from the window when fullscreen is true", () => {
+    Object.defineProperty(window, "innerWidth", { value: 640, configurable: true });
+    Object.defineProperty(window, "innerHeight", { value: 480, configurable: true });
+    const canvas = document.createElement("canvas");
+    const game = createApp(canvas, { fullscreen: true });
+    expect(game.viewport.w).toBe(640);
+    expect(game.viewport.h).toBe(480);
+    game.destroy();
   });
 
   it("fills the configured background at the start of every frame", () => {
@@ -741,6 +782,7 @@ describe("live viewport & background", () => {
     Object.defineProperty(window, "innerWidth", { value: 800, configurable: true });
     Object.defineProperty(window, "innerHeight", { value: 600, configurable: true });
     const canvas = document.createElement("canvas");
+    mockBox(canvas, 800, 600);
     const game = createApp(canvas, { resolution: { w: 200, h: 200 }, fullscreen: false });
     const vp = game.viewport;
     expect(vp.w).toBe(200); // logical size, not the window
@@ -754,6 +796,7 @@ describe("live viewport & background", () => {
     Object.defineProperty(window, "innerWidth", { value: 800, configurable: true });
     Object.defineProperty(window, "innerHeight", { value: 600, configurable: true });
     const canvas = document.createElement("canvas");
+    mockBox(canvas, 800, 600);
     canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 800, height: 600 }) as DOMRect;
     const game = createApp(canvas, { resolution: { w: 200, h: 200 }, fullscreen: false });
     // Window center (400,300) → logical center (100,100).
@@ -791,6 +834,7 @@ describe("live viewport & background", () => {
       } as unknown as CanvasRenderingContext2D;
     };
     const canvas = document.createElement("canvas");
+    mockBox(canvas, 800, 600);
     const game = createApp(canvas, { resolution: { w: 200, h: 200 }, fullscreen: false });
     game.Loop.run({ update: vi.fn(), draw: () => log.push("draw") });
     tick(16);

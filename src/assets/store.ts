@@ -111,7 +111,7 @@ function loadImage(url: string): Promise<HTMLImageElement> {
     img.addEventListener("load", () => resolve(img), { once: true });
     img.addEventListener(
       "error",
-      () => reject(new Error(`Minimotor.Assets: failed to load image "${url}"`)),
+      () => reject(new Error(`createAssets: failed to load image "${url}"`)),
       { once: true },
     );
     img.src = url;
@@ -121,7 +121,7 @@ function loadImage(url: string): Promise<HTMLImageElement> {
 async function loadAudio(url: string): Promise<ArrayBuffer> {
   const res = await fetch(url);
   if (!res.ok) {
-    throw new Error(`Minimotor.Assets: failed to load audio "${url}" (${res.status})`);
+    throw new Error(`createAssets: failed to load audio "${url}" (${res.status})`);
   }
   return res.arrayBuffer();
 }
@@ -129,7 +129,7 @@ async function loadAudio(url: string): Promise<ArrayBuffer> {
 async function loadJson(url: string): Promise<unknown> {
   const res = await fetch(url);
   if (!res.ok) {
-    throw new Error(`Minimotor.Assets: failed to load JSON "${url}" (${res.status})`);
+    throw new Error(`createAssets: failed to load JSON "${url}" (${res.status})`);
   }
   return res.json();
 }
@@ -137,7 +137,7 @@ async function loadJson(url: string): Promise<unknown> {
 async function loadObj(url: string): Promise<MeshData> {
   const res = await fetch(url);
   if (!res.ok) {
-    throw new Error(`Minimotor.Assets: failed to load OBJ "${url}" (${res.status})`);
+    throw new Error(`createAssets: failed to load OBJ "${url}" (${res.status})`);
   }
   return parseObj(await res.text());
 }
@@ -162,7 +162,7 @@ function loadOne(url: string): Promise<unknown> {
   if (AUDIO_EXT.test(url)) return loadAudio(url);
   return Promise.reject(
     new Error(
-      `Minimotor.Assets: unknown asset type for "${url}" (expected image, OBJ, JSON map, or audio)`,
+      `createAssets: unknown asset type for "${url}" (expected image, OBJ, JSON map, or audio)`,
     ),
   );
 }
@@ -258,7 +258,7 @@ export function createAssetStore(): AssetStore {
 
     get<T>(name: string): T {
       if (!cache.has(name)) {
-        throw new Error(`Minimotor.Assets: "${name}" is not loaded (call load() first)`);
+        throw new Error(`createAssets: "${name}" is not loaded (call load() first)`);
       }
       return cache.get(name) as T;
     },
@@ -266,7 +266,7 @@ export function createAssetStore(): AssetStore {
     image(name) {
       const a = store.get<unknown>(name);
       if (!(a instanceof HTMLImageElement)) {
-        throw new Error(`Minimotor.Assets: "${name}" is not an image`);
+        throw new Error(`createAssets: "${name}" is not an image`);
       }
       return a;
     },

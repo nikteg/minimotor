@@ -9,16 +9,15 @@
         margin: 0;
         overflow: hidden;
       }
-      /* The engine sizes each canvas to the full window; the halves clip them
-         so both games are visible at once. Each game still maps its pointer
-         through its own canvas rect, so input lands correctly in both. */
+      /* Each canvas sizes to its half (`fullscreen: false`). */
       .half {
         height: 50vh;
-        overflow: hidden;
         position: relative;
       }
       canvas {
         display: block;
+        width: 100%;
+        height: 100%;
       }
     </style>
   </head>

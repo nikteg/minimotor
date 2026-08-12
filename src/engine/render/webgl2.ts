@@ -13,6 +13,7 @@ import type { DrawSprite, DrawSpritesOptions } from "../draw.js";
 import type { SceneRenderer } from "./target.js";
 import type { Rgba } from "./color.js";
 import { parseRgba } from "./color.js";
+import { scratchGeneration } from "../offscreen.js";
 import {
   FLOATS_PER_QUAD,
   IDENTITY,
@@ -203,6 +204,7 @@ export function createWebGL2Renderer(
   );
 
   const textures = new WeakMap<CanvasImageSource, WebGLTexture>();
+  const texGen = new WeakMap<WebGLTexture, number>();
   const transform: Affine = { ...IDENTITY };
   const spriteScratch: DrawSprite[] = [];
   let quadCount = 0;
@@ -253,9 +255,16 @@ export function createWebGL2Renderer(
 
   function upload(image: CanvasImageSource): WebGLTexture | null {
     let tex = textures.get(image);
-    const live = isLiveCanvas(image);
-    // Canvases are redrawn in place (tile bakes, particle dots). Images are not.
-    if (tex && !live) return tex;
+    const gen = scratchGeneration(image);
+    // Engine-owned scratches re-upload only when `bumpScratch` runs. Static
+    // images never change. A canvas the game handed in stays live.
+    if (tex) {
+      if (gen !== undefined) {
+        if (texGen.get(tex) === gen) return tex;
+      } else if (!isLiveCanvas(image)) {
+        return tex;
+      }
+    }
     if (!tex) {
       tex = gl.createTexture();
       if (!tex) return null;
@@ -273,8 +282,10 @@ export function createWebGL2Renderer(
     } catch {
       gl.deleteTexture(tex);
       textures.delete(image);
+      texGen.delete(tex);
       return null;
     }
+    if (gen !== undefined) texGen.set(tex, gen);
     return tex;
   }
 

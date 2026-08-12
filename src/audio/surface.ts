@@ -312,7 +312,7 @@ export function sfx<K extends string>(
       spec,
       play(playOpts = {}) {
         if (!isUnlocked()) {
-          console.warn(`Minimotor.Audio: "${name}" dropped — audio unlocks on the first gesture`);
+          console.warn(`createAudio: "${name}" dropped — audio unlocks on the first gesture`);
           return;
         }
         const busName = (playOpts.bus ?? defaultBus).name;

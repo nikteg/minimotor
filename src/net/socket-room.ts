@@ -148,7 +148,7 @@ export function socketRoom<Msg = unknown>(
       if (settled) return;
       settled = true;
       room.close();
-      reject(new Error("Minimotor.Net: room server never answered"));
+      reject(new Error("createNet: room server never answered"));
     }, opts.timeoutMs ?? 8000);
 
     /** A welcome after a reconnect is a fresh membership list: diff it so the
@@ -221,7 +221,7 @@ export function socketRoom<Msg = unknown>(
         settled = true;
         clearTimeout(timer);
         setStatus("closed");
-        reject(new Error("Minimotor.Net: room server unreachable"));
+        reject(new Error("createNet: room server unreachable"));
         return;
       }
       if (!reconnectOn) {

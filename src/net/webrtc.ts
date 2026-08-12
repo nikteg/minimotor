@@ -190,7 +190,7 @@ export function createPeer(config: RtcConfig = {}): RtcPeer {
           else whenGatheringComplete(pc!, () => emitLocalDescription("offer"));
         })
         .catch((err) => {
-          console.warn("Minimotor.Net: creating WebRTC offer failed", err);
+          console.warn("createNet: creating WebRTC offer failed", err);
           fast.close();
           safe.close();
           fast.onClose?.();

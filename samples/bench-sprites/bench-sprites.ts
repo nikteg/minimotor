@@ -1,10 +1,9 @@
-// Sprite throughput benchmark — the measurement `docs/plan-gpu-rendering.md`
-// asks for before any of the GPU work is worth starting.
+// Sprite throughput benchmark — compare Canvas2D vs the WebGL2 batcher on
+// the same harness. Default is `renderer: "webgl"`; `?renderer=canvas` is
+// the 2D baseline the plan's table was measured against.
 //
 // The question it answers is narrow and specific: at what N does
-// `Draw.sprites` stop holding 60fps on THIS machine? If that number is
-// comfortably above what a game built on the engine needs, stages 2–3 of the
-// plan are premature and only the OffscreenCanvas work is worth shipping.
+// `Draw.sprites` stop holding 60fps on THIS machine?
 //
 // Two things are measured, and they are not the same:
 //
@@ -34,7 +33,11 @@ import { createApp } from "minimotor";
 import * as Sprites from "minimotor/sprites";
 import type { DrawSprite } from "minimotor";
 
-const game = createApp("game", { background: "#0b0e14" });
+const wantGl = new URLSearchParams(location.search).get("renderer") !== "canvas";
+const game = createApp("game", {
+  background: "#0b0e14",
+  renderer: wantGl ? "webgl" : "canvas",
+});
 createDebug(game, { initial: "performance" });
 const view = game.viewport;
 const { Draw, Loop } = game;
@@ -248,7 +251,7 @@ Loop.run({
       UI.text(`sprites  ${sprites.length.toLocaleString()}`, { size: 13 });
       UI.text(`draw     ${drawWindow.median.toFixed(2)} ms`, { size: 13 });
       UI.text(`frame    ${frameWindow.median.toFixed(2)} ms`, { size: 13 });
-      UI.text(`mode     ${mode}${culling ? " + cull" : ""}`, {
+      UI.text(`mode     ${mode}${culling ? " + cull" : ""} · ${game.renderer}`, {
         color: "dim",
         size: 12,
       });

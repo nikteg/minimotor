@@ -70,7 +70,7 @@ export interface Charges {
  *  off instantly (e.g. on landing). `fraction` drives a recharge bar. Regen
  *  freezes when its clock is held.
  *
- *    const dash = Minimotor.Gizmos.charges({ max: 1, refillMs: 0 }); // ground-only
+ *    const dash = Gizmos.charges({ max: 1, refillMs: 0 }); // ground-only
  *    if (onGround) dash.refill();
  *    if (pressDash && dash.use()) doDash(); */
 export function charges(options: {

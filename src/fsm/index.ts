@@ -7,7 +7,7 @@
 // (idle/run/jump/fall/wallslide, enemy AI, door lifecycles), anim states =
 // visuals DRIVEN by the Fsm — the entire bridge is one line:
 //
-//   const state = Minimotor.Fsm.create({
+//   const state = Fsm.create({
 //     idle: { update: () => (run !== 0 ? "run" : undefined) },
 //     run:  { update: () => (!grounded ? "fall" : run === 0 ? "idle" : undefined) },
 //     jump: { enter() { vel.y = JUMP; }, update: () => (vel.y > 0 ? "fall" : undefined) },

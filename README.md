@@ -119,11 +119,18 @@ The simulation runs at 60 steps per second unless you say otherwise —
 (clocks, timers, tweens, particles, UI ageing) follows the rate you pick.
 Read `Loop.step` rather than assuming 16.67ms.
 
-Pass `{ renderer: "webgl" }` to draw `Draw.sprites`, `Draw.tiles`, and
-`Draw.particles` through a WebGL2 scene canvas stacked under the 2D overlay
+Pass `{ renderer: "webgl" }` to draw `Draw.sprite`, `Draw.sprites`, `Draw.tiles`,
+and `Draw.particles` through a WebGL2 scene canvas stacked under the 2D overlay
 (UI, text, and `Draw.rect` stay on Canvas2D). `{ renderer: "auto" }` tries
 WebGL2 and falls back to canvas silently. The default is `"canvas"` — same
-as today. Read `app.renderer` to see which path won.
+as today. Read `app.renderer` to see which path won. This 2D GL canvas and a
+3D `attachSceneLayer` do not compose (two WebGL contexts); pick one, or keep
+HUD sprites on Canvas2D.
+
+Atlas / layer / packAtlas / tint return `ScratchCanvas`
+(`HTMLCanvasElement | OffscreenCanvas`), not `HTMLCanvasElement`. The runtime
+still draws; a type annotation of the old name will fail the typecheck. There
+is no compatibility shim — `CanvasImageSource` is the right bound.
 
 **Input** — `Input.map` binds keys/gamepad buttons to named actions with edge
 state; `OnscreenInput` renders an opt-in touch gamepad that shares the same
@@ -139,7 +146,8 @@ the optional `minimotor/ecs` module (tiny entity-component-system), `Fsm`
 (event bus), `Assets` (manifest loading with progress).
 
 **Rendering & feel** — `Sprites` (offscreen pre-rendering, tinting, atlas
-baking), `Anim` (animation and value tweens), `Aseprite` (sprite-sheet JSON),
+baking; those helpers return `ScratchCanvas`, which may be an `OffscreenCanvas`),
+`Anim` (animation and value tweens), `Aseprite` (sprite-sheet JSON),
 `Particles`, `Tiles` (ASCII/Tiled levels and auto-tiling), `LDtk` (editor-authored
 worlds), `UI` (immediate-mode
 buttons, panels, lists, tables, dialogs, drag-and-drop). `UI.vw`/`UI.vh`
@@ -148,10 +156,10 @@ width inside the viewport automatically.
 
 **3D** — opt-in (`minimotor/3d`, `minimotor/physics3d`). The same `createApp`
 canvas hosts a GPU scene via `UI.viewport3d`, `createUiSurface`, or
-`attachSceneLayer`. It shares the GPU; it is not a second engine.
-`createPhysics3D` does not import Rapier — pass the `-compat` package you
-installed (`@dimforge/rapier3d-compat`, or `-deterministic-compat` when a
-client and a server step the same world):
+`attachSceneLayer`. It is not a second engine, and it does not share the 2D
+batcher's WebGL context. `createPhysics3D` does not import Rapier — pass the
+`-compat` package you installed (`@dimforge/rapier3d-compat`, or
+`-deterministic-compat` when a client and a server step the same world):
 
 ```ts
 import * as rapier from "@dimforge/rapier3d-compat";

@@ -82,12 +82,13 @@ a small typed bus, not a required pillar — scenes and ECS cover most fan-out.
 sprites, LDtk, Aseprite. UI is immediate-mode: widgets are drawn and polled
 every frame.
 
-**Opt-in 3D** — a layer on the same 2D app, sharing the GPU, not a second
-engine. `minimotor/3d` is meshes, a flat JSON-safe scene, cameras, WebGL2 /
-WebGPU renderers, glTF, and animation. `minimotor/physics3d` is Rapier behind
-its own entry: you pass `@dimforge/rapier3d-compat` (or the deterministic
-sibling) into `createPhysics3D`. The 2D renderer does not know 3D exists; they
-meet in three
+**Opt-in 3D** — a layer on the same 2D app, not a second engine. It does **not**
+share the 2D batcher's WebGL context: `renderer: "webgl"` and `attachSceneLayer`
+are two stacked GL canvases. `minimotor/3d` is meshes, a flat JSON-safe scene,
+cameras, WebGL2 / WebGPU renderers, glTF, and animation. `minimotor/physics3d`
+is Rapier behind its own entry: you pass `@dimforge/rapier3d-compat` (or the
+deterministic sibling) into `createPhysics3D`. The 2D renderer does not know 3D
+exists; they meet in three
 places that point opposite ways:
 
 - `UI.viewport3d` — a 3D view **inside** the UI (blitted into a widget rect).
@@ -129,9 +130,13 @@ These still hold:
 ## GPU 2D
 
 `createApp(canvas, { renderer: "webgl" | "auto" })` stacks a WebGL2 scene
-canvas under the overlay. `Draw.sprites` / `Draw.tiles` / `Draw.particles` batch
-there; UI, text, and `Draw.rect` stay on Canvas2D. Default is `"canvas"`.
-Bake sites (atlases, tile layers, particle dots, font alpha maps) use
-`OffscreenCanvas` when the environment can rasterise it — see
-`src/engine/offscreen.ts`. Offscreen *rendering* on a worker (plan stage 4b)
+canvas under the overlay. `Draw.sprite` / `Draw.sprites` / `Draw.tiles` /
+`Draw.particles` batch there; UI, text, and `Draw.rect` stay on Canvas2D.
+Default is `"canvas"`. Bake sites (atlases, tile layers, particle dots, font
+alpha maps) use `OffscreenCanvas` when the environment can rasterise it — see
+`src/engine/offscreen.ts`. Offscreen _rendering_ on a worker (plan stage 4b)
 is still a proposal — `docs/plan-gpu-rendering.md`.
+
+The 2D WebGL canvas and a 3D `attachSceneLayer` do not share a device. Combining
+both is two WebGL contexts and undefined z-order. Pick one GL canvas as the
+scene, or keep HUD sprites on Canvas2D.
