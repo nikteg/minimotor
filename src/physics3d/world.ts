@@ -213,10 +213,33 @@ export interface Physics3DWorld {
   dispose(): void;
 }
 
+/** One `init()` per Rapier module, however many worlds are built from it.
+ *
+ *  wasm-bindgen's loader is idempotent only once it has FINISHED: `init` checks
+ *  a module-level `wasm` binding that it sets at the end, so two calls that
+ *  overlap both find it undefined, both instantiate, and the second replaces
+ *  the memory the first one's worlds are still pointing into. Building several
+ *  worlds with `Promise.all` — a game loading its levels, or a test suite
+ *  building one world per level — then fails deep inside the wasm with
+ *  "memory access out of bounds" or a collider whose shape reads back null.
+ *
+ *  Keyed on the module rather than kept in one variable, so an app that hands
+ *  in two different Rapier builds gets one init each. */
+const started = new WeakMap<Rapier3D, Promise<unknown>>();
+
+function ensureRapier(rapier: Rapier3D): Promise<unknown> {
+  let ready = started.get(rapier);
+  if (!ready) {
+    ready = rapier.init();
+    started.set(rapier, ready);
+  }
+  return ready;
+}
+
 /** Create a generic 3D rigid-body world backed by the Rapier module you pass. */
 export async function createPhysics3D(options: Physics3DOptions): Promise<Physics3DWorld> {
   const rapier = options.rapier;
-  await rapier.init();
+  await ensureRapier(rapier);
   const raw = new rapier.World(options.gravity ?? { x: 0, y: -9.81, z: 0 });
   if (options.timestep !== undefined) raw.timestep = options.timestep;
   if (options.solverIterations !== undefined) {
