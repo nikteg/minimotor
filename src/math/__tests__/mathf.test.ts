@@ -12,6 +12,8 @@ import {
   easeIn,
   easeOut,
   easeInOut,
+  quartIn,
+  quartOut,
   randRange,
   randInt,
   randItem,
@@ -50,7 +52,7 @@ describe("Mathf", () => {
   });
 
   it("easings hit the 0 and 1 endpoints", () => {
-    for (const e of [linear, easeIn, easeOut, easeInOut, backIn, backOut]) {
+    for (const e of [linear, easeIn, easeOut, easeInOut, backIn, backOut, quartIn, quartOut]) {
       expect(e(0)).toBeCloseTo(0);
       expect(e(1)).toBeCloseTo(1);
     }
@@ -67,6 +69,11 @@ describe("Mathf", () => {
     expect(easeIn(0.5)).toBeCloseTo(0.25); // slow start
     expect(easeOut(0.5)).toBeCloseTo(0.75); // fast start
     expect(easeInOut(0.5)).toBeCloseTo(0.5);
+    // The quartics are the same shapes pushed harder: a quarter of the
+    // distance at halfway becomes a sixteenth, and three quarters becomes
+    // fifteen sixteenths.
+    expect(quartIn(0.5)).toBeCloseTo(0.0625);
+    expect(quartOut(0.5)).toBeCloseTo(0.9375);
   });
 
   describe("randomness", () => {

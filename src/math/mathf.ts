@@ -128,6 +128,19 @@ export function easeInOut(t: number): number {
   return t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
 }
 
+/** Accelerate from zero, hard (quartic). The same shape as `easeIn` but with
+ *  far more of the distance left until late — for something that should read
+ *  as *building* rather than merely starting. */
+export function quartIn(t: number): number {
+  return t * t * t * t;
+}
+/** Decelerate to zero, hard (quartic). Most of the distance is covered in the
+ *  first third, so a move eased this way reads as *arriving* almost at once
+ *  and then creeping the last little way. */
+export function quartOut(t: number): number {
+  return 1 - (1 - t) ** 4;
+}
+
 /** The overshoot constant every implementation of the back easings uses. It
  *  is not derived from anything — 1.70158 makes the curve overshoot by about
  *  10%, and it became the shared value because the original Penner easings
