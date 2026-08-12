@@ -57,6 +57,7 @@ layout(location = 3) in vec4 aColor;
 layout(location = 4) in uvec4 aJoints;
 layout(location = 5) in vec4 aWeights;
 layout(location = 6) in vec2 aUv1;
+layout(location = 7) in vec4 aTangent;
 
 uniform mat4 uViewProj;
 uniform mat4 uModel;
@@ -69,10 +70,12 @@ out vec3 vNormal;
 out vec2 vUv;
 out vec2 vUv1;
 out vec4 vColor;
+out vec4 vTangent;
 
 void main() {
   vec4 localPosition = vec4(aPosition, 1.0);
   vec3 localNormal = aNormal;
+  vec3 localTangent = aTangent.xyz;
   if (uHasSkin) {
     mat4 skin =
       aWeights.x * uJointMatrices[int(aJoints.x)] +
@@ -81,11 +84,16 @@ void main() {
       aWeights.w * uJointMatrices[int(aJoints.w)];
     localPosition = skin * localPosition;
     localNormal = mat3(skin) * localNormal;
+    localTangent = mat3(skin) * localTangent;
   }
   vec4 world = uModel * localPosition;
   vWorldPos = world.xyz;
   // The inverse-transpose, so a non-uniformly scaled mesh still lights right.
   vNormal = uNormalMat * localNormal;
+  // A tangent is a DIRECTION ALONG the surface, not a normal to it, so it goes
+  // through the model matrix rather than the inverse-transpose. w carries the
+  // handedness and rides through untouched.
+  vTangent = vec4(mat3(uModel) * localTangent, aTangent.w);
   vUv = aUv;
   vUv1 = aUv1;
   vColor = aColor;
@@ -100,6 +108,7 @@ in vec3 vNormal;
 in vec2 vUv;
 in vec2 vUv1;
 in vec4 vColor;
+in vec4 vTangent;
 
 uniform vec4 uBaseColor;
 uniform vec3 uAmbient;
@@ -225,20 +234,38 @@ vec3 blendOverlay(vec3 pattern, vec3 surface) {
   return lum < 0.5 ? 2.0 * pattern * surface : 1.0 - 2.0 * (1.0 - pattern) * (1.0 - surface);
 }
 
-/** Tangent frame rebuilt from screen-space derivatives, so a normal map works
- *  on any mesh with uvs and no TANGENT attribute has to exist or agree. */
+/** The tangent frame the normal map is read in.
+ *
+ *  Two ways to get one. If the mesh SHIPS a tangent, use it: it is the frame
+ *  the map was baked against, it is continuous across a face however the uv
+ *  islands are packed behind it, and w says which way the bitangent runs.
+ *  Otherwise rebuild it per pixel from screen-space derivatives, which needs
+ *  no attribute and cannot disagree with the uvs the mesh actually has, but
+ *  reads the frame off however the unwrap happens to be laid out locally — so
+ *  a uv island that changes density across a flat face leaves a visible step
+ *  in the shading exactly at the change. Shipped tangents are the fix for
+ *  that; the derivative path stays for meshes built in code. */
 vec3 applyNormalMap(vec3 n, vec2 uv) {
-  vec3 dPosX = dFdx(vWorldPos);
-  vec3 dPosY = dFdy(vWorldPos);
-  vec2 dUvX = dFdx(uv);
-  vec2 dUvY = dFdy(uv);
-  float det = dUvX.x * dUvY.y - dUvY.x * dUvX.y;
-  // A degenerate uv patch has no basis to build from; leave the face alone
-  // rather than tilting it by a divide-by-zero.
-  if (abs(det) < 1e-12) return n;
-  vec3 tangent = normalize((dPosX * dUvY.y - dPosY * dUvX.y) / det);
-  vec3 bitangent = normalize(cross(n, tangent));
-  tangent = cross(bitangent, n);
+  vec3 tangent;
+  vec3 bitangent;
+  if (dot(vTangent.xyz, vTangent.xyz) > 1e-12) {
+    // Gram-Schmidt against the interpolated normal, which is what keeps the
+    // frame orthogonal after the two have been interpolated separately.
+    tangent = normalize(vTangent.xyz - n * dot(n, vTangent.xyz));
+    bitangent = cross(n, tangent) * (vTangent.w < 0.0 ? -1.0 : 1.0);
+  } else {
+    vec3 dPosX = dFdx(vWorldPos);
+    vec3 dPosY = dFdy(vWorldPos);
+    vec2 dUvX = dFdx(uv);
+    vec2 dUvY = dFdy(uv);
+    float det = dUvX.x * dUvY.y - dUvY.x * dUvX.y;
+    // A degenerate uv patch has no basis to build from; leave the face alone
+    // rather than tilting it by a divide-by-zero.
+    if (abs(det) < 1e-12) return n;
+    tangent = normalize((dPosX * dUvY.y - dPosY * dUvX.y) / det);
+    bitangent = normalize(cross(n, tangent));
+    tangent = cross(bitangent, n);
+  }
   vec3 sampled = texture(uNormalMap, uv).xyz * 2.0 - 1.0;
   sampled.xy *= uNormalScale;
   return normalize(mat3(tangent, bitangent, n) * sampled);
@@ -592,6 +619,9 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     gl!.vertexAttribIPointer(4, 4, gl!.UNSIGNED_SHORT, 0, 0);
     attach(5, mesh.weights ?? defaultWeights(n), 4);
     attach(6, mesh.uvs1 ?? new Float32Array(n * 2), 2);
+    // All zeroes when the mesh has none, which is what the shader's
+    // length test reads as "rebuild the frame from derivatives instead".
+    attach(7, mesh.tangents ?? new Float32Array(n * 4), 4);
 
     const indexBuffer = gl!.createBuffer();
     if (!indexBuffer) throw new Error("WebGL2: could not create an index buffer.");

@@ -24,6 +24,19 @@ export interface MeshData {
   /** `[x, y, z]` per vertex, unit length. Generate with `computeNormals` when
    *  a source doesn't provide them. */
   normals?: Float32Array;
+  /** `[x, y, z, w]` per vertex: the surface tangent the normal map was baked
+   *  against, plus the bitangent's handedness in w (+1 or -1), exactly as
+   *  glTF's `TANGENT` defines it.
+   *
+   *  Optional, and worth supplying whenever an authoring tool has one. Without
+   *  it the backends rebuild a frame per pixel from screen-space derivatives,
+   *  which needs no attribute and cannot disagree with the mesh's own uvs, but
+   *  reads the frame off however the unwrap happens to be laid out locally: a
+   *  uv island that changes texel density across a flat face leaves a visible
+   *  step in the shading at the change. A shipped tangent is continuous across
+   *  the face whatever the packing behind it does. Ignored when there is no
+   *  `normalMap`. */
+  tangents?: Float32Array;
   /** `[u, v]` per vertex. `v = 0` is the TOP of a texture, as in glTF and as
    *  `drawImage` sees an image — not OpenGL's bottom-up convention. Both
    *  backends upload an image's first row at v = 0, so this needs no flip

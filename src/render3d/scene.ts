@@ -109,11 +109,12 @@ export interface Material {
    *  the usual `xyz * 0.5 + 0.5` encoding; the blue channel points out of the
    *  surface, which is why an unmodified normal map looks lilac.
    *
-   *  No TANGENT vertex attribute is needed: the basis is rebuilt per pixel
-   *  from screen-space derivatives of the position and uv. That costs a few
-   *  ALU ops and, unlike a baked tangent, cannot disagree with the uvs the
-   *  mesh actually ships. It does need real uvs — a mesh without them gets a
-   *  degenerate basis, so the map is ignored. */
+   *  The basis comes from the mesh's `tangents` when it has them, and is
+   *  otherwise rebuilt per pixel from screen-space derivatives of the position
+   *  and uv — a few ALU ops, no attribute, and it cannot disagree with the uvs
+   *  the mesh actually ships. See `MeshData.tangents` for when the derived one
+   *  is not good enough. Either way it needs real uvs: a mesh without them
+   *  gets a degenerate basis, so the map is ignored. */
   normalMap?: TexImageSource;
   /** Bump when the normal map's PIXELS change, as with `textureVersion`. */
   normalMapVersion?: number;

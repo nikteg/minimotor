@@ -112,6 +112,7 @@ struct VsOut {
   @location(2)       uv       : vec2f,
   @location(3)       color    : vec4f,
   @location(4)       uv1      : vec2f,
+  @location(5)       tangent  : vec4f,
 };
 
 @vertex
@@ -123,10 +124,12 @@ fn vs(
   @location(4) joints   : vec4u,
   @location(5) weights  : vec4f,
   @location(6) uv1      : vec2f,
+  @location(7) tangent  : vec4f,
 ) -> VsOut {
   var out : VsOut;
   var local = vec4f(position, 1.0);
   var localNormal = normal;
+  var localTangent = tangent.xyz;
   if (draw.skinParams.x > 0.5) {
     let skin = weights.x * draw.jointMatrices[joints.x] +
       weights.y * draw.jointMatrices[joints.y] +
@@ -134,11 +137,18 @@ fn vs(
       weights.w * draw.jointMatrices[joints.w];
     local = skin * local;
     localNormal = mat3x3f(skin[0].xyz, skin[1].xyz, skin[2].xyz) * localNormal;
+    localTangent = mat3x3f(skin[0].xyz, skin[1].xyz, skin[2].xyz) * localTangent;
   }
   let world = draw.model * local;
   out.worldPos = world.xyz;
   let nm = mat3x3f(draw.normal0.xyz, draw.normal1.xyz, draw.normal2.xyz);
   out.normal = nm * localNormal;
+  // A tangent lies ALONG the surface, so it takes the model matrix rather
+  // than the inverse-transpose the normal needs. w is the handedness.
+  out.tangent = vec4f(
+    mat3x3f(draw.model[0].xyz, draw.model[1].xyz, draw.model[2].xyz) * localTangent,
+    tangent.w,
+  );
   out.uv = uv;
   out.uv1 = uv1;
   out.color = color;
@@ -146,8 +156,8 @@ fn vs(
   return out;
 }
 
-/** Tangent frame rebuilt from screen-space derivatives — see the WebGL2
- *  backend for why no TANGENT attribute is involved. */
+/** The tangent frame the normal map is read in: the shipped one when the mesh
+ *  has it, derivatives otherwise — see the WebGL2 backend for the trade. */
 /** Visibility in 0..1 — 1 is clear air. A ground-hugging slab needs the fog
  *  density integrated along the view ray, otherwise the layer slides with the
  *  camera instead of staying put in the world. */
@@ -237,23 +247,33 @@ fn blendOverlay(pattern : vec3f, surface : vec3f) -> vec3f {
   );
 }
 
-fn applyNormalMap(n : vec3f, worldPos : vec3f, uv : vec2f, scale : f32) -> vec3f {
-  // Sampled up front, BEFORE the degenerate-uv guard below. textureSample
-  // picks its mip from implicit derivatives, which WGSL only permits in
-  // uniform control flow, and the guard branches on a dpdx result — so a
-  // sample placed after it fails to compile even though every lane would take
-  // the same path in practice.
+fn applyNormalMap(n : vec3f, worldPos : vec3f, uv : vec2f, scale : f32, shipped : vec4f) -> vec3f {
+  // Sampled up front, BEFORE the branches below. textureSample picks its mip
+  // from implicit derivatives, which WGSL only permits in uniform control
+  // flow, and the guard branches on a dpdx result — so a sample placed after
+  // it fails to compile even though every lane would take the same path in
+  // practice.
   var sampled = textureSample(normalTex, samp, uv).xyz * 2.0 - 1.0;
   sampled = vec3f(sampled.xy * scale, sampled.z);
+  // The derivative frame, always computed: same uniformity rule.
   let dPosX = dpdx(worldPos);
   let dPosY = dpdy(worldPos);
   let dUvX = dpdx(uv);
   let dUvY = dpdy(uv);
-  let det = dUvX.x * dUvY.y - dUvY.x * dUvX.y;
-  if (abs(det) < 1e-12) { return n; }
-  var tangent = normalize((dPosX * dUvY.y - dPosY * dUvX.y) / det);
-  let bitangent = normalize(cross(n, tangent));
-  tangent = cross(bitangent, n);
+  var tangent = vec3f(0.0);
+  var bitangent = vec3f(0.0);
+  if (dot(shipped.xyz, shipped.xyz) > 1e-12) {
+    // Gram-Schmidt against the interpolated normal — the two are interpolated
+    // separately and come out of it not quite orthogonal.
+    tangent = normalize(shipped.xyz - n * dot(n, shipped.xyz));
+    bitangent = cross(n, tangent) * select(1.0, -1.0, shipped.w < 0.0);
+  } else {
+    let det = dUvX.x * dUvY.y - dUvY.x * dUvX.y;
+    if (abs(det) < 1e-12) { return n; }
+    tangent = normalize((dPosX * dUvY.y - dPosY * dUvX.y) / det);
+    bitangent = normalize(cross(n, tangent));
+    tangent = cross(bitangent, n);
+  }
   return normalize(mat3x3f(tangent, bitangent, n) * sampled);
 }
 
@@ -309,7 +329,7 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
   var n = normalize(in.normal);
   if (!frontFacing) { n = -n; }
   if (draw.skinParams.y > 0.5) {
-    n = applyNormalMap(n, in.worldPos, uv, draw.skinParams.z);
+    n = applyNormalMap(n, in.worldPos, uv, draw.skinParams.z, in.tangent);
   }
   let view = normalize(frame.cameraPos.xyz - in.worldPos);
 
@@ -370,6 +390,7 @@ interface GpuMesh {
   joints: GPUBuffer;
   weights: GPUBuffer;
   uvs1: GPUBuffer;
+  tangents: GPUBuffer;
   indices: GPUBuffer;
   count: number;
   format: GPUIndexFormat;
@@ -522,6 +543,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     { arrayStride: 8, attributes: [{ shaderLocation: 4, offset: 0, format: "uint16x4" }] },
     { arrayStride: 16, attributes: [{ shaderLocation: 5, offset: 0, format: "float32x4" }] },
     { arrayStride: 8, attributes: [{ shaderLocation: 6, offset: 0, format: "float32x2" }] },
+    { arrayStride: 16, attributes: [{ shaderLocation: 7, offset: 0, format: "float32x4" }] },
   ];
 
   const pipelines = new Map<string, GPURenderPipeline>();
@@ -719,6 +741,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     gpu.joints.destroy();
     gpu.weights.destroy();
     gpu.uvs1.destroy();
+    gpu.tangents.destroy();
     gpu.indices.destroy();
   }
 
@@ -741,6 +764,9 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       joints: buffer(mesh.joints ?? defaultJoints(n), GPUBufferUsage.VERTEX),
       weights: buffer(mesh.weights ?? defaultWeights(n), GPUBufferUsage.VERTEX),
       uvs1: buffer(mesh.uvs1 ?? new Float32Array(n * 2), GPUBufferUsage.VERTEX),
+      // Zeroes when the mesh ships none; the shader reads a zero-length
+      // tangent as "rebuild the frame from derivatives".
+      tangents: buffer(mesh.tangents ?? new Float32Array(n * 4), GPUBufferUsage.VERTEX),
       indices: buffer(mesh.indices, GPUBufferUsage.INDEX),
       count: mesh.indices.length,
       format: mesh.indices instanceof Uint32Array ? "uint32" : "uint16",
@@ -1056,6 +1082,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
         pass.setVertexBuffer(4, gpu.joints);
         pass.setVertexBuffer(5, gpu.weights);
         pass.setVertexBuffer(6, gpu.uvs1);
+        pass.setVertexBuffer(7, gpu.tangents);
         pass.setIndexBuffer(gpu.indices, gpu.format);
         pass.drawIndexed(gpu.count);
         stats.drawCalls++;

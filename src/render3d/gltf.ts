@@ -199,6 +199,7 @@ function readPrimitive(
     required(primitive.attributes.POSITION, "POSITION"),
   );
   const normals = optionalAccessor(document, buffers, primitive.attributes.NORMAL);
+  const tangents = optionalAccessor(document, buffers, primitive.attributes.TANGENT);
   const uvs = optionalAccessor(document, buffers, primitive.attributes.TEXCOORD_0);
   const uvs1 = optionalAccessor(document, buffers, primitive.attributes.TEXCOORD_1);
   const colors = optionalAccessor(document, buffers, primitive.attributes.COLOR_0);
@@ -210,6 +211,10 @@ function readPrimitive(
       : integerAccessor(document, buffers, primitive.indices);
   const mesh: MeshData = { positions, indices };
   if (normals) mesh.normals = normals;
+  // glTF defines `TANGENT` as VEC4 — xyz along the surface, w the bitangent's
+  // handedness. Anything else is a malformed file, so drop it rather than feed
+  // the backends a stride they will read off the end of.
+  if (tangents && tangents.length === (positions.length / 3) * 4) mesh.tangents = tangents;
   if (uvs) mesh.uvs = uvs;
   if (uvs1) mesh.uvs1 = uvs1;
   if (colors)
