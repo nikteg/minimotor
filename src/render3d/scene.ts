@@ -62,6 +62,29 @@ export interface Material {
    *  surfaces occlude each other in the order you would expect while both
    *  ignore the scene. Default is the ordinary depth-tested behaviour. */
   depthTest?: boolean;
+  /** Also draw this surface where something is IN FRONT of it, at this
+   *  fraction of its alpha. 0 or unset draws it only where it is visible,
+   *  which is the ordinary behaviour.
+   *
+   *  The difference from `depthTest: false` is which of the two pictures wins.
+   *  An overlay ignores the scene's depth and is drawn over everything, so it
+   *  stops reading as an object in the world at all. This keeps the ordinary
+   *  pass exactly as it was — solid where the surface is genuinely visible —
+   *  and adds a second, ghost pass over the part a wall or a hill is covering.
+   *  The result reads as "the thing is behind that", which is the information
+   *  the player wants, rather than as "the thing is in front of that", which
+   *  is a lie.
+   *
+   *  For anything the player is tracking and can lose: the ball in a game
+   *  whose camera the terrain gets in front of, a unit behind a building, a
+   *  waypoint marker that should still say how far away it is. Around 0.25 is
+   *  a hint; much above 0.5 and the ghost competes with the real one.
+   *
+   *  Implemented as a second draw with the depth test REVERSED and depth
+   *  writes off — not with the test switched off, which would paint the whole
+   *  surface over the scene and lose the cue entirely. It costs one extra draw
+   *  call per node that asks for it. */
+  occludedAlpha?: number;
   /** A view-angle alpha ramp as `[bias, scale, power]`, multiplied into the
    *  surface's own alpha:
    *
@@ -429,6 +452,26 @@ export function updateWorldMatrices(scene: Scene3D): void {
       destination.set(jointMatrix);
     }
   }
+}
+
+/** The material a node's `occludedAlpha` ghost pass draws with: the same
+ *  surface, blended, at a fraction of the alpha it was authored with.
+ *
+ *  Both backends call this so the two agree on what the ghost looks like —
+ *  which they have to, since a scene is expected to render the same either
+ *  way. The alpha is scaled rather than replaced, so a surface that was
+ *  already half transparent gives a fainter ghost than a solid one, and
+ *  `transparent` is forced on because the ghost is blended whatever the node
+ *  is. */
+export function ghostMaterial(material: Material): Material {
+  const color = material.color ?? [1, 1, 1, 1];
+  const alpha = color[3] * (material.occludedAlpha ?? 0);
+  return {
+    ...material,
+    transparent: true,
+    occludedAlpha: 0,
+    color: [...color.slice(0, 3), alpha] as [number, number, number, number],
+  };
 }
 
 /** True when the node, or anything it hangs off, is hidden. Visibility is

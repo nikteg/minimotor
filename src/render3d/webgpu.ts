@@ -33,7 +33,7 @@
 
 import { Mat4 } from "@src/math/mat4.js";
 import { cameraPosition, viewProjection } from "./camera.js";
-import { fogUniform, isVisible } from "./scene.js";
+import { fogUniform, ghostMaterial, isVisible } from "./scene.js";
 import { triangleCount, vertexCount } from "./mesh.js";
 import type { Camera3D } from "./camera.js";
 import type { MeshData } from "./mesh.js";
@@ -552,8 +552,10 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     doubleSided: boolean,
     overlay: boolean,
     lines: boolean,
+    /** The `occludedAlpha` ghost pass: depth test reversed, depth writes off. */
+    occluded = false,
   ): GPURenderPipeline {
-    const key = `${blend}:${doubleSided}:${overlay}:${lines}`;
+    const key = `${blend}:${doubleSided}:${overlay}:${lines}:${occluded}`;
     const cached = pipelines.get(key);
     if (cached) return cached;
     const pipeline = device.createRenderPipeline({
@@ -586,11 +588,14 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       depthStencil: {
         format: "depth24plus",
         // Transparent geometry tests against depth but does not write it, so
-        // two blended surfaces do not occlude each other.
-        depthWriteEnabled: !blend,
+        // two blended surfaces do not occlude each other. A ghost never writes
+        // depth either: a hint that did would occlude the geometry that is
+        // doing the occluding.
+        depthWriteEnabled: !blend && !occluded,
         // An overlay ignores the scene's depth but still writes its own, so a
-        // stack of them occludes itself in draw order.
-        depthCompare: overlay ? "always" : "less-equal",
+        // stack of them occludes itself in draw order. A ghost inverts the
+        // test instead, so it paints only where the scene is in front of it.
+        depthCompare: occluded ? "greater" : overlay ? "always" : "less-equal",
       },
       multisample: { count: sampleCount },
     });
@@ -831,7 +836,9 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     const normalTexture = normal
       ? textureFor(normal, material.normalMapVersion ?? 0)
       : blankTexture;
-    const detailTexture = detail ? textureFor(detail, material.detailMapVersion ?? 0) : blankTexture;
+    const detailTexture = detail
+      ? textureFor(detail, material.detailMapVersion ?? 0)
+      : blankTexture;
     // A rebuilt texture invalidates every view of it, so the cached group has
     // to be dropped whenever any upload replaced its GPUTexture.
     const stamp = `${identity(baseTexture)}|${identity(normalTexture)}|${identity(detailTexture)}|${samplerKey}`;
@@ -866,6 +873,8 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
   const blended: { index: number; depth: number }[] = [];
   /** `depthTest: false` nodes, drawn last against a depth test that passes. */
   const overlay: number[] = [];
+  /** `occludedAlpha` nodes, drawn a second time where something covers them. */
+  const occluded: number[] = [];
 
   /** Pack one node's per-draw uniforms at slot `slot`. */
   function writeDrawData(node: Node3D, material: Material, slot: number): void {
@@ -965,12 +974,20 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       opaque.length = 0;
       blended.length = 0;
       overlay.length = 0;
+      occluded.length = 0;
       cameraPosition(camera, eye);
       scene.nodes.forEach((n, i) => {
         if (!n.mesh || !n.world) return;
         if (!isVisible(scene, i)) {
           stats.culled++;
           return;
+        }
+        // A ghost pass is IN ADDITION to whichever pass the node belongs to:
+        // the surface still draws normally where it is visible. An overlay is
+        // already drawn over everything, so a ghost of it would paint the same
+        // picture twice.
+        if ((n.material?.occludedAlpha ?? 0) > 0 && n.material?.depthTest !== false) {
+          occluded.push(i);
         }
         // `depthTest: false` opts out of the scene's depth entirely, so it
         // cannot share a pass with geometry that is still sorting against it.
@@ -987,7 +1004,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       });
       blended.sort((a, b) => b.depth - a.depth);
 
-      const total = opaque.length + blended.length + overlay.length;
+      const total = opaque.length + blended.length + occluded.length + overlay.length;
       ensureDrawCapacity(Math.max(1, total));
 
       viewProjection(camera, width / height, true, viewProj);
@@ -1017,10 +1034,17 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       });
       device.queue.writeBuffer(frameBuffer, 0, frameData);
 
-      const order = [...opaque, ...blended.map((b) => b.index), ...overlay];
+      // The ghosts go between the blended pass and the overlays: they blend
+      // over whatever is covering their node, and an overlay is meant to sit
+      // above everything including them. Each carries its own draw slot,
+      // because it is the same node with a different alpha.
+      const order = [...opaque, ...blended.map((b) => b.index), ...occluded, ...overlay];
+      const firstGhost = opaque.length + blended.length;
       order.forEach((index, slot) => {
         const n = scene.nodes[index];
-        writeDrawData(n, n.material ?? {}, slot);
+        const material = n.material ?? {};
+        const ghost = slot >= firstGhost && slot < firstGhost + occluded.length;
+        writeDrawData(n, ghost ? ghostMaterial(material) : material, slot);
       });
       if (total > 0) {
         device.queue.writeBuffer(drawBuffer!, 0, drawData, 0, total * DRAW_FLOATS);
@@ -1063,7 +1087,8 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
 
       order.forEach((index, slot) => {
         const n = scene.nodes[index];
-        const material = n.material ?? {};
+        const ghost = slot >= firstGhost && slot < firstGhost + occluded.length;
+        const material = ghost ? ghostMaterial(n.material ?? {}) : (n.material ?? {});
         const gpu = uploadMesh(n.mesh!);
         pass.setPipeline(
           pipelineFor(
@@ -1071,6 +1096,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
             !!material.doubleSided,
             material.depthTest === false,
             n.mesh!.topology === "lines",
+            ghost,
           ),
         );
         pass.setBindGroup(0, frameBindGroup!, [slot * DRAW_BYTES]);

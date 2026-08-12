@@ -30,7 +30,7 @@
 
 import { Mat4 } from "@src/math/mat4.js";
 import { cameraPosition, viewProjection } from "./camera.js";
-import { fogUniform, isVisible } from "./scene.js";
+import { fogUniform, ghostMaterial, isVisible } from "./scene.js";
 import { triangleCount, vertexCount } from "./mesh.js";
 import type { Camera3D } from "./camera.js";
 import type { MeshData } from "./mesh.js";
@@ -566,6 +566,8 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
   const blended: { index: number; depth: number }[] = [];
   /** `depthTest: false` nodes, drawn last against a depth test that passes. */
   const overlay: number[] = [];
+  /** `occludedAlpha` nodes, drawn a second time where something covers them. */
+  const occluded: number[] = [];
 
   function applyCanvasSize(retainBackingStore = false): void {
     const bw = Math.max(1, Math.round(width * dpr));
@@ -895,11 +897,19 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
       opaque.length = 0;
       blended.length = 0;
       overlay.length = 0;
+      occluded.length = 0;
       scene.nodes.forEach((n, i) => {
         if (!n.mesh || !n.world) return;
         if (!isVisible(scene, i)) {
           stats.culled++;
           return;
+        }
+        // A ghost pass is IN ADDITION to whichever pass the node belongs to:
+        // the surface still draws normally where it is visible.
+        // An overlay is already drawn over everything, so a ghost of it would
+        // paint the same picture twice.
+        if ((n.material?.occludedAlpha ?? 0) > 0 && n.material?.depthTest !== false) {
+          occluded.push(i);
         }
         // `depthTest: false` opts out of the scene's depth entirely, so it
         // cannot share a pass with geometry that is still sorting against it.
@@ -930,6 +940,27 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
         }
         gl!.depthMask(true);
         gl!.disable(gl!.BLEND);
+      }
+
+      if (occluded.length > 0) {
+        // The ghost half of `occludedAlpha`: the same node again, with the
+        // depth test REVERSED, so it paints only where the scene is already
+        // in front of it. Depth writes stay off — a hint that wrote depth
+        // would occlude the geometry doing the occluding.
+        //
+        // After the blended pass, so it blends over whatever is covering the
+        // node, and before the overlays, which are meant to sit above
+        // everything including this.
+        gl!.depthFunc(gl!.GREATER);
+        gl!.depthMask(false);
+        gl!.enable(gl!.BLEND);
+        gl!.blendFuncSeparate(gl!.ONE, gl!.ONE_MINUS_SRC_ALPHA, gl!.ONE, gl!.ONE_MINUS_SRC_ALPHA);
+        for (const i of occluded) {
+          drawNode(scene.nodes[i], ghostMaterial(scene.nodes[i].material ?? {}));
+        }
+        gl!.disable(gl!.BLEND);
+        gl!.depthMask(true);
+        gl!.depthFunc(gl!.LEQUAL);
       }
 
       if (overlay.length > 0) {
