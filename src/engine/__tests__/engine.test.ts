@@ -172,6 +172,54 @@ describe("run / loop", () => {
     expect(draw).toHaveBeenCalledWith(game.ctx);
   });
 
+  it("caps the draw rate without slowing the simulation down", () => {
+    // The cap exists so a machine can stop spending its GPU on frames nobody
+    // asked for. What must NOT change is how often the game thinks: the
+    // fixed-step catch-up still runs `update` for every step of wall-clock
+    // that passed, and only the picture is skipped.
+    const { game } = build();
+    const update = vi.fn();
+    const draw = vi.fn();
+    game.Loop.maxDrawFps = 30;
+    game.Loop.run({ update, draw });
+    tick(0);
+    // Ten 16 ms frames: 160 ms of time, which is nine 16.7 ms steps at the
+    // default 60 Hz simulation, and five 33 ms draws at the cap.
+    for (let frame = 1; frame <= 10; frame++) tick(frame * 16);
+    expect(update.mock.calls.length).toBeGreaterThanOrEqual(8);
+    expect(draw.mock.calls.length).toBeLessThanOrEqual(6);
+    expect(draw.mock.calls.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("hands a drawn frame the whole gap it stands for", () => {
+    // Anything animating off `frameDelta` has to move at the same speed capped
+    // or not, so the frame that IS drawn is told how long it has been since
+    // the last one — not how long since the last animation frame.
+    const { game } = build();
+    const deltas: number[] = [];
+    game.Loop.maxDrawFps = 30;
+    game.Loop.run({ update: () => {}, draw: () => deltas.push(game.Loop.frameDelta) });
+    tick(0);
+    for (let frame = 1; frame <= 8; frame++) tick(frame * 16);
+    expect(deltas.length).toBeGreaterThan(1);
+    // Every drawn frame covers at least the cap's period rather than one 16 ms
+    // animation frame.
+    for (const delta of deltas.slice(1)) expect(delta).toBeGreaterThanOrEqual(30);
+  });
+
+  it("draws every animation frame once the cap is lifted", () => {
+    const { game } = build();
+    const draw = vi.fn();
+    game.Loop.maxDrawFps = 30;
+    game.Loop.run({ update: () => {}, draw });
+    tick(0);
+    tick(16);
+    const capped = draw.mock.calls.length;
+    game.Loop.maxDrawFps = 0;
+    for (let frame = 2; frame <= 5; frame++) tick(frame * 16);
+    expect(draw.mock.calls.length - capped).toBe(4);
+  });
+
   it("measures per-frame update/draw cost in game.timings", () => {
     const { game } = build();
     game.Loop.run({ update: () => {}, draw: () => {} });

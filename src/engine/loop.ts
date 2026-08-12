@@ -11,6 +11,9 @@ export interface LoopApi {
   readonly step: number;
   readonly steps: number;
   readonly frameDelta: number;
+  /** Draw-rate cap in frames per second; 0 is uncapped. The simulation keeps
+   *  its own fixed rate either way — see `AppOptions.maxDrawFps`. */
+  maxDrawFps: number;
   readonly interpolation: number;
   readonly paused: boolean;
   readonly timings: FrameTimings;
@@ -48,6 +51,12 @@ export function createLoop(app: Runtime): LoopApi {
     },
     get frameDelta() {
       return app.frameDelta;
+    },
+    get maxDrawFps() {
+      return app.maxDrawFps;
+    },
+    set maxDrawFps(next: number) {
+      app.maxDrawFps = next;
     },
     get interpolation() {
       return app.interpolation;

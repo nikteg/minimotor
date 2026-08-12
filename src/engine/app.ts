@@ -105,6 +105,9 @@ export interface Runtime {
   readonly sceneRenderer: SceneRenderer | null;
   /** Real time since the previous rendered frame, in milliseconds. */
   readonly frameDelta: number;
+  /** Draw-rate cap in frames per second; 0 is uncapped. Settable at run time,
+   *  so a game can put it behind a setting. */
+  maxDrawFps: number;
   /** How far the unsimulated remainder has progressed between the previous and
    * current fixed states, from 0 to 1. Render at
    * `prev + (curr - prev) * interpolation` for smooth motion. */
@@ -182,12 +185,37 @@ export interface RuntimeOptions {
   /** Auto-pause while a coarse-pointer device is held in portrait. Default
    *  false. */
   pauseOnPortrait?: boolean;
-  /** Fixed simulation rate in steps per second. Default 60. This sets the size
+  /** Fixed SIMULATION rate in steps per second. Default 60. This sets the size
    *  of one `update()` — everything that advances per step (clocks, timers,
    *  tweens, particles, UI ageing) derives from it, so raising it makes the
    *  whole simulation finer-grained rather than just calling `update` more
-   *  often. Rendering stays on the display's own rhythm either way. */
+   *  often.
+   *
+   *  It says nothing about drawing, which follows the display unless
+   *  `maxDrawFps` caps it. The two are separate clocks and neither bounds the
+   *  other: a game can simulate at 120 and draw at 30, or the reverse. */
   fps?: number;
+  /** Cap on how often the picture is DRAWN, in frames per second. Unset or 0
+   *  draws on the display's own rhythm, which is the default and what a game
+   *  normally wants.
+   *
+   *  Named for the half of the frame it governs, because `fps` above is the
+   *  simulation's rate and the two are easy to read as one number and its
+   *  ceiling. They are not related: this one never changes how often the game
+   *  thinks.
+   *
+   *  This is not the simulation rate — `fps` above is — and capping it does not
+   *  slow the game down: the fixed-step catch-up still runs `update()` the same
+   *  number of times per second, and only the drawing is skipped. That is the
+   *  whole point on a laptop that is also running a dev server and a browser,
+   *  where the scene render is what spins the fan.
+   *
+   *  A skipped frame skips the frame-end input roll with it, so a click that
+   *  lands between two drawn frames is still there for the next one to see. The
+   *  frame the app does draw gets a `frameDelta` covering the whole gap, so
+   *  anything animating off it moves at the right speed rather than at the
+   *  fraction of it that was drawn. */
+  maxDrawFps?: number;
   /** Scene backend. `"canvas"` (default) is the existing Canvas2D path with
    *  no extra canvas. `"webgl"` requires WebGL2 and draws `Draw.sprites` /
    *  `Draw.tiles` / `Draw.particles` on a stacked scene canvas. `"auto"` tries
@@ -227,6 +255,10 @@ function buildRuntime(options: RuntimeOptions): Runtime {
     throw new RangeError("Minimotor: fps must be a finite number greater than 0");
   }
   const stepMs = 1000 / fps;
+  let maxDrawFps = options.maxDrawFps ?? 0;
+  /** Time since the last frame that was actually DRAWN, which is what the drawn
+   *  frame is handed as its delta. Equal to the frame delta when uncapped. */
+  let sinceDraw = 0;
   const maxCatchupSteps = Math.max(1, Math.round(MAX_CATCHUP_MS / stepMs));
   const canvas = resolveCanvas(options.canvas);
   // The viewport is a LIVE object: same identity forever, fields mutated in
@@ -832,6 +864,19 @@ function buildRuntime(options: RuntimeOptions): Runtime {
     timings.updateMs = performance.now() - updStart;
     timings.steps = Math.min(steps, maxCatchupSteps);
 
+    // The cap goes here, AFTER the steps: the simulation keeps its rate and
+    // only the picture is skipped. Half a step of slack, because a 30 fps cap
+    // on a 60 Hz display otherwise misses every second frame by a hair of
+    // scheduling jitter and settles at 20.
+    sinceDraw += elapsed;
+    if (maxDrawFps > 0 && sinceDraw < 1000 / maxDrawFps - stepMs / 2) return;
+    // The drawn frame is handed the whole gap, so an animation that moves by
+    // `frameDelta` moves at the same speed capped or not. Input edges are
+    // rolled in `endFrame()` below, which a skipped frame never reaches, so a
+    // press that lands between two drawn frames survives to be seen.
+    frameDelta = sinceDraw;
+    sinceDraw = 0;
+
     clearFrame();
     sceneRenderer?.beginFrame();
     const drawStart = performance.now();
@@ -853,6 +898,18 @@ function buildRuntime(options: RuntimeOptions): Runtime {
     sceneRenderer,
     get frameDelta() {
       return frameDelta;
+    },
+    get maxDrawFps() {
+      return maxDrawFps;
+    },
+    set maxDrawFps(next: number) {
+      const wanted = Number.isFinite(next) && next > 0 ? next : 0;
+      // Assigning the value it already has does nothing, so a game is free to
+      // write this every frame from a settings object without starving the
+      // draw by restarting the window each time.
+      if (wanted === maxDrawFps) return;
+      maxDrawFps = wanted;
+      sinceDraw = 0;
     },
     get interpolation() {
       return accumulator / stepMs;
