@@ -46,6 +46,7 @@ export * from "./camera.js";
 export { attachSceneLayer } from "./layer.js";
 export type { SceneLayer, SceneLayerOptions } from "./layer.js";
 export * from "./animation.js";
+export * from "./particles.js";
 export * from "./gltf.js";
 export {
   createUiSurface,
