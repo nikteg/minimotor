@@ -1,4 +1,4 @@
-import type { Protocol } from "minimotor";
+import type { Protocol } from "minimotor/net";
 import type { LevelId } from "./api-lab.generated.js";
 
 /** The one contract a peer-hosted or dedicated server can share with clients. */

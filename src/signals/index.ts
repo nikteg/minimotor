@@ -2,7 +2,8 @@
 // A tiny synchronous pub/sub bus for decoupling app modules: emit a named
 // event with a payload; any number of listeners react. No engine/DOM
 // dependency. Handler exceptions are isolated so one bad listener can't stop
-// the rest (or crash the loop).
+// the rest (or crash the loop). This is a small typed bus, not a required
+// engine pillar; scenes and ECS cover most fan-out.
 //
 //   const Signals = createSignals();
 //   Signals.on("score", n => hud.score += n);

@@ -24,6 +24,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+import * as rapier from "@dimforge/rapier3d-compat";
 import { createPhysics3D } from "@src/physics3d/index.js";
 
 /** A 40×40 floor at y = 0, fanned from the corner at (-20, 0, -20).
@@ -49,7 +50,11 @@ interface Roll {
 }
 
 async function rollAcross(fixInternalEdges: boolean, up = true): Promise<Roll> {
-  const world = await createPhysics3D({ gravity: { x: 0, y: -50, z: 0 }, timestep: 1 / 120 });
+  const world = await createPhysics3D({
+    rapier,
+    gravity: { x: 0, y: -50, z: 0 },
+    timestep: 1 / 120,
+  });
   const floor = world.createBody({ type: "fixed" });
   const { vertices, indices } = fannedFloor(up);
   world.createCollider(

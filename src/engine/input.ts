@@ -28,6 +28,19 @@ export interface Keys {
   keyReleased(key: string): boolean;
 }
 
+/** One currently-down pointer. Coordinates are logical CSS pixels in the same
+ *  space as `Pointer.x` / `Pointer.y`. */
+export interface PointerTouch {
+  /** `PointerEvent.pointerId`. */
+  readonly id: number;
+  /** Logical x within the canvas. */
+  readonly x: number;
+  /** Logical y within the canvas. */
+  readonly y: number;
+  /** Always `true` while the entry is in `Pointer.touches`. */
+  readonly down: boolean;
+}
+
 /** Polled pointer (mouse + touch) in logical CSS pixels, relative to the
  *  canvas. `pressed`/`released` are edge-triggered like `Keys`. */
 export interface Pointer {
@@ -70,6 +83,10 @@ export interface Pointer {
    *  The canvas swallows its own `contextmenu`, so a right-drag that starts on
    *  it is the app's to use. */
   readonly secondary: SecondaryButton;
+  /** Currently-down pointers (touches and a pressed mouse). Empty when none
+   *  are held — a hovering mouse does not appear here. `x`/`y`/`down` still
+   *  track the primary pointer: the first active touch, or the mouse. */
+  readonly touches: readonly PointerTouch[];
 }
 
 /** The right mouse button's own edges, mirroring `Pointer`'s primary ones. */

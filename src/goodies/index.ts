@@ -11,13 +11,13 @@
 // module `Gizmos`.
 //
 // The catalog is split into family modules for readability, but the public
-// surface stays FLAT — everything is `Minimotor.Goodies.<recipe>`, no nested
+// surface stays FLAT — everything is `Goodies.<recipe>`, no nested
 // namespaces. Add a recipe to the family file it belongs to; this barrel just
 // re-exports.
 //
 //   wrapping   — toroidal / wrap-around world math
 //   random     — chance, loot picks, one-shot shuffle, dice
-//   grid       — neighbours, flood fill, lines, sight, distance fields
+//   grid       — neighbours, flood fill, A*, lines, sight, distance fields
 //   steering   — aim/lead a target, ring/grid formations
 //   inventory  — item-stack move / merge / swap
 //   scoring    — timing grades, score ranks, beat timing

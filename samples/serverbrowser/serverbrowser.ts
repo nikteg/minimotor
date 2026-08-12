@@ -8,7 +8,7 @@ import { createDebug } from "minimotor/debug";
 // The server list is mock data — swap fetchServers() for a real request.
 import { createUI } from "minimotor/ui";
 import { Mathf, createApp } from "minimotor";
-import { TableSort, ThemeOverrides } from "minimotor";
+import type { TableSort, ThemeOverrides } from "minimotor/ui";
 import { installLayoutProbe } from "../shared/layout-probe.ts";
 
 interface Server {

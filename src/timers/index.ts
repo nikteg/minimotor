@@ -5,9 +5,10 @@
 // (pause) freezes them; slow-mo stretches them. Not platformer-specific —
 // grace windows, buffered inputs and cooldowns recur across genres.
 //
-//   const coyote = Minimotor.Timers.window(100);   // grace after leaving ground
-//   const jumpBuf = Minimotor.Timers.buffer(120);  // a press honored early
-//   const dashCd = Minimotor.Timers.cooldown(500); // reusable-after-delay
+//   const Timers = createTimers(app);
+//   const coyote = Timers.window(100);   // grace after leaving ground
+//   const jumpBuf = Timers.buffer(120);  // a press honored early
+//   const dashCd = Timers.cooldown(500); // reusable-after-delay
 //
 //   // per step — no tick():
 //   if (grounded) coyote.charge();
@@ -141,7 +142,8 @@ export interface JumpGate {
  *  ledge, and a press landed just before touchdown isn't dropped. It decides
  *  *when* to jump; the jump velocity stays game policy.
  *
- *    const gate = Minimotor.Timers.jumpGate({ coyoteMs: 100, bufferMs: 130 });
+ *    const Timers = createTimers(app);
+ *    const gate = Timers.jumpGate({ coyoteMs: 100, bufferMs: 130 });
  *    if (gate.try(input.jump.pressed, player.grounded)) player.vel.y = JUMP; */
 export function jumpGate(opts: JumpGateOptions): JumpGate {
   const clock = opts.clock;

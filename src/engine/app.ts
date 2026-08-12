@@ -1,6 +1,8 @@
 import { applyFullscreen, preventNavigation } from "@src/engine/fullscreen.js";
 import { createClockApi, type ClockApi } from "@src/clock/index.js";
 import type { Keys, Pointer } from "./input.js";
+import type { SceneRenderer } from "./render/target.js";
+import { createWebGL2Renderer } from "./render/webgl2.js";
 import type { KeyCode } from "./keycodes.js";
 import { createDraw, type DrawApi } from "./draw.js";
 import { createLoop, type LoopApi } from "./loop.js";
@@ -97,6 +99,10 @@ export interface Runtime {
   readonly keys: Keys;
   /** Polled pointer state — read in `update`. */
   readonly pointer: Pointer;
+  /** Which scene path this app bound. `"auto"` resolves to one of these. */
+  readonly renderer: "canvas" | "webgl";
+  /** WebGL2 scene layer, or `null` on the Canvas2D path. */
+  readonly sceneRenderer: SceneRenderer | null;
   /** Real time since the previous rendered frame, in milliseconds. */
   readonly frameDelta: number;
   /** How far the unsimulated remainder has progressed between the previous and
@@ -182,6 +188,11 @@ export interface RuntimeOptions {
    *  whole simulation finer-grained rather than just calling `update` more
    *  often. Rendering stays on the display's own rhythm either way. */
   fps?: number;
+  /** Scene backend. `"canvas"` (default) is the existing Canvas2D path with
+   *  no extra canvas. `"webgl"` requires WebGL2 and draws `Draw.sprites` /
+   *  `Draw.tiles` / `Draw.particles` on a stacked scene canvas. `"auto"` tries
+   *  WebGL2 and falls back to canvas silently. */
+  renderer?: "canvas" | "webgl" | "auto";
 }
 
 // Two fresh presses within this window count as a double-press / double-click;
@@ -226,7 +237,16 @@ function buildRuntime(options: RuntimeOptions): Runtime {
   const background = options.background ?? null;
   const barColor = options.barColor ?? "#000";
   const letterboxed = !!options.resolution;
-  if (background) canvas.style.background = background;
+
+  const rendererOpt = options.renderer ?? "canvas";
+  let sceneRenderer: SceneRenderer | null = null;
+  if (rendererOpt === "webgl" || rendererOpt === "auto") {
+    sceneRenderer = createWebGL2Renderer(canvas, {
+      background,
+      required: rendererOpt === "webgl",
+    });
+  }
+  if (background && !sceneRenderer) canvas.style.background = background;
 
   // Touches on the app's canvas belong to the app (widgets run their own
   // scroll/drag physics). Without `touch-action:none`, mobile browsers claim a
@@ -260,9 +280,11 @@ function buildRuntime(options: RuntimeOptions): Runtime {
       ctx.save();
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.fillStyle = barColor;
-      if (background) {
+      if (background || sceneRenderer) {
         // The play area gets its own `background` fill below — paint only the
-        // actual bar strips (device px) instead of the whole canvas.
+        // actual bar strips (device px) instead of the whole canvas. With a
+        // GL scene the overlay play area stays transparent, so bars-only is
+        // required even when `background` is omitted.
         const ox = Math.round(viewport.dpr * viewport.offsetX);
         const oy = Math.round(viewport.dpr * viewport.offsetY);
         const right = ox + viewport.w * viewport.scale * viewport.dpr;
@@ -278,7 +300,10 @@ function buildRuntime(options: RuntimeOptions): Runtime {
       }
       ctx.restore();
     }
-    if (background) {
+    if (sceneRenderer) {
+      // Overlay play area must stay transparent so the GL scene shows through.
+      if (typeof ctx.clearRect === "function") ctx.clearRect(0, 0, viewport.w, viewport.h);
+    } else if (background) {
       ctx.fillStyle = background;
       ctx.fillRect(0, 0, viewport.w, viewport.h);
     }
@@ -391,7 +416,26 @@ function buildRuntime(options: RuntimeOptions): Runtime {
         return ptr.secondaryReleased;
       },
     },
+    get touches() {
+      return touchesLive;
+    },
   };
+
+  type TouchState = { id: number; x: number; y: number; down: boolean };
+  const touchById = new Map<number, TouchState>();
+  const touchPool: TouchState[] = [];
+  const touchesLive: TouchState[] = [];
+  let primaryId: number | null = null;
+
+  function eventPointerId(e: Event): number | undefined {
+    if ("pointerId" in e && typeof (e as PointerEvent).pointerId === "number") {
+      return (e as PointerEvent).pointerId;
+    }
+    return undefined;
+  }
+  function pointerIdOrMouse(e: Event): number {
+    return eventPointerId(e) ?? 1;
+  }
 
   // ---- Frame state ----
   let frameDelta = stepMs;
@@ -441,7 +485,7 @@ function buildRuntime(options: RuntimeOptions): Runtime {
   const invalidateRect = () => {
     canvasRect = null;
   };
-  const setPointer = (e: { clientX: number; clientY: number }) => {
+  const clientToLogical = (e: { clientX: number; clientY: number }) => {
     if (!canvasRect) canvasRect = canvas.getBoundingClientRect();
     // Client → canvas-CSS px (normalize any CSS stretch), then invert the
     // letterbox base transform (offset + scale) to logical coordinates.
@@ -450,24 +494,92 @@ function buildRuntime(options: RuntimeOptions): Runtime {
     const cssX = canvasRect.width > 0 ? ((e.clientX - canvasRect.left) * cw) / canvasRect.width : 0;
     const cssY =
       canvasRect.height > 0 ? ((e.clientY - canvasRect.top) * ch) / canvasRect.height : 0;
-    ptr.x = (cssX - viewport.offsetX) / viewport.scale;
-    ptr.y = (cssY - viewport.offsetY) / viewport.scale;
-    ptr.inside = ptr.x >= 0 && ptr.y >= 0 && ptr.x <= viewport.w && ptr.y <= viewport.h;
+    const x = (cssX - viewport.offsetX) / viewport.scale;
+    const y = (cssY - viewport.offsetY) / viewport.scale;
+    const inside = x >= 0 && y >= 0 && x <= viewport.w && y <= viewport.h;
+    return { x, y, inside };
+  };
+  const applyPrimaryPos = (x: number, y: number, inside: boolean) => {
+    ptr.x = x;
+    ptr.y = y;
+    ptr.inside = inside;
+  };
+  const setPointer = (e: { clientX: number; clientY: number }) => {
+    const p = clientToLogical(e);
+    applyPrimaryPos(p.x, p.y, p.inside);
+  };
+  const addTouch = (id: number, x: number, y: number): TouchState => {
+    let t = touchById.get(id);
+    if (t) {
+      t.x = x;
+      t.y = y;
+      t.down = true;
+      return t;
+    }
+    t = touchPool.pop() ?? { id: 0, x: 0, y: 0, down: true };
+    t.id = id;
+    t.x = x;
+    t.y = y;
+    t.down = true;
+    touchById.set(id, t);
+    touchesLive.push(t);
+    return t;
+  };
+  const dropTouch = (id: number): boolean => {
+    const t = touchById.get(id);
+    if (!t) return false;
+    touchById.delete(id);
+    const i = touchesLive.indexOf(t);
+    if (i >= 0) touchesLive.splice(i, 1);
+    t.down = false;
+    touchPool.push(t);
+    return true;
+  };
+  const dropAllTouches = () => {
+    for (const t of touchesLive) {
+      t.down = false;
+      touchPool.push(t);
+    }
+    touchesLive.length = 0;
+    touchById.clear();
+    primaryId = null;
+  };
+  const adoptPrimary = (id: number) => {
+    primaryId = id;
+    const t = touchById.get(id);
+    if (!t) return;
+    applyPrimaryPos(t.x, t.y, t.x >= 0 && t.y >= 0 && t.x <= viewport.w && t.y <= viewport.h);
   };
   const markDoublePress = () => {
     ptr.doublePressed = true; // one update step (consumed like `pressed`)
     ptr.frameDoublePressed = true; // whole frame, for draw-phase UI
   };
+  const onPointerMove = (e: PointerEvent) => {
+    const p = clientToLogical(e);
+    const id = pointerIdOrMouse(e);
+    const tracked = touchById.get(id);
+    if (tracked) {
+      tracked.x = p.x;
+      tracked.y = p.y;
+    }
+    if (touchById.size === 0 || id === primaryId) applyPrimaryPos(p.x, p.y, p.inside);
+  };
   const onPointerDown = (e: PointerEvent) => {
-    setPointer(e);
+    const p = clientToLogical(e);
     // The right button is its own gesture. Letting it mint a primary press
     // means every UI button fires on right-click and every drag handler starts
     // on one, which is never what an app wants.
     if (e.button === SECONDARY_BUTTON) {
+      applyPrimaryPos(p.x, p.y, p.inside);
       if (!ptr.secondaryDown) ptr.secondaryPressed = true;
       ptr.secondaryDown = true;
       return;
     }
+    const id = pointerIdOrMouse(e);
+    addTouch(id, p.x, p.y);
+    if (primaryId !== null && id !== primaryId) return;
+    primaryId = id;
+    applyPrimaryPos(p.x, p.y, p.inside);
     const t = performance.now();
     // Fast-path / touch double-tap: a second press within DOUBLE_PRESS_MS and
     // close to the first. The native `dblclick` listener below additionally
@@ -475,13 +587,13 @@ function buildRuntime(options: RuntimeOptions): Runtime {
     // double-click matches the user's system setting exactly — the two union.
     if (
       t - lastPointerDownAt <= DOUBLE_PRESS_MS &&
-      Math.hypot(ptr.x - lastPointerDownX, ptr.y - lastPointerDownY) <= DOUBLE_CLICK_SLOP
+      Math.hypot(p.x - lastPointerDownX, p.y - lastPointerDownY) <= DOUBLE_CLICK_SLOP
     ) {
       markDoublePress();
     }
     lastPointerDownAt = t;
-    lastPointerDownX = ptr.x;
-    lastPointerDownY = ptr.y;
+    lastPointerDownX = p.x;
+    lastPointerDownY = p.y;
     ptr.down = true;
     ptr.pressed = true;
     ptr.framePressed = true; // survives the steps; cleared at frame end
@@ -503,24 +615,50 @@ function buildRuntime(options: RuntimeOptions): Runtime {
     ptr.wheel += e.deltaY * scale;
   };
   const onPointerUp = (e: PointerEvent) => {
-    setPointer(e);
+    const p = clientToLogical(e);
     if (e.button === SECONDARY_BUTTON) {
+      applyPrimaryPos(p.x, p.y, p.inside);
       if (ptr.secondaryDown) ptr.secondaryReleased = true;
       ptr.secondaryDown = false;
       return;
     }
-    ptr.down = false;
-    ptr.released = true;
-    ptr.frameReleased = true; // survives the steps; cleared at frame end
+    const id = pointerIdOrMouse(e);
+    const wasPrimary = id === primaryId;
+    dropTouch(id);
+    if (touchById.size === 0) {
+      primaryId = null;
+      applyPrimaryPos(p.x, p.y, p.inside);
+      ptr.down = false;
+      ptr.released = true;
+      ptr.frameReleased = true; // survives the steps; cleared at frame end
+      return;
+    }
+    if (wasPrimary) adoptPrimary(touchesLive[0].id);
   };
   // The browser stole the gesture mid-drag (system pan/zoom, a notification
   // pull, the iOS loupe): no pointerup ever comes, only this. Drop `down` so
   // in-flight drags end cleanly instead of sticking until the next tap — but
   // mint NO release edge (a canceled gesture must not read as a click). The
   // event's coordinates are unreliable per spec, so the position stays put.
-  const onPointerCancel = () => {
-    ptr.down = false;
+  // A cancel without `pointerId` (tests, some synthetic events) drops every
+  // active pointer, matching the old single-pointer behaviour.
+  const onPointerCancel = (e: Event) => {
+    const id = eventPointerId(e);
+    if (id === undefined) {
+      dropAllTouches();
+      ptr.down = false;
+      ptr.secondaryDown = false;
+      return;
+    }
+    const wasPrimary = id === primaryId;
+    dropTouch(id);
     ptr.secondaryDown = false;
+    if (touchById.size === 0) {
+      primaryId = null;
+      ptr.down = false;
+      return;
+    }
+    if (wasPrimary) adoptPrimary(touchesLive[0].id);
   };
   // iOS runs its own zoom/selection gestures even under `touch-action:none`:
   // pinch (`gesturestart`/`change`/`end`), double-tap zoom (the second tap's
@@ -550,7 +688,7 @@ function buildRuntime(options: RuntimeOptions): Runtime {
   // rest of the page keeps its menu.
   canvas.addEventListener("contextmenu", stopGesture);
   canvas.addEventListener("dblclick", onDblClick);
-  window.addEventListener("pointermove", setPointer);
+  window.addEventListener("pointermove", onPointerMove);
   canvas.addEventListener("wheel", onWheel, { passive: true });
   window.addEventListener("pointerup", onPointerUp);
   window.addEventListener("pointercancel", onPointerCancel);
@@ -612,6 +750,7 @@ function buildRuntime(options: RuntimeOptions): Runtime {
     resizeDirty = false;
     Object.assign(viewport, readViewport(canvas, options.resolution)); // live: mutate in place
     canvasRect = null;
+    sceneRenderer?.resize();
     for (const h of resizeHandlers) h(viewport);
   };
   const handleResize = () => {
@@ -659,7 +798,9 @@ function buildRuntime(options: RuntimeOptions): Runtime {
       // mid-pause doesn't fire pressed() on the first step after resume().
       consumeEdges();
       clearFrame();
+      sceneRenderer?.beginFrame();
       drawClipped();
+      sceneRenderer?.endFrame();
       endFrame(); // pause menus hit-test and scroll in draw too
       return;
     }
@@ -692,9 +833,11 @@ function buildRuntime(options: RuntimeOptions): Runtime {
     timings.steps = Math.min(steps, maxCatchupSteps);
 
     clearFrame();
+    sceneRenderer?.beginFrame();
     const drawStart = performance.now();
     drawClipped();
     timings.drawMs = performance.now() - drawStart;
+    sceneRenderer?.endFrame();
     endFrame();
   }
 
@@ -706,6 +849,8 @@ function buildRuntime(options: RuntimeOptions): Runtime {
     },
     keys,
     pointer,
+    renderer: sceneRenderer ? "webgl" : "canvas",
+    sceneRenderer,
     get frameDelta() {
       return frameDelta;
     },
@@ -788,7 +933,7 @@ function buildRuntime(options: RuntimeOptions): Runtime {
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("pointerup", onPointerUp);
       window.removeEventListener("pointercancel", onPointerCancel);
-      window.removeEventListener("pointermove", setPointer);
+      window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("scroll", invalidateRect, true);
       window.removeEventListener("resize", handleResize);
       window.removeEventListener("orientationchange", handleOrient);
@@ -804,6 +949,8 @@ function buildRuntime(options: RuntimeOptions): Runtime {
       canvas.removeEventListener("touchend", onTouchEnd);
       canvas.removeEventListener("selectstart", stopGesture);
       if (portraitMq && portraitApply) portraitMq.removeEventListener?.("change", portraitApply);
+      sceneRenderer?.destroy();
+      sceneRenderer = null;
       for (const h of destroyHandlers) h();
       stepHandlers.clear();
       stepStartHandlers.clear();
@@ -916,6 +1063,9 @@ export interface App {
   readonly Keys: Keys;
   readonly Pointer: Pointer;
   readonly Mouse: Pointer;
+  /** Which scene path this app bound. `"canvas"` is the default 2D path;
+   *  `"webgl"` means sprites/tiles/particles draw on the stacked GL canvas. */
+  readonly renderer: "canvas" | "webgl";
   readonly visible: boolean;
   readonly focused: boolean;
   /** Last frame's update/draw cost. Same object mutated each frame — read,
@@ -991,11 +1141,12 @@ export function createApp(
     canvas: runtime.canvas,
     ctx: runtime.ctx,
     viewport: runtime.viewport,
-    Draw: createDraw(runtime),
+    Draw: createDraw(runtime, runtime.sceneRenderer),
     Loop: createLoop(runtime),
     Clock: createClockApi(runtime),
     Keys: runtime.keys,
     Pointer: runtime.pointer,
+    renderer: runtime.renderer,
     get timings() {
       return runtime.timings;
     },

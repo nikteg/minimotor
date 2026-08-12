@@ -1,5 +1,5 @@
 import { Mathf } from "minimotor";
-import type { Bus } from "minimotor";
+import type { Bus } from "minimotor/audio";
 import type { AudioApi } from "minimotor/audio";
 
 interface AudioState {

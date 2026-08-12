@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { createPhysics3D } from "../world.js";
+import * as rapier from "@dimforge/rapier3d-compat";
+import type { Vec3 } from "@src/math/vec3.js";
+import { createPhysics3D, type Physics3DOptions } from "../world.js";
+
+function physics(options: Omit<Physics3DOptions, "rapier"> = {}) {
+  return createPhysics3D({ rapier, ...options });
+}
 
 describe("physics3d raycast", () => {
   it("reports the distance, point and normal of the nearest surface", async () => {
-    const world = await createPhysics3D({ gravity: { x: 0, y: 0, z: 0 } });
+    const world = await physics({ gravity: { x: 0, y: 0, z: 0 } });
     const ground = world.createBody({ type: "fixed", position: { x: 0, y: -1, z: 0 } });
     world.createCollider(ground, { type: "cuboid", halfExtents: { x: 50, y: 1, z: 50 } });
     world.step();
@@ -17,7 +23,7 @@ describe("physics3d raycast", () => {
   });
 
   it("returns null past maxDistance and when nothing is in the way", async () => {
-    const world = await createPhysics3D({ gravity: { x: 0, y: 0, z: 0 } });
+    const world = await physics({ gravity: { x: 0, y: 0, z: 0 } });
     const ground = world.createBody({ type: "fixed", position: { x: 0, y: -1, z: 0 } });
     world.createCollider(ground, { type: "cuboid", halfExtents: { x: 1, y: 1, z: 1 } });
     world.step();
@@ -30,7 +36,7 @@ describe("physics3d raycast", () => {
   });
 
   it("skips excluded colliders", async () => {
-    const world = await createPhysics3D({ gravity: { x: 0, y: 0, z: 0 } });
+    const world = await physics({ gravity: { x: 0, y: 0, z: 0 } });
     const near = world.createBody({ type: "fixed", position: { x: 0, y: 2, z: 0 } });
     const nearCollider = world.createCollider(near, {
       type: "cuboid",
@@ -54,7 +60,7 @@ describe("physics3d raycast", () => {
   });
 
   it("casts against only the colliders a filter accepts", async () => {
-    const world = await createPhysics3D({ gravity: { x: 0, y: 0, z: 0 } });
+    const world = await physics({ gravity: { x: 0, y: 0, z: 0 } });
     const prop = world.createBody({ type: "fixed", position: { x: 0, y: 2, z: 0 } });
     world.createCollider(prop, { type: "cuboid", halfExtents: { x: 1, y: 0.5, z: 1 } });
     const ground = world.createBody({ type: "fixed", position: { x: 0, y: -1, z: 0 } });
@@ -81,7 +87,7 @@ describe("physics3d raycast", () => {
 
 describe("physics3d kinematic bodies", () => {
   it("shoves a resting body along when the platform under it moves", async () => {
-    const world = await createPhysics3D({ gravity: { x: 0, y: -20, z: 0 }, timestep: 1 / 60 });
+    const world = await physics({ gravity: { x: 0, y: -20, z: 0 }, timestep: 1 / 60 });
     const platform = world.createBody({ type: "kinematic-position" });
     world.createCollider(
       platform,
@@ -105,6 +111,83 @@ describe("physics3d kinematic bodies", () => {
     // Carried, not left behind: `setNextPosition` gives the solver a velocity
     // to work with, which friction then passes on to whatever is standing on it.
     expect(box.position.x - settled).toBeGreaterThan(1);
+    world.dispose();
+  });
+});
+
+describe("physics3d math types", () => {
+  it("accepts a math Vec3 and a plain {x,y,z} literal", async () => {
+    const world = await physics({ gravity: { x: 0, y: 0, z: 0 } });
+    const origin: Vec3 = { x: 0, y: 5, z: 0 };
+    const ground = world.createBody({ type: "fixed", position: { x: 0, y: -1, z: 0 } });
+    world.createCollider(ground, { type: "cuboid", halfExtents: { x: 50, y: 1, z: 50 } });
+    world.step();
+
+    const hit = world.raycast(origin, { x: 0, y: -1, z: 0 });
+    expect(hit).not.toBeNull();
+    expect(hit?.distance).toBeCloseTo(5, 4);
+    world.dispose();
+  });
+});
+
+describe("physics3d queries", () => {
+  it("queryAabb finds a cuboid and respects filter", async () => {
+    const world = await physics({ gravity: { x: 0, y: 0, z: 0 } });
+    const body = world.createBody({ type: "fixed", position: { x: 0, y: 0, z: 0 } });
+    const cuboid = world.createCollider(body, {
+      type: "cuboid",
+      halfExtents: { x: 1, y: 1, z: 1 },
+    });
+    const other = world.createBody({ type: "fixed", position: { x: 10, y: 0, z: 0 } });
+    world.createCollider(other, { type: "cuboid", halfExtents: { x: 1, y: 1, z: 1 } });
+    world.step();
+
+    const hits = world.queryAabb({ x: -2, y: -2, z: -2 }, { x: 2, y: 2, z: 2 });
+    expect(hits).toContain(cuboid);
+    expect(hits).toHaveLength(1);
+    expect(
+      world.queryAabb({ x: -2, y: -2, z: -2 }, { x: 2, y: 2, z: 2 }, { filter: () => false }),
+    ).toEqual([]);
+    expect(
+      world.queryAabb(
+        { x: -2, y: -2, z: -2 },
+        { x: 2, y: 2, z: 2 },
+        { filter: (c) => c === cuboid },
+      ),
+    ).toEqual([cuboid]);
+    world.dispose();
+  });
+
+  it("pointPick hits a containing cuboid and misses empty space", async () => {
+    const world = await physics({ gravity: { x: 0, y: 0, z: 0 } });
+    const body = world.createBody({ type: "fixed", position: { x: 0, y: 0, z: 0 } });
+    const cuboid = world.createCollider(body, {
+      type: "cuboid",
+      halfExtents: { x: 1, y: 1, z: 1 },
+    });
+    world.step();
+
+    expect(world.pointPick({ x: 0, y: 0, z: 0 })).toBe(cuboid);
+    expect(world.pointPick({ x: 0.5, y: 0.5, z: 0.5 })).toBe(cuboid);
+    expect(world.pointPick({ x: 10, y: 0, z: 0 })).toBeNull();
+    expect(world.pointPick({ x: 0, y: 0, z: 0 }, { filter: () => false })).toBeNull();
+    world.dispose();
+  });
+});
+
+describe("physics3d joints", () => {
+  it("creates a revolute joint whose destroy() is idempotent", async () => {
+    const world = await physics({ gravity: { x: 0, y: 0, z: 0 } });
+    const anchor = world.createBody({ type: "fixed", position: { x: 0, y: 0, z: 0 } });
+    world.createCollider(anchor, { type: "cuboid", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } });
+    const arm = world.createBody({ type: "dynamic", position: { x: 2, y: 0, z: 0 } });
+    world.createCollider(arm, { type: "cuboid", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } });
+    const joint = world.revolute(anchor, arm, { x: 0, y: 0, z: 0 }, { x: 0, y: 1, z: 0 });
+
+    expect(joint.raw.isValid()).toBe(true);
+    joint.destroy();
+    expect(joint.raw.isValid()).toBe(false);
+    joint.destroy();
     world.dispose();
   });
 });

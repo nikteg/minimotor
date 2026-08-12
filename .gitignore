@@ -23,5 +23,9 @@ test-results/
 .claude/settings.local.json
 .minimotor/
 
+# Local `mm level simulate` outputs — not engine source.
+generated-levels/*
+!generated-levels/README.md
+
 # Agent worktrees; each is its own checkout of this repo.
 .claude/worktrees/

@@ -1,6 +1,7 @@
 // API Lab — one small game exercising the public API. [#n] references
 // API-REVIEW.md.
-import { Collision, Mathf, Tiles, createApp, type BodyState, type Shared } from "minimotor";
+import { Collision, Mathf, Tiles, createApp } from "minimotor";
+import type { BodyState, Shared } from "minimotor/net";
 import * as Sprites from "minimotor/sprites";
 import { createAnimation } from "minimotor/animation";
 import { createAssets } from "minimotor/assets";

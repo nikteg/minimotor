@@ -1,7 +1,7 @@
 import { Tiles } from "minimotor";
 import type { AssetStore } from "minimotor/assets";
 import { createTilesetSkin, frameFromCell } from "minimotor/ui";
-import type { ThemeOverrides } from "minimotor";
+import type { ThemeOverrides } from "minimotor/ui";
 
 export function createHexanyTheme(atlas: CanvasImageSource): ThemeOverrides {
   const tiles = Tiles.set(atlas, { size: 16, names: { frame: [0, 0, 6, 6] } });

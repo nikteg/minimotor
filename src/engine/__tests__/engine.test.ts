@@ -66,6 +66,23 @@ describe("createApp", () => {
     expect(game.Loop).toBeDefined();
   });
 
+  it("exposes renderer: canvas by default and does not request webgl2", () => {
+    const types: string[] = [];
+    HTMLCanvasElement.prototype.getContext = function (type: string) {
+      types.push(type);
+      if (type !== "2d") return origGc.call(this, type);
+      return {
+        setTransform: vi.fn(),
+        fillRect: vi.fn(),
+        canvas: this,
+      } as unknown as CanvasRenderingContext2D;
+    };
+    const { game } = build("default-renderer");
+    expect(game.renderer).toBe("canvas");
+    expect(types).not.toContain("webgl2");
+    expect(types.every((t) => t === "2d")).toBe(true);
+  });
+
   it("throws for a missing canvas id", () => {
     expect(() => createApp("nope", { fullscreen: false })).toThrow(/not found/);
   });
@@ -555,6 +572,99 @@ describe("input", () => {
     window.dispatchEvent(ex);
     expect(ex.defaultPrevented).toBe(false);
     game.destroy();
+  });
+
+  it("tracks two simultaneous touches; Pointer.x/y follow the primary", () => {
+    const { game, canvas } = build("multi-touch");
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      left: 0,
+      top: 0,
+      width: game.viewport.w,
+      height: game.viewport.h,
+      right: game.viewport.w,
+      bottom: game.viewport.h,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    expect(game.Pointer.touches).toEqual([]);
+
+    canvas.dispatchEvent(
+      new PointerEvent("pointerdown", { pointerId: 10, clientX: 20, clientY: 30, button: 0 }),
+    );
+    expect(game.Pointer.down).toBe(true);
+    expect(game.Pointer.x).toBeCloseTo(20);
+    expect(game.Pointer.y).toBeCloseTo(30);
+    expect(game.Pointer.touches).toHaveLength(1);
+    expect(game.Pointer.touches[0]).toMatchObject({ id: 10, x: 20, y: 30, down: true });
+
+    canvas.dispatchEvent(
+      new PointerEvent("pointerdown", { pointerId: 11, clientX: 80, clientY: 90, button: 0 }),
+    );
+    expect(game.Pointer.touches).toHaveLength(2);
+    expect(game.Pointer.x).toBeCloseTo(20); // still the first finger
+    expect(game.Pointer.y).toBeCloseTo(30);
+
+    window.dispatchEvent(
+      new PointerEvent("pointermove", { pointerId: 11, clientX: 85, clientY: 95 }),
+    );
+    expect(game.Pointer.x).toBeCloseTo(20);
+    expect(game.Pointer.touches.find((t) => t.id === 11)).toMatchObject({ x: 85, y: 95 });
+
+    window.dispatchEvent(
+      new PointerEvent("pointermove", { pointerId: 10, clientX: 25, clientY: 35 }),
+    );
+    expect(game.Pointer.x).toBeCloseTo(25);
+    expect(game.Pointer.y).toBeCloseTo(35);
+
+    window.dispatchEvent(
+      new PointerEvent("pointerup", { pointerId: 10, clientX: 25, clientY: 35, button: 0 }),
+    );
+    expect(game.Pointer.touches).toHaveLength(1);
+    expect(game.Pointer.touches[0].id).toBe(11);
+    expect(game.Pointer.down).toBe(true);
+    expect(game.Pointer.x).toBeCloseTo(85); // remaining finger is now primary
+    expect(game.Pointer.y).toBeCloseTo(95);
+
+    window.dispatchEvent(
+      new PointerEvent("pointerup", { pointerId: 11, clientX: 85, clientY: 95, button: 0 }),
+    );
+    expect(game.Pointer.touches).toEqual([]);
+    expect(game.Pointer.down).toBe(false);
+  });
+
+  it("drops one id on pointercancel and leaves the other down", () => {
+    const { game, canvas } = build("touch-cancel");
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      left: 0,
+      top: 0,
+      width: game.viewport.w,
+      height: game.viewport.h,
+      right: game.viewport.w,
+      bottom: game.viewport.h,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    canvas.dispatchEvent(
+      new PointerEvent("pointerdown", { pointerId: 1, clientX: 10, clientY: 10, button: 0 }),
+    );
+    canvas.dispatchEvent(
+      new PointerEvent("pointerdown", { pointerId: 2, clientX: 40, clientY: 40, button: 0 }),
+    );
+    window.dispatchEvent(new PointerEvent("pointercancel", { pointerId: 1 }));
+    expect(game.Pointer.touches).toHaveLength(1);
+    expect(game.Pointer.touches[0].id).toBe(2);
+    expect(game.Pointer.down).toBe(true);
+    expect(game.Pointer.released).toBe(false);
+    expect(game.Pointer.x).toBeCloseTo(40);
+  });
+
+  it("does not list a hovering mouse in touches", () => {
+    const { game } = build("mouse-hover");
+    window.dispatchEvent(new PointerEvent("pointermove", { pointerId: 1, clientX: 5, clientY: 5 }));
+    expect(game.Pointer.touches).toEqual([]);
+    expect(game.Pointer.down).toBe(false);
   });
 });
 

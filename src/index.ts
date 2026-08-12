@@ -1,4 +1,4 @@
-// Minimotor — a minimal 2D canvas framework for small games and playful apps.
+// minimotor — a TypeScript 2D game engine with an opt-in 3D layer.
 // createApp creates isolated apps.
 //
 // WHERE A CAPABILITY LIVES
@@ -110,20 +110,6 @@ export type {
  */
 export type { App } from "./engine/index.js";
 export type {
-  PlatformerAnimationState,
-  PlatformerAnimationBody,
-  PlatformerAnimationCursor,
-  PlatformerAnimations,
-} from "./platformer/index.js";
-export type {
-  Anchor,
-  StickSpec,
-  ButtonSpec,
-  HapticsConfig,
-  OnscreenGamepadConfig,
-  OnscreenPad,
-} from "./onscreen/index.js";
-export type {
   Rect,
   Viewport,
   KeyCode,
@@ -132,6 +118,7 @@ export type {
   // re-export infers a type that can't be written down outside node_modules.
   Keys,
   Pointer,
+  PointerTouch,
   SecondaryButton,
   LoopApi,
   FrameTimings,
@@ -150,43 +137,9 @@ export type {
   Fill,
   GradientStops,
 } from "./engine/index.js";
-export type { SceneSpec, SceneStack, GoOptions, SceneStackOptions } from "./scenes/index.js";
-export type {
-  Portal,
-  PortalArea,
-  PortalBody,
-  PortalDestination,
-  PortalOptions,
-  PortalRouter,
-  PortalTravel,
-} from "./portals/index.js";
 export type { ClockApi, ClockHandle, Cancel } from "./clock/index.js";
 export type { SignalBus } from "./signals/index.js";
 export { createSignals } from "./signals/index.js";
-export type {
-  AssetStore,
-  AssetManifest,
-  AssetSpec,
-  ProgressFn,
-  Loaded,
-  LoadedAsset,
-} from "./assets/index.js";
-export type {
-  GridAnimationSource,
-  AnimationSource,
-  AnimationCursor,
-  SheetOptions,
-  SheetStateSpec,
-  SheetImage,
-  FrameRect,
-  ImageAnimationSource,
-  ImageAnimationCursor,
-  StateClip,
-  Motion,
-  AnimateOptions,
-  SequenceStep,
-  Parallel,
-} from "./anim/index.js";
 export type {
   Sweep,
   Contact,
@@ -202,44 +155,7 @@ export type {
   Contacts,
   MoverBody,
 } from "./collision/index.js";
-export type {
-  CameraOptions,
-  CameraLens,
-  RenderOptions,
-  ScreenMapOptions,
-  FollowTarget,
-} from "./camera/index.js";
-export type {
-  ParticleSystem,
-  BurstOptions,
-  EmitOptions,
-  ParticleOptions,
-  Range,
-} from "./particles/index.js";
-export type {
-  PerfStats,
-  Perf3DSource,
-  Perf3DFrameStats,
-  Perf3DStats,
-  PerfTracker,
-  NetStats,
-  NetMeter,
-  PerfHudOptions,
-  PerfOptions,
-  Sparkline,
-} from "./perf/index.js";
-export type {
-  GamepadState,
-  GamepadNavigation,
-  PadButton,
-  PadCode,
-  Binding,
-  ActionState,
-  InputMap,
-  InputMapOptions,
-} from "./input/index.js";
 export type { State, FsmOptions, Machine } from "./fsm/index.js";
-export type { Window, Buffer, Cooldown, JumpGate, JumpGateOptions } from "./timers/index.js";
 export type {
   Level,
   GridOptions as TileGridOptions,
@@ -263,30 +179,11 @@ export type {
   TransitionRun,
   TransitionPhases,
 } from "./transitions/index.js";
-
-export type {
-  SfxBuilder,
-  MusicConfig,
-  SfxSpec,
-  SfxHandle,
-  PlayOptions,
-  BusHandle,
-  EngineOptions,
-  EngineDrive,
-  EngineHandle,
-  MusicOptions,
-  MusicHandle,
-  Bus,
-  Filter,
-  Effect,
-  DelayEffect,
-  ToneOptions,
-  ToneSweep,
-} from "./audio/index.js";
 export type {
   Weighted,
   GridPoint,
   GridNeighborOptions,
+  AstarOptions,
   LeadTarget,
   TimingGrade,
   DamageRoll,
@@ -316,37 +213,6 @@ export type {
   ScoreTracker,
   ScoreStore,
 } from "./gizmos/index.js";
-export type {
-  Transport,
-  WsConfig,
-  RtcConfig,
-  Signal,
-  RtcSessionOptions,
-  HostSession,
-  GuestSession,
-  Room,
-  RoomOptions,
-  SyncOptions,
-  PeerStates,
-  Interpolator,
-  InterpolatorOptions,
-  Roster,
-  RosterOptions,
-  Protocol,
-  ProtocolShape,
-  StateOf,
-  EventsOf,
-  RequestsOf,
-  ClientMessageOf,
-  ServerMessageOf,
-  ProtocolTransport,
-  SharedItemId,
-  SharedItem,
-  SharedItemsOptions,
-  SharedItems,
-  Shared,
-  BodyState,
-} from "./net/index.js";
 
 /** Pure, allocation-free collision geometry. `Collision.moveAndSlide`/
  *  `Collision.slide` do swept platformer resolution against `Solids`, plus
@@ -359,70 +225,6 @@ export type {
  *    if (body.grounded && input.jump.pressed) body.vel.y = -JUMP;
  */
 export { Collision };
-
-export type {
-  BarOptions,
-  ButtonOptions,
-  ButtonStyle,
-  ButtonVariant,
-  ConfirmOptions,
-  DialogOptions,
-  DragSourceOptions,
-  DragSourceState,
-  DraggedItem,
-  DropResult,
-  DropTargetOptions,
-  DropTargetState,
-  Fillable,
-  FloatTextManager,
-  FloatTextOptions,
-  Flowable,
-  GridOptions,
-  IdPart,
-  LayoutChildren,
-  LayoutOptions,
-  ListOptions,
-  ListItemOptions,
-  ModalOptions,
-  PanelOptions,
-  PopoverOptions,
-  ScrollbarOptions,
-  SliderOptions,
-  SpinnerOptions,
-  Flow,
-  FlowOptions,
-  TableColumn,
-  TableSort,
-  TableOptions,
-  TableResult,
-  TabsOptions,
-  TextOptions,
-  TextInputOptions,
-  TextInputResult,
-  SelectGroup,
-  SelectOption,
-  SelectOptions,
-  SelectResult,
-  Theme,
-  ThemeOverrides,
-  ThemeButton,
-  ThemePanel,
-  ThemePanelTitle,
-  ThemePadding,
-  ResolvedThemePadding,
-  ThemeSpacing,
-  ThemeTextPadding,
-  ThemeButtonText,
-  ThemeSelect,
-  NineSliceRegion,
-  TileRegion,
-  TilesetFrameRole,
-  TilesetSkin,
-  TilesetSkinOptions,
-  TilesetSprite,
-  TilesetCellSource,
-  ToggleOptions,
-} from "./ui/api.js";
 
 export { Vec2 } from "./math/vec2.js";
 

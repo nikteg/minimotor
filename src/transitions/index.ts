@@ -3,8 +3,8 @@
 // behind it at the midpoint, then the overlay ramps back out. Pass one to the
 // scene stack's `go`:
 //
-//   scenes.go("play", { transition: Minimotor.Transitions.fade(400) });
-//   scenes.go("over", { transition: Minimotor.Transitions.wipe(500, "down") });
+//   scenes.go("play", { transition: Transitions.fade(400) });
+//   scenes.go("over", { transition: Transitions.wipe(500, "down") });
 //
 // A `Transition` is plain data (duration + how to draw coverage `t`), so custom
 // ones are one object literal. The runner (`run`) is pure and fixed-step —

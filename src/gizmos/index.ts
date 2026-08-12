@@ -2,7 +2,7 @@
 // Gizmos is the stateful sibling of Goodies. Where a Goodie is a pure function
 // (call it, get a value), a Gizmo is a little machine you CREATE once and then
 // tick or mutate across frames — it carries live state. The public surface is
-// flat, matching Goodies: `Minimotor.Gizmos.<gadget>`.
+// flat, matching Goodies: `Gizmos.<gadget>`.
 //
 //   random   — seeded RNG generator, without-replacement shuffle bag
 //   motion   — patrol oscillator, motion-trail ring

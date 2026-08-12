@@ -1,4 +1,4 @@
-import type { ThemeOverrides } from "minimotor";
+import type { ThemeOverrides } from "minimotor/ui";
 import type { AssetStore } from "minimotor/assets";
 import { inspectTilesetSkin } from "minimotor/ui";
 import { loadTinyRpgThemes, type TinyRpgThemes } from "./themes/tiny-rpg-mana-soul.ts";
