@@ -554,8 +554,10 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     lines: boolean,
     /** The `occludedAlpha` ghost pass: depth test reversed, depth writes off. */
     occluded = false,
+    /** `additive`: add to what is behind rather than blending over it. */
+    additive = false,
   ): GPURenderPipeline {
-    const key = `${blend}:${doubleSided}:${overlay}:${lines}:${occluded}`;
+    const key = `${blend}:${doubleSided}:${overlay}:${lines}:${occluded}:${additive}`;
     const cached = pipelines.get(key);
     if (cached) return cached;
     const pipeline = device.createRenderPipeline({
@@ -570,8 +572,13 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
             blend: blend
               ? {
                   // Premultiplied source, matching the canvas alpha mode and
-                  // the shader's premultiplied output.
-                  color: { srcFactor: "one", dstFactor: "one-minus-src-alpha" },
+                  // the shader's premultiplied output. An additive surface
+                  // keeps everything behind it and adds its own light on top,
+                  // so only the colour destination changes.
+                  color: {
+                    srcFactor: "one",
+                    dstFactor: additive ? "one" : "one-minus-src-alpha",
+                  },
                   alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha" },
                 }
               : undefined,
@@ -1097,6 +1104,9 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
             material.depthTest === false,
             n.mesh!.topology === "lines",
             ghost,
+            // A ghost is a hint about where something is, not a light: it
+            // blends whatever the surface it copies does.
+            !ghost && !!material.additive,
           ),
         );
         pass.setBindGroup(0, frameBindGroup!, [slot * DRAW_BYTES]);

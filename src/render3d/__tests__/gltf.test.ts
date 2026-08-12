@@ -137,7 +137,9 @@ describe("loadGltf materials", () => {
       documentWith({
         meshes: [
           {
-            primitives: [{ attributes: { POSITION: 0, TEXCOORD_0: 1, TEXCOORD_1: 1 }, material: 0 }],
+            primitives: [
+              { attributes: { POSITION: 0, TEXCOORD_0: 1, TEXCOORD_1: 1 }, material: 0 },
+            ],
           },
         ],
         materials: [

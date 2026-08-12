@@ -569,6 +569,15 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
   /** `occludedAlpha` nodes, drawn a second time where something covers them. */
   const occluded: number[] = [];
 
+  /** Premultiplied-alpha blending, matching the context and the textures, or
+   *  addition for a surface that emits light rather than covering what is
+   *  behind it. Both keep the source premultiplied, so the only thing that
+   *  changes is what happens to the destination. */
+  function setBlendMode(additive: boolean): void {
+    if (additive) gl!.blendFuncSeparate(gl!.ONE, gl!.ONE, gl!.ONE, gl!.ONE_MINUS_SRC_ALPHA);
+    else gl!.blendFuncSeparate(gl!.ONE, gl!.ONE_MINUS_SRC_ALPHA, gl!.ONE, gl!.ONE_MINUS_SRC_ALPHA);
+  }
+
   function applyCanvasSize(retainBackingStore = false): void {
     const bw = Math.max(1, Math.round(width * dpr));
     const bh = Math.max(1, Math.round(height * dpr));
@@ -932,11 +941,18 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
       if (blended.length > 0) {
         blended.sort((a, b) => b.depth - a.depth); // farthest first
         gl!.enable(gl!.BLEND);
-        // Premultiplied-alpha blending, matching the context and the textures.
-        gl!.blendFuncSeparate(gl!.ONE, gl!.ONE_MINUS_SRC_ALPHA, gl!.ONE, gl!.ONE_MINUS_SRC_ALPHA);
         gl!.depthMask(false);
+        // The blend function is per node rather than per pass: `additive`
+        // surfaces sit in this same pass, since addition commutes and needs no
+        // sorting of its own.
+        let additive: boolean | null = null;
         for (const { index } of blended) {
-          drawNode(scene.nodes[index], scene.nodes[index].material ?? {});
+          const material = scene.nodes[index].material ?? {};
+          if (!!material.additive !== additive) {
+            additive = !!material.additive;
+            setBlendMode(additive);
+          }
+          drawNode(scene.nodes[index], material);
         }
         gl!.depthMask(true);
         gl!.disable(gl!.BLEND);
@@ -954,7 +970,7 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
         gl!.depthFunc(gl!.GREATER);
         gl!.depthMask(false);
         gl!.enable(gl!.BLEND);
-        gl!.blendFuncSeparate(gl!.ONE, gl!.ONE_MINUS_SRC_ALPHA, gl!.ONE, gl!.ONE_MINUS_SRC_ALPHA);
+        setBlendMode(false);
         for (const i of occluded) {
           drawNode(scene.nodes[i], ghostMaterial(scene.nodes[i].material ?? {}));
         }
@@ -972,12 +988,7 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
           const material = scene.nodes[i].material ?? {};
           if (material.transparent) {
             gl!.enable(gl!.BLEND);
-            gl!.blendFuncSeparate(
-              gl!.ONE,
-              gl!.ONE_MINUS_SRC_ALPHA,
-              gl!.ONE,
-              gl!.ONE_MINUS_SRC_ALPHA,
-            );
+            setBlendMode(!!material.additive);
             gl!.depthMask(false);
           }
           drawNode(scene.nodes[i], material);

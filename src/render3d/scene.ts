@@ -46,6 +46,24 @@ export interface Material {
    *  ones, back to front; see `Renderer3D` for the ordering rule and its
    *  limits. */
   transparent?: boolean;
+  /** Add this surface to what is behind it instead of blending over it.
+   *  Needs `transparent`, which is what puts the surface in the blended pass
+   *  at all.
+   *
+   *  This is the mode light comes in: fire, sparks, a glow, a dust mote lit
+   *  from behind, a wind streak over a bright floor. Alpha blending REPLACES
+   *  what is behind the surface in proportion to its alpha, so a white card at
+   *  0.6 over a coloured floor is a grey-white patch — the card reads as an
+   *  object stuck to the screen. Adding it instead brightens what is already
+   *  there and leaves the floor's own colour showing through, which is what a
+   *  streak of light does.
+   *
+   *  It also makes the draw order stop mattering: addition commutes, so two
+   *  additive surfaces give the same picture either way round, where two
+   *  alpha-blended ones do not. They are still drawn in the blended pass, and
+   *  still sorted with it — no reason to split a second pass for a property
+   *  that does not need one. */
+  additive?: boolean;
   /** Draw over everything, whatever is in front. Set false and the surface
    *  skips the depth test entirely and is drawn last, after both the opaque
    *  and the blended pass.

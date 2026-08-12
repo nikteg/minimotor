@@ -47,7 +47,9 @@ describe("the two backends' shading maths", () => {
   });
 
   it.each(backends)("%s blends the hemisphere off the normal's Y", (_name, source) => {
-    expect(source).toMatch(/mix\(\s*(?:u|frame\.)[Aa]mbient(?:\.rgb)?,\s*(?:u|frame\.)?[Aa]mbientGround(?:\.rgb)?,\s*max\(1e-6, 0\.5 - n\.y \* 0\.5\)\)/);
+    expect(source).toMatch(
+      /mix\(\s*(?:u|frame\.)[Aa]mbient(?:\.rgb)?,\s*(?:u|frame\.)?[Aa]mbientGround(?:\.rgb)?,\s*max\(1e-6, 0\.5 - n\.y \* 0\.5\)\)/,
+    );
   });
 
   it.each(backends)("%s gives the tone-mapped specular all four fixes", (_name, source) => {
@@ -168,8 +170,12 @@ describe("the two backends' mesh caching", () => {
     // A rebuild per frame leaks a whole mesh per frame if the old handles are
     // dropped instead of destroyed, which is the kind of thing that only shows
     // up an hour into a session.
-    expect(webgl2).toMatch(/function releaseMesh\(gpu: GpuMesh\): void \{[\s\S]*?deleteVertexArray/);
-    expect(webgpu).toMatch(/function releaseMesh\(gpu: GpuMesh\): void \{[\s\S]*?positions\.destroy\(\)/);
+    expect(webgl2).toMatch(
+      /function releaseMesh\(gpu: GpuMesh\): void \{[\s\S]*?deleteVertexArray/,
+    );
+    expect(webgpu).toMatch(
+      /function releaseMesh\(gpu: GpuMesh\): void \{[\s\S]*?positions\.destroy\(\)/,
+    );
   });
 });
 
