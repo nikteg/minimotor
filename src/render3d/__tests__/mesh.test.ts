@@ -292,6 +292,25 @@ describe("mergeMeshes", () => {
     expect(Array.from(merged.normals!.slice(at, at + 3))).toEqual([0, 1, 0]);
   });
 
+  it("carries a second uv set and zeroes it where a part has none", () => {
+    // The primitives never build a `uvs1`, so a merged pair of one authored
+    // part and one generated part is the ordinary case for a detail-mapped
+    // mesh — and a part left at zero samples one texel rather than reading
+    // whatever the neighbouring part's uvs happened to be.
+    const withUv1: MeshData = {
+      positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]),
+      uvs1: new Float32Array([0, 0, 1, 0, 0, 1]),
+      indices: new Uint16Array([0, 1, 2]),
+    };
+    const plain: MeshData = {
+      positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]),
+      indices: new Uint16Array([0, 1, 2]),
+    };
+    expect(mergeMeshes([plain, plain]).uvs1).toBeUndefined();
+    const merged = mergeMeshes([withUv1, plain]);
+    expect(Array.from(merged.uvs1!)).toEqual([0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0]);
+  });
+
   it("promotes to 32-bit indices past 65535 vertices", () => {
     const big = sphere(1, 200, 200); // 40k+ vertices
     const merged = mergeMeshes([big, big]);

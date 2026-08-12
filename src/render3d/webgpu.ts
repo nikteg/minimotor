@@ -49,8 +49,10 @@ const MAX_JOINTS = 64;
  *  to 16 bytes anyway. */
 const FRAME_BYTES = 288;
 /** Per-draw: model(64) + normalMat as 3×vec4(48) + baseColor(16) + params(16)
- *  + skinParams(16) + uvTransform(16) + rimAlpha(16) + joints. Padded to the
- *  256-byte minimum dynamic-offset alignment. */
+ *  + skinParams(16) + uvTransform(16) + rimAlpha(16) + detail(16) + joints.
+ *  Padded to the 256-byte minimum dynamic-offset alignment, which is why
+ *  adding `detail` did not move this number: 4304 and 4288 both round to the
+ *  same slot. */
 const DRAW_BYTES = 4352;
 const DRAW_FLOATS = DRAW_BYTES / 4;
 const TIMESTAMP_SLOTS = 64;
@@ -91,6 +93,8 @@ struct DrawData {
   uvTransform: vec4f,
   // xyz: rim alpha bias/scale/power, w: metalness
   rimAlpha  : vec4f,
+  // x: detail overlay strength (0 off), y: detail reads uv1 rather than uv
+  detail    : vec4f,
   jointMatrices: array<mat4x4f, ${MAX_JOINTS}>,
 };
 
@@ -99,6 +103,7 @@ struct DrawData {
 @group(1) @binding(0) var samp : sampler;
 @group(1) @binding(1) var tex  : texture_2d<f32>;
 @group(1) @binding(2) var normalTex : texture_2d<f32>;
+@group(1) @binding(3) var detailTex : texture_2d<f32>;
 
 struct VsOut {
   @builtin(position) clip     : vec4f,
@@ -106,6 +111,7 @@ struct VsOut {
   @location(1)       normal   : vec3f,
   @location(2)       uv       : vec2f,
   @location(3)       color    : vec4f,
+  @location(4)       uv1      : vec2f,
 };
 
 @vertex
@@ -116,6 +122,7 @@ fn vs(
   @location(3) color    : vec4f,
   @location(4) joints   : vec4u,
   @location(5) weights  : vec4f,
+  @location(6) uv1      : vec2f,
 ) -> VsOut {
   var out : VsOut;
   var local = vec4f(position, 1.0);
@@ -133,6 +140,7 @@ fn vs(
   let nm = mat3x3f(draw.normal0.xyz, draw.normal1.xyz, draw.normal2.xyz);
   out.normal = nm * localNormal;
   out.uv = uv;
+  out.uv1 = uv1;
   out.color = color;
   out.clip = frame.viewProj * world;
   return out;
@@ -217,6 +225,18 @@ fn roughnessOf(shininess : f32) -> f32 {
   return clamp(1.0 - (log2(max(shininess, 1e-6)) - 1.0) / 7.0, 0.0, 1.0);
 }
 
+/** Photoshop's Overlay — see the WebGL2 backend for why the PATTERN is the
+ *  side that gets tested. Both backends have to keep the same pivot or they
+ *  stop drawing the same frame. */
+fn blendOverlay(pattern : vec3f, surface : vec3f) -> vec3f {
+  let lum = dot(pattern, vec3f(0.2126, 0.7152, 0.0722));
+  return select(
+    1.0 - 2.0 * (1.0 - pattern) * (1.0 - surface),
+    2.0 * pattern * surface,
+    lum < 0.5,
+  );
+}
+
 fn applyNormalMap(n : vec3f, worldPos : vec3f, uv : vec2f, scale : f32) -> vec3f {
   // Sampled up front, BEFORE the degenerate-uv guard below. textureSample
   // picks its mip from implicit derivatives, which WGSL only permits in
@@ -251,6 +271,12 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
     } else {
       base = base * texel;
     }
+  }
+  // While base is still in display space — see Material.detailMap.
+  if (draw.detail.x > 0.0) {
+    let detailUv = select(uv, in.uv1, draw.detail.y > 0.5);
+    let pattern = textureSample(detailTex, samp, detailUv).rgb;
+    base = vec4f(mix(base.rgb, blendOverlay(pattern, base.rgb), draw.detail.x), base.a);
   }
   // Ahead of the cutoff and of the unlit branch, because the ramp is what
   // decides the final alpha: a bias of zero means the face-on fragments are
@@ -343,6 +369,7 @@ interface GpuMesh {
   colors: GPUBuffer;
   joints: GPUBuffer;
   weights: GPUBuffer;
+  uvs1: GPUBuffer;
   indices: GPUBuffer;
   count: number;
   format: GPUIndexFormat;
@@ -480,6 +507,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
       { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
       { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+      { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: {} },
     ],
   });
   const pipelineLayout = device.createPipelineLayout({
@@ -493,6 +521,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     { arrayStride: 16, attributes: [{ shaderLocation: 3, offset: 0, format: "float32x4" }] },
     { arrayStride: 8, attributes: [{ shaderLocation: 4, offset: 0, format: "uint16x4" }] },
     { arrayStride: 16, attributes: [{ shaderLocation: 5, offset: 0, format: "float32x4" }] },
+    { arrayStride: 8, attributes: [{ shaderLocation: 6, offset: 0, format: "float32x2" }] },
   ];
 
   const pipelines = new Map<string, GPURenderPipeline>();
@@ -616,6 +645,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       { binding: 0, resource: sampler },
       { binding: 1, resource: blankTexture.createView() },
       { binding: 2, resource: blankTexture.createView() },
+      { binding: 3, resource: blankTexture.createView() },
     ],
   });
 
@@ -688,6 +718,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     gpu.colors.destroy();
     gpu.joints.destroy();
     gpu.weights.destroy();
+    gpu.uvs1.destroy();
     gpu.indices.destroy();
   }
 
@@ -709,6 +740,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       colors: buffer(mesh.colors ?? filled(n * 4, 1), GPUBufferUsage.VERTEX),
       joints: buffer(mesh.joints ?? defaultJoints(n), GPUBufferUsage.VERTEX),
       weights: buffer(mesh.weights ?? defaultWeights(n), GPUBufferUsage.VERTEX),
+      uvs1: buffer(mesh.uvs1 ?? new Float32Array(n * 2), GPUBufferUsage.VERTEX),
       indices: buffer(mesh.indices, GPUBufferUsage.INDEX),
       count: mesh.indices.length,
       format: mesh.indices instanceof Uint32Array ? "uint32" : "uint16",
@@ -753,15 +785,16 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     return texture;
   }
 
-  /** One bind group per (base texture, normal map, sampler) combination. The
-   *  group has to name both textures at once, so it cannot be cached against
-   *  the base image alone. */
+  /** One bind group per (base texture, normal map, detail map, sampler)
+   *  combination. The group has to name all three textures at once, so it
+   *  cannot be cached against the base image alone. */
   function textureGroupFor(material: Material): GPUBindGroup {
     const base = material.texture;
     const normal = material.normalMap;
-    if (!base && !normal) return blankBindGroup;
+    const detail = (material.detailStrength ?? 0) > 0 ? material.detailMap : undefined;
+    if (!base && !normal && !detail) return blankBindGroup;
     const baseKey = (base ?? blankTexture) as object;
-    const samplerKey = `${material.pixelated ?? true}|${material.repeat ?? false}|${identity(normal)}`;
+    const samplerKey = `${material.pixelated ?? true}|${material.repeat ?? false}|${identity(normal)}|${identity(detail)}`;
     let byCombination = textureGroups.get(baseKey);
     if (!byCombination) {
       byCombination = new Map();
@@ -772,9 +805,10 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     const normalTexture = normal
       ? textureFor(normal, material.normalMapVersion ?? 0)
       : blankTexture;
+    const detailTexture = detail ? textureFor(detail, material.detailMapVersion ?? 0) : blankTexture;
     // A rebuilt texture invalidates every view of it, so the cached group has
-    // to be dropped whenever either upload replaced its GPUTexture.
-    const stamp = `${identity(baseTexture)}|${identity(normalTexture)}|${samplerKey}`;
+    // to be dropped whenever any upload replaced its GPUTexture.
+    const stamp = `${identity(baseTexture)}|${identity(normalTexture)}|${identity(detailTexture)}|${samplerKey}`;
     const existing = byCombination.get(stamp);
     if (existing) return existing;
     const group = device.createBindGroup({
@@ -783,6 +817,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
         { binding: 0, resource: samplerFor(material.pixelated ?? true, material.repeat ?? false) },
         { binding: 1, resource: baseTexture.createView() },
         { binding: 2, resource: normalTexture.createView() },
+        { binding: 3, resource: detailTexture.createView() },
       ],
     });
     byCombination.set(stamp, group);
@@ -845,7 +880,11 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     drawData[at + 45] = rim?.[1] ?? 0;
     drawData[at + 46] = rim?.[2] ?? 1;
     drawData[at + 47] = material.metallic ?? 0;
-    drawData.set(skin ?? IDENTITY_JOINTS, at + 48);
+    drawData[at + 48] = material.detailMap ? (material.detailStrength ?? 0) : 0;
+    drawData[at + 49] = material.detailUv === 1 ? 1 : 0;
+    drawData[at + 50] = 0;
+    drawData[at + 51] = 0;
+    drawData.set(skin ?? IDENTITY_JOINTS, at + 52);
   }
 
   const renderer: Renderer3D = {
@@ -1016,6 +1055,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
         pass.setVertexBuffer(3, gpu.colors);
         pass.setVertexBuffer(4, gpu.joints);
         pass.setVertexBuffer(5, gpu.weights);
+        pass.setVertexBuffer(6, gpu.uvs1);
         pass.setIndexBuffer(gpu.indices, gpu.format);
         pass.drawIndexed(gpu.count);
         stats.drawCalls++;

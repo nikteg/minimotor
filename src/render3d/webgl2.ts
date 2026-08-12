@@ -56,6 +56,7 @@ layout(location = 2) in vec2 aUv;
 layout(location = 3) in vec4 aColor;
 layout(location = 4) in uvec4 aJoints;
 layout(location = 5) in vec4 aWeights;
+layout(location = 6) in vec2 aUv1;
 
 uniform mat4 uViewProj;
 uniform mat4 uModel;
@@ -66,6 +67,7 @@ uniform mat4 uJointMatrices[${MAX_JOINTS}];
 out vec3 vWorldPos;
 out vec3 vNormal;
 out vec2 vUv;
+out vec2 vUv1;
 out vec4 vColor;
 
 void main() {
@@ -85,6 +87,7 @@ void main() {
   // The inverse-transpose, so a non-uniformly scaled mesh still lights right.
   vNormal = uNormalMat * localNormal;
   vUv = aUv;
+  vUv1 = aUv1;
   vColor = aColor;
   gl_Position = uViewProj * world;
 }`;
@@ -95,6 +98,7 @@ precision highp float;
 in vec3 vWorldPos;
 in vec3 vNormal;
 in vec2 vUv;
+in vec2 vUv1;
 in vec4 vColor;
 
 uniform vec4 uBaseColor;
@@ -113,6 +117,9 @@ uniform sampler2D uTexture;
 uniform bool uHasNormalMap;
 uniform sampler2D uNormalMap;
 uniform float uNormalScale;
+uniform sampler2D uDetailMap;
+uniform float uDetailStrength; // 0 disables the sample entirely
+uniform bool uDetailUv1;
 uniform vec3 uRimAlpha; // bias, scale, power — see Material.rimAlpha
 uniform vec4 uUvTransform;
 uniform int uFogMode; // -1 off, 0 linear, 1 exp, 2 exp squared, 3 layered
@@ -207,6 +214,17 @@ float roughnessOf(float shininess) {
   return clamp(1.0 - (log2(max(shininess, 1e-6)) - 1.0) / 7.0, 0.0, 1.0);
 }
 
+/** Photoshop's Overlay, pivoting on mid-grey: the pattern decides which half
+ *  of the curve runs, so a texel lighter than half screens the surface up and
+ *  a darker one multiplies it down. The PATTERN is what gets tested, not the
+ *  surface — which is what makes this an overlay OF the detail map rather than
+ *  a surface-driven contrast boost, and the two are visibly different on a
+ *  dark base. (No backticks in here: this is inside a template literal.) */
+vec3 blendOverlay(vec3 pattern, vec3 surface) {
+  float lum = dot(pattern, vec3(0.2126, 0.7152, 0.0722));
+  return lum < 0.5 ? 2.0 * pattern * surface : 1.0 - 2.0 * (1.0 - pattern) * (1.0 - surface);
+}
+
 /** Tangent frame rebuilt from screen-space derivatives, so a normal map works
  *  on any mesh with uvs and no TANGENT attribute has to exist or agree. */
 vec3 applyNormalMap(vec3 n, vec2 uv) {
@@ -235,6 +253,11 @@ void main() {
     // Blend 2 keeps the base colour's own alpha: the texture decides colour
     // where it is opaque, not whether the surface is there at all.
     base = uTextureBlend == 2 ? vec4(mix(base.rgb, texel.rgb, texel.a), base.a) : base * texel;
+  }
+  // While base is still in display space — see Material.detailMap.
+  if (uDetailStrength > 0.0) {
+    vec3 pattern = texture(uDetailMap, uDetailUv1 ? vUv1 : uv).rgb;
+    base.rgb = mix(base.rgb, blendOverlay(pattern, base.rgb), uDetailStrength);
   }
   // Ahead of the cutoff and of the unlit branch, because the ramp is what
   // decides the final alpha: a bias of zero means the face-on fragments are
@@ -361,6 +384,9 @@ interface Uniforms {
   hasNormalMap: WebGLUniformLocation | null;
   normalMap: WebGLUniformLocation | null;
   normalScale: WebGLUniformLocation | null;
+  detailMap: WebGLUniformLocation | null;
+  detailStrength: WebGLUniformLocation | null;
+  detailUv1: WebGLUniformLocation | null;
   rimAlpha: WebGLUniformLocation | null;
   uvTransform: WebGLUniformLocation | null;
   fogMode: WebGLUniformLocation | null;
@@ -471,6 +497,9 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     hasNormalMap: gl.getUniformLocation(program, "uHasNormalMap"),
     normalMap: gl.getUniformLocation(program, "uNormalMap"),
     normalScale: gl.getUniformLocation(program, "uNormalScale"),
+    detailMap: gl.getUniformLocation(program, "uDetailMap"),
+    detailStrength: gl.getUniformLocation(program, "uDetailStrength"),
+    detailUv1: gl.getUniformLocation(program, "uDetailUv1"),
     rimAlpha: gl.getUniformLocation(program, "uRimAlpha"),
     uvTransform: gl.getUniformLocation(program, "uUvTransform"),
     fogMode: gl.getUniformLocation(program, "uFogMode"),
@@ -562,6 +591,7 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     gl!.enableVertexAttribArray(4);
     gl!.vertexAttribIPointer(4, 4, gl!.UNSIGNED_SHORT, 0, 0);
     attach(5, mesh.weights ?? defaultWeights(n), 4);
+    attach(6, mesh.uvs1 ?? new Float32Array(n * 2), 2);
 
     const indexBuffer = gl!.createBuffer();
     if (!indexBuffer) throw new Error("WebGL2: could not create an index buffer.");
@@ -675,6 +705,18 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     } else {
       gl!.uniform1i(u.hasNormalMap, 0);
     }
+
+    const detailStrength = material.detailMap ? (material.detailStrength ?? 0) : 0;
+    if (detailStrength > 0) {
+      gl!.activeTexture(gl!.TEXTURE2);
+      gl!.bindTexture(
+        gl!.TEXTURE_2D,
+        uploadTexture(material.detailMap!, pixelated, material.detailMapVersion ?? 0, repeat),
+      );
+      gl!.uniform1i(u.detailMap, 2);
+      gl!.uniform1i(u.detailUv1, material.detailUv === 1 ? 1 : 0);
+    }
+    gl!.uniform1f(u.detailStrength, detailStrength);
 
     // `[1, 0, 1]` is the identity ramp: bias 1 with no grazing term leaves the
     // alpha exactly as authored, and the shader's own `scale != 0` test skips

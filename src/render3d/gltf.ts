@@ -25,6 +25,10 @@ interface GltfDocument {
 interface GltfTextureRef {
   index?: number;
   scale?: number;
+  /** Which uv set the map reads. Only the detail map acts on this; everything
+   *  else in this loader is TEXCOORD_0 whatever the document says, because
+   *  nothing has needed otherwise. */
+  texCoord?: number;
   extensions?: { KHR_texture_transform?: { offset?: number[]; scale?: number[] } };
 }
 
@@ -39,14 +43,18 @@ interface GltfMaterial {
     baseColorTexture?: GltfTextureRef;
   };
   /** The format's own escape hatch, used here to carry the material knobs glTF
-   *  cannot express: `uvProjection`, `textureBlend`, `rimAlpha` and
-   *  `specular` — the dielectric reflectance, which core metallic-roughness
-   *  simply has no field for. */
+   *  cannot express: `uvProjection`, `textureBlend`, `rimAlpha`, `specular` —
+   *  the dielectric reflectance, which core metallic-roughness simply has no
+   *  field for — and the overlay detail map, which no ratified extension
+   *  covers either. `detailTexture` is an ordinary texture reference so it can
+   *  carry `texCoord: 1` the way the rest of the format does. */
   extras?: {
     uvProjection?: string;
     textureBlend?: string;
     rimAlpha?: number[];
     specular?: number;
+    detailTexture?: GltfTextureRef;
+    detailStrength?: number;
   };
 }
 
@@ -192,6 +200,7 @@ function readPrimitive(
   );
   const normals = optionalAccessor(document, buffers, primitive.attributes.NORMAL);
   const uvs = optionalAccessor(document, buffers, primitive.attributes.TEXCOORD_0);
+  const uvs1 = optionalAccessor(document, buffers, primitive.attributes.TEXCOORD_1);
   const colors = optionalAccessor(document, buffers, primitive.attributes.COLOR_0);
   const joints = optionalAccessor(document, buffers, primitive.attributes.JOINTS_0);
   const weights = optionalAccessor(document, buffers, primitive.attributes.WEIGHTS_0);
@@ -202,6 +211,7 @@ function readPrimitive(
   const mesh: MeshData = { positions, indices };
   if (normals) mesh.normals = normals;
   if (uvs) mesh.uvs = uvs;
+  if (uvs1) mesh.uvs1 = uvs1;
   if (colors)
     mesh.colors = colors.length === (positions.length / 3) * 4 ? colors : expandColors(colors);
   if (joints) mesh.joints = Uint16Array.from(joints);
@@ -260,19 +270,31 @@ function materialFor(
 
   const base = pbr?.baseColorTexture;
   const normal = source?.normalTexture;
+  const detail = source?.extras?.detailTexture;
   const baseImage = imageFor(document, images, base);
   const normalImage = imageFor(document, images, normal);
+  const detailImage = imageFor(document, images, detail);
   if (baseImage) material.texture = baseImage;
   if (normalImage) {
     material.normalMap = normalImage;
     if (normal?.scale !== undefined) material.normalScale = normal.scale;
   }
-  if (baseImage || normalImage) {
+  if (detailImage) {
+    material.detailMap = detailImage;
+    material.detailStrength = source?.extras?.detailStrength ?? 0;
+    if (detail?.texCoord === 1) material.detailUv = 1;
+  }
+  if (baseImage || normalImage || detailImage) {
     // A glTF texture is photographic by default; the engine's nearest-neighbour
     // default is for pixel art, which a loaded document is usually not.
     material.pixelated = false;
-    const sampler =
-      document.samplers?.[document.textures?.[(base ?? normal)?.index ?? -1]?.sampler ?? -1];
+    // One sampler serves the whole material, so a document that wants two
+    // different filters on one surface cannot have them. The base texture wins
+    // when there is one, since that is the map the eye reads as the surface;
+    // a lone detail map gets to choose, which is what a deliberately blocky
+    // overlay over an untextured colour needs.
+    const chosen = base ?? normal ?? detail;
+    const sampler = document.samplers?.[document.textures?.[chosen?.index ?? -1]?.sampler ?? -1];
     if (sampler?.magFilter === NEAREST) material.pixelated = true;
     if (sampler?.wrapS === REPEAT || sampler?.wrapT === REPEAT) material.repeat = true;
     const transform = (base ?? normal)?.extensions?.KHR_texture_transform;

@@ -29,6 +29,18 @@ export interface MeshData {
    *  backends upload an image's first row at v = 0, so this needs no flip
    *  anywhere; see the note at the top of `webgl2.ts`. */
   uvs?: Float32Array;
+  /** A SECOND `[u, v]` per vertex, same convention as `uvs`.
+   *
+   *  One unwrap rarely serves two purposes. A surface texture wants islands
+   *  packed tightly into an atlas, wherever they land and at whatever
+   *  orientation; a detail overlay wants a layout that follows the shape — up
+   *  the face, around the barrel — because the pattern's direction is the
+   *  point of it. Authoring tools solve that by shipping both, and glTF's
+   *  `texCoord: 1` on a texture reference is how a document says which one a
+   *  given map reads. Only `Material.detailUv` selects it here; there is no
+   *  second set for the base colour or the normal map, because nothing has
+   *  needed one and an unused attribute is still a buffer per mesh. */
+  uvs1?: Float32Array;
   /** `[r, g, b, a]` per vertex, 0..1. Multiplied with the material colour. */
   colors?: Float32Array;
   /** Four joint indices per vertex, used by a glTF-style skin. */
@@ -217,6 +229,7 @@ export function mergeMeshes(meshes: readonly MeshData[]): MeshData {
   const idxs = meshes.reduce((n, m) => n + m.indices.length, 0);
   const anyNormals = meshes.some((m) => m.normals);
   const anyUvs = meshes.some((m) => m.uvs);
+  const anyUvs1 = meshes.some((m) => m.uvs1);
   const anyColors = meshes.some((m) => m.colors);
   // Topology is a property of the draw call, so one merged mesh can only have
   // one. Mixing would silently reinterpret one input's indices as the other's
@@ -233,6 +246,7 @@ export function mergeMeshes(meshes: readonly MeshData[]): MeshData {
   if (lines) out.topology = "lines";
   if (anyNormals) out.normals = new Float32Array(verts * 3);
   if (anyUvs) out.uvs = new Float32Array(verts * 2);
+  if (anyUvs1) out.uvs1 = new Float32Array(verts * 2);
   if (anyColors) out.colors = new Float32Array(verts * 4);
 
   let v = 0;
@@ -245,6 +259,7 @@ export function mergeMeshes(meshes: readonly MeshData[]): MeshData {
       else for (let k = 0; k < n; k++) out.normals[(v + k) * 3 + 1] = 1;
     }
     if (out.uvs && m.uvs) out.uvs.set(m.uvs, v * 2);
+    if (out.uvs1 && m.uvs1) out.uvs1.set(m.uvs1, v * 2);
     if (out.colors) {
       if (m.colors) out.colors.set(m.colors, v * 4);
       else out.colors.fill(1, v * 4, (v + n) * 4);

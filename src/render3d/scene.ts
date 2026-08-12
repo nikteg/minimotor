@@ -120,6 +120,33 @@ export interface Material {
   /** How far the normal map tilts the surface, 0..1+ where 1 is the map's own
    *  strength and 0 is flat. Default 1. */
   normalScale?: number;
+  /** A pattern blended over the base colour in Photoshop's OVERLAY mode, at
+   *  `detailStrength`. Sampled with `detailUv` and the material's own
+   *  `pixelated`/`repeat` settings; `uvScale`/`uvOffset` do NOT apply, because
+   *  a detail unwrap is already authored at the density it wants.
+   *
+   *  Overlay, not multiply: the point of a detail map is to add relief without
+   *  changing what colour the surface IS. Multiplying a pattern in can only
+   *  darken, so a tiled overlay reads as dirt and the artist compensates by
+   *  brightening the base colour until the two only agree at one strength.
+   *  Overlay pivots around mid-grey — lighter than half lifts, darker drops,
+   *  exactly half does nothing — so the surface keeps its own value at any
+   *  strength and the map is free to be an unbiased pattern.
+   *
+   *  The blend happens in DISPLAY space, before any linearization: overlay's
+   *  0.5 pivot is a perceptual midpoint, and run against linear light it
+   *  pivots around a value most of a stop darker than the one the pattern was
+   *  painted against. */
+  detailMap?: TexImageSource;
+  /** Bump when the detail map's PIXELS change, as with `textureVersion`. */
+  detailMapVersion?: number;
+  /** How much of the overlay to mix in, 0..1. Default 0, which is off — a
+   *  detail map with no strength costs a sample and changes nothing. */
+  detailStrength?: number;
+  /** Which uv set the detail map reads: 0 (the default) is the mesh's `uvs`,
+   *  1 is its `uvs1`. A mesh with no `uvs1` gets zeros, which samples one
+   *  texel of the map across the whole surface. */
+  detailUv?: 0 | 1;
   /** Multiply uvs by this before sampling — how a small detail texture tiles
    *  across a large surface. Default `[1, 1]`. */
   uvScale?: readonly [number, number];

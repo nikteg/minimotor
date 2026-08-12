@@ -131,6 +131,62 @@ describe("loadGltf materials", () => {
     expect(material?.pixelated).toBe(false);
   });
 
+  it("reads an overlay detail map out of extras, with its own uv set", async () => {
+    const decoder = stubDecoder();
+    serve(
+      documentWith({
+        meshes: [
+          {
+            primitives: [{ attributes: { POSITION: 0, TEXCOORD_0: 1, TEXCOORD_1: 1 }, material: 0 }],
+          },
+        ],
+        materials: [
+          {
+            pbrMetallicRoughness: { baseColorFactor: [0.9, 0.4, 0.4, 1] },
+            extras: { detailTexture: { index: 0, texCoord: 1 }, detailStrength: 0.05 },
+          },
+        ],
+        textures: [{ source: 0, sampler: 0 }],
+        samplers: [{ magFilter: 9728, wrapS: 10497 }],
+        images: [{ uri: "grid.png" }],
+      }),
+      ["grid.png"],
+    );
+
+    const { scene } = await loadGltf("assets/level.gltf");
+    const node = scene.nodes.find((n) => n.mesh);
+    expect(decoder.calls).toBe(1);
+    expect(node?.material?.detailMap).toBeDefined();
+    expect(node?.material?.detailStrength).toBe(0.05);
+    expect(node?.material?.detailUv).toBe(1);
+    expect(node?.mesh?.uvs1).toBeDefined();
+    // With no base texture the detail map is the only thing the one sampler
+    // has to serve, so a nearest, wrapping detail map gets to be both.
+    expect(node?.material?.pixelated).toBe(true);
+    expect(node?.material?.repeat).toBe(true);
+  });
+
+  it("leaves a detail map with no strength inert", async () => {
+    stubDecoder();
+    serve(
+      documentWith({
+        materials: [{ extras: { detailTexture: { index: 0 } } }],
+        textures: [{ source: 0 }],
+        images: [{ uri: "grid.png" }],
+      }),
+      ["grid.png"],
+    );
+
+    const { scene } = await loadGltf("assets/level.gltf");
+    const material = scene.nodes.find((n) => n.mesh)?.material;
+    // Loaded but weightless: both backends test the strength, not the map, so
+    // an exporter that writes the texture and forgets the number changes
+    // nothing rather than blending at some default.
+    expect(material?.detailMap).toBeDefined();
+    expect(material?.detailStrength).toBe(0);
+    expect(material?.detailUv).toBeUndefined();
+  });
+
   it("turns a KHR_texture_transform scale into uv tiling and enables repeat", async () => {
     stubDecoder();
     serve(

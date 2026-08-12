@@ -94,6 +94,30 @@ describe("the two backends' shading maths", () => {
     expect(webgpu).toContain("select(1.0, 0.31830988, toneMap)");
   });
 
+  it.each(backends)("%s pivots the detail overlay on the pattern", (_name, source) => {
+    // Overlay is not symmetric. Testing the SURFACE instead of the pattern is
+    // the same function with its arguments swapped and produces a plausible
+    // image, so nothing about the frame says which way round it is — until the
+    // two backends disagree. Both coefficient triples and the 0.5 pivot.
+    expect(source).toMatch(/0\.2126, 0\.7152, 0\.0722/);
+    expect(source).toMatch(/lum < 0\.5/);
+    expect(source).toMatch(/2\.0 \* pattern \* surface/);
+    expect(source).toMatch(/1\.0 - 2\.0 \* \(1\.0 - pattern\) \* \(1\.0 - surface\)/);
+  });
+
+  it("blends the detail overlay before linearizing, in both", () => {
+    // Overlay's 0.5 is a PERCEPTUAL midpoint. Run against linear light it
+    // pivots most of a stop darker than the value the pattern was painted
+    // against, so the same map lightens where it should darken.
+    const order = (source: string, decode: string): boolean => {
+      const overlay = source.indexOf("blendOverlay(pattern");
+      const linear = source.indexOf(decode);
+      return overlay > 0 && linear > overlay;
+    };
+    expect(order(webgl2, "if (uToneMap) base.rgb = srgbToLinear")).toBe(true);
+    expect(order(webgpu, "if (toneMap) { base = vec4f(srgbToLinear")).toBe(true);
+  });
+
   it("fogs before the curve in both", () => {
     // Fog mixed in AFTER the tone map would be a different image: the fog
     // colour would skip the shoulder that everything it is blending with went
