@@ -1,12 +1,17 @@
 import type { Rect } from "./app.js";
 import { drawText, monoFont, type TextHAlign, type TextVAlign } from "@src/engine/text.js";
 import { blitPixelAligned } from "./pixel-raster.js";
+import type { SceneRenderer } from "./render/target.js";
+import { createDrawRecorder, type DrawRecorder } from "./render/record-ctx.js";
+import { readTransform } from "./render/math.js";
 
 type Point = { x: number; y: number };
 
 interface DrawTarget {
   readonly ctx: CanvasRenderingContext2D;
   readonly spriteScratch: DrawSprite[];
+  readonly scene: SceneRenderer | null;
+  readonly recorder: DrawRecorder | null;
 }
 
 /** Anything `Draw.text` can draw glyphs from that is not a CSS font string —
@@ -563,6 +568,11 @@ function sprites(
   list: Iterable<DrawSprite>,
   opts: DrawSpritesOptions = {},
 ): void {
+  if (this.scene) {
+    this.scene.setTransform(readTransform(this.ctx));
+    this.scene.sprites(list, opts);
+    return;
+  }
   const ctx = this.ctx;
   const spriteScratch = this.spriteScratch;
   const lerp = opts.interpolation;
@@ -705,6 +715,13 @@ function tiles<S>(
   skin?: S,
   opts?: DrawTilesOptions,
 ): void {
+  if (this.scene && this.recorder) {
+    this.recorder.begin(this.ctx, this.scene);
+    const fake = this.recorder.ctx;
+    if ("skinless" in level && level.skinless) level.render(fake);
+    else (level as TilesLike<S>).render(fake, skin as S, opts);
+    return;
+  }
   const ctx = this.ctx;
   if ("skinless" in level && level.skinless) level.render(ctx);
   else (level as TilesLike<S>).render(ctx, skin as S, opts);
@@ -721,6 +738,11 @@ export interface ParticleLike {
 /** Render a particle system (`Particles.createSystem()`), typically inside a
  *  `Camera.render` block for world-space effects. */
 function particles(this: DrawTarget, sys: ParticleLike): void {
+  if (this.scene && this.recorder) {
+    this.recorder.begin(this.ctx, this.scene);
+    sys.render(this.recorder.ctx);
+    return;
+  }
   sys.render(this.ctx);
 }
 
@@ -790,13 +812,20 @@ export interface DrawApi {
   particles(sys: ParticleLike): void;
 }
 
-/** Create a renderer permanently bound to one app/context. */
-export function createDraw(host: { readonly ctx: CanvasRenderingContext2D }): DrawApi {
+/** Create a renderer permanently bound to one app/context. When `scene` is
+ *  present, `sprites` / `tiles` / `particles` go there; everything else stays
+ *  on the overlay 2D context. */
+export function createDraw(
+  host: { readonly ctx: CanvasRenderingContext2D },
+  scene?: SceneRenderer | null,
+): DrawApi {
   const target: DrawTarget = {
     get ctx() {
       return host.ctx;
     },
     spriteScratch: [],
+    scene: scene ?? null,
+    recorder: scene ? createDrawRecorder() : null,
   };
   return {
     get ctx() {

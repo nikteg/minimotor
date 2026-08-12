@@ -4,6 +4,7 @@ import {
   chance,
   damageRoll,
   dayCycle,
+  astar,
   floodFill,
   gridFormation,
   gridLine,
@@ -125,6 +126,58 @@ describe("Goodies grids", () => {
       { x: 0, y: 0 },
       { x: 1, y: 0 },
       { x: 0, y: 1 },
+    ]);
+  });
+});
+
+describe("Goodies.astar", () => {
+  const fromRows = (rows: string[]) => (x: number, y: number) => {
+    const row = rows[y];
+    return !!row && x >= 0 && x < row.length && row[x] !== "#";
+  };
+
+  it("walks a straight corridor, including start and goal", () => {
+    const passable = fromRows(["......"]);
+    expect(astar({ x: 0, y: 0 }, { x: 5, y: 0 }, passable)).toEqual([
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 2, y: 0 },
+      { x: 3, y: 0 },
+      { x: 4, y: 0 },
+      { x: 5, y: 0 },
+    ]);
+  });
+
+  it("detours around a wall", () => {
+    const passable = fromRows(["..#..", "..#..", "....."]);
+    const path = astar({ x: 0, y: 0 }, { x: 4, y: 0 }, passable);
+    expect(path).not.toBeNull();
+    expect(path![0]).toEqual({ x: 0, y: 0 });
+    expect(path![path!.length - 1]).toEqual({ x: 4, y: 0 });
+    expect(path!.length).toBeGreaterThan(5);
+    for (const cell of path!) expect(passable(cell.x, cell.y)).toBe(true);
+  });
+
+  it("returns null when the goal is unreachable", () => {
+    const passable = fromRows(["..#..", "..#..", "..#.."]);
+    expect(astar({ x: 0, y: 1 }, { x: 4, y: 1 }, passable)).toBeNull();
+    expect(astar({ x: 0, y: 0 }, { x: 1, y: 0 }, () => false)).toBeNull();
+  });
+
+  it("returns the start cell when start equals goal", () => {
+    const passable = fromRows(["...", "...", "..."]);
+    expect(astar({ x: 1, y: 1 }, { x: 1, y: 1 }, passable)).toEqual([{ x: 1, y: 1 }]);
+  });
+
+  it("rejects diagonal corner cuts", () => {
+    const blocked = fromRows([".#", "#."]);
+    expect(astar({ x: 0, y: 0 }, { x: 1, y: 1 }, blocked, { diagonal: true })).toBeNull();
+
+    const oneWall = fromRows([".#", ".."]);
+    expect(astar({ x: 0, y: 0 }, { x: 1, y: 1 }, oneWall, { diagonal: true })).toEqual([
+      { x: 0, y: 0 },
+      { x: 0, y: 1 },
+      { x: 1, y: 1 },
     ]);
   });
 });

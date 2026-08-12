@@ -1,8 +1,8 @@
 # minimotor
 
-A minimal 2D canvas framework for small games and playful apps: a fixed-step
-loop, drawing, input, collision, audio, and multiplayer building blocks. Every
-app owns its runtime state explicitly, with no framework or build magic.
+minimotor is a TypeScript 2D game engine with an opt-in 3D layer: a fixed-step
+loop, immediate-mode drawing and UI, and plain-data helpers — never a framework
+you subclass.
 
 ```ts
 // Colored square that moves with arrow keys — a complete game.
@@ -32,7 +32,8 @@ Loop.run({
 `createApp` binds a `<canvas>` (by id or element), owns resizing and clearing,
 and returns one isolated app. Its `viewport` is **live**:
 `viewport.w`/`viewport.h` update on resize without rebinding. Everything else
-is imported and created only when the app uses it.
+is imported and created only when the app uses it. 3D (`minimotor/3d`,
+`minimotor/physics3d`) is a layer on top of that 2D app, not a replacement.
 
 ## Design
 
@@ -42,7 +43,8 @@ is imported and created only when the app uses it.
   around.
 - **Pay for what you import.** The core bundle is dependency-free. Rigid-body
   physics (`planck` for 2D and Rapier for 3D) and the Node server half live
-  behind their own entry points.
+  behind their own entry points; planck is an optional peer, and 3D physics
+  takes the Rapier module you pass in.
 - **Canvas coordinates everywhere.** Pixels, y down — including the physics
   adapter, which converts to Box2D meters at the boundary.
 
@@ -66,7 +68,7 @@ is imported and created only when the app uses it.
 | `minimotor/ui`             | `createUI(app, Input?)` — immediate-mode UI isolated to one canvas, with optional all-pad navigation.       |
 | `minimotor/net`            | `createNet(app)` — multiplayer sessions and app-owned sync utilities.                                       |
 | `minimotor/physics2d`      | `createPhysics2D(app)` — rigid-body physics over planck/Box2D.                                              |
-| `minimotor/physics3d`      | `createPhysics3D(options)` — generic Rapier bodies, colliders, and fixed-step worlds.                       |
+| `minimotor/physics3d`      | `createPhysics3D({ rapier })` — generic Rapier bodies, colliders, and fixed-step worlds.                    |
 | `minimotor/3d`             | Meshes, scenes, cameras, renderers, animation, and a JSON glTF loader.                                      |
 | `minimotor/performance`    | `createPerformanceMonitoring(app)` plus standalone measurement utilities.                                   |
 | `minimotor/platformer`     | Standalone platformer animation-state helpers (idle/run/jump/fall from a body).                             |
@@ -117,6 +119,12 @@ The simulation runs at 60 steps per second unless you say otherwise —
 (clocks, timers, tweens, particles, UI ageing) follows the rate you pick.
 Read `Loop.step` rather than assuming 16.67ms.
 
+Pass `{ renderer: "webgl" }` to draw `Draw.sprites`, `Draw.tiles`, and
+`Draw.particles` through a WebGL2 scene canvas stacked under the 2D overlay
+(UI, text, and `Draw.rect` stay on Canvas2D). `{ renderer: "auto" }` tries
+WebGL2 and falls back to canvas silently. The default is `"canvas"` — same
+as today. Read `app.renderer` to see which path won.
+
 **Input** — `Input.map` binds keys/gamepad buttons to named actions with edge
 state; `OnscreenInput` renders an opt-in touch gamepad that shares the same
 code path as a hardware pad. `pad.buttonBounds("a")` locates a virtual button
@@ -137,6 +145,20 @@ worlds), `UI` (immediate-mode
 buttons, panels, lists, tables, dialogs, drag-and-drop). `UI.vw`/`UI.vh`
 provide constrained viewport-relative sizes; modals clamp their preferred
 width inside the viewport automatically.
+
+**3D** — opt-in (`minimotor/3d`, `minimotor/physics3d`). The same `createApp`
+canvas hosts a GPU scene via `UI.viewport3d`, `createUiSurface`, or
+`attachSceneLayer`. It shares the GPU; it is not a second engine.
+`createPhysics3D` does not import Rapier — pass the `-compat` package you
+installed (`@dimforge/rapier3d-compat`, or `-deterministic-compat` when a
+client and a server step the same world):
+
+```ts
+import * as rapier from "@dimforge/rapier3d-compat";
+import { createPhysics3D } from "minimotor/physics3d";
+
+const phys = await createPhysics3D({ rapier });
+```
 
 #### Tileset UI skins
 
@@ -206,9 +228,9 @@ presence, and matchmaking.
 **Ready-made legos** — the small pieces of game knowledge that otherwise get
 rewritten (usually slightly wrong) in every project, for any kind of game.
 `Goodies` holds the **pure recipes** — call one, get a value: steering and target
-leading, flood fill, line of sight, distance fields, weighted random and dice,
-inventory stacking, world wrapping, clock formatting. `Gizmos` holds the
-**stateful gadgets** — create one, then tick it: combos, score trackers,
+leading, flood fill, line of sight, distance fields, A* pathfinding, weighted
+random and dice, inventory stacking, world wrapping, clock formatting. `Gizmos`
+holds the **stateful gadgets** — create one, then tick it: combos, score trackers,
 patrols, trails, ability charges, checkpoint routes, seeded RNG and shuffle
 bags, undo stacks, arcade car handling and skidmarks. Both surfaces are flat:
 `Goodies.floodFill`, `Gizmos.combo`.
@@ -656,8 +678,9 @@ Two rules follow, and `src/__tests__/layering.test.ts` enforces them:
 - Optional capabilities do not import the app runtime as a value. Factories
   receive `App` explicitly and implementation modules remain reusable.
 - Capabilities that need peers take them as arguments — `createUI(app, input)`,
-  `createOnscreenInput(app, input, ui)`, and `createAutosave(app, snapshots,
-storage)` keep wiring visible and capability dependencies honest.
+  `createOnscreenInput(app, input, ui)`, `createAutosave(app, snapshots,
+  storage)`, and `createPhysics3D({ rapier })` keep wiring visible and
+  capability dependencies honest.
 
 ## License
 

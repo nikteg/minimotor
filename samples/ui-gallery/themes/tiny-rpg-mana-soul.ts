@@ -1,7 +1,7 @@
 import { Tiles } from "minimotor";
 import type { AssetStore } from "minimotor/assets";
 import { createTilesetSkin, frameFromCell } from "minimotor/ui";
-import type { TilesetCellSource, ThemeOverrides } from "minimotor";
+import type { TilesetCellSource, ThemeOverrides } from "minimotor/ui";
 
 export interface TinyRpgThemes {
   theme: ThemeOverrides;

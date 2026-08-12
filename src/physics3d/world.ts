@@ -1,23 +1,25 @@
-import * as RAPIER from "@dimforge/rapier3d-compat";
+// Generic Rapier world. The engine does not import a Rapier package — pass
+// the module you installed:
+//
+//   import * as rapier from "@dimforge/rapier3d-compat";
+//   const phys = await createPhysics3D({ rapier });
+//
+// Use `@dimforge/rapier3d-deterministic-compat` when a client and a server
+// step the same world. Do not mix the two.
 
-/** A plain three-dimensional vector used at the physics boundary. */
-export interface Vec3 {
-  x: number;
-  y: number;
-  z: number;
-}
+import type * as RAPIER from "@dimforge/rapier3d-compat";
+import type { Vec3 } from "@src/math/vec3.js";
+import { Quat } from "@src/math/quat.js";
 
-/** A plain orientation quaternion used at the physics boundary. */
-export interface Quat {
-  x: number;
-  y: number;
-  z: number;
-  w: number;
-}
+/** The Rapier module `createPhysics3D` needs. `@dimforge/rapier3d-compat` and
+ *  `@dimforge/rapier3d-deterministic-compat` share this TypeScript surface. */
+export type Rapier3D = typeof import("@dimforge/rapier3d-compat");
 
 export type RigidBody3DType = "fixed" | "dynamic" | "kinematic-position" | "kinematic-velocity";
 
 export interface Physics3DOptions {
+  /** The Rapier module to simulate with. The engine does not import one. */
+  rapier: Rapier3D;
   gravity?: Vec3;
   /** Fixed simulation step in seconds. Defaults to 1/60. */
   timestep?: number;
@@ -161,6 +163,21 @@ export interface Raycast3DOptions {
   filter?: (collider: RAPIER.Collider) => boolean;
 }
 
+export interface Query3DOptions {
+  /** Consider only colliders this accepts. */
+  filter?: (collider: RAPIER.Collider) => boolean;
+}
+
+/** What every joint factory hands back: a way to let go, and the raw joint.
+ *  `destroy()` is idempotent — destroying either joined body already takes
+ *  the joint with it. */
+export interface Physics3DJoint {
+  /** Escape hatch: the underlying Rapier impulse joint. */
+  readonly raw: RAPIER.ImpulseJoint;
+  /** Remove the joint. */
+  destroy(): void;
+}
+
 export interface Physics3DWorld {
   readonly raw: RAPIER.World;
   createBody(options?: RigidBody3DOptions): Physics3DBody;
@@ -178,34 +195,49 @@ export interface Physics3DWorld {
    * sees the world as of the last step; a collider created since then is
    * invisible to it. Step once after building a level before querying it. */
   raycast(origin: Vec3, direction: Vec3, options?: Raycast3DOptions): Raycast3DHit | null;
+  /** Every collider whose AABB overlaps the box, in no particular order.
+   *  Allocates the result array. Rapier rebuilds query structures during
+   *  `step`, so a collider created since the last step is invisible. */
+  queryAabb(min: Vec3, max: Vec3, opts?: Query3DOptions): RAPIER.Collider[];
+  /** The nearest collider containing the point, or `null`. Exact (a point in
+   *  a cuboid's AABB but outside the shape misses). Same step caveat as
+   *  `queryAabb`. */
+  pointPick(point: Vec3, opts?: Query3DOptions): RAPIER.Collider | null;
+  /** Hinge two bodies at a world-space point, free to rotate about `axis`. */
+  revolute(a: Physics3DBody, b: Physics3DBody, anchor: Vec3, axis: Vec3): Physics3DJoint;
+  /** Ball/socket: two bodies share a world-space point, free to tumble. */
+  spherical(a: Physics3DBody, b: Physics3DBody, anchor: Vec3): Physics3DJoint;
+  /** Weld two bodies at a world-space point, locking the current relative pose. */
+  fixed(a: Physics3DBody, b: Physics3DBody, anchor: Vec3): Physics3DJoint;
   step(): void;
   dispose(): void;
 }
 
-let rapierReady: Promise<void> | undefined;
-
-function ensureRapier(): Promise<void> {
-  return (rapierReady ??= RAPIER.init());
-}
-
-/** Create a generic 3D rigid-body world backed by Rapier. */
-export async function createPhysics3D(options: Physics3DOptions = {}): Promise<Physics3DWorld> {
-  await ensureRapier();
-  const raw = new RAPIER.World(options.gravity ?? { x: 0, y: -9.81, z: 0 });
+/** Create a generic 3D rigid-body world backed by the Rapier module you pass. */
+export async function createPhysics3D(options: Physics3DOptions): Promise<Physics3DWorld> {
+  const rapier = options.rapier;
+  await rapier.init();
+  const raw = new rapier.World(options.gravity ?? { x: 0, y: -9.81, z: 0 });
   if (options.timestep !== undefined) raw.timestep = options.timestep;
   if (options.solverIterations !== undefined) {
     raw.integrationParameters.numSolverIterations = options.solverIterations;
   }
+  const combineRules: Record<CoefficientCombine, RAPIER.CoefficientCombineRule> = {
+    average: rapier.CoefficientCombineRule.Average,
+    min: rapier.CoefficientCombineRule.Min,
+    multiply: rapier.CoefficientCombineRule.Multiply,
+    max: rapier.CoefficientCombineRule.Max,
+  };
 
   return {
     raw,
     createBody(bodyOptions = {}) {
-      const descriptor = createRigidBodyDescriptor(bodyOptions);
+      const descriptor = createRigidBodyDescriptor(rapier, bodyOptions);
       const body = raw.createRigidBody(descriptor);
       return wrapBody(body);
     },
     createCollider(body, shape, colliderOptions = {}) {
-      const descriptor = createColliderDescriptor(shape);
+      const descriptor = createColliderDescriptor(rapier, shape);
       const position = colliderOptions.position;
       if (position) descriptor.setTranslation(position.x, position.y, position.z);
       if (colliderOptions.rotation) descriptor.setRotation(colliderOptions.rotation);
@@ -213,17 +245,17 @@ export async function createPhysics3D(options: Physics3DOptions = {}): Promise<P
       if (colliderOptions.restitution !== undefined)
         descriptor.setRestitution(colliderOptions.restitution);
       if (colliderOptions.frictionCombine) {
-        descriptor.setFrictionCombineRule(COMBINE_RULES[colliderOptions.frictionCombine]);
+        descriptor.setFrictionCombineRule(combineRules[colliderOptions.frictionCombine]);
       }
       if (colliderOptions.restitutionCombine) {
-        descriptor.setRestitutionCombineRule(COMBINE_RULES[colliderOptions.restitutionCombine]);
+        descriptor.setRestitutionCombineRule(combineRules[colliderOptions.restitutionCombine]);
       }
       if (colliderOptions.density !== undefined) descriptor.setDensity(colliderOptions.density);
       if (colliderOptions.sensor !== undefined) descriptor.setSensor(colliderOptions.sensor);
       return raw.createCollider(descriptor, body.raw);
     },
     raycast(origin, direction, rayOptions = {}) {
-      const ray = new RAPIER.Ray(origin, direction);
+      const ray = new rapier.Ray(origin, direction);
       const exclude = rayOptions.exclude;
       const accept = rayOptions.filter;
       const skipping = exclude && exclude.length > 0;
@@ -255,6 +287,70 @@ export async function createPhysics3D(options: Physics3DOptions = {}): Promise<P
         collider: hit.collider,
       };
     },
+    queryAabb(min, max, opts = {}) {
+      const found: RAPIER.Collider[] = [];
+      const accept = opts.filter;
+      raw.collidersWithAabbIntersectingAabb(
+        {
+          x: (min.x + max.x) * 0.5,
+          y: (min.y + max.y) * 0.5,
+          z: (min.z + max.z) * 0.5,
+        },
+        {
+          x: Math.abs(max.x - min.x) * 0.5,
+          y: Math.abs(max.y - min.y) * 0.5,
+          z: Math.abs(max.z - min.z) * 0.5,
+        },
+        (collider) => {
+          if (!accept || accept(collider)) found.push(collider);
+          return true;
+        },
+      );
+      return found;
+    },
+    pointPick(point, opts = {}) {
+      let nearest: RAPIER.Collider | null = null;
+      let best = Infinity;
+      const accept = opts.filter;
+      raw.intersectionsWithPoint(point, (collider) => {
+        if (accept && !accept(collider)) return true;
+        const t = collider.translation();
+        const d =
+          (t.x - point.x) * (t.x - point.x) +
+          (t.y - point.y) * (t.y - point.y) +
+          (t.z - point.z) * (t.z - point.z);
+        if (d < best) {
+          best = d;
+          nearest = collider;
+        }
+        return true;
+      });
+      return nearest;
+    },
+    revolute(a, b, anchor, axis) {
+      const params = rapier.JointData.revolute(
+        worldPointToLocal(a.raw, anchor),
+        worldPointToLocal(b.raw, anchor),
+        worldDirToLocal(a.raw, axis),
+      );
+      return jointHandle(raw, raw.createImpulseJoint(params, a.raw, b.raw, true));
+    },
+    spherical(a, b, anchor) {
+      const params = rapier.JointData.spherical(
+        worldPointToLocal(a.raw, anchor),
+        worldPointToLocal(b.raw, anchor),
+      );
+      return jointHandle(raw, raw.createImpulseJoint(params, a.raw, b.raw, true));
+    },
+    fixed(a, b, anchor) {
+      const params = rapier.JointData.fixed(
+        worldPointToLocal(a.raw, anchor),
+        IDENTITY_QUAT,
+        worldPointToLocal(b.raw, anchor),
+        relativeFrame(a.raw, b.raw),
+      );
+      return jointHandle(raw, raw.createImpulseJoint(params, a.raw, b.raw, true));
+    },
     step() {
       raw.step();
     },
@@ -264,22 +360,58 @@ export async function createPhysics3D(options: Physics3DOptions = {}): Promise<P
   };
 }
 
-const COMBINE_RULES: Record<CoefficientCombine, RAPIER.CoefficientCombineRule> = {
-  average: RAPIER.CoefficientCombineRule.Average,
-  min: RAPIER.CoefficientCombineRule.Min,
-  multiply: RAPIER.CoefficientCombineRule.Multiply,
-  max: RAPIER.CoefficientCombineRule.Max,
-};
+const IDENTITY_QUAT: Quat = { x: 0, y: 0, z: 0, w: 1 };
 
-function createRigidBodyDescriptor(options: RigidBody3DOptions): RAPIER.RigidBodyDesc {
+function worldPointToLocal(body: RAPIER.RigidBody, world: Vec3): Vec3 {
+  const t = body.translation();
+  const r = body.rotation();
+  return Quat.rotateVec3(
+    { x: -r.x, y: -r.y, z: -r.z, w: r.w },
+    { x: world.x - t.x, y: world.y - t.y, z: world.z - t.z },
+  );
+}
+
+function worldDirToLocal(body: RAPIER.RigidBody, dir: Vec3): Vec3 {
+  const r = body.rotation();
+  return Quat.rotateVec3({ x: -r.x, y: -r.y, z: -r.z, w: r.w }, { x: dir.x, y: dir.y, z: dir.z });
+}
+
+/** Joint frame on `b` that matches `a`'s current world orientation, so a
+ *  `fixed` joint locks the pose they already have rather than snapping. */
+function relativeFrame(a: RAPIER.RigidBody, b: RAPIER.RigidBody): Quat {
+  const ra = a.rotation();
+  const rb = b.rotation();
+  return Quat.mul(
+    { x: -rb.x, y: -rb.y, z: -rb.z, w: rb.w },
+    { x: ra.x, y: ra.y, z: ra.z, w: ra.w },
+    { x: 0, y: 0, z: 0, w: 1 },
+  );
+}
+
+function jointHandle(world: RAPIER.World, joint: RAPIER.ImpulseJoint): Physics3DJoint {
+  let dead = false;
+  return {
+    raw: joint,
+    destroy() {
+      if (dead) return;
+      dead = true;
+      if (joint.isValid()) world.removeImpulseJoint(joint, true);
+    },
+  };
+}
+
+function createRigidBodyDescriptor(
+  rapier: Rapier3D,
+  options: RigidBody3DOptions,
+): RAPIER.RigidBodyDesc {
   const descriptor =
     options.type === "fixed"
-      ? RAPIER.RigidBodyDesc.fixed()
+      ? rapier.RigidBodyDesc.fixed()
       : options.type === "kinematic-position"
-        ? RAPIER.RigidBodyDesc.kinematicPositionBased()
+        ? rapier.RigidBodyDesc.kinematicPositionBased()
         : options.type === "kinematic-velocity"
-          ? RAPIER.RigidBodyDesc.kinematicVelocityBased()
-          : RAPIER.RigidBodyDesc.dynamic();
+          ? rapier.RigidBodyDesc.kinematicVelocityBased()
+          : rapier.RigidBodyDesc.dynamic();
   if (options.position) {
     descriptor.setTranslation(options.position.x, options.position.y, options.position.z);
   }
@@ -291,26 +423,26 @@ function createRigidBodyDescriptor(options: RigidBody3DOptions): RAPIER.RigidBod
   return descriptor;
 }
 
-function createColliderDescriptor(shape: Collider3DShape): RAPIER.ColliderDesc {
+function createColliderDescriptor(rapier: Rapier3D, shape: Collider3DShape): RAPIER.ColliderDesc {
   switch (shape.type) {
     case "ball":
-      return RAPIER.ColliderDesc.ball(shape.radius);
+      return rapier.ColliderDesc.ball(shape.radius);
     case "cuboid":
-      return RAPIER.ColliderDesc.cuboid(
+      return rapier.ColliderDesc.cuboid(
         shape.halfExtents.x,
         shape.halfExtents.y,
         shape.halfExtents.z,
       );
     case "cylinder":
-      return RAPIER.ColliderDesc.cylinder(shape.halfHeight, shape.radius);
+      return rapier.ColliderDesc.cylinder(shape.halfHeight, shape.radius);
     case "trimesh":
-      return RAPIER.ColliderDesc.trimesh(
+      return rapier.ColliderDesc.trimesh(
         shape.vertices,
         shape.indices,
-        shape.fixInternalEdges === false ? undefined : RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES,
+        shape.fixInternalEdges === false ? undefined : rapier.TriMeshFlags.FIX_INTERNAL_EDGES,
       );
     case "convexHull": {
-      const descriptor = RAPIER.ColliderDesc.convexHull(shape.points);
+      const descriptor = rapier.ColliderDesc.convexHull(shape.points);
       if (!descriptor) throw new Error("convexHull needs at least four non-coplanar points.");
       return descriptor;
     }

@@ -11,7 +11,8 @@ import { createUI } from "minimotor/ui";
 // 100 ms in the past from Net.createInterpolator snapshot buffers.
 import { Collision, Gizmos, Goodies, Mathf, createApp, Transitions } from "minimotor";
 import { component, createEcs, type Entity } from "minimotor/ecs";
-import { Car, Flash, Interpolator, Skidmarks, Transition, TransitionRun } from "minimotor";
+import { Car, Flash, Skidmarks, Transition, TransitionRun } from "minimotor";
+import type { Interpolator } from "minimotor/net";
 import { createPhysics2D } from "minimotor/physics2d";
 import type { Body2D } from "minimotor/physics2d";
 import {

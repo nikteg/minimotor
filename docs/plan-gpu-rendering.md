@@ -1,6 +1,12 @@
 # Plan: a GPU path and OffscreenCanvas for minimotor
 
-Status: proposal. Nothing here is implemented.
+Status: stages 1–3 are implemented (`createApp({ renderer: "webgl" | "auto" })`,
+dual-canvas WebGL2 sprite batcher, tiles/particles via a recording 2D context).
+Stages 4a/4b (OffscreenCanvas) are still a proposal.
+
+The shipped shape is a `SceneRenderer` for `Draw.sprites` / `Draw.tiles` /
+`Draw.particles` only — not a full `RenderTarget` for every primitive. Overlay
+Canvas2D still owns UI, text, and `Draw.rect`. See `src/engine/render/`.
 
 ## Why
 

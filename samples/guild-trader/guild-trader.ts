@@ -2,7 +2,7 @@ import { createDebug } from "minimotor/debug";
 // GUILD TRADER: RPG inventory drag/drop, stack merging, dialogue and loot recipes.
 import { createUI } from "minimotor/ui";
 import { Gizmos, Goodies, createApp } from "minimotor";
-import { Flow } from "minimotor";
+import type { Flow } from "minimotor/ui";
 import { installLayoutProbe } from "../shared/layout-probe.ts";
 
 interface Item {

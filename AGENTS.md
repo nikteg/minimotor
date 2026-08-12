@@ -173,6 +173,12 @@ ones that can still pop:
    the second reason;
    `samples/netroom`'s roster line uses the first.
 
+4. **Equal-fill count cache.** Several `flex: "fill"` / `Flow.fill()` children
+   share leftover main-axis space equally, using last frame's fill-call count
+   for this container. Missing cache (frame 1, or a lone fill) treats the count
+   as 1 — that fill takes all remaining. When the number of fill children
+   changes, the new split is one frame behind.
+
 Related, and the reason a compact line used to need a magic height:
 `alignCross` (`"start"` / `"center"` / `"end"`) is flexbox's `align-items`, and
 only moves a child that has a cross size of its own — a child that fills the

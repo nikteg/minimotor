@@ -100,8 +100,8 @@ export interface DistanceField {
  *  out-of-bounds cells; `limit` caps the number of mapped cells
  *  (default 10 000) to guard malformed infinite maps.
  *
- *    const field = Minimotor.Goodies.distanceField(exit, (x, y) => open(x, y));
- *    const step = Minimotor.Goodies.gridNeighbors(e.x, e.y)
+ *    const field = Goodies.distanceField(exit, (x, y) => open(x, y));
+ *    const step = Goodies.gridNeighbors(e.x, e.y)
  *      .reduce((best, n) => (field.at(n.x, n.y) < field.at(best.x, best.y) ? n : best)); */
 export function distanceField(
   starts: GridPoint | readonly GridPoint[],
@@ -135,6 +135,108 @@ export function distanceField(
     at: (x, y) => dist.get(`${x},${y}`) ?? Infinity,
     cells,
   };
+}
+
+export interface AstarOptions {
+  /** Include the four diagonals (8-way) as well as the cardinals. Default false. */
+  diagonal?: boolean;
+  /** Cap on expansions. Default 10_000. */
+  limit?: number;
+}
+
+interface AstarNode {
+  x: number;
+  y: number;
+  g: number;
+  f: number;
+  i: number;
+  parent: AstarNode | null;
+}
+
+function astarHeuristic(ax: number, ay: number, bx: number, by: number, diagonal: boolean): number {
+  const dx = Math.abs(ax - bx);
+  const dy = Math.abs(ay - by);
+  return diagonal ? dx + dy + (Math.SQRT2 - 2) * Math.min(dx, dy) : dx + dy;
+}
+
+function popOpen(open: AstarNode[]): AstarNode {
+  let best = 0;
+  for (let i = 1; i < open.length; i++) {
+    const a = open[i],
+      b = open[best];
+    if (a.f < b.f || (a.f === b.f && a.i < b.i)) best = i;
+  }
+  const node = open[best];
+  open[best] = open[open.length - 1];
+  open.pop();
+  return node;
+}
+
+/** Shortest 4-way (or 8-way) path from `start` to `goal`, or null if none.
+ *  `passable(x,y)` must reject walls and out-of-bounds. */
+export function astar(
+  start: GridPoint,
+  goal: GridPoint,
+  passable: (x: number, y: number) => boolean,
+  options?: AstarOptions,
+): GridPoint[] | null {
+  if (!passable(start.x, start.y) || !passable(goal.x, goal.y)) return null;
+  if (start.x === goal.x && start.y === goal.y) return [{ x: start.x, y: start.y }];
+
+  const diagonal = options?.diagonal === true;
+  const limit = options?.limit ?? 10_000;
+  const startNode: AstarNode = {
+    x: start.x,
+    y: start.y,
+    g: 0,
+    f: astarHeuristic(start.x, start.y, goal.x, goal.y, diagonal),
+    i: 0,
+    parent: null,
+  };
+  const open: AstarNode[] = [startNode];
+  const bestG = new Map<string, number>([[`${start.x},${start.y}`, 0]]);
+  const closed = new Set<string>();
+  let nextI = 1;
+  let expansions = 0;
+
+  while (open.length > 0) {
+    const current = popOpen(open);
+    const ck = `${current.x},${current.y}`;
+    if (closed.has(ck)) continue;
+    if (current.x === goal.x && current.y === goal.y) {
+      const path: GridPoint[] = [];
+      for (let n: AstarNode | null = current; n; n = n.parent) path.push({ x: n.x, y: n.y });
+      path.reverse();
+      return path;
+    }
+    closed.add(ck);
+    expansions++;
+    if (expansions > limit) return null;
+
+    for (const next of gridNeighbors(current.x, current.y, { diagonal })) {
+      const nk = `${next.x},${next.y}`;
+      if (closed.has(nk) || !passable(next.x, next.y)) continue;
+      const dx = next.x - current.x;
+      const dy = next.y - current.y;
+      if (dx !== 0 && dy !== 0) {
+        if (!passable(current.x + dx, current.y) || !passable(current.x, current.y + dy)) continue;
+      }
+      const step = dx !== 0 && dy !== 0 ? Math.SQRT2 : 1;
+      const g = current.g + step;
+      const known = bestG.get(nk);
+      if (known !== undefined && g >= known) continue;
+      bestG.set(nk, g);
+      open.push({
+        x: next.x,
+        y: next.y,
+        g,
+        f: g + astarHeuristic(next.x, next.y, goal.x, goal.y, diagonal),
+        i: nextI++,
+        parent: current,
+      });
+    }
+  }
+  return null;
 }
 
 /** Integer cells crossed by a Bresenham line, including both endpoints. */

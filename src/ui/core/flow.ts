@@ -90,21 +90,6 @@ export interface FlowOptions {
    *  new line (rows wrap downward, cols wrap sideways) offset by the tallest/
    *  widest slot of the line just finished. Needs `length`. Default false. */
   wrap?: boolean;
-  /**
-   * FIXME: This is not a good long-term equal-layout API. Requiring the
-   * caller to know the number of future `flex: "fill"` children leaks the
-   * implementation detail of a one-pass immediate-mode callback into the
-   * layout description. It also makes dynamic child lists awkward and leaves
-   * the caller choosing between a magic count and hand-written widths.
-   *
-   * TODO: Replace this with a genuinely automatic distribution primitive, or
-   * redesign container children so the row can collect/measure its direct
-   * children before assigning equal slots without invoking user callbacks
-   * twice. The eventual API should let callers say “distribute fill children
-   * equally” and should derive the count itself, including when children are
-   * added or removed during normal immediate-mode rendering.
-   */
-  fillChildren?: number;
   /** Internal layout-space scale. Closure containers set this to the active
    *  UI transform so a scaled boundary is not applied twice. */
   layoutScale?: number;
@@ -159,7 +144,13 @@ export interface Flow {
   /** Reserve a slot that fills the remaining main-axis space, minus `reserve`
    *  (leave room for later fixed slots — e.g. a footer's height + gap). Needs
    *  `length` set on the flow; the closure containers set it for you. `cross`
-   *  optionally supplies the other axis. */
+   *  optionally supplies the other axis.
+   *
+   *  Several fills in one auto container share the leftover space equally.
+   *  The split uses last frame's fill-call count for that container (1 when
+   *  missing, so a lone fill still takes everything). When the number of fill
+   *  children changes, the new split is one frame behind — the same class of
+   *  lag as the other first-frame caches. */
   fill(reserve?: number, cross?: number): { x: number; y: number; w: number; h: number };
   /** Extra spacing before the next slot. */
   gap(px: number): void;
@@ -202,6 +193,17 @@ export interface Flow {
  *
  *    const right = UI.flow({ x: vp.w - 12, y: 12, align: "end" }); // ← grows left */
 export function flow(opts: FlowOptions): Flow {
+  return createFlow(opts, 1);
+}
+
+/** Per-flow hook: equal-fill redistribution + this frame's fill() count. */
+const flowFinishFills = new WeakMap<Flow, () => number>();
+
+function finishFlowFills(st: Flow): number {
+  return flowFinishFills.get(st)?.() ?? 0;
+}
+
+function createFlow(opts: FlowOptions, expectedFills: number): Flow {
   const dir = opts.dir ?? "row";
   const gapPx = opts.gap ?? theme.spacing.md;
   const back = opts.align === "end";
@@ -213,7 +215,15 @@ export function flow(opts: FlowOptions): Flow {
   const wrapping = (opts.wrap ?? false) && !back && opts.length !== undefined;
   let lineCross = 0; // tallest (row) / widest (col) slot in the current line
   let crossMax = 0; // largest cross size any slot ASKED for — see `crossExtent`
-  let fillChildren = Math.max(0, Math.floor(opts.fillChildren ?? 0));
+  // Equal-fill: divide leftover main-axis space by last frame's fill() count
+  // (1 when missing — a lone fill still takes everything). Count this frame's
+  // calls and, when they differ, mutate the fill rects in place so nested
+  // auto containers holding those objects see the corrected size this frame.
+  let fillsLeft = Math.max(1, Math.floor(expectedFills));
+  let fillCount = 0;
+  const fillRects: { x: number; y: number; w: number; h: number }[] = [];
+  let fillRemaining0 = 0;
+  let fillReserve = 0;
   const crossFactor =
     opts.alignCross === "center" ? 0.5 : opts.alignCross === "end" ? 1 : /* start */ 0;
 
@@ -289,7 +299,7 @@ export function flow(opts: FlowOptions): Flow {
     return Math.max(0, start + opts.length - cur);
   };
 
-  return {
+  const st: Flow = {
     dir,
     crossSize: dir === "col" ? opts.w : opts.h,
     fitCross: opts.fitCross ?? false,
@@ -316,12 +326,20 @@ export function flow(opts: FlowOptions): Flow {
       };
     },
     fill(reserve = 0, cross) {
-      const slots = fillChildren > 0 ? fillChildren : 1;
-      const distributedGap = fillChildren > 0 ? gapPx * (slots - 1) : 0;
+      if (fillCount === 0) {
+        fillRemaining0 = remaining();
+        fillReserve = reserve;
+      }
+      fillCount++;
+      const distributing = fillsLeft > 0;
+      const slots = Math.max(1, fillsLeft);
+      const distributedGap = distributing ? gapPx * (slots - 1) : 0;
       const avail = Math.max(0, remaining() - reserve - distributedGap);
-      const main = fillChildren > 0 ? avail / slots : avail;
-      if (fillChildren > 0) fillChildren--;
-      return dir === "row" ? advance(main, cross) : advance(cross, main);
+      const main = distributing ? avail / slots : avail;
+      if (fillsLeft > 0) fillsLeft--;
+      const rect = dir === "row" ? advance(main, cross) : advance(cross, main);
+      fillRects.push(rect);
+      return rect;
     },
     gap(px) {
       if (dir === "row") cx += (back ? -1 : 1) * px;
@@ -357,6 +375,50 @@ export function flow(opts: FlowOptions): Flow {
     },
     crossStart: dir === "row" ? opts.y : opts.x,
   };
+  flowFinishFills.set(st, () => {
+    // Redistribute only when the live count disagrees with last frame's, the
+    // fills were consecutive last slots, and the cursor can still be moved
+    // (no wrap / end-align). Nested auto containers hold these same rect
+    // objects, so mutating them is DeferredSlot.commit for equal-fill.
+    if (
+      fillCount > 0 &&
+      fillCount !== Math.max(1, Math.floor(expectedFills)) &&
+      !wrapping &&
+      !back
+    ) {
+      const lastFill = fillRects[fillRects.length - 1];
+      const afterLast = (dir === "row" ? lastFill.x + lastFill.w : lastFill.y + lastFill.h) + gapPx;
+      const cur = dir === "row" ? cx : cy;
+      let consecutive = Math.abs(cur - afterLast) <= 0.5;
+      for (let i = 1; i < fillRects.length && consecutive; i++) {
+        const prev = fillRects[i - 1];
+        const next = fillRects[i];
+        const expected = (dir === "row" ? prev.x + prev.w : prev.y + prev.h) + gapPx;
+        const got = dir === "row" ? next.x : next.y;
+        if (Math.abs(got - expected) > 0.5) consecutive = false;
+      }
+      if (consecutive) {
+        const n = fillCount;
+        const avail = Math.max(0, fillRemaining0 - fillReserve - gapPx * (n - 1));
+        const main = avail / n;
+        let pos = dir === "row" ? fillRects[0].x : fillRects[0].y;
+        for (const rect of fillRects) {
+          if (dir === "row") {
+            rect.x = pos;
+            rect.w = main;
+          } else {
+            rect.y = pos;
+            rect.h = main;
+          }
+          pos += main + gapPx;
+        }
+        if (dir === "row") cx = pos;
+        else cy = pos;
+      }
+    }
+    return fillCount;
+  });
+  return st;
 }
 
 // ---------- Layout containers (closure children) ----------
@@ -641,19 +703,15 @@ export interface LayoutOptions {
    *  pinned. Only meaningful with `overflow: "auto"` or `"scroll"`. */
   stickToEnd?: boolean;
   /** Fill the remaining main-axis space in the parent flow. This is the
-   *  container equivalent of Flow.fill(); only meaningful when nested. */
+   *  container equivalent of Flow.fill(); only meaningful when nested.
+   *  Several fill children in one container share the leftover space equally
+   *  (the split is taken from last frame's fill-call count). */
   flex?: "fill";
   /** Flex-wrap: children that would overflow the main axis wrap onto a new line
    *  (a row wraps downward, a col sideways), each line offset by the previous
    *  line's tallest/widest child. Needs a bounded main axis (`w` for a row, `h`
    *  for a col) to know where to break. Default false. */
   wrap?: boolean;
-  /**
-   * FIXME: Count-based equal distribution is an interim API. A row should be
-   * able to discover its fill children automatically; see the longer FIXME on
-   * `FlowOptions.fillChildren`.
-   */
-  fillChildren?: number;
   /** Place this (root) container in the VIEWPORT — `"center"` for a dialog,
    *  `"bottomRight"` for a HUD cluster, etc. — instead of pinning `x`/`y`. `w`/`h`
    *  become the PREFERRED size, clamped to the viewport minus `margin`; `x`/`y`
@@ -680,7 +738,7 @@ export function runContainer<R>(
   wrap = false,
   contentMain?: number,
   alignCross: "start" | "center" | "end" = "start",
-  fillChildren = 0,
+  expectedFills = 1,
 ): R {
   const padding = resolvePadding(pad);
   const inner = {
@@ -705,24 +763,26 @@ export function runContainer<R>(
   const blockFar = contentMain !== undefined ? blockNear + contentMain : innerNear + innerMain;
   const mainStart = reverse ? blockFar : blockNear;
   const flowAlign = reverse ? "end" : "start";
-  const st = flow({
-    x: dir === "row" ? mainStart : inner.x,
-    y: dir === "col" ? mainStart : inner.y,
-    dir,
-    gap,
-    align: flowAlign,
-    // Cross-axis size the children fill: row → height, col → width.
-    h: dir === "row" ? inner.h : undefined,
-    w: dir === "col" ? inner.w : undefined,
-    // Main-axis length enables fill()/remaining inside the callback.
-    length: innerMain,
-    layoutScale: currentUiScale(),
-    fitCross,
-    stretchCross,
-    alignCross,
-    wrap,
-    fillChildren,
-  });
+  const st = createFlow(
+    {
+      x: dir === "row" ? mainStart : inner.x,
+      y: dir === "col" ? mainStart : inner.y,
+      dir,
+      gap,
+      align: flowAlign,
+      // Cross-axis size the children fill: row → height, col → width.
+      h: dir === "row" ? inner.h : undefined,
+      w: dir === "col" ? inner.w : undefined,
+      // Main-axis length enables fill()/remaining inside the callback.
+      length: innerMain,
+      layoutScale: currentUiScale(),
+      fitCross,
+      stretchCross,
+      alignCross,
+      wrap,
+    },
+    expectedFills,
+  );
   layoutStack.push(st);
   try {
     return children(st);
@@ -753,6 +813,11 @@ export interface ContentSize {
 // Swept: entries for containers that stop being drawn (or whose position-
 // derived fallback key changes as they move) age out instead of accumulating.
 const contentSizes = sweptCache<ContentSize>();
+// Last frame's `fill()` / `flex: "fill"` count per auto-container key. The
+// equal split uses this the way `contentSizes` uses last frame's measurement:
+// missing means 1 (this fill takes all remaining), and a count change is one
+// frame behind.
+const fillCounts = sweptCache<number>();
 
 // The enclosing containers' cache keys, innermost last, with a running count of
 // the child containers each has handed a fallback key to this frame. A NESTED
@@ -890,12 +955,19 @@ export function containerRect(
     // active scale, so only the first fill crossing the boundary is reduced.
     const scale = parent.layoutScale === currentUiScale() ? 1 : currentUiScale();
     const logical = (value: number): number => value / scale;
-    return {
-      x: slot.x,
-      y: slot.y,
-      w: parent.dir === "row" ? logical(slot.w) : (opts.w ?? logical(slot.w)),
-      h: parent.dir === "col" ? logical(slot.h) : (opts.h ?? auto?.h ?? logical(slot.h)),
-    };
+    if (scale !== 1) {
+      return {
+        x: slot.x,
+        y: slot.y,
+        w: parent.dir === "row" ? logical(slot.w) : (opts.w ?? logical(slot.w)),
+        h: parent.dir === "col" ? logical(slot.h) : (opts.h ?? auto?.h ?? logical(slot.h)),
+      };
+    }
+    // Same object as the fill slot so a later equal-fill redistribution
+    // mutates this container's box in place (DeferredSlot.commit style).
+    if (parent.dir === "row") slot.h = opts.h ?? auto?.h ?? slot.h;
+    else if (opts.w !== undefined) slot.w = opts.w;
+    return slot;
   }
   // Nested: reserve a slot from the parent. Size along the PARENT's main axis
   // (width for a row parent, height for a col parent) from auto/explicit; pass
@@ -950,8 +1022,8 @@ export function runAutoSized<R>(
   alignCross: "start" | "center" | "end" = "start",
   stretchCross = false,
   minW = 0,
-  fillChildren = 0,
 ): R {
+  const expectedFills = (key && fillCounts.get(key)) || 1;
   return runContainer(
     dir,
     body,
@@ -966,6 +1038,11 @@ export function runAutoSized<R>(
       pushLayoutParent();
       try {
         const r = children(st);
+        // Record this frame's fill() count for next frame's equal split, and
+        // mutate fill rects in place when the live count disagrees so nested
+        // auto containers holding those objects see the corrected size now.
+        if (key) fillCounts.set(key, finishFlowFills(st));
+        else finishFlowFills(st);
         const measured = measuredContainerSize(st, outer.x, outer.y, pad);
         measured.w = Math.max(measured.w, minW);
         storeContentSize(key, measured);
@@ -998,7 +1075,7 @@ export function runAutoSized<R>(
     wrap,
     contentMain,
     alignCross,
-    fillChildren,
+    expectedFills,
   );
 }
 
@@ -1153,7 +1230,6 @@ export function autoContainer<R>(
     cfg.alignCross ?? "start",
     stretchingCross,
     opts.minW ?? 0,
-    opts.fillChildren ?? 0,
   );
   // A filled container in a row knows its width up front, but its height is
   // still auto-sized by its children. Feed that measured cross-axis size back

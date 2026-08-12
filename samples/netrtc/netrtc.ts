@@ -14,7 +14,7 @@
 import { createNet } from "minimotor/net";
 import { createUI } from "minimotor/ui";
 import { createApp } from "minimotor";
-import type { GuestSession, HostSession } from "minimotor";
+import type { GuestSession, HostSession } from "minimotor/net";
 
 interface Vec {
   x: number;

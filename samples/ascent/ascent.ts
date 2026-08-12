@@ -29,7 +29,8 @@ import { createUI } from "minimotor/ui";
 import { Fsm, Gizmos, Mathf, createApp } from "minimotor";
 import * as Sprites from "minimotor/sprites";
 import { component, createEcs, type Entity } from "minimotor/ecs";
-import { AnimationCursor, SpriteLike } from "minimotor";
+import type { SpriteLike } from "minimotor";
+import type { AnimationCursor } from "minimotor/animation";
 
 const game = createApp("game", { preventNavigation: true });
 const Anim = createAnimation(game);

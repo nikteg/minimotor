@@ -19,7 +19,8 @@ import { createTimers } from "minimotor/timers";
 import { createUI } from "minimotor/ui";
 import { Collision, Mathf, createApp, Tiles } from "minimotor";
 import * as Sprites from "minimotor/sprites";
-import { Level, ImageAnimationCursor, AnimationCursor, MoverBody } from "minimotor";
+import type { Level, MoverBody } from "minimotor";
+import type { AnimationCursor, ImageAnimationCursor } from "minimotor/animation";
 
 // A fixed 480×270 logical stage, letterboxed into the window by the engine —
 // world and HUD both draw in this space (no manual letterbox math).

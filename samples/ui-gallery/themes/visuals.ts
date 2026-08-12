@@ -1,7 +1,7 @@
 import { Tiles } from "minimotor";
 import type { AssetStore } from "minimotor/assets";
 import { createTilesetSkin, frameFromCell } from "minimotor/ui";
-import type { ThemeOverrides } from "minimotor";
+import type { ThemeOverrides } from "minimotor/ui";
 
 export function createVisualsTheme(atlas: CanvasImageSource): ThemeOverrides {
   const tiles = Tiles.set(atlas, {

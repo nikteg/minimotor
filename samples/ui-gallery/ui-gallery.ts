@@ -17,7 +17,7 @@ import { createAssets } from "minimotor/assets";
 import { createBrowserStorage } from "minimotor/storage";
 import type { SelectGroup } from "minimotor/ui";
 import type { HotModuleContext } from "minimotor/hot-reload";
-import type { TableSort, ThemeOverrides } from "minimotor";
+import type { TableSort, ThemeOverrides } from "minimotor/ui";
 import { installLayoutProbe } from "../shared/layout-probe.ts";
 import { createGalleryThemeCatalog } from "./gallery-themes.ts";
 import {
@@ -430,21 +430,6 @@ Loop.run({
             fitCross: true,
           },
           () => {
-            // FIXME: This equal-width row is a layout-API smell. The
-            // gallery should not have to know that there are exactly two
-            // fill children just to make sibling panels look balanced.
-            //
-            // TODO: Revisit the equal-distribution primitive in the UI
-            // library. Ideally `row` would discover its direct fill
-            // children automatically, without this count and without
-            // measuring or sizing anything in the sample. A future
-            // solution should also handle bins being added/removed while
-            // preserving immediate-mode input semantics.
-            //
-            // TODO: Also question whether this gallery needs equal-sized
-            // bins at all. Natural auto-sized panels may be the better
-            // demonstration of the library's automatic flow, especially
-            // for themes whose button padding and frame art differ.
             UI.row(
               {
                 id: uiId("header-row"),
@@ -1014,7 +999,6 @@ Loop.run({
                               {
                                 gap: 12,
                                 fitCross: true,
-                                fillChildren: bins.length,
                               },
                               () => {
                                 bins.forEach((bin) => {

@@ -7,7 +7,7 @@ import { createAudio } from "minimotor/audio";
 import { createParticles } from "minimotor/particles";
 import { createUI } from "minimotor/ui";
 import { Collision, createApp } from "minimotor";
-import { AnimationCursor } from "minimotor";
+import type { AnimationCursor } from "minimotor/animation";
 import { createSfx } from "../shared/sfx.ts";
 
 interface Level {
