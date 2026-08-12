@@ -116,8 +116,29 @@ uniform vec4 uUvTransform;
 uniform int uFogMode; // -1 off, 0 linear, 1 exp, 2 exp squared, 3 layered
 uniform vec3 uFogColor;
 uniform vec3 uFogParams; // see fogUniform() in scene.ts
+uniform bool uToneMap; // Scene3D.toneMapping == "aces"
+uniform vec3 uAmbientGround;
 
 out vec4 fragColor;
+
+/** sRGB in both directions, as the cheap squares rather than the piecewise
+ *  curve. Real-time renderers have used this pair for long enough that a
+ *  shader written against the exact transfer function looks subtly wrong
+ *  beside them; the error is under a percent everywhere but the deepest few
+ *  values, and it costs a multiply instead of a branch and a pow. */
+vec3 srgbToLinear(vec3 c) { return c * c; }
+vec3 linearToSrgb(vec3 c) { return sqrt(c); }
+
+/** The ACES filmic curve, in Krzysztof Narkowicz's fitted form.
+ *
+ *  The clamp at 8 is part of the fit and not a safety rail: the rational
+ *  function flattens out well before that, so anything brighter is already
+ *  white and letting it through only risks an overflow on a half-float path. */
+vec3 acesToneMap(vec3 color) {
+  color = min(color, vec3(8.0));
+  const float A = 2.51, B = 0.03, C = 2.43, D = 0.59, E = 0.14;
+  return (color * (A * color + B)) / (color * (C * color + D) + E);
+}
 
 /** Visibility in 0..1 — 1 is clear air. A ground-hugging slab needs the fog
  *  density integrated along the view ray, otherwise the layer slides with the
@@ -192,10 +213,20 @@ void main() {
   }
   if (base.a < 0.002) discard;
 
+  // Everything below works in linear light when tone mapping is on, so the
+  // decode happens once here — on the material colour, the vertex colour and
+  // the texture together, all three of which are authored for a display.
+  if (uToneMap) base.rgb = srgbToLinear(base.rgb);
+
   if (uUnlit) {
+    // Unlit skips the lighting, not the output curve: an unlit gizmo beside a
+    // lit surface has to have come through the same shoulder, or it reads as
+    // belonging to a different scene.
+    vec3 flat = base.rgb;
+    if (uToneMap) flat = linearToSrgb(acesToneMap(flat));
     // The canvas is premultiplied-alpha, so premultiply exactly once at the
     // render boundary. Texture uploads stay straight-alpha below.
-    fragColor = vec4(base.rgb * base.a, base.a);
+    fragColor = vec4(flat * base.a, base.a);
     return;
   }
 
@@ -206,22 +237,35 @@ void main() {
   if (uHasNormalMap) n = applyNormalMap(n, uv);
   vec3 view = normalize(uCameraPos - vWorldPos);
 
-  vec3 lit = uAmbient;
+  // A hemisphere when a ground colour was given, the plain fill otherwise.
+  // The blend runs off the normal's Y alone, so it costs nothing per light and
+  // does not care where the camera is.
+  vec3 lit = mix(uAmbient, uAmbientGround, max(1e-6, 0.5 - n.y * 0.5));
   vec3 spec = vec3(0.0);
+  // Lambert's 1/pi, which is what puts an intensity on the same scale as an
+  // illuminance. Only under tone mapping: applying it to the direct model
+  // would darken every existing scene by the same third.
+  float diffuseScale = uToneMap ? 0.31830988 : 1.0;
   for (int i = 0; i < ${MAX_LIGHTS}; i++) {
     if (i >= uLightCount) break;
     vec3 toLight = -uLightDir[i];
     float ndl = max(dot(n, toLight), 0.0);
-    lit += uLightColor[i] * ndl;
+    lit += uLightColor[i] * ndl * diffuseScale;
     if (uShininess > 0.0 && ndl > 0.0) {
       vec3 halfway = normalize(toLight + view);
       spec += uLightColor[i] * uSpecular * pow(max(dot(n, halfway), 0.0), uShininess);
     }
   }
   vec3 shaded = base.rgb * lit + spec;
+  // Fog before the curve, not after: the fog colour is a colour in the scene
+  // like any other, and a distant surface that has faded most of the way into
+  // it should reach the shoulder with it rather than be mixed into an
+  // already-toned pixel.
   if (uFogMode >= 0) {
-    shaded = mix(uFogColor, shaded, clamp(fogVisibility(vWorldPos, uCameraPos), 0.0, 1.0));
+    vec3 fog = uToneMap ? srgbToLinear(uFogColor) : uFogColor;
+    shaded = mix(fog, shaded, clamp(fogVisibility(vWorldPos, uCameraPos), 0.0, 1.0));
   }
+  if (uToneMap) shaded = linearToSrgb(acesToneMap(shaded));
   fragColor = vec4(shaded * base.a, base.a);
 }`;
 
@@ -257,6 +301,8 @@ interface Uniforms {
   fogMode: WebGLUniformLocation | null;
   fogColor: WebGLUniformLocation | null;
   fogParams: WebGLUniformLocation | null;
+  toneMap: WebGLUniformLocation | null;
+  ambientGround: WebGLUniformLocation | null;
   hasSkin: WebGLUniformLocation | null;
   jointMatrices: WebGLUniformLocation | null;
 }
@@ -364,6 +410,8 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     fogMode: gl.getUniformLocation(program, "uFogMode"),
     fogColor: gl.getUniformLocation(program, "uFogColor"),
     fogParams: gl.getUniformLocation(program, "uFogParams"),
+    toneMap: gl.getUniformLocation(program, "uToneMap"),
+    ambientGround: gl.getUniformLocation(program, "uAmbientGround"),
     hasSkin: gl.getUniformLocation(program, "uHasSkin"),
     jointMatrices: gl.getUniformLocation(program, "uJointMatrices"),
   };
@@ -654,6 +702,11 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
       cameraPosition(camera, eye);
       gl!.uniform3f(u.cameraPos, eye.x, eye.y, eye.z);
       gl!.uniform3f(u.ambient, scene.ambient[0], scene.ambient[1], scene.ambient[2]);
+      // No ground colour means no hemisphere: feeding the sky colour to both
+      // ends makes the shader's `mix` a no-op and keeps the fill uniform.
+      const ground = scene.ambientGround ?? scene.ambient;
+      gl!.uniform3f(u.ambientGround, ground[0], ground[1], ground[2]);
+      gl!.uniform1i(u.toneMap, scene.toneMapping === "aces" ? 1 : 0);
 
       const lights = scene.lights.slice(0, MAX_LIGHTS);
       lights.forEach((light, i) => {

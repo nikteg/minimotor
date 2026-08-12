@@ -221,6 +221,28 @@ export interface DirectionalLight {
   intensity?: number;
 }
 
+/** What the shader does with a colour on its way to the framebuffer.
+ *
+ *  `"none"` is the direct model and the default: material colours are display
+ *  values, a light of intensity 1 leaves a face-on surface at its own colour,
+ *  and what the shader computes is what the pixel gets. It is predictable and
+ *  it is what a gizmo, a preview or a flat-shaded game wants.
+ *
+ *  `"aces"` is the physical model, and it is a different contract rather than
+ *  an extra step on the end. Colours are treated as sRGB and decoded before
+ *  lighting, the diffuse term is divided by π so intensities read as
+ *  illuminance rather than as a multiplier, and the result is run through the
+ *  ACES filmic curve and re-encoded. The visible consequence is the shoulder:
+ *  a lit face can be given four or five times the light it needs and roll off
+ *  to white smoothly instead of clipping, which is what lets an ambient fill
+ *  bright enough to keep unlit faces readable coexist with a strong key.
+ *
+ *  Do not mix the two by feeding `"none"` intensities to `"aces"`. Under
+ *  `"none"` a key and a fill that sum to 1 are correctly exposed; under
+ *  `"aces"` the same pair renders muted and dark, because the π and the curve
+ *  are both expecting numbers several times larger. */
+export type ToneMapping = "none" | "aces";
+
 /** Everything a `Renderer3D` needs to draw a frame. */
 export interface Scene3D {
   /** Nodes in dependency order — every parent before its children. */
@@ -228,8 +250,21 @@ export interface Scene3D {
   /** Directional lights. An empty list plus zero ambient renders black, which
    *  is a surprisingly common first-run mistake; `createScene` seeds one. */
   lights: DirectionalLight[];
-  /** Uniform fill light as `[r, g, b]`, keeping shadowed faces readable. */
+  /** Uniform fill light as `[r, g, b]`, keeping shadowed faces readable.
+   *  With `ambientGround` set this is the SKY half of a hemisphere instead. */
   ambient: readonly [number, number, number];
+  /** Ground half of an ambient hemisphere, as `[r, g, b]`.
+   *
+   *  Set it and `ambient` stops being uniform: a face pointing straight up
+   *  gets `ambient`, one pointing straight down gets this, and the two blend
+   *  by the normal's Y. That single gradient is most of what separates a fill
+   *  that reads as sky from one that reads as a grey wash, and it costs one
+   *  `mix`. Left unset, the fill stays uniform. */
+  ambientGround?: readonly [number, number, number];
+  /** How the shader turns computed light into a pixel. Defaults to `"none"`.
+   *  Read `ToneMapping` before changing it: the two modes want light
+   *  intensities on different scales. */
+  toneMapping?: ToneMapping;
   /** Background as `[r, g, b, a]`. An alpha below 1 lets whatever is behind
    *  the 3D viewport show through — which is how a model sits on a UI panel
    *  without a box of sky around it. */

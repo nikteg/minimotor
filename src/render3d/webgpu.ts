@@ -41,11 +41,11 @@ import type { Vec3 } from "@src/math/vec3.js";
 
 const MAX_LIGHTS = 4;
 const MAX_JOINTS = 64;
-/** Frame uniforms: viewProj(64) + cameraPos(16) + ambient(16) + lightCount(16)
- *  + fogParams(16) + fogColor(16) + dir[4](64) + colour[4](64). Every field is
- *  vec4-aligned because WGSL's std140-like rules round a vec3 up to 16 bytes
- *  anyway. */
-const FRAME_BYTES = 272;
+/** Frame uniforms: viewProj(64) + cameraPos(16) + ambient(16) + ambientGround(16)
+ *  + lightCount(16) + fogParams(16) + fogColor(16) + dir[4](64) + colour[4](64).
+ *  Every field is vec4-aligned because WGSL's std140-like rules round a vec3 up
+ *  to 16 bytes anyway. */
+const FRAME_BYTES = 288;
 /** Per-draw: model(64) + normalMat as 3×vec4(48) + baseColor(16) + params(16)
  *  + skinParams(16) + uvTransform(16) + rimAlpha(16) + joints. Padded to the
  *  256-byte minimum dynamic-offset alignment. */
@@ -58,7 +58,11 @@ const SHADER = /* wgsl */ `
 struct Frame {
   viewProj   : mat4x4f,
   cameraPos  : vec4f,
+  // xyz: the sky half of the ambient hemisphere, w: 1 when tone mapping is on
   ambient    : vec4f,
+  // xyz: the ground half; equal to the sky half when no hemisphere was asked
+  // for, which makes the shader's mix a no-op
+  ambientGround : vec4f,
   lightCount : vec4f,
   // xyz: see fogUniform() in scene.ts, w: mode (-1 off, 0 linear, 1 exp,
   // 2 exp squared, 3 layered)
@@ -137,6 +141,21 @@ fn vs(
 /** Visibility in 0..1 — 1 is clear air. A ground-hugging slab needs the fog
  *  density integrated along the view ray, otherwise the layer slides with the
  *  camera instead of staying put in the world. */
+// sRGB in both directions, as the cheap squares rather than the piecewise
+// curve — the same pair the WebGL2 backend uses, and they have to stay the
+// same pair or the two backends stop drawing the same frame.
+fn srgbToLinear(c : vec3f) -> vec3f { return c * c; }
+fn linearToSrgb(c : vec3f) -> vec3f { return sqrt(c); }
+
+// The ACES filmic curve, in Krzysztof Narkowicz's fitted form. The clamp at 8
+// is part of the fit: the rational function has flattened out well before
+// there, so anything brighter is already white.
+fn acesToneMap(colorIn : vec3f) -> vec3f {
+  let color = min(colorIn, vec3f(8.0));
+  let a = 2.51; let b = 0.03; let c = 2.43; let d = 0.59; let e = 0.14;
+  return (color * (a * color + b)) / (color * (c * color + d) + e);
+}
+
 fn fogVisibility(world : vec3f, eye : vec3f) -> f32 {
   let mode = frame.fogParams.w;
   if (mode < 0.5) {
@@ -213,9 +232,21 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
     base.a = base.a * clamp(draw.rimAlpha.x + draw.rimAlpha.y * pow(grazing, draw.rimAlpha.z), 0.0, 1.0);
   }
   if (base.a < 0.002) { discard; }
+
+  // Everything below works in linear light when tone mapping is on, so the
+  // decode happens once here — on the material colour, the vertex colour and
+  // the texture together, all three of which are authored for a display.
+  let toneMap = frame.ambient.w > 0.5;
+  if (toneMap) { base = vec4f(srgbToLinear(base.rgb), base.a); }
+
   if (draw.params.y > 0.5) {
+    // Unlit skips the lighting, not the output curve: an unlit gizmo beside a
+    // lit surface has to have come through the same shoulder, or it reads as
+    // belonging to a different scene.
+    var flat = base.rgb;
+    if (toneMap) { flat = linearToSrgb(acesToneMap(flat)); }
     // Unlit output is premultiplied to match the canvas alpha mode.
-    return vec4f(base.rgb * base.a, base.a);
+    return vec4f(flat * base.a, base.a);
   }
 
   var n = normalize(in.normal);
@@ -225,23 +256,37 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
   }
   let view = normalize(frame.cameraPos.xyz - in.worldPos);
 
-  var lit = frame.ambient.rgb;
+  // A hemisphere when a ground colour was given, the plain fill otherwise.
+  // The blend runs off the normal's Y alone, so it costs nothing per light and
+  // does not care where the camera is.
+  var lit = mix(frame.ambient.rgb, frame.ambientGround.rgb, max(1e-6, 0.5 - n.y * 0.5));
   var spec = vec3f(0.0);
   let count = i32(frame.lightCount.x);
+  // Lambert's 1/pi, which is what puts an intensity on the same scale as an
+  // illuminance. Only under tone mapping: applying it to the direct model
+  // would darken every existing scene by the same third.
+  let diffuseScale = select(1.0, 0.31830988, toneMap);
   for (var i = 0; i < ${MAX_LIGHTS}; i = i + 1) {
     if (i >= count) { break; }
     let toLight = -frame.lightDir[i].xyz;
     let ndl = max(dot(n, toLight), 0.0);
-    lit = lit + frame.lightColor[i].rgb * ndl;
+    lit = lit + frame.lightColor[i].rgb * ndl * diffuseScale;
     if (draw.params.x > 0.0 && ndl > 0.0) {
       let halfway = normalize(toLight + view);
       spec = spec + frame.lightColor[i].rgb * draw.params.w * pow(max(dot(n, halfway), 0.0), draw.params.x);
     }
   }
   var rgb = base.rgb * lit + spec;
+  // Fog before the curve, not after: the fog colour is a colour in the scene
+  // like any other, and a distant surface that has faded most of the way into
+  // it should reach the shoulder with it rather than be mixed into an
+  // already-toned pixel.
   if (frame.fogParams.w >= 0.0) {
-    rgb = mix(frame.fogColor.rgb, rgb, clamp(fogVisibility(in.worldPos, frame.cameraPos.xyz), 0.0, 1.0));
+    var fogRgb = frame.fogColor.rgb;
+    if (toneMap) { fogRgb = srgbToLinear(fogRgb); }
+    rgb = mix(fogRgb, rgb, clamp(fogVisibility(in.worldPos, frame.cameraPos.xyz), 0.0, 1.0));
   }
+  if (toneMap) { rgb = linearToSrgb(acesToneMap(rgb)); }
   return vec4f(rgb * base.a, base.a);
 }`;
 
@@ -791,22 +836,27 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       viewProjection(camera, width / height, true, viewProj);
       frameData.set(viewProj, 0);
       frameData.set([eye.x, eye.y, eye.z, 0], 16);
-      frameData.set([scene.ambient[0], scene.ambient[1], scene.ambient[2], 0], 20);
+      const toneMap = scene.toneMapping === "aces" ? 1 : 0;
+      frameData.set([scene.ambient[0], scene.ambient[1], scene.ambient[2], toneMap], 20);
+      // No ground colour means no hemisphere: both ends the same colour makes
+      // the shader's mix a no-op and keeps the fill uniform.
+      const ground = scene.ambientGround ?? scene.ambient;
+      frameData.set([ground[0], ground[1], ground[2], 0], 24);
       const lights = scene.lights.slice(0, MAX_LIGHTS);
-      frameData[24] = lights.length;
+      frameData[28] = lights.length;
       const fog = scene.fog ? fogUniform(scene.fog) : undefined;
-      frameData.set(fog ? [...fog.params, fog.mode] : [0, 0, 0, -1], 28);
+      frameData.set(fog ? [...fog.params, fog.mode] : [0, 0, 0, -1], 32);
       frameData.set(
         scene.fog ? [scene.fog.color[0], scene.fog.color[1], scene.fog.color[2], 1] : [0, 0, 0, 0],
-        32,
+        36,
       );
       lights.forEach((light, i) => {
         const d = light.direction;
         const l = Math.hypot(d.x, d.y, d.z) || 1;
-        frameData.set([d.x / l, d.y / l, d.z / l, 0], 36 + i * 4);
+        frameData.set([d.x / l, d.y / l, d.z / l, 0], 40 + i * 4);
         const c = light.color ?? WHITE3;
         const k = light.intensity ?? 1;
-        frameData.set([c[0] * k, c[1] * k, c[2] * k, 0], 52 + i * 4);
+        frameData.set([c[0] * k, c[1] * k, c[2] * k, 0], 56 + i * 4);
       });
       device.queue.writeBuffer(frameBuffer, 0, frameData);
 
