@@ -1,6 +1,8 @@
 // ---------- Debug overlay ----------
 // One opt-in plugin owns the common development HUD progression:
-//   none → performance → performance + world collision → none.
+//   none → performance → performance + world collision → none,
+// with an optional fourth stop that draws the collision through the geometry
+// (`collisionMode: "xray"`).
 
 import type { LadderSource, MoverBody, Solid, SolidSource } from "@src/collision/index.js";
 import type { CameraLens } from "@src/camera/index.js";
@@ -9,7 +11,7 @@ import { createInspector, type Inspection } from "./inspector.js";
 import { plugin as perfPlugin, type Perf3DSource, type PerfOptions } from "@src/perf/index.js";
 import type { NetMeter } from "@src/perf/net-meter.js";
 
-export type DebugMode = "off" | "performance" | "collision";
+export type DebugMode = "off" | "performance" | "collision" | "collision-xray";
 
 /** Extra content drawn while the overlay is visible.
  *
@@ -38,8 +40,18 @@ export interface DebugOptions {
    *  collision lives in a physics world this module knows nothing about, so it
    *  fills the slot itself from a `panel`, which is handed the current mode. Set
    *  this and the cycle grows a third stop that the overlay itself draws
-   *  nothing into. */
-  collisionMode?: boolean;
+   *  nothing into.
+   *
+   *  `"xray"` asks for TWO such stops rather than one: `"collision"`, which the
+   *  game should draw the way the camera sees it, and `"collision-xray"`, which
+   *  it should draw through the geometry. In 3D those are different questions
+   *  and one answer cannot serve both — a collider mesh baked from a surface
+   *  z-fights along every edge when it is depth-tested against that same
+   *  surface, so a depth-tested view is the honest one and a see-through view
+   *  is the readable one. Only meaningful for a game filling the slot itself;
+   *  the built-in 2D `world` path is drawn over the finished frame either way,
+   *  and both stops look identical there. */
+  collisionMode?: boolean | "xray";
   /** Initial mode. Default `"off"`. */
   initial?: DebugMode;
   /** Panels to draw while the overlay is visible, in order. More can be added
@@ -86,7 +98,7 @@ export interface DebugApi {
   readonly entries: readonly Inspection[];
 }
 
-const allModes: readonly DebugMode[] = ["off", "performance", "collision"];
+const allModes: readonly DebugMode[] = ["off", "performance", "collision", "collision-xray"];
 
 function drawSolid(ctx: CanvasRenderingContext2D, solid: Solid): void {
   ctx.beginPath();
@@ -145,7 +157,15 @@ function debugPlugin(app: App, opts: DebugOptions): DebugPlugin {
   const perf = opts.perf === false ? null : perfPlugin(opts.perf);
   const camera = opts.camera;
   let render3d: Perf3DSource | null = null;
-  const modes = (opts.world && camera) || opts.collisionMode ? allModes : allModes.slice(0, 2);
+  // The x-ray stop is opt-in rather than automatic: it only tells a 3D game's
+  // collision view anything, and a cycle with a stop that looks exactly like
+  // the one before it is worse than a cycle without it.
+  const modes =
+    (opts.world && camera) || opts.collisionMode
+      ? opts.collisionMode === "xray"
+        ? allModes
+        : allModes.slice(0, 3)
+      : allModes.slice(0, 2);
   const requestedInitial = opts.initial ?? "off";
   const initialIndex = modes.indexOf(requestedInitial);
   let index = initialIndex >= 0 ? initialIndex : modes.indexOf("performance");
@@ -233,7 +253,9 @@ function debugPlugin(app: App, opts: DebugOptions): DebugPlugin {
       if (down && !shortcutDown) cycle();
       shortcutDown = down;
 
-      if (modes[index] === "collision" && opts.world && camera) {
+      // Both collision stops, because this overlay paints over the finished
+      // frame and has no depth to test against — see `collisionMode`.
+      if (modes[index].startsWith("collision") && opts.world && camera) {
         const world = typeof opts.world === "function" ? opts.world() : opts.world;
         const view = camera.rect;
         app.ctx.save();

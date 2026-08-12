@@ -66,6 +66,23 @@ describe("createDebug", () => {
     ]);
   });
 
+  it("adds a second collision stop for a game that can draw through its geometry", () => {
+    // Two different questions in 3D — which shapes are in front of me, and
+    // what is behind that hill — and one drawing cannot answer both. Opt-in,
+    // because for anything drawn over the finished frame the two stops would
+    // look identical.
+    const game = {
+      Keys: { keyDown: () => false },
+      onFrame: () => () => {},
+    } as unknown as App;
+    const debug = createDebug(game, { perf: false, collisionMode: "xray" });
+
+    expect(debug.cycle()).toBe("performance");
+    expect(debug.cycle()).toBe("collision");
+    expect(debug.cycle()).toBe("collision-xray");
+    expect(debug.cycle()).toBe("off");
+  });
+
   it("unsubscribes nothing on its own — the app owns the handler's lifetime", () => {
     const handlers: Array<() => void> = [];
     const game = {
