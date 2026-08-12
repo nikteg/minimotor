@@ -41,6 +41,19 @@ export interface MeshData {
    *  segment for `"lines"` — see `topology`. Triangles are counter-clockwise
    *  when seen from the front. */
   indices: Uint16Array | Uint32Array;
+  /** Bump this whenever the vertex or index DATA changes in place.
+   *
+   *  Meshes are cached against the `MeshData` object's identity, so a mesh
+   *  whose arrays are rewritten looks unchanged to a backend and would keep
+   *  drawing its first upload forever. That is exactly what a mesh rebuilt
+   *  every frame is — a particle batch, a stroked path, a deforming ribbon —
+   *  and for those this is the difference between animation and a still.
+   *
+   *  Leave it undefined for geometry that never changes and the upload happens
+   *  once. Changing the ARRAY LENGTHS is allowed too, but reallocates rather
+   *  than rewriting, so a batch that varies in size is cheapest kept at a
+   *  fixed capacity with the unused tail degenerate. */
+  version?: number;
   /** What the indices describe. `"triangles"` (the default) is surfaces;
    *  `"lines"` is a list of independent segments, two indices each.
    *

@@ -8,9 +8,10 @@
 // GPU resources are cached WEAKLY against the plain-data objects that describe
 // them — a `MeshData` maps to its VAO and buffers, a `TexImageSource` to its
 // texture. So a caller creates meshes as ordinary values, and one that goes out
-// of scope takes its GPU memory with it. The cost is that a MUTATED mesh is not
-// noticed; `release(mesh)` is the escape hatch, and `mesh.version` would be the
-// next step if in-place vertex editing ever becomes a real use.
+// of scope takes its GPU memory with it. A mesh MUTATED in place is noticed
+// only if it says so: bump `MeshData.version` and the buffers are rebuilt, the
+// same bargain `Material.textureVersion` strikes for a canvas redrawn in place.
+// `release(mesh)` remains the way to hand the memory back early.
 //
 // Two conventions worth stating because getting either wrong looks like a
 // renderer bug rather than a convention mismatch:
@@ -335,6 +336,9 @@ interface GpuMesh {
   indexBuffer: WebGLBuffer;
   count: number;
   type: number;
+  /** The `MeshData.version` these buffers were filled from, so an in-place
+   *  edit can be noticed. `undefined` for a mesh that never declared one. */
+  version: number | undefined;
 }
 
 interface Uniforms {
@@ -521,7 +525,12 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
 
   function uploadMesh(mesh: MeshData): GpuMesh {
     const cached = meshes.get(mesh);
-    if (cached) return cached;
+    if (cached && cached.version === mesh.version) return cached;
+    // A version that moved means the arrays were rewritten in place. Drop the
+    // old buffers and build again: re-specifying is what `bufferData` already
+    // does per attribute, and a re-upload of a mesh sized for its worst frame
+    // costs the same whether or not the contents changed shape.
+    if (cached) releaseMesh(cached);
 
     const vao = gl!.createVertexArray();
     if (!vao) throw new Error("WebGL2: could not create a vertex array object.");
@@ -566,9 +575,16 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
       indexBuffer,
       count: mesh.indices.length,
       type: mesh.indices instanceof Uint32Array ? gl!.UNSIGNED_INT : gl!.UNSIGNED_SHORT,
+      version: mesh.version,
     };
     meshes.set(mesh, gpu);
     return gpu;
+  }
+
+  function releaseMesh(gpu: GpuMesh): void {
+    gl!.deleteVertexArray(gpu.vao);
+    for (const buffer of gpu.buffers) gl!.deleteBuffer(buffer);
+    gl!.deleteBuffer(gpu.indexBuffer);
   }
 
   function uploadTexture(
@@ -880,9 +896,7 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     release(mesh: object) {
       const gpu = meshes.get(mesh);
       if (!gpu) return;
-      gl!.deleteVertexArray(gpu.vao);
-      for (const b of gpu.buffers) gl!.deleteBuffer(b);
-      gl!.deleteBuffer(gpu.indexBuffer);
+      releaseMesh(gpu);
       meshes.delete(mesh);
     },
 

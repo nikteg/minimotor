@@ -126,6 +126,29 @@ describe("the two backends' framebuffers", () => {
   });
 });
 
+describe("the two backends' mesh caching", () => {
+  it("re-uploads a mesh whose version moved, in both", () => {
+    // Meshes are cached against the `MeshData` object's identity, so a mesh
+    // rebuilt in place — a particle batch, a stroked path — looks unchanged
+    // and would keep drawing its first upload forever. Both backends have to
+    // honour the opt-out, or a caller gets animation on one and a still on the
+    // other, which reads as a content bug rather than a backend one.
+    for (const [name, source] of backends) {
+      expect(source, name).toContain("cached.version === mesh.version");
+      expect(source, name).toContain("if (cached) releaseMesh(cached);");
+      expect(source, name).toContain("version: mesh.version,");
+    }
+  });
+
+  it("frees the old buffers rather than leaking them, in both", () => {
+    // A rebuild per frame leaks a whole mesh per frame if the old handles are
+    // dropped instead of destroyed, which is the kind of thing that only shows
+    // up an hour into a session.
+    expect(webgl2).toMatch(/function releaseMesh\(gpu: GpuMesh\): void \{[\s\S]*?deleteVertexArray/);
+    expect(webgpu).toMatch(/function releaseMesh\(gpu: GpuMesh\): void \{[\s\S]*?positions\.destroy\(\)/);
+  });
+});
+
 describe("Scene3D's shading fields", () => {
   it("leaves a fresh scene on the direct model", () => {
     // Opting in is the whole point: every scene that existed before this

@@ -347,6 +347,9 @@ interface GpuMesh {
   count: number;
   format: GPUIndexFormat;
   triangles: number;
+  /** The `MeshData.version` these buffers were filled from, so an in-place
+   *  edit can be noticed. `undefined` for a mesh that never declared one. */
+  version: number | undefined;
 }
 
 /** How to build a WebGPU renderer. */
@@ -678,9 +681,24 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     return buf;
   }
 
+  function releaseMesh(gpu: GpuMesh): void {
+    gpu.positions.destroy();
+    gpu.normals.destroy();
+    gpu.uvs.destroy();
+    gpu.colors.destroy();
+    gpu.joints.destroy();
+    gpu.weights.destroy();
+    gpu.indices.destroy();
+  }
+
   function uploadMesh(mesh: MeshData): GpuMesh {
     const cached = meshes.get(mesh);
-    if (cached) return cached;
+    if (cached && cached.version === mesh.version) return cached;
+    // A version that moved means the arrays were rewritten in place, so the
+    // buffers behind them are stale. Destroying and rebuilding keeps this the
+    // same code path as a first upload, and a caller rebuilding every frame is
+    // already paying for the data it hands over.
+    if (cached) releaseMesh(cached);
     const n = vertexCount(mesh);
     // WebGPU has no "disabled attribute" fallback at all — an absent buffer is
     // a validation error, not a garbage read — so defaults are always filled.
@@ -695,6 +713,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       count: mesh.indices.length,
       format: mesh.indices instanceof Uint32Array ? "uint32" : "uint16",
       triangles: triangleCount(mesh),
+      version: mesh.version,
     };
     meshes.set(mesh, gpu);
     return gpu;
@@ -1019,13 +1038,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     release(mesh: object) {
       const gpu = meshes.get(mesh);
       if (!gpu) return;
-      gpu.positions.destroy();
-      gpu.normals.destroy();
-      gpu.uvs.destroy();
-      gpu.colors.destroy();
-      gpu.joints.destroy();
-      gpu.weights.destroy();
-      gpu.indices.destroy();
+      releaseMesh(gpu);
       meshes.delete(mesh);
     },
 
