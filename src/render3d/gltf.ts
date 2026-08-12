@@ -291,9 +291,15 @@ function materialFor(
     // One sampler serves the whole material, so a document that wants two
     // different filters on one surface cannot have them. The base texture wins
     // when there is one, since that is the map the eye reads as the surface;
-    // a lone detail map gets to choose, which is what a deliberately blocky
+    // otherwise the detail map chooses, which is what a deliberately blocky
     // overlay over an untextured colour needs.
-    const chosen = base ?? normal ?? detail;
+    //
+    // The normal map is last on purpose, and in practice never decides
+    // anything: both backends sample a normal map smoothly whatever this says,
+    // because a nearest-sampled vector field turns a smooth surface into
+    // faceted steps. Letting it outrank the detail map here is what quietly
+    // filtered every wall's 32x32 detail grid into a soft wash.
+    const chosen = base ?? detail ?? normal;
     const sampler = document.samplers?.[document.textures?.[chosen?.index ?? -1]?.sampler ?? -1];
     if (sampler?.magFilter === NEAREST) material.pixelated = true;
     if (sampler?.wrapS === REPEAT || sampler?.wrapT === REPEAT) material.repeat = true;

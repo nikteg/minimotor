@@ -166,6 +166,33 @@ describe("loadGltf materials", () => {
     expect(node?.material?.repeat).toBe(true);
   });
 
+  it("lets the detail map outrank the normal map when choosing the sampler", async () => {
+    stubDecoder();
+    serve(
+      documentWith({
+        materials: [
+          {
+            normalTexture: { index: 0 },
+            extras: { detailTexture: { index: 1 }, detailStrength: 0.2 },
+          },
+        ],
+        textures: [
+          { source: 0, sampler: 0 },
+          { source: 1, sampler: 1 },
+        ],
+        samplers: [{}, { magFilter: 9728 }],
+        images: [{ uri: "normal.png" }, { uri: "grid.png" }],
+      }),
+      ["normal.png", "grid.png"],
+    );
+
+    const { scene } = await loadGltf("assets/level.gltf");
+    // Both backends sample a normal map smoothly whatever this flag says, so
+    // a normal map that outranks the detail map decides the one thing it has
+    // no stake in — and silently filters the detail grid into a soft wash.
+    expect(scene.nodes.find((n) => n.mesh)?.material?.pixelated).toBe(true);
+  });
+
   it("leaves a detail map with no strength inert", async () => {
     stubDecoder();
     serve(
