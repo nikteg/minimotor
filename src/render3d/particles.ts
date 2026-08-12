@@ -41,7 +41,12 @@ export type BillboardMode =
   | "billboard"
   /** Stretched along its own velocity and rolled to face the camera about
    *  that axis — a streak, a spark, a rain line. A particle that is not
-   *  moving has no axis to stretch along and falls back to `billboard`. */
+   *  moving has no axis to stretch along and falls back to `billboard`.
+   *
+   *  The stretch runs along the sprite's U axis and the quad's head sits on
+   *  the particle with the tail behind it, which is what a streak texture is
+   *  drawn for. `lengthScale` multiplies `size.y` to get that length, and
+   *  `size.x` becomes the thickness. */
   | "stretched"
   /** Flat in the XZ plane, facing straight up. For something that reads as
    *  lying ON the ground: a scorch, a ripple, a shadow puddle. */
@@ -70,8 +75,10 @@ export interface EmitterOptions {
   /** Full extents of the box particles are born inside, centred on the node.
    *  Omitted, they are all born at the origin. */
   box?: { x: number; y: number; z: number };
-  /** Which way particles set off, in local space. Default is +Z, which is the
-   *  direction a box shape emits along. Normalized on the way in. */
+  /** Which way particles set off, in local space, normalized on the way in.
+   *  Default is +Z. Other engines' box emitters do not agree on the sign —
+   *  Cocos', for one, sets off down −Z — so an emitter ported from authored
+   *  data should pass this rather than rely on the default. */
   direction?: { x: number; y: number; z: number };
   /** Quad size before any stretch. */
   size: { x: number; y: number };
@@ -80,8 +87,9 @@ export interface EmitterOptions {
   /** Units per second squared, downward. */
   gravity?: number;
   mode?: BillboardMode;
-  /** For `"stretched"`: how many times the quad's height is stretched along
-   *  the velocity. The length is `size.y * lengthScale`. */
+  /** For `"stretched"`: how many times `size.y` is stretched along the
+   *  velocity. The trail's length is `size.y * lengthScale` and its thickness
+   *  is `size.x`. */
   lengthScale?: number;
   sheet?: SpriteSheet;
   /** The most particles alive at once. Defaults to what `rate` and the longest
@@ -263,6 +271,10 @@ export function createEmitter(opts: EmitterOptions): Emitter {
 
     let halfWidth = size.x / 2;
     let halfHeight = size.y / 2;
+    // How far along `right` the quad's centre is pushed. Zero for every mode
+    // but `stretched`, which anchors its head on the particle instead of
+    // straddling it — see below.
+    let shift = 0;
 
     if (mode === "horizontal") {
       right.x = 1;
@@ -276,19 +288,36 @@ export function createEmitter(opts: EmitterOptions): Emitter {
       along.x = vx[slot] / speedNow;
       along.y = vy[slot] / speedNow;
       along.z = vz[slot] / speedNow;
-      Vec3.cross(along, toView, right);
-      const rightLength = Math.hypot(right.x, right.y, right.z);
-      if (rightLength < 1e-6) {
+      // The stretch runs along the sprite's U axis, not its V — so `right` is
+      // the velocity and `up` is the perpendicular, which is the opposite of
+      // the other two modes.
+      //
+      // This is not a free choice. A streak texture is drawn the way a streak
+      // is read, left to right along the image, so a sheet's frames are wide
+      // and short; stretching down V instead would take a 128x16 line, squeeze
+      // its length into the quad's width and smear its 16-pixel thickness over
+      // the whole trail. It is also what the engines that ship this mode do.
+      //
+      // u increases with the velocity, so a frame drawn left to right points
+      // the way the particle is going: whatever the art does along its length
+      // — taper, arrowhead, a flipbook of a line scrolling — reads forwards.
+      right.x = along.x;
+      right.y = along.y;
+      right.z = along.z;
+      Vec3.cross(along, toView, up);
+      if (Math.hypot(up.x, up.y, up.z) < 1e-6) {
         // Flying straight at the camera: any perpendicular will do, and the
         // quad is edge-on enough that which one is not visible.
         const helper = Math.abs(along.y) < 0.9 ? worldUp : worldRight;
-        Vec3.cross(along, helper, right);
+        Vec3.cross(along, helper, up);
       }
-      Vec3.normalize(right, right);
-      up.x = along.x;
-      up.y = along.y;
-      up.z = along.z;
-      halfHeight = (size.y * lengthScale) / 2;
+      Vec3.normalize(up, up);
+      halfWidth = (size.y * lengthScale) / 2;
+      halfHeight = size.x / 2;
+      // A streak shows where a particle has BEEN, so its head sits ON the
+      // particle and the tail runs back down the velocity. Centring it instead
+      // draws half the trail in front of the thing making it.
+      shift = -halfWidth;
     } else {
       // Square-on. Cross with world up first, so the quad's own up stays as
       // near vertical as the view allows rather than rolling with the camera.
@@ -329,9 +358,9 @@ export function createEmitter(opts: EmitterOptions): Emitter {
     for (let corner = 0; corner < 4; corner++) {
       const [across, along2, u, v] = corners[corner];
       const p = (base + corner) * 3;
-      positions[p] = x + right.x * across + up.x * along2;
-      positions[p + 1] = y + right.y * across + up.y * along2;
-      positions[p + 2] = z + right.z * across + up.z * along2;
+      positions[p] = x + right.x * (across + shift) + up.x * along2;
+      positions[p + 1] = y + right.y * (across + shift) + up.y * along2;
+      positions[p + 2] = z + right.z * (across + shift) + up.z * along2;
       // Facing the camera, so an emitter drawn with a lit material is lit
       // evenly rather than going dark as it turns. Most callers use `unlit`.
       normals[p] = toView.x;

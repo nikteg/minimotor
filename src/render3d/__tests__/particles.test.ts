@@ -201,6 +201,64 @@ describe("the mesh it writes", () => {
     expect(Math.max(...widths) - Math.min(...widths)).toBeCloseTo(2, 4);
   });
 
+  it("runs a stretched quad's U axis down the trail, head first", () => {
+    // The orientation is not a free choice. A streak texture is drawn the way
+    // a streak reads — left to right along the image — so its frames are wide
+    // and short. Stretching down V instead squeezes a 128x16 line's length
+    // into the quad's thickness and smears its 16 pixels over the whole trail,
+    // which is the wind card coming out rotated a quarter turn.
+    const emitter = createEmitter({
+      rate: 1000,
+      lifetime: 10,
+      capacity: 1,
+      mode: "stretched",
+      lengthScale: 5,
+      speed: 1,
+      direction: { x: 0, y: 1, z: 0 },
+      size: { x: 2, y: 4 },
+      random: middle,
+    });
+    emitter.update(1 / 60, { x: 0, y: 0, z: 100 });
+    const corners = quadOf(emitter.mesh, 0);
+    const uvs = [0, 1, 2, 3].map((corner) => [
+      emitter.mesh.uvs![corner * 2],
+      emitter.mesh.uvs![corner * 2 + 1],
+    ]);
+    // u increases with the velocity, so on a particle flying straight up the
+    // u = 1 corners are the higher pair. A frame drawn left to right then
+    // points the way the particle is going rather than back down its trail.
+    const leading = corners.filter((_, at) => uvs[at][0] === 1).map(([, y]) => y);
+    const trailing = corners.filter((_, at) => uvs[at][0] === 0).map(([, y]) => y);
+    expect(Math.min(...leading)).toBeGreaterThan(Math.max(...trailing));
+    // Across the trail is V, and it is `size.x` wide rather than the length.
+    const acrossAtU1 = corners.filter((_, at) => uvs[at][0] === 1).map(([x]) => x);
+    expect(Math.max(...acrossAtU1) - Math.min(...acrossAtU1)).toBeCloseTo(2, 4);
+  });
+
+  it("anchors a stretched quad's head on the particle", () => {
+    // A trail shows where a particle has been. Centring it on the particle
+    // draws half the trail ahead of the thing making it, which reads as the
+    // particle sitting in the middle of its own spark.
+    const emitter = createEmitter({
+      rate: 1000,
+      lifetime: 10,
+      capacity: 1,
+      mode: "stretched",
+      lengthScale: 5,
+      speed: 1,
+      direction: { x: 0, y: 1, z: 0 },
+      size: { x: 2, y: 4 },
+      random: middle,
+    });
+    emitter.update(1 / 60, { x: 0, y: 0, z: 100 });
+    const heights = quadOf(emitter.mesh, 0).map(([, y]) => y);
+    // Born at the origin, and a particle is written on the frame it spawns
+    // before it has moved — so the head is at y = 0 and the whole 20-unit
+    // trail hangs below it rather than straddling it at ±10.
+    expect(Math.max(...heights)).toBeCloseTo(0, 6);
+    expect(Math.min(...heights)).toBeCloseTo(-20, 4);
+  });
+
   it("falls back to a plain billboard for a particle that is not moving", () => {
     // `stretched` has no axis to stretch along at zero speed, and normalizing
     // a zero vector would put NaN into the vertex buffer — which drops the
