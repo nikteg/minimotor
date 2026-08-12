@@ -180,7 +180,7 @@ describe("run / loop", () => {
     const { game } = build();
     const update = vi.fn();
     const draw = vi.fn();
-    game.Loop.maxDrawFps = 30;
+    game.Loop.maxFps = 30;
     game.Loop.run({ update, draw });
     tick(0);
     // Ten 16 ms frames: 160 ms of time, which is nine 16.7 ms steps at the
@@ -197,7 +197,7 @@ describe("run / loop", () => {
     // the last one — not how long since the last animation frame.
     const { game } = build();
     const deltas: number[] = [];
-    game.Loop.maxDrawFps = 30;
+    game.Loop.maxFps = 30;
     game.Loop.run({ update: () => {}, draw: () => deltas.push(game.Loop.frameDelta) });
     tick(0);
     for (let frame = 1; frame <= 8; frame++) tick(frame * 16);
@@ -210,12 +210,12 @@ describe("run / loop", () => {
   it("draws every animation frame once the cap is lifted", () => {
     const { game } = build();
     const draw = vi.fn();
-    game.Loop.maxDrawFps = 30;
+    game.Loop.maxFps = 30;
     game.Loop.run({ update: () => {}, draw });
     tick(0);
     tick(16);
     const capped = draw.mock.calls.length;
-    game.Loop.maxDrawFps = 0;
+    game.Loop.maxFps = 0;
     for (let frame = 2; frame <= 5; frame++) tick(frame * 16);
     expect(draw.mock.calls.length - capped).toBe(4);
   });

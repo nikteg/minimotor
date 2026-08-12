@@ -107,7 +107,7 @@ export interface Runtime {
   readonly frameDelta: number;
   /** Draw-rate cap in frames per second; 0 is uncapped. Settable at run time,
    *  so a game can put it behind a setting. */
-  maxDrawFps: number;
+  maxFps: number;
   /** How far the unsimulated remainder has progressed between the previous and
    * current fixed states, from 0 to 1. Render at
    * `prev + (curr - prev) * interpolation` for smooth motion. */
@@ -185,24 +185,33 @@ export interface RuntimeOptions {
   /** Auto-pause while a coarse-pointer device is held in portrait. Default
    *  false. */
   pauseOnPortrait?: boolean;
-  /** Fixed SIMULATION rate in steps per second. Default 60. This sets the size
-   *  of one `update()` — everything that advances per step (clocks, timers,
-   *  tweens, particles, UI ageing) derives from it, so raising it makes the
-   *  whole simulation finer-grained rather than just calling `update` more
-   *  often.
+  /** How many fixed simulation steps run per second. Default 60. This sets the
+   *  size of one `update()` — everything that advances per step (clocks,
+   *  timers, tweens, particles, UI ageing) derives from it, so raising it
+   *  makes the whole simulation finer-grained rather than just calling
+   *  `update` more often.
    *
-   *  It says nothing about drawing, which follows the display unless
-   *  `maxDrawFps` caps it. The two are separate clocks and neither bounds the
-   *  other: a game can simulate at 120 and draw at 30, or the reverse. */
+   *  It says nothing about drawing, which follows the display unless `maxFps`
+   *  caps it. The two are separate clocks and neither bounds the other: a game
+   *  can simulate at 120 and draw at 30, or the reverse.
+   *
+   *  Named for steps rather than frames because everywhere else in this engine
+   *  — `Loop.step`, `Loop.steps`, `onStep` — a step is the unit, and because
+   *  `fps` unqualified reads as the frames a player SEES. Unity spells the two
+   *  `fixedDeltaTime` and `targetFrameRate`, Godot `physics_ticks_per_second`
+   *  and `max_fps`; this is the same split. */
+  stepsPerSecond?: number;
+  /** @deprecated The old name for `stepsPerSecond`, still honoured so that
+   *  existing games keep running. It was confusing next to `maxFps`: one was
+   *  the simulation and the other the picture, and both said "fps". */
   fps?: number;
   /** Cap on how often the picture is DRAWN, in frames per second. Unset or 0
    *  draws on the display's own rhythm, which is the default and what a game
    *  normally wants.
    *
-   *  Named for the half of the frame it governs, because `fps` above is the
-   *  simulation's rate and the two are easy to read as one number and its
-   *  ceiling. They are not related: this one never changes how often the game
-   *  thinks.
+   *  `fps` here means what it means everywhere else — the frames a player
+   *  sees. The simulation's rate is `stepsPerSecond`, and capping this one
+   *  never changes how often the game thinks.
    *
    *  This is not the simulation rate — `fps` above is — and capping it does not
    *  slow the game down: the fixed-step catch-up still runs `update()` the same
@@ -215,7 +224,7 @@ export interface RuntimeOptions {
    *  frame the app does draw gets a `frameDelta` covering the whole gap, so
    *  anything animating off it moves at the right speed rather than at the
    *  fraction of it that was drawn. */
-  maxDrawFps?: number;
+  maxFps?: number;
   /** Scene backend. `"canvas"` (default) is the existing Canvas2D path with
    *  no extra canvas. `"webgl"` requires WebGL2 and draws `Draw.sprites` /
    *  `Draw.tiles` / `Draw.particles` on a stacked scene canvas. `"auto"` tries
@@ -250,12 +259,12 @@ function resolveCanvas(canvas: string | HTMLCanvasElement): HTMLCanvasElement {
 
 function buildRuntime(options: RuntimeOptions): Runtime {
   const pauseOnPortrait = options.pauseOnPortrait ?? false;
-  const fps = options.fps ?? 60;
+  const fps = options.stepsPerSecond ?? options.fps ?? 60;
   if (!Number.isFinite(fps) || fps <= 0) {
-    throw new RangeError("Minimotor: fps must be a finite number greater than 0");
+    throw new RangeError("Minimotor: stepsPerSecond must be a finite number greater than 0");
   }
   const stepMs = 1000 / fps;
-  let maxDrawFps = options.maxDrawFps ?? 0;
+  let maxFps = options.maxFps ?? 0;
   /** Time since the last frame that was actually DRAWN, which is what the drawn
    *  frame is handed as its delta. Equal to the frame delta when uncapped. */
   let sinceDraw = 0;
@@ -869,7 +878,7 @@ function buildRuntime(options: RuntimeOptions): Runtime {
     // on a 60 Hz display otherwise misses every second frame by a hair of
     // scheduling jitter and settles at 20.
     sinceDraw += elapsed;
-    if (maxDrawFps > 0 && sinceDraw < 1000 / maxDrawFps - stepMs / 2) return;
+    if (maxFps > 0 && sinceDraw < 1000 / maxFps - stepMs / 2) return;
     // The drawn frame is handed the whole gap, so an animation that moves by
     // `frameDelta` moves at the same speed capped or not. Input edges are
     // rolled in `endFrame()` below, which a skipped frame never reaches, so a
@@ -899,16 +908,16 @@ function buildRuntime(options: RuntimeOptions): Runtime {
     get frameDelta() {
       return frameDelta;
     },
-    get maxDrawFps() {
-      return maxDrawFps;
+    get maxFps() {
+      return maxFps;
     },
-    set maxDrawFps(next: number) {
+    set maxFps(next: number) {
       const wanted = Number.isFinite(next) && next > 0 ? next : 0;
       // Assigning the value it already has does nothing, so a game is free to
       // write this every frame from a settings object without starving the
       // draw by restarting the window each time.
-      if (wanted === maxDrawFps) return;
-      maxDrawFps = wanted;
+      if (wanted === maxFps) return;
+      maxFps = wanted;
       sinceDraw = 0;
     },
     get interpolation() {

@@ -115,7 +115,7 @@ function spawnHud(app: App) { ... }
 update), `Draw` (rects, text, sprites, tiles, gradients), `Keys`, `Pointer`,
 `Mouse`, and `Clock`. `createCamera(app)` adds follow, shake, and lenses.
 The simulation runs at 60 steps per second unless you say otherwise —
-`createApp("game", { fps: 120 })` — and everything that advances per step
+`createApp("game", { stepsPerSecond: 120 })` — and everything that advances per step
 (clocks, timers, tweens, particles, UI ageing) follows the rate you pick.
 Read `Loop.step` rather than assuming 16.67ms.
 
@@ -679,7 +679,7 @@ Two rules follow, and `src/__tests__/layering.test.ts` enforces them:
   receive `App` explicitly and implementation modules remain reusable.
 - Capabilities that need peers take them as arguments — `createUI(app, input)`,
   `createOnscreenInput(app, input, ui)`, `createAutosave(app, snapshots,
-  storage)`, and `createPhysics3D({ rapier })` keep wiring visible and
+storage)`, and `createPhysics3D({ rapier })` keep wiring visible and
   capability dependencies honest.
 
 ## License
