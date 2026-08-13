@@ -307,23 +307,30 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
     let detailUv = detailSource * draw.detailUvTransform.xy + draw.detailUvTransform.zw;
     let pattern = textureSample(detailTex, samp, detailUv);
     if (draw.detail.z > 0.0) {
-      var over = pattern.rgb * draw.detail.z;
+      let lit = frame.ambient.w > 0.5;
+      // Both maps are scaled and linearized BEFORE they multiply, not after:
+      // squaring a product of two alphas is not the product of two squares, and
+      // the difference is the whole brightness of a lit decal.
+      let scaled = pattern.rgb * draw.detail.z;
+      var over = select(scaled, srgbToLinear(scaled), lit);
       var weight = pattern.a * draw.detail.x;
       if (draw.detailMaskTransform.x != 0.0 || draw.detailMaskTransform.y != 0.0) {
         let maskUv = detailSource * draw.detailMaskTransform.xy + draw.detailMaskTransform.zw;
         let mask = textureSample(detailMaskTex, samp, maskUv);
+        let maskScaled = mask.rgb * draw.detail.z;
+        let cut = select(maskScaled, srgbToLinear(maskScaled), lit);
         // The decal's own alpha comes into the RGB here as well as into the
         // weight, which is what makes a mask DARKEN rather than tint: a canvas
         // at 6% alpha contributes 6% of 6% of its light and the surface keeps
         // the rest. A hard cut at the mask's edge, not a fade, so the shape
         // stays the shape at any distance.
-        over = over * pattern.a * mask.rgb * draw.detail.z * mask.a;
+        over = over * pattern.a * cut * mask.a;
         if (mask.a < 0.01) { weight = 0.0; }
       }
       let blended = select(
         mix(base.rgb, over, weight),
-        linearToSrgb(mix(srgbToLinear(base.rgb), srgbToLinear(over), weight)),
-        frame.ambient.w > 0.5,
+        linearToSrgb(mix(srgbToLinear(base.rgb), over, weight)),
+        lit,
       );
       base = vec4f(blended, base.a);
     } else {

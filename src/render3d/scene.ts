@@ -222,8 +222,12 @@ export interface Material {
    *  canvas cut into shapes: one canvas texel becomes whatever the mask draws
    *  inside it, at screen resolution rather than at the canvas's.
    *
-   *  A mask tiles by definition, so the material needs `repeat`. Ignored by
-   *  the `overlay` blend, which has no alpha to gate. */
+   *  Sampled through the material's own `pixelated`/`repeat`, like everything
+   *  else on it — one sampler serves the whole material. A mask tiles by
+   *  definition, so it needs `repeat`; and it wants the same filter as the map
+   *  it is cutting, which in practice it has, since a decal canvas crisp enough
+   *  to be worth masking is a nearest one. Ignored by the `overlay` blend,
+   *  which has no alpha to gate. */
   detailMask?: TexImageSource;
   /** Bump when the detail mask's PIXELS change, as with `textureVersion`. */
   detailMaskVersion?: number;

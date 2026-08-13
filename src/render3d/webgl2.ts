@@ -295,21 +295,27 @@ void main() {
     vec2 detailUv = detailSource * uDetailUvTransform.xy + uDetailUvTransform.zw;
     vec4 pattern = texture(uDetailMap, detailUv);
     if (uDetailOver > 0.0) {
+      // Both maps are scaled and linearized BEFORE they multiply, not after:
+      // squaring a product of two alphas is not the product of two squares, and
+      // the difference is the whole brightness of a lit decal.
       vec3 over = pattern.rgb * uDetailOver;
+      if (uToneMap) over = srgbToLinear(over);
       float weight = pattern.a * uDetailStrength;
       if (uDetailMaskTransform.x != 0.0 || uDetailMaskTransform.y != 0.0) {
         vec2 maskUv = detailSource * uDetailMaskTransform.xy + uDetailMaskTransform.zw;
         vec4 mask = texture(uDetailMask, maskUv);
+        vec3 cut = mask.rgb * uDetailOver;
+        if (uToneMap) cut = srgbToLinear(cut);
         // The decal's own alpha comes into the RGB here as well as into the
         // weight, which is what makes a mask DARKEN rather than tint: a canvas
         // at 6% alpha contributes 6% of 6% of its light and the surface keeps
         // the rest. A hard cut at the mask's edge, not a fade, so the shape
         // stays the shape at any distance.
-        over *= pattern.a * mask.rgb * uDetailOver * mask.a;
+        over *= pattern.a * cut * mask.a;
         if (mask.a < 0.01) weight = 0.0;
       }
       base.rgb = uToneMap
-        ? linearToSrgb(mix(srgbToLinear(base.rgb), srgbToLinear(over), weight))
+        ? linearToSrgb(mix(srgbToLinear(base.rgb), over, weight))
         : mix(base.rgb, over, weight);
     } else {
       base.rgb = mix(base.rgb, blendOverlay(pattern.rgb, base.rgb), uDetailStrength);
