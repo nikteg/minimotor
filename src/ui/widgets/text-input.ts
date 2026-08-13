@@ -15,6 +15,7 @@ import {
   drawFocusRing,
   ensureWired,
   focusFromPointer,
+  focusProxies,
   isInOverlayPass,
   isOverlayActive,
   measureWidth,
@@ -65,11 +66,12 @@ export interface TextEditor {
   lastReturned: string;
 }
 
-/** A drawn field's hit target for the native press listener: its screen-space
- *  rect (plus the clip it was drawn under), the resolved opts to open an editor
- *  with, and whether it was input-dead behind an overlay when it drew. */
+/** A drawn field's hit targets for the native press listener: its screen-space
+ *  rects (the box itself, plus any `UI.field` label proxying for it), the clip
+ *  it was drawn under, the resolved opts to open an editor with, and whether it
+ *  was input-dead behind an overlay when it drew. */
 interface PressTarget {
-  rect: { x: number; y: number; w: number; h: number };
+  rects: { x: number; y: number; w: number; h: number }[];
   clip: { x: number; y: number; w: number; h: number } | undefined;
   opts: TextInputOptions & { id: string };
   dead: boolean;
@@ -117,7 +119,7 @@ function ensureNativePress(ctx: CanvasRenderingContext2D): void {
       const p = rawPointer();
       for (const t of s.pressTargets.values()) {
         if (t.dead || t.opts.disabled) continue;
-        if (!pointInRect(p.x, p.y, t.rect)) continue;
+        if (!t.rects.some((rect) => pointInRect(p.x, p.y, rect))) continue;
         if (t.clip && !pointInRect(p.x, p.y, t.clip)) continue;
         if (s.editor?.id === t.opts.id) s.editor.input.focus({ preventScroll: true });
         else openTextEditor(t.opts);
@@ -411,11 +413,19 @@ export function textInput(opts: TextInputOptions): TextInputResult {
   // a synchronous in-gesture focus — see `pressTargets`). Rect + clip stored in
   // SCREEN space so the raw pointer can hit-test them next frame.
   ensureNativePress(ctx);
+  // Anything proxying for this field — a `UI.field` label — is part of the hit
+  // area on BOTH paths: here for the mobile in-gesture focus, and in the
+  // immediate-mode press below. The proxy drew earlier this frame, so its rect
+  // is already registered by the time the field reads it.
+  const proxyRects = focusProxies(id);
   {
-    const tl = uiToScreen(rect.x, rect.y);
-    const br = uiToScreen(rect.x + rect.w, rect.y + rect.h);
+    const toScreen = (r: { x: number; y: number; w: number; h: number }) => {
+      const tl = uiToScreen(r.x, r.y);
+      const br = uiToScreen(r.x + r.w, r.y + r.h);
+      return { x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y };
+    };
     s.drawnTargets.set(id, {
-      rect: { x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y },
+      rects: [rect, ...proxyRects].map(toScreen),
       clip: activeClip(),
       opts: resolvedOpts,
       dead: isOverlayActive() && !isInOverlayPass(),
@@ -437,16 +447,25 @@ export function textInput(opts: TextInputOptions): TextInputResult {
   });
   const p = uiPointer();
   const hovered = !opts.disabled && pointInRect(p.x, p.y, rect);
+  // A press on the field's LABEL counts as a press on the field — but only for
+  // focusing it. The caret still comes from `openTextEditor` (end of the text),
+  // because a label has no character under the pointer to aim at.
+  const proxied = !opts.disabled && proxyRects.some((proxy) => pointInRect(p.x, p.y, proxy));
+  // The pointer is on this field if it is on the BOX or on anything proxying
+  // for it. Both halves matter below: a label press has to open the editor, and
+  // it must not read as the outside press that closes it — the field would
+  // otherwise blur itself on the very frame its own label focused it.
+  const mine = hovered || proxied;
   // An I-beam over a text field reads "you can select here" (vs the hand a
   // button asks for). The engine resets it every frame.
-  if (hovered) setCursor("text");
+  if (mine) setCursor("text");
   // Focus + begin selecting on PRESS (native mousedown behavior — a press-then-
   // drag selects). A press outside a focused field commits + blurs it.
-  if (hovered && p.pressed && !opts.disabled) {
+  if (mine && p.pressed && !opts.disabled) {
     focusFromPointer(ctx, id);
     if (s.editor?.id === id) s.editor.input.focus({ preventScroll: true });
     else openTextEditor(resolvedOpts);
-  } else if (p.pressed && !hovered && s.editor?.id === id) s.editor.input.blur();
+  } else if (p.pressed && !mine && s.editor?.id === id) s.editor.input.blur();
 
   const active = s.editor?.id === id ? s.editor : null;
   if (active) {

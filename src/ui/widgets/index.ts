@@ -11,6 +11,7 @@
 //   button / toggle / tabs / slider / spinner / bar — the basic controls
 //              (one file each)
 //   layout     — row / col / panel (framed container) / spacer / clip
+//   field      — a label bound to the control it names (press to focus)
 //   lists      — list / grid / scrollbar / listItem
 //   table      — sortable data table
 //   overlays   — popover / modal / confirm / dialog
@@ -29,6 +30,7 @@ export * from "./slider.js";
 export * from "./spinner.js";
 export * from "./bar.js";
 export * from "./layout.js";
+export * from "./field.js";
 export * from "./lists.js";
 export * from "./table.js";
 export * from "./overlays.js";

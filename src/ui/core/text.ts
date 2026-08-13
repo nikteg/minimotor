@@ -141,6 +141,14 @@ export interface TextOptions {
   maxWidth?: number;
 }
 
+/** The line box a single line of themed text occupies: the font size plus the
+ *  kit's leading. What `text` reserves per line, and what a caller placing a
+ *  label in a COLUMN must pass as `h` — a column slot with no height falls back
+ *  to `theme.button.height`, which turns a one-line label into a 32px block. */
+export function lineHeight(size?: number): number {
+  return (size ?? theme.fontSize) + 6;
+}
+
 export function resolveColor(c: string | undefined): string {
   if (c === "dim") return theme.textDim;
   if (c === "accent") return theme.accent;
@@ -193,7 +201,7 @@ export function text(str: string, rawOpts?: TextOptions): void {
     const vy = ANCHOR_V[opts.anchor];
     const baseX = hx === 0 ? view.safeLeft : hx === 0.5 ? view.w / 2 : view.w;
     const baseY = vy === 0 ? view.safeTop : vy === 0.5 ? view.h / 2 : view.h;
-    const lineH = (opts.size ?? theme.fontSize) + 6;
+    const lineH = lineHeight(opts.size);
     opts = {
       ...opts,
       x: baseX + (opts.x ?? 0),
@@ -223,7 +231,7 @@ export function text(str: string, rawOpts?: TextOptions): void {
   }
   ctx.font = opts.font ?? uiFont(opts.size ?? theme.fontSize, opts.bold ?? false);
   const natural = Math.ceil(measureWidth(ctx, str));
-  const lineH = (opts.size ?? theme.fontSize) + 6;
+  const lineH = lineHeight(opts.size);
   const themePad = resolveThemeTextPadding(theme.textPad);
   const padLeft = opts.padX ?? opts.pad ?? themePad.left;
   const padRight = opts.padX ?? opts.pad ?? themePad.right;

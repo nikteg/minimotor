@@ -6,9 +6,11 @@ import {
   text,
   textWidth,
   theme,
+  uiPointer,
   type UiPadding,
 } from "@src/ui/core/index.js";
 import { list } from "./lists.js";
+import { pointInRect } from "@src/collision/index.js";
 
 // Last sorted copy per input array (weak — dropped with the data). Re-sorts
 // only when the caller passes a new array or the sort key/direction changes;
@@ -33,9 +35,33 @@ export interface TableColumn<Row> {
   sortable?: boolean;
   /** The sortable value — also the default cell text when `cell` is omitted. */
   value?: (row: Row) => string | number;
+  /** This column hosts INTERACTIVE widgets — a JOIN button, a kick icon — not
+   *  just drawing. The table then stops reading presses inside it as presses on
+   *  the ROW, so the widget's click isn't also a row selection. Set it on the
+   *  column, not per cell: the column's rect is what the row has to exclude,
+   *  and it has to know before the cells draw. */
+  interactive?: boolean;
   /** Custom cell renderer, drawn into the padded content rect (e.g. a coloured
-   *  number or a bar). Falls back to `value` rendered as themed text. */
-  cell?: (row: Row, rect: { x: number; y: number; w: number; h: number }) => void;
+   *  number, a bar, or a widget). Falls back to `value` rendered as themed
+   *  text. `cell` carries the ids and row state a widget needs. */
+  cell?: (row: Row, rect: { x: number; y: number; w: number; h: number }, cell: TableCell) => void;
+}
+
+/** What a cell renderer is told about the cell it is drawing into, beyond the
+ *  rect: everything a WIDGET in that cell needs and cannot work out for
+ *  itself. */
+export interface TableCell {
+  /** A stable widget id for this cell. Keyed by the ROW (via `rowKey`), not by
+   *  the slot the row currently occupies, so sorting or scrolling the table
+   *  doesn't move a widget's identity onto its neighbour — which would take
+   *  the keyboard focus and the pressed state with it. Suffix it (`` `${id}:x` ``)
+   *  when a cell holds more than one widget. */
+  id: string;
+  /** The row's position in the SORTED rows this frame. A position, not an
+   *  identity — use `id` for anything that must survive a re-sort. */
+  index: number;
+  /** This row is the selected one. */
+  selected: boolean;
 }
 
 /** Current sort: which column `key`, ascending (`1`) or descending (`-1`). */
@@ -85,6 +111,13 @@ export interface TableOptions<Row> extends Fillable {
   /** Scrollbar width when the list overflows. Defaults to the theme scrollbar
    *  width. */
   scrollbarWidth?: number;
+  /** Stable identity per row — a party code, a player id. Without it a row is
+   *  identified by its POSITION, which moves the moment the table is re-sorted
+   *  or a row arrives: the keyboard focus stays on the slot and lands on
+   *  whatever slid into it, and a widget in a cell inherits the previous
+   *  occupant's id. Give it for any table that sorts, streams, or holds
+   *  widgets. */
+  rowKey?: (row: Row) => string;
   /** Stable prefix for the header, row, list and scrollbar widget ids. */
   id?: string;
 }
@@ -117,7 +150,18 @@ export interface TableResult<Row> {
  *        { key: "ping", label: "PING", width: 70, align: "right", value: (s) => s.ping,
  *          cell: (s, r) => UI.text(`${s.ping}`, { ...r, align: "right", color: pingColor(s.ping) }) },
  *      ],
- *    }); */
+ *    });
+ *
+ *  A cell can hold a WIDGET, not just drawing — a JOIN button, a kick icon.
+ *  Mark the column `interactive` and give the widget `cell.id`, and give the
+ *  table a `rowKey`; the two together are what make the press belong to the
+ *  widget instead of also selecting the row, and keep the widget's identity on
+ *  its row through a sort or a scroll:
+ *
+ *      { key: "join", label: "", width: 80, sortable: false, interactive: true,
+ *        cell: (p, r, cell) => {
+ *          if (UI.button({ ...r, id: cell.id, label: "JOIN" })) join(p.code);
+ *        } } */
 export function table<Row>(opts: TableOptions<Row>): TableResult<Row> {
   const padding = resolveThemePadding(opts.cellPadding, {
     x: theme.spacing.sm,
@@ -224,6 +268,20 @@ export function table<Row>(opts: TableOptions<Row>): TableResult<Row> {
     });
   });
 
+  // Row identity. `rowKey` names the ROW; without one a row is only its
+  // position, which is what it has always been — keep that as the fallback so
+  // existing ids don't move.
+  const baseId = opts.id ?? `table@${rect.x}:${rect.y}`;
+  const rowToken = (i: number): string => (opts.rowKey ? opts.rowKey(rows[i]) : String(i));
+  const rowWidgetId = (i: number): string => `${opts.id}:r:${rowToken(i)}`;
+  // Columns that host widgets, as x-spans. A press inside one belongs to the
+  // widget, not to the row behind it: the row draws FIRST (it is the
+  // background), so without this the JOIN button and the row selection both
+  // take the same click. Empty for every table that only draws.
+  const widgetSpans = opts.columns
+    .map((c, i) => (c.interactive ? rects[i] : null))
+    .filter((r): r is { x: number; w: number } => r !== null);
+
   // Rows: windowed list; draw the selection highlight then each column's cell.
   let selected: Row | null = opts.selected ?? null;
   const offset = list(
@@ -242,13 +300,19 @@ export function table<Row>(opts: TableOptions<Row>): TableResult<Row> {
       // reaches all of them) and auto-scrolls to the focused one. The per-row
       // listItem below uses the SAME id but tabIndex:-1, so it draws the focus
       // ring + handles Enter without adding a duplicate tab stop.
-      rowId: opts.id ? (i) => `${opts.id}:r:${i}` : undefined,
+      rowId: opts.id ? rowWidgetId : undefined,
     },
     (i, rowRect) => {
       const rowData = rows[i];
       const isSel = opts.selected !== undefined && rowData === opts.selected;
+      // Decided BEFORE the row's own hit test, because the widget that owns
+      // this press hasn't drawn yet — the cells come after the background.
+      const p = uiPointer();
+      const overWidget = widgetSpans.some((span) =>
+        pointInRect(p.x, p.y, { x: span.x, y: rowRect.y, w: span.w, h: rowHeight }),
+      );
       const clicked = listItem({
-        id: opts.id ? `${opts.id}:r:${i}` : undefined,
+        id: opts.id ? rowWidgetId(i) : undefined,
         tabIndex: -1,
         x: rowRect.x,
         y: rowRect.y,
@@ -256,7 +320,7 @@ export function table<Row>(opts: TableOptions<Row>): TableResult<Row> {
         h: rowHeight,
         selected: isSel,
       });
-      if (clicked) selected = rowData;
+      if (clicked && !overWidget) selected = rowData;
       opts.columns.forEach((c, ci) => {
         const cellRect = {
           x: rects[ci].x + left,
@@ -264,8 +328,15 @@ export function table<Row>(opts: TableOptions<Row>): TableResult<Row> {
           w: Math.max(0, rects[ci].w - left - right),
           h: Math.max(0, rowHeight - top - bottom),
         };
-        if (c.cell) c.cell(rowData, cellRect);
-        else if (c.value) text(String(c.value(rowData)), { ...cellRect, align: c.align ?? "left" });
+        if (c.cell) {
+          c.cell(rowData, cellRect, {
+            id: `${baseId}:c:${rowToken(i)}:${c.key}`,
+            index: i,
+            selected: isSel,
+          });
+        } else if (c.value) {
+          text(String(c.value(rowData)), { ...cellRect, align: c.align ?? "left" });
+        }
       });
     },
   );

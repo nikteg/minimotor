@@ -7,9 +7,10 @@
 // whose canvas (or focused widget) it belongs to.
 import { navigation, type GamepadState } from "@src/input/gamepad.js";
 import type { App } from "@src/engine/index.js";
+import { pointInRect } from "@src/collision/index.js";
 import { roundRectPath, theme } from "./theme.js";
 import { isInOverlayPass } from "./lifecycle.js";
-import { uiToScreen } from "./input.js";
+import { uiPointer, uiToScreen } from "./input.js";
 import { allUiApps, currentUiApp, uiGamepads, uiSlot, uiApp, withUiApp } from "./state.js";
 
 // Focusables register in draw order each frame. Keyboard events happen between
@@ -28,9 +29,21 @@ export interface FocusEntry {
   blur?: () => void;
 }
 
+/** A rect drawn by one widget that counts as a press on ANOTHER — a
+ *  `UI.field` label standing in for the input it labels. Registered in the
+ *  coords the proxy drew in, and only for the current frame. */
+export interface FocusProxy {
+  id: string;
+  rect: { x: number; y: number; w: number; h: number };
+}
+
 interface FocusState {
   frame: FocusEntry[];
   registry: FocusEntry[];
+  /** Proxy rects registered THIS frame, in draw order. The proxy always draws
+   *  before its target (a label precedes its input), so a widget can read the
+   *  rects standing in for it while it is still deciding what the pointer did. */
+  proxies: FocusProxy[];
   focused: string | null;
   // Mirrors browser :focus-visible behavior: pointer focus remains usable but
   // only keyboard traversal paints the dotted focus indicator.
@@ -65,6 +78,7 @@ const navRepeat = (): NavRepeat => ({ key: null, elapsed: 0, next: 350, count: 0
 const fs = uiSlot<FocusState>(() => ({
   frame: [],
   registry: [],
+  proxies: [],
   focused: null,
   visible: false,
   trapSeen: false,
@@ -248,6 +262,39 @@ export function markFocusableOverlay(id: string): void {
       return;
     }
   }
+}
+
+/** Register `rect` as standing in for widget `id` for the rest of this frame:
+ *  a press inside it is a press on that widget. This is how `UI.field` binds a
+ *  label to its input, and it has to live in the kernel — the widget being
+ *  proxied is the only code that can act on it, and it draws LATER in the frame.
+ *
+ *  Without it a label could set the focus id and nothing more: `textInput`
+ *  blurs its editor on any press outside its own box, so the field would throw
+ *  the focus away on the very frame the label granted it. */
+export function registerFocusProxy(
+  id: string,
+  rect: { x: number; y: number; w: number; h: number },
+): void {
+  fs().proxies.push({ id, rect });
+}
+
+/** This frame's proxy rects for `id`, in the coords they were registered in —
+ *  what a widget adds to its own hit area. Empty for the common case. */
+export function focusProxies(id: string): { x: number; y: number; w: number; h: number }[] {
+  const proxies = fs().proxies;
+  const out: { x: number; y: number; w: number; h: number }[] = [];
+  for (const proxy of proxies) if (proxy.id === id) out.push(proxy.rect);
+  return out;
+}
+
+/** Whether the pointer is inside one of this frame's proxy rects for `id` —
+ *  the test a widget runs alongside its own `hovered`. */
+export function focusProxyHovered(id: string): boolean {
+  const proxies = fs().proxies;
+  if (proxies.length === 0) return false;
+  const p = uiPointer();
+  return proxies.some((proxy) => proxy.id === id && pointInRect(p.x, p.y, proxy.rect));
 }
 
 export function focusFromPointer(ctx: CanvasRenderingContext2D, id: string | undefined): void {
@@ -485,6 +532,7 @@ export function focusEndFrame(): void {
   const s = fs();
   s.registry = s.frame;
   s.frame = [];
+  s.proxies.length = 0;
   const wasFocusOverlay = s.overlayActive;
   if (!wasFocusOverlay && s.trapSeen) s.beforeOverlay = s.focused;
   s.overlayActive = s.trapSeen;
