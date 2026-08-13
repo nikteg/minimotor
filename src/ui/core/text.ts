@@ -1,6 +1,6 @@
 import { uiCtx } from "./context.js";
 import { Flow, currentLayout, place } from "./flow.js";
-import { centeredText, resolveThemeTextPadding, theme, uiFont } from "./theme.js";
+import { centeredSpans, resolveThemeTextPadding, theme, uiFont, type TextRun } from "./theme.js";
 import { currentUiTransform, uiHeight, uiWidth } from "./input.js";
 import { measureWidth } from "./measure.js";
 import { uiApp } from "./state.js";
@@ -95,6 +95,28 @@ export function fitAnchored(
   };
 }
 
+/** One coloured run inside a single `UI.text` call.
+ *
+ *  Passing an array of these instead of a string keeps the label ONE widget —
+ *  one slot, one wrap, one alignment, one measurement — while letting parts of
+ *  it carry their own colour. The immediate reason it exists is a chat/event
+ *  log where a player's name must stay in that player's colour without the
+ *  surrounding sentence being cut into separately laid-out labels, which is
+ *  what makes wrapping and right-alignment go wrong.
+ *
+ *  Runs are drawn in array order and their text is CONCATENATED verbatim —
+ *  no separator is inserted, so any spacing belongs inside the runs. */
+export interface TextSpan {
+  /** The characters of this run. */
+  text: string;
+  /** Colour for this run. `"dim"` / `"accent"` map to theme roles exactly as
+   *  `TextOptions.color` does; omitted inherits the call's own `color`. */
+  color?: string;
+}
+
+/** What `UI.text` draws: a plain string, or runs that share one layout. */
+export type TextContent = string | readonly TextSpan[];
+
 /** A themed text label. */
 export interface TextOptions {
   /** Position. In a layout, omit and it flows like any widget (reserving a
@@ -155,35 +177,119 @@ export function resolveColor(c: string | undefined): string {
   return c ?? theme.text;
 }
 
-/** Width of `text` in the given font (default: the theme's base font) —
- *  for sizing custom layouts around labels. Memoized per (font, string). */
-export function textWidth(text: string, font?: string): number {
+/** Width of `content` in the given font (default: the theme's base font) —
+ *  for sizing custom layouts around labels. Memoized per (font, string).
+ *  Runs measure as the one string they concatenate to, which is the same width
+ *  `UI.text` will reserve for them. */
+export function textWidth(content: TextContent, font?: string): number {
   const ctx = uiCtx();
   const prevFont = ctx.font;
   ctx.font = font ?? uiFont();
-  const w = measureWidth(ctx, text);
+  const w = measureWidth(ctx, spanText(content));
   ctx.font = prevFont;
   return w;
+}
+
+/** The runs of `content`, with `"dim"`/`"accent"` resolved and the label's own
+ *  colour standing in for any run that names none. A plain string is one run —
+ *  which is what keeps every string caller on the span code path rather than
+ *  beside it. */
+function toRuns(content: TextContent, fallback: string | undefined): TextRun[] {
+  const base = resolveColor(fallback);
+  if (typeof content === "string") return [{ text: content, color: base }];
+  return mergeRuns(
+    content.map((span) => ({
+      text: span.text,
+      color: span.color === undefined ? base : resolveColor(span.color),
+    })),
+  );
+}
+
+/** The one string a run list means — what is measured, wrapped, ellipsized and
+ *  reported. Runs concatenate verbatim. */
+export function spanText(content: TextContent): string {
+  return typeof content === "string" ? content : content.map((s) => s.text).join("");
+}
+
+/** Greedy word-wrap `runs` into lines no wider than `maxW` (font must be set on
+ *  `ctx`), each line a run list whose concatenation is that line's text.
+ *
+ *  This is the kit's ONLY wrapping calculation: `wrapLines` is this function
+ *  with one run. Words are measured as the combined string they will be drawn
+ *  as, so a word that straddles a colour boundary (`"Ana"` + `"'s ball"`)
+ *  breaks where the same characters in one colour would. */
+export function wrapRuns(
+  ctx: CanvasRenderingContext2D,
+  runs: readonly TextRun[],
+  maxW: number,
+): TextRun[][] {
+  // Tokenize into words that carry their runs. Whitespace closes a word; a word
+  // is one or more fragments, one per colour it passes through.
+  const words: TextRun[][] = [];
+  let word: TextRun[] = [];
+  const endWord = (): void => {
+    if (word.length > 0) words.push(word);
+    word = [];
+  };
+  for (const run of runs) {
+    for (const chunk of run.text.split(/(\s+)/)) {
+      if (!chunk) continue;
+      if (/^\s+$/.test(chunk)) endWord();
+      else word.push({ text: chunk, color: run.color });
+    }
+  }
+  endWord();
+
+  const lines: TextRun[][] = [];
+  let line: TextRun[] = [];
+  let lineText = "";
+  for (const w of words) {
+    const wordText = w.map((f) => f.text).join("");
+    const candidate = lineText ? `${lineText} ${wordText}` : wordText;
+    if (lineText && measureWidth(ctx, candidate) > maxW) {
+      lines.push(line);
+      line = [...w];
+      lineText = wordText;
+    } else {
+      // The joining space rides on the run before it — invisible, so its colour
+      // cannot matter, and this keeps the line's concatenation equal to the
+      // string a single-colour wrap would have produced.
+      if (lineText) line[line.length - 1] = appendSpace(line[line.length - 1]!);
+      line.push(...w);
+      lineText = candidate;
+    }
+  }
+  if (line.length > 0) lines.push(line);
+  return lines.length > 0 ? lines.map(mergeRuns) : [[]];
+}
+
+function appendSpace(run: TextRun): TextRun {
+  return { text: `${run.text} `, color: run.color };
+}
+
+/** Fold neighbouring runs that share a colour back into one, and drop empties.
+ *
+ *  This is not a tidiness pass, it is what keeps the plain-string case BYTE
+ *  IDENTICAL: word-wrapping cuts a line into one fragment per word, and without
+ *  this a single-colour wrapped label would be painted word by word — measured
+ *  and advanced per fragment — instead of as the one string `centeredText`
+ *  draws. One run in, one run out. */
+function mergeRuns(runs: readonly TextRun[]): TextRun[] {
+  const out: TextRun[] = [];
+  for (const run of runs) {
+    if (!run.text) continue;
+    const last = out[out.length - 1];
+    if (last && last.color === run.color) last.text += run.text;
+    else out.push({ text: run.text, color: run.color });
+  }
+  return out;
 }
 
 /** Greedy word-wrap `str` into lines no wider than `maxW` (font must be set
  *  on `ctx`). A single word wider than `maxW` gets its own line (drawn clamped
  *  by the caller). */
 export function wrapLines(ctx: CanvasRenderingContext2D, str: string, maxW: number): string[] {
-  const words = str.split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  let line = "";
-  for (const word of words) {
-    const candidate = line ? `${line} ${word}` : word;
-    if (line && measureWidth(ctx, candidate) > maxW) {
-      lines.push(line);
-      line = word;
-    } else {
-      line = candidate;
-    }
-  }
-  if (line) lines.push(line);
-  return lines.length > 0 ? lines : [""];
+  return wrapRuns(ctx, [{ text: str }], maxW).map((line) => line.map((r) => r.text).join(""));
 }
 
 /** Draw a line of themed text. Uses the theme font/size/color so a screen
@@ -191,10 +297,20 @@ export function wrapLines(ctx: CanvasRenderingContext2D, str: string, maxW: numb
  *  positions absolutely:
  *
  *    UI.text("Score: 42", { x: 12, y: 12, bold: true });
- *    UI.text(name, { color: "dim", align: "right", w: col.w }); */
-export function text(str: string, rawOpts?: TextOptions): void {
+ *    UI.text(name, { color: "dim", align: "right", w: col.w });
+ *
+ *  Pass RUNS instead of a string to colour parts of one label without splitting
+ *  it into separate widgets — the runs share this call's slot, wrap, alignment
+ *  and measurement, and only the paint is per-run:
+ *
+ *    UI.text([{ text: name, color: player.color }, { text: " holed out" }]); */
+export function text(content: TextContent, rawOpts?: TextOptions): void {
   const ctx = uiCtx();
   let opts = rawOpts ?? {};
+  // Everything below sizes, wraps, ellipsizes and records the label as the one
+  // string it reads as — `str` — so a multi-colour label occupies exactly the
+  // box its plain-string equivalent would.
+  const str = spanText(content);
   if (opts.anchor) {
     const view = anchorViewport();
     const hx = ANCHOR_H[opts.anchor];
@@ -275,6 +391,7 @@ export function text(str: string, rawOpts?: TextOptions): void {
   const bh = rect.h - padTop - padBottom;
 
   const align = opts.align ?? "left";
+  const runs = toRuns(content, opts.color);
   ctx.fillStyle = resolveColor(opts.color);
   ctx.textAlign = align;
   // A known width constrains the text: it flows in a layout, or w/maxWidth was
@@ -294,11 +411,13 @@ export function text(str: string, rawOpts?: TextOptions): void {
   const maxW = opts.maxWidth ?? (constrained ? bw : undefined);
 
   if (opts.wrap && maxW !== undefined) {
-    const lines = wrapLines(ctx, str, maxW);
+    const lines = wrapRuns(ctx, runs, maxW);
     const blockTop = by + (bh - lines.length * lineH) / 2;
-    lines.forEach((line, i) => centeredText(ctx, line, tx, blockTop + i * lineH + lineH / 2, maxW));
+    lines.forEach((line, i) =>
+      centeredSpans(ctx, line, tx, blockTop + i * lineH + lineH / 2, maxW),
+    );
   } else {
-    centeredText(ctx, str, tx, by + bh / 2, maxW);
+    centeredSpans(ctx, runs, tx, by + bh / 2, maxW);
   }
   ctx.restore();
 }

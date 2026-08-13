@@ -520,3 +520,83 @@ export function centeredText(
     ctx.fillText(str, x, cy);
   }
 }
+
+/** One run of a line that is drawn in a single colour. `color` is already
+ *  RESOLVED to a CSS colour (theme roles are mapped by the caller, which is
+ *  what keeps this module below `text.ts`); `undefined` keeps whatever
+ *  `fillStyle` the caller set, which is how a run with no colour of its own
+ *  inherits the label's. */
+export interface TextRun {
+  text: string;
+  color?: string;
+}
+
+/** `centeredText` for a line made of several differently coloured runs.
+ *
+ *  Canvas has one `fillStyle` per `fillText`, so a multi-colour line has to be
+ *  drawn run by run — but it must still be ELLIPSIZED, ALIGNED and BASELINED as
+ *  the one string it is, or a coloured word would change where the line sits.
+ *  So the combined string does all of that, and only the painting is split: the
+ *  ellipsis is applied to the whole line and then sliced back over the runs by
+ *  character offset, and the left origin is derived from the combined width
+ *  under the caller's `textAlign` before each run is laid down left-to-right.
+ *
+ *  A single run is handed straight to `centeredText`, so the overwhelmingly
+ *  common case draws through exactly the code it always did. */
+export function centeredSpans(
+  ctx: CanvasRenderingContext2D,
+  runs: readonly TextRun[],
+  x: number,
+  cy: number,
+  maxW?: number,
+): void {
+  if (runs.length <= 1) {
+    const only = runs[0];
+    if (only?.color !== undefined) ctx.fillStyle = only.color;
+    centeredText(ctx, only?.text ?? "", x, cy, maxW);
+    return;
+  }
+  ctx.textBaseline = "alphabetic";
+  const full = runs.map((r) => r.text).join("");
+  const shown = maxW !== undefined ? ellipsize(ctx, full, maxW) : full;
+  // Slice the (possibly ellipsized) line back over the runs by character
+  // offset. `ellipsize` only ever returns a PREFIX plus "…", so a run's
+  // characters keep their index and the ellipsis lands on the run the cut fell
+  // inside — the same colour as the text it replaced.
+  const drawn: TextRun[] = [];
+  let at = 0;
+  for (const run of runs) {
+    if (at >= shown.length) break;
+    const piece = shown.slice(at, at + run.text.length);
+    if (piece) drawn.push({ text: piece, color: run.color });
+    at += run.text.length;
+  }
+  const width = measureWidth(ctx, shown);
+  const align = ctx.textAlign;
+  const left =
+    align === "center" ? x - width / 2 : align === "right" || align === "end" ? x - width : x;
+  const { asc, desc } = lineMetrics(ctx);
+  const baseline = asc || desc ? cy + (asc - desc) / 2 : cy;
+  const outline = theme.textOutline;
+  const prevAlign = ctx.textAlign;
+  const prevFill = ctx.fillStyle;
+  // Runs are positioned by hand, so the canvas must not align them as well.
+  ctx.textAlign = "left";
+  if (!asc && !desc) ctx.textBaseline = "middle";
+  let pen = left;
+  for (const run of drawn) {
+    if (outline && outline.width > 0 && ctx.strokeText) {
+      ctx.save();
+      ctx.strokeStyle = outline.color;
+      ctx.lineWidth = outline.width;
+      ctx.lineJoin = "round";
+      ctx.strokeText(run.text, pen, baseline);
+      ctx.restore();
+    }
+    ctx.fillStyle = run.color ?? prevFill;
+    ctx.fillText(run.text, pen, baseline);
+    pen += measureWidth(ctx, run.text);
+  }
+  ctx.fillStyle = prevFill;
+  ctx.textAlign = prevAlign;
+}
