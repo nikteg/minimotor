@@ -12,6 +12,11 @@ import type { TableSort, ThemeOverrides } from "minimotor/ui";
 import { installLayoutProbe } from "../shared/layout-probe.ts";
 
 interface Server {
+  /** Stable identity — what `UI.table`'s `rowKey` hands to the JOIN button, so
+   *  that button belongs to this server and not to the slot it happens to
+   *  occupy after the next sort. Deliberately not the name: a key is not a
+   *  label. */
+  id: string;
   name: string;
   mode: string;
   region: string;
@@ -50,6 +55,7 @@ function fetchServers(): Server[] {
   for (let i = 0; i < 42; i++) {
     const max = Mathf.randItem([4, 8, 12, 16]);
     list.push({
+      id: `s${i}`,
       name: `${Mathf.randItem(ADJ)} ${Mathf.randItem(NOUN)} #${Mathf.randInt(1, 99)}`,
       mode: Mathf.randItem(MODES),
       region: Mathf.randItem(REGIONS),
@@ -237,6 +243,10 @@ Loop.run({
           rowHeight: ROW_H,
           headerHeight: 20,
           id: uiId("servers"),
+          // Names the ROW. Without it a row is its position, and re-sorting
+          // moves every JOIN button's id onto its neighbour — with the keyboard
+          // focus and the pressed state along with it.
+          rowKey: (s) => s.id,
           rows: list,
           sort,
           offset: scroll,
@@ -279,6 +289,30 @@ Loop.run({
               width: 74,
               value: (s) => s.ping,
               cell: (s, r) => UI.text(`${s.ping}`, { ...r, color: pingColor(s.ping) }),
+            },
+            // A WIDGET in a cell. `interactive` is what stops this column's
+            // presses also selecting the row underneath — the row's background
+            // draws first, so without it one release lands on both — and
+            // `cell.id` is the stable per-row id, which is why sorting the table
+            // under a focused JOIN button keeps the focus on that server.
+            {
+              key: "join",
+              label: "",
+              width: 62,
+              sortable: false,
+              interactive: true,
+              cell: (s, r, cell) => {
+                if (
+                  UI.button({
+                    ...r,
+                    id: cell.id,
+                    label: "JOIN",
+                    disabled: s.players >= s.max,
+                    tooltip: s.players >= s.max ? `${s.name} is full` : `Join ${s.name}`,
+                  })
+                )
+                  confirming = s;
+              },
             },
           ],
         });
