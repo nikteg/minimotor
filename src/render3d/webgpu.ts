@@ -50,9 +50,11 @@ const MAX_JOINTS = 64;
 const FRAME_BYTES = 288;
 /** Per-draw: model(64) + normalMat as 3×vec4(48) + baseColor(16) + params(16)
  *  + skinParams(16) + uvTransform(16) + rimAlpha(16) + detail(16)
- *  + detailUvTransform(16) + detailMaskTransform(16) + joints.
+ *  + detailUvTransform(16) + detailMaskTransform(16) + detailFlags(16)
+ *  + joints.
  *  Padded to the 256-byte minimum dynamic-offset alignment: the fields and
- *  joints occupy 4336 bytes, so each dynamic slot is still 4352. */
+ *  joints occupy 4352 bytes, which is exactly one slot — the next field to be
+ *  added here has to take the whole block to 4608. */
 const DRAW_BYTES = 4352;
 const DRAW_FLOATS = DRAW_BYTES / 4;
 const TIMESTAMP_SLOTS = 64;
@@ -101,6 +103,9 @@ struct DrawData {
   // xy: detail-mask uv scale, zw: its offset. A zero scale means there is no
   // mask — see Material.detailMaskUvScale.
   detailMaskTransform: vec4f,
+  // x: the secondary map's RGB is premultiplied by its own alpha — see
+  // Material.detailPremultiplied. yzw spare.
+  detailFlags: vec4f,
   jointMatrices: array<mat4x4f, ${MAX_JOINTS}>,
 };
 
@@ -311,7 +316,8 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
       // Both maps are scaled and linearized BEFORE they multiply, not after:
       // squaring a product of two alphas is not the product of two squares, and
       // the difference is the whole brightness of a lit decal.
-      let scaled = pattern.rgb * draw.detail.z;
+      let straight = select(pattern.rgb, pattern.rgb * pattern.a, draw.detailFlags.x > 0.5);
+      let scaled = straight * draw.detail.z;
       var over = select(scaled, srgbToLinear(scaled), lit);
       var weight = pattern.a * draw.detail.x;
       if (draw.detailMaskTransform.x != 0.0 || draw.detailMaskTransform.y != 0.0) {
@@ -986,7 +992,11 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     drawData[at + 57] = maskScale?.[1] ?? 0;
     drawData[at + 58] = maskOffset[0];
     drawData[at + 59] = maskOffset[1];
-    drawData.set(skin ?? IDENTITY_JOINTS, at + 60);
+    drawData[at + 60] = material.detailPremultiplied ? 1 : 0;
+    drawData[at + 61] = 0;
+    drawData[at + 62] = 0;
+    drawData[at + 63] = 0;
+    drawData.set(skin ?? IDENTITY_JOINTS, at + 64);
   }
 
   const renderer: Renderer3D = {

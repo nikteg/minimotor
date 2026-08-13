@@ -187,6 +187,19 @@ export interface Material {
   detailMap?: TexImageSource;
   /** Bump when the detail map's PIXELS change, as with `textureVersion`. */
   detailMapVersion?: number;
+  /** The secondary map already has its alpha multiplied into its RGB.
+   *
+   *  Every other texture here is straight-alpha, which is what an image decoder
+   *  and a 2D canvas both hand over. A render target is the exception: anything
+   *  drawn into one through an additive or source-over blend accumulates
+   *  `colour * alpha`, so its RGB is premultiplied and a straight-alpha read of
+   *  it is `1/alpha` too bright. That error is worst exactly where alpha is
+   *  lowest, so a soft-edged decal does not merely glow — it grows a bright
+   *  fringe and reads as fatter than it is.
+   *
+   *  Set this when the decal is a render target, or an emulation of one.
+   *  `over` only; the overlay blend never looks at alpha. */
+  detailPremultiplied?: boolean;
   /** How much of the overlay to mix in, 0..1. Default 0, which is off — a
    *  detail map with no strength costs a sample and changes nothing. */
   detailStrength?: number;

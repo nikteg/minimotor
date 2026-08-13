@@ -132,6 +132,7 @@ uniform bool uDetailUv1;
 uniform bool uDetailPlanar;
 uniform float uDetailOver; // 0 overlay; otherwise alpha-over RGB multiplier
 uniform vec4 uDetailUvTransform;
+uniform bool uDetailPremultiplied;
 uniform sampler2D uDetailMask;
 // xy scale, zw offset, over the same source the detail map reads. A zero scale
 // means there is no mask — see Material.detailMaskUvScale.
@@ -298,7 +299,7 @@ void main() {
       // Both maps are scaled and linearized BEFORE they multiply, not after:
       // squaring a product of two alphas is not the product of two squares, and
       // the difference is the whole brightness of a lit decal.
-      vec3 over = pattern.rgb * uDetailOver;
+      vec3 over = (uDetailPremultiplied ? pattern.rgb * pattern.a : pattern.rgb) * uDetailOver;
       if (uToneMap) over = srgbToLinear(over);
       float weight = pattern.a * uDetailStrength;
       if (uDetailMaskTransform.x != 0.0 || uDetailMaskTransform.y != 0.0) {
@@ -452,6 +453,7 @@ interface Uniforms {
   detailPlanar: WebGLUniformLocation | null;
   detailOver: WebGLUniformLocation | null;
   detailUvTransform: WebGLUniformLocation | null;
+  detailPremultiplied: WebGLUniformLocation | null;
   detailMask: WebGLUniformLocation | null;
   detailMaskTransform: WebGLUniformLocation | null;
   rimAlpha: WebGLUniformLocation | null;
@@ -570,6 +572,7 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     detailPlanar: gl.getUniformLocation(program, "uDetailPlanar"),
     detailOver: gl.getUniformLocation(program, "uDetailOver"),
     detailUvTransform: gl.getUniformLocation(program, "uDetailUvTransform"),
+    detailPremultiplied: gl.getUniformLocation(program, "uDetailPremultiplied"),
     detailMask: gl.getUniformLocation(program, "uDetailMask"),
     detailMaskTransform: gl.getUniformLocation(program, "uDetailMaskTransform"),
     rimAlpha: gl.getUniformLocation(program, "uRimAlpha"),
@@ -821,6 +824,7 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
         detailOffset[0],
         detailOffset[1],
       );
+      gl!.uniform1i(u.detailPremultiplied, material.detailPremultiplied ? 1 : 0);
       // A mask tiles by definition, so it rides the material's own `repeat`
       // rather than asking for its own sampler — see Material.detailMask.
       const maskScale = material.detailMask ? material.detailMaskUvScale : undefined;
