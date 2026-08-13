@@ -629,6 +629,17 @@ export interface LayoutOptions {
   minH?: number;
   /** Minimum width in px; auto-sized containers grow to at least this value. */
   minW?: number;
+  /** Maximum height in px; an auto-sized container stops growing here.
+   *
+   *  On an `overflow: "auto"` container this is the "shrink-wrap, then scroll"
+   *  bound, and it is the reason `maxH` exists: `h` pins a scroll region to one
+   *  height whether the content needs it or not, so a dialog that fits gets a
+   *  box of empty space and a scrollbar it never uses. With `maxH` the region
+   *  is as tall as its content until the content passes the cap, and only then
+   *  does it clip and scroll. */
+  maxH?: number;
+  /** Maximum width in px (see `maxH`). */
+  maxW?: number;
   /** Stable id for the auto-height cache. Optional: falls back to the
    *  `idScope` call-order, then to a position-derived key for pinned
    *  containers. Set it when several unpinned containers would otherwise
@@ -903,15 +914,22 @@ export function measuredContainerSize(
 // of width/height the caller omitted (auto-sizing). A ROOT container (pinned
 // x/y) may omit both and shrink-wrap; a NESTED container fills its parent's
 // cross axis and only auto-sizes along the main axis.
+/** A requested size held between the caller's floor and ceiling. `min` wins a
+ *  contradiction, so `minH` above `maxH` behaves like `minH` alone rather than
+ *  collapsing the box. */
+export function bound(value: number, min?: number, max?: number): number {
+  return Math.max(min ?? 0, max === undefined ? value : Math.min(value, max));
+}
+
 export function containerRect(
   dir: "row" | "col",
   opts: LayoutOptions,
   auto?: ContentSize,
 ): { x: number; y: number; w: number; h: number } {
   const requestedW = opts.w ?? auto?.w;
-  const w = requestedW === undefined ? undefined : Math.max(requestedW, opts.minW ?? 0);
+  const w = requestedW === undefined ? undefined : bound(requestedW, opts.minW, opts.maxW);
   const requestedH = opts.h ?? auto?.h;
-  const h = requestedH === undefined ? undefined : Math.max(requestedH, opts.minH ?? 0);
+  const h = requestedH === undefined ? undefined : bound(requestedH, opts.minH, opts.maxH);
   if (opts.anchor) {
     // Root placed in the VIEWPORT: `w`/`h` are the preferred size clamped to the
     // viewport minus `margin`; the anchor + any `x`/`y` offset position it.

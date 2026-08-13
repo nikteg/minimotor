@@ -4,6 +4,7 @@ import {
   LayoutChildren,
   LayoutOptions,
   autoContainer,
+  bound,
   cachedContentSize,
   containerKey,
   containerRect,
@@ -140,7 +141,17 @@ function scrollable<R>(
   const explicitMain = horiz ? opts.w : opts.h;
   const fitMain =
     contentMain === undefined ? avail : clipOnly ? naturalMain : Math.min(naturalMain, avail);
-  const estMain = explicitMain ?? (horiz ? cachedBox?.w : cachedBox?.h) ?? fitMain;
+  // `maxH`/`maxW` on the SCROLL axis is what makes a nested region shrink-wrap
+  // and then clip, which is the whole point of a capped scroll box: it takes
+  // its content's size until the content passes the cap. Without it a nested
+  // region has no main size of its own — `mainForRect` below is `undefined` so
+  // the parent's slot decides — and the only way to bound one was `h`, which
+  // pins it to that height whether the content needs it or not.
+  const maxMain = horiz ? opts.maxW : opts.maxH;
+  const cappedMain =
+    maxMain === undefined ? undefined : bound(naturalMain, horiz ? opts.minW : opts.minH, maxMain);
+  const estMain =
+    explicitMain ?? cappedMain ?? (horiz ? cachedBox?.w : cachedBox?.h) ?? fitMain;
   const estView = horiz ? estMain : estMain - top - bottom;
   const barThick = !clipOnly && (contentMain ?? estView) - estView > 0.5 ? theme.scrollbarW : 0;
   const gutter = barThick ? barThick + theme.scrollbarGap : 0; // room reserved for the bar
@@ -162,9 +173,11 @@ function scrollable<R>(
       : contentCross !== undefined
         ? naturalCross
         : undefined);
-  // Main size for the box: explicit, else `undefined` so a nested parent fills
-  // it (a root falls back to the fit estimate).
-  const mainForRect = explicitMain ?? (isRootContainer(opts) ? fitMain : undefined);
+  // Main size for the box: explicit, else the capped content size, else
+  // `undefined` so a nested parent fills it (a root falls back to the fit
+  // estimate).
+  const mainForRect =
+    explicitMain ?? cappedMain ?? (isRootContainer(opts) ? fitMain : undefined);
   const rect = containerRect(
     dir,
     horiz ? { ...opts, w: mainForRect, h: boxCross } : { ...opts, w: boxCross, h: mainForRect },
