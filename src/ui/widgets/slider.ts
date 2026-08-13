@@ -59,6 +59,37 @@ export interface SliderOptions extends Flowable {
 // One slider drag at a time (per UI runtime), tracked across frames by id.
 const sliderDragSlot = uiSlot<{ id: string | null }>(() => ({ id: null }));
 
+/** How many stops `valueSpace` will walk before it gives up and reads the ends
+ *  only. A stepped range longer than this is a continuous control with a snap
+ *  on it, not a list of positions with names, and its formatter is a number
+ *  whose widest form is at one end. */
+const MEASURED_STOPS_LIMIT = 64;
+
+// The room the value readout needs, measured over the WHOLE range rather than
+// the live value — the track must not resize, and the knob must not wobble,
+// while the thing is being dragged.
+//
+// The ends are not the widest text. `step` turns the range into a fixed set of
+// stops, and a caller that NAMES them can easily put its longest name in the
+// middle: Trash Golf's UI-scale slider steps over 1x, 1.125x, 1.25x, 1.5x,
+// 1.75x, 2x, where every interior stop is wider than both ends and "1.125x"
+// is three times the width of "1x". Reserving for the ends alone left that one
+// painting over the bar.
+function valueSpaceFor(
+  ctx: CanvasRenderingContext2D,
+  fmt: (v: number) => string,
+  min: number,
+  max: number,
+  step: number | undefined,
+): number {
+  let widest = Math.max(measureWidth(ctx, fmt(min)), measureWidth(ctx, fmt(max)));
+  const stops = step && step > 0 ? (max - min) / step : Infinity;
+  if (!Number.isFinite(stops) || stops > MEASURED_STOPS_LIMIT) return widest;
+  for (let i = 1; i < stops; i++)
+    widest = Math.max(widest, measureWidth(ctx, fmt(min + i * step!)));
+  return widest;
+}
+
 /** Draw a slider and return the (possibly changed) new value — drag the knob
  *  or click anywhere on the track:
  *
@@ -89,14 +120,11 @@ export function slider(
   const fmt = (v: number) => (opts.format ? opts.format(v) : v.toFixed(decimals));
   // Reserve room INSIDE the slot for both the left label and the right value
   // readout, so the track sits between them and neither spills past the
-  // widget's box. The value width is taken from the range extremes (not the
-  // live value) so the track doesn't resize — and the knob doesn't wobble —
-  // while dragging.
+  // widget's box. See `valueSpaceFor` for where the value's width comes from.
   ctx.save();
   ctx.font = opts.font ?? uiFont();
   const labelSpace = opts.label ? Math.ceil(measureWidth(ctx, opts.label)) + 10 : 0;
-  const valueSpace =
-    Math.ceil(Math.max(measureWidth(ctx, fmt(min)), measureWidth(ctx, fmt(max)))) + 12;
+  const valueSpace = Math.ceil(valueSpaceFor(ctx, fmt, min, max, opts.step)) + 12;
   ctx.restore();
   const sx = slot.x + labelSpace;
   const sy = slot.y + slot.h / 2;
