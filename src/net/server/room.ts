@@ -17,6 +17,14 @@ export interface ServerSocket {
   /** 1 === OPEN in the `ws`/browser convention; `undefined` is treated as open
    *  (test doubles need not model it). */
   readyState?: number;
+  /** Bytes handed to `send` that have not gone out yet. A client on a link too
+   *  slow for what it is being sent accumulates these in the server's own
+   *  memory, and every queued frame is stale before it arrives. Rooms do not
+   *  act on this — dropping a message is only safe when the sender knows it
+   *  carries full state rather than a delta — but a caller that publishes
+   *  snapshots can read it and skip a client that is behind. `undefined` on a
+   *  test double, which reads as nothing queued. */
+  readonly bufferedAmount?: number;
   /** Subscribe to a socket event (`"message"`, `"close"`). */
   on(event: string, handler: (...args: unknown[]) => void): void;
 }
