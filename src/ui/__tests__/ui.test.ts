@@ -234,7 +234,7 @@ describe("UI theme", () => {
     expect(defaultTheme.button.width).toBe(0);
     expect(defaultTheme.barH).toBe(12);
     expect(defaultTheme.tabH).toBe(30);
-    expect(defaultTheme.panel.title.height).toBe(32);
+    expect(defaultTheme.panel.title.height).toBe(26);
     expect(defaultTheme.panel.title.overhang).toEqual({ x: 0, y: 0 });
     expect(defaultTheme.panel.frameInset).toEqual({ x: 0, y: 0 });
     expect(defaultTheme.panel.padding).toEqual({ x: 8, y: 8 });

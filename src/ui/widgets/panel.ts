@@ -94,8 +94,26 @@ export function paintFrame(ctx: CanvasRenderingContext2D, opts: PanelFrame): voi
     // A procedural title strip follows the same overhang behavior as a
     // tileset title frame.
     if (!titleFrame) {
-      ctx.fillStyle = "rgba(255,255,255,0.06)";
+      // Clipped to the panel's INNER outline — inside the border, at the
+      // radius the border leaves — rather than filled as a bare rectangle. A
+      // 6%-white wash could square off a rounded top corner without anyone
+      // noticing; `theme.panel.title.background` is opaque by the time anyone
+      // sets it, and then the squared corners and the painted-over top border
+      // are the first two things you see.
+      const bw = theme.borderWidth;
+      ctx.save();
+      roundRectPath(
+        ctx,
+        opts.x + bw,
+        opts.y + bw,
+        Math.max(0, opts.w - bw * 2),
+        Math.max(0, opts.h - bw * 2),
+        Math.max(0, theme.radius - bw),
+      );
+      ctx.clip();
+      ctx.fillStyle = theme.panel.title.background ?? "rgba(255,255,255,0.06)";
       ctx.fillRect(titleRect.x, titleRect.y, titleRect.w, titleRect.h);
+      ctx.restore();
     }
     ctx.fillStyle = opts.titleColor ?? theme.panel.title.color ?? theme.accent;
     ctx.font = opts.font ?? uiFont(theme.fontSize + 1, true);

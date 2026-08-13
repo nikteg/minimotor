@@ -681,7 +681,9 @@ describe("tiled panel content clearance", () => {
     const tree = layoutTree();
     const frame = tree.find((entry) => entry.kind === "panel")!;
     const save = tree.find((entry) => entry.id === "pixel-save")!;
-    expect(frame.rect.h).toBe(112);
+    // 106 and not 112: the title band is the default theme's 26 rather
+    // than the 32 it was before the band was solved for an even inset.
+    expect(frame.rect.h).toBe(106);
     expect(save.rect.y + save.rect.h).toBeLessThanOrEqual(frame.rect.y + frame.rect.h - 16);
   });
 });

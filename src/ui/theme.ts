@@ -436,6 +436,12 @@ export interface ThemeButton {
 export interface ThemePanelTitle {
   height: number;
   color?: string;
+  /** Fill behind the title strip. Unset paints the default 6%-white wash over
+   *  whatever the panel's own background is — a hint of a band rather than a
+   *  band. Set it for a header bar that reads as its own surface; it is clipped
+   *  to the panel's inner outline, so a solid colour keeps the panel's rounded
+   *  corners and does not paint over its border. */
+  background?: string;
   padding: ThemePadding;
   overhang: ThemePadding;
 }
@@ -770,7 +776,13 @@ const baseDefaults = {
     padding: { x: 8, y: 8 },
     frameInset: { x: 0, y: 0 },
     title: {
-      height: 32,
+      // Solved so the gap a reader sees above the title equals the gap beside
+      // it, which at 32 it did not: the text is optically centred in the band
+      // (`centeredText`), so the top gap is `(height - capHeight) / 2` while
+      // the side gap is `panel.padding.x + title.padding.x`. With a 14px title
+      // (`fontSize + 1`), a 0.7em cap height and an 8-unit body pad that read
+      // 11.1 above against 8 beside. `2 * 8 + 0.7 * 14` is 25.8, so 26.
+      height: 26,
       padding: { x: 0, y: 0 },
       overhang: { x: 0, y: 0 },
     },
