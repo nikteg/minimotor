@@ -348,7 +348,18 @@ void main() {
     if (uToneMap) plain = linearToSrgb(acesToneMap(plain));
     // The canvas is premultiplied-alpha, so premultiply exactly once at the
     // render boundary. Texture uploads stay straight-alpha below.
-    fragColor = vec4(plain * base.a, base.a);
+    //
+    // Colour and opacity saturate SEPARATELY, before they meet. A straight-alpha
+    // pipeline clamps both to [0,1] on the way into the blend and only then
+    // multiplies, so a material colour above 1 is brightness the target cannot
+    // hold, and an alpha above 1 is opacity that stops at fully opaque --
+    // neither is licence for the other to overflow. Premultiplying first and
+    // letting the write clamp the product instead turns a doubled alpha into
+    // doubled brightness on every half-lit texel, which is a different picture,
+    // not a rounding difference. Both clamps are no-ops for the in-range colours
+    // everything else passes.
+    float opacity = clamp(base.a, 0.0, 1.0);
+    fragColor = vec4(clamp(plain, 0.0, 1.0) * opacity, opacity);
     return;
   }
 

@@ -367,8 +367,12 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
     // Named to match the WebGL2 backend, where flat is a reserved word.
     var plain = base.rgb;
     if (toneMap) { plain = linearToSrgb(acesToneMap(plain)); }
-    // Unlit output is premultiplied to match the canvas alpha mode.
-    return vec4f(plain * base.a, base.a);
+    // Unlit output is premultiplied to match the canvas alpha mode, and colour
+    // and opacity saturate SEPARATELY before they meet -- see the WebGL2
+    // backend for why premultiplying an over-1 alpha first is a different
+    // picture rather than a rounding difference.
+    let opacity = clamp(base.a, 0.0, 1.0);
+    return vec4f(clamp(plain, vec3f(0.0), vec3f(1.0)) * opacity, opacity);
   }
 
   var n = normalize(in.normal);

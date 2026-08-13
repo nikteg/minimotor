@@ -120,6 +120,25 @@ describe("the two backends' shading maths", () => {
     expect(order(webgpu, "if (toneMap) { base = vec4f(srgbToLinear")).toBe(true);
   });
 
+  it("saturates an unlit colour and its opacity separately, in both", () => {
+    // The premultiply at the render boundary is `clamp(rgb) * clamp(a)`, not
+    // `clamp(rgb * a)`. A straight-alpha pipeline clamps both on the way into
+    // the blend and multiplies afterwards, so an alpha above 1 is opacity that
+    // stops at fully opaque and never becomes brightness. Premultiplying first
+    // makes a doubled alpha double the colour of every texel it has not already
+    // saturated -- half a channel of difference on a soft-edged sprite, not a
+    // rounding error. Both clamps are no-ops for in-range colours, which is
+    // everything that does not deliberately pass one over 1.
+    expect(webgl2).toMatch(/float opacity = clamp\(base\.a, 0\.0, 1\.0\);/);
+    expect(webgl2).toMatch(
+      /fragColor = vec4\(clamp\(plain, 0\.0, 1\.0\) \* opacity, opacity\);/,
+    );
+    expect(webgpu).toMatch(/let opacity = clamp\(base\.a, 0\.0, 1\.0\);/);
+    expect(webgpu).toMatch(
+      /return vec4f\(clamp\(plain, vec3f\(0\.0\), vec3f\(1\.0\)\) \* opacity, opacity\);/,
+    );
+  });
+
   it("fogs before the curve in both", () => {
     // Fog mixed in AFTER the tone map would be a different image: the fog
     // colour would skip the shoulder that everything it is blending with went
