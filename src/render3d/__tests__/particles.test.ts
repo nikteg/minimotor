@@ -103,6 +103,42 @@ describe("emitting", () => {
     expect(z).toBeCloseTo(4, 1);
     expect(y).toBeLessThan(-4);
   });
+
+  it("fires bursts at zero and repeats them with a looping duration", () => {
+    const emitter = createEmitter({
+      rate: 0,
+      lifetime: 0.75,
+      duration: 1,
+      loop: true,
+      bursts: [{ time: 0, count: 2 }],
+      size: { x: 1, y: 1 },
+      random: middle,
+    });
+    emitter.update(1 / 60, VIEW);
+    expect(emitter.alive).toBe(2);
+    emitter.update(0.8, VIEW);
+    expect(emitter.alive).toBe(0);
+    emitter.update(0.2, VIEW);
+    expect(emitter.alive).toBe(2);
+  });
+
+  it("does not repeat a burst on a non-looping emitter", () => {
+    const emitter = createEmitter({
+      rate: 0,
+      lifetime: 0.25,
+      duration: 0.5,
+      loop: false,
+      bursts: [{ count: 1 }],
+      size: { x: 1, y: 1 },
+      random: middle,
+    });
+    emitter.update(1 / 60, VIEW);
+    expect(emitter.alive).toBe(1);
+    emitter.update(1, VIEW);
+    expect(emitter.alive).toBe(0);
+    emitter.update(1, VIEW);
+    expect(emitter.alive).toBe(0);
+  });
 });
 
 describe("the mesh it writes", () => {
@@ -298,6 +334,58 @@ describe("the mesh it writes", () => {
     expect([...emitter.mesh.positions].every((v) => Number.isFinite(v))).toBe(true);
     const corners = quadOf(emitter.mesh, 0);
     expect(Math.max(...corners.map(([, y]) => y))).toBeCloseTo(1, 6);
+  });
+
+  it("copies, scales and rotates authored geometry per mesh particle", () => {
+    const source = {
+      positions: new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 0]),
+      normals: new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]),
+      uvs: new Float32Array([0, 0, 1, 0, 0, 1]),
+      indices: new Uint16Array([0, 1, 2]),
+    };
+    const emitter = createEmitter({
+      rate: 0,
+      lifetime: 10,
+      bursts: [{ count: 1 }],
+      mode: "mesh",
+      mesh: source,
+      size: { x: 2, y: 3, z: 4 },
+      rotation: { y: Math.PI / 2 },
+      offset: { x: 5, y: 6, z: 7 },
+      random: middle,
+    });
+    emitter.update(1 / 60, VIEW);
+    expect(emitter.alive).toBe(1);
+    expect(Array.from(emitter.mesh.positions.slice(0, 9))).toEqual([5, 6, 5, 5, 9, 7, 5, 6, 7]);
+    // Capacity includes one spare particle, so its second triangle is present
+    // but collapsed until another burst needs it.
+    expect([...emitter.mesh.indices]).toEqual([0, 1, 2, 3, 4, 5]);
+  });
+
+  it("turns authored mesh particles over their lifetime", () => {
+    const emitter = createEmitter({
+      rate: 0,
+      lifetime: 10,
+      bursts: [{ count: 1 }],
+      mode: "mesh",
+      mesh: {
+        positions: new Float32Array([1, 0, 0]),
+        indices: new Uint16Array([0]),
+      },
+      size: { x: 1, y: 1, z: 1 },
+      angularVelocity: { y: Math.PI / 2 },
+      random: middle,
+    });
+    emitter.update(1 / 60, VIEW);
+    emitter.update(1, VIEW);
+    expect(emitter.mesh.positions[0]).toBeCloseTo(0, 5);
+    expect(emitter.mesh.positions[2]).toBeCloseTo(-1, 5);
+  });
+
+  it("requires source geometry for mesh mode", () => {
+    expect(() =>
+      createEmitter({ rate: 1, lifetime: 1, mode: "mesh", size: { x: 1, y: 1 } }),
+    ).toThrow(/non-empty mesh/);
   });
 });
 
