@@ -602,8 +602,17 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     occluded = false,
     /** `additive`: add to what is behind rather than blending over it. */
     additive = false,
+    /** The overlay pass's depth prepass: an `occludesOverlays` node re-drawn
+     *  for its shape alone, so it writes depth and no colour at all. */
+    depthOnly = false,
+    /** An `overlayOccluded` overlay: tested against that prepass rather than
+     *  ignoring depth, which is the whole point of the pair. */
+    gatedOverlay = false,
+    /** True for every overlay in a pass whose depth buffer holds the prepass —
+     *  gated or not, none of them may write into it. */
+    occluderDepth = false,
   ): GPURenderPipeline {
-    const key = `${blend}:${doubleSided}:${overlay}:${lines}:${occluded}:${additive}`;
+    const key = `${blend}:${doubleSided}:${overlay}:${lines}:${occluded}:${additive}:${depthOnly}:${gatedOverlay}:${occluderDepth}`;
     const cached = pipelines.get(key);
     if (cached) return cached;
     const pipeline = device.createRenderPipeline({
@@ -615,6 +624,10 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
         targets: [
           {
             format,
+            // A prepass draw exists for its depth: masking the colour off is
+            // what keeps the occluder from painting itself over the frame a
+            // second time, now that the depth it sorted against is gone.
+            writeMask: depthOnly ? 0 : GPUColorWrite.ALL,
             blend: blend
               ? {
                   // Premultiplied source, matching the canvas alpha mode and
@@ -643,12 +656,16 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
         // Transparent geometry tests against depth but does not write it, so
         // two blended surfaces do not occlude each other. A ghost never writes
         // depth either: a hint that did would occlude the geometry that is
-        // doing the occluding.
-        depthWriteEnabled: !blend && !occluded,
+        // doing the occluding. Nor does anything drawn once the prepass is
+        // standing in the buffer — that depth belongs to the nominated
+        // occluders, and an overlay writing into it would become one.
+        depthWriteEnabled: depthOnly || (!blend && !occluded && !occluderDepth),
         // An overlay ignores the scene's depth but still writes its own, so a
         // stack of them occludes itself in draw order. A ghost inverts the
         // test instead, so it paints only where the scene is in front of it.
-        depthCompare: occluded ? "greater" : overlay ? "always" : "less-equal",
+        // A gated overlay is the one overlay that tests: LEQUAL against the
+        // prepass, which contains only what it agreed to hide behind.
+        depthCompare: occluded ? "greater" : overlay && !gatedOverlay ? "always" : "less-equal",
       },
       multisample: { count: sampleCount },
     });
@@ -932,6 +949,12 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
   const overlay: number[] = [];
   /** `occludedAlpha` nodes, drawn a second time where something covers them. */
   const occluded: number[] = [];
+  /** `occludesOverlays` nodes, re-drawn for their shape alone so an opted-in
+   *  overlay has something — and only that something — to be hidden behind. */
+  const overlayOccluders: number[] = [];
+  /** Where each node's uniforms landed, so the prepass can re-draw an occluder
+   *  from the slot it already has instead of packing the same bytes twice. */
+  const slotOf = new Map<number, number>();
 
   /** Pack one node's per-draw uniforms at slot `slot`. */
   function writeDrawData(node: Node3D, material: Material, slot: number): void {
@@ -999,6 +1022,35 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     drawData.set(skin ?? IDENTITY_JOINTS, at + 64);
   }
 
+  /** Bind one node's mesh, textures and packed uniform slot, and draw it.
+   *  Which PIPELINE is the caller's business, because the same node is drawn
+   *  three different ways: as itself, as its `occludedAlpha` ghost, and as a
+   *  depth-only shape in the overlay pass's prepass. */
+  function drawSlot(
+    pass: GPURenderPassEncoder,
+    node: Node3D,
+    material: Material,
+    slot: number,
+    pipeline: GPURenderPipeline,
+  ): void {
+    const gpu = uploadMesh(node.mesh!);
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, frameBindGroup!, [slot * DRAW_BYTES]);
+    pass.setBindGroup(1, textureGroupFor(material));
+    pass.setVertexBuffer(0, gpu.positions);
+    pass.setVertexBuffer(1, gpu.normals);
+    pass.setVertexBuffer(2, gpu.uvs);
+    pass.setVertexBuffer(3, gpu.colors);
+    pass.setVertexBuffer(4, gpu.joints);
+    pass.setVertexBuffer(5, gpu.weights);
+    pass.setVertexBuffer(6, gpu.uvs1);
+    pass.setVertexBuffer(7, gpu.tangents);
+    pass.setIndexBuffer(gpu.indices, gpu.format);
+    pass.drawIndexed(gpu.count);
+    stats.drawCalls++;
+    stats.triangles += gpu.triangles;
+  }
+
   const renderer: Renderer3D = {
     backend: "webgpu",
     canvas,
@@ -1052,12 +1104,19 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       blended.length = 0;
       overlay.length = 0;
       occluded.length = 0;
+      overlayOccluders.length = 0;
       cameraPosition(camera, eye);
       scene.nodes.forEach((n, i) => {
         if (!n.mesh || !n.world) return;
         if (!isVisible(scene, i)) {
           stats.culled++;
           return;
+        }
+        // An overlay's depth is not the scene's depth — it was drawn with the
+        // test off — so nominating one as an occluder would mask the overlays
+        // behind a shape that never sorted against anything.
+        if (n.material?.occludesOverlays && n.material.depthTest !== false) {
+          overlayOccluders.push(i);
         }
         // A ghost pass is IN ADDITION to whichever pass the node belongs to:
         // the surface still draws normally where it is visible. An overlay is
@@ -1117,6 +1176,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       // because it is the same node with a different alpha.
       const order = [...opaque, ...blended.map((b) => b.index), ...occluded, ...overlay];
       const firstGhost = opaque.length + blended.length;
+      const firstOverlay = order.length - overlay.length;
       order.forEach((index, slot) => {
         const n = scene.nodes[index];
         const material = n.material ?? {};
@@ -1127,19 +1187,38 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
         device.queue.writeBuffer(drawBuffer!, 0, drawData, 0, total * DRAW_FLOATS);
       }
 
+      // Both halves of the `occludesOverlays`/`overlayOccluded` pair have to be
+      // in the frame for the prepass to mean anything: an occluder with no
+      // opted-in overlay hides nothing, and an opted-in overlay with no
+      // occluder wants the ordinary "over everything" pass rather than a test
+      // against an empty buffer. Either missing and the frame is encoded
+      // exactly as it was before the pair existed.
+      const gating =
+        overlayOccluders.length > 0 &&
+        overlay.some((i) => scene.nodes[i].material?.overlayOccluded === true);
+      slotOf.clear();
+      // An occluder is an ordinary scene node drawn before the ghosts, so its
+      // uniforms are already packed and the prepass re-draws it from the slot
+      // it has rather than spending a second one on identical bytes.
+      if (gating) for (let slot = 0; slot < firstGhost; slot++) slotOf.set(order[slot], slot);
+
       const bg = scene.background;
       const encoder = device.createCommandEncoder();
       const timestampSlot = reserveGpuTimestamp();
-      const pass = encoder.beginRenderPass({
+      // Multisampled: draw into the offscreen target and let the pass resolve
+      // it down into the frame the compositor shows. The views are made once,
+      // because a gated frame encodes two passes over the same textures.
+      const colorView = (colorTexture ?? context!.getCurrentTexture()).createView();
+      const resolveView = colorTexture ? context!.getCurrentTexture().createView() : undefined;
+      const depthView = depthTexture!.createView();
+      let pass = encoder.beginRenderPass({
         colorAttachments: [
           {
-            // Multisampled: draw into the offscreen target and let the pass
-            // resolve it down into the frame the compositor shows. `storeOp`
-            // stays `"store"` rather than the usual `"discard"`, because a
-            // caller that renders a second layer with `clear: false` needs the
-            // samples this pass wrote, not just their average.
-            view: (colorTexture ?? context!.getCurrentTexture()).createView(),
-            resolveTarget: colorTexture ? context!.getCurrentTexture().createView() : undefined,
+            // `storeOp` stays `"store"` rather than the usual `"discard"`,
+            // because a caller that renders a second layer with `clear: false`
+            // needs the samples this pass wrote, not just their average.
+            view: colorView,
+            resolveTarget: resolveView,
             // Premultiplied clear, matching the canvas alpha mode.
             clearValue: { r: bg[0] * bg[3], g: bg[1] * bg[3], b: bg[2] * bg[3], a: bg[3] },
             loadOp: options.clear === false ? "load" : "clear",
@@ -1147,7 +1226,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
           },
         ],
         depthStencilAttachment: {
-          view: depthTexture!.createView(),
+          view: depthView,
           depthClearValue: 1,
           depthLoadOp: options.clear === false ? "load" : "clear",
           depthStoreOp: "store",
@@ -1158,16 +1237,77 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
             : {
                 querySet: timestampQuerySet!,
                 beginningOfPassWriteIndex: timestampSlot * 2,
-                endOfPassWriteIndex: timestampSlot * 2 + 1,
+                // The closing stamp belongs to whichever pass ends the frame,
+                // or a gated frame would report a GPU time that stops before
+                // its overlays.
+                endOfPassWriteIndex: gating ? undefined : timestampSlot * 2 + 1,
               },
       });
 
-      order.forEach((index, slot) => {
+      for (let slot = 0; slot < order.length; slot++) {
+        if (gating && slot === firstOverlay) {
+          // What an opted-in overlay must test against is a depth buffer
+          // holding the nominated occluders and NOTHING else — the scene's own
+          // depth is the thing the overlay pass exists to ignore. WebGPU can
+          // only clear an attachment as a pass BEGINS, so a gated frame is two
+          // passes: the scene, then the overlays over a cleared depth buffer
+          // with the colour loaded, so the second paints onto the first's
+          // picture rather than starting again.
+          pass.end();
+          pass = encoder.beginRenderPass({
+            colorAttachments: [
+              {
+                view: colorView,
+                resolveTarget: resolveView,
+                loadOp: "load",
+                storeOp: "store",
+              },
+            ],
+            depthStencilAttachment: {
+              view: depthView,
+              depthClearValue: 1,
+              depthLoadOp: "clear",
+              depthStoreOp: "store",
+            },
+            timestampWrites:
+              timestampSlot === null
+                ? undefined
+                : { querySet: timestampQuerySet!, endOfPassWriteIndex: timestampSlot * 2 + 1 },
+          });
+          for (const index of overlayOccluders) {
+            const occluderSlot = slotOf.get(index);
+            if (occluderSlot === undefined) continue;
+            const n = scene.nodes[index];
+            const material = n.material ?? {};
+            drawSlot(
+              pass,
+              n,
+              material,
+              occluderSlot,
+              pipelineFor(
+                // Never blended, whatever the surface is: a draw that writes no
+                // colour has nothing to blend, and saying so keeps a
+                // transparent occluder from also turning its depth writes off.
+                false,
+                !!material.doubleSided,
+                false,
+                n.mesh!.topology === "lines",
+                false,
+                false,
+                true,
+              ),
+            );
+          }
+        }
+        const index = order[slot];
         const n = scene.nodes[index];
         const ghost = slot >= firstGhost && slot < firstGhost + occluded.length;
         const material = ghost ? ghostMaterial(n.material ?? {}) : (n.material ?? {});
-        const gpu = uploadMesh(n.mesh!);
-        pass.setPipeline(
+        drawSlot(
+          pass,
+          n,
+          material,
+          slot,
           pipelineFor(
             !!material.transparent,
             !!material.doubleSided,
@@ -1177,23 +1317,12 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
             // A ghost is a hint about where something is, not a light: it
             // blends whatever the surface it copies does.
             !ghost && !!material.additive,
+            false,
+            gating && slot >= firstOverlay && material.overlayOccluded === true,
+            gating && slot >= firstOverlay,
           ),
         );
-        pass.setBindGroup(0, frameBindGroup!, [slot * DRAW_BYTES]);
-        pass.setBindGroup(1, textureGroupFor(material));
-        pass.setVertexBuffer(0, gpu.positions);
-        pass.setVertexBuffer(1, gpu.normals);
-        pass.setVertexBuffer(2, gpu.uvs);
-        pass.setVertexBuffer(3, gpu.colors);
-        pass.setVertexBuffer(4, gpu.joints);
-        pass.setVertexBuffer(5, gpu.weights);
-        pass.setVertexBuffer(6, gpu.uvs1);
-        pass.setVertexBuffer(7, gpu.tangents);
-        pass.setIndexBuffer(gpu.indices, gpu.format);
-        pass.drawIndexed(gpu.count);
-        stats.drawCalls++;
-        stats.triangles += gpu.triangles;
-      });
+      }
 
       pass.end();
       const timestampReadback =

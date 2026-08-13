@@ -616,6 +616,9 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
   const overlay: number[] = [];
   /** `occludedAlpha` nodes, drawn a second time where something covers them. */
   const occluded: number[] = [];
+  /** `occludesOverlays` nodes, re-drawn for their shape alone so an opted-in
+   *  overlay has something — and only that something — to be hidden behind. */
+  const overlayOccluders: number[] = [];
 
   /** Premultiplied-alpha blending, matching the context and the textures, or
    *  addition for a surface that emits light rather than covering what is
@@ -997,11 +1000,18 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
       blended.length = 0;
       overlay.length = 0;
       occluded.length = 0;
+      overlayOccluders.length = 0;
       scene.nodes.forEach((n, i) => {
         if (!n.mesh || !n.world) return;
         if (!isVisible(scene, i)) {
           stats.culled++;
           return;
+        }
+        // An overlay's depth is not the scene's depth — it was drawn with the
+        // test off — so nominating one as an occluder would mask the overlays
+        // behind a shape that never sorted against anything.
+        if (n.material?.occludesOverlays && n.material.depthTest !== false) {
+          overlayOccluders.push(i);
         }
         // A ghost pass is IN ADDITION to whichever pass the node belongs to:
         // the surface still draws normally where it is visible.
@@ -1070,23 +1080,61 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
       }
 
       if (overlay.length > 0) {
-        // Last, and against a depth function that always passes. The mask
-        // stays on for an opaque overlay so two of them still occlude each
-        // other in draw order, which is what makes a stack of them readable.
-        gl!.depthFunc(gl!.ALWAYS);
+        // Both halves of the `occludesOverlays`/`overlayOccluded` pair have to
+        // be in the frame for the prepass to mean anything: an occluder with no
+        // opted-in overlay hides nothing, and an opted-in overlay with no
+        // occluder wants the ordinary "over everything" pass rather than a test
+        // against an empty buffer. Either missing and this whole block runs
+        // exactly as it did before the pair existed.
+        const gating =
+          overlayOccluders.length > 0 &&
+          overlay.some((i) => scene.nodes[i].material?.overlayOccluded === true);
+        if (gating) {
+          // Clear, then re-draw the occluders alone: what the overlays must
+          // test against is a depth buffer containing the nominated objects and
+          // NOTHING else — the scene's own depth is what the overlay pass
+          // exists to ignore. Scissored like the frame's own clear, so a second
+          // viewport sharing this backing store keeps the depth it just wrote.
+          gl!.clearDepth(1);
+          gl!.enable(gl!.SCISSOR_TEST);
+          gl!.scissor(0, targetY, targetW, targetH);
+          gl!.depthMask(true);
+          gl!.clear(gl!.DEPTH_BUFFER_BIT);
+          gl!.disable(gl!.SCISSOR_TEST);
+          // Shape only: colour writes off, depth writes on, and the ordinary
+          // LEQUAL so two occluders resolve against each other correctly. The
+          // full material is bound for a draw that emits no colour, which is
+          // waste — but it is one draw per nominated node, and a second program
+          // whose only job is to write nothing costs more than it saves.
+          gl!.colorMask(false, false, false, false);
+          for (const i of overlayOccluders) {
+            drawNode(scene.nodes[i], scene.nodes[i].material ?? {});
+          }
+          gl!.colorMask(true, true, true, true);
+        }
+
+        // Last, and against a depth function that always passes — unless this
+        // overlay opted into the prepass above, in which case LEQUAL lets the
+        // occluders cut it out.
         for (const i of overlay) {
           const material = scene.nodes[i].material ?? {};
+          const gated = gating && material.overlayOccluded === true;
+          gl!.depthFunc(gated ? gl!.LEQUAL : gl!.ALWAYS);
+          // Without a prepass the mask stays on for an opaque overlay, so two
+          // of them still occlude each other in draw order, which is what makes
+          // a stack of them readable. WITH one, nothing in this pass writes
+          // depth: the buffer belongs to the nominated occluders until the pass
+          // ends, and an overlay writing into it would quietly become a second
+          // occluder — the failure looks like one readout eating another.
+          gl!.depthMask(!gating && !material.transparent);
           if (material.transparent) {
             gl!.enable(gl!.BLEND);
             setBlendMode(!!material.additive);
-            gl!.depthMask(false);
           }
           drawNode(scene.nodes[i], material);
-          if (material.transparent) {
-            gl!.depthMask(true);
-            gl!.disable(gl!.BLEND);
-          }
+          if (material.transparent) gl!.disable(gl!.BLEND);
         }
+        gl!.depthMask(true);
         gl!.depthFunc(gl!.LEQUAL);
       }
       gl!.bindVertexArray(null);

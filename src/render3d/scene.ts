@@ -80,6 +80,46 @@ export interface Material {
    *  surfaces occlude each other in the order you would expect while both
    *  ignore the scene. Default is the ordinary depth-tested behaviour. */
   depthTest?: boolean;
+  /** Put this node's shape into the depth buffer the overlay pass tests
+   *  against, so it hides the overlays that asked to be hidden.
+   *
+   *  "Behind the ball, in front of the course" is not a picture the overlay
+   *  pass can produce on its own: an overlay skips the depth test entirely, so
+   *  it is either over everything or over nothing. This pair of flags gives it
+   *  a depth buffer with only the NOMINATED objects in it. After the scene is
+   *  drawn, the depth buffer is cleared, every node carrying this flag is
+   *  re-drawn for its shape alone with colour writes off, and each
+   *  `overlayOccluded` overlay tests against that instead of ignoring depth.
+   *
+   *  Two consequences to know before reaching for it. The occluder hides an
+   *  overlay by its GEOMETRY rather than by its visible pixels — the course is
+   *  not in that buffer, so an occluder that is itself behind a hill still cuts
+   *  the overlay out; pair it with `occludedAlpha` and the cut-out reads as the
+   *  ghost, which is the honest picture. And the frame's depth buffer ends up
+   *  holding the prepass, so a scene that renders a second pass over the first
+   *  with `clear: false` and expects to depth-test against it cannot also gate
+   *  overlays.
+   *
+   *  Ignored on a `depthTest: false` material — an overlay has no depth of its
+   *  own worth testing against. Costs one extra draw call per flagged node, and
+   *  only in a frame that also contains an `overlayOccluded` overlay: with
+   *  either half of the pair missing there is nothing to occlude or nothing to
+   *  occlude with, and the pass runs exactly as it did before. */
+  occludesOverlays?: boolean;
+  /** Let `occludesOverlays` nodes hide this overlay, instead of drawing over
+   *  everything unconditionally.
+   *
+   *  Only meaningful with `depthTest: false`, since that is what puts a surface
+   *  in the overlay pass at all. It is opt-in per overlay because the two kinds
+   *  usually coexist: an aiming guide wants to disappear behind the ball it is
+   *  aimed from, while the readout naming the club must stay legible whatever
+   *  is in front of it.
+   *
+   *  Such an overlay does not write depth, so it cannot occlude the next
+   *  overlay in turn — the buffer belongs to the nominated occluders for the
+   *  whole pass, and an overlay writing into it would become a second occluder
+   *  nobody asked for. Overlays still paint in node order, as before. */
+  overlayOccluded?: boolean;
   /** Also draw this surface where something is IN FRONT of it, at this
    *  fraction of its alpha. 0 or unset draws it only where it is visible,
    *  which is the ordinary behaviour.

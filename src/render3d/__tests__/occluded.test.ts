@@ -50,7 +50,7 @@ describe("both backends", () => {
   it("keep depth writes off for the ghost", () => {
     // A hint that wrote depth would occlude the geometry doing the occluding.
     expect(read("webgl2.ts")).toMatch(/depthFunc\(gl!\.GREATER\);[\s\S]{0,200}depthMask\(false\)/);
-    expect(read("webgpu.ts")).toMatch(/depthWriteEnabled: !blend && !occluded/);
+    expect(read("webgpu.ts")).toMatch(/depthWriteEnabled: depthOnly \|\| \(!blend && !occluded/);
   });
 
   it("draw the ghost after the blended pass and before the overlays", () => {

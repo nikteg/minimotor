@@ -145,7 +145,11 @@ describe("the two backends' framebuffers", () => {
     expect(webgl2).toContain("antialias: opts.antialias ?? true");
     expect(webgpu).toMatch(/sampleCount = opts\.antialias === false \? 1 : 4/);
     expect(webgpu).toContain("multisample: { count: sampleCount }");
-    expect(webgpu).toMatch(/resolveTarget: colorTexture \?/);
+    // Made once and handed to every pass in the frame: a gated overlay pass is
+    // a second pass over the same textures, and one that forgot to resolve
+    // would show the scene resolved and the overlays not.
+    expect(webgpu).toMatch(/resolveView = colorTexture \?/);
+    expect(webgpu.match(/^ +resolveTarget: resolveView,$/gm) ?? []).toHaveLength(2);
     // The colour target and the depth target, which a pass rejects unless they
     // agree.
     expect(webgpu.match(/^ +sampleCount,$/gm) ?? []).toHaveLength(2);
