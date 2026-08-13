@@ -791,13 +791,19 @@ function buildRuntime(options: RuntimeOptions & { fitWindow?: boolean }): Runtim
   // stopped/paused-loop stage schedules a one-off rAF so it still adapts).
   let resizeDirty = false;
   let resizeRaf = 0;
-  const applyResize = () => {
-    if (!resizeDirty) return;
+  /** Returns whether it actually re-read the viewport, which the loop needs:
+   *  reassigning `canvas.width`/`height` reallocates and CLEARS the backing
+   *  store, so a frame that resizes and is then skipped by the frame-rate cap
+   *  shows an empty canvas. Dragging a window edge with a cap on produced a
+   *  steady flicker that way — every skipped frame was a cleared one. */
+  const applyResize = (): boolean => {
+    if (!resizeDirty) return false;
     resizeDirty = false;
     Object.assign(viewport, readViewport(canvas, options.resolution, fitWindow)); // live: mutate in place
     canvasRect = null;
     sceneRenderer?.resize();
     for (const h of resizeHandlers) h(viewport);
+    return true;
   };
   const handleResize = () => {
     resizeDirty = true;
@@ -840,7 +846,7 @@ function buildRuntime(options: RuntimeOptions & { fitWindow?: boolean }): Runtim
     // Schedule the next frame FIRST: an exception in the user's update()/draw()
     // then surfaces without silently killing the loop.
     rafHandle = requestAnimationFrame(loop);
-    applyResize(); // coalesced viewport re-read (at most once per frame)
+    const resized = applyResize(); // coalesced viewport re-read (at most once per frame)
     if (!lastTime) lastTime = time;
 
     if (paused) {
@@ -889,8 +895,12 @@ function buildRuntime(options: RuntimeOptions & { fitWindow?: boolean }): Runtim
     // only the picture is skipped. Half a step of slack, because a 30 fps cap
     // on a 60 Hz display otherwise misses every second frame by a hair of
     // scheduling jitter and settles at 20.
+    // …unless this frame resized. `applyResize` cleared the canvas above, so
+    // skipping the draw now would put an empty surface on screen until the cap
+    // lets the next one through — which is a flicker for as long as the drag
+    // lasts, not a dropped frame nobody sees.
     sinceDraw += elapsed;
-    if (maxFps > 0 && sinceDraw < 1000 / maxFps - stepMs / 2) return;
+    if (maxFps > 0 && !resized && sinceDraw < 1000 / maxFps - stepMs / 2) return;
     // The drawn frame is handed the whole gap, so an animation that moves by
     // `frameDelta` moves at the same speed capped or not. Input edges are
     // rolled in `endFrame()` below, which a skipped frame never reaches, so a
