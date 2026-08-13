@@ -297,6 +297,56 @@ describe("what still falls back to the cache", () => {
     expect(lag.find((l) => l.entry.id === "inventory")!.off.h).toBeLessThan(0);
   });
 
+  // The case a stated width cannot reach, and the reason it is worth its own
+  // pair of tests: on a container anchored to an edge that is NOT its top, the
+  // stale size is not a stale size, it is a stale POSITION. `containerRect`
+  // places an anchored box by measuring back from the far edge
+  // (`by = vp.h - ch - margin`), so a height that is one frame behind moves the
+  // whole box and everything drawn inside it — where the same staleness on a
+  // top-anchored box is invisible, since the content grows downwards into space
+  // the box was going to occupy anyway.
+  //
+  // `layoutLag` does NOT tell these two apart: both report the same off.h. The
+  // anchor decides whether that is a glitch a player sees.
+  const anchoredCorner = (n: number, anchor: "bottomLeft" | "topLeft") => () =>
+    col({ anchor, margin: 0, gap: 0, id: "corner" }, () => {
+      for (let i = 0; i < n; i++) button({ id: `b${i}`, label: `B${i}` });
+    });
+
+  it("a bottom-anchored root draws its whole content a frame late, in the wrong place", () => {
+    frame(anchoredCorner(1, "bottomLeft"));
+    const before = frame(anchoredCorner(1, "bottomLeft"));
+    const changing = frame(anchoredCorner(2, "bottomLeft"));
+    const lagOnChange = layoutLag().map((l) => l.entry.id);
+    const settled = frame(anchoredCorner(2, "bottomLeft"));
+    expect(lagOnChange).toContain("corner");
+    // The frame the content grows, the box is still the height of ONE button,
+    // so its top edge has not moved — and the first button is still exactly
+    // where it was before the change.
+    expect(changing.b0.y).toBe(before.b0.y);
+    // Next frame the box knows its real height and the whole stack jumps up by
+    // the button it gained. That jump is the one-frame pop.
+    expect(settled.b0.y).toBe(before.b0.y - before.b0.h);
+    // And for one frame the second button hung off the bottom of the viewport.
+    expect(changing.b1.y + changing.b1.h).toBeGreaterThan(600);
+    expect(settled.b1.y + settled.b1.h).toBeCloseTo(600, 0);
+  });
+
+  it("the same staleness on a top-anchored root moves nothing", () => {
+    frame(anchoredCorner(1, "topLeft"));
+    const before = frame(anchoredCorner(1, "topLeft"));
+    const changing = frame(anchoredCorner(2, "topLeft"));
+    const lagOnChange = layoutLag().map((l) => l.entry.id);
+    const settled = frame(anchoredCorner(2, "topLeft"));
+    expect(changing.b0.y).toBe(before.b0.y);
+    expect(settled.b0.y).toBe(before.b0.y);
+    expect(settled.b1).toEqual(changing.b1);
+    // Same container, same stale height, and the SAME finding — so the report
+    // cannot see the difference the anchor makes. Only the anchor decides
+    // whether that staleness is a jump a player sees or nothing at all.
+    expect(lagOnChange).toContain("corner");
+  });
+
   it("stays quiet once a lagging container has settled", () => {
     const build = () =>
       panel({ x: 0, y: 0, w: 300, id: "settled" }, () => {
