@@ -60,6 +60,9 @@ interface GltfMaterial {
     detailUvProjection?: string;
     detailUvScale?: number[];
     detailUvOffset?: number[];
+    detailMaskTexture?: GltfTextureRef;
+    detailMaskUvScale?: number[];
+    detailMaskUvOffset?: number[];
   };
 }
 
@@ -309,6 +312,19 @@ function materialFor(
   }
   if (detailOffset?.length === 2 && detailOffset.every((value) => Number.isFinite(value))) {
     material.detailUvOffset = [detailOffset[0]!, detailOffset[1]!];
+  }
+  // The mask needs a uv scale to mean anything at all — it is a tiling pattern
+  // read off the secondary map's own source — so an image with no scale beside
+  // it is dropped rather than sampled once across the world.
+  const maskScale = source?.extras?.detailMaskUvScale;
+  const maskOffset = source?.extras?.detailMaskUvOffset;
+  const maskImage = imageFor(document, images, source?.extras?.detailMaskTexture);
+  if (maskImage && maskScale?.length === 2 && maskScale.every((value) => Number.isFinite(value))) {
+    material.detailMask = maskImage;
+    material.detailMaskUvScale = [maskScale[0]!, maskScale[1]!];
+    if (maskOffset?.length === 2 && maskOffset.every((value) => Number.isFinite(value))) {
+      material.detailMaskUvOffset = [maskOffset[0]!, maskOffset[1]!];
+    }
   }
   if (baseImage || normalImage || detailImage) {
     // A glTF texture is photographic by default; the engine's nearest-neighbour

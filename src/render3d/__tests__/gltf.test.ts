@@ -242,6 +242,56 @@ describe("loadGltf materials", () => {
     expect(material?.detailUvOffset).toEqual([40 / 256, -7 / 256]);
   });
 
+  it("reads a detail mask on its own frequency over the same projection", async () => {
+    stubDecoder();
+    serve(
+      documentWith({
+        materials: [
+          {
+            extras: {
+              detailBlend: "over",
+              detailUvProjection: "planarXZ",
+              detailUvScale: [1 / 256, -1 / 256],
+              detailMaskTexture: { index: 0 },
+              detailMaskUvScale: [2, -2],
+              detailMaskUvOffset: [92, -52],
+            },
+          },
+        ],
+        textures: [{ source: 0 }],
+        images: [{ uri: "disc.png" }],
+      }),
+      ["disc.png"],
+    );
+
+    const { scene } = await loadGltf("assets/level.gltf");
+    const material = scene.nodes.find((n) => n.mesh)?.material;
+    expect(material?.detailMask).toBeDefined();
+    // 512 times the decal's own scale, which is what puts one mask tile in
+    // each texel of a 512-square canvas projected over 256 world units.
+    expect(material?.detailMaskUvScale).toEqual([2, -2]);
+    expect(material?.detailMaskUvOffset).toEqual([92, -52]);
+  });
+
+  it("drops a detail mask that came without a uv scale", async () => {
+    stubDecoder();
+    serve(
+      documentWith({
+        materials: [{ extras: { detailBlend: "over", detailMaskTexture: { index: 0 } } }],
+        textures: [{ source: 0 }],
+        images: [{ uri: "disc.png" }],
+      }),
+      ["disc.png"],
+    );
+
+    const { scene } = await loadGltf("assets/level.gltf");
+    // A mask is a tiling pattern by definition. With no scale it would stretch
+    // one texel over the whole world, which is never what one is for, so the
+    // backends' `scale != 0` test reads it as absent — and so does the loader,
+    // rather than handing them a texture they will not sample.
+    expect(scene.nodes.find((n) => n.mesh)?.material?.detailMask).toBeUndefined();
+  });
+
   it("turns a KHR_texture_transform scale into uv tiling and enables repeat", async () => {
     stubDecoder();
     serve(

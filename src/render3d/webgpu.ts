@@ -50,9 +50,9 @@ const MAX_JOINTS = 64;
 const FRAME_BYTES = 288;
 /** Per-draw: model(64) + normalMat as 3×vec4(48) + baseColor(16) + params(16)
  *  + skinParams(16) + uvTransform(16) + rimAlpha(16) + detail(16)
- *  + detailUvTransform(16) + joints.
+ *  + detailUvTransform(16) + detailMaskTransform(16) + joints.
  *  Padded to the 256-byte minimum dynamic-offset alignment: the fields and
- *  joints occupy 4320 bytes, so each dynamic slot is 4352. */
+ *  joints occupy 4336 bytes, so each dynamic slot is still 4352. */
 const DRAW_BYTES = 4352;
 const DRAW_FLOATS = DRAW_BYTES / 4;
 const TIMESTAMP_SLOTS = 64;
@@ -98,6 +98,9 @@ struct DrawData {
   detail    : vec4f,
   // xy: detail uv scale, zw: detail uv offset
   detailUvTransform: vec4f,
+  // xy: detail-mask uv scale, zw: its offset. A zero scale means there is no
+  // mask — see Material.detailMaskUvScale.
+  detailMaskTransform: vec4f,
   jointMatrices: array<mat4x4f, ${MAX_JOINTS}>,
 };
 
@@ -107,6 +110,7 @@ struct DrawData {
 @group(1) @binding(1) var tex  : texture_2d<f32>;
 @group(1) @binding(2) var normalTex : texture_2d<f32>;
 @group(1) @binding(3) var detailTex : texture_2d<f32>;
+@group(1) @binding(4) var detailMaskTex : texture_2d<f32>;
 
 struct VsOut {
   @builtin(position) clip     : vec4f,
@@ -295,18 +299,36 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
       base = base * texel;
     }
   }
-  // While base is still in display space — see Material.detailMap.
+  // Overlay while base is still in display space; alpha-over in linear light —
+  // see Material.detailMap for why the two belong on opposite sides of it.
   if (draw.detail.x > 0.0) {
     var detailSource = select(in.uv, in.uv1, draw.detail.y > 0.5);
     detailSource = select(detailSource, in.worldPos.xz, draw.detail.w > 0.5);
     let detailUv = detailSource * draw.detailUvTransform.xy + draw.detailUvTransform.zw;
     let pattern = textureSample(detailTex, samp, detailUv);
-    let mixed = select(
-      mix(base.rgb, blendOverlay(pattern.rgb, base.rgb), draw.detail.x),
-      mix(base.rgb, pattern.rgb * draw.detail.z, pattern.a * draw.detail.x),
-      draw.detail.z > 0.0,
-    );
-    base = vec4f(mixed, base.a);
+    if (draw.detail.z > 0.0) {
+      var over = pattern.rgb * draw.detail.z;
+      var weight = pattern.a * draw.detail.x;
+      if (draw.detailMaskTransform.x != 0.0 || draw.detailMaskTransform.y != 0.0) {
+        let maskUv = detailSource * draw.detailMaskTransform.xy + draw.detailMaskTransform.zw;
+        let mask = textureSample(detailMaskTex, samp, maskUv);
+        // The decal's own alpha comes into the RGB here as well as into the
+        // weight, which is what makes a mask DARKEN rather than tint: a canvas
+        // at 6% alpha contributes 6% of 6% of its light and the surface keeps
+        // the rest. A hard cut at the mask's edge, not a fade, so the shape
+        // stays the shape at any distance.
+        over = over * pattern.a * mask.rgb * draw.detail.z * mask.a;
+        if (mask.a < 0.01) { weight = 0.0; }
+      }
+      let blended = select(
+        mix(base.rgb, over, weight),
+        linearToSrgb(mix(srgbToLinear(base.rgb), srgbToLinear(over), weight)),
+        frame.ambient.w > 0.5,
+      );
+      base = vec4f(blended, base.a);
+    } else {
+      base = vec4f(mix(base.rgb, blendOverlay(pattern.rgb, base.rgb), draw.detail.x), base.a);
+    }
   }
   // Ahead of the cutoff and of the unlit branch, because the ramp is what
   // decides the final alpha: a bias of zero means the face-on fragments are
@@ -539,6 +561,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
       { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: {} },
       { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+      { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: {} },
     ],
   });
   const pipelineLayout = device.createPipelineLayout({
@@ -690,6 +713,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       { binding: 1, resource: blankTexture.createView() },
       { binding: 2, resource: blankTexture.createView() },
       { binding: 3, resource: blankTexture.createView() },
+      { binding: 4, resource: blankTexture.createView() },
     ],
   });
 
@@ -833,16 +857,17 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     return texture;
   }
 
-  /** One bind group per (base texture, normal map, detail map, sampler)
-   *  combination. The group has to name all three textures at once, so it
-   *  cannot be cached against the base image alone. */
+  /** One bind group per (base texture, normal map, detail map, detail mask,
+   *  sampler) combination. The group has to name all four textures at once, so
+   *  it cannot be cached against the base image alone. */
   function textureGroupFor(material: Material): GPUBindGroup {
     const base = material.texture;
     const normal = material.normalMap;
     const detail = (material.detailStrength ?? 0) > 0 ? material.detailMap : undefined;
+    const mask = detail ? material.detailMask : undefined;
     if (!base && !normal && !detail) return blankBindGroup;
     const baseKey = (base ?? blankTexture) as object;
-    const samplerKey = `${material.pixelated ?? true}|${material.repeat ?? false}|${identity(normal)}|${identity(detail)}`;
+    const samplerKey = `${material.pixelated ?? true}|${material.repeat ?? false}|${identity(normal)}|${identity(detail)}|${identity(mask)}`;
     let byCombination = textureGroups.get(baseKey);
     if (!byCombination) {
       byCombination = new Map();
@@ -856,9 +881,10 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     const detailTexture = detail
       ? textureFor(detail, material.detailMapVersion ?? 0)
       : blankTexture;
+    const maskTexture = mask ? textureFor(mask, material.detailMaskVersion ?? 0) : blankTexture;
     // A rebuilt texture invalidates every view of it, so the cached group has
     // to be dropped whenever any upload replaced its GPUTexture.
-    const stamp = `${identity(baseTexture)}|${identity(normalTexture)}|${identity(detailTexture)}|${samplerKey}`;
+    const stamp = `${identity(baseTexture)}|${identity(normalTexture)}|${identity(detailTexture)}|${identity(maskTexture)}|${samplerKey}`;
     const existing = byCombination.get(stamp);
     if (existing) return existing;
     const group = device.createBindGroup({
@@ -868,6 +894,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
         { binding: 1, resource: baseTexture.createView() },
         { binding: 2, resource: normalTexture.createView() },
         { binding: 3, resource: detailTexture.createView() },
+        { binding: 4, resource: maskTexture.createView() },
       ],
     });
     byCombination.set(stamp, group);
@@ -946,7 +973,13 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     drawData[at + 53] = detailScale[1];
     drawData[at + 54] = detailOffset[0];
     drawData[at + 55] = detailOffset[1];
-    drawData.set(skin ?? IDENTITY_JOINTS, at + 56);
+    const maskScale = material.detailMask ? material.detailMaskUvScale : undefined;
+    const maskOffset = material.detailMaskUvOffset ?? ZERO_UV;
+    drawData[at + 56] = maskScale?.[0] ?? 0;
+    drawData[at + 57] = maskScale?.[1] ?? 0;
+    drawData[at + 58] = maskOffset[0];
+    drawData[at + 59] = maskOffset[1];
+    drawData.set(skin ?? IDENTITY_JOINTS, at + 60);
   }
 
   const renderer: Renderer3D = {

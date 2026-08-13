@@ -175,10 +175,15 @@ export interface Material {
    *  exactly half does nothing — so the surface keeps its own value at any
    *  strength and the map is free to be an unbiased pattern.
    *
-   *  The blend happens in DISPLAY space, before any linearization: overlay's
-   *  0.5 pivot is a perceptual midpoint, and run against linear light it
-   *  pivots around a value most of a stop darker than the one the pattern was
-   *  painted against. */
+   *  The OVERLAY blend happens in DISPLAY space, before any linearization:
+   *  overlay's 0.5 pivot is a perceptual midpoint, and run against linear
+   *  light it pivots around a value most of a stop darker than the one the
+   *  pattern was painted against. `over` is the other way round — it is an
+   *  alpha composite of one light against another, so under
+   *  `toneMapping: "aces"` it runs in linear and comes back. Mixing the same
+   *  weight in display space instead lands about twice as far from the base
+   *  once the surface is squared, which is a real error rather than a taste:
+   *  a 6% wash reads as 11%. */
   detailMap?: TexImageSource;
   /** Bump when the detail map's PIXELS change, as with `textureVersion`. */
   detailMapVersion?: number;
@@ -206,6 +211,29 @@ export interface Material {
   /** Secondary-map uv offset. With no value, uv0 inherits `uvOffset`, while
    * uv1 and planar projection use `[0, 0]`. */
   detailUvOffset?: readonly [number, number];
+  /** A second pattern that GATES the `over` secondary map, sampled from the
+   *  same source uvs through `detailMaskUvScale`/`detailMaskUvOffset` — so it
+   *  runs at its own frequency over the same projection rather than following
+   *  the decal's.
+   *
+   *  Where the mask's alpha is under 0.01 the secondary map is off entirely;
+   *  everywhere else the decal's RGB is multiplied by its own alpha, by the
+   *  mask's RGB and by the mask's alpha before the mix. That is a live decal
+   *  canvas cut into shapes: one canvas texel becomes whatever the mask draws
+   *  inside it, at screen resolution rather than at the canvas's.
+   *
+   *  A mask tiles by definition, so the material needs `repeat`. Ignored by
+   *  the `overlay` blend, which has no alpha to gate. */
+  detailMask?: TexImageSource;
+  /** Bump when the detail mask's PIXELS change, as with `textureVersion`. */
+  detailMaskVersion?: number;
+  /** Detail-mask uv scale, over the same source the secondary map reads.
+   *  Zero — the default — means there is no mask: a mask scaled to zero would
+   *  stretch one texel across the world, which is never what one is for. */
+  detailMaskUvScale?: readonly [number, number];
+  /** Detail-mask uv offset, applied after `detailMaskUvScale`. Default
+   *  `[0, 0]`. */
+  detailMaskUvOffset?: readonly [number, number];
   /** Multiply uvs by this before sampling — how a small detail texture tiles
    *  across a large surface. Default `[1, 1]`. */
   uvScale?: readonly [number, number];

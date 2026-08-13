@@ -132,6 +132,10 @@ uniform bool uDetailUv1;
 uniform bool uDetailPlanar;
 uniform float uDetailOver; // 0 overlay; otherwise alpha-over RGB multiplier
 uniform vec4 uDetailUvTransform;
+uniform sampler2D uDetailMask;
+// xy scale, zw offset, over the same source the detail map reads. A zero scale
+// means there is no mask — see Material.detailMaskUvScale.
+uniform vec4 uDetailMaskTransform;
 uniform vec3 uRimAlpha; // bias, scale, power — see Material.rimAlpha
 uniform vec4 uUvTransform;
 uniform int uFogMode; // -1 off, 0 linear, 1 exp, 2 exp squared, 3 layered
@@ -284,14 +288,32 @@ void main() {
     // where it is opaque, not whether the surface is there at all.
     base = uTextureBlend == 2 ? vec4(mix(base.rgb, texel.rgb, texel.a), base.a) : base * texel;
   }
-  // While base is still in display space — see Material.detailMap.
+  // Overlay while base is still in display space; alpha-over in linear light —
+  // see Material.detailMap for why the two belong on opposite sides of it.
   if (uDetailStrength > 0.0) {
     vec2 detailSource = uDetailPlanar ? vWorldPos.xz : (uDetailUv1 ? vUv1 : vUv);
     vec2 detailUv = detailSource * uDetailUvTransform.xy + uDetailUvTransform.zw;
     vec4 pattern = texture(uDetailMap, detailUv);
-    base.rgb = uDetailOver > 0.0
-      ? mix(base.rgb, pattern.rgb * uDetailOver, pattern.a * uDetailStrength)
-      : mix(base.rgb, blendOverlay(pattern.rgb, base.rgb), uDetailStrength);
+    if (uDetailOver > 0.0) {
+      vec3 over = pattern.rgb * uDetailOver;
+      float weight = pattern.a * uDetailStrength;
+      if (uDetailMaskTransform.x != 0.0 || uDetailMaskTransform.y != 0.0) {
+        vec2 maskUv = detailSource * uDetailMaskTransform.xy + uDetailMaskTransform.zw;
+        vec4 mask = texture(uDetailMask, maskUv);
+        // The decal's own alpha comes into the RGB here as well as into the
+        // weight, which is what makes a mask DARKEN rather than tint: a canvas
+        // at 6% alpha contributes 6% of 6% of its light and the surface keeps
+        // the rest. A hard cut at the mask's edge, not a fade, so the shape
+        // stays the shape at any distance.
+        over *= pattern.a * mask.rgb * uDetailOver * mask.a;
+        if (mask.a < 0.01) weight = 0.0;
+      }
+      base.rgb = uToneMap
+        ? linearToSrgb(mix(srgbToLinear(base.rgb), srgbToLinear(over), weight))
+        : mix(base.rgb, over, weight);
+    } else {
+      base.rgb = mix(base.rgb, blendOverlay(pattern.rgb, base.rgb), uDetailStrength);
+    }
   }
   // Ahead of the cutoff and of the unlit branch, because the ramp is what
   // decides the final alpha: a bias of zero means the face-on fragments are
@@ -424,6 +446,8 @@ interface Uniforms {
   detailPlanar: WebGLUniformLocation | null;
   detailOver: WebGLUniformLocation | null;
   detailUvTransform: WebGLUniformLocation | null;
+  detailMask: WebGLUniformLocation | null;
+  detailMaskTransform: WebGLUniformLocation | null;
   rimAlpha: WebGLUniformLocation | null;
   uvTransform: WebGLUniformLocation | null;
   fogMode: WebGLUniformLocation | null;
@@ -540,6 +564,8 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     detailPlanar: gl.getUniformLocation(program, "uDetailPlanar"),
     detailOver: gl.getUniformLocation(program, "uDetailOver"),
     detailUvTransform: gl.getUniformLocation(program, "uDetailUvTransform"),
+    detailMask: gl.getUniformLocation(program, "uDetailMask"),
+    detailMaskTransform: gl.getUniformLocation(program, "uDetailMaskTransform"),
     rimAlpha: gl.getUniformLocation(program, "uRimAlpha"),
     uvTransform: gl.getUniformLocation(program, "uUvTransform"),
     fogMode: gl.getUniformLocation(program, "uFogMode"),
@@ -789,6 +815,27 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
         detailOffset[0],
         detailOffset[1],
       );
+      // A mask tiles by definition, so it rides the material's own `repeat`
+      // rather than asking for its own sampler — see Material.detailMask.
+      const maskScale = material.detailMask ? material.detailMaskUvScale : undefined;
+      if (maskScale && (maskScale[0] !== 0 || maskScale[1] !== 0)) {
+        const maskOffset = material.detailMaskUvOffset ?? ZERO_UV;
+        gl!.activeTexture(gl!.TEXTURE3);
+        gl!.bindTexture(
+          gl!.TEXTURE_2D,
+          uploadTexture(material.detailMask!, pixelated, material.detailMaskVersion ?? 0, repeat),
+        );
+        gl!.uniform1i(u.detailMask, 3);
+        gl!.uniform4f(
+          u.detailMaskTransform,
+          maskScale[0],
+          maskScale[1],
+          maskOffset[0],
+          maskOffset[1],
+        );
+      } else {
+        gl!.uniform4f(u.detailMaskTransform, 0, 0, 0, 0);
+      }
     }
     gl!.uniform1f(u.detailStrength, detailStrength);
 
