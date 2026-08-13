@@ -49,10 +49,10 @@ const MAX_JOINTS = 64;
  *  to 16 bytes anyway. */
 const FRAME_BYTES = 288;
 /** Per-draw: model(64) + normalMat as 3×vec4(48) + baseColor(16) + params(16)
- *  + skinParams(16) + uvTransform(16) + rimAlpha(16) + detail(16) + joints.
- *  Padded to the 256-byte minimum dynamic-offset alignment, which is why
- *  adding `detail` did not move this number: 4304 and 4288 both round to the
- *  same slot. */
+ *  + skinParams(16) + uvTransform(16) + rimAlpha(16) + detail(16)
+ *  + detailUvTransform(16) + joints.
+ *  Padded to the 256-byte minimum dynamic-offset alignment: the fields and
+ *  joints occupy 4320 bytes, so each dynamic slot is 4352. */
 const DRAW_BYTES = 4352;
 const DRAW_FLOATS = DRAW_BYTES / 4;
 const TIMESTAMP_SLOTS = 64;
@@ -93,8 +93,11 @@ struct DrawData {
   uvTransform: vec4f,
   // xyz: rim alpha bias/scale/power, w: metalness
   rimAlpha  : vec4f,
-  // x: detail overlay strength (0 off), y: detail reads uv1 rather than uv
+  // x: detail strength, y: reads uv1, z: alpha-over RGB scale (0 is overlay),
+  // w: planar-XZ
   detail    : vec4f,
+  // xy: detail uv scale, zw: detail uv offset
+  detailUvTransform: vec4f,
   jointMatrices: array<mat4x4f, ${MAX_JOINTS}>,
 };
 
@@ -294,9 +297,16 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
   }
   // While base is still in display space — see Material.detailMap.
   if (draw.detail.x > 0.0) {
-    let detailUv = select(uv, in.uv1, draw.detail.y > 0.5);
-    let pattern = textureSample(detailTex, samp, detailUv).rgb;
-    base = vec4f(mix(base.rgb, blendOverlay(pattern, base.rgb), draw.detail.x), base.a);
+    var detailSource = select(in.uv, in.uv1, draw.detail.y > 0.5);
+    detailSource = select(detailSource, in.worldPos.xz, draw.detail.w > 0.5);
+    let detailUv = detailSource * draw.detailUvTransform.xy + draw.detailUvTransform.zw;
+    let pattern = textureSample(detailTex, samp, detailUv);
+    let mixed = select(
+      mix(base.rgb, blendOverlay(pattern.rgb, base.rgb), draw.detail.x),
+      mix(base.rgb, pattern.rgb * draw.detail.z, pattern.a * draw.detail.x),
+      draw.detail.z > 0.0,
+    );
+    base = vec4f(mixed, base.a);
   }
   // Ahead of the cutoff and of the unlit branch, because the ramp is what
   // decides the final alpha: a bias of zero means the face-on fragments are
@@ -924,9 +934,19 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     drawData[at + 47] = material.metallic ?? 0;
     drawData[at + 48] = material.detailMap ? (material.detailStrength ?? 0) : 0;
     drawData[at + 49] = material.detailUv === 1 ? 1 : 0;
-    drawData[at + 50] = 0;
-    drawData[at + 51] = 0;
-    drawData.set(skin ?? IDENTITY_JOINTS, at + 52);
+    drawData[at + 50] = material.detailBlend === "over" ? (material.detailColorScale ?? 1) : 0;
+    drawData[at + 51] = material.detailUvProjection === "planarXZ" ? 1 : 0;
+    const detailScale =
+      material.detailUvScale ??
+      (material.detailUv === 1 || material.detailUvProjection === "planarXZ" ? UNIT_UV : uvScale);
+    const detailOffset =
+      material.detailUvOffset ??
+      (material.detailUv === 1 || material.detailUvProjection === "planarXZ" ? ZERO_UV : uvOffset);
+    drawData[at + 52] = detailScale[0];
+    drawData[at + 53] = detailScale[1];
+    drawData[at + 54] = detailOffset[0];
+    drawData[at + 55] = detailOffset[1];
+    drawData.set(skin ?? IDENTITY_JOINTS, at + 56);
   }
 
   const renderer: Renderer3D = {

@@ -216,6 +216,32 @@ describe("loadGltf materials", () => {
     expect(material?.detailUv).toBeUndefined();
   });
 
+  it("reads an independently projected alpha-over detail map", async () => {
+    serve(
+      documentWith({
+        materials: [
+          {
+            extras: {
+              detailBlend: "over",
+              detailColorScale: 2,
+              detailUvProjection: "planarXZ",
+              detailUvScale: [1 / 256, 1 / 256],
+              detailUvOffset: [40 / 256, -7 / 256],
+            },
+          },
+        ],
+      }),
+    );
+
+    const { scene } = await loadGltf("assets/level.gltf");
+    const material = scene.nodes.find((n) => n.mesh)?.material;
+    expect(material?.detailBlend).toBe("over");
+    expect(material?.detailColorScale).toBe(2);
+    expect(material?.detailUvProjection).toBe("planarXZ");
+    expect(material?.detailUvScale).toEqual([1 / 256, 1 / 256]);
+    expect(material?.detailUvOffset).toEqual([40 / 256, -7 / 256]);
+  });
+
   it("turns a KHR_texture_transform scale into uv tiling and enables repeat", async () => {
     stubDecoder();
     serve(

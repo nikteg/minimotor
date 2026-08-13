@@ -185,10 +185,27 @@ export interface Material {
   /** How much of the overlay to mix in, 0..1. Default 0, which is off — a
    *  detail map with no strength costs a sample and changes nothing. */
   detailStrength?: number;
+  /** How the secondary map combines with the surface. `overlay` is the
+   * contrast-preserving detail default; `over` uses the map's alpha to paint
+   * its RGB over the base, which is useful for a live decal canvas. */
+  detailBlend?: "overlay" | "over";
+  /** RGB multiplier for an alpha-over secondary map. Default 1. Kept separate
+   * from `detailStrength`, which weights the map's alpha rather than its light. */
+  detailColorScale?: number;
   /** Which uv set the detail map reads: 0 (the default) is the mesh's `uvs`,
    *  1 is its `uvs1`. A mesh with no `uvs1` gets zeros, which samples one
    *  texel of the map across the whole surface. */
   detailUv?: 0 | 1;
+  /** Generate the secondary map's uvs from world XZ instead of the mesh. This
+   * is deliberately independent of `uvProjection`, so a projected live decal
+   * does not disturb an albedo or normal map's authored unwrap. */
+  detailUvProjection?: "mesh" | "planarXZ";
+  /** Secondary-map uv scale. With no value, uv0 inherits `uvScale`, while uv1
+   * and planar projection use `[1, 1]`. */
+  detailUvScale?: readonly [number, number];
+  /** Secondary-map uv offset. With no value, uv0 inherits `uvOffset`, while
+   * uv1 and planar projection use `[0, 0]`. */
+  detailUvOffset?: readonly [number, number];
   /** Multiply uvs by this before sampling — how a small detail texture tiles
    *  across a large surface. Default `[1, 1]`. */
   uvScale?: readonly [number, number];

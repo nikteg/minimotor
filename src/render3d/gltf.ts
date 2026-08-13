@@ -55,6 +55,11 @@ interface GltfMaterial {
     specular?: number;
     detailTexture?: GltfTextureRef;
     detailStrength?: number;
+    detailBlend?: string;
+    detailColorScale?: number;
+    detailUvProjection?: string;
+    detailUvScale?: number[];
+    detailUvOffset?: number[];
   };
 }
 
@@ -288,6 +293,22 @@ function materialFor(
     material.detailMap = detailImage;
     material.detailStrength = source?.extras?.detailStrength ?? 0;
     if (detail?.texCoord === 1) material.detailUv = 1;
+  }
+  const detailScale = source?.extras?.detailUvScale;
+  const detailOffset = source?.extras?.detailUvOffset;
+  const detailColorScale = source?.extras?.detailColorScale;
+  if (source?.extras?.detailBlend === "over") material.detailBlend = "over";
+  if (typeof detailColorScale === "number" && Number.isFinite(detailColorScale)) {
+    material.detailColorScale = detailColorScale;
+  }
+  if (source?.extras?.detailUvProjection === "planarXZ") {
+    material.detailUvProjection = "planarXZ";
+  }
+  if (detailScale?.length === 2 && detailScale.every((value) => Number.isFinite(value))) {
+    material.detailUvScale = [detailScale[0]!, detailScale[1]!];
+  }
+  if (detailOffset?.length === 2 && detailOffset.every((value) => Number.isFinite(value))) {
+    material.detailUvOffset = [detailOffset[0]!, detailOffset[1]!];
   }
   if (baseImage || normalImage || detailImage) {
     // A glTF texture is photographic by default; the engine's nearest-neighbour

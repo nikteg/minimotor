@@ -129,6 +129,9 @@ uniform float uNormalScale;
 uniform sampler2D uDetailMap;
 uniform float uDetailStrength; // 0 disables the sample entirely
 uniform bool uDetailUv1;
+uniform bool uDetailPlanar;
+uniform float uDetailOver; // 0 overlay; otherwise alpha-over RGB multiplier
+uniform vec4 uDetailUvTransform;
 uniform vec3 uRimAlpha; // bias, scale, power — see Material.rimAlpha
 uniform vec4 uUvTransform;
 uniform int uFogMode; // -1 off, 0 linear, 1 exp, 2 exp squared, 3 layered
@@ -283,8 +286,12 @@ void main() {
   }
   // While base is still in display space — see Material.detailMap.
   if (uDetailStrength > 0.0) {
-    vec3 pattern = texture(uDetailMap, uDetailUv1 ? vUv1 : uv).rgb;
-    base.rgb = mix(base.rgb, blendOverlay(pattern, base.rgb), uDetailStrength);
+    vec2 detailSource = uDetailPlanar ? vWorldPos.xz : (uDetailUv1 ? vUv1 : vUv);
+    vec2 detailUv = detailSource * uDetailUvTransform.xy + uDetailUvTransform.zw;
+    vec4 pattern = texture(uDetailMap, detailUv);
+    base.rgb = uDetailOver > 0.0
+      ? mix(base.rgb, pattern.rgb * uDetailOver, pattern.a * uDetailStrength)
+      : mix(base.rgb, blendOverlay(pattern.rgb, base.rgb), uDetailStrength);
   }
   // Ahead of the cutoff and of the unlit branch, because the ramp is what
   // decides the final alpha: a bias of zero means the face-on fragments are
@@ -414,6 +421,9 @@ interface Uniforms {
   detailMap: WebGLUniformLocation | null;
   detailStrength: WebGLUniformLocation | null;
   detailUv1: WebGLUniformLocation | null;
+  detailPlanar: WebGLUniformLocation | null;
+  detailOver: WebGLUniformLocation | null;
+  detailUvTransform: WebGLUniformLocation | null;
   rimAlpha: WebGLUniformLocation | null;
   uvTransform: WebGLUniformLocation | null;
   fogMode: WebGLUniformLocation | null;
@@ -527,6 +537,9 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     detailMap: gl.getUniformLocation(program, "uDetailMap"),
     detailStrength: gl.getUniformLocation(program, "uDetailStrength"),
     detailUv1: gl.getUniformLocation(program, "uDetailUv1"),
+    detailPlanar: gl.getUniformLocation(program, "uDetailPlanar"),
+    detailOver: gl.getUniformLocation(program, "uDetailOver"),
+    detailUvTransform: gl.getUniformLocation(program, "uDetailUvTransform"),
     rimAlpha: gl.getUniformLocation(program, "uRimAlpha"),
     uvTransform: gl.getUniformLocation(program, "uUvTransform"),
     fogMode: gl.getUniformLocation(program, "uFogMode"),
@@ -756,6 +769,26 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
       );
       gl!.uniform1i(u.detailMap, 2);
       gl!.uniform1i(u.detailUv1, material.detailUv === 1 ? 1 : 0);
+      gl!.uniform1i(u.detailPlanar, material.detailUvProjection === "planarXZ" ? 1 : 0);
+      gl!.uniform1f(
+        u.detailOver,
+        material.detailBlend === "over" ? (material.detailColorScale ?? 1) : 0,
+      );
+      const detailScale =
+        material.detailUvScale ??
+        (material.detailUv === 1 || material.detailUvProjection === "planarXZ" ? UNIT_UV : uvScale);
+      const detailOffset =
+        material.detailUvOffset ??
+        (material.detailUv === 1 || material.detailUvProjection === "planarXZ"
+          ? ZERO_UV
+          : uvOffset);
+      gl!.uniform4f(
+        u.detailUvTransform,
+        detailScale[0],
+        detailScale[1],
+        detailOffset[0],
+        detailOffset[1],
+      );
     }
     gl!.uniform1f(u.detailStrength, detailStrength);
 
