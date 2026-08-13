@@ -96,8 +96,43 @@ export interface EmitterOptions {
   /** Units per second along `direction` at birth. */
   speed?: Range;
   /** Full extents of the box particles are born inside, centred on the node.
-   *  Omitted, they are all born at the origin. */
+   *  Omitted — and with no `circle` either — they are all born at the origin. */
   box?: { x: number; y: number; z: number };
+  /** Births each particle somewhere on a disc in the shape's local XY plane
+   *  and sends it straight out along its OWN radius, so the launch direction
+   *  differs per particle and `direction` says nothing. A splash, a shockwave
+   *  ring, an impact burst: the fan is the whole effect, and a shape that can
+   *  only agree on one direction turns it into a jet.
+   *
+   *  This is Cocos' `ShapeModule` Circle, read off the engine rather than
+   *  guessed (`cc.13039.js:52200-52206`, with `LH` at `:51042`): the angle is
+   *  uniform in `[0, arc)`, the distance from the centre is uniform in
+   *  `[radius * (1 - radiusThickness), radius]` — uniform in the RADIUS, not
+   *  in area, so a filled disc is denser towards its middle than a scatter of
+   *  points would be, and reproducing that is the difference between a puff
+   *  with a hot core and one with a hollow one — and then
+   *  `velocity = normalize(position)` scaled by `speed`. A particle born
+   *  exactly at the centre gets no direction at all and stays put, which is
+   *  what Cocos' `Vec3.normalize` does with a zero vector.
+   *
+   *  `shapeRotation` turns the disc AND every launch direction with it, which
+   *  is how an authored ring gets laid flat in XZ by a quarter turn about X.
+   *  `offset` moves it off the node origin.
+   *
+   *  A shape is one shape: `_shapeType` is a single value, and where both are
+   *  passed the circle is what gets emitted and `box` and `direction` are
+   *  ignored. */
+  circle?: {
+    /** Distance from the centre to the rim, after any scale is folded in. */
+    radius: number;
+    /** How much of the disc is filled inwards from the rim: 0 births every
+     *  particle exactly on the rim, 1 fills it to the centre. Cocos' default,
+     *  and this one, is 1. */
+    radiusThickness?: number;
+    /** How much of the turn is used, in RADIANS, measured from +X towards +Y.
+     *  Default is a full turn. */
+    arc?: number;
+  };
   /** Offset of the emission shape from the node origin. */
   offset?: { x: number; y: number; z: number };
   /** Euler rotation of the emission shape, in radians. It turns both box
@@ -106,7 +141,10 @@ export interface EmitterOptions {
   /** Which way particles set off, in local space, normalized on the way in.
    *  Default is +Z. Other engines' box emitters do not agree on the sign —
    *  Cocos', for one, sets off down −Z — so an emitter ported from authored
-   *  data should pass this rather than rely on the default. */
+   *  data should pass this rather than rely on the default.
+   *
+   *  One direction for the whole emitter, so a `circle` overrides it entirely
+   *  rather than combining with it. */
   direction?: { x: number; y: number; z: number };
   /** Particle size, sampled once at birth. `z` is used by mesh particles and
    * defaults to `x`; billboards use x/y. */
@@ -263,6 +301,13 @@ export function createEmitter(opts: EmitterOptions): Emitter {
   const offset = opts.offset ?? { x: 0, y: 0, z: 0 };
   const turned = { x: 0, y: 0, z: 0 };
 
+  // Cocos' own defaults for the two that are usually left alone
+  // (`cc.13039.js:52496-52526`): a solid disc through a full turn.
+  const circle = opts.circle;
+  const circleRadius = circle?.radius ?? 0;
+  const circleInner = circleRadius * (1 - (circle?.radiusThickness ?? 1));
+  const circleArc = circle?.arc ?? Math.PI * 2;
+
   const direction = { x: 0, y: 0, z: 1 };
   if (opts.direction) {
     const d = opts.direction;
@@ -352,17 +397,52 @@ export function createEmitter(opts: EmitterOptions): Emitter {
     // Full. Dropping the particle rather than recycling the oldest keeps a
     // burst from cutting live ones short, which reads as flicker.
     if (slot < 0) return;
-    const bx = opts.box ? (random() - 0.5) * opts.box.x : 0;
-    const by = opts.box ? (random() - 0.5) * opts.box.y : 0;
-    const bz = opts.box ? (random() - 0.5) * opts.box.z : 0;
+    let bx = 0;
+    let by = 0;
+    let bz = 0;
+    // The distance the circle put the particle from its centre, which is also
+    // what turns its position back into its outward direction below. Zero for
+    // every other shape, and those use the emitter's one `direction` instead.
+    let radial = 0;
+    if (circle) {
+      // Angle first, then distance. Cocos draws them in that order
+      // (`generateArcAngle` is evaluated into the argument list before `LH`
+      // lerps the radius), and a caller that passes a seeded `random` to
+      // reproduce a burst gets a different disc if they are swapped.
+      const angle = circleArc * random();
+      radial = circleInner + (circleRadius - circleInner) * random();
+      bx = Math.cos(angle) * radial;
+      by = Math.sin(angle) * radial;
+    } else if (opts.box) {
+      bx = (random() - 0.5) * opts.box.x;
+      by = (random() - 0.5) * opts.box.y;
+      bz = (random() - 0.5) * opts.box.z;
+    }
     rotate(bx, by, bz, shapeRotation.x, shapeRotation.y, shapeRotation.z, turned);
     px[slot] = turned.x + offset.x;
     py[slot] = turned.y + offset.y;
     pz[slot] = turned.z + offset.z;
     const launch = pick(speed, random);
-    vx[slot] = direction.x * launch;
-    vy[slot] = direction.y * launch;
-    vz[slot] = direction.z * launch;
+    if (circle) {
+      // `velocity = normalize(position) * speed`, with the shape rotation
+      // applied to it exactly as it was to the position — Cocos rotates both
+      // by the same quat at the end of `emit`. A Euler rotation preserves
+      // length, so the already-rotated offset divided by the radius it was
+      // born at IS the rotated unit radius: no second rotate, and no second
+      // normalize to disagree with the first about the last bit.
+      //
+      // Dead centre there is no radius to point along and the particle does
+      // not move, which is what Cocos' `Vec3.normalize` returns for a zero
+      // vector, and it keeps `radius: 0` from writing NaN into the whole mesh.
+      const outward = radial > 0 ? launch / radial : 0;
+      vx[slot] = turned.x * outward;
+      vy[slot] = turned.y * outward;
+      vz[slot] = turned.z * outward;
+    } else {
+      vx[slot] = direction.x * launch;
+      vy[slot] = direction.y * launch;
+      vz[slot] = direction.z * launch;
+    }
     age[slot] = 0;
     life[slot] = Math.max(1e-4, pick(lifetime, random));
     scaleX[slot] = pick(sizeX, random);

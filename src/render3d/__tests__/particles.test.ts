@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from "vitest";
 import { Mat4 } from "@src/math/mat4.js";
-import { createEmitter, localViewer } from "@src/render3d/particles.js";
+import { createEmitter, localViewer, type Emitter } from "@src/render3d/particles.js";
 
 /** A repeatable stand-in for `Math.random`, so a test can say what a particle
  * was born with. Always dead centre: a box spawn lands at the origin and a
@@ -386,6 +386,229 @@ describe("the mesh it writes", () => {
     expect(() =>
       createEmitter({ rate: 1, lifetime: 1, mode: "mesh", size: { x: 1, y: 1 } }),
     ).toThrow(/non-empty mesh/);
+  });
+});
+
+describe("the circle emission shape", () => {
+  /** A `random` that walks a fixed list and wraps, because "dead centre" says
+   *  nothing useful about a disc — it puts every particle at the same angle.
+   *
+   *  A circle spawn draws exactly twice and in this order: the angle around
+   *  the arc, then how far out from the centre. Everything else these emitters
+   *  pass is a constant, and `pick` only draws for a range, so the list reads
+   *  as one pair per particle. */
+  const sequence = (values: readonly number[]): (() => number) => {
+    let at = 0;
+    return () => values[at++ % values.length];
+  };
+
+  /** One burst of `count` zero-size particles, so each quad collapses onto the
+   *  particle itself and the mesh reads as a list of spawn points. */
+  const disc = (
+    count: number,
+    circle: NonNullable<Parameters<typeof createEmitter>[0]["circle"]>,
+    rest: Partial<Parameters<typeof createEmitter>[0]> = {},
+  ): Emitter =>
+    createEmitter({
+      rate: 0,
+      lifetime: 10,
+      bursts: [{ count }],
+      circle,
+      size: { x: 0, y: 0 },
+      ...rest,
+    });
+
+  const pointsOf = (emitter: Emitter, count: number): number[][] =>
+    Array.from({ length: count }, (_, at) => quadOf(emitter.mesh, at)[0]);
+
+  /** Where each particle is going, MEASURED rather than asked for. Velocity is
+   *  not on the public surface, and everything that depends on it — how long a
+   *  stretched card is drawn, where a spark has got to — only ever sees it as
+   *  displacement over time. Gravity is off in these, so one step is enough. */
+  const velocitiesOf = (emitter: Emitter, count: number, dt: number): number[][] => {
+    const before = pointsOf(emitter, count);
+    emitter.update(dt, VIEW);
+    return pointsOf(emitter, count).map((after, at) =>
+      after.map((value, axis) => (value - before[at][axis]) / dt),
+    );
+  };
+
+  const distanceOf = ([x, y, z]: number[]): number => Math.hypot(x, y, z);
+
+  /** Readable places, and `+ 0` to fold −0 back into 0: `sin` of three
+   *  quarters of a turn lands a hair BELOW zero, and `toEqual` tells the two
+   *  apart even though nothing downstream can. */
+  const round = (value: number): number => Math.round(value * 1e6) / 1e6 + 0;
+
+  it("births on the rim at radiusThickness 0 and fires each particle along its own radius", () => {
+    // The wall hit: `radius 0.1`, `radiusThickness 0`, `startSpeed 15`. The
+    // outward fan IS the effect, and one direction for the whole emitter turns
+    // this splash into a jet.
+    const emitter = disc(
+      4,
+      { radius: 2, radiusThickness: 0 },
+      { speed: 3, random: sequence([0, 0, 0.25, 0, 0.5, 0, 0.75, 0]) },
+    );
+    emitter.update(1 / 60, VIEW);
+    expect(emitter.alive).toBe(4);
+    // A quarter of the turn each, from +X towards +Y, all of them on the rim.
+    const born = pointsOf(emitter, 4);
+    for (const [, , z] of born) expect(z).toBeCloseTo(0, 6);
+    expect(born.map(([x]) => round(x))).toEqual([2, 0, -2, 0]);
+    expect(born.map(([, y]) => round(y))).toEqual([0, 2, 0, -2]);
+
+    const going = velocitiesOf(emitter, 4, 0.5);
+    for (let at = 0; at < 4; at++) {
+      // `velocity = normalize(position) * speed`: same way as the radius it was
+      // born on, and the speed the emitter was given, not the radius.
+      expect(distanceOf(going[at])).toBeCloseTo(3, 5);
+      for (let axis = 0; axis < 3; axis++) {
+        expect(going[at][axis]).toBeCloseTo((born[at][axis] / 2) * 3, 5);
+      }
+    }
+  });
+
+  it("fills the disc inwards from the rim at radiusThickness 1", () => {
+    // Cocos lerps the distance itself between the inner and outer radius
+    // (`cc.13039.js:51042`), so the distances are uniform in the RADIUS rather
+    // than over the area — a filled disc is denser in the middle, which is
+    // what gives a puff a hot core instead of a hollow one.
+    const emitter = disc(3, { radius: 2 }, { random: sequence([0, 0, 0, 0.5, 0, 1]) });
+    emitter.update(1 / 60, VIEW);
+    expect(pointsOf(emitter, 3).map(distanceOf)).toEqual([0, 1, 2]);
+  });
+
+  it("leaves a hole in the middle for a radiusThickness between the two", () => {
+    const emitter = disc(
+      3,
+      { radius: 4, radiusThickness: 0.5 },
+      { random: sequence([0, 0, 0, 0.5, 0, 1]) },
+    );
+    emitter.update(1 / 60, VIEW);
+    // An annulus from `radius * (1 - radiusThickness)` out to `radius`.
+    expect(pointsOf(emitter, 3).map(distanceOf)).toEqual([2, 3, 4]);
+  });
+
+  it("keeps every particle inside the arc, measured from +X towards +Y", () => {
+    const emitter = disc(
+      3,
+      { radius: 1, radiusThickness: 0, arc: Math.PI / 2 },
+      { random: sequence([0, 0, 0.5, 0, 1, 0]) },
+    );
+    emitter.update(1 / 60, VIEW);
+    const angles = pointsOf(emitter, 3).map(([x, y]) => Math.atan2(y, x));
+    expect(angles[0]).toBeCloseTo(0, 6);
+    expect(angles[1]).toBeCloseTo(Math.PI / 4, 6);
+    expect(angles[2]).toBeCloseTo(Math.PI / 2, 6);
+  });
+
+  it("turns the disc AND every launch direction with shapeRotation", () => {
+    // The bumper impact's ring is authored in XY and laid flat by a quarter
+    // turn about X. Rotating the spawn points without the directions would
+    // draw a flat ring whose sparks all climb out of it.
+    const emitter = disc(
+      2,
+      { radius: 2, radiusThickness: 0 },
+      {
+        shapeRotation: { x: Math.PI / 2, y: 0, z: 0 },
+        speed: 4,
+        random: sequence([0, 0, 0.25, 0]),
+      },
+    );
+    emitter.update(1 / 60, VIEW);
+    const born = pointsOf(emitter, 2);
+    // The disc's own +Y has become world +Z, so the ring lies in XZ.
+    expect(born[0][0]).toBeCloseTo(2, 6);
+    expect(born[0][2]).toBeCloseTo(0, 6);
+    expect(born[1][0]).toBeCloseTo(0, 6);
+    expect(born[1][2]).toBeCloseTo(2, 6);
+    for (const [, y] of born) expect(y).toBeCloseTo(0, 6);
+
+    const going = velocitiesOf(emitter, 2, 0.5);
+    for (const [, y] of going) expect(y).toBeCloseTo(0, 5);
+    expect(going[0][0]).toBeCloseTo(4, 5);
+    expect(going[1][2]).toBeCloseTo(4, 5);
+  });
+
+  it("measures the outward direction from the disc's centre, not the node's", () => {
+    // `offset` translates the shape; it is not part of the radius. Normalizing
+    // the final position instead would send both of these the same way, which
+    // for a ring hung off to one side is every particle fleeing the origin.
+    const emitter = disc(
+      2,
+      { radius: 1, radiusThickness: 0 },
+      { offset: { x: 10, y: 0, z: 0 }, speed: 2, random: sequence([0, 0, 0.5, 0]) },
+    );
+    emitter.update(1 / 60, VIEW);
+    const born = pointsOf(emitter, 2);
+    expect(born[0][0]).toBeCloseTo(11, 6);
+    expect(born[1][0]).toBeCloseTo(9, 6);
+    const going = velocitiesOf(emitter, 2, 0.5);
+    expect(going[0][0]).toBeCloseTo(2, 5);
+    expect(going[1][0]).toBeCloseTo(-2, 5);
+  });
+
+  it("leaves a particle born dead centre still rather than pointing nowhere", () => {
+    // A zero radius has no direction to give, and Cocos' `Vec3.normalize`
+    // answers a zero vector with a zero vector. Dividing by the length instead
+    // would put NaN in the vertex buffer, which drops the whole batch — not
+    // one particle.
+    const emitter = disc(2, { radius: 0 }, { speed: 15, random: sequence([0, 0, 0.7, 0.9]) });
+    emitter.update(1 / 60, VIEW);
+    expect([...emitter.mesh.positions].every((value) => Number.isFinite(value))).toBe(true);
+    const going = velocitiesOf(emitter, 2, 0.5);
+    for (const velocity of going) {
+      for (const axis of velocity) expect(axis).toBe(0);
+    }
+  });
+
+  it("gives a stretched card its length from the particle's own velocity", () => {
+    // The reason this shape is not decoration. A stretched billboard draws
+    // along the velocity with its head on the particle, so on a ring every
+    // card points out of the ring — the bumper impact's spokes. With one
+    // shared direction they would all lie the same way and read as a comb.
+    const emitter = disc(
+      2,
+      { radius: 1, radiusThickness: 0 },
+      {
+        mode: "stretched" as const,
+        lengthScale: 4,
+        speed: 5,
+        size: { x: 0.2, y: 1 },
+        random: sequence([0, 0, 0.5, 0]),
+      },
+    );
+    emitter.update(1 / 60, VIEW);
+    const first = quadOf(emitter.mesh, 0).map(([x]) => x);
+    const second = quadOf(emitter.mesh, 1).map(([x]) => x);
+    // Born at x = 1 heading +X: the head stays on the particle and the four
+    // units of trail hang back the way it came.
+    expect(Math.max(...first)).toBeCloseTo(1, 5);
+    expect(Math.min(...first)).toBeCloseTo(-3, 5);
+    // And the one on the far side of the ring is the mirror of it.
+    expect(Math.min(...second)).toBeCloseTo(-1, 5);
+    expect(Math.max(...second)).toBeCloseTo(3, 5);
+  });
+
+  it("emits the circle rather than the box when a caller passes both", () => {
+    // `_shapeType` is one value, so an emitter is one shape. Combining them
+    // would be inventing a shape Cocos does not have.
+    const emitter = disc(
+      1,
+      { radius: 1, radiusThickness: 0 },
+      {
+        box: { x: 100, y: 100, z: 100 },
+        direction: { x: 0, y: 0, z: -1 },
+        speed: 7,
+        random: sequence([0, 0]),
+      },
+    );
+    emitter.update(1 / 60, VIEW);
+    // Exactly on the rim, so the box drew nothing and moved nothing.
+    expect(pointsOf(emitter, 1)[0].map(round)).toEqual([1, 0, 0]);
+    const [going] = velocitiesOf(emitter, 1, 0.5);
+    expect(going[0]).toBeCloseTo(7, 5);
+    expect(going[2]).toBeCloseTo(0, 5);
   });
 });
 
