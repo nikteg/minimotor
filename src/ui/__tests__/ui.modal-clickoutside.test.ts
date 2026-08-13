@@ -166,6 +166,34 @@ describe("modal onClickOutside", () => {
     expect(outside).toBe(0);
   });
 
+  it("ignores the release on the first frame of a REOPEN too", () => {
+    // The grace on the opening click used to be "is there a cache entry for
+    // this modal", and a swept entry outlives its widget by ~10 seconds — so a
+    // modal closed and reopened inside that window skipped its own grace and
+    // the click that reopened it dismissed it on the spot. From the outside the
+    // button simply stopped working after the first use.
+    releaseAt(20, 20);
+    expect(outside).toBe(1);
+
+    // Closed: the app stops drawing it. Well under the stale window, so the
+    // entry is certainly still there.
+    fx.beginFrame();
+    fx.endFrame();
+
+    // Reopened by a click that, like any button outside the dialog, releases
+    // on the backdrop.
+    fx.pointer.x = 20;
+    fx.pointer.y = 20;
+    fx.pointer.frameReleased = true;
+    frame();
+    expect(outside, "the click that reopened it must not also close it").toBe(1);
+
+    // And the grace really is one frame rather than a licence: the next frame
+    // with a release outside closes it as usual.
+    frame();
+    expect(outside).toBe(2);
+  });
+
   it("does nothing when no handler is given", () => {
     frame({ onClickOutside: false });
     frame({ onClickOutside: false });

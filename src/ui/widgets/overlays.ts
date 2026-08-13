@@ -20,6 +20,7 @@ import {
   theme,
   uiCtx,
   uiFont,
+  uiFrameTick,
   uiToScreen,
 } from "@src/ui/core/index.js";
 import { anchorViewport, fitAnchored } from "@src/ui/core/index.js";
@@ -275,10 +276,19 @@ export function modal<R>(
   return rect;
 }
 
-// Whether each modal was up LAST frame. The release that OPENS a modal lands
+// The frame each modal was last drawn on. The release that OPENS a modal lands
 // on the backdrop of the modal it just opened, and would close it again on the
-// same click. Swept, so a modal that stops being drawn drops out by itself.
-const modalWasOpen = sweptCache<boolean>();
+// same click — so the first frame of a modal never dismisses it.
+//
+// The FRAME and not a boolean, which is what this used to hold. A swept entry
+// outlives its widget by `STALE_FRAMES`, about ten seconds, because that is
+// what makes the cache a cache; so "is there an entry" answered "was this
+// modal open at some point in the last ten seconds" and a modal closed and
+// reopened inside that window skipped its own first-frame grace. The click
+// that reopened it then dismissed it immediately, and it looked like the
+// button had stopped working. Found in a game whose settings modal could be
+// opened exactly once.
+const modalLastDrawn = sweptCache<number>();
 
 function clickAway(
   opts: ModalOptions,
@@ -286,8 +296,9 @@ function clickAway(
   dialog: { x: number; y: number; w: number; h: number } | null,
 ): void {
   if (!opts.onClickOutside) return;
-  const was = modalWasOpen.get(id) ?? false;
-  modalWasOpen.set(id, true);
+  const tick = uiFrameTick();
+  const was = modalLastDrawn.get(id) === tick - 1;
+  modalLastDrawn.set(id, tick);
   if (!was || !dialog) return;
   // Raw pointer: the modal IS the overlay, so `uiPointer` is dead everywhere
   // outside the dialog — which is precisely the region being tested. The raw

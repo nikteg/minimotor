@@ -40,6 +40,18 @@ export interface SweptCache<V> {
   clear(): void;
 }
 
+/** The current app's frame counter, as the sweeper bumps it.
+ *
+ *  For widgets whose state is "was I drawn on the PREVIOUS frame" rather than
+ *  "have I been drawn lately". A `sweptCache` entry survives `STALE_FRAMES`
+ *  after its widget stops being drawn — that is what makes it a cache and not
+ *  a leak — so a bare presence check answers "within the last ten seconds",
+ *  which is the wrong question for anything that toggles. Store this alongside
+ *  the value and compare. */
+export function uiFrameTick(): number {
+  return state().tick;
+}
+
 let nextCache = 0;
 
 /** Create a swept cache. Module-scope only — the callsite's slot is permanent. */
