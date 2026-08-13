@@ -1,8 +1,16 @@
 import { addNode, createScene, node, type Material, type Scene3D } from "./scene.js";
 import { createClip, type Clip, type Track } from "./animation.js";
+import { isGlb, parseGlb } from "./glb.js";
 import type { MeshData } from "./mesh.js";
 
-interface GltfDocument {
+/** The parts of the glTF document this loader reads.
+ *
+ * Exported because a caller that keeps a `GltfAsset` around — to read its own
+ * data out of the same file rather than fetch it twice — needs to be able to
+ * say what it is holding. It is not a complete glTF 2.0 typing and does not
+ * try to be: fields nothing here consumes are simply absent. */
+export interface GltfDocument {
+  asset?: { version?: string; generator?: string };
   scene?: number;
   scenes?: { nodes?: number[] }[];
   nodes?: GltfNode[];
@@ -16,6 +24,14 @@ interface GltfDocument {
   buffers?: { uri?: string; byteLength: number }[];
   bufferViews?: { buffer: number; byteOffset?: number; byteLength: number; byteStride?: number }[];
   accessors?: GltfAccessor[];
+  /** Root extension objects, untouched. This loader implements none of them at
+   * the root — it reads `KHR_texture_transform` where it appears on a texture
+   * reference and nothing else — and carries the rest so an application that
+   * owns an extension of its own can read it off the parsed document instead
+   * of fetching and parsing the file a second time. */
+  extensions?: Record<string, unknown>;
+  extensionsUsed?: string[];
+  extensionsRequired?: string[];
 }
 
 /** A glTF texture reference, plus the `KHR_texture_transform` scale and offset
@@ -66,7 +82,7 @@ interface GltfMaterial {
   };
 }
 
-interface GltfNode {
+export interface GltfNode {
   name?: string;
   mesh?: number;
   skin?: number;
@@ -74,19 +90,24 @@ interface GltfNode {
   translation?: number[];
   rotation?: number[];
   scale?: number[];
+  /** glTF's other way of writing a local transform. Declared so a caller can
+   * SEE one; this loader does not implement it and builds every node from
+   * translation/rotation/scale, so a document that uses `matrix` loads at the
+   * identity. Nothing this engine exports writes one. */
+  matrix?: number[];
   /** Whatever the exporter needed to say and glTF has no field for. Carried
    *  through untouched — see `LoadedGltf.extras`. */
   extras?: Record<string, unknown>;
 }
 
-interface GltfPrimitive {
+export interface GltfPrimitive {
   attributes: Record<string, number>;
   indices?: number;
   material?: number;
   mode?: number;
 }
 
-interface GltfAccessor {
+export interface GltfAccessor {
   bufferView?: number;
   byteOffset?: number;
   componentType: number;
@@ -114,6 +135,57 @@ export interface LoadedGltf {
   extras: Map<number, Record<string, unknown>>;
 }
 
+/** A glTF file, fetched and parsed, but not yet made into anything.
+ *
+ * The two halves of loading are genuinely separate jobs. Getting to this — the
+ * document and the bytes its accessors index into — is all a caller needs to
+ * read its own data out of a file; building a scene graph, decoding images and
+ * compiling animation is the other half, and an application that only wants
+ * the first should not have to pay for the second or fetch the file twice to
+ * avoid it. */
+export interface GltfAsset {
+  document: GltfDocument;
+  /** One entry per `document.buffers`, in order. A GLB's BIN chunk is buffer
+   * 0, matching the specification's rule that only the first buffer may omit
+   * its URI. */
+  buffers: ArrayBuffer[];
+  /** What relative URIs inside the document resolve against — the URL the
+   * asset itself came from. */
+  baseUrl: string;
+}
+
+/** Fetch and parse a glTF or GLB file, resolving its buffers.
+ *
+ * The container is decided by the first four bytes and not by the URL: a GLB
+ * served as `.gltf`, or from a blob or a URL with no filename at all, is still
+ * a GLB. */
+export async function loadGltfAsset(url: string): Promise<GltfAsset> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`glTF request failed (${response.status}): ${url}`);
+  return parseGltfAsset(await response.arrayBuffer(), url);
+}
+
+/** Parse glTF or GLB bytes that are already in hand.
+ *
+ * `url` is what relative buffer and image URIs resolve against, and what names
+ * the file in any error; bytes with no URL of their own can pass anything that
+ * locates their siblings. */
+export async function parseGltfAsset(bytes: ArrayBuffer, url: string): Promise<GltfAsset> {
+  const container = isGlb(bytes) ? parseGlb(bytes, url) : undefined;
+  const text = container ? container.json : new TextDecoder().decode(bytes);
+  let document: GltfDocument;
+  try {
+    document = JSON.parse(text) as GltfDocument;
+  } catch (error) {
+    throw new Error(`glTF JSON is not parseable: ${url} (${(error as Error).message})`);
+  }
+  if (typeof document !== "object" || document === null) {
+    throw new Error(`glTF document is not an object: ${url}`);
+  }
+  const buffers = await loadBuffers(document, url, container?.binary);
+  return { document, buffers, baseUrl: url };
+}
+
 /** Load the useful, renderer-facing part of a glTF 2.0 file: geometry,
  * hierarchy, skins, transform animation, materials and their base-colour and
  * normal textures.
@@ -121,10 +193,13 @@ export interface LoadedGltf {
  * An image that fails to decode is skipped rather than failing the load — a
  * missing texture should cost you a texture, not the whole scene. */
 export async function loadGltf(url: string): Promise<LoadedGltf> {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`glTF request failed (${response.status}): ${url}`);
-  const document = (await response.json()) as GltfDocument;
-  const buffers = await loadBuffers(document, url);
+  return instantiateGltf(await loadGltfAsset(url));
+}
+
+/** Build the render scene, materials, images and animation clips out of an
+ * asset that has already been fetched and parsed. */
+export async function instantiateGltf(asset: GltfAsset): Promise<LoadedGltf> {
+  const { document, buffers, baseUrl: url } = asset;
   const images = await loadImages(document, buffers, url);
   const scene = createScene({ background: [0, 0, 0, 0] });
   const nodes = document.nodes ?? [];
@@ -445,11 +520,26 @@ async function loadImages(
   );
 }
 
-async function loadBuffers(document: GltfDocument, url: string): Promise<ArrayBuffer[]> {
+/** Resolve every buffer the document declares.
+ *
+ * `binary` is a GLB's BIN chunk, and glTF gives it exactly one place to go:
+ * the first buffer, and only if that buffer has no URI. A later buffer without
+ * one is a malformed document rather than a second claim on the chunk. */
+async function loadBuffers(
+  document: GltfDocument,
+  url: string,
+  binary?: ArrayBuffer,
+): Promise<ArrayBuffer[]> {
   return Promise.all(
-    (document.buffers ?? []).map(async (buffer) => {
-      if (!buffer.uri)
-        throw new Error("Binary .glb buffers are not supported by the JSON loader yet.");
+    (document.buffers ?? []).map(async (buffer, index) => {
+      if (!buffer.uri) {
+        if (index === 0 && binary) return binary;
+        throw new Error(
+          index === 0
+            ? `glTF buffer 0 has no URI and the file carries no BIN chunk: ${url}`
+            : `glTF buffer ${index} has no URI; only buffer 0 may take the BIN chunk: ${url}`,
+        );
+      }
       if (buffer.uri.startsWith("data:")) return decodeDataUri(buffer.uri);
       const response = await fetch(resolveSibling(buffer.uri, url));
       if (!response.ok) throw new Error(`glTF buffer request failed (${response.status}).`);
@@ -469,6 +559,23 @@ function resolveSibling(uri: string, url: string): string {
     const directory = url.slice(0, url.lastIndexOf("/") + 1);
     return `${directory}${uri}`;
   }
+}
+
+/** Read an accessor out of a parsed asset as floats, de-interleaving a strided
+ * buffer view and un-normalising integer components on the way.
+ *
+ * The same reader the mesh path uses, exposed so an application holding a
+ * `GltfAsset` can get at data of its own — collision geometry, a spline, a
+ * baked lightmap's uvs — without a second implementation of glTF's component
+ * types drifting away from this one. */
+export function readGltfAccessor(asset: GltfAsset, index: number): Float32Array {
+  return readAccessor(asset.document, asset.buffers, index);
+}
+
+/** The same, for an accessor being used as a triangle index list: narrowed to
+ * the smallest integer array that holds it, exactly as `readPrimitive` does. */
+export function readGltfIndices(asset: GltfAsset, index: number): Uint16Array | Uint32Array {
+  return integerAccessor(asset.document, asset.buffers, index);
 }
 
 function readAccessor(document: GltfDocument, buffers: ArrayBuffer[], index: number): Float32Array {

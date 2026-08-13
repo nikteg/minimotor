@@ -48,6 +48,7 @@ export type { SceneLayer, SceneLayerOptions } from "./layer.js";
 export * from "./animation.js";
 export * from "./particles.js";
 export * from "./gltf.js";
+export { isGlb, parseGlb, type GlbContainer } from "./glb.js";
 export {
   createUiSurface,
   intersectQuad,
