@@ -458,7 +458,13 @@ export function textInput(opts: TextInputOptions): TextInputResult {
   const mine = hovered || proxied;
   // An I-beam over a text field reads "you can select here" (vs the hand a
   // button asks for). The engine resets it every frame.
-  if (mine) setCursor("text");
+  //
+  // The BOX only, not `mine`: a proxy rect is folded into the hit area so a
+  // press on it focuses this field, and that says nothing about what the
+  // pointer is standing on. Over a `UI.field` label there is no text to select
+  // and no caret to place, so the I-beam is a lie; the label asks for its own
+  // cursor in `field`, and it draws first, so this line would overrule it.
+  if (hovered) setCursor("text");
   // Focus + begin selecting on PRESS (native mousedown behavior — a press-then-
   // drag selects). A press outside a focused field commits + blurs it.
   if (mine && p.pressed && !opts.disabled) {

@@ -114,6 +114,8 @@ const downAt = (canvas: HTMLCanvasElement, x: number, y: number) =>
   canvas.dispatchEvent(new MouseEvent("pointerdown", { clientX: x, clientY: y }));
 const upAt = (x: number, y: number) =>
   window.dispatchEvent(new MouseEvent("pointerup", { clientX: x, clientY: y }));
+const moveTo = (x: number, y: number) =>
+  window.dispatchEvent(new MouseEvent("pointermove", { clientX: x, clientY: y }));
 
 const editor = () => document.querySelector("input");
 
@@ -220,6 +222,39 @@ describe("UI.field", () => {
     tick();
     expect(b).toBe("second");
     expect(a).toBe("");
+  });
+
+  // The proxy rect makes the label part of the field's hit area, and the field
+  // used to read that as "the pointer is over me" for the cursor too — so the
+  // label wore the box's I-beam, offering text to select where there is none.
+  it("the label wears the hand, the box wears the I-beam", () => {
+    const { canvas } = nameField();
+    tick();
+    moveTo(40, LABEL_Y);
+    tick();
+    expect(canvas.style.cursor).toBe("pointer");
+    moveTo(40, INPUT_Y);
+    tick();
+    expect(canvas.style.cursor).toBe("text");
+    moveTo(40, 300);
+    tick();
+    expect(canvas.style.cursor).toBe("");
+  });
+
+  it("a disabled field's label asks for no cursor at all", () => {
+    const { canvas } = build(() => {
+      field({ label: "Player name", id: "name", x: 20, y: 20, w: 180, disabled: true }, (id) =>
+        textInput({ id, value: "", disabled: true }),
+      );
+    });
+    tick();
+    moveTo(40, LABEL_Y);
+    tick();
+    expect(canvas.style.cursor).toBe("");
+    // …and neither does the box it names, which is disabled alongside it.
+    moveTo(40, INPUT_Y);
+    tick();
+    expect(canvas.style.cursor).toBe("");
   });
 
   it("a disabled field's label focuses nothing", () => {

@@ -14,6 +14,7 @@ import {
   lastWidgetRect,
   lineHeight,
   focusFromPointer,
+  hoverCursor,
   registerFocusProxy,
   requiredWidgetId,
   text,
@@ -85,9 +86,16 @@ export function field<R>(opts: FieldOptions, children: (id: string, layout: Flow
       // native pointerdown listener that opens the mobile keyboard in-gesture.
       registerFocusProxy(id, labelRect);
       const p = uiPointer();
-      // Keyboard focus moves here, the same way a direct press moves it, so a
-      // control with no proxy support of its own is still focused by its label.
-      if (p.pressed && pointInRect(p.x, p.y, labelRect)) focusFromPointer(ctx, id);
+      if (pointInRect(p.x, p.y, labelRect)) {
+        // The label is a thing you click, so it wears the hand — the same
+        // cursor as the button it behaves like. It is NOT the I-beam of the
+        // field it is bound to: there is no text here to select and no caret to
+        // place. `textInput` scopes its own I-beam to the box for that reason.
+        hoverCursor(true);
+        // Keyboard focus moves here, the same way a direct press moves it, so a
+        // control with no proxy support of its own is still focused by its label.
+        if (p.pressed) focusFromPointer(ctx, id);
+      }
     }
     return children(id, layout);
   });
