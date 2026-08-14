@@ -700,6 +700,148 @@ describe("sprite sheets", () => {
   });
 });
 
+/** Which way up a billboard sprite lands, measured on SCREEN.
+ *
+ * Every other geometry test here reads extents — the width, the height, which
+ * axis is flat — and an extent is blind to a half turn. That is the gap this
+ * closes, and the gap is not hypothetical: the quad's basis used to point
+ * camera-LEFT, which turned every billboard sprite a half circle about the
+ * view axis. Reported from a consumer as "the hearts are upside down"; nobody
+ * saw it on the sparks, the snow or the ring bursts, because a half turn of a
+ * radially symmetric sheet is the same sheet.
+ *
+ * So this projects the corners onto a screen basis built INDEPENDENTLY of the
+ * emitter — an ordinary look-at from the camera position — and asks where the
+ * texture's top-left texel came out. It is checked from four camera positions
+ * including one off-axis, because a single camera on an axis can be right for
+ * the wrong reason.
+ */
+describe("which way up a sprite lands", () => {
+  /** Screen right and up for a camera at `eye` looking at the origin, y-up.
+   *  Deliberately hand-rolled rather than taken from the emitter. */
+  function screenBasis(eye: [number, number, number]) {
+    const length = Math.hypot(...eye) || 1;
+    // Forward is towards the origin, so it is the negated eye.
+    const forward: [number, number, number] = [
+      -eye[0] / length,
+      -eye[1] / length,
+      -eye[2] / length,
+    ];
+    // `cross(worldUp, -forward)`, the x axis an ordinary look-at builds.
+    const right: [number, number, number] = [-forward[2], 0, forward[0]];
+    const rightLength = Math.hypot(right[0], right[2]) || 1;
+    right[0] /= rightLength;
+    right[2] /= rightLength;
+    const up: [number, number, number] = [
+      right[1] * forward[2] - right[2] * forward[1],
+      right[2] * forward[0] - right[0] * forward[2],
+      right[0] * forward[1] - right[1] * forward[0],
+    ];
+    return { right, up };
+  }
+
+  /** Each corner as `{ u, v, screenX, screenY }` for a camera at `eye`. */
+  function cornersOnScreen(eye: [number, number, number], turn = false) {
+    const emitter = createEmitter({
+      rate: 1000,
+      lifetime: 10,
+      capacity: 1,
+      size: { x: 2, y: 2 },
+      sheet: { columns: 4, rows: 4 },
+      random: middle,
+    });
+    emitter.update(1 / 60, { x: eye[0], y: eye[1], z: eye[2] });
+    const { right, up } = screenBasis(eye);
+    const mesh = emitter.mesh;
+    const out: { u: number; v: number; screenX: number; screenY: number }[] = [];
+    for (let corner = 0; corner < 4; corner++) {
+      const p = corner * 3;
+      const t = corner * 2;
+      const point = [mesh.positions[p], mesh.positions[p + 1], mesh.positions[p + 2]];
+      const screenX = point[0] * right[0] + point[1] * right[1] + point[2] * right[2];
+      const screenY = point[0] * up[0] + point[1] * up[1] + point[2] * up[2];
+      // The frozen control: a half turn about the view axis is exactly the old
+      // basis, and it must fail every assertion below.
+      out.push({
+        u: mesh.uvs[t],
+        v: mesh.uvs[t + 1],
+        screenX: turn ? -screenX : screenX,
+        screenY: turn ? -screenY : screenY,
+      });
+    }
+    return out;
+  }
+
+  const EYES: [number, number, number][] = [
+    [0, 0, 30],
+    [30, 0, 0],
+    [0, 0, -30],
+    [12, 9, 20],
+  ];
+
+  it("puts the texture's top-left texel at the top left of the screen", () => {
+    for (const eye of EYES) {
+      for (const corner of cornersOnScreen(eye)) {
+        // A 4x4 sheet on a fresh particle is cell (0, 0), so u and v are each
+        // either 0 (left/top of the cell) or 0.25 (right/bottom of it).
+        expect(corner.u === 0 || corner.u === 0.25).toBe(true);
+        expect(corner.v === 0 || corner.v === 0.25).toBe(true);
+        // Low u is screen-left; low v is the top of the texture, so it must be
+        // screen-UP. Both signs, from every camera.
+        expect(Math.sign(corner.screenX)).toBe(corner.u === 0 ? -1 : 1);
+        expect(Math.sign(corner.screenY)).toBe(corner.v === 0 ? 1 : -1);
+      }
+    }
+  });
+
+  it("fails the same check on a quad turned half a circle", () => {
+    // The control. Without this the test above would pass just as happily
+    // against a basis nobody had checked, which is how the half turn shipped.
+    let wrong = 0;
+    for (const eye of EYES) {
+      for (const corner of cornersOnScreen(eye, true)) {
+        if (Math.sign(corner.screenX) !== (corner.u === 0 ? -1 : 1)) wrong++;
+        if (Math.sign(corner.screenY) !== (corner.v === 0 ? 1 : -1)) wrong++;
+      }
+    }
+    // Four cameras, four corners, both axes.
+    expect(wrong).toBe(EYES.length * 4 * 2);
+  });
+
+  it("draws a vertical quad upright and the right way round", () => {
+    // `vertical` shares the horizontal axis with `billboard` but takes world up
+    // rather than deriving one, so the same mirrored axis did not turn it over
+    // — it drew every sprite back to front instead. Both halves are pinned:
+    // low v is world-UP, and low u is screen-LEFT.
+    for (const eye of EYES) {
+      const emitter = createEmitter({
+        rate: 1000,
+        lifetime: 10,
+        capacity: 1,
+        mode: "vertical",
+        size: { x: 2, y: 2 },
+        sheet: { columns: 4, rows: 4 },
+        random: middle,
+      });
+      emitter.update(1 / 60, { x: eye[0], y: eye[1], z: eye[2] });
+      const { right } = screenBasis(eye);
+      const mesh = emitter.mesh;
+      for (let corner = 0; corner < 4; corner++) {
+        const p = corner * 3;
+        const y = mesh.positions[p + 1];
+        const screenX =
+          mesh.positions[p] * right[0] +
+          mesh.positions[p + 1] * right[1] +
+          mesh.positions[p + 2] * right[2];
+        const u = mesh.uvs[corner * 2];
+        const v = mesh.uvs[corner * 2 + 1];
+        expect(Math.sign(y)).toBe(v === 0 ? 1 : -1);
+        expect(Math.sign(screenX)).toBe(u === 0 ? -1 : 1);
+      }
+    }
+  });
+});
+
 describe("localViewer", () => {
   it("undoes a node's translation", () => {
     const world = Mat4.fromTranslation(10, 0, 0);
