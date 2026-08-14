@@ -457,10 +457,27 @@ export function createEmitter(opts: EmitterOptions): Emitter {
     alive++;
   }
 
+  /** The slack the burst window is compared with, on BOTH ends. An emission
+   *  time accumulated one frame at a time never lands exactly on a multiple of
+   *  `duration`, so a cycle boundary has to be recognised from either side of
+   *  it or the burst that starts the cycle is lost. */
+  const BURST_EPSILON = 1e-9;
+
   function fireBursts(start: number, end: number, includeStart: boolean): void {
     if (bursts.length === 0) return;
     const firstCycle = looping && duration > 0 ? Math.max(0, Math.floor(start / duration)) : 0;
-    const lastCycle = looping && duration > 0 ? Math.max(0, Math.floor(end / duration)) : 0;
+    // `end + BURST_EPSILON`, matching the test below, and NOT `end`. The two
+    // used to disagree: a frame whose `end` fell a hair SHORT of the next
+    // boundary never considered that cycle at all, and the following frame —
+    // whose `start` is the same number — then rejected the event for being
+    // within `BURST_EPSILON` of its start. The window belonged to neither
+    // frame and the burst was dropped. With a regular timestep that repeats at
+    // every boundary until accumulated float error drifts the other way, which
+    // is minutes of a looping effect emitting nothing: MEASURED at a fixed
+    // 1/60 on a `duration: 1.5`, `lifetime: 1.5`, one-particle-per-cycle
+    // emitter, dark from 1.5 s to 9.0 s.
+    const lastCycle =
+      looping && duration > 0 ? Math.max(0, Math.floor((end + BURST_EPSILON) / duration)) : 0;
     for (let cycle = firstCycle; cycle <= lastCycle; cycle++) {
       if (!looping && cycle > 0) break;
       const origin = looping && duration > 0 ? cycle * duration : 0;
@@ -471,8 +488,10 @@ export function createEmitter(opts: EmitterOptions): Emitter {
           const local = Math.max(0, burst.time ?? 0) + repeat * interval;
           if (duration > 0 && local > duration) continue;
           const event = origin + local;
-          const afterStart = includeStart ? event >= start - 1e-9 : event > start + 1e-9;
-          if (!afterStart || event > end + 1e-9) continue;
+          const afterStart = includeStart
+            ? event >= start - BURST_EPSILON
+            : event > start + BURST_EPSILON;
+          if (!afterStart || event > end + BURST_EPSILON) continue;
           const probability = Math.max(0, Math.min(1, burst.probability ?? 1));
           if (probability <= 0 || (probability < 1 && random() > probability)) continue;
           const count = Math.max(0, Math.floor(pick(burst.count, random)));

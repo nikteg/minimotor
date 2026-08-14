@@ -122,6 +122,31 @@ describe("emitting", () => {
     expect(emitter.alive).toBe(2);
   });
 
+  it("keeps a once-per-cycle burst alight on a perfectly regular timestep", () => {
+    // The shape the Trash Golf tornado is authored in: one particle per cycle,
+    // living exactly as long as the cycle, so the emitter is never empty and
+    // never doubled. Stepped at an exact 1/60 the accumulated emission time
+    // lands a hair BELOW each 1.5 s boundary, which used to lose the burst on
+    // both sides of it — the frame that reached the boundary did not consider
+    // the new cycle and the next one rejected it as too close to its start.
+    // Dark from 1.5 s to 9.0 s, then well again once float drift changed sign.
+    const emitter = createEmitter({
+      rate: 0,
+      lifetime: 1.5,
+      duration: 1.5,
+      loop: true,
+      bursts: [{ time: 0, count: 1 }],
+      size: { x: 1, y: 1 },
+      random: middle,
+    });
+    let dark = 0;
+    for (let frame = 0; frame < 60 * 30; frame++) {
+      emitter.update(1 / 60, VIEW);
+      if (emitter.alive === 0) dark++;
+    }
+    expect(dark).toBe(0);
+  });
+
   it("does not repeat a burst on a non-looping emitter", () => {
     const emitter = createEmitter({
       rate: 0,
