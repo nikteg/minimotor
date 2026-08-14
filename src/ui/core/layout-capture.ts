@@ -12,7 +12,7 @@
 
 import { uiCtx } from "./context.js";
 import { currentUiScale, uiToScreen } from "./input.js";
-import { onFrameEnd, onReset } from "./lifecycle.js";
+import { ensureWired, onFrameEnd, onReset } from "./lifecycle.js";
 import { uiSlot } from "./state.js";
 
 /** One captured rect: a widget slot or a container box. */
@@ -47,6 +47,19 @@ export interface LayoutEntry {
   /** The auto-size cache key another container ALSO used this frame. Two
    *  containers sharing one key are reading each other's measurements. */
   sharedKey?: string;
+  /** The words in the box, for a widget that draws a label of its own.
+   *
+   *  Set by `UI.text`, which is the one widget whose entire output is a string
+   *  and which takes no `id` — so before this, a captured tree could say a
+   *  label occupied a rect but never what it said, and the only headless way to
+   *  ask was to scrape `fillText` off the context.
+   *
+   *  Crucially it is the COMBINED string: a label built from colour runs
+   *  reports the one line those runs concatenate to, exactly as `textWidth`
+   *  measures it and as the wrap is computed from. A reader of the tree — a
+   *  test, a debug overlay, or anything reading the screen out — sees the
+   *  sentence, never the fragments the paint happened to be cut into. */
+  text?: string;
 }
 
 // Entries recorded so far THIS frame, and the last completed frame's tree.
@@ -124,10 +137,24 @@ export function recordLayout(
   rect: { x: number; y: number; w: number; h: number },
   flags?: { clips?: boolean; pinned?: boolean },
 ): number {
+  const frame = st().frame;
+  // Registering the frame-end hook is not enough on its own: `appFrameEnd` —
+  // the thing that RUNS the hooks — is attached to the app by `ensureWired`,
+  // which is otherwise reached only through the input layer. A screen built out
+  // of nothing but `UI.text` touches no input, so as far as this module is
+  // concerned the frame never ends and `layoutTree()` stays empty however many
+  // frames the caller draws. Capture's whole contract is that entries become
+  // readable at the frame boundary, so it has to ask for one.
+  //
+  // Here rather than in `layoutCapture(true)` because that can be called with
+  // no app selected at all — several tests do — and `ensureWired` reads the
+  // current app. The first record of a frame is always inside one. It costs one
+  // length comparison per rect and one already-idempotent call per frame.
+  if (frame.length === 0) ensureWired();
   const tl = uiToScreen(rect.x, rect.y);
   const br = uiToScreen(rect.x + rect.w, rect.y + rect.h);
   return (
-    st().frame.push({
+    frame.push({
       kind,
       id: id === undefined ? undefined : String(id),
       rect: { x: rect.x, y: rect.y, w: rect.w, h: rect.h },
@@ -156,6 +183,20 @@ export function refreshLayoutRect(
   const br = uiToScreen(rect.x + rect.w, rect.y + rect.h);
   entry.rect = { x: rect.x, y: rect.y, w: rect.w, h: rect.h };
   entry.screenRect = { x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y };
+}
+
+/** Hang the label a widget just drew on the entry it just recorded.
+ *
+ *  Same "the MOST RECENT entry" idiom as `pushLayoutParent`: the caller records
+ *  its rect through `place` and annotates it on the next line, with nothing in
+ *  between that could record. Kept separate from `recordLayout` so the generic
+ *  `place` path — every widget in the kit — carries no text parameter it has
+ *  nothing to put in. */
+export function annotateLayoutText(str: string): void {
+  if (!layoutCaptureActive) return;
+  const frame = st().frame;
+  const entry = frame[frame.length - 1];
+  if (entry) entry.text = str;
 }
 
 /** Open the container that recorded the MOST RECENT entry: everything recorded

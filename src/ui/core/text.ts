@@ -2,6 +2,7 @@ import { uiCtx } from "./context.js";
 import { Flow, currentLayout, place } from "./flow.js";
 import { centeredSpans, resolveThemeTextPadding, theme, uiFont, type TextRun } from "./theme.js";
 import { currentUiTransform, uiHeight, uiWidth } from "./input.js";
+import { annotateLayoutText, layoutCaptureActive } from "./layout-capture.js";
 import { measureWidth } from "./measure.js";
 import { uiApp } from "./state.js";
 
@@ -382,6 +383,11 @@ export function text(content: TextContent, rawOpts?: TextOptions): void {
     autoH,
     "text",
   );
+  // The label's words, on the slot that was just recorded for it. `str` is the
+  // COMBINED string, so a run-coloured label reports the same sentence to the
+  // capture that it reported to `place` and that `textWidth` returns — the tree
+  // never sees the fragments the paint is cut into.
+  if (layoutCaptureActive) annotateLayoutText(str);
 
   // Inset within the slot (pad shorthand + per-axis overrides). Falls back to
   // the theme's textPad (default 0 → flush) so a global inset is one setTheme.

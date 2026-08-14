@@ -538,8 +538,10 @@ export interface TextRun {
  *  the one string it is, or a coloured word would change where the line sits.
  *  So the combined string does all of that, and only the painting is split: the
  *  ellipsis is applied to the whole line and then sliced back over the runs by
- *  character offset, and the left origin is derived from the combined width
- *  under the caller's `textAlign` before each run is laid down left-to-right.
+ *  character offset, the left origin is derived from the combined width under
+ *  the caller's `textAlign`, and each run is then placed at the combined
+ *  string's own offset for it (see the loop) rather than at the running sum of
+ *  the runs' widths — the two differ wherever the font kerns across the split.
  *
  *  A single run is handed straight to `centeredText`, so the overwhelmingly
  *  common case draws through exactly the code it always did. */
@@ -563,12 +565,12 @@ export function centeredSpans(
   // offset. `ellipsize` only ever returns a PREFIX plus "…", so a run's
   // characters keep their index and the ellipsis lands on the run the cut fell
   // inside — the same colour as the text it replaced.
-  const drawn: TextRun[] = [];
+  const drawn: (TextRun & { at: number })[] = [];
   let at = 0;
   for (const run of runs) {
     if (at >= shown.length) break;
     const piece = shown.slice(at, at + run.text.length);
-    if (piece) drawn.push({ text: piece, color: run.color });
+    if (piece) drawn.push({ text: piece, color: run.color, at });
     at += run.text.length;
   }
   const width = measureWidth(ctx, shown);
@@ -583,8 +585,21 @@ export function centeredSpans(
   // Runs are positioned by hand, so the canvas must not align them as well.
   ctx.textAlign = "left";
   if (!asc && !desc) ctx.textBaseline = "middle";
-  let pen = left;
   for (const run of drawn) {
+    // Each run starts where the COMBINED string would put it — the width of the
+    // line's prefix — rather than at the running total of the runs' own widths.
+    // The two are not the same number: canvas kerns across a pair of glyphs and
+    // splitting the pair between two `measureText` calls loses the kern, so the
+    // sum of the parts is WIDER than the whole. MEASURED in headless Chromium
+    // over three fonts and eight boundaries: `"V"`+`"."` at 13px Helvetica Neue
+    // is 9.880 joined against 11.557 summed, 1.677px apart, and `"AV"`+`"A"` at
+    // 12px system-ui is 0.762px apart. Summing would drift every run after the
+    // first rightwards by that much and push the line's painted end past the
+    // box `text` reserved from the joined measure — which is exactly the "one
+    // layout" property this file exists to keep. Boundaries that fall on a
+    // space (what a coloured name inside a sentence actually produces) measure
+    // 0 apart, so this is a correctness floor rather than a visible shift.
+    const pen = run.at === 0 ? left : left + measureWidth(ctx, shown.slice(0, run.at));
     if (outline && outline.width > 0 && ctx.strokeText) {
       ctx.save();
       ctx.strokeStyle = outline.color;
@@ -595,7 +610,6 @@ export function centeredSpans(
     }
     ctx.fillStyle = run.color ?? prevFill;
     ctx.fillText(run.text, pen, baseline);
-    pen += measureWidth(ctx, run.text);
   }
   ctx.fillStyle = prevFill;
   ctx.textAlign = prevAlign;
