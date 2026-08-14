@@ -274,14 +274,35 @@ export interface Material {
    * The mask still reads the MESH uv under `triplanar`, since a mask is a
    * planar-projection idea and nothing pairs the two. */
   detailUvProjection?: "mesh" | "planarXZ" | "triplanar";
-  /** Secondary-map uv scale. With no value, uv0 inherits `uvScale`, while uv1
-   * and either projection use `[1, 1]`. Under `triplanar` it is world units
-   * per tile on each plane's two axes — x/z for the ground plane, and the
-   * horizontal/vertical pair for the two upright ones. */
+  /** Secondary-map uv scale, in TILES PER UNIT of whatever the projection
+   * reads — so a larger number is a smaller pattern, and the world size of one
+   * tile is its reciprocal. With no value, uv0 inherits `uvScale`, while uv1
+   * and either projection use `[1, 1]`.
+   *
+   * Under `triplanar` it is a HORIZONTAL/VERTICAL pair rather than a per-plane
+   * pair: `x` scales both axes of the ground plane and the horizontal axis of
+   * the two upright ones, `y` scales only their vertical axis. A pattern with
+   * a distinct vertical rhythm — a slime run, a tide line, brickwork — is the
+   * ordinary case for a wall, and reading `y` as "the second axis of each
+   * plane" instead stretched the ground plane by the ratio of the two and made
+   * a wall's top cap read at a different size from its sides. */
   detailUvScale?: readonly [number, number];
   /** Secondary-map uv offset. With no value, uv0 inherits `uvOffset`, while
    * uv1 and either projection use `[0, 0]`. */
   detailUvOffset?: readonly [number, number];
+  /** Snap the world position to a grid of this many units before a PROJECTED
+   * secondary map samples it — `ceil(p / step) * step`, componentwise.
+   *
+   * A projection reads a continuous position, so it magnifies a pattern
+   * smoothly however crisp the sampler is: `pixelated` quantizes the texture's
+   * own texels, and at any real tiling those are far finer than the blocks a
+   * pixel-art surface wants. Quantizing the POSITION instead gives blocks of a
+   * chosen world size, aligned to the world rather than to the mesh or to the
+   * screen, and identical on every face a triplanar sample touches.
+   *
+   * Default 0, which is off. Ignored under `mesh`, which has no world position
+   * to snap. The mask is unaffected — it reads the mesh uv. */
+  detailWorldStep?: number;
   /** A second pattern that GATES the `over` secondary map, sampled from the
    *  same source uvs through `detailMaskUvScale`/`detailMaskUvOffset` — so it
    *  runs at its own frequency over the same projection rather than following
@@ -324,7 +345,16 @@ export interface Material {
    *  the world position straight down the Y axis instead, so one tiling
    *  texture runs continuously across a whole environment and no mesh in it
    *  has to be unwrapped — the standard trick for ground. The seams show on
-   *  vertical faces, which is why it is per-material rather than global. */
+   *  vertical faces, which is why it is per-material rather than global.
+   *
+   *  This moves the ALBEDO map only. `normalMap` keeps the mesh's own uv
+   *  whatever this says, because a tangent-space normal map is not a picture
+   *  that can be laid anywhere: its vectors are expressed in the frame the
+   *  unwrap builds, and the mesh's tangents go on describing that unwrap after
+   *  the projection has replaced the uv it was read at. Re-projecting one
+   *  makes its BUMP LAYOUT visible as if it were albedo — the tell is a
+   *  lilac-blue sheet's plate-and-strip pattern showing through a surface it
+   *  was never meant to draw on. */
   uvProjection?: "mesh" | "planarXZ";
   /** How `texture` combines with `color`.
    *
@@ -486,6 +516,17 @@ export function detailProjectionMode(material: Material): 0 | 1 | 2 {
   if (material.detailUvProjection === "planarXZ") return 1;
   if (material.detailUvProjection === "triplanar") return 2;
   return 0;
+}
+
+/** `Material.detailWorldStep` as the shaders see it: the grid the world
+ *  position snaps to before a projected secondary map reads it, and 0 for off.
+ *  Resolved here for the same reason as `detailProjectionMode` — and because a
+ *  step under the mesh's own uv is meaningless, so the mode gates it in ONE
+ *  place rather than in each backend's uniform block. */
+export function detailWorldStep(material: Material): number {
+  if (detailProjectionMode(material) === 0) return 0;
+  const step = material.detailWorldStep ?? 0;
+  return Number.isFinite(step) && step > 0 ? step : 0;
 }
 
 /** The fog mode as the shaders see it. Resolved here rather than in each

@@ -30,7 +30,13 @@
 
 import { Mat4 } from "@src/math/mat4.js";
 import { cameraPosition, viewProjection } from "./camera.js";
-import { detailProjectionMode, fogUniform, ghostMaterial, isVisible } from "./scene.js";
+import {
+  detailProjectionMode,
+  detailWorldStep,
+  fogUniform,
+  ghostMaterial,
+  isVisible,
+} from "./scene.js";
 import { triangleCount, vertexCount } from "./mesh.js";
 import type { Camera3D } from "./camera.js";
 import type { MeshData } from "./mesh.js";
@@ -130,6 +136,7 @@ uniform sampler2D uDetailMap;
 uniform float uDetailStrength; // 0 disables the sample entirely
 uniform bool uDetailUv1;
 uniform int uDetailProjection; // 0 mesh uv, 1 planar XZ, 2 triplanar
+uniform float uDetailWorldStep; // 0 off; see Material.detailWorldStep
 uniform float uDetailOver; // 0 overlay; otherwise alpha-over RGB multiplier
 uniform vec4 uDetailUvTransform;
 uniform bool uDetailPremultiplied;
@@ -282,6 +289,10 @@ vec3 applyNormalMap(vec3 n, vec2 uv) {
 void main() {
   vec2 source = uUvPlanar ? vWorldPos.xz : vUv;
   vec2 uv = source * uUvTransform.xy + uUvTransform.zw;
+  // The normal map keeps the MESH uv under a projection — see
+  // Material.uvProjection. Its vectors are expressed in the frame the unwrap
+  // builds, and vTangent still describes that unwrap.
+  vec2 normalUv = uUvPlanar ? vUv : uv;
   vec4 base = uBaseColor * vColor;
   if (uTextureBlend > 0) {
     vec4 texel = texture(uTexture, uv);
@@ -294,7 +305,12 @@ void main() {
   if (uDetailStrength > 0.0) {
     // Triplanar leaves this at the mesh uv, which is what the MASK below then
     // reads: a mask is a planar-projection idea and nothing pairs the two.
-    vec2 detailSource = uDetailProjection == 1 ? vWorldPos.xz : (uDetailUv1 ? vUv1 : vUv);
+    // Blocks of a chosen world size, for a projected pattern that has to read
+    // as pixel art — see Material.detailWorldStep. Off at zero.
+    vec3 detailPos = uDetailWorldStep > 0.0
+      ? ceil(vWorldPos / uDetailWorldStep) * uDetailWorldStep
+      : vWorldPos;
+    vec2 detailSource = uDetailProjection == 1 ? detailPos.xz : (uDetailUv1 ? vUv1 : vUv);
     vec2 detailUv = detailSource * uDetailUvTransform.xy + uDetailUvTransform.zw;
     vec4 pattern = texture(uDetailMap, detailUv);
     if (uDetailProjection == 2) {
@@ -305,11 +321,14 @@ void main() {
       // the blend band is a few degrees wide instead of the whole quadrant.
       vec3 axis = pow(abs(normalize(vNormal)), vec3(8.0));
       axis /= max(axis.x + axis.y + axis.z, 1e-6);
+      // Horizontal/vertical rather than per-plane: the ground plane takes the
+      // horizontal scale on BOTH axes, so one tile is the same square however
+      // a face is turned. See Material.detailUvScale.
       vec2 s = uDetailUvTransform.xy;
       vec2 o = uDetailUvTransform.zw;
-      pattern = texture(uDetailMap, vWorldPos.zy * s + o) * axis.x
-              + texture(uDetailMap, vWorldPos.xz * s + o) * axis.y
-              + texture(uDetailMap, vWorldPos.xy * s + o) * axis.z;
+      pattern = texture(uDetailMap, detailPos.zy * s + o) * axis.x
+              + texture(uDetailMap, detailPos.xz * s.xx + o) * axis.y
+              + texture(uDetailMap, detailPos.xy * s + o) * axis.z;
     }
     if (uDetailOver > 0.0) {
       // Both maps are scaled and linearized BEFORE they multiply, not after:
@@ -383,7 +402,7 @@ void main() {
   // material is lit rather than black on its reverse.
   vec3 n = normalize(vNormal);
   if (!gl_FrontFacing) n = -n;
-  if (uHasNormalMap) n = applyNormalMap(n, uv);
+  if (uHasNormalMap) n = applyNormalMap(n, normalUv);
   vec3 view = normalize(uCameraPos - vWorldPos);
 
   // A hemisphere when a ground colour was given, the plain fill otherwise.
@@ -478,6 +497,7 @@ interface Uniforms {
   detailStrength: WebGLUniformLocation | null;
   detailUv1: WebGLUniformLocation | null;
   detailProjection: WebGLUniformLocation | null;
+  detailWorldStep: WebGLUniformLocation | null;
   detailOver: WebGLUniformLocation | null;
   detailUvTransform: WebGLUniformLocation | null;
   detailPremultiplied: WebGLUniformLocation | null;
@@ -597,6 +617,7 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     detailStrength: gl.getUniformLocation(program, "uDetailStrength"),
     detailUv1: gl.getUniformLocation(program, "uDetailUv1"),
     detailProjection: gl.getUniformLocation(program, "uDetailProjection"),
+    detailWorldStep: gl.getUniformLocation(program, "uDetailWorldStep"),
     detailOver: gl.getUniformLocation(program, "uDetailOver"),
     detailUvTransform: gl.getUniformLocation(program, "uDetailUvTransform"),
     detailPremultiplied: gl.getUniformLocation(program, "uDetailPremultiplied"),
@@ -835,6 +856,7 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
       gl!.uniform1i(u.detailMap, 2);
       gl!.uniform1i(u.detailUv1, material.detailUv === 1 ? 1 : 0);
       gl!.uniform1i(u.detailProjection, detailProjectionMode(material));
+      gl!.uniform1f(u.detailWorldStep, detailWorldStep(material));
       gl!.uniform1f(
         u.detailOver,
         material.detailBlend === "over" ? (material.detailColorScale ?? 1) : 0,

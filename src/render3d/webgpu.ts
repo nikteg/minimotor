@@ -33,7 +33,13 @@
 
 import { Mat4 } from "@src/math/mat4.js";
 import { cameraPosition, viewProjection } from "./camera.js";
-import { detailProjectionMode, fogUniform, ghostMaterial, isVisible } from "./scene.js";
+import {
+  detailProjectionMode,
+  detailWorldStep,
+  fogUniform,
+  ghostMaterial,
+  isVisible,
+} from "./scene.js";
 import { triangleCount, vertexCount } from "./mesh.js";
 import type { Camera3D } from "./camera.js";
 import type { MeshData } from "./mesh.js";
@@ -104,7 +110,8 @@ struct DrawData {
   // mask — see Material.detailMaskUvScale.
   detailMaskTransform: vec4f,
   // x: the secondary map's RGB is premultiplied by its own alpha — see
-  // Material.detailPremultiplied. yzw spare.
+  // Material.detailPremultiplied. y: the world grid a projected secondary map
+  // snaps its position to, 0 for off — see Material.detailWorldStep. zw spare.
   detailFlags: vec4f,
   jointMatrices: array<mat4x4f, ${MAX_JOINTS}>,
 };
@@ -293,6 +300,10 @@ fn applyNormalMap(n : vec3f, worldPos : vec3f, uv : vec2f, scale : f32, shipped 
 fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec4f {
   let source = select(in.uv, in.worldPos.xz, draw.skinParams.w > 0.5);
   let uv = source * draw.uvTransform.xy + draw.uvTransform.zw;
+  // The normal map keeps the MESH uv under a projection — see
+  // Material.uvProjection. Its vectors are expressed in the frame the unwrap
+  // builds, and in.tangent still describes that unwrap.
+  let normalUv = select(uv, in.uv, draw.skinParams.w > 0.5);
   var base = draw.baseColor * in.color;
   if (draw.params.z > 0.5) {
     let texel = textureSample(tex, samp, uv);
@@ -307,8 +318,15 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
   // Overlay while base is still in display space; alpha-over in linear light —
   // see Material.detailMap for why the two belong on opposite sides of it.
   if (draw.detail.x > 0.0) {
+    // Blocks of a chosen world size, for a projected pattern that has to read
+    // as pixel art — see Material.detailWorldStep. Off at zero.
+    // select() evaluates both arms, so the divisor is clamped rather than
+    // guarded: an unset step would otherwise divide by zero and come back NaN.
+    let step = draw.detailFlags.y;
+    let snapped = ceil(in.worldPos / max(step, 1e-6)) * step;
+    let detailPos = select(in.worldPos, snapped, step > 0.0);
     var detailSource = select(in.uv, in.uv1, draw.detail.y > 0.5);
-    detailSource = select(detailSource, in.worldPos.xz, draw.detail.w > 0.5 && draw.detail.w < 1.5);
+    detailSource = select(detailSource, detailPos.xz, draw.detail.w > 0.5 && draw.detail.w < 1.5);
     let detailUv = detailSource * draw.detailUvTransform.xy + draw.detailUvTransform.zw;
     var pattern = textureSample(detailTex, samp, detailUv);
     if (draw.detail.w > 1.5) {
@@ -319,11 +337,14 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
       // the blend band is a few degrees wide instead of the whole quadrant.
       var axis = pow(abs(normalize(in.normal)), vec3f(8.0));
       axis /= max(axis.x + axis.y + axis.z, 1e-6);
+      // Horizontal/vertical rather than per-plane: the ground plane takes the
+      // horizontal scale on BOTH axes, so one tile is the same square however
+      // a face is turned. See Material.detailUvScale.
       let s = draw.detailUvTransform.xy;
       let o = draw.detailUvTransform.zw;
-      pattern = textureSample(detailTex, samp, in.worldPos.zy * s + o) * axis.x
-              + textureSample(detailTex, samp, in.worldPos.xz * s + o) * axis.y
-              + textureSample(detailTex, samp, in.worldPos.xy * s + o) * axis.z;
+      pattern = textureSample(detailTex, samp, detailPos.zy * s + o) * axis.x
+              + textureSample(detailTex, samp, detailPos.xz * s.xx + o) * axis.y
+              + textureSample(detailTex, samp, detailPos.xy * s + o) * axis.z;
     }
     if (draw.detail.z > 0.0) {
       let lit = frame.ambient.w > 0.5;
@@ -392,7 +413,7 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
   var n = normalize(in.normal);
   if (!frontFacing) { n = -n; }
   if (draw.skinParams.y > 0.5) {
-    n = applyNormalMap(n, in.worldPos, uv, draw.skinParams.z, in.tangent);
+    n = applyNormalMap(n, in.worldPos, normalUv, draw.skinParams.z, in.tangent);
   }
   let view = normalize(frame.cameraPos.xyz - in.worldPos);
 
@@ -1032,7 +1053,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     drawData[at + 58] = maskOffset[0];
     drawData[at + 59] = maskOffset[1];
     drawData[at + 60] = material.detailPremultiplied ? 1 : 0;
-    drawData[at + 61] = 0;
+    drawData[at + 61] = detailWorldStep(material);
     drawData[at + 62] = 0;
     drawData[at + 63] = 0;
     drawData.set(skin ?? IDENTITY_JOINTS, at + 64);
