@@ -250,15 +250,27 @@ export async function instantiateGltf(asset: GltfAsset): Promise<LoadedGltf> {
     return pivot;
   };
 
+  // The default scene is the whole of what gets built. glTF keeps `nodes` as a
+  // flat pool and a scene names the roots into it, so a document may carry
+  // layers no viewer should show: a collision hull, a spawn locator, an
+  // alternative dress for the same model. Instantiating the pool would read
+  // their accessors and DRAW them. A document with no `scenes` at all has
+  // expressed no opinion, and then everything in it is what it has.
   const selected = document.scenes?.[document.scene ?? 0]?.nodes ?? nodes.map((_, i) => i);
   for (const root of selected) if (!originalToPivot.has(root)) buildNode(root);
-  for (let i = 0; i < nodes.length; i++) if (!originalToPivot.has(i)) buildNode(i);
 
   for (const [originalIndex, source] of nodes.entries()) {
-    if (source.skin === undefined) continue;
+    if (source.skin === undefined || !originalToPivot.has(originalIndex)) continue;
     const skin = document.skins?.[source.skin];
     if (!skin) continue;
-    const joints = skin.joints.map((joint) => originalToPivot.get(joint)).filter(isNumber);
+    // A joint outside the scene still poses a mesh inside it, and
+    // `inverseBindMatrices` is positional — dropping joint 3 would shift every
+    // matrix after it onto the wrong bone. So a skin reaches its joints even
+    // where the scene graph does not, which is the one thing the pool pass
+    // above was ever needed for.
+    const joints = skin.joints
+      .map((joint) => originalToPivot.get(joint) ?? (nodes[joint] ? buildNode(joint) : undefined))
+      .filter(isNumber);
     const inverseBindMatrices =
       skin.inverseBindMatrices === undefined
         ? identityMatrices(joints.length)

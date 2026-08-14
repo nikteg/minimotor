@@ -450,3 +450,70 @@ describe("loadGltf node extras", () => {
     expect([...extras.keys()]).toEqual([platform]);
   });
 });
+
+describe("loadGltf scene selection", () => {
+  /** A drawn node and a node the scene does not name, each with geometry. */
+  function twoLayers(extra: Record<string, unknown> = {}): Record<string, unknown> {
+    return documentWith({
+      scenes: [{ nodes: [0] }],
+      nodes: [
+        { name: "deck", mesh: 0 },
+        { name: "collider", mesh: 0 },
+      ],
+      ...extra,
+    });
+  }
+
+  it("leaves a node outside the default scene out of the graph entirely", async () => {
+    serve(twoLayers());
+
+    const { scene } = await loadGltf("assets/level.gltf");
+    expect(scene.nodes.map((n) => n.name)).not.toContain("collider");
+    expect(scene.nodes.filter((n) => n.mesh)).toHaveLength(1);
+  });
+
+  it("honours document.scene rather than the first scene", async () => {
+    serve(twoLayers({ scene: 1, scenes: [{ nodes: [0] }, { nodes: [1] }] }));
+
+    const { scene } = await loadGltf("assets/level.gltf");
+    expect(scene.nodes.map((n) => n.name)).toContain("collider");
+    expect(scene.nodes.map((n) => n.name)).not.toContain("deck");
+  });
+
+  it("builds every node when the document names no scenes at all", async () => {
+    serve(twoLayers({ scene: undefined, scenes: undefined }));
+
+    const { scene } = await loadGltf("assets/level.gltf");
+    expect(scene.nodes.filter((n) => n.mesh)).toHaveLength(2);
+  });
+
+  it("reaches a skin's joints where the scene graph does not", async () => {
+    serve(
+      documentWith({
+        scenes: [{ nodes: [0] }],
+        nodes: [{ name: "body", mesh: 0, skin: 0 }, { name: "boneA" }, { name: "boneB" }],
+        skins: [{ joints: [1, 2] }],
+      }),
+    );
+
+    // `inverseBindMatrices` is positional, so a joint the scene misses must be
+    // built rather than filtered out — filtering shifts every later bone.
+    const { scene } = await loadGltf("assets/level.gltf");
+    const skin = scene.nodes.find((n) => n.mesh)?.skin;
+    expect(skin?.joints).toHaveLength(2);
+    expect(skin?.joints.map((joint) => scene.nodes[joint].name)).toEqual(["boneA", "boneB"]);
+  });
+
+  it("skips a skin whose own mesh the scene does not draw", async () => {
+    serve(
+      documentWith({
+        scenes: [{ nodes: [] }],
+        nodes: [{ name: "body", mesh: 0, skin: 0 }, { name: "boneA" }],
+        skins: [{ joints: [1] }],
+      }),
+    );
+
+    const { scene } = await loadGltf("assets/level.gltf");
+    expect(scene.nodes).toHaveLength(0);
+  });
+});
