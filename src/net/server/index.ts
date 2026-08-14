@@ -10,6 +10,7 @@ export * from "./signaling.js";
 export * from "./presence.js";
 export * from "./matchmaker.js";
 export type {
+  MessageCodec,
   Protocol,
   ProtocolShape,
   StateOf,

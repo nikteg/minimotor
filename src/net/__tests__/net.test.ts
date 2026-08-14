@@ -4,6 +4,7 @@ import {
   connectProtocol,
   createPeer,
   createInterpolator,
+  type MessageCodec,
   type Protocol,
   type Signal,
 } from "@src/net/index.js";
@@ -19,7 +20,7 @@ class MockWS {
   onmessage: ((e: MessageEvent) => void) | null = null;
   onerror: (() => void) | null = null;
   readyState = 0;
-  sent: (string | ArrayBuffer)[] = [];
+  sent: (string | ArrayBuffer | Uint8Array)[] = [];
   constructor(url: string) {
     this.url = url;
     MockWS.instances.push(this);
@@ -32,10 +33,10 @@ class MockWS {
     this.readyState = 3;
     this.onclose?.();
   }
-  _msg(data: ArrayBuffer) {
+  _msg(data: ArrayBufferLike) {
     this.onmessage?.(new MessageEvent("message", { data }));
   }
-  send(d: string | ArrayBuffer) {
+  send(d: string | ArrayBuffer | Uint8Array) {
     this.sent.push(d);
   }
   close() {
@@ -125,6 +126,22 @@ class MockPC {
   }
 }
 
+/** A protocol whose one message packs into three bytes, for the codec tests
+ *  below. `decode` refuses everything else — a heartbeat, another lane's frame,
+ *  and text — which is the contract `ProtocolConfig.codec` documents. */
+type Packed = Protocol<{
+  client: { type: "move"; x: number };
+  server: { type: "move"; x: number };
+}>;
+const PACKED_TAG = 0x5b;
+const packedCodec: MessageCodec<{ type: "move"; x: number }, { type: "move"; x: number }> = {
+  encode: (message) => new Uint8Array([PACKED_TAG, message.x & 0xff, message.x >>> 8]),
+  decode: (frame) =>
+    typeof frame === "string" || frame.length !== 3 || frame[0] !== PACKED_TAG
+      ? undefined
+      : { type: "move", x: frame[1] | (frame[2] << 8) },
+};
+
 beforeEach(() => {
   MockWS.instances = [];
   MockPC.instances = [];
@@ -196,6 +213,45 @@ describe("Net", () => {
       game.onMessage = received;
       ws.onmessage?.(new MessageEvent("message", { data: '{"type":"world","x":3}' }));
       expect(received).toHaveBeenCalledWith({ type: "world", x: 3 });
+    });
+
+    // ---------- ProtocolConfig.codec ----------
+    it("sends and receives a shared protocol through a codec", () => {
+      const game = connectProtocol<Packed>({ url: "ws://x", codec: packedCodec });
+      const ws = MockWS.instances[0];
+      ws._open();
+      game.send({ type: "move", x: 2 });
+      game.trySend({ type: "move", x: 5 });
+      // Nothing on this wire is text — which is the whole request.
+      expect(ws.sent.every((frame) => frame instanceof Uint8Array)).toBe(true);
+      expect(ws.sent.map((frame) => packedCodec.decode(frame as Uint8Array))).toEqual([
+        { type: "move", x: 2 },
+        { type: "move", x: 5 },
+      ]);
+      const received = vi.fn();
+      game.onMessage = received;
+      ws._msg((packedCodec.encode({ type: "move", x: 3 }) as Uint8Array).buffer);
+      expect(received).toHaveBeenCalledWith({ type: "move", x: 3 });
+    });
+
+    it("ignores the frames a codec refuses, heartbeat included", () => {
+      const game = connectProtocol<Packed>({ url: "ws://x", codec: packedCodec });
+      const ws = MockWS.instances[0];
+      ws._open();
+      const received = vi.fn();
+      game.onMessage = received;
+      ws._msg(new Uint8Array(0).buffer); // `heartbeatPayload`'s default
+      ws._msg(new Uint8Array([9, 9, 9]).buffer); // another lane
+      ws.onmessage?.(new MessageEvent("message", { data: '{"type":"move","x":1}' }));
+      expect(received).not.toHaveBeenCalled();
+    });
+
+    it("stays on JSON text frames when no codec is given", () => {
+      const game = connectProtocol<Packed>({ url: "ws://x" });
+      const ws = MockWS.instances[0];
+      ws._open();
+      game.send({ type: "move", x: 2 });
+      expect(ws.sent[0]).toBe('{"type":"move","x":2}');
     });
   });
 

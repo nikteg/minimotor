@@ -1,27 +1,27 @@
 import { describe, it, expect } from "vitest";
 import { serve, serveProtocol, type ServerSocket } from "@src/net/server/room.js";
 import { signaling } from "@src/net/server/signaling.js";
-import type { Protocol } from "@src/net/protocol.js";
+import type { MessageCodec, Protocol } from "@src/net/protocol.js";
 
 // A WebSocket-like socket + server test double.
 class MockSocket implements ServerSocket {
-  sent: string[] = [];
+  sent: (string | Uint8Array)[] = [];
   readyState = 1;
   handlers: Record<string, (...a: any[]) => void> = {};
-  send(data: string) {
+  send(data: string | Uint8Array) {
     this.sent.push(data);
   }
   on(event: string, handler: (...a: any[]) => void) {
     this.handlers[event] = handler;
   }
-  message(raw: string) {
+  message(raw: string | Uint8Array) {
     this.handlers.message?.(raw);
   }
   close() {
     this.handlers.close?.();
   }
   json() {
-    return this.sent.map((s) => JSON.parse(s));
+    return this.sent.map((s) => JSON.parse(String(s)));
   }
 }
 class MockServer {
@@ -102,6 +102,99 @@ describe("net/server room", () => {
     a.readyState = 3; // CLOSED
     room.broadcast({ n: 1 });
     expect(a.sent).toEqual([]);
+  });
+});
+
+// ---------- RoomOptions.codec ----------
+// A room given no codec must behave EXACTLY as it did before the option
+// existed, which is the half of this that has to keep being true; the packed
+// half only has to work.
+
+/** One tag byte plus one f32 — the smallest thing that is genuinely not text.
+ *  `decode` answers undefined for anything else, which is the contract the
+ *  heartbeat and a peer on an older build both rely on. */
+type Tick = { type: "tick"; n: number };
+const TAG = 0x7a;
+const tickCodec: MessageCodec<Tick, Tick> = {
+  encode(message) {
+    const bytes = new Uint8Array(5);
+    bytes[0] = TAG;
+    new DataView(bytes.buffer).setFloat32(1, message.n, true);
+    return bytes;
+  },
+  decode(frame) {
+    if (typeof frame === "string" || frame.length !== 5 || frame[0] !== TAG) return undefined;
+    const view = new DataView(frame.buffer, frame.byteOffset, frame.length);
+    return { type: "tick", n: view.getFloat32(1, true) };
+  },
+};
+
+describe("net/server room codec", () => {
+  it("stays on JSON when no codec is given", () => {
+    const srv = new MockServer();
+    const room = serve(srv);
+    const a = srv.connect();
+    room.broadcast({ hi: 1 });
+    expect(typeof a.sent[0]).toBe("string");
+    expect(a.json()).toEqual([{ hi: 1 }]);
+  });
+
+  it("encodes send, broadcast and relay through the codec", () => {
+    const srv = new MockServer();
+    const room = serve<Tick, Tick>(srv, { codec: tickCodec });
+    const a = srv.connect();
+    const b = srv.connect();
+    room.broadcast({ type: "tick", n: 1.5 });
+    room.send(room.clients[0], { type: "tick", n: 2 });
+    room.relay(room.clients[0], { type: "tick", n: 3 });
+    expect(a.sent.every((frame) => frame instanceof Uint8Array)).toBe(true);
+    expect(a.sent.map((frame) => tickCodec.decode(frame as Uint8Array)?.n)).toEqual([1.5, 2]);
+    expect(b.sent.map((frame) => tickCodec.decode(frame as Uint8Array)?.n)).toEqual([1.5, 3]);
+  });
+
+  it("encodes one frame per broadcast, not one per client", () => {
+    const srv = new MockServer();
+    let encodes = 0;
+    const room = serve<Tick, Tick>(srv, {
+      codec: {
+        encode(message) {
+          encodes++;
+          return tickCodec.encode(message);
+        },
+        decode: tickCodec.decode,
+      },
+    });
+    srv.connect();
+    srv.connect();
+    srv.connect();
+    room.broadcast({ type: "tick", n: 1 });
+    expect(encodes).toBe(1);
+  });
+
+  it("decodes inbound frames and drops what the codec refuses", () => {
+    const srv = new MockServer();
+    const got: Tick[] = [];
+    serve<Tick, Tick>(srv, { codec: tickCodec, onMessage: (_c, msg) => got.push(msg) });
+    const a = srv.connect();
+    a.message(tickCodec.encode({ type: "tick", n: 4 }) as Uint8Array);
+    a.message(new Uint8Array(0)); // the default heartbeat frame
+    a.message(new Uint8Array([0x01, 0x02])); // a lane this codec knows nothing about
+    a.message('{"type":"tick","n":9}'); // valid JSON, and still not this codec's
+    expect(got).toEqual([{ type: "tick", n: 4 }]);
+  });
+
+  it("carries a codec through serveProtocol in both directions", () => {
+    type App = Protocol<{ client: Tick; server: Tick }>;
+    const srv = new MockServer();
+    const room = serveProtocol<App>(srv, {
+      codec: tickCodec,
+      onMessage(client, msg) {
+        room.send(client, { type: "tick", n: msg.n * 2 });
+      },
+    });
+    const client = srv.connect();
+    client.message(tickCodec.encode({ type: "tick", n: 21 }) as Uint8Array);
+    expect(tickCodec.decode(client.sent[0] as Uint8Array)).toEqual({ type: "tick", n: 42 });
   });
 });
 

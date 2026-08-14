@@ -2,18 +2,21 @@
 // Node-side helpers for the authoritative/relay half of a multiplayer game.
 // A "room" wraps a WebSocket-like server — the `ws` package's WebSocketServer
 // fits structurally, so nothing here imports `ws` or Node — and hands you
-// connection lifecycle plus JSON broadcast/relay/send. An echo, a relay, or an
+// connection lifecycle plus broadcast/relay/send — JSON by default, or any
+// format you like by passing `RoomOptions.codec`. An echo, a relay, or an
 // authoritative world server becomes a few lines instead of hand-rolled socket
 // bookkeeping. Reach these from the `minimotor/server` entry point (they are
 // deliberately NOT part of the browser `Minimotor` bundle).
 
-import type { ClientMessageOf, ProtocolShape, ServerMessageOf } from "../protocol.js";
+import type { ClientMessageOf, MessageCodec, ProtocolShape, ServerMessageOf } from "../protocol.js";
 
 /** The slice of a WebSocket connection a room uses. `ws`'s WebSocket satisfies
  *  it structurally, so callers pass their sockets with no cast or `ws` import. */
 export interface ServerSocket {
-  /** Send a (already-serialized) string frame to this client. */
-  send(data: string): void;
+  /** Send an already-serialized frame to this client: a string, or bytes when
+   *  the room was given a `codec`. `ws`'s `send` takes both, and a method
+   *  parameter is bivariant, so a text-only test double still satisfies this. */
+  send(data: string | Uint8Array): void;
   /** 1 === OPEN in the `ws`/browser convention; `undefined` is treated as open
    *  (test doubles need not model it). */
   readyState?: number;
@@ -55,25 +58,49 @@ export interface RoomClient {
   readonly group: string;
 }
 
-/** Lifecycle callbacks for `serve`: join, per-client message, and leave. */
-export interface RoomOptions<Recv> {
+/** Lifecycle callbacks for `serve`: join, per-client message, and leave — plus
+ *  the optional `codec` that decides what a frame IS. */
+export interface RoomOptions<Recv, Send = unknown> {
   /** A client connected (after it's added to `room.clients`). */
   onJoin?(client: RoomClient): void;
-  /** A JSON message arrived from `client`. Non-JSON frames are ignored. */
+  /** A message arrived from `client`, already decoded.
+   *
+   * WHICH frames reach here is the `codec`'s decision, and that is the one
+   * behavioural thing this option changes rather than just re-spelling. With no
+   * codec the room parses JSON and silently drops anything that is not valid
+   * JSON — a heartbeat, a binary frame from another lane, a truncated write.
+   * With a codec the room hands it every frame verbatim and drops exactly what
+   * `decode` returns `undefined` for, so a codec that accepts too much delivers
+   * junk as a message and one that accepts too little is invisible. */
   onMessage?(client: RoomClient, msg: Recv): void;
   /** A client disconnected (after it's removed from `room.clients`). */
   onLeave?(client: RoomClient): void;
+  /** Encode outbound and decode inbound frames instead of using JSON.
+   *
+   * ABSENT IS THE DEFAULT AND THE DEFAULT IS JSON — a room given no codec
+   * behaves exactly as it always has, down to calling `JSON.stringify` once per
+   * `broadcast` and reusing the string across clients.
+   *
+   * It covers the whole room, not one lane: `send`, `broadcast`, `relay` and
+   * the inbound parse all go through it, which is the point. The snapshot-only
+   * packing in `body-codec.ts` is the other trade — pack the one message that
+   * repeats and keep the rest readable — and both are legitimate. This is for
+   * the caller who wants no text on the wire at all and is willing to give up
+   * a readable network tab for it. */
+  codec?: MessageCodec<Send, Recv>;
 }
 
-/** A server-side room: the live client list plus JSON send/broadcast/relay. */
+/** A server-side room: the live client list plus encode-and-send/broadcast/
+ *  relay. Encoding is `JSON.stringify` unless `RoomOptions.codec` says
+ *  otherwise. */
 export interface Room<Send> {
   /** Currently-connected clients (live array; don't mutate). */
   readonly clients: RoomClient[];
-  /** JSON-encode and send to one client. */
+  /** Encode and send to one client. */
   send(client: RoomClient, msg: Send): void;
-  /** JSON-encode and send to every connected client. */
+  /** Encode and send to every connected client. */
   broadcast(msg: Send): void;
-  /** JSON-encode and send to every client except `from` — the classic relay. */
+  /** Encode and send to every client except `from` — the classic relay. */
   relay(from: RoomClient, msg: Send): void;
   /** The clients sharing one `?room=` group. */
   group(name: string): RoomClient[];
@@ -85,8 +112,9 @@ function isOpen(s: ServerSocket): boolean {
 }
 
 /** Wire a WebSocket-like server into a room: it tracks connections with stable
- *  ids, parses inbound JSON into `onMessage`, and gives you broadcast/relay/
- *  send (each JSON-encodes and skips closing sockets). `ws`'s WebSocketServer
+ *  ids, parses inbound frames into `onMessage`, and gives you broadcast/relay/
+ *  send (each encodes once and skips closing sockets). Encoding is JSON unless
+ *  `opts.codec` says otherwise; see `RoomOptions.codec`. `ws`'s WebSocketServer
  *  fits `SocketServer` structurally.
  *
  *    import { WebSocketServer } from "ws";
@@ -98,22 +126,28 @@ function isOpen(s: ServerSocket): boolean {
  *    }); */
 export function serve<Send = unknown, Recv = unknown>(
   server: SocketServer,
-  opts: RoomOptions<Recv> = {},
+  opts: RoomOptions<Recv, Send> = {},
 ): Room<Send> {
   const clients: RoomClient[] = [];
   let nextId = 0;
+  const codec = opts.codec;
+  // One encode per call, reused across every recipient — the property
+  // `broadcast` has always had with `JSON.stringify` and the reason a codec
+  // must not be per-client.
+  const encode = (msg: Send): string | Uint8Array =>
+    codec ? codec.encode(msg) : JSON.stringify(msg);
 
   const room: Room<Send> = {
     clients,
     send(client, msg) {
-      if (isOpen(client.socket)) client.socket.send(JSON.stringify(msg));
+      if (isOpen(client.socket)) client.socket.send(encode(msg));
     },
     broadcast(msg) {
-      const data = JSON.stringify(msg);
+      const data = encode(msg);
       for (const c of clients) if (isOpen(c.socket)) c.socket.send(data);
     },
     relay(from, msg) {
-      const data = JSON.stringify(msg);
+      const data = encode(msg);
       for (const c of clients) if (c !== from && isOpen(c.socket)) c.socket.send(data);
     },
     group(name) {
@@ -129,6 +163,17 @@ export function serve<Send = unknown, Recv = unknown>(
     clients.push(client);
     opts.onJoin?.(client);
     socket.on("message", (raw: unknown) => {
+      if (codec) {
+        // `ws` hands both text and binary frames over as a Buffer, which IS a
+        // Uint8Array, so a codec sees bytes for both and never has to be told
+        // which kind of frame it was. A test double passing a plain string is
+        // handed the string.
+        const decoded = codec.decode(
+          raw instanceof Uint8Array ? raw : typeof raw === "string" ? raw : String(raw),
+        );
+        if (decoded !== undefined) opts.onMessage?.(client, decoded);
+        return;
+      }
       let msg: Recv;
       try {
         msg = JSON.parse(String(raw)) as Recv;
@@ -147,10 +192,14 @@ export function serve<Send = unknown, Recv = unknown>(
   return room;
 }
 
-/** Serve the browser and server sides of one shared JSON `Protocol`. */
+/** Serve the browser and server sides of one shared `Protocol`.
+ *
+ * JSON unless `opts.codec` says otherwise. The codec faces the way the SERVER
+ * does — it encodes `ServerMessageOf<P>` and decodes `ClientMessageOf<P>` — and
+ * `connectProtocol` takes its mirror image at the other end. */
 export function serveProtocol<P extends ProtocolShape>(
   server: SocketServer,
-  opts: RoomOptions<ClientMessageOf<P>> = {},
+  opts: RoomOptions<ClientMessageOf<P>, ServerMessageOf<P>> = {},
 ): Room<ServerMessageOf<P>> {
   return serve<ServerMessageOf<P>, ClientMessageOf<P>>(server, opts);
 }

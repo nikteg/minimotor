@@ -1,5 +1,5 @@
 import { Transport, WsConfig } from "./types.js";
-import type { ClientMessageOf, ProtocolShape, ServerMessageOf } from "./protocol.js";
+import type { ClientMessageOf, MessageCodec, ProtocolShape, ServerMessageOf } from "./protocol.js";
 
 // ---------- WebSocket ----------
 
@@ -152,11 +152,39 @@ export interface ProtocolTransport<P extends ProtocolShape> {
   close(): void;
 }
 
-/** Connect a typed JSON protocol. Invalid JSON frames are ignored. */
-export function connectProtocol<P extends ProtocolShape>(config: WsConfig): ProtocolTransport<P> {
+/** `connect`'s configuration plus the one thing only a typed protocol can have:
+ *  a codec for its own message union. */
+export interface ProtocolConfig<P extends ProtocolShape> extends WsConfig {
+  /** Encode outbound and decode inbound frames instead of using JSON.
+   *
+   * The mirror of `RoomOptions.codec`: this end encodes `ClientMessageOf<P>`
+   * and decodes `ServerMessageOf<P>`. Absent is the default and the default is
+   * JSON.
+   *
+   * NOTE the frame this end never sees as a message: `heartbeatPayload`
+   * defaults to a 0-byte binary frame and the server may echo one, so `decode`
+   * has to answer `undefined` for it — which is the same requirement the JSON
+   * path met with a `try/catch`. */
+  codec?: MessageCodec<ClientMessageOf<P>, ServerMessageOf<P>>;
+}
+
+/** Connect a typed protocol, JSON unless `config.codec` says otherwise. Frames
+ *  this end cannot read are ignored. */
+export function connectProtocol<P extends ProtocolShape>(
+  config: ProtocolConfig<P>,
+): ProtocolTransport<P> {
   const raw = connect(config);
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
+  const codec = config.codec;
+  // A codec that answers with a string is sent as its UTF-8 bytes rather than
+  // as a text frame: `Transport` is a binary channel, and a server reading it
+  // with `String(raw)` — which is what `serve` does — cannot tell the two
+  // apart anyway.
+  const encode = (message: ClientMessageOf<P>): Uint8Array => {
+    const framed = codec ? codec.encode(message) : JSON.stringify(message);
+    return typeof framed === "string" ? encoder.encode(framed) : framed;
+  };
   const channel: ProtocolTransport<P> = {
     onMessage: null,
     onClose: null,
@@ -165,16 +193,22 @@ export function connectProtocol<P extends ProtocolShape>(config: WsConfig): Prot
       return raw.state;
     },
     send(message) {
-      raw.sendJson(message);
+      if (codec) raw.send(encode(message));
+      else raw.sendJson(message);
     },
     trySend(message) {
-      return raw.trySend(encoder.encode(JSON.stringify(message)));
+      return raw.trySend(encode(message));
     },
     close() {
       raw.close();
     },
   };
   raw.onMessage = (bytes) => {
+    if (codec) {
+      const decoded = codec.decode(bytes);
+      if (decoded !== undefined) channel.onMessage?.(decoded);
+      return;
+    }
     try {
       channel.onMessage?.(JSON.parse(decoder.decode(bytes)) as ServerMessageOf<P>);
     } catch {
