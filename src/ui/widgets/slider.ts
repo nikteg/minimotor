@@ -9,7 +9,9 @@ import {
   drawFocusRing,
   focusFromPointer,
   hoverCursor,
+  lifecycleOnce,
   measureWidth,
+  onFrameEnd,
   placeField,
   rawPointer,
   registerFocusable,
@@ -54,10 +56,52 @@ export interface SliderOptions extends Flowable {
   font?: string;
   /** Label and value-text color. Default `theme.text`. */
   color?: string;
+  /** The grab: the pointer went down on this slider's track or knob. Paired
+   *  with `onRelease`, and NOTHING is called for the value changes in
+   *  between — which is the whole point of the pair.
+   *
+   *  A slider's value moves once per frame while it is being dragged, so a
+   *  caller that hangs a click, a haptic or a save on "the value changed" fires
+   *  it sixty times a second. Trash Golf's volume sliders played the
+   *  interface's click on every step and machine-gunned across a drag
+   *  (31 clips for one sweep of the track). Grab and let-go are the two edges a
+   *  gesture actually has, and they are the two the kit had no way to report. */
+  onPress?: () => void;
+  /** The let-go: the drag this slider owned has ended, wherever the pointer
+   *  came up — including outside the widget, and including a press that never
+   *  moved the value at all.
+   *
+   *  Exactly one per `onPress`, EXCEPT when the slider stops being drawn while
+   *  the drag is live (its modal closed under the finger): a widget that is not
+   *  drawn cannot be told anything, and the pending let-go is dropped rather
+   *  than saved up for whenever it is next drawn. */
+  onRelease?: () => void;
 }
 
 // One slider drag at a time (per UI runtime), tracked across frames by id.
-const sliderDragSlot = uiSlot<{ id: string | null }>(() => ({ id: null }));
+//
+// `released` is the id whose drag ENDED this frame, announced rather than acted
+// on because the slider that owned the drag is not necessarily the one that
+// notices the pointer went up: the slot is shared, so whichever slider is drawn
+// FIRST is the one that runs the release check, and in a settings panel that is
+// usually not the one under the finger.
+const sliderDragSlot = uiSlot<{ id: string | null; released: string | null }>(() => ({
+  id: null,
+  released: null,
+}));
+
+// Frame-end housekeeping for a gesture whose slider may no longer be on screen.
+// An unclaimed announcement lives for one frame and no longer, and a drag whose
+// slider was not drawn at all ends here — otherwise a modal dismissed under the
+// finger leaves `id` set, and the next time that panel is opened the first
+// slider drawn announces a let-go for a gesture that finished a minute ago.
+const ensureSliderHooks = lifecycleOnce(() =>
+  onFrameEnd(() => {
+    const sd = sliderDragSlot();
+    sd.released = null;
+    if (!rawPointer().down) sd.id = null;
+  }),
+);
 
 /** How many stops `valueSpace` will walk before it gives up and reads the ends
  *  only. A stepped range longer than this is a continuous control with a snap
@@ -110,6 +154,7 @@ export function slider(
   if (typeof optsOrLabel === "string")
     return slider({ ...rest, label: optsOrLabel, value: valueArg as number });
   const opts = optsOrLabel;
+  ensureSliderHooks();
   const ctx = uiCtx();
   const min = opts.min ?? 0;
   const max = opts.max ?? 1;
@@ -166,10 +211,21 @@ export function slider(
   // clipped scroll region sees a DEAD pointer (down=false) whenever the finger
   // is outside ITS clip — it must not cancel another slider's live drag (nor
   // its own when the finger wanders out of the clip mid-drag).
-  if (!rawPointer().down) sd.id = null;
+  if (!rawPointer().down && sd.id) {
+    sd.released = sd.id;
+    sd.id = null;
+  }
   if (p.pressed && pointerHover && !sd.id) {
     sd.id = id;
     focusFromPointer(ctx, id);
+    opts.onPress?.();
+  }
+  // Read AFTER the clear above so a slider that ends its own drag still hears
+  // about it in the same frame, and consumed so the frame-end sweep only ever
+  // has to drop an announcement nobody was drawn to collect.
+  if (sd.released === id) {
+    sd.released = null;
+    opts.onRelease?.();
   }
   // While dragging, the slider owns the pointer — a slider inside a scroll
   // region must never also swipe-scroll it.
