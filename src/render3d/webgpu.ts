@@ -33,7 +33,7 @@
 
 import { Mat4 } from "@src/math/mat4.js";
 import { cameraPosition, viewProjection } from "./camera.js";
-import { fogUniform, ghostMaterial, isVisible } from "./scene.js";
+import { detailProjectionMode, fogUniform, ghostMaterial, isVisible } from "./scene.js";
 import { triangleCount, vertexCount } from "./mesh.js";
 import type { Camera3D } from "./camera.js";
 import type { MeshData } from "./mesh.js";
@@ -308,9 +308,23 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
   // see Material.detailMap for why the two belong on opposite sides of it.
   if (draw.detail.x > 0.0) {
     var detailSource = select(in.uv, in.uv1, draw.detail.y > 0.5);
-    detailSource = select(detailSource, in.worldPos.xz, draw.detail.w > 0.5);
+    detailSource = select(detailSource, in.worldPos.xz, draw.detail.w > 0.5 && draw.detail.w < 1.5);
     let detailUv = detailSource * draw.detailUvTransform.xy + draw.detailUvTransform.zw;
-    let pattern = textureSample(detailTex, samp, detailUv);
+    var pattern = textureSample(detailTex, samp, detailUv);
+    if (draw.detail.w > 1.5) {
+      // Three world-space projections blended by the face's own normal, so a
+      // pattern runs across a whole shape at one density with no unwrap. The
+      // exponent is what makes the seams narrow: raised to the eighth, a
+      // 45-degree face is still 50/50 but a 30-degree one is already 94/6, so
+      // the blend band is a few degrees wide instead of the whole quadrant.
+      var axis = pow(abs(normalize(in.normal)), vec3f(8.0));
+      axis /= max(axis.x + axis.y + axis.z, 1e-6);
+      let s = draw.detailUvTransform.xy;
+      let o = draw.detailUvTransform.zw;
+      pattern = textureSample(detailTex, samp, in.worldPos.zy * s + o) * axis.x
+              + textureSample(detailTex, samp, in.worldPos.xz * s + o) * axis.y
+              + textureSample(detailTex, samp, in.worldPos.xy * s + o) * axis.z;
+    }
     if (draw.detail.z > 0.0) {
       let lit = frame.ambient.w > 0.5;
       // Both maps are scaled and linearized BEFORE they multiply, not after:
@@ -1002,13 +1016,11 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     drawData[at + 48] = material.detailMap ? (material.detailStrength ?? 0) : 0;
     drawData[at + 49] = material.detailUv === 1 ? 1 : 0;
     drawData[at + 50] = material.detailBlend === "over" ? (material.detailColorScale ?? 1) : 0;
-    drawData[at + 51] = material.detailUvProjection === "planarXZ" ? 1 : 0;
-    const detailScale =
-      material.detailUvScale ??
-      (material.detailUv === 1 || material.detailUvProjection === "planarXZ" ? UNIT_UV : uvScale);
-    const detailOffset =
-      material.detailUvOffset ??
-      (material.detailUv === 1 || material.detailUvProjection === "planarXZ" ? ZERO_UV : uvOffset);
+    const detailProjection = detailProjectionMode(material);
+    drawData[at + 51] = detailProjection;
+    const detailProjected = material.detailUv === 1 || detailProjection !== 0;
+    const detailScale = material.detailUvScale ?? (detailProjected ? UNIT_UV : uvScale);
+    const detailOffset = material.detailUvOffset ?? (detailProjected ? ZERO_UV : uvOffset);
     drawData[at + 52] = detailScale[0];
     drawData[at + 53] = detailScale[1];
     drawData[at + 54] = detailOffset[0];

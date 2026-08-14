@@ -30,7 +30,7 @@
 
 import { Mat4 } from "@src/math/mat4.js";
 import { cameraPosition, viewProjection } from "./camera.js";
-import { fogUniform, ghostMaterial, isVisible } from "./scene.js";
+import { detailProjectionMode, fogUniform, ghostMaterial, isVisible } from "./scene.js";
 import { triangleCount, vertexCount } from "./mesh.js";
 import type { Camera3D } from "./camera.js";
 import type { MeshData } from "./mesh.js";
@@ -129,7 +129,7 @@ uniform float uNormalScale;
 uniform sampler2D uDetailMap;
 uniform float uDetailStrength; // 0 disables the sample entirely
 uniform bool uDetailUv1;
-uniform bool uDetailPlanar;
+uniform int uDetailProjection; // 0 mesh uv, 1 planar XZ, 2 triplanar
 uniform float uDetailOver; // 0 overlay; otherwise alpha-over RGB multiplier
 uniform vec4 uDetailUvTransform;
 uniform bool uDetailPremultiplied;
@@ -292,9 +292,25 @@ void main() {
   // Overlay while base is still in display space; alpha-over in linear light —
   // see Material.detailMap for why the two belong on opposite sides of it.
   if (uDetailStrength > 0.0) {
-    vec2 detailSource = uDetailPlanar ? vWorldPos.xz : (uDetailUv1 ? vUv1 : vUv);
+    // Triplanar leaves this at the mesh uv, which is what the MASK below then
+    // reads: a mask is a planar-projection idea and nothing pairs the two.
+    vec2 detailSource = uDetailProjection == 1 ? vWorldPos.xz : (uDetailUv1 ? vUv1 : vUv);
     vec2 detailUv = detailSource * uDetailUvTransform.xy + uDetailUvTransform.zw;
     vec4 pattern = texture(uDetailMap, detailUv);
+    if (uDetailProjection == 2) {
+      // Three world-space projections blended by the face's own normal, so a
+      // pattern runs across a whole shape at one density with no unwrap. The
+      // exponent is what makes the seams narrow: raised to the eighth, a
+      // 45-degree face is still 50/50 but a 30-degree one is already 94/6, so
+      // the blend band is a few degrees wide instead of the whole quadrant.
+      vec3 axis = pow(abs(normalize(vNormal)), vec3(8.0));
+      axis /= max(axis.x + axis.y + axis.z, 1e-6);
+      vec2 s = uDetailUvTransform.xy;
+      vec2 o = uDetailUvTransform.zw;
+      pattern = texture(uDetailMap, vWorldPos.zy * s + o) * axis.x
+              + texture(uDetailMap, vWorldPos.xz * s + o) * axis.y
+              + texture(uDetailMap, vWorldPos.xy * s + o) * axis.z;
+    }
     if (uDetailOver > 0.0) {
       // Both maps are scaled and linearized BEFORE they multiply, not after:
       // squaring a product of two alphas is not the product of two squares, and
@@ -461,7 +477,7 @@ interface Uniforms {
   detailMap: WebGLUniformLocation | null;
   detailStrength: WebGLUniformLocation | null;
   detailUv1: WebGLUniformLocation | null;
-  detailPlanar: WebGLUniformLocation | null;
+  detailProjection: WebGLUniformLocation | null;
   detailOver: WebGLUniformLocation | null;
   detailUvTransform: WebGLUniformLocation | null;
   detailPremultiplied: WebGLUniformLocation | null;
@@ -580,7 +596,7 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     detailMap: gl.getUniformLocation(program, "uDetailMap"),
     detailStrength: gl.getUniformLocation(program, "uDetailStrength"),
     detailUv1: gl.getUniformLocation(program, "uDetailUv1"),
-    detailPlanar: gl.getUniformLocation(program, "uDetailPlanar"),
+    detailProjection: gl.getUniformLocation(program, "uDetailProjection"),
     detailOver: gl.getUniformLocation(program, "uDetailOver"),
     detailUvTransform: gl.getUniformLocation(program, "uDetailUvTransform"),
     detailPremultiplied: gl.getUniformLocation(program, "uDetailPremultiplied"),
@@ -818,19 +834,14 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
       );
       gl!.uniform1i(u.detailMap, 2);
       gl!.uniform1i(u.detailUv1, material.detailUv === 1 ? 1 : 0);
-      gl!.uniform1i(u.detailPlanar, material.detailUvProjection === "planarXZ" ? 1 : 0);
+      gl!.uniform1i(u.detailProjection, detailProjectionMode(material));
       gl!.uniform1f(
         u.detailOver,
         material.detailBlend === "over" ? (material.detailColorScale ?? 1) : 0,
       );
-      const detailScale =
-        material.detailUvScale ??
-        (material.detailUv === 1 || material.detailUvProjection === "planarXZ" ? UNIT_UV : uvScale);
-      const detailOffset =
-        material.detailUvOffset ??
-        (material.detailUv === 1 || material.detailUvProjection === "planarXZ"
-          ? ZERO_UV
-          : uvOffset);
+      const projected = material.detailUv === 1 || detailProjectionMode(material) !== 0;
+      const detailScale = material.detailUvScale ?? (projected ? UNIT_UV : uvScale);
+      const detailOffset = material.detailUvOffset ?? (projected ? ZERO_UV : uvOffset);
       gl!.uniform4f(
         u.detailUvTransform,
         detailScale[0],

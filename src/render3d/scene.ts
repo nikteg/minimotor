@@ -254,15 +254,33 @@ export interface Material {
    *  1 is its `uvs1`. A mesh with no `uvs1` gets zeros, which samples one
    *  texel of the map across the whole surface. */
   detailUv?: 0 | 1;
-  /** Generate the secondary map's uvs from world XZ instead of the mesh. This
-   * is deliberately independent of `uvProjection`, so a projected live decal
-   * does not disturb an albedo or normal map's authored unwrap. */
-  detailUvProjection?: "mesh" | "planarXZ";
+  /** Generate the secondary map's uvs from the world position instead of from
+   * the mesh. Deliberately independent of `uvProjection`, so a projected decal
+   * does not disturb an albedo or normal map's authored unwrap.
+   *
+   * `planarXZ` drops the world position down the Y axis — one continuous
+   * pattern across a whole floor, smeared on anything vertical. `triplanar`
+   * pays for two more samples and has no smear: it projects onto all three
+   * world planes and blends them by the face's own normal raised to the
+   * eighth, so a shape covered in it reads at ONE density whichever way each
+   * face points, with a blend band a few degrees wide rather than a quadrant.
+   *
+   * Reach for `triplanar` when the surface has no usable unwrap for the
+   * pattern — which is the common case for level geometry, where the second uv
+   * set is a packed atlas and its density varies by an order of magnitude
+   * between islands. A pattern laid on that reads as different sizes on
+   * different faces of one wall, and no single `detailUvScale` fixes it.
+   *
+   * The mask still reads the MESH uv under `triplanar`, since a mask is a
+   * planar-projection idea and nothing pairs the two. */
+  detailUvProjection?: "mesh" | "planarXZ" | "triplanar";
   /** Secondary-map uv scale. With no value, uv0 inherits `uvScale`, while uv1
-   * and planar projection use `[1, 1]`. */
+   * and either projection use `[1, 1]`. Under `triplanar` it is world units
+   * per tile on each plane's two axes — x/z for the ground plane, and the
+   * horizontal/vertical pair for the two upright ones. */
   detailUvScale?: readonly [number, number];
   /** Secondary-map uv offset. With no value, uv0 inherits `uvOffset`, while
-   * uv1 and planar projection use `[0, 0]`. */
+   * uv1 and either projection use `[0, 0]`. */
   detailUvOffset?: readonly [number, number];
   /** A second pattern that GATES the `over` secondary map, sampled from the
    *  same source uvs through `detailMaskUvScale`/`detailMaskUvOffset` — so it
@@ -459,6 +477,15 @@ export interface Scene3D {
   /** Optional distance fog. Unlit materials are left alone: a gizmo or a
    *  nameplate that opted out of lighting has opted out of atmosphere too. */
   fog?: Fog3D;
+}
+
+/** `Material.detailUvProjection` as the shaders see it: 0 mesh uv, 1 planar
+ *  XZ, 2 triplanar. Resolved here rather than in each backend so WebGL2 and
+ *  WebGPU cannot drift apart on what an unset value means. */
+export function detailProjectionMode(material: Material): 0 | 1 | 2 {
+  if (material.detailUvProjection === "planarXZ") return 1;
+  if (material.detailUvProjection === "triplanar") return 2;
+  return 0;
 }
 
 /** The fog mode as the shaders see it. Resolved here rather than in each
