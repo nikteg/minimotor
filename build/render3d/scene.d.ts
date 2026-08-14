@@ -233,6 +233,21 @@ export interface Material {
     /** RGB multiplier for an alpha-over secondary map. Default 1. Kept separate
      * from `detailStrength`, which weights the map's alpha rather than its light. */
     detailColorScale?: number;
+    /** Let an `over` secondary map composite into the surface's OPACITY as well
+     *  as its colour, at the same weight: `a = mix(a, map.a, map.a * strength)`.
+     *  Default off, which leaves `transparent` meaning exactly what it meant.
+     *
+     *  Off, a decal can only paint a surface that is already there. On, the
+     *  decal is what makes the surface be there at all — a material whose base
+     *  colour is fully transparent shows up only where the map has ink on it,
+     *  and fades back out as the ink does. That is a real authoring idiom and
+     *  not an edge case: an invisible floor that a live canvas reveals cannot be
+     *  expressed any other way, because the reveal has to be per fragment.
+     *
+     *  Needs `transparent`; without it the surface is in the opaque pass and the
+     *  alpha it computes is written to a channel nothing reads. Ignored by the
+     *  `overlay` blend, which never looks at alpha at all. */
+    detailOpacity?: boolean;
     /** Which uv set the detail map reads: 0 (the default) is the mesh's `uvs`,
      *  1 is its `uvs1`. A mesh with no `uvs1` gets zeros, which samples one
      *  texel of the map across the whole surface. */

@@ -31,7 +31,12 @@ const sortCache = new WeakMap();
  *      { key: "join", label: "", width: 80, sortable: false, interactive: true,
  *        cell: (p, r, cell) => {
  *          if (UI.button({ ...r, id: cell.id, label: "JOIN" })) join(p.code);
- *        } } */
+ *        } }
+ *
+ *  Give it an `empty` for the no-rows case, so the columns do not disappear
+ *  along with the data:
+ *
+ *      UI.table({ ..., empty: "Nobody has a party open." }); */
 export function table(opts) {
     const padding = resolveThemePadding(opts.cellPadding, {
         x: theme.spacing.sm,
@@ -201,5 +206,35 @@ export function table(opts) {
             }
         });
     });
+    // The empty state, drawn after the (rowless) list so it sits over the body
+    // the rows would have filled. After rather than instead: `list` still runs
+    // with `count: 0` so the scroll offset it reports is the one the caller
+    // assigns back, and so a table that empties out mid-scroll is reset by the
+    // same code path that would have done it anyway.
+    //
+    // The HEADER is deliberately left live. Clicking it on an empty table still
+    // flips the sort arrow, which is the same thing it did before this option
+    // existed and is the honest answer to "what will this table be sorted by when
+    // rows arrive". Suppressing it would make the header behave differently
+    // depending on the data, which is the class of surprise this option exists to
+    // remove. There are no rows, so there is no row press and no scrollbar
+    // (`content` is 0, so `barW` is 0 and the body is the full width).
+    //
+    // `rect` is untouched and still the whole table — the overlay recipe in
+    // `TableResult` keeps working for anyone who was already using it.
+    if (rows.length === 0 && opts.empty !== undefined) {
+        const body = {
+            x: rect.x + left,
+            y: rect.y + headerHeight + top,
+            w: Math.max(0, contentW - left - right),
+            h: Math.max(0, listH - top - bottom),
+        };
+        if (typeof opts.empty === "string") {
+            text(opts.empty, { ...body, align: "center", color: "dim", wrap: true });
+        }
+        else {
+            opts.empty(body);
+        }
+    }
     return { sort, offset, selected, rect };
 }

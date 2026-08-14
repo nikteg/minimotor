@@ -97,7 +97,9 @@ struct DrawData {
   detailMaskTransform: vec4f,
   // x: the secondary map's RGB is premultiplied by its own alpha — see
   // Material.detailPremultiplied. y: the world grid a projected secondary map
-  // snaps its position to, 0 for off — see Material.detailWorldStep. zw spare.
+  // snaps its position to, 0 for off — see Material.detailWorldStep. z: the
+  // map composites into the surface's opacity too — see
+  // Material.detailOpacity. w spare.
   detailFlags: vec4f,
   jointMatrices: array<mat4x4f, ${MAX_JOINTS}>,
 };
@@ -359,7 +361,11 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
         linearToSrgb(mix(srgbToLinear(base.rgb), over, weight)),
         lit,
       );
-      base = vec4f(blended, base.a);
+      // The opacity too when asked, at the same weight — see
+      // Material.detailOpacity. Straight, never through the tone curve: a
+      // coverage is not a light and there is nothing to linearize.
+      let opacity = select(base.a, mix(base.a, pattern.a, weight), draw.detailFlags.z > 0.5);
+      base = vec4f(blended, opacity);
     } else {
       base = vec4f(mix(base.rgb, blendOverlay(pattern.rgb, base.rgb), draw.detail.x), base.a);
     }
@@ -970,7 +976,10 @@ export async function createWebGPURenderer(opts = {}) {
         drawData[at + 59] = maskOffset[1];
         drawData[at + 60] = material.detailPremultiplied ? 1 : 0;
         drawData[at + 61] = detailWorldStep(material);
-        drawData[at + 62] = 0;
+        // Needs `transparent`: an opaque surface's alpha is written to a channel
+        // nothing reads, and letting a decal move it there would only invite a
+        // pipeline change to start showing holes in a floor.
+        drawData[at + 62] = material.detailOpacity && material.transparent ? 1 : 0;
         drawData[at + 63] = 0;
         drawData.set(skin ?? IDENTITY_JOINTS, at + 64);
     }

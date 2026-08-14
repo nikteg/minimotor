@@ -247,7 +247,16 @@ function materialFor(document, images, index) {
             material.detailMaskUvOffset = [maskOffset[0], maskOffset[1]];
         }
     }
-    if (baseImage || normalImage || detailImage) {
+    // The MASK counts. It is a texture with a sampler like any other, and a
+    // material that carries nothing else used to skip this block entirely and
+    // keep the untextured defaults — nearest, and CLAMPED. A mask is a tiling
+    // pattern by definition (see Material.detailMask), so clamping it reads the
+    // sheet's edge texel across the whole surface; where that edge is
+    // transparent the mask reads as absent everywhere and the `over` blend it
+    // gates is switched off on a surface that looks fully textured. It is a
+    // silent failure: the decal simply never appears, on exactly the materials
+    // whose only map is the mask.
+    if (baseImage || normalImage || detailImage || maskImage) {
         // A glTF texture is photographic by default; the engine's nearest-neighbour
         // default is for pixel art, which a loaded document is usually not.
         material.pixelated = false;
@@ -262,7 +271,10 @@ function materialFor(document, images, index) {
         // because a nearest-sampled vector field turns a smooth surface into
         // faceted steps. Letting it outrank the detail map here is what quietly
         // filtered every wall's 32x32 detail grid into a soft wash.
-        const chosen = base ?? detail ?? normal;
+        // The mask is LAST, after the normal map: it decides the sampler only for
+        // a material that has no other map, which is the case this list was
+        // extended for.
+        const chosen = base ?? detail ?? normal ?? source?.extras?.detailMaskTexture;
         const sampler = document.samplers?.[document.textures?.[chosen?.index ?? -1]?.sampler ?? -1];
         if (sampler?.magFilter === NEAREST)
             material.pixelated = true;

@@ -54,8 +54,10 @@ export interface TextRun {
  *  the one string it is, or a coloured word would change where the line sits.
  *  So the combined string does all of that, and only the painting is split: the
  *  ellipsis is applied to the whole line and then sliced back over the runs by
- *  character offset, and the left origin is derived from the combined width
- *  under the caller's `textAlign` before each run is laid down left-to-right.
+ *  character offset, the left origin is derived from the combined width under
+ *  the caller's `textAlign`, and each run is then placed at the combined
+ *  string's own offset for it (see the loop) rather than at the running sum of
+ *  the runs' widths — the two differ wherever the font kerns across the split.
  *
  *  A single run is handed straight to `centeredText`, so the overwhelmingly
  *  common case draws through exactly the code it always did. */

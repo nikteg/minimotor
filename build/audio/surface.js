@@ -527,6 +527,15 @@ export function music(data, opts = {}) {
     let decoded = null;
     let wantPlaying = false;
     let starting = false;
+    /** The level the track SHOULD be at, which is not the same thing as the
+     *  level its `GainNode` is at — there is no node until `start` has decoded
+     *  and built one. A `fade` before that used to be dropped on the floor and
+     *  the voice then came up at the authored `opts.volume` instead, so a caller
+     *  that set a mixed level and started the track in the same breath was
+     *  silently overruled for the whole of its first play. Holding the target
+     *  here is what makes `fade` mean the same thing on either side of the
+     *  decode. */
+    let volume = opts.volume ?? 1;
     async function start() {
         if (source || starting || !wantPlaying)
             return;
@@ -537,7 +546,7 @@ export function music(data, opts = {}) {
             if (!wantPlaying || source)
                 return;
             gain = ctx.createGain();
-            gain.gain.value = opts.volume ?? 1;
+            gain.gain.value = volume;
             const busName = (opts.bus ?? buses.music).name;
             gain.connect(Mixer.bus(busName).input);
             source = ctx.createBufferSource();
@@ -575,13 +584,17 @@ export function music(data, opts = {}) {
             source?.stop();
             source = null;
         },
-        fade(volume, ms) {
+        fade(target, ms) {
+            // Recorded whether or not there is anything to ramp: a track faded
+            // before its first `play` comes up AT this level rather than at the
+            // authored one, and one faded while stopped keeps it for the next play.
+            volume = target;
             const ctx = audioCtx;
             if (!gain || !ctx)
                 return;
             gain.gain.cancelScheduledValues(ctx.currentTime);
             gain.gain.setValueAtTime(gain.gain.value, ctx.currentTime);
-            gain.gain.linearRampToValueAtTime(volume, ctx.currentTime + ms / 1000);
+            gain.gain.linearRampToValueAtTime(target, ctx.currentTime + ms / 1000);
         },
         get playing() {
             return source !== null;

@@ -43,6 +43,19 @@ export interface LayoutEntry {
     /** The auto-size cache key another container ALSO used this frame. Two
      *  containers sharing one key are reading each other's measurements. */
     sharedKey?: string;
+    /** The words in the box, for a widget that draws a label of its own.
+     *
+     *  Set by `UI.text`, which is the one widget whose entire output is a string
+     *  and which takes no `id` — so before this, a captured tree could say a
+     *  label occupied a rect but never what it said, and the only headless way to
+     *  ask was to scrape `fillText` off the context.
+     *
+     *  Crucially it is the COMBINED string: a label built from colour runs
+     *  reports the one line those runs concatenate to, exactly as `textWidth`
+     *  measures it and as the wrap is computed from. A reader of the tree — a
+     *  test, a debug overlay, or anything reading the screen out — sees the
+     *  sentence, never the fragments the paint happened to be cut into. */
+    text?: string;
 }
 /** The zero-cost-when-off guard: record sites check this boolean and skip the
  *  `recordLayout` call entirely while capture is disabled. */
@@ -83,6 +96,14 @@ export declare function refreshLayoutRect(index: number, rect: {
     w: number;
     h: number;
 }): void;
+/** Hang the label a widget just drew on the entry it just recorded.
+ *
+ *  Same "the MOST RECENT entry" idiom as `pushLayoutParent`: the caller records
+ *  its rect through `place` and annotates it on the next line, with nothing in
+ *  between that could record. Kept separate from `recordLayout` so the generic
+ *  `place` path — every widget in the kit — carries no text parameter it has
+ *  nothing to put in. */
+export declare function annotateLayoutText(str: string): void;
 /** Open the container that recorded the MOST RECENT entry: everything recorded
  *  until `popLayoutParent` becomes its child. Call it right after a container
  *  records its own box, around the children callback. */

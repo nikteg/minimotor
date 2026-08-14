@@ -11,7 +11,7 @@
 // each record site — nothing is allocated, mapped or stored.
 import { uiCtx } from "./context.js";
 import { currentUiScale, uiToScreen } from "./input.js";
-import { onFrameEnd, onReset } from "./lifecycle.js";
+import { ensureWired, onFrameEnd, onReset } from "./lifecycle.js";
 import { uiSlot } from "./state.js";
 // Entries recorded so far THIS frame, and the last completed frame's tree.
 // Per app, like every other frame-scoped state.
@@ -73,9 +73,24 @@ const parents = [];
  *  always behind a `layoutCaptureActive` guard. `id` is the raw option value
  *  (stringified here so call sites stay one expression). */
 export function recordLayout(kind, id, rect, flags) {
+    const frame = st().frame;
+    // Registering the frame-end hook is not enough on its own: `appFrameEnd` —
+    // the thing that RUNS the hooks — is attached to the app by `ensureWired`,
+    // which is otherwise reached only through the input layer. A screen built out
+    // of nothing but `UI.text` touches no input, so as far as this module is
+    // concerned the frame never ends and `layoutTree()` stays empty however many
+    // frames the caller draws. Capture's whole contract is that entries become
+    // readable at the frame boundary, so it has to ask for one.
+    //
+    // Here rather than in `layoutCapture(true)` because that can be called with
+    // no app selected at all — several tests do — and `ensureWired` reads the
+    // current app. The first record of a frame is always inside one. It costs one
+    // length comparison per rect and one already-idempotent call per frame.
+    if (frame.length === 0)
+        ensureWired();
     const tl = uiToScreen(rect.x, rect.y);
     const br = uiToScreen(rect.x + rect.w, rect.y + rect.h);
-    return (st().frame.push({
+    return (frame.push({
         kind,
         id: id === undefined ? undefined : String(id),
         rect: { x: rect.x, y: rect.y, w: rect.w, h: rect.h },
@@ -100,6 +115,21 @@ export function refreshLayoutRect(index, rect) {
     const br = uiToScreen(rect.x + rect.w, rect.y + rect.h);
     entry.rect = { x: rect.x, y: rect.y, w: rect.w, h: rect.h };
     entry.screenRect = { x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y };
+}
+/** Hang the label a widget just drew on the entry it just recorded.
+ *
+ *  Same "the MOST RECENT entry" idiom as `pushLayoutParent`: the caller records
+ *  its rect through `place` and annotates it on the next line, with nothing in
+ *  between that could record. Kept separate from `recordLayout` so the generic
+ *  `place` path — every widget in the kit — carries no text parameter it has
+ *  nothing to put in. */
+export function annotateLayoutText(str) {
+    if (!layoutCaptureActive)
+        return;
+    const frame = st().frame;
+    const entry = frame[frame.length - 1];
+    if (entry)
+        entry.text = str;
 }
 /** Open the container that recorded the MOST RECENT entry: everything recorded
  *  until `popLayoutParent` becomes its child. Call it right after a container

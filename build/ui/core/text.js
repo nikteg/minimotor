@@ -2,6 +2,7 @@ import { uiCtx } from "./context.js";
 import { currentLayout, place } from "./flow.js";
 import { centeredSpans, resolveThemeTextPadding, theme, uiFont } from "./theme.js";
 import { currentUiTransform, uiHeight, uiWidth } from "./input.js";
+import { annotateLayoutText, layoutCaptureActive } from "./layout-capture.js";
 import { measureWidth } from "./measure.js";
 import { uiApp } from "./state.js";
 export const ANCHOR_H = {
@@ -274,6 +275,12 @@ export function text(content, rawOpts) {
     const rect = place(opts.wrap && wrapWidth !== undefined
         ? { ...opts, w: autoW ?? opts.w, h: opts.h ?? autoH }
         : opts, natural + padLeft + padRight, autoH, "text");
+    // The label's words, on the slot that was just recorded for it. `str` is the
+    // COMBINED string, so a run-coloured label reports the same sentence to the
+    // capture that it reported to `place` and that `textWidth` returns — the tree
+    // never sees the fragments the paint is cut into.
+    if (layoutCaptureActive)
+        annotateLayoutText(str);
     // Inset within the slot (pad shorthand + per-axis overrides). Falls back to
     // the theme's textPad (default 0 → flush) so a global inset is one setTheme.
     const bx = rect.x + padLeft;
