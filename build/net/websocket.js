@@ -132,11 +132,21 @@ export function connect(config) {
     doConnect();
     return transport;
 }
-/** Connect a typed JSON protocol. Invalid JSON frames are ignored. */
+/** Connect a typed protocol, JSON unless `config.codec` says otherwise. Frames
+ *  this end cannot read are ignored. */
 export function connectProtocol(config) {
     const raw = connect(config);
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
+    const codec = config.codec;
+    // A codec that answers with a string is sent as its UTF-8 bytes rather than
+    // as a text frame: `Transport` is a binary channel, and a server reading it
+    // with `String(raw)` — which is what `serve` does — cannot tell the two
+    // apart anyway.
+    const encode = (message) => {
+        const framed = codec ? codec.encode(message) : JSON.stringify(message);
+        return typeof framed === "string" ? encoder.encode(framed) : framed;
+    };
     const channel = {
         onMessage: null,
         onClose: null,
@@ -145,16 +155,25 @@ export function connectProtocol(config) {
             return raw.state;
         },
         send(message) {
-            raw.sendJson(message);
+            if (codec)
+                raw.send(encode(message));
+            else
+                raw.sendJson(message);
         },
         trySend(message) {
-            return raw.trySend(encoder.encode(JSON.stringify(message)));
+            return raw.trySend(encode(message));
         },
         close() {
             raw.close();
         },
     };
     raw.onMessage = (bytes) => {
+        if (codec) {
+            const decoded = codec.decode(bytes);
+            if (decoded !== undefined)
+                channel.onMessage?.(decoded);
+            return;
+        }
         try {
             channel.onMessage?.(JSON.parse(decoder.decode(bytes)));
         }

@@ -331,9 +331,14 @@ export function createEmitter(opts) {
             // Taken per particle rather than from one camera basis, so a card close
             // to the camera turns to face IT rather than to face the way the camera
             // is pointing — the same thing at any distance, and better up close.
-            right.x = -toView.z;
+            //
+            // `cross(worldUp, toView)`, the same axis and the same sign as the
+            // `billboard` branch below — see the note there for what the mirrored
+            // one costs. Here `up` is world up rather than derived, so the mirror
+            // did not turn the quad over; it drew every sprite back to front.
+            right.x = toView.z;
             right.y = 0;
-            right.z = toView.x;
+            right.z = -toView.x;
             if (Math.hypot(right.x, right.z) < 1e-6) {
                 // Directly above or below: no yaw resolves it, so pick one.
                 right.x = 1;
@@ -383,10 +388,21 @@ export function createEmitter(opts) {
         else {
             // Square-on. Cross with world up first, so the quad's own up stays as
             // near vertical as the view allows rather than rolling with the camera.
-            right.x = -toView.z;
+            //
+            // This IS `cross(worldUp, toView)` written out — `(0,1,0) x (tx,ty,tz)`
+            // is `(tz, 0, -tx)` — and the sign is the whole of it. The mirrored
+            // `(-tz, 0, tx)` points camera-LEFT, and because `up` is then derived
+            // from it the quad came out turned a half circle about the view axis:
+            // BOTH u and v reversed, which is a rotation and not a mirror, so it
+            // reads as upside down rather than as back to front. Six of the seven
+            // billboard sheets a consumer ships are radially symmetric — sparks,
+            // snow, ring bursts — and a half turn is invisible on those, which is
+            // why this stood for so long. It was found on a heart.
+            right.x = toView.z;
             right.y = 0;
-            right.z = toView.x;
+            right.z = -toView.x;
             if (Math.hypot(right.x, right.z) < 1e-6) {
+                // Directly above or below: no yaw resolves it, so pick one.
                 right.x = 1;
                 right.z = 0;
             }
