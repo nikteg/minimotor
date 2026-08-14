@@ -140,6 +140,7 @@ uniform float uDetailWorldStep; // 0 off; see Material.detailWorldStep
 uniform float uDetailOver; // 0 overlay; otherwise alpha-over RGB multiplier
 uniform vec4 uDetailUvTransform;
 uniform bool uDetailPremultiplied;
+uniform bool uDetailOpacity; // Material.detailOpacity
 uniform sampler2D uDetailMask;
 // xy scale, zw offset, over the same source the detail map reads. A zero scale
 // means there is no mask — see Material.detailMaskUvScale.
@@ -353,6 +354,10 @@ void main() {
       base.rgb = uToneMap
         ? linearToSrgb(mix(srgbToLinear(base.rgb), over, weight))
         : mix(base.rgb, over, weight);
+      // The same composite on the opacity, at the same weight — see
+      // Material.detailOpacity. Straight, never through the tone curve: a
+      // coverage is not a light and there is nothing to linearize.
+      if (uDetailOpacity) base.a = mix(base.a, pattern.a, weight);
     } else {
       base.rgb = mix(base.rgb, blendOverlay(pattern.rgb, base.rgb), uDetailStrength);
     }
@@ -501,6 +506,7 @@ interface Uniforms {
   detailOver: WebGLUniformLocation | null;
   detailUvTransform: WebGLUniformLocation | null;
   detailPremultiplied: WebGLUniformLocation | null;
+  detailOpacity: WebGLUniformLocation | null;
   detailMask: WebGLUniformLocation | null;
   detailMaskTransform: WebGLUniformLocation | null;
   rimAlpha: WebGLUniformLocation | null;
@@ -621,6 +627,7 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     detailOver: gl.getUniformLocation(program, "uDetailOver"),
     detailUvTransform: gl.getUniformLocation(program, "uDetailUvTransform"),
     detailPremultiplied: gl.getUniformLocation(program, "uDetailPremultiplied"),
+    detailOpacity: gl.getUniformLocation(program, "uDetailOpacity"),
     detailMask: gl.getUniformLocation(program, "uDetailMask"),
     detailMaskTransform: gl.getUniformLocation(program, "uDetailMaskTransform"),
     rimAlpha: gl.getUniformLocation(program, "uRimAlpha"),
@@ -872,6 +879,10 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
         detailOffset[1],
       );
       gl!.uniform1i(u.detailPremultiplied, material.detailPremultiplied ? 1 : 0);
+      // Needs `transparent`: an opaque surface's alpha is written to a channel
+      // nothing reads, and letting a decal move it there would only invite a
+      // pipeline change to start showing holes in a floor.
+      gl!.uniform1i(u.detailOpacity, material.detailOpacity && material.transparent ? 1 : 0);
       // A mask tiles by definition, so it rides the material's own `repeat`
       // rather than asking for its own sampler — see Material.detailMask.
       const maskScale = material.detailMask ? material.detailMaskUvScale : undefined;
