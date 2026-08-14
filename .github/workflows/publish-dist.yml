@@ -1,0 +1,122 @@
+# Publish the compiled kit to the `dist` branch, so consumers install prebuilt
+# output instead of compiling minimotor on `pnpm install`.
+#
+# See tools/make-dist.mjs for why the branch exists and what goes on it. In
+# short: `prepare` + a gitignored build/ forced every consumer to build, pnpm 11
+# gates a dependency's build behind an `allowBuilds` key that embeds the commit
+# sha, and so a version bump touched a third file whose omission is invisible.
+name: Publish dist
+
+on:
+  push:
+    branches: [main]
+  # So a build can be republished without an empty commit — e.g. after fixing
+  # the workflow itself, or the first time, before `dist` exists.
+  workflow_dispatch:
+
+# One publish at a time. Two pushes to main otherwise race on `git push origin
+# dist` and the loser fails; worse, the loser could be the NEWER build if it
+# gets there first and is then rejected. Queue rather than cancel-in-progress,
+# so the tree that lands last is the one built from the newest main.
+#
+# GitHub keeps only one run pending per group, so a burst of three pushes drops
+# the middle run. That is correct here: `dist` is a rolling build of main's tip,
+# not a per-commit archive, and the tip still gets published.
+concurrency:
+  group: publish-dist
+  cancel-in-progress: false
+
+permissions:
+  contents: write # the only write this needs: pushing the dist branch
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v5
+        with:
+          # dist's history has to be reachable so the new build can be appended
+          # to it rather than replacing it. Rewriting dist would 404 the tarball
+          # every consumer's lockfile has pinned.
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          # Pinned explicitly because package.json carries no `packageManager`
+          # field for the action to read. Matches the pnpm that wrote
+          # pnpm-lock.yaml; bump both together.
+          version: 11.13.1
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # --ignore-scripts covers two things at once. It skips this package's own
+      # `prepare` (the build runs explicitly in the next step, so running it
+      # twice is pure minutes), and it means pnpm 11 never has to decide whether
+      # a dependency may build — which would otherwise fail the job with
+      # ERR_PNPM_IGNORED_BUILDS, since this repo has no allowBuilds list. The
+      # build itself is tsc + tsc-alias + cp, all pure JavaScript, so nothing it
+      # needs comes from a postinstall.
+      - name: Install
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      # THE GATE. tsconfig.json sets noEmitOnError, so a type error fails here
+      # and every step below is skipped — a broken build cannot reach the
+      # branch. This is deliberately the same bar `prepare` set for consumers
+      # before the dist branch existed, so nothing about what gets shipped has
+      # been loosened. It is not a test run: `pnpm test` belongs in its own
+      # workflow, gating merges into main rather than the publish of main.
+      - name: Build
+        run: pnpm build
+
+      - name: Assemble the payload
+        run: node tools/make-dist.mjs --out "$RUNNER_TEMP/dist-payload"
+
+      - name: Publish to dist
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # An orphan branch on the first run; thereafter append to what is
+          # already published. A worktree keeps this off the main checkout,
+          # which still holds build/ and node_modules.
+          if git rev-parse --verify --quiet origin/dist >/dev/null; then
+            git worktree add "$RUNNER_TEMP/dist-branch" -B dist origin/dist
+          else
+            git worktree add --orphan -b dist "$RUNNER_TEMP/dist-branch"
+          fi
+
+          # --delete so a file that stops being emitted stops being published.
+          rsync -a --delete --exclude '.git' \
+            "$RUNNER_TEMP/dist-payload/" "$RUNNER_TEMP/dist-branch/"
+
+          cd "$RUNNER_TEMP/dist-branch"
+          # --force because main's .gitignore excludes build/, *.js and *.d.ts,
+          # which is nearly everything being published. The dist branch carries
+          # no .gitignore of its own, but a stray one would be just as fatal.
+          git add --all --force .
+
+          if git diff --cached --quiet; then
+            echo "dist already matches this build — nothing to publish"
+            exit 0
+          fi
+
+          subject=$(git -C "$GITHUB_WORKSPACE" log -1 --format=%s "$SOURCE_SHA")
+          git commit --quiet -m "Build ${SOURCE_SHA:0:7} — ${subject}" -m \
+          "Compiled output of main, published by .github/workflows/publish-dist.yml.
+          Generated: see DIST.md before committing here by hand.
+
+          Source-Commit: ${SOURCE_SHA}"
+
+          # No retry loop. The concurrency group above is what serialises
+          # publishes; the only thing left that can lose this push is a human
+          # committing to dist directly, and failing loudly is the right answer
+          # to that rather than quietly building a merge on top of it.
+          git push origin dist
