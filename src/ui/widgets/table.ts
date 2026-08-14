@@ -118,6 +118,29 @@ export interface TableOptions<Row> extends Fillable {
    *  occupant's id. Give it for any table that sorts, streams, or holds
    *  widgets. */
   rowKey?: (row: Row) => string;
+  /** What to show in the body when there are no `rows` — the table's empty
+   *  state, drawn BELOW the header, with the header and the table's own
+   *  geometry still standing.
+   *
+   *  A string is drawn as dim, centred, wrapped themed text. Pass a callback
+   *  for anything else; it is handed the padded body rect (the table's rect
+   *  minus the header strip and the cell padding) and may draw or place widgets
+   *  in it.
+   *
+   *  Opt-in: with no `empty`, a rowless table draws its header over empty space
+   *  exactly as it always has. The alternative — a caller skipping `UI.table`
+   *  entirely and drawing its own sentence instead — is what this replaces, and
+   *  it costs the header: the columns vanish while the list is empty and
+   *  reappear with the first row, so the block changes SHAPE rather than
+   *  contents, and anything centred or anchored around it moves.
+   *
+   *  It does NOT change the table's height. The table has never derived its
+   *  height from `rows.length` — the height comes from `h` or from the flow, so
+   *  what an empty table is worth is the caller's decision and stays that way.
+   *  A caller that wants no jump when the first row lands reserves one row's
+   *  worth for the empty case, which is what makes the empty and one-row states
+   *  the same size. */
+  empty?: string | ((rect: { x: number; y: number; w: number; h: number }) => void);
   /** Stable prefix for the header, row, list and scrollbar widget ids. */
   id?: string;
 }
@@ -161,7 +184,12 @@ export interface TableResult<Row> {
  *      { key: "join", label: "", width: 80, sortable: false, interactive: true,
  *        cell: (p, r, cell) => {
  *          if (UI.button({ ...r, id: cell.id, label: "JOIN" })) join(p.code);
- *        } } */
+ *        } }
+ *
+ *  Give it an `empty` for the no-rows case, so the columns do not disappear
+ *  along with the data:
+ *
+ *      UI.table({ ..., empty: "Nobody has a party open." }); */
 export function table<Row>(opts: TableOptions<Row>): TableResult<Row> {
   const padding = resolveThemePadding(opts.cellPadding, {
     x: theme.spacing.sm,
@@ -340,6 +368,36 @@ export function table<Row>(opts: TableOptions<Row>): TableResult<Row> {
       });
     },
   );
+
+  // The empty state, drawn after the (rowless) list so it sits over the body
+  // the rows would have filled. After rather than instead: `list` still runs
+  // with `count: 0` so the scroll offset it reports is the one the caller
+  // assigns back, and so a table that empties out mid-scroll is reset by the
+  // same code path that would have done it anyway.
+  //
+  // The HEADER is deliberately left live. Clicking it on an empty table still
+  // flips the sort arrow, which is the same thing it did before this option
+  // existed and is the honest answer to "what will this table be sorted by when
+  // rows arrive". Suppressing it would make the header behave differently
+  // depending on the data, which is the class of surprise this option exists to
+  // remove. There are no rows, so there is no row press and no scrollbar
+  // (`content` is 0, so `barW` is 0 and the body is the full width).
+  //
+  // `rect` is untouched and still the whole table — the overlay recipe in
+  // `TableResult` keeps working for anyone who was already using it.
+  if (rows.length === 0 && opts.empty !== undefined) {
+    const body = {
+      x: rect.x + left,
+      y: rect.y + headerHeight + top,
+      w: Math.max(0, contentW - left - right),
+      h: Math.max(0, listH - top - bottom),
+    };
+    if (typeof opts.empty === "string") {
+      text(opts.empty, { ...body, align: "center", color: "dim", wrap: true });
+    } else {
+      opts.empty(body);
+    }
+  }
 
   return { sort, offset, selected, rect };
 }

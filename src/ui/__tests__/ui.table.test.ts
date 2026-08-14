@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from "vitest";
-import { _reset, table, type TableColumn } from "@src/ui/api.js";
+import { _reset, table, type TableColumn, type TableOptions } from "@src/ui/api.js";
 import { selectUiApp } from "@src/ui/core/state.js";
 import { createTestUiApp } from "./app-fixture.js";
 
@@ -203,5 +203,115 @@ describe("UI.table", () => {
     expect(res.sort).toEqual({ key: "ping", dir: -1 });
     expect(res.offset).toBe(0);
     expect(res.selected).toBe(rows[1]);
+  });
+});
+
+// PLAN item 172. A table with no rows used to leave callers with one option:
+// skip `UI.table` and draw a sentence instead — which takes the HEADER away
+// with the data, so the block changes shape rather than contents and anything
+// centred around it moves. `empty` is the option that keeps the table.
+describe("UI.table empty state", () => {
+  let painted: [string, number, number][];
+
+  beforeEach(() => {
+    _reset();
+    const made = mockCtx();
+    painted = made.fillText;
+    selectUiApp(createTestUiApp(made.ctx));
+  });
+
+  const columns: TableColumn<Server>[] = [
+    { key: "name", label: "NAME", value: (s) => s.name },
+    { key: "ping", label: "PING", width: 70, align: "right", value: (s) => s.ping },
+  ];
+
+  function render(rows: Server[], empty?: TableOptions<Server>["empty"]) {
+    painted.length = 0;
+    const result = table<Server>({
+      x: 0,
+      y: 0,
+      w: 200,
+      h: 300,
+      rowHeight: 20,
+      headerHeight: 24,
+      columns,
+      rows,
+      sort: { key: "ping", dir: 1 },
+      offset: 0,
+      cellPadding: { x: 0, y: 0 },
+      empty,
+      id: "t",
+    });
+    return { result, painted: [...painted] };
+  }
+
+  it("draws the message, and still draws the header above it", () => {
+    const { painted } = render([], "Nobody has a party open.");
+    const said = painted.map(([t]) => t);
+    expect(said).toContain("Nobody has a party open.");
+    // The whole point: the columns do not vanish with the data.
+    expect(said).toContain("NAME");
+    expect(said.some((t) => t.startsWith("PING"))).toBe(true);
+  });
+
+  it("puts the message BELOW the header, not over it", () => {
+    const { painted } = render([], "Nothing here");
+    const y = (label: string) => painted.find(([t]) => t.startsWith(label))![2];
+    expect(y("Nothing here")).toBeGreaterThan(y("NAME"));
+  });
+
+  it("says nothing at all when the caller passed no empty", () => {
+    // Opt-in: a rowless table without `empty` draws exactly what it always did.
+    const { painted } = render([]);
+    expect(painted.map(([t]) => t)).toEqual(["NAME", "PING ▲"]);
+  });
+
+  it("does not draw the message once there is a row to show", () => {
+    const { painted } = render([{ name: "Aay", ping: 10 }], "Nobody has a party open.");
+    const said = painted.map(([t]) => t);
+    expect(said).not.toContain("Nobody has a party open.");
+    expect(said).toContain("Aay");
+  });
+
+  it("hands a callback the body rect, under the header and inside the padding", () => {
+    let got: { x: number; y: number; w: number; h: number } | null = null;
+    table<Server>({
+      x: 10,
+      y: 20,
+      w: 200,
+      h: 300,
+      rowHeight: 20,
+      headerHeight: 24,
+      columns,
+      rows: [],
+      sort: { key: "ping", dir: 1 },
+      offset: 0,
+      cellPadding: { x: 4, y: 2 },
+      empty: (rect) => {
+        got = rect;
+      },
+      id: "t",
+    });
+    // x/y inset by the cell padding, y also past the header strip; the width is
+    // the full table width less the padding, because a rowless table overflows
+    // nothing and so reserves no scrollbar gutter.
+    expect(got).toEqual({ x: 14, y: 46, w: 192, h: 272 });
+  });
+
+  it("leaves the table's own rect alone, so the overlay recipe still works", () => {
+    const bare = render([]).result.rect;
+    const withEmpty = render([], "Nothing here").result.rect;
+    expect(withEmpty).toEqual(bare);
+    expect(withEmpty).toEqual({ x: 0, y: 0, w: 200, h: 300 });
+  });
+
+  it("keeps the header sortable while the table is empty", () => {
+    // Deliberate: the arrow answers "what will this be sorted by when rows
+    // arrive", and a header that stopped responding when the data ran out
+    // would be the same shape-changing surprise in another form.
+    const { result } = render([], "Nothing here");
+    expect(result.sort).toEqual({ key: "ping", dir: 1 });
+    expect(result.offset).toBe(0);
+    expect(result.selected).toBe(null);
   });
 });
