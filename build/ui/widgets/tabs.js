@@ -1,0 +1,83 @@
+// ---------- tabs ----------
+import { buttonState, centeredText, consumeKeyboardCommand, drawBox, drawFocusRing, focusFromPointer, hoverCursor, measureWidth, place, registerFocusable, roundRectPath, theme, uiCtx, uiFont, uiPointer, widgetId, } from "../../ui/core/index.js";
+/** Draw a tab strip; returns the (possibly changed) active index:
+ *
+ *    tab = UI.tabs({ x, y, items: ["All", "Coop", "PvP"], active: tab }); */
+export function tabs(opts) {
+    const ctx = uiCtx();
+    ctx.save();
+    ctx.font = opts.font ?? uiFont(theme.fontSize, true);
+    // Auto width: equal cells sized to the widest label.
+    const w = opts.w ??
+        (Math.ceil(Math.max(...opts.items.map((t) => measureWidth(ctx, t)))) +
+            theme.spacing.lg * 2 +
+            2) *
+            opts.items.length;
+    const rect = place(opts, w, opts.h ?? theme.tabH, "tabs", true);
+    const id = widgetId(opts.id, "tabs");
+    const keyboardFocused = registerFocusable(ctx, { id, tabIndex: opts.tabIndex, rect });
+    const cellW = rect.w / opts.items.length;
+    const p = uiPointer();
+    let active = opts.active;
+    const command = consumeKeyboardCommand(id);
+    if (command === "ArrowRight" || command === "ArrowDown")
+        active = (active + 1) % opts.items.length;
+    if (command === "ArrowLeft" || command === "ArrowUp")
+        active = (active - 1 + opts.items.length) % opts.items.length;
+    ctx.textAlign = "center";
+    // Uniform baseline across the row: `centeredText` centers each label's own
+    // ink box, so labels with descenders (g/q) would sit higher than others.
+    // "middle" is font-relative (string-independent), so every tab lines up.
+    ctx.textBaseline = "middle";
+    // Round only the strip's outer corners: clip the whole strip, fill cells
+    // square inside it.
+    ctx.save();
+    roundRectPath(ctx, rect.x, rect.y, rect.w, rect.h, theme.radius);
+    ctx.clip();
+    opts.items.forEach((label, i) => {
+        const x = rect.x + i * cellW;
+        const { hover, clicked } = buttonState({ x, y: rect.y, w: cellW, h: rect.h }, p);
+        hoverCursor(hover);
+        if (clicked) {
+            active = i;
+            focusFromPointer(ctx, id);
+        }
+        const isActive = i === active;
+        // Tabs have a useful, local focus treatment already: the same lit state
+        // that pointer hover uses. The strip is one focusable widget, so the
+        // selected tab is the tab keyboard focus is currently acting on.
+        const focused = keyboardFocused && isActive && theme.focusStyle === "hover";
+        const visuallyHovered = hover || focused;
+        const hasTabSkin = !!(theme.skin?.frames.tab ||
+            theme.skin?.frames.tabHover ||
+            theme.skin?.frames.tabActive);
+        if (hasTabSkin) {
+            drawBox(ctx, x, rect.y, cellW - 2, rect.h, {
+                fill: visuallyHovered ? theme.bgHover : isActive ? theme.bg : theme.bgActive,
+                stroke: theme.border,
+                role: "tab",
+                state: visuallyHovered ? "hover" : isActive ? "active" : "default",
+                // The tab band runs along x. A frame the pack authored vertically
+                // (`orientation: "y"`) is rotated into it, which is how a plate whose
+                // open edge is on one END becomes a tab whose open edge is its BOTTOM.
+                axis: "x",
+            });
+        }
+        else {
+            ctx.fillStyle = visuallyHovered ? theme.bgHover : isActive ? theme.bg : theme.bgActive;
+            ctx.fillRect(x, rect.y, cellW - 2, rect.h);
+            if (isActive) {
+                ctx.fillStyle = theme.accent;
+                ctx.fillRect(x, rect.y + rect.h - (theme.spacing.sm - 1), cellW - 2, theme.spacing.sm - 1);
+            }
+        }
+        ctx.fillStyle = isActive ? theme.text : theme.textDim;
+        ctx.textAlign = "center";
+        centeredText(ctx, label, x + cellW / 2, rect.y + rect.h / 2, cellW - (theme.spacing.lg - 2));
+    });
+    ctx.restore();
+    ctx.restore();
+    if (keyboardFocused && theme.focusStyle !== "hover")
+        drawFocusRing(ctx, rect);
+    return active;
+}

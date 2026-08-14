@@ -1,0 +1,2 @@
+// ---------- Bitmap font types ----------
+export {};

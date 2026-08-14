@@ -1,0 +1,14 @@
+/** Binds a button element to an action with touch+click+mousedown handling.
+ *  mousedown+preventDefault stops the button from grabbing focus
+ *  so the spacebar continues working after a click.
+ *  Touch is handled directly in touchstart for reliable mobile response.
+ *  Returns the element, or null if the id is missing from the DOM. */
+export declare function wireButton(id: string, action: () => void): HTMLElement | null;
+/** Prevent default touch behavior on a canvas so it doesn't steal
+ *  focus from keyboard input. Call this once after canvas setup. */
+export declare function preventTouchFocus(canvas: HTMLCanvasElement): void;
+/** Fire device haptics via the Vibration API. `pattern` is a duration in ms or
+ *  an on/off pattern (`[on, off, on, …]`). Returns true if the buzz was
+ *  accepted. Safe everywhere: no-ops (returns false) where vibration is
+ *  unsupported — desktop, iOS Safari — so callers never need to feature-detect. */
+export declare function vibrate(pattern: number | number[]): boolean;

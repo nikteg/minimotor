@@ -1,0 +1,176 @@
+{
+  "name": "minimotor",
+  "version": "0.2.0",
+  "description": "Minimal game framework — fixed-step loop, drawing, input, collision, audio, 3D rendering, and optional physics — for small games and playful apps",
+  "homepage": "https://github.com/nikteg/minimotor#readme",
+  "bugs": "https://github.com/nikteg/minimotor/issues",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nikteg/minimotor.git"
+  },
+  "bin": {
+    "mm": "./build/cli/index.js"
+  },
+  "files": [
+    "build",
+    "src/cli/__examples",
+    "README.md",
+    "tsconfig.web.json"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./build/index.d.ts",
+      "default": "./build/index.js"
+    },
+    "./audio": {
+      "types": "./build/audio/index.d.ts",
+      "default": "./build/audio/index.js"
+    },
+    "./animation": {
+      "types": "./build/anim/index.d.ts",
+      "default": "./build/anim/index.js"
+    },
+    "./aseprite": {
+      "types": "./build/aseprite/index.d.ts",
+      "default": "./build/aseprite/index.js"
+    },
+    "./assets": {
+      "types": "./build/assets/index.d.ts",
+      "default": "./build/assets/index.js"
+    },
+    "./ecs": {
+      "types": "./build/ecs/index.d.ts",
+      "default": "./build/ecs/index.js"
+    },
+    "./sprites": {
+      "types": "./build/sprites/index.d.ts",
+      "default": "./build/sprites/index.js"
+    },
+    "./camera": {
+      "types": "./build/camera/index.d.ts",
+      "default": "./build/camera/index.js"
+    },
+    "./debug": {
+      "types": "./build/debug/index.d.ts",
+      "default": "./build/debug/index.js"
+    },
+    "./input": {
+      "types": "./build/input/index.d.ts",
+      "default": "./build/input/index.js"
+    },
+    "./ldtk": {
+      "types": "./build/ldtk/index.d.ts",
+      "default": "./build/ldtk/index.js"
+    },
+    "./onscreen-input": {
+      "types": "./build/onscreen/index.d.ts",
+      "default": "./build/onscreen/index.js"
+    },
+    "./net": {
+      "types": "./build/net/index.d.ts",
+      "default": "./build/net/index.js"
+    },
+    "./particles": {
+      "types": "./build/particles/index.d.ts",
+      "default": "./build/particles/index.js"
+    },
+    "./3d": {
+      "types": "./build/render3d/index.d.ts",
+      "default": "./build/render3d/index.js"
+    },
+    "./platformer": {
+      "types": "./build/platformer/index.d.ts",
+      "default": "./build/platformer/index.js"
+    },
+    "./procgen": {
+      "types": "./build/procgen/index.d.ts",
+      "default": "./build/procgen/index.js"
+    },
+    "./portals": {
+      "types": "./build/portals/index.d.ts",
+      "default": "./build/portals/index.js"
+    },
+    "./scenes": {
+      "types": "./build/scenes/index.d.ts",
+      "default": "./build/scenes/index.js"
+    },
+    "./storage": {
+      "types": "./build/storage/index.d.ts",
+      "default": "./build/storage/index.js"
+    },
+    "./timers": {
+      "types": "./build/timers/index.d.ts",
+      "default": "./build/timers/index.js"
+    },
+    "./ui": {
+      "types": "./build/ui/index.d.ts",
+      "default": "./build/ui/index.js"
+    },
+    "./hot-reload": {
+      "types": "./build/hot/index.d.ts",
+      "default": "./build/hot/index.js"
+    },
+    "./physics2d": {
+      "types": "./build/physics2d/index.d.ts",
+      "default": "./build/physics2d/index.js"
+    },
+    "./physics3d": {
+      "types": "./build/physics3d/index.d.ts",
+      "default": "./build/physics3d/index.js"
+    },
+    "./performance": {
+      "types": "./build/perf/index.d.ts",
+      "default": "./build/perf/index.js"
+    },
+    "./snapshots": {
+      "types": "./build/snapshots/index.d.ts",
+      "default": "./build/snapshots/index.js"
+    },
+    "./autosave": {
+      "types": "./build/autosave/index.d.ts",
+      "default": "./build/autosave/index.js"
+    },
+    "./capture": {
+      "types": "./build/capture/index.d.ts",
+      "default": "./build/capture/index.js"
+    },
+    "./rng": {
+      "types": "./build/rng/index.d.ts",
+      "default": "./build/rng/index.js"
+    },
+    "./server": {
+      "types": "./build/net/server/index.d.ts",
+      "default": "./build/net/server/index.js"
+    },
+    "./cli": {
+      "types": "./build/cli/index.d.ts",
+      "default": "./build/cli/index.js"
+    },
+    "./cli/*": {
+      "types": "./build/cli/features/*.d.ts",
+      "default": "./build/cli/features/*.js"
+    }
+  },
+  "dependencies": {
+    "ajv": "^8.20.0",
+    "ws": "^8.21.1"
+  },
+  "peerDependencies": {
+    "@dimforge/rapier3d-compat": "0.20.0",
+    "planck": "^1.5.0"
+  },
+  "peerDependenciesMeta": {
+    "@dimforge/rapier3d-compat": {
+      "optional": true
+    },
+    "planck": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

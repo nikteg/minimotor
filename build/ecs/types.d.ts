@@ -1,0 +1,89 @@
+/** A component handle. Carries the element type `T` for typed queries. */
+export interface Component<T> {
+    /** Dense numeric id, assigned on registration — the query bitset index. */
+    readonly id: number;
+    /** Label passed to `component` (auto-generated when omitted) — for
+     *  debugging and `Perf` overlays. */
+    readonly name: string;
+    /** Pair this component with data for `world.spawn(...)`. */
+    with(data: T): ComponentInit<T>;
+}
+/** A component + its initial data, produced by `Component.with()`. */
+export interface ComponentInit<T> {
+    /** The component type this data attaches to. */
+    readonly component: Component<T>;
+    /** The initial value, stored on the entity when spawned. */
+    readonly data: T;
+}
+export type AnyComponent = Component<any>;
+export type AnyComponentInit = ComponentInit<any>;
+/** An entity id. Encodes a slot index plus a generation counter, so a handle to
+ *  a despawned-and-recycled slot is detected as dead by `world.alive()`. */
+export type Entity = number & {
+    readonly __entity: unique symbol;
+};
+/** A simulation system: runs in the update phase (via `world.update()`). */
+export type System = (world: Ecs) => void;
+/** A render system: runs in the draw phase (via `world.draw(ctx)`). */
+export type RenderSystem = (world: Ecs, ctx: CanvasRenderingContext2D) => void;
+/** A container of entities, their components, and queries over them. Create
+ *  with `createEcs()` — the blessed instance idiom is `const ecs =
+ *  createEcs()`. ECS worlds are game CONTENT: make one per scene or per
+ *  game, drop it to tear it down. */
+export interface Ecs {
+    /** Create an entity, optionally attaching components. Returns its id. */
+    spawn(...inits: AnyComponentInit[]): Entity;
+    /** Mark an entity (and all its components) for removal. Safe inside
+     *  `each`/`query`: deferred automatically and applied when the outermost
+     *  iteration ends — no skipped-element bugs, nothing to call. */
+    despawn(e: Entity): void;
+    /** Is this exact handle still live? (False for a recycled/despawned slot.) */
+    alive(e: Entity): boolean;
+    /** Attach or overwrite a component on an entity. */
+    add<T>(e: Entity, c: Component<T>, data: T): void;
+    /** Read a component, or undefined if absent/dead. */
+    get<T>(e: Entity, c: Component<T>): T | undefined;
+    /** Does the entity have this component? */
+    has(e: Entity, c: AnyComponent): boolean;
+    /** Remove a component. Deferred if a query is iterating. */
+    remove(e: Entity, c: AnyComponent): void;
+    /** How many entities currently have this component. */
+    count(c: AnyComponent): number;
+    /** Total live entities (despawns land once the outermost iteration ends). */
+    readonly size: number;
+    /** Remove every entity and component (systems are kept). */
+    clear(): void;
+    /** Register (or replace, by name) an update-phase system. Systems run in
+     *  registration order when `update()` is called. */
+    system(name: string, fn: System): void;
+    /** Register (or replace, by name) a draw-phase system. */
+    renderSystem(name: string, fn: RenderSystem): void;
+    /** Run every update system in order, then flush buffered structural changes. */
+    update(): void;
+    /** Run every render system in order with the given context. */
+    draw(ctx: CanvasRenderingContext2D): void;
+    /** The live backing array of a component's data — every row currently
+     *  attached, packed (a sparse set's dense side). This is the zero-copy bridge
+     *  to code that consumes component data in bulk without the ECS knowing what
+     *  that code does: e.g. hand the `Sprite` store to the renderer with
+     *  `Draw.sprites(ecs.dense(Sprites.Sprite), { interpolation, view })`. The array is
+     *  the store's own backing — read and mutate elements freely, but don't
+     *  change its length (spawn/despawn own that). Empty when nothing holds `c`. */
+    dense<T>(c: Component<T>): readonly T[];
+    /** Callback-form query for hot systems: no generator, no per-entity tuple
+     *  allocation. Same matching semantics as `query`. */
+    each<A>(a: Component<A>, fn: (e: Entity, a: A) => void): void;
+    each<A, B>(a: Component<A>, b: Component<B>, fn: (e: Entity, a: A, b: B) => void): void;
+    each<A, B, C>(a: Component<A>, b: Component<B>, c: Component<C>, fn: (e: Entity, a: A, b: B, c: C) => void): void;
+    each<A, B, C, D>(a: Component<A>, b: Component<B>, c: Component<C>, d: Component<D>, fn: (e: Entity, a: A, b: B, c: C, d: D) => void): void;
+    /** Iterate every entity carrying all the given components, yielding
+     *  `[entity, ...data]` tuples (data in argument order). Walks the smallest
+     *  matching store; `spawn`/`despawn` during iteration are deferred and
+     *  applied when the outermost iteration ends. Prefer `each` in hot loops —
+     *  it allocates no tuple. */
+    query<A>(a: Component<A>): Iterable<[Entity, A]>;
+    query<A, B>(a: Component<A>, b: Component<B>): Iterable<[Entity, A, B]>;
+    query<A, B, C>(a: Component<A>, b: Component<B>, c: Component<C>): Iterable<[Entity, A, B, C]>;
+    query<A, B, C, D>(a: Component<A>, b: Component<B>, c: Component<C>, d: Component<D>): Iterable<[Entity, A, B, C, D]>;
+    query(...cs: AnyComponent[]): Iterable<[Entity, ...unknown[]]>;
+}

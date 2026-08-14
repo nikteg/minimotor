@@ -1,0 +1,101 @@
+// ---------- UI ----------
+// Immediate-mode UI: buttons, panels, lists, tables, dialogs, drag-and-drop.
+// Widgets are drawn and polled every frame from their options — no retained
+// widget tree, no event handlers to wire up.
+//
+//   const UI = createUI(app);
+//   if (UI.button("Play", { x: 300, y: 200 })) start();
+//   UI.panel({ x: 20, y: 20, w: 200, h: 120, title: "Inventory" });
+import { animate as animateValue } from "../anim/value.js";
+import * as UiModule from "./api.js";
+import { registerUiApp, withUiApp } from "./core/state.js";
+export { createTilesetSkin, createTilesetSkinFromManifest, frameFromCell, inspectTilesetSkin, } from "./api.js";
+/** UI API isolated to one canvas and bound to its interface clock. */
+export function createUI(app, { gamepads } = {}) {
+    registerUiApp(app, gamepads);
+    const bind = (fn) => ((...args) => withUiApp(app, () => fn(...args)));
+    return {
+        bar: bind(UiModule.bar),
+        blur: bind(UiModule.blur),
+        button: bind(UiModule.button),
+        buttonState: bind(UiModule.buttonState),
+        buttonWidth: bind(UiModule.buttonWidth),
+        cancelDrag: bind(UiModule.cancelDrag),
+        clearFloatText: bind(UiModule.clearFloatText),
+        clip: bind(UiModule.clip),
+        col: bind(UiModule.col),
+        confirm: bind(UiModule.confirm),
+        createFloatText: bind(UiModule.createFloatText),
+        dialog: bind(UiModule.dialog),
+        dragScroll: bind(UiModule.dragScroll),
+        dragGesture: bind(UiModule.dragGesture),
+        dragSource: bind(UiModule.dragSource),
+        draggedItem: bind(UiModule.draggedItem),
+        drawFloatText: bind(UiModule.drawFloatText),
+        drawLayoutOverlay: bind(UiModule.drawLayoutOverlay),
+        drawTips: bind(UiModule.drawTips),
+        dropIndicator: bind(UiModule.dropIndicator),
+        dropTarget: bind(UiModule.dropTarget),
+        dropTargetState: bind(UiModule.dropTargetState),
+        field: bind(UiModule.field),
+        floatText: bind(UiModule.floatText),
+        flow: bind(UiModule.flow),
+        focus: bind(UiModule.focus),
+        focusedId: bind(UiModule.focusedId),
+        focusNext: bind(UiModule.focusNext),
+        focusPrevious: bind(UiModule.focusPrevious),
+        fromScreen: bind(UiModule.fromScreen),
+        getTheme: bind(UiModule.getTheme),
+        grid: bind(UiModule.grid),
+        height: bind(UiModule.height),
+        idScope: bind(UiModule.idScope),
+        ids: bind(UiModule.ids),
+        lastRect: bind(UiModule.lastRect),
+        layoutCapture: bind(UiModule.layoutCapture),
+        layoutIssues: bind(UiModule.layoutIssues),
+        layoutLag: bind(UiModule.layoutLag),
+        layoutTree: bind(UiModule.layoutTree),
+        list: bind(UiModule.list),
+        listItem: bind(UiModule.listItem),
+        measureWidth: bind(UiModule.measureWidth),
+        minimap: bind(UiModule.minimap),
+        modal: bind(UiModule.modal),
+        panel: bind(UiModule.panel),
+        pointerOverUi: bind(UiModule.pointerOverUi),
+        pressOrigin: bind(UiModule.pressOrigin),
+        popover: bind(UiModule.popover),
+        row: bind(UiModule.row),
+        scaled: bind(UiModule.scaled),
+        scrollbar: bind(UiModule.scrollbar),
+        scrollbarFade: bind(UiModule.scrollbarFade),
+        wheelScroll: bind(UiModule.wheelScroll),
+        dismissedByOutsideRelease: bind(UiModule.dismissedByOutsideRelease),
+        scrollGestureActive: bind(UiModule.scrollGestureActive),
+        select: bind(UiModule.select),
+        setBaseSize: bind(UiModule.setBaseSize),
+        setCursor: bind(UiModule.setCursor),
+        setNavPad: bind(UiModule.setNavPad),
+        setScale: bind(UiModule.setScale),
+        setTheme: bind(UiModule.setTheme),
+        withTheme: bind(UiModule.withTheme),
+        slider: bind(UiModule.slider),
+        spacer: bind(UiModule.spacer),
+        spinner: bind(UiModule.spinner),
+        table: bind(UiModule.table),
+        tabs: bind(UiModule.tabs),
+        text: bind(UiModule.text),
+        textInput: bind(UiModule.textInput),
+        textMetrics: bind(UiModule.textMetrics),
+        textWidth: bind(UiModule.textWidth),
+        toScreen: bind(UiModule.toScreen),
+        toggle: bind(UiModule.toggle),
+        tooltip: bind(UiModule.tooltip),
+        vh: bind(UiModule.vh),
+        viewport3d: bind(UiModule.viewport3d),
+        vw: bind(UiModule.vw),
+        width: bind(UiModule.width),
+        worldLabel: bind(UiModule.worldLabel),
+        defaultTheme: UiModule.defaultTheme,
+        animate: (options) => animateValue({ ...options, clock: app.Clock.ui }),
+    };
+}

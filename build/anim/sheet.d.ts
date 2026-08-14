@@ -1,0 +1,104 @@
+import type { ClockHandle } from "../clock/index.js";
+/** A rectangular region of the sheet image (px). Matches the `sx/sy/sw/sh`
+ *  fields of the ECS `Sprite` component. */
+export interface FrameRect {
+    /** Source x of the frame's top-left in the sheet image (px). */
+    sx: number;
+    /** Source y of the frame's top-left in the sheet image (px). */
+    sy: number;
+    /** Source width of the frame (px). */
+    sw: number;
+    /** Source height of the frame (px). */
+    sh: number;
+    /** Original untrimmed frame size and packed-content offset. Present for
+     * trimmed atlases; Draw.sprite uses them to preserve alignment. */
+    sourceW?: number;
+    sourceH?: number;
+    offsetX?: number;
+    offsetY?: number;
+}
+/** One named state's frames within a sheet's grid (a row and its frame count). */
+export interface SheetStateSpec {
+    /** Grid row holding this state's frames. */
+    row: number;
+    /** Frame count, left to right from column 0. */
+    frames: number;
+    /** Playback speed in frames/second. Default 12 (ignored for 1 frame). */
+    fps?: number;
+}
+/** Config for `Anim.fromGrid` — the source frame size plus the named states packed
+ *  into the grid. */
+export interface SheetOptions<K extends string> {
+    /** Source frame size in the image, in px. */
+    frame: {
+        w: number;
+        h: number;
+    };
+    /** Named states — the keys become the cursor's typed vocabulary. */
+    states: Record<K, SheetStateSpec>;
+    /** Clock every cursor from this sheet runs on. Defaults to the ambient
+     *  clock, which is what `createAnimation(app)` binds. */
+    clock?: ClockHandle;
+}
+/** An image source usable as a sheet: a `CanvasImageSource` with known
+ *  `width`/`height`. */
+export type SheetImage = CanvasImageSource & {
+    width: number;
+    height: number;
+};
+/** The image-bearing shape consumed by `Draw.sprite`. Multi-image animations
+ * expose the active state's image through the same protocol. */
+export interface AnimationImageSource {
+    readonly image: SheetImage;
+}
+/** A per-entity playback head over a sheet. Everything derives from the
+ *  cursor's clock at read time. */
+export interface AnimationCursor<K extends string = string> {
+    /** The sheet this cursor plays over. */
+    readonly sheet: AnimationImageSource;
+    /** The active state name. */
+    readonly state: K;
+    /** Switch state. Same-state calls are no-ops (call it every step freely);
+     *  switching resets the new state's timeline. */
+    set(state: K): void;
+    /** Restart the current state's timeline. */
+    reset(): void;
+    /** Freeze on the current frame. */
+    pause(): void;
+    /** Continue from the frozen frame. */
+    resume(): void;
+    /** Whether playback is currently frozen. */
+    readonly paused: boolean;
+    /** Current frame index within the state. */
+    readonly frame: number;
+    /** Source rect of the current frame (reused scratch — read, don't hold). */
+    readonly rect: FrameRect;
+    /** True once a non-looping state has reached its last frame. */
+    readonly done: boolean;
+}
+export interface PlaybackOptions {
+    /** Playback clock. Defaults to the clock the sheet captured when it was
+     *  built — an app-bound `Anim.fromGrid` captures that app's world clock, so
+     *  cursors pause and slow down with it without naming it here. */
+    clock?: ClockHandle;
+}
+/** Shared playback protocol implemented by every animation image layout. */
+export interface AnimationSource<K extends string = string, C extends AnimationCursor<K> = AnimationCursor<K>> {
+    /** Start a playback cursor, on this sheet's clock unless `opts` names one. */
+    play(initial: K, opts?: PlaybackOptions): C;
+    /** Play one state once, hold its final frame, and report `done`. */
+    once(initial: K, opts?: PlaybackOptions): C;
+    /** Source rect for an arbitrary state/frame (manual draws, HUD icons).
+     *  Reused scratch — read, don't hold. */
+    rect(state: K, frame: number): FrameRect;
+}
+/** A single-image grid source, including its shared image and cell size. */
+export interface GridAnimationSource<K extends string = string> extends AnimationSource<K> {
+    readonly image: SheetImage;
+    readonly frame: {
+        w: number;
+        h: number;
+    };
+}
+/** Slice an image into a named-state sprite sheet. */
+export declare function fromGrid<K extends string>(image: SheetImage, opts: SheetOptions<K>): GridAnimationSource<K>;
