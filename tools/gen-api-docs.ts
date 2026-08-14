@@ -1,17 +1,18 @@
 // Generate the API reference page from minimotor's built TypeScript types.
 //
-//   pnpm run build && node tools/gen-api-docs.ts   (or: pnpm run docs:api)
+//   pnpm run docs:api
 //
-// Walks build/index.d.ts with the TypeScript compiler API, pulls every export
-// (namespaces + their members, standalone functions, types/interfaces) together
-// with its JSDoc, and writes a single self-contained page to samples/api/.
+// Walks every public type entry in package.json with the TypeScript compiler
+// API, pulls every export (namespaces + their members, standalone functions,
+// types/interfaces) together with its JSDoc, and writes a single self-contained
+// page to samples/api/.
 // No new dependency — `typescript` already ships as a devDep, and Node runs
 // this file directly via built-in type stripping (erasable syntax only).
 import ts from "typescript";
 import { createHighlighter } from "shiki";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 
 type Kind = "namespace" | "function" | "interface" | "type" | "value";
 
@@ -55,11 +56,55 @@ const buildDir = join(root, "build");
 const isOwnMember = (sym: ts.Symbol): boolean =>
   (sym.declarations ?? []).some((d) => d.getSourceFile().fileName.startsWith(buildDir));
 
-const entries: [label: string, file: string][] = [
-  ["index", join(root, "build/index.d.ts")],
-  ["physics2d", join(root, "build/physics2d/service.d.ts")],
-  ["server", join(root, "build/server.d.ts")],
-];
+interface PackageJson {
+  exports?: Record<string, string | { types?: string }>;
+}
+
+// The package export map is the public API. Derive the docs inputs from it so
+// adding or moving a subpath cannot silently leave its API undocumented. A
+// wildcard entry (currently `minimotor/cli/*`) expands to the declaration files
+// that the wildcard actually exposes.
+function publicTypeEntries(): [label: string, file: string][] {
+  const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as PackageJson;
+  const found: [label: string, file: string][] = [];
+
+  for (const [subpath, target] of Object.entries(pkg.exports ?? {})) {
+    const types = typeof target === "string" ? target : target.types;
+    if (!types) continue;
+
+    const label = subpath === "." ? "index" : subpath.replace(/^\.\//, "");
+    if (!types.includes("*")) {
+      const file = join(root, types);
+      if (!existsSync(file)) {
+        throw new Error(`Missing public declaration ${types}; run pnpm build first`);
+      }
+      found.push([label, file]);
+      continue;
+    }
+
+    const pattern = basename(types);
+    const [prefix, suffix] = pattern.split("*");
+    const directory = join(root, dirname(types));
+    if (!existsSync(directory)) {
+      throw new Error(
+        `Missing public declaration directory ${dirname(types)}; run pnpm build first`,
+      );
+    }
+    const matches = readdirSync(directory)
+      .filter((name) => name.startsWith(prefix) && name.endsWith(suffix))
+      .sort();
+    if (!matches.length) throw new Error(`Public declaration pattern ${types} matched no files`);
+
+    for (const name of matches) {
+      const wildcard = name.slice(prefix.length, name.length - suffix.length);
+      found.push([label.replace("*", wildcard), join(directory, name)]);
+    }
+  }
+
+  return found;
+}
+
+const entries = publicTypeEntries();
 
 const program = ts.createProgram(
   entries.map(([, f]) => f),
@@ -171,13 +216,15 @@ function describe(rawSym: ts.Symbol): DocEntry {
   const type = decl ? checker.getTypeOfSymbolAtLocation(sym, decl) : null;
   const callSigs = type ? type.getCallSignatures() : [];
   const props = type ? type.getProperties() : [];
+  const ownProps = props.filter(isOwnMember);
 
   // Namespace object literal (`export const Draw = { ... }`): object type,
   // has members, no call signature of its own.
   const isObjectNamespace =
     !isNamespace &&
+    !!(type && type.getFlags() & ts.TypeFlags.Object) &&
     callSigs.length === 0 &&
-    props.length > 0 &&
+    ownProps.length > 0 &&
     !(flags & (ts.SymbolFlags.Interface | ts.SymbolFlags.TypeAlias | ts.SymbolFlags.Class));
 
   if (isNamespace) {
@@ -197,7 +244,7 @@ function describe(rawSym: ts.Symbol): DocEntry {
       name,
       kind: "namespace",
       doc: docOf(sym),
-      members: props.map((mem) => memberEntry(mem)).filter(present),
+      members: ownProps.map((mem) => memberEntry(mem)).filter(present),
     };
   }
   if (callSigs.length > 0 && type) {
@@ -475,15 +522,18 @@ function renderItem(it: PageItem): string {
 // Names that already appear as a member of some namespace (e.g. Collision's
 // slide/moveAndSlide, also exported standalone) — so we don't also list them as
 // top-level functions. They belong inside their namespace.
-const memberNames = new Set<string>();
-for (const g of groups)
-  for (const it of g.items) for (const m of it.members ?? []) memberNames.add(m.name);
+const memberNames = new Map<string, Set<string>>();
+for (const g of groups) {
+  const names = new Set<string>();
+  for (const it of g.items) for (const m of it.members ?? []) names.add(m.name);
+  memberNames.set(g.label, names);
+}
 
 // Which namespace re-exports each type — so top-level types can be labeled
 // `Namespace.Type` (e.g. `Audio.SfxSpec`, `Anim.SheetOptions`) in the sidebar,
 // filter and heading. Built from each `import * as X` namespace's type exports.
 const typeOwner = new Map<string, string>();
-for (const [, file] of entries) {
+for (const [label, file] of entries) {
   const src = program.getSourceFile(file);
   const mod = src && checker.getSymbolAtLocation(src);
   if (!mod) continue;
@@ -510,15 +560,16 @@ for (const [, file] of entries) {
         }
       }
       const ef = et.getFlags();
-      if (ef & TYPE_FLAGS && !(ef & VALUE_FLAGS) && !typeOwner.has(e.getName()))
-        typeOwner.set(e.getName(), s.getName());
+      const key = `${label}\0${e.getName()}`;
+      if (ef & TYPE_FLAGS && !(ef & VALUE_FLAGS) && !typeOwner.has(key))
+        typeOwner.set(key, s.getName());
     }
   }
 }
 
 const flat: PageItem[] = groups
   .flatMap((g) => g.items.map((it) => ({ ...it, module: g.label, label: it.name })))
-  .filter((it) => it.kind !== "function" || !memberNames.has(it.name));
+  .filter((it) => it.kind !== "function" || !memberNames.get(it.module)?.has(it.name));
 
 // Promote nested sub-namespaces (Audio.Music, Audio.Mixer) to their OWN cards;
 // the parent keeps just its direct functions/properties. They sort right after
@@ -548,12 +599,10 @@ const expanded: PageItem[] = flat.flatMap((it) => {
 });
 
 const allItems: PageItem[] = expanded.map((it) => {
-  // Prefix types with their owning namespace where known (only the main-entry
-  // types — a same-named type in `minimotor/server` isn't the Net one).
+  // Prefix types with their owning namespace where known. Ownership is scoped
+  // to an entry point so same-named types in different subpaths cannot collide.
   const owner =
-    it.module === "index" &&
-    (it.kind === "type" || it.kind === "interface") &&
-    typeOwner.get(it.name);
+    (it.kind === "type" || it.kind === "interface") && typeOwner.get(`${it.module}\0${it.name}`);
   return { ...it, label: owner ? `${owner}.${it.name}` : it.name };
 });
 allItems.sort((a, b) => kindRank[a.kind] - kindRank[b.kind] || a.label.localeCompare(b.label));
@@ -630,7 +679,7 @@ const html = `<!doctype html>
      (npm run docs:api) from the package's exported types. Re-run after API changes. -->
 <html lang="en"><head>
 <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<meta name="description" content="Minimotor API reference — every export of the minimotor, minimotor/physics2d and minimotor/server entry points, generated from the package's TypeScript types." />
+<meta name="description" content="Minimotor API reference — every public package export, generated from the package's TypeScript types." />
 <title>Minimotor · API reference</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
@@ -760,7 +809,7 @@ const html = `<!doctype html>
     <p id="noresults" hidden></p>
   </main>
 </div>
-<footer>Generated from build/*.d.ts · <a href="../">back to samples</a></footer>
+<footer>Generated from the public package exports · <a href="../">back to samples</a></footer>
 <script>
   const f = document.getElementById("filter");
   const items = [...document.querySelectorAll(".item")];
@@ -938,8 +987,17 @@ const html = `<!doctype html>
 </body></html>`;
 
 const outDir = join(root, "samples/api");
-mkdirSync(outDir, { recursive: true });
-writeFileSync(join(outDir, "index.html"), html);
-console.log(
-  `API docs → samples/api/index.html  (${allItems.length} exports across ${groups.length} modules)`,
-);
+if (html.includes("__@"))
+  throw new Error("Generated API docs contain an internal TypeScript symbol");
+
+if (process.argv.includes("--check")) {
+  console.log(
+    `API docs ok (${allItems.length} exports across ${groups.length} public entry points)`,
+  );
+} else {
+  mkdirSync(outDir, { recursive: true });
+  writeFileSync(join(outDir, "index.html"), html);
+  console.log(
+    `API docs → samples/api/index.html  (${allItems.length} exports across ${groups.length} public entry points)`,
+  );
+}
