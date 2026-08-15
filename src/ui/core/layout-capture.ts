@@ -13,6 +13,7 @@
 import { uiCtx } from "./context.js";
 import { currentUiScale, uiToScreen } from "./input.js";
 import { ensureWired, onFrameEnd, onReset } from "./lifecycle.js";
+import { armPaint, resetPaintSeq } from "./paint-seq.js";
 import { uiSlot } from "./state.js";
 
 /** One captured rect: a widget slot or a container box. */
@@ -60,6 +61,24 @@ export interface LayoutEntry {
    *  test, a debug overlay, or anything reading the screen out — sees the
    *  sentence, never the fragments the paint happened to be cut into. */
   text?: string;
+  /** WHEN this rect was drawn, as a 1-based ordinal over the frame's painted
+   *  entries — the sequence the kit actually issued the draws in, kept apart
+   *  from this array's own PLACEMENT order.
+   *
+   *  The two are not the same question and the array order answers only the
+   *  second: entries arrive as a tree, containers before the children they
+   *  hold, and a container that paints nothing still takes an index. So
+   *  `paint` is **absent** for every entry that put no pixels down — a bare
+   *  `row`/`col`, a `UI.fill` reservation whose caller drew with the raw
+   *  context — and those entries cannot occlude anything. See `paintIssues`,
+   *  which is the check this exists for. */
+  paint?: number;
+  /** This rect was recorded inside an overlay's own draw — a `popover` or
+   *  `modal` body, or the deferred `select` menu. An overlay is SUPPOSED to
+   *  paint over the screen beneath it, so `paintIssues` never reports one as
+   *  the offender; the interesting case is the reverse, something ordinary
+   *  painting over an overlay after it went up. */
+  overlay?: true;
 }
 
 // Entries recorded so far THIS frame, and the last completed frame's tree.
@@ -92,9 +111,13 @@ function ensureCaptureHook(): void {
     s.tree = s.frame;
     s.frame = [];
     s.keys.clear();
+    resetPaintSeq();
+    overlayDepth = 0;
   });
   onReset(() => {
     layoutCaptureActive = false;
+    resetPaintSeq();
+    overlayDepth = 0;
   });
 }
 
@@ -110,12 +133,17 @@ export function layoutCapture(on: boolean): void {
     s.frame.length = 0;
     s.tree.length = 0;
     s.keys.clear();
+    resetPaintSeq();
+    overlayDepth = 0;
   }
 }
 
-/** The layout entries captured for the last COMPLETED frame (draw order —
- *  containers before the children placed inside them). Empty until a frame
- *  has finished with capture enabled:
+/** The layout entries captured for the last COMPLETED frame, in PLACEMENT order
+ *  — containers before the children placed inside them, which is a tree and not
+ *  a paint sequence. For when a rect was drawn, read `LayoutEntry.paint`; the
+ *  two coincide today but nothing enforces that, and `paintIssues` is the check
+ *  that uses the paint one. Empty until a frame has finished with capture
+ *  enabled:
  *
  *    UI.layoutCapture(true);
  *    // ...one frame renders...
@@ -153,18 +181,21 @@ export function recordLayout(
   if (frame.length === 0) ensureWired();
   const tl = uiToScreen(rect.x, rect.y);
   const br = uiToScreen(rect.x + rect.w, rect.y + rect.h);
-  return (
-    frame.push({
-      kind,
-      id: id === undefined ? undefined : String(id),
-      rect: { x: rect.x, y: rect.y, w: rect.w, h: rect.h },
-      screenRect: { x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y },
-      scale: currentUiScale(),
-      parent: parents[parents.length - 1],
-      clips: flags?.clips,
-      pinned: flags?.pinned,
-    }) - 1
-  );
+  const entry: LayoutEntry = {
+    kind,
+    id: id === undefined ? undefined : String(id),
+    rect: { x: rect.x, y: rect.y, w: rect.w, h: rect.h },
+    screenRect: { x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y },
+    scale: currentUiScale(),
+    parent: parents[parents.length - 1],
+    clips: flags?.clips,
+    pinned: flags?.pinned,
+    overlay: overlayDepth > 0 ? true : undefined,
+  };
+  // Whatever the kit draws next belongs to this rect until something else is
+  // recorded — the same "most recent entry" idiom as `annotateLayoutText`.
+  armPaint(entry);
+  return frame.push(entry) - 1;
 }
 
 /** Rewrite an entry's geometry after the fact. A container placed into a
@@ -211,6 +242,26 @@ export function pushLayoutParent(): void {
 export function popLayoutParent(): void {
   if (!layoutCaptureActive) return;
   parents.pop();
+}
+
+// How many overlays own the draw right now. A COUNTER rather than a flag
+// because overlays nest — a `select` inside a `modal` is ordinary — and because
+// the frame-wide `isInOverlayPass()` cannot answer this question at all: it goes
+// true when an immediate `popover` opens and stays true for the rest of the
+// frame, so it would mark everything drawn AFTER the popover as an overlay,
+// which is precisely item 115's fault wearing the exemption meant to excuse it.
+let overlayDepth = 0;
+
+/** Everything recorded until `popLayoutOverlay` belongs to an overlay and is
+ *  entitled to paint over what is beneath it. Called by `popover` and `modal`
+ *  around their own box and body, and by the deferred `select` menu pass. */
+export function pushLayoutOverlay(): void {
+  overlayDepth++;
+}
+
+/** Leave the innermost overlay opened by `pushLayoutOverlay`. */
+export function popLayoutOverlay(): void {
+  if (overlayDepth > 0) overlayDepth--;
 }
 
 /** Record what an auto-sized container's box was actually worth, once its
@@ -325,8 +376,9 @@ function overlayColor(kind: string): { stroke: string; width: number } {
  *  Boxes are drawn from `screenRect`, which is already screen-logical — call
  *  it at the ROOT of the draw, OUTSIDE any `UI.scaled` block, or the scale is
  *  applied twice. Findings win over kind: a child that escaped its container
- *  (`layoutIssues`) is red, a container that drew at a stale size
- *  (`layoutLag`) is orange.
+ *  (`layoutIssues`) is red, as is anything painted THROUGH an open overlay
+ *  (`paintIssues`); a container that drew at a stale size (`layoutLag`) is
+ *  orange.
  *
  *      UI.layoutCapture(debugOn);
  *      UI.scaled(() => buildTheWholeUI());
@@ -337,6 +389,16 @@ export function drawLayoutOverlay(opts: LayoutOverlayOptions = {}): void {
   const ctx = uiCtx();
   const escaped = new Set(layoutIssues().map((issue) => issue.child));
   const stale = new Set(layoutLag().map((finding) => finding.entry));
+  // Only the unambiguous half of `paintIssues`. Two ordinary regions that
+  // overlap are a design decision and belong in a test's report, not painted
+  // red over the art every frame; something drawn through an OPEN OVERLAY is a
+  // fault however it got there, and this is the only place a reader would see it
+  // without knowing to go looking.
+  const throughOverlay = new Set(
+    paintIssues()
+      .filter((issue) => issue.throughOverlay)
+      .map((issue) => issue.over),
+  );
   const wanted = opts.kinds ? new Set(opts.kinds) : undefined;
   const labels = opts.labels ?? "containers";
   ctx.save();
@@ -355,9 +417,11 @@ export function drawLayoutOverlay(opts: LayoutOverlayOptions = {}): void {
     if (r.w <= 0 || r.h <= 0) continue;
     const look = escaped.has(entry)
       ? { stroke: "#ff4b4b", width: 2 }
-      : stale.has(entry)
-        ? { stroke: "#ffad42", width: 2 }
-        : overlayColor(entry.kind);
+      : throughOverlay.has(entry)
+        ? { stroke: "#ff4b4b", width: 2 }
+        : stale.has(entry)
+          ? { stroke: "#ffad42", width: 2 }
+          : overlayColor(entry.kind);
     ctx.strokeStyle = look.stroke;
     ctx.lineWidth = look.width;
     // The half-pixel offset is what keeps a 1px stroke on the pixel rather
@@ -421,6 +485,132 @@ export function layoutIssues(tolerance = 0.5): LayoutIssue[] {
     };
     const worst = Math.max(overflow.left, overflow.top, overflow.right, overflow.bottom);
     if (worst > tolerance) issues.push({ child: e, parent, overflow });
+  }
+  return issues;
+}
+
+/** Two rects that were painted over one another — what `paintIssues` reports. */
+export interface PaintIssue {
+  /** The entry that painted FIRST and is therefore the one underneath. */
+  under: LayoutEntry;
+  /** The entry that painted over it. Never an overlay: an overlay covering the
+   *  screen beneath it is the overlay working. */
+  over: LayoutEntry;
+  /** Where the two met, in screen px, already clipped to both entries'
+   *  clipping ancestors — so a row scrolled out of a list does not report an
+   *  overlap it is masked out of. */
+  overlap: { x: number; y: number; w: number; h: number };
+  /** `under` is an OVERLAY. This is the unambiguous form of the fault: a
+   *  popover, a modal or an open menu is up, and ordinary content drawn later
+   *  in the frame has painted straight through it. Nothing legitimate does
+   *  this — the rest of the list is pairs whose order is a design decision. */
+  throughOverlay?: true;
+}
+
+/** Intersect an entry's screen rect with every clipping ancestor's, which is
+ *  the part of it that can actually reach the canvas. */
+function visibleRect(
+  tree: readonly LayoutEntry[],
+  index: number,
+): { x: number; y: number; w: number; h: number } {
+  const e = tree[index];
+  let { x, y, w, h } = e.screenRect;
+  let at = e.parent;
+  while (at !== undefined) {
+    const ancestor = tree[at];
+    if (!ancestor) break;
+    if (ancestor.clips) {
+      const c = ancestor.screenRect;
+      const nx = Math.max(x, c.x);
+      const ny = Math.max(y, c.y);
+      w = Math.min(x + w, c.x + c.w) - nx;
+      h = Math.min(y + h, c.y + c.h) - ny;
+      x = nx;
+      y = ny;
+      if (w <= 0 || h <= 0) return { x, y, w: 0, h: 0 };
+    }
+    at = ancestor.parent;
+  }
+  return { x, y, w, h };
+}
+
+/** Whether `a` is `b` or one of its ancestors. */
+function inSubtree(tree: readonly LayoutEntry[], a: number, b: number): boolean {
+  let at: number | undefined = b;
+  while (at !== undefined) {
+    if (at === a) return true;
+    at = tree[at]?.parent;
+  }
+  return false;
+}
+
+/** Rects the captured frame painted over one another, later paint first.
+ *
+ *  The check `layoutIssues` cannot make. That one compares a child against the
+ *  container that placed it, which catches a box too small for its contents and
+ *  nothing else; two rects that never shared a parent can sit straight on top of
+ *  each other with `layoutIssues` and `layoutLag` clean the whole time. They did,
+ *  twice — a party table painted through an open popover, and a HUD panel and a
+ *  status column whose z-order could only be settled by eye.
+ *
+ *  What is reported: a pair whose visible rects overlap, where the LATER-painted
+ *  one is not an overlay. Three things are deliberately not in it:
+ *
+ *  - an entry that painted nothing (no `paint` — a bare `row`/`col`, an unused
+ *    `fill` slot). Geometry that puts no pixels down cannot cover anything;
+ *  - an entry painting over its own container, or over anything else on its own
+ *    ancestor line. That is what nesting IS;
+ *  - an overlay as the offender. A `popover`, a `modal` and an open `select`
+ *    menu are built to cover the screen; `throughOverlay` marks the reverse,
+ *    which is never legitimate.
+ *
+ *  What is LEFT in the list is not automatically a bug — two HUD panels that
+ *  deliberately overlap belong here, and which of them is on top is a design
+ *  decision. So the consumer's assertion is usually about the CONTENTS:
+ *
+ *      expect(UI.paintIssues().filter((i) => i.throughOverlay)).toEqual([]);
+ *
+ *  ...for the fault shape, and a named pair's `over`/`under` for a z-order that
+ *  is meant to be a particular way round. `O(n²)` over the frame's painted
+ *  entries — a harness call, like the rest of this module. */
+export function paintIssues(tolerance = 0.5): PaintIssue[] {
+  const tree = layoutTree();
+  const painted: number[] = [];
+  const rects: { x: number; y: number; w: number; h: number }[] = [];
+  for (const [i, e] of tree.entries()) {
+    if (e.paint === undefined) continue;
+    const r = visibleRect(tree, i);
+    if (r.w <= tolerance || r.h <= tolerance) continue;
+    painted.push(i);
+    rects[i] = r;
+  }
+  // Paint order, not array order: the two coincide today (every record site is
+  // followed by the widget's own draw) and the whole point of the field is that
+  // the check does not have to depend on that staying true.
+  painted.sort((a, b) => tree[a].paint! - tree[b].paint!);
+  const issues: PaintIssue[] = [];
+  for (let i = 0; i < painted.length; i++) {
+    const ai = painted[i];
+    for (let j = i + 1; j < painted.length; j++) {
+      const bi = painted[j];
+      const over = tree[bi];
+      if (over.overlay) continue;
+      if (inSubtree(tree, ai, bi) || inSubtree(tree, bi, ai)) continue;
+      const a = rects[ai];
+      const b = rects[bi];
+      const x = Math.max(a.x, b.x);
+      const y = Math.max(a.y, b.y);
+      const w = Math.min(a.x + a.w, b.x + b.w) - x;
+      const h = Math.min(a.y + a.h, b.y + b.h) - y;
+      if (w <= tolerance || h <= tolerance) continue;
+      const under = tree[ai];
+      issues.push({
+        under,
+        over,
+        overlap: { x, y, w, h },
+        throughOverlay: under.overlay ? true : undefined,
+      });
+    }
   }
   return issues;
 }

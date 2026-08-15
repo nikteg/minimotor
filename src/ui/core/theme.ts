@@ -4,6 +4,10 @@
 // are core and re-exported below so `UI.setTheme` stays one import for callers.
 
 import { lineMetrics, measureWidth } from "./measure.js";
+// The layout capture's paint clock. Imported from its own leaf module rather
+// than from `layout-capture.ts`, which reaches `lifecycle.ts` and so back to
+// this file — see the note at the top of `paint-seq.ts`.
+import { notePaint } from "./paint-seq.js";
 import {
   theme,
   type NineSliceRegion,
@@ -146,6 +150,7 @@ export function drawThemeSprite(
 ): boolean {
   const sprite = theme.skin?.sprites.icons?.[name];
   if (!sprite) return false;
+  notePaint();
   const dw = w ?? sprite.region.sw;
   const dh = h ?? sprite.region.sh;
   if (dw <= 0 || dh <= 0) return false;
@@ -297,6 +302,7 @@ export function drawNineSlice(
   w: number,
   h: number,
 ): void {
+  notePaint();
   const { left, top, right, bottom } = region.insets;
   const centerW = region.sw - left - right;
   const centerH = region.sh - top - bottom;
@@ -390,6 +396,10 @@ export function drawBox(
     axis?: "x" | "y";
   },
 ): void {
+  // Every opaque box in the kit lands here — panel and popover frames, buttons,
+  // fields, bars, tabs, toggles, list rows — which makes it the one place the
+  // capture has to be told "these pixels went down now".
+  notePaint();
   const frames = theme.skin?.frames;
   const state = opts.state ?? "default";
   const variant = opts.variant ?? "default";
@@ -490,6 +500,10 @@ export function centeredText(
   cy: number,
   maxW?: number,
 ): void {
+  // A label is the other half of what reaches the canvas — item 115's fault was
+  // a table's HEADER coming through a popover, not a box. An empty string is
+  // not a paint.
+  if (text !== "") notePaint();
   // measureText's actualBoundingBox values are relative to the CURRENT
   // textBaseline — pin it before measuring, or state leaked from caller
   // drawing (e.g. "middle") skews the correction.
@@ -558,6 +572,7 @@ export function centeredSpans(
     centeredText(ctx, only?.text ?? "", x, cy, maxW);
     return;
   }
+  notePaint();
   ctx.textBaseline = "alphabetic";
   const full = runs.map((r) => r.text).join("");
   const shown = maxW !== undefined ? ellipsize(ctx, full, maxW) : full;

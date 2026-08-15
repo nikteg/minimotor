@@ -12,8 +12,15 @@ import {
   hasActiveNavPad,
   lastContainerRect,
   lastWidgetRect,
+  layoutCaptureActive,
   measureWidth,
+  notePaint,
+  popLayoutOverlay,
+  popLayoutParent,
+  pushLayoutOverlay,
+  pushLayoutParent,
   rawPointer,
+  recordLayout,
   runAutoSized,
   sweptCache,
   text,
@@ -128,29 +135,51 @@ export function popover(opts: PopoverOptions, children?: () => void): boolean {
   if (!open) return false;
 
   enterOverlay();
-  paintFrame(ctx, {
-    x: rect.x,
-    y: rect.y,
-    w: rect.w,
-    h: rect.h,
-    title: opts.title,
-    bg: opts.bg,
-    border: opts.border,
-  });
-  if (children) {
-    const body = { x: rect.x, y: rect.y + top, w: rect.w, h: rect.h - top };
-    runAutoSized(
-      key,
-      rect,
-      body,
-      "col",
-      opts.gap ?? theme.spacing.md,
-      pad,
-      "start",
-      false,
-      false,
-      children,
-    );
+  // The capture could not see a popover AT ALL before this: the box is computed
+  // here rather than through `place`/`autoContainer`, so nothing recorded it,
+  // and `runAutoSized`'s `pushLayoutParent` — which opens "the most recent
+  // entry" — therefore hung the popover's children off the TRIGGER drawn just
+  // before it. Recording the box first fixes both at once, since the box is then
+  // the most recent entry. `pinned`, because the coordinates are the popover's
+  // own (anchored or explicit) and never a container's slot.
+  //
+  // `pushLayoutOverlay` is the other half: this frame and everything inside it
+  // is an overlay, which is what entitles it to paint over the screen behind it
+  // and what makes anything painting over IT a fault. See `paintIssues`.
+  pushLayoutOverlay();
+  const captured = layoutCaptureActive;
+  if (captured) {
+    recordLayout("popover", id, rect, { pinned: true });
+    pushLayoutParent();
+  }
+  try {
+    paintFrame(ctx, {
+      x: rect.x,
+      y: rect.y,
+      w: rect.w,
+      h: rect.h,
+      title: opts.title,
+      bg: opts.bg,
+      border: opts.border,
+    });
+    if (children) {
+      const body = { x: rect.x, y: rect.y + top, w: rect.w, h: rect.h - top };
+      runAutoSized(
+        key,
+        rect,
+        body,
+        "col",
+        opts.gap ?? theme.spacing.md,
+        pad,
+        "start",
+        false,
+        false,
+        children,
+      );
+    }
+  } finally {
+    if (captured) popLayoutParent();
+    popLayoutOverlay();
   }
   return true;
 }
@@ -235,11 +264,53 @@ export function modal<R>(
   if (opts.onDismiss && consumeDismissRequest()) opts.onDismiss();
   enterOverlay(opts.showFocus ?? hasActiveNavPad());
   const vp = anchorViewport();
+  const id = opts.id ?? `modal:${opts.title ?? ""}`;
+  // The dim backdrop is the modal's real extent — it covers the viewport and
+  // eats the pointer over all of it — and it was never in the capture, so a
+  // reader of the tree saw only a centered panel and no sign of what made it
+  // modal. Recorded as the overlay ROOT, with the dialog hung under it.
+  //
+  // BEFORE the fill, not after: the paint clock credits a draw to the entry
+  // recorded most recently, so a backdrop painted first would have had its
+  // ordinal taken by the dialog panel and the modal would have read as an entry
+  // that covers the viewport and never paints.
+  pushLayoutOverlay();
+  const captured = layoutCaptureActive;
+  if (captured) {
+    // `${id}:backdrop`, not `id`: the dialog PANEL already carries the modal's
+    // own id, and a second entry answering to the same one silently changes what
+    // every existing `tree.find(e => e.id === …)` resolves to — from the dialog
+    // to a box the size of the window. Two consumers' assertions moved before
+    // this suffix existed.
+    recordLayout("modal", `${id}:backdrop`, { x: 0, y: 0, w: vp.w, h: vp.h }, { pinned: true });
+  }
   ctx.save();
   ctx.fillStyle = theme.dim;
   ctx.fillRect(0, 0, vp.w, vp.h);
   ctx.restore();
-  const id = opts.id ?? `modal:${opts.title ?? ""}`;
+  if (captured) {
+    // The raw `fillRect` above bypasses the kit's box painter, so claim the
+    // ordinal by hand — those pixels are on the screen either way.
+    notePaint();
+    pushLayoutParent();
+  }
+  try {
+    return drawModalBody(opts, id, children, ctx, vp);
+  } finally {
+    if (captured) popLayoutParent();
+    popLayoutOverlay();
+  }
+}
+
+/** The modal's contents, split out only so `modal` can wrap it in the capture's
+ *  overlay scope with one `try`/`finally` rather than three return paths. */
+function drawModalBody<R>(
+  opts: ModalOptions,
+  id: string,
+  children: LayoutChildren<R> | undefined,
+  ctx: CanvasRenderingContext2D,
+  vp: { w: number; h: number },
+): R | { x: number; y: number; w: number; h: number } {
   if (children) {
     // The dialog IS a panel: centered by the anchor, auto-sized on the axis
     // left unspecified, and laying its children out like any container.

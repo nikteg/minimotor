@@ -6,6 +6,7 @@ import {
   fitAnchored,
   centeredText,
   currentUiScale,
+  detachPaint,
   ensureWired,
   measureWidth,
   onFrameEnd,
@@ -53,6 +54,10 @@ export function drawTips(): void {
   if (isOverlayActive() || isInOverlayPass()) return;
   const shown = st().shown;
   if (!shown || performance.now() - shown.since < 350) return;
+  // A tip is a box no `place` ever recorded, drawn after the whole UI. Without
+  // this it would be credited to whichever entry happened to close the frame —
+  // see `paint-seq.ts`.
+  detachPaint();
   withTheme(shown.theme, () => {
     const msg = shown.text;
     const p = rawPointer();

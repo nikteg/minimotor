@@ -11,6 +11,9 @@ import {
   button,
   col,
   defaultTheme,
+  layoutCapture,
+  layoutTree,
+  paintIssues,
   scaled,
   select,
   setTheme,
@@ -221,6 +224,51 @@ describe("select drop-menu scrolling", () => {
     tick();
     const labels = visibleLabels(game);
     expect(labels).toContain("Bangkok");
+  });
+
+  /** The open menu is the kit's ONE genuinely deferred painter, and the layout
+   * capture has to agree with the canvas about that. It draws from `onOverlayPass`
+   * at frame end, over everything the draw callback already put down — so its box
+   * and every row inside it are marked `overlay`, and `paintIssues` must not
+   * report a menu covering the screen it is a menu FOR.
+   *
+   * Its box was also missing from the tree entirely: the rows appeared with the
+   * `clip` inside `list` for a parent and nothing said what frame they sat in. */
+  it("marks the deferred menu as an overlay in the layout capture", () => {
+    const { game, canvas } = buildSelect();
+    layoutCapture(true);
+    tick();
+    downAt(canvas, 60, 36);
+    tick();
+    upAt(60, 36);
+    tick();
+    tick();
+    selectUiApp(game);
+    const tree = layoutTree();
+    const menu = tree.find((entry) => entry.kind === "selectMenu");
+    const rows = tree.filter((entry) => entry.kind === "selectOption");
+    expect({
+      menuFound: menu !== undefined,
+      menuOverlay: menu?.overlay,
+      menuPainted: menu?.paint !== undefined,
+      rows: rows.length > 0,
+      everyRowOverlay: rows.every((row) => row.overlay === true),
+      // The control itself is drawn in the ordinary pass and is NOT an overlay;
+      // the menu paints after it and over it.
+      controlOverlay: tree.find((entry) => entry.kind === "select")?.overlay,
+      menuAfterControl: (menu?.paint ?? 0) > (tree.find((e) => e.kind === "select")?.paint ?? 0),
+      throughOverlay: paintIssues().filter((issue) => issue.throughOverlay),
+    }).toEqual({
+      menuFound: true,
+      menuOverlay: true,
+      menuPainted: true,
+      rows: true,
+      everyRowOverlay: true,
+      controlOverlay: undefined,
+      menuAfterControl: true,
+      throughOverlay: [],
+    });
+    layoutCapture(false);
   });
 
   it("captures background clicks while the deferred menu is open", () => {

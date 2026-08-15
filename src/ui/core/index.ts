@@ -27,6 +27,7 @@ export * from "./context.js";
 export * from "./frame-cache.js";
 export * from "./measure.js";
 export * from "./layout-capture.js";
+export * from "./paint-seq.js";
 export * from "./state.js";
 export * from "./theme.js";
 export * from "./flow.js";
