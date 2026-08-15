@@ -99,6 +99,13 @@ test("an unglazed deck does not change at all as the camera goes round", async (
   // here is the scene ceasing to be a controlled experiment, and it would show
   // up next door as a direction reading that was never about the coat.
   const flat = await sweep(page, [0, 45, 90, 135, 180, 225, 270], 0);
+  // Guard the guard, and this one has already earned its place. An equality
+  // over a sweep is satisfied perfectly by a frame that is entirely black, and
+  // a black frame is exactly what a harness returns when the readback lands
+  // outside a canvas — which happened here the moment a fourth URL parameter
+  // was added, because an absent one read as 0 and shrank the canvas to 16
+  // pixels square. Three of these four tests passed through it.
+  expect(flat[0]!.luma).toBeGreaterThan(5);
   for (const f of flat) expect(f.luma).toBeCloseTo(flat[0]!.luma, 3);
 });
 

@@ -43,8 +43,17 @@ import type { Backend3D } from "minimotor/3d";
 
 const params = new URLSearchParams(location.search);
 const num = (key: string, fallback: number): number => {
-  const raw = Number(params.get(key));
-  return Number.isFinite(raw) ? raw : fallback;
+  // `params.get` gives null for a parameter that is not there, and `Number(null)`
+  // is 0 rather than NaN — so a `Number.isFinite` guard alone reads every
+  // ABSENT parameter as zero instead of taking the fallback. It went unnoticed
+  // while the spec passed all three of them on every URL, and appeared the
+  // moment a fourth was added that it does not pass: the canvas came back 16
+  // pixels square, every readback landed outside it, and three of the four
+  // tests still passed because black equals black.
+  const raw = params.get(key);
+  if (raw === null || raw.trim() === "") return fallback;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : fallback;
 };
 
 const wanted = params.get("backend");
@@ -61,7 +70,11 @@ document.body.append(canvas);
 // No MSAA: the deck fills the frame, so there is no silhouette worth softening,
 // and one fewer thing between the shader and the number the spec reads.
 const renderer = await createRenderer3D({ backend, canvas, antialias: false });
-renderer.resize(256, 256, 1);
+// 256 for the spec, which wants a small reproducible frame. `?size=` is for
+// `bench()` below, which wants the opposite — enough pixels that the fragment
+// stage is what the clock is measuring.
+const size = Math.max(16, Math.round(num("size", 256)));
+renderer.resize(size, size, 1);
 
 const scene = createScene({
   // Opaque, so a screenshot of the PAGE has nothing of the page in it.
@@ -147,6 +160,29 @@ window.__glaze = {
     }
     return sum / (data.length / 4);
   },
+  /** Milliseconds per frame, averaged over `frames` renders of this scene at
+   *  the current `?size=`, with the deck's coat forced to `strength`.
+   *
+   *  **Not a frame rate.** A frame rate on this machine reads 8.3 ms whatever
+   *  is in the scene, because that is the display's vsync period and the GPU
+   *  finishes long before it — which makes "the coat is free" and "the coat
+   *  costs 8 ms" the same measurement. This renders back to back with nothing
+   *  waiting on a refresh, and reads one pixel back at the end of the run so
+   *  the queue has to have drained before the clock is read. What it answers is
+   *  the only question worth asking of a per-pixel term: how much does turning
+   *  it on add per pixel drawn. */
+  bench(frames: number, strength: number): number {
+    const material = scene.nodes[0]!.material!;
+    material.glaze = { ...material.glaze!, strength };
+    renderer.render(scene, camera);
+    rb.drawImage(renderer.canvas, 0, 0);
+    rb.getImageData(0, 0, 1, 1);
+    const start = performance.now();
+    for (let i = 0; i < frames; i += 1) renderer.render(scene, camera);
+    rb.drawImage(renderer.canvas, 0, 0);
+    rb.getImageData(0, 0, 1, 1);
+    return (performance.now() - start) / frames;
+  },
   /** A cheap order-dependent digest of every pixel — enough to say "the same
    *  frame" or "a different frame", which is all any caller here asks. */
   digest(): string {
@@ -165,6 +201,7 @@ declare global {
       ready: boolean;
       backend: Backend3D;
       patch(x: number, y: number, w: number, h: number): number;
+      bench(frames: number, strength: number): number;
       digest(): string;
     };
   }
