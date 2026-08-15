@@ -36,6 +36,47 @@ export function detailWorldStep(material) {
     const step = material.detailWorldStep ?? 0;
     return Number.isFinite(step) && step > 0 ? step : 0;
 }
+/** `Material.glaze`'s master weight as the shaders see it, and 0 for every way
+ *  of not having one. Resolved here for the same reason as the two above: it is
+ *  the single test both backends branch the whole coat on, and a backend that
+ *  disagreed about what "off" means would draw a different frame. */
+export function glazeStrength(material) {
+    const strength = material.glaze?.strength ?? 0;
+    return Number.isFinite(strength) && strength > 0 ? Math.min(strength, 1) : 0;
+}
+/** `Glaze.parallax` as the shaders see it — and **0 whenever the material has
+ *  no `texture`**, which is the guard this function exists for.
+ *
+ *  The parallax term re-samples the material's OWN albedo. A material with no
+ *  albedo has nothing to re-sample, and the two backends do not fail the same
+ *  way when asked to anyway: WebGL2's sampler uniform sits at texture unit 0,
+ *  so an unbound material reads whatever the PREVIOUS draw left bound there,
+ *  while WebGPU falls to its 1x1 blank and reads white. Neither raises an
+ *  error, neither looks like a bug in a screenshot, and the WebGL2 half changes
+ *  with draw order — so it would come and go as the scene was re-sorted.
+ *
+ *  This is the shape of bug that once cost a whole course its detail blend by
+ *  quietly handing a material a sampler nobody had configured. One test in one
+ *  place is not enough for it; the resolution has to be somewhere neither
+ *  backend can skip. */
+export function glazeParallax(material) {
+    if (!material.texture)
+        return 0;
+    const parallax = material.glaze?.parallax ?? 0;
+    return Number.isFinite(parallax) ? parallax : 0;
+}
+/** Whether `Material.settle` has anything to lay on: a wash with no `up` and no
+ *  usable `rise` is an object that costs a normalize and changes nothing.
+ *  Resolved here so both backends agree on which materials skip the branch. */
+export function settleActive(material) {
+    const settle = material.settle;
+    if (!settle)
+        return false;
+    const up = settle.up ?? 0;
+    const rise = settle.rise ?? 0;
+    const riseAmount = settle.riseAmount ?? 0;
+    return up > 0 || (rise > 0 && riseAmount > 0);
+}
 /** The fog mode as the shaders see it. Resolved here rather than in each
  *  backend so WebGL2 and WebGPU cannot drift apart, and so the guards against
  *  a divide-by-zero live in one place. `params` means `(start, end, unused)`

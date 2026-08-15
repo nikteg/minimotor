@@ -32,7 +32,7 @@
 // to flip. `copyExternalImageToTexture` also lands top-down by default.
 import { Mat4 } from "../math/mat4.js";
 import { cameraPosition, viewProjection } from "./camera.js";
-import { detailProjectionMode, detailWorldStep, fogUniform, ghostMaterial, isVisible, } from "./scene.js";
+import { detailProjectionMode, detailWorldStep, fogUniform, ghostMaterial, glazeParallax, glazeStrength, isVisible, settleActive, } from "./scene.js";
 import { triangleCount, vertexCount } from "./mesh.js";
 const MAX_LIGHTS = 4;
 const MAX_JOINTS = 64;
@@ -44,11 +44,20 @@ const FRAME_BYTES = 288;
 /** Per-draw: model(64) + normalMat as 3×vec4(48) + baseColor(16) + params(16)
  *  + skinParams(16) + uvTransform(16) + rimAlpha(16) + detail(16)
  *  + detailUvTransform(16) + detailMaskTransform(16) + detailFlags(16)
- *  + joints.
- *  Padded to the 256-byte minimum dynamic-offset alignment: the fields and
- *  joints occupy 4352 bytes, which is exactly one slot — the next field to be
- *  added here has to take the whole block to 4608. */
-const DRAW_BYTES = 4352;
+ *  + glaze(16) + glazeTint(16) + glazeWave(16) + settle(16) + settle2(16)
+ *  + joints(4096).
+ *
+ *  Padded to the 256-byte minimum dynamic-offset alignment. The fields and
+ *  joints now occupy 4432 bytes, so the slot is the next multiple of 256.
+ *
+ *  **The five `glaze`/`settle` vec4s cost nothing that the first one did not.**
+ *  This was 4352 — exactly 17 slots, with the note that the next field added
+ *  would take the whole block to 4608. It has, and the quantisation means the
+ *  16 bytes a single scalar would have cost and the 80 these five vec4s cost
+ *  are the same 256 bytes of stride either way. What that leaves is 176 bytes
+ *  of headroom: the NEXT eleven vec4s are free, and the twelfth costs 256
+ *  again. */
+const DRAW_BYTES = 4608;
 const DRAW_FLOATS = DRAW_BYTES / 4;
 const TIMESTAMP_SLOTS = 64;
 const TIMESTAMP_STRIDE = 256;
@@ -101,6 +110,19 @@ struct DrawData {
   // map composites into the surface's opacity too — see
   // Material.detailOpacity. w spare.
   detailFlags: vec4f,
+  // x: strength — 0 disables every term of the coat, y: fresnel exponent,
+  // z: parallax offset, w: scroll phase. See Material.glaze.
+  glaze     : vec4f,
+  // xyz: the faked sky's tint, w: ripple frequency in waves per world unit
+  glazeTint : vec4f,
+  // x: ripple tilt, y: sparkle, zw spare
+  glazeWave : vec4f,
+  // xyz: the colour that has settled, w: how much collects on an up-facing
+  // face. See Material.settle.
+  settle    : vec4f,
+  // x: up sharpness, y: the ground line's world Y, z: rise height, w: rise
+  // amount
+  settle2   : vec4f,
   jointMatrices: array<mat4x4f, ${MAX_JOINTS}>,
 };
 
@@ -254,6 +276,26 @@ fn blendOverlay(pattern : vec3f, surface : vec3f) -> vec3f {
   );
 }
 
+/** A wrapped triangle wave smoothed by the 3t^2-2t^3 interpolant a value noise
+ *  uses, on -1..1. Deliberately not sin(): see the WebGL2 backend, and the two
+ *  have to stay the same arithmetic or they stop drawing the same frame. */
+fn glazeWave(x : f32) -> f32 {
+  let t = fract(x);
+  let tri = 1.0 - abs(t * 2.0 - 1.0);
+  return tri * tri * (3.0 - 2.0 * tri) * 2.0 - 1.0;
+}
+
+/** Two octaves of that wave along skewed axes, drifting at rates that share no
+ *  small ratio, so the sum's period is long enough that nobody sees it come
+ *  round. Returns a tilt in the world XZ plane. */
+fn glazeRipple(p : vec2f, phase : f32) -> vec2f {
+  let a = glazeWave(p.x * 0.75 + p.y * 0.35 + phase);
+  let b = glazeWave(p.y * 0.85 - p.x * 0.45 - phase * 0.63);
+  let c = glazeWave(p.x * 1.90 - p.y * 1.60 + phase * 1.70);
+  let d = glazeWave(p.y * 2.10 + p.x * 1.40 - phase * 1.30);
+  return vec2f(a + c * 0.45, b + d * 0.45);
+}
+
 fn applyNormalMap(n : vec3f, worldPos : vec3f, uv : vec2f, scale : f32, shipped : vec4f) -> vec3f {
   // Sampled up front, BEFORE the branches below. textureSample picks its mip
   // from implicit derivatives, which WGSL only permits in uniform control
@@ -301,6 +343,32 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
       base = vec4f(mix(base.rgb, texel.rgb, texel.a), base.a);
     } else {
       base = base * texel;
+    }
+  }
+  // The glaze's normal and its one extra sample are taken HERE, up beside the
+  // base texture read, and not down beside the light where the rest of the coat
+  // is applied — because WGSL permits an implicit-derivative sample only in
+  // uniform control flow, applyNormalMap() below returns early inside a branch
+  // on a derivative, and a sample placed after that call fails to COMPILE. The
+  // WebGL2 backend does not need the split and takes it anyway: the two are
+  // required to draw the same frame, and the cheapest way to keep them doing it
+  // is to give them the same shape.
+  //
+  // It costs nothing regardless. A reflective coat is a layer OVER the surface,
+  // so it has no business reading the surface's normal map.
+  var glazeNormal = vec3f(0.0, 1.0, 0.0);
+  var glazeUnder = vec3f(0.0);
+  if (draw.glaze.x > 0.0) {
+    let tilt = glazeRipple(in.worldPos.xz * draw.glazeTint.w, draw.glaze.w);
+    glazeNormal = normalize(normalize(in.normal) + vec3f(tilt.x, 0.0, tilt.y) * draw.glazeWave.x);
+    if (draw.glaze.z != 0.0) {
+      let toEye = normalize(frame.cameraPos.xyz - in.worldPos);
+      // The offset goes on the SOURCE coordinate, before the uv transform, so
+      // it lands in whatever units the projection reads — world units under
+      // planarXZ, uv under the mesh's own unwrap. See Glaze.parallax.
+      let under = (source + reflect(-toEye, glazeNormal).xz * draw.glaze.z)
+        * draw.uvTransform.xy + draw.uvTransform.zw;
+      glazeUnder = textureSample(tex, samp, under).rgb;
     }
   }
   // Overlay while base is still in display space; alpha-over in linear light —
@@ -369,6 +437,34 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
     } else {
       base = vec4f(mix(base.rgb, blendOverlay(pattern.rgb, base.rgb), draw.detail.x), base.a);
     }
+  }
+  // What has SETTLED on the surface, which is albedo and therefore belongs here
+  // rather than beside the light: a snow cap that did not take the scene's own
+  // lighting reads as a sticker. See Material.settle.
+  if (draw.settle.w > 0.0 || draw.settle2.w > 0.0) {
+    var settleN = normalize(in.normal);
+    if (!frontFacing) { settleN = -settleN; }
+    // Collects on faces that point at the sky and gives out as one tilts.
+    let top = pow(max(settleN.y, 0.0), draw.settle2.x) * draw.settle.w;
+    // And climbs from a ground line, strongest at the foot. Everything BELOW
+    // the line is covered outright, which is what a ground line means — the
+    // clamp is what says so, and it is why this is not symmetric.
+    let climb = (1.0 - clamp((in.worldPos.y - draw.settle2.y)
+      / max(draw.settle2.z, 1e-6), 0.0, 1.0)) * draw.settle2.w;
+    let foot = select(0.0, climb, draw.settle2.z > 0.0);
+    // max() rather than a sum: a wall's foot and a wall's cap are the same snow
+    // seen twice, and adding them drives the corner past white.
+    let settled = clamp(max(top, foot), 0.0, 1.0);
+    let lit = frame.ambient.w > 0.5;
+    let lay = select(draw.settle.rgb, srgbToLinear(draw.settle.rgb), lit);
+    base = vec4f(
+      select(
+        mix(base.rgb, draw.settle.rgb, settled),
+        linearToSrgb(mix(srgbToLinear(base.rgb), lay, settled)),
+        lit,
+      ),
+      base.a,
+    );
   }
   // Ahead of the cutoff and of the unlit branch, because the ramp is what
   // decides the final alpha: a bias of zero means the face-on fragments are
@@ -445,6 +541,47 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
   // A metal has no diffuse: what it does not reflect, it absorbs.
   let albedo = select(base.rgb, base.rgb * (1.0 - draw.rimAlpha.w), toneMap);
   var rgb = albedo * lit + spec;
+  // The faked reflective coat, ADDED to the shaded surface and taken before the
+  // fog, because it is light like any other — see Material.glaze.
+  if (draw.glaze.x > 0.0) {
+    let toEye = normalize(frame.cameraPos.xyz - in.worldPos);
+    let bounce = reflect(-toEye, glazeNormal);
+    // Weak head-on, strong at a grazing angle. On a low orbit over a flat deck
+    // this is most of what the eye reads. See Glaze.fresnel.
+    let fresnel = pow(1.0 - clamp(dot(glazeNormal, toEye), 0.0, 1.0), draw.glaze.y);
+    // The faked sky, looked up by the reflected ray: a two-stop vertical
+    // gradient by its own height...
+    let sky = clamp(bounce.y * 0.5 + 0.5, 0.0, 1.0);
+    var env = draw.glazeTint.rgb * (0.25 + 0.75 * sky * sky);
+    // ...plus a tight lobe around the scene's OWN first light, which is what
+    // actually sweeps when the camera turns. Reusing the key light rather than
+    // taking a direction of its own keeps the reflection agreeing with the
+    // scene it is in, and costs no uniform. With no lights there is nothing to
+    // reflect, and straight up is the answer that adds no lobe anywhere.
+    let sun = select(
+      vec3f(0.0, 1.0, 0.0),
+      -normalize(frame.lightDir[0].xyz),
+      frame.lightCount.x > 0.0,
+    );
+    let lobe = max(dot(bounce, sun), 0.0);
+    let lobe2 = lobe * lobe;
+    let lobe8 = lobe2 * lobe2 * lobe2 * lobe2;
+    env += draw.glazeTint.rgb * lobe8 * 1.5;
+    // The grain, an octave far above the ripple and gated by that same lobe so
+    // it glitters where the light is instead of everywhere. See Glaze.sparkle.
+    if (draw.glazeWave.y > 0.0) {
+      let grain = glazeRipple(in.worldPos.xz * draw.glazeTint.w * 9.0, draw.glaze.w * 2.3);
+      let g = clamp(grain.x * grain.y, 0.0, 1.0);
+      let g2 = g * g;
+      env += draw.glazeTint.rgb * (g2 * g2 * g2) * draw.glazeWave.y * (0.25 + lobe8);
+    }
+    if (toneMap) { env = srgbToLinear(env); }
+    // The sky takes over at a grazing angle and what is UNDER the ice shows
+    // head-on, which is the right way round and is why the two weights are
+    // complements rather than both riding the Fresnel.
+    let under = select(glazeUnder, srgbToLinear(glazeUnder), toneMap);
+    rgb += (env * (0.25 + 0.75 * fresnel) + under * (1.0 - fresnel) * 0.5) * draw.glaze.x;
+  }
   // Fog before the curve, not after: the fog colour is a colour in the scene
   // like any other, and a distant surface that has faded most of the way into
   // it should reach the shoulder with it rather than be mixed into an
@@ -981,7 +1118,38 @@ export async function createWebGPURenderer(opts = {}) {
         // pipeline change to start showing holes in a floor.
         drawData[at + 62] = material.detailOpacity && material.transparent ? 1 : 0;
         drawData[at + 63] = 0;
-        drawData.set(skin ?? IDENTITY_JOINTS, at + 64);
+        // The faked reflective coat. `glazeStrength` is the one test the shader
+        // branches the whole thing on, and `glazeParallax` is what stops a material
+        // with no albedo from re-sampling the 1x1 blank — both resolved in scene.ts
+        // so the two backends cannot disagree about what "off" means.
+        const glaze = glazeStrength(material);
+        drawData[at + 64] = glaze;
+        drawData[at + 65] = material.glaze?.fresnel ?? 4;
+        drawData[at + 66] = glazeParallax(material);
+        drawData[at + 67] = material.glaze?.scroll ?? 0;
+        const tint = material.glaze?.tint ?? WHITE3;
+        drawData[at + 68] = tint[0];
+        drawData[at + 69] = tint[1];
+        drawData[at + 70] = tint[2];
+        drawData[at + 71] = material.glaze?.scrollScale ?? 0.25;
+        drawData[at + 72] = material.glaze?.ripple ?? 0.08;
+        drawData[at + 73] = material.glaze?.sparkle ?? 0;
+        drawData[at + 74] = 0;
+        drawData[at + 75] = 0;
+        // What has settled on it. Both weights go to zero when `settleActive` says
+        // there is nothing to lay on, which is what keeps the shader's own `w > 0`
+        // test from reaching a half-configured wash.
+        const settle = settleActive(material) ? material.settle : undefined;
+        const laid = settle?.color ?? WHITE3;
+        drawData[at + 76] = laid[0];
+        drawData[at + 77] = laid[1];
+        drawData[at + 78] = laid[2];
+        drawData[at + 79] = settle?.up ?? 0;
+        drawData[at + 80] = settle?.upSharpness ?? 4;
+        drawData[at + 81] = settle?.baseY ?? 0;
+        drawData[at + 82] = settle?.rise ?? 0;
+        drawData[at + 83] = settle?.riseAmount ?? 0;
+        drawData.set(skin ?? IDENTITY_JOINTS, at + 84);
     }
     /** Bind one node's mesh, textures and packed uniform slot, and draw it.
      *  Which PIPELINE is the caller's business, because the same node is drawn
