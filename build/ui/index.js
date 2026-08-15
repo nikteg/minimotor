@@ -60,6 +60,7 @@ export function createUI(app, { gamepads } = {}) {
         measureWidth: bind(UiModule.measureWidth),
         minimap: bind(UiModule.minimap),
         modal: bind(UiModule.modal),
+        paintIssues: bind(UiModule.paintIssues),
         panel: bind(UiModule.panel),
         pointerOverUi: bind(UiModule.pointerOverUi),
         pressOrigin: bind(UiModule.pressOrigin),

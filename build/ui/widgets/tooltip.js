@@ -2,7 +2,7 @@
 // A single hover-stable tooltip: widgets request one for the frame while their
 // hit-area is hovered; `drawTips` paints it near the pointer once the hover has
 // held ~350 ms. Hover stability + reset run off the kernel's frame-end hooks.
-import { fitAnchored, centeredText, currentUiScale, ensureWired, measureWidth, onFrameEnd, onReset, rawPointer, isInOverlayPass, isOverlayActive, uiSlot, theme, uiCtx, uiFont, withTheme, } from "../../ui/core/index.js";
+import { fitAnchored, centeredText, currentUiScale, detachPaint, ensureWired, measureWidth, onFrameEnd, onReset, rawPointer, isInOverlayPass, isOverlayActive, uiSlot, theme, uiCtx, uiFont, withTheme, } from "../../ui/core/index.js";
 import { paintFrame } from "./panel.js";
 const st = uiSlot(() => ({ request: null, scale: 1, theme, shown: null }));
 /** Request a tooltip for this frame (call while your hit-area is hovered —
@@ -29,6 +29,10 @@ export function drawTips() {
     const shown = st().shown;
     if (!shown || performance.now() - shown.since < 350)
         return;
+    // A tip is a box no `place` ever recorded, drawn after the whole UI. Without
+    // this it would be credited to whichever entry happened to close the frame —
+    // see `paint-seq.ts`.
+    detachPaint();
     withTheme(shown.theme, () => {
         const msg = shown.text;
         const p = rawPointer();

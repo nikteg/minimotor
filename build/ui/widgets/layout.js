@@ -131,8 +131,18 @@ function scrollable(kind, dir, opts, cfg, children) {
     const rect = containerRect(dir, horiz ? { ...opts, w: mainForRect, h: boxCross } : { ...opts, w: boxCross, h: mainForRect }, cachedBox);
     // `clips`: this region masks its children, so content extending past the box
     // is the point, not a layout fault (see `layoutIssues`).
-    if (layoutCaptureActive)
+    //
+    // ...and OPENED as a parent, which it was not before item 196. A scrolling
+    // panel recorded its box and then let the `clip` below — and everything drawn
+    // inside it — land as its SIBLINGS, under whatever container held the panel.
+    // The tree therefore said a scroll region's own content was not its content,
+    // which reads as a lie in a debug overlay and made `paintIssues` report a
+    // scrolling panel's frame under every line of its own text.
+    const capturedRegion = layoutCaptureActive;
+    if (capturedRegion) {
         recordLayout(kind, opts.id, rect, { clips: true });
+        pushLayoutParent();
+    }
     cfg.box?.(rect);
     storeContentSize(key, { w: rect.w, h: rect.h, ew: rect.w, eh: rect.h });
     // The bar sits on the CROSS edge (right for vertical, bottom for horizontal)
@@ -199,6 +209,8 @@ function scrollable(kind, dir, opts, cfg, children) {
         });
     }
     scrollOffsets.set(sbId, offset);
+    if (capturedRegion)
+        popLayoutParent();
     return result;
 }
 // Auto containers shrink-wrap omitted axes by default. `fitCross` remains the

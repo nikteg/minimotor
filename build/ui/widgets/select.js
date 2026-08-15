@@ -5,7 +5,7 @@
 // its deferred menu draw + editor cleanup off the frame loop via the kernel's
 // lifecycle hooks (onOverlayPass / onFrameEnd / onReset), so core never imports
 // it back.
-import { captureOverlay, centeredText, consumeKeyboardActivation, consumeKeyboardCommand, buttonState, drawBox, currentUiTransform, dragPointer, drawFocusRing, drawThemeSprite, ensureWired, enterOverlay, focusFromPointer, hoverCursor, lifecycleOnce, layoutCaptureActive, recordLayout, markFocusableOverlay, onFrameEnd, onOverlayPass, onReset, placeField, pointerGestureOwned, popUiTransform, pushUiTransform, registerFocusable, requiredWidgetId, uiSlot, fitAnchored, theme, uiCtx, uiFont, uiHeight, uiPointer, uiWidth, ellipsize, resolveThemePadding, resolveThemeTextPadding, wrapLines, withTheme, } from "../../ui/core/index.js";
+import { captureOverlay, centeredText, consumeKeyboardActivation, consumeKeyboardCommand, buttonState, drawBox, currentUiTransform, dragPointer, drawFocusRing, drawThemeSprite, ensureWired, enterOverlay, focusFromPointer, hoverCursor, lifecycleOnce, layoutCaptureActive, popLayoutOverlay, popLayoutParent, pushLayoutOverlay, pushLayoutParent, recordLayout, markFocusableOverlay, onFrameEnd, onOverlayPass, onReset, placeField, pointerGestureOwned, popUiTransform, pushUiTransform, registerFocusable, requiredWidgetId, uiSlot, fitAnchored, theme, uiCtx, uiFont, uiHeight, uiPointer, uiWidth, ellipsize, resolveThemePadding, resolveThemeTextPadding, wrapLines, withTheme, } from "../../ui/core/index.js";
 import { dismissedByOutsideRelease, list, scrollGestureActive } from "./lists.js";
 import { listMetrics } from "./list-metrics.js";
 import { evictUnseenEditor, mountHiddenEditor } from "./native-editor.js";
@@ -316,6 +316,18 @@ export function drawSelectOverlay() {
     // The normal draw pass captured the background already; only now does the
     // deferred menu become the live side of the overlay boundary.
     enterOverlay();
+    // ...and the layout capture's side of the same boundary: an open menu paints
+    // over whatever the frame already drew, which is the widget working and not
+    // the fault `paintIssues` hunts for. The scope covers BOTH branches below.
+    pushLayoutOverlay();
+    try {
+        drawSelectOverlayPass(request);
+    }
+    finally {
+        popLayoutOverlay();
+    }
+}
+function drawSelectOverlayPass(request) {
     // The overlay pass runs inside this runtime's frame end, so the ambient
     // context already points at the canvas the select was drawn on — but every
     // `UI.scaled` block has popped by now, canvas-side and pointer-side. Restore
@@ -482,6 +494,15 @@ function drawSelectMenu(ctx, opts, rect) {
     const gap = 2;
     const menuPos = fitAnchored({ x: rect.x, y: rect.y + rect.h + gap, w: rect.w, h: menuH }, rect.y - menuH - gap, 4);
     const menu = { x: menuPos.x, y: menuPos.y, w: rect.w, h: menuH };
+    // The menu's own box, which nothing recorded before: its rows appeared in the
+    // capture with the `clip` inside `list` for a parent and no sign of the frame
+    // they sat in. Recorded before the frame is painted so the paint clock credits
+    // the frame to it, and opened as a parent so the rows hang off it.
+    const captured = layoutCaptureActive;
+    if (captured) {
+        recordLayout("selectMenu", opts.id, menu, { pinned: true });
+        pushLayoutParent();
+    }
     ctx.save();
     ctx.fillStyle = theme.bgActive;
     ctx.fillRect(menu.x, menu.y, menu.w, menu.h);
@@ -544,6 +565,11 @@ function drawSelectMenu(ctx, opts, rect) {
         if (clicked)
             picked = entry.optionIndex;
     });
+    // Closed here rather than at the end of the function: everything the menu
+    // draws is inside `list`, and the three paths below all `return`, which would
+    // leave the capture's parent stack open into the next frame.
+    if (captured)
+        popLayoutParent();
     if (picked >= 0) {
         editor.index = picked;
         editor.select.value = String(picked);

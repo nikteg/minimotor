@@ -56,6 +56,24 @@ export interface LayoutEntry {
      *  test, a debug overlay, or anything reading the screen out — sees the
      *  sentence, never the fragments the paint happened to be cut into. */
     text?: string;
+    /** WHEN this rect was drawn, as a 1-based ordinal over the frame's painted
+     *  entries — the sequence the kit actually issued the draws in, kept apart
+     *  from this array's own PLACEMENT order.
+     *
+     *  The two are not the same question and the array order answers only the
+     *  second: entries arrive as a tree, containers before the children they
+     *  hold, and a container that paints nothing still takes an index. So
+     *  `paint` is **absent** for every entry that put no pixels down — a bare
+     *  `row`/`col`, a `UI.fill` reservation whose caller drew with the raw
+     *  context — and those entries cannot occlude anything. See `paintIssues`,
+     *  which is the check this exists for. */
+    paint?: number;
+    /** This rect was recorded inside an overlay's own draw — a `popover` or
+     *  `modal` body, or the deferred `select` menu. An overlay is SUPPOSED to
+     *  paint over the screen beneath it, so `paintIssues` never reports one as
+     *  the offender; the interesting case is the reverse, something ordinary
+     *  painting over an overlay after it went up. */
+    overlay?: true;
 }
 /** The zero-cost-when-off guard: record sites check this boolean and skip the
  *  `recordLayout` call entirely while capture is disabled. */
@@ -64,9 +82,12 @@ export declare let layoutCaptureActive: boolean;
  *  every placed widget/container rect is recorded for `layoutTree()` — a test
  *  and debugging aid; leave it off in production draw loops. */
 export declare function layoutCapture(on: boolean): void;
-/** The layout entries captured for the last COMPLETED frame (draw order —
- *  containers before the children placed inside them). Empty until a frame
- *  has finished with capture enabled:
+/** The layout entries captured for the last COMPLETED frame, in PLACEMENT order
+ *  — containers before the children placed inside them, which is a tree and not
+ *  a paint sequence. For when a rect was drawn, read `LayoutEntry.paint`; the
+ *  two coincide today but nothing enforces that, and `paintIssues` is the check
+ *  that uses the paint one. Empty until a frame has finished with capture
+ *  enabled:
  *
  *    UI.layoutCapture(true);
  *    // ...one frame renders...
@@ -110,6 +131,12 @@ export declare function annotateLayoutText(str: string): void;
 export declare function pushLayoutParent(): void;
 /** Close the container opened by `pushLayoutParent`. */
 export declare function popLayoutParent(): void;
+/** Everything recorded until `popLayoutOverlay` belongs to an overlay and is
+ *  entitled to paint over what is beneath it. Called by `popover` and `modal`
+ *  around their own box and body, and by the deferred `select` menu pass. */
+export declare function pushLayoutOverlay(): void;
+/** Leave the innermost overlay opened by `pushLayoutOverlay`. */
+export declare function popLayoutOverlay(): void;
 /** Record what an auto-sized container's box was actually worth, once its
  *  children have been measured. Called only from `autoContainer`, only while
  *  capture is on.
@@ -181,8 +208,9 @@ export interface LayoutOverlayOptions {
  *  Boxes are drawn from `screenRect`, which is already screen-logical — call
  *  it at the ROOT of the draw, OUTSIDE any `UI.scaled` block, or the scale is
  *  applied twice. Findings win over kind: a child that escaped its container
- *  (`layoutIssues`) is red, a container that drew at a stale size
- *  (`layoutLag`) is orange.
+ *  (`layoutIssues`) is red, as is anything painted THROUGH an open overlay
+ *  (`paintIssues`); a container that drew at a stale size (`layoutLag`) is
+ *  orange.
  *
  *      UI.layoutCapture(debugOn);
  *      UI.scaled(() => buildTheWholeUI());
@@ -215,3 +243,55 @@ export interface LayoutIssue {
  *      // ...a frame renders...
  *      expect(UI.layoutIssues()).toEqual([]); */
 export declare function layoutIssues(tolerance?: number): LayoutIssue[];
+/** Two rects that were painted over one another — what `paintIssues` reports. */
+export interface PaintIssue {
+    /** The entry that painted FIRST and is therefore the one underneath. */
+    under: LayoutEntry;
+    /** The entry that painted over it. Never an overlay: an overlay covering the
+     *  screen beneath it is the overlay working. */
+    over: LayoutEntry;
+    /** Where the two met, in screen px, already clipped to both entries'
+     *  clipping ancestors — so a row scrolled out of a list does not report an
+     *  overlap it is masked out of. */
+    overlap: {
+        x: number;
+        y: number;
+        w: number;
+        h: number;
+    };
+    /** `under` is an OVERLAY. This is the unambiguous form of the fault: a
+     *  popover, a modal or an open menu is up, and ordinary content drawn later
+     *  in the frame has painted straight through it. Nothing legitimate does
+     *  this — the rest of the list is pairs whose order is a design decision. */
+    throughOverlay?: true;
+}
+/** Rects the captured frame painted over one another, later paint first.
+ *
+ *  The check `layoutIssues` cannot make. That one compares a child against the
+ *  container that placed it, which catches a box too small for its contents and
+ *  nothing else; two rects that never shared a parent can sit straight on top of
+ *  each other with `layoutIssues` and `layoutLag` clean the whole time. They did,
+ *  twice — a party table painted through an open popover, and a HUD panel and a
+ *  status column whose z-order could only be settled by eye.
+ *
+ *  What is reported: a pair whose visible rects overlap, where the LATER-painted
+ *  one is not an overlay. Three things are deliberately not in it:
+ *
+ *  - an entry that painted nothing (no `paint` — a bare `row`/`col`, an unused
+ *    `fill` slot). Geometry that puts no pixels down cannot cover anything;
+ *  - an entry painting over its own container, or over anything else on its own
+ *    ancestor line. That is what nesting IS;
+ *  - an overlay as the offender. A `popover`, a `modal` and an open `select`
+ *    menu are built to cover the screen; `throughOverlay` marks the reverse,
+ *    which is never legitimate.
+ *
+ *  What is LEFT in the list is not automatically a bug — two HUD panels that
+ *  deliberately overlap belong here, and which of them is on top is a design
+ *  decision. So the consumer's assertion is usually about the CONTENTS:
+ *
+ *      expect(UI.paintIssues().filter((i) => i.throughOverlay)).toEqual([]);
+ *
+ *  ...for the fault shape, and a named pair's `over`/`under` for a z-order that
+ *  is meant to be a particular way round. `O(n²)` over the frame's painted
+ *  entries — a harness call, like the rest of this module. */
+export declare function paintIssues(tolerance?: number): PaintIssue[];
