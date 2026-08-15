@@ -40,6 +40,56 @@ export interface LayoutEntry {
         w: number;
         h: number;
     };
+    /** The rect this container's own frame was PAINTED at, when the layout moved
+     *  it afterwards — otherwise absent, and `rect` is both.
+     *
+     *  A container placed into a deferred slot (`Flow.reserve`) has to paint its
+     *  backdrop UNDER its children, so the frame goes down at the provisional
+     *  size and only `slot.commit` — after the children — knows the real one.
+     *  `rect` reports the committed size, because that is where the children were
+     *  put and what the parent's cursor advanced by. Both are true and they are
+     *  different rects, so the capture records both rather than picking.
+     *
+     *  Set only when the entry actually painted (it carries a `paint` ordinal)
+     *  and only when the two differ by more than half a pixel — so a settled
+     *  screen carries none of these, and an entry that put no pixels down never
+     *  carries one however far its slot moved.
+     *
+     *  **How rare that makes it, MEASURED** on the largest consumer to hand: over
+     *  240 settled frames — every screen it ships, four window sizes, six UI
+     *  scales — not one entry in any tree carried this field, and on the frames
+     *  that were NOT settled exactly one box in the whole application ever did.
+     *  Which is the argument for the field's shape: a container that is not
+     *  mid-resize pays a comparison and nothing else, and the alternative fix —
+     *  moving `cfg.box` past `slot.commit` — would have reordered every deferred
+     *  panel's backdrop under its own children to close a gap that narrow.
+     *
+     *  **`lag` does not overlap with this and cannot stand in for it.** `lag`
+     *  compares the COMMITTED rect against the measured content, and for a
+     *  deferred container those are the same number by construction: the field is
+     *  absent on exactly the frames this one is present. MEASURED on this repo's
+     *  own fixture (`ui.painted-rect.test.ts`) and on the consumer's play HUD —
+     *  closing the scorecard leaves 160px of panel frame on the canvas below a
+     *  48px `rect`, with `layoutLag` silent throughout.
+     *
+     *  Occlusion is a question about pixels, so `paintIssues` and
+     *  `drawLayoutOverlay` read this in preference to `rect`; containment
+     *  (`layoutIssues`) is a question about where children were PLACED, and reads
+     *  `rect`, which is what the container's body flow actually used. */
+    paintedRect?: {
+        x: number;
+        y: number;
+        w: number;
+        h: number;
+    };
+    /** `paintedRect` mapped to SCREEN-logical coords — the pair to `screenRect`,
+     *  present exactly when `paintedRect` is. */
+    paintedScreenRect?: {
+        x: number;
+        y: number;
+        w: number;
+        h: number;
+    };
     /** The auto-size cache key another container ALSO used this frame. Two
      *  containers sharing one key are reading each other's measurements. */
     sharedKey?: string;
@@ -110,8 +160,19 @@ export declare function recordLayout(kind: string, id: string | number | undefin
  *  order and the children hang off it) but only learns its true size after
  *  them — this is how the recorded rect catches up, instead of the tree
  *  reporting the provisional size the container was never drawn at.
- *  `index` is what `recordLayout` returned; -1 is ignored. */
+ *  `index` is what `recordLayout` returned; -1 is ignored.
+ *
+ *  `paintedAt` is the rect as it stood when the container painted its own
+ *  backdrop, which is BEFORE the commit and therefore not always this one. Pass
+ *  it and the difference is kept as `paintedRect` instead of being overwritten
+ *  — the caller does not have to decide whether the two agree, and an entry
+ *  that painted nothing never gets the field however far its rect moved. */
 export declare function refreshLayoutRect(index: number, rect: {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+}, paintedAt?: {
     x: number;
     y: number;
     w: number;
@@ -205,9 +266,12 @@ export interface LayoutOverlayOptions {
  *  capture left on it trails the live UI by one frame (invisible in practice,
  *  and the reason a toggle should enable capture and the overlay together).
  *
- *  Boxes are drawn from `screenRect`, which is already screen-logical — call
- *  it at the ROOT of the draw, OUTSIDE any `UI.scaled` block, or the scale is
- *  applied twice. Findings win over kind: a child that escaped its container
+ *  Boxes are drawn from `screenRect` — or from `paintedScreenRect` where an
+ *  entry has one, so the box follows the art rather than the layout on the one
+ *  frame those disagree (see `LayoutEntry.paintedRect`). Either is already
+ *  screen-logical: call this at the ROOT of the draw, OUTSIDE any `UI.scaled`
+ *  block, or the scale is applied twice. Findings win over kind: a child that
+ *  escaped its container
  *  (`layoutIssues`) is red, as is anything painted THROUGH an open overlay
  *  (`paintIssues`); a container that drew at a stale size (`layoutLag`) is
  *  orange.
@@ -284,6 +348,12 @@ export interface PaintIssue {
  *  - an overlay as the offender. A `popover`, a `modal` and an open `select`
  *    menu are built to cover the screen; `throughOverlay` marks the reverse,
  *    which is never legitimate.
+ *
+ *  Rects are the ones the entries PAINTED at (`LayoutEntry.paintedRect` where
+ *  present), not the ones the layout settled on. The two are the same on every
+ *  settled frame and differ for a deferred container on the frame its content
+ *  changes size — which is both a false positive and a false negative at once,
+ *  on precisely the boxes most likely to be mid-resize.
  *
  *  What is LEFT in the list is not automatically a bug — two HUD panels that
  *  deliberately overlap belong here, and which of them is on top is a design

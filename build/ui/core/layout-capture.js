@@ -121,15 +121,46 @@ export function recordLayout(kind, id, rect, flags) {
  *  order and the children hang off it) but only learns its true size after
  *  them — this is how the recorded rect catches up, instead of the tree
  *  reporting the provisional size the container was never drawn at.
- *  `index` is what `recordLayout` returned; -1 is ignored. */
-export function refreshLayoutRect(index, rect) {
+ *  `index` is what `recordLayout` returned; -1 is ignored.
+ *
+ *  `paintedAt` is the rect as it stood when the container painted its own
+ *  backdrop, which is BEFORE the commit and therefore not always this one. Pass
+ *  it and the difference is kept as `paintedRect` instead of being overwritten
+ *  — the caller does not have to decide whether the two agree, and an entry
+ *  that painted nothing never gets the field however far its rect moved. */
+export function refreshLayoutRect(index, rect, paintedAt) {
     const entry = st().frame[index];
     if (!entry)
         return;
     const tl = uiToScreen(rect.x, rect.y);
     const br = uiToScreen(rect.x + rect.w, rect.y + rect.h);
+    // Before the overwrite, while `entry.rect` is still the rect the frame art
+    // went down at. Only for an entry that put pixels somewhere: a bare `row`
+    // painted no backdrop, so it has no second rect to be honest about.
+    if (paintedAt !== undefined && entry.paint !== undefined && movedFrom(paintedAt, rect)) {
+        const ptl = uiToScreen(paintedAt.x, paintedAt.y);
+        const pbr = uiToScreen(paintedAt.x + paintedAt.w, paintedAt.y + paintedAt.h);
+        entry.paintedRect = { x: paintedAt.x, y: paintedAt.y, w: paintedAt.w, h: paintedAt.h };
+        entry.paintedScreenRect = { x: ptl.x, y: ptl.y, w: pbr.x - ptl.x, h: pbr.y - ptl.y };
+    }
     entry.rect = { x: rect.x, y: rect.y, w: rect.w, h: rect.h };
     entry.screenRect = { x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y };
+}
+/** Whether two rects differ by enough to be worth recording separately. Half a
+ *  pixel, the same tolerance `layoutLag` and `layoutIssues` use. */
+function movedFrom(a, b) {
+    return (Math.abs(a.x - b.x) > 0.5 ||
+        Math.abs(a.y - b.y) > 0.5 ||
+        Math.abs(a.w - b.w) > 0.5 ||
+        Math.abs(a.h - b.h) > 0.5);
+}
+/** The rect an entry actually put pixels in: what it painted at when the layout
+ *  moved it afterwards, and its ordinary rect otherwise. What every occlusion
+ *  question should ask. Internal — a consumer writes the same `??` against
+ *  `LayoutEntry.paintedScreenRect`, and the public surface stays two fields
+ *  rather than two fields and an accessor. */
+function paintedScreenRect(entry) {
+    return entry.paintedScreenRect ?? entry.screenRect;
 }
 /** Hang the label a widget just drew on the entry it just recorded.
  *
@@ -255,9 +286,12 @@ function overlayColor(kind) {
  *  capture left on it trails the live UI by one frame (invisible in practice,
  *  and the reason a toggle should enable capture and the overlay together).
  *
- *  Boxes are drawn from `screenRect`, which is already screen-logical — call
- *  it at the ROOT of the draw, OUTSIDE any `UI.scaled` block, or the scale is
- *  applied twice. Findings win over kind: a child that escaped its container
+ *  Boxes are drawn from `screenRect` — or from `paintedScreenRect` where an
+ *  entry has one, so the box follows the art rather than the layout on the one
+ *  frame those disagree (see `LayoutEntry.paintedRect`). Either is already
+ *  screen-logical: call this at the ROOT of the draw, OUTSIDE any `UI.scaled`
+ *  block, or the scale is applied twice. Findings win over kind: a child that
+ *  escaped its container
  *  (`layoutIssues`) is red, as is anything painted THROUGH an open overlay
  *  (`paintIssues`); a container that drew at a stale size (`layoutLag`) is
  *  orange.
@@ -295,7 +329,11 @@ export function drawLayoutOverlay(opts = {}) {
     for (const entry of tree) {
         if (wanted && !wanted.has(entry.kind))
             continue;
-        const r = entry.screenRect;
+        // The rect the pixels are at, not the rect the layout settled on — this is
+        // drawn OVER the finished art, so a box that does not follow the frame it
+        // is boxing is the overlay lying to the eye it exists for. The two differ
+        // only on a frame where a deferred container's content changed size.
+        const r = paintedScreenRect(entry);
         if (r.w <= 0 || r.h <= 0)
             continue;
         const look = escaped.has(entry)
@@ -361,10 +399,19 @@ export function layoutIssues(tolerance = 0.5) {
     return issues;
 }
 /** Intersect an entry's screen rect with every clipping ancestor's, which is
- *  the part of it that can actually reach the canvas. */
+ *  the part of it that can actually reach the canvas.
+ *
+ *  The entry's own rect is the one it PAINTED at (`paintedScreenRect`), because
+ *  this feeds an occlusion check and occlusion is about pixels: a deferred
+ *  container's backdrop went down at the provisional size and `rect` reports
+ *  the committed one. The clipping ANCESTORS are read from their ordinary
+ *  rects, which is right for the same reason — a clip is applied from the box
+ *  the region laid its children out in, and the two clipping kinds (`clip` and
+ *  `scrollable`) never take a deferred slot, so for them the two rects are the
+ *  same rect anyway. */
 function visibleRect(tree, index) {
     const e = tree[index];
-    let { x, y, w, h } = e.screenRect;
+    let { x, y, w, h } = paintedScreenRect(e);
     let at = e.parent;
     while (at !== undefined) {
         const ancestor = tree[at];
@@ -414,6 +461,12 @@ function inSubtree(tree, a, b) {
  *  - an overlay as the offender. A `popover`, a `modal` and an open `select`
  *    menu are built to cover the screen; `throughOverlay` marks the reverse,
  *    which is never legitimate.
+ *
+ *  Rects are the ones the entries PAINTED at (`LayoutEntry.paintedRect` where
+ *  present), not the ones the layout settled on. The two are the same on every
+ *  settled frame and differ for a deferred container on the frame its content
+ *  changes size — which is both a false positive and a false negative at once,
+ *  on precisely the boxes most likely to be mid-resize.
  *
  *  What is LEFT in the list is not automatically a bug — two HUD panels that
  *  deliberately overlap belong here, and which of them is on top is a design
