@@ -1217,6 +1217,13 @@ export function autoContainer<R>(
   const parent = currentLayout();
   const rect = reservation ? reservation.slot.rect : containerRect(dir, opts, cached);
   const recorded = layoutCaptureActive ? recordLayout(kind, opts.id, rect) : -1;
+  // `rect` is mutated in place further down — by `slot.commit`, by the flex
+  // fill feedback, by an equal-fill redistribution in the parent's flow — and
+  // the backdrop below goes down BEFORE any of that. Snapshot the geometry the
+  // frame art is about to use, so `refreshLayoutRect` can keep it as
+  // `paintedRect` rather than have the committed size stand in for pixels that
+  // were never there. Harness-only: nothing is copied while capture is off.
+  const paintedAt = recorded >= 0 ? { x: rect.x, y: rect.y, w: rect.w, h: rect.h } : undefined;
   cfg.box?.(rect);
   const top = cfg.top ?? 0;
   const bottom = cfg.bottom ?? 0;
@@ -1262,8 +1269,12 @@ export function autoContainer<R>(
     }
   }
   if (recorded >= 0) {
-    // `slot.commit` resized `rect` after the entry above was recorded from it.
-    if (reservation || opts.flex === "fill") refreshLayoutRect(recorded, rect);
+    // `slot.commit` resized `rect` after the entry above was recorded from it —
+    // as did the flex-fill feedback above, and an equal-fill redistribution in
+    // the PARENT's flow, which reaches the very same object (see
+    // `containerRect`'s fill branch). All three are post-paint, so this hands
+    // over what the backdrop was drawn at as well as where the slot ended up.
+    if (reservation || opts.flex === "fill") refreshLayoutRect(recorded, rect, paintedAt);
     // What the box was worth against what it turned out to hold. A deferred
     // container is measured in-frame and is 0 by construction; the ones that
     // fell back to the cache are where a pop can still come from, and this is
