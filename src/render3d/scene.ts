@@ -379,6 +379,176 @@ export interface Material {
    *  through where the texture is clear — what a decal or line sheet painted
    *  over a solid colour needs. */
   textureBlend?: "multiply" | "over";
+  /** A glassy layer OVER the surface that answers to where the CAMERA is.
+   *  Absent, or at zero strength, and not one term of it is computed. */
+  glaze?: Glaze;
+  /** A wash of colour laid on by ORIENTATION and HEIGHT — what has settled on
+   *  the surface rather than what the surface is made of. Absent, or with
+   *  nothing to lay on, and not one term of it is computed. */
+  settle?: Settle;
+}
+
+/** A faked reflective coat: view-dependent light added on top of a surface
+ *  that has already been shaded.
+ *
+ *  Nothing here is correct and none of it is trying to be. A correct reflection
+ *  means rendering the scene again from the surface, and at that price the
+ *  effect stops being worth having. What this buys instead is the one thing no
+ *  amount of painting into a texture can buy: **the highlights move when the
+ *  CAMERA moves, and hold still when it holds still.** That is the entire cue
+ *  the eye reads as wet, polished or frozen, and it is why a baked sheen always
+ *  reads as a pattern painted onto a surface however well it is painted — the
+ *  pattern is nailed to the floor, and real reflections are nailed to the eye.
+ *
+ *  Four terms, cheapest first:
+ *
+ *  - **Fresnel.** The coat is weak where the surface faces you and strong at a
+ *    grazing angle, which is what every dielectric does, and what makes a flat
+ *    floor read as hard and wet towards its far edge. Seen from a low orbit
+ *    this is most of the visible effect, and it is one `pow`.
+ *  - **A faked sky**, looked up by the REFLECTED ray: a two-stop vertical
+ *    gradient plus a tight lobe around the scene's own first light. The lobe is
+ *    what sweeps as the camera turns — on a flat face the reflected ray's
+ *    horizontal part swings a degree for every degree of orbit, so the glint
+ *    crosses the surface while nothing in the scene has moved at all.
+ *  - **`ripple`**, which tilts the normal a little before any of the above is
+ *    looked up. This is what breaks the sky into moving glints instead of one
+ *    smooth wash, and it is the term that makes a surface worth looking at
+ *    while the camera is standing still.
+ *  - **`parallax`**, the surface's OWN albedo re-sampled along the reflected
+ *    ray. One fetch, of a texture already bound and already in cache, and it is
+ *    the term that puts something UNDERNEATH the surface instead of on it.
+ *    Without it, ice is a shiny floor.
+ *
+ *  **No new texture is sampled by any of this, and that is a deliberate
+ *  choice rather than a saving.** The parallax re-reads the material's own
+ *  `texture` and everything else is arithmetic, so this adds no binding, no
+ *  upload path and no entry to the loader's sampler-choice chain. A term with
+ *  a map of its own would need all three, and a material that reaches a
+ *  sampler nothing bound does not fail loudly — it draws whatever the last
+ *  draw happened to leave there.
+ *
+ *  Added AFTER lighting and BEFORE fog, because it is light. A distant glazed
+ *  surface has to fade into the atmosphere with everything else; a coat added
+ *  after the fog sits on top of the horizon glowing. */
+export interface Glaze {
+  /** Master weight, 0..1. At 0 — or with the whole object absent — the shader
+   *  computes no term and takes no extra sample, which is what makes this safe
+   *  to leave on a material that is only sometimes glazed. */
+  strength: number;
+  /** Colour of the faked sky, as `[r, g, b]`. Default white.
+   *
+   *  A cold near-white is ice or glass, a warm grey is polished stone, and the
+   *  scene's own horizon colour is standing water. It tints the gradient AND
+   *  the light lobe, so it is the colour of the whole reflection rather than a
+   *  wash over part of it. */
+  tint?: readonly [number, number, number];
+  /** Grazing-angle exponent. Default 4.
+   *
+   *  Lower spreads the coat over the whole surface and reads as haze on top of
+   *  it; higher pins it to the silhouette and the far edge. Below about 2 a
+   *  surface stops looking reflective and starts looking foggy, because a
+   *  reflection you can see head-on is a reflection with no Fresnel in it. */
+  fresnel?: number;
+  /** How far the reflected ray drags the surface's own `texture` when it is
+   *  re-sampled underneath, in the units the material's `uvProjection` reads —
+   *  WORLD units under `planarXZ`, uv units under the mesh's own unwrap, the
+   *  same convention `detailUvScale` uses. Default 0, which skips the extra
+   *  fetch entirely.
+   *
+   *  A fake depth, not a raymarch: one offset, one sample, no iteration. It is
+   *  convincing exactly as long as the offset stays small against the features
+   *  in the texture. Push it and the surface reads as a second sliding copy of
+   *  itself rather than as something seen through a few centimetres of ice.
+   *
+   *  **Forced to 0 on a material with no `texture`**, by `glazeParallax()`, and
+   *  that guard is not a detail — see it for what the two backends would
+   *  otherwise each draw. */
+  parallax?: number;
+  /** Animation phase for `ripple` and `sparkle`, in whatever unit the caller is
+   *  counting. Default 0.
+   *
+   *  The renderer has no clock of its own and is not being given one here. A
+   *  global time uniform would make every glazed surface in a scene share one
+   *  phase, and — worse — it would make a rendered frame depend on WHEN it was
+   *  rendered, which is the end of comparing two of them. Advancing this is a
+   *  number the caller already has, and parking it is what makes a frame
+   *  reproducible. */
+  scroll?: number;
+  /** Ripple frequency, in waves per world unit. Default 0.25 — one wave every
+   *  four units, a slow swell rather than a chop. */
+  scrollScale?: number;
+  /** How far the ripple tilts the normal before the sky is looked up. Default
+   *  0.08.
+   *
+   *  It perturbs the REFLECTION's normal only, never the surface's own lighting
+   *  normal, so a rippled floor does not start self-shading in bands. Past
+   *  about 0.3 the tilt can point the reflected ray below the horizon on a flat
+   *  face and the coat starts to flicker. */
+  ripple?: number;
+  /** Glitter: a sparkle at a frequency far above the ripple, gated by the same
+   *  light lobe so it appears where the light is rather than everywhere. 0..1,
+   *  default 0.
+   *
+   *  Kept apart from `ripple` because the two say different things — the ripple
+   *  is the SHAPE of the surface and the sparkle is the GRAIN in it. Frost,
+   *  snow and crushed ice have a great deal of it; water and polished stone
+   *  have none at all. */
+  sparkle?: number;
+}
+
+/** A colour laid over a surface by which way it FACES and how high it SITS —
+ *  snow on the tops of things, dust on ledges, moss climbing from the ground,
+ *  a tide line, rust at a waterline.
+ *
+ *  Two independent keys, either of which may be off:
+ *
+ *  - **`up`** weights the wash by `dot(normal, +Y)`, so it collects on faces
+ *    pointing at the sky and leaves vertical ones alone. That is the whole of
+ *    "snow settles on the top": no geometry, no second unwrap, one dot product.
+ *  - **`rise`** weights it by world height above `baseY`, strongest at the foot
+ *    and gone by `baseY + rise`.
+ *
+ *  The PAIR matters more than either half. `up` alone frosts the tops of
+ *  everything and leaves the uprights untouched, which reads as a lighting bug
+ *  rather than as weather. `rise` alone paints a band round everything at one
+ *  height, which reads as a flood. Together they describe a surface something
+ *  has fallen ONTO and crept UP, and that is the difference between a scene
+ *  that is cold and a scene with a cold filter over it.
+ *
+ *  This is ALBEDO — it changes what colour the surface IS, so it is applied
+ *  before lighting and is lit like anything else. A snow cap that did not take
+ *  the scene's own light would read as a sticker.
+ *
+ *  Alpha-over rather than overlay, and therefore in linear light under
+ *  `toneMapping: "aces"`, for the reason `detailMap` sets out at length: what
+ *  has settled on a surface HIDES the surface, it does not modulate it. */
+export interface Settle {
+  /** Colour of whatever has settled, as `[r, g, b]`. */
+  color: readonly [number, number, number];
+  /** How much collects on a face pointing straight up, 0..1. Default 0. */
+  up?: number;
+  /** How quickly the `up` wash gives out as a face tilts from the sky. Default
+   *  4.
+   *
+   *  The exponent on `dot(normal, +Y)`: 1 is a broad smear reaching most of the
+   *  way down a slope, 8 confines it to nearly-flat tops. The default sits
+   *  where a ramp keeps a little and a wall keeps none, which is what settling
+   *  looks like. */
+  upSharpness?: number;
+  /** World Y the `rise` climbs from — the ground line. Default 0. Everything
+   *  BELOW it is covered at full `riseAmount`, which is what a ground line
+   *  means. */
+  baseY?: number;
+  /** How far above `baseY` the rise reaches, in world units. Default 0, off. */
+  rise?: number;
+  /** How strong the rise is at `baseY` itself, 0..1. Default 0.
+   *
+   *  Kept apart from `up` so one surface can carry both at different weights,
+   *  which is the ordinary case rather than an exotic one: a wall wants a
+   *  strong foot and a weak cap, and the floor it stands on wants the cap term
+   *  and no foot at all. */
+  riseAmount?: number;
 }
 
 /** How fog thickens with distance. `layered` is the odd one out: it is a
@@ -542,6 +712,48 @@ export function detailWorldStep(material: Material): number {
   if (detailProjectionMode(material) === 0) return 0;
   const step = material.detailWorldStep ?? 0;
   return Number.isFinite(step) && step > 0 ? step : 0;
+}
+
+/** `Material.glaze`'s master weight as the shaders see it, and 0 for every way
+ *  of not having one. Resolved here for the same reason as the two above: it is
+ *  the single test both backends branch the whole coat on, and a backend that
+ *  disagreed about what "off" means would draw a different frame. */
+export function glazeStrength(material: Material): number {
+  const strength = material.glaze?.strength ?? 0;
+  return Number.isFinite(strength) && strength > 0 ? Math.min(strength, 1) : 0;
+}
+
+/** `Glaze.parallax` as the shaders see it — and **0 whenever the material has
+ *  no `texture`**, which is the guard this function exists for.
+ *
+ *  The parallax term re-samples the material's OWN albedo. A material with no
+ *  albedo has nothing to re-sample, and the two backends do not fail the same
+ *  way when asked to anyway: WebGL2's sampler uniform sits at texture unit 0,
+ *  so an unbound material reads whatever the PREVIOUS draw left bound there,
+ *  while WebGPU falls to its 1x1 blank and reads white. Neither raises an
+ *  error, neither looks like a bug in a screenshot, and the WebGL2 half changes
+ *  with draw order — so it would come and go as the scene was re-sorted.
+ *
+ *  This is the shape of bug that once cost a whole course its detail blend by
+ *  quietly handing a material a sampler nobody had configured. One test in one
+ *  place is not enough for it; the resolution has to be somewhere neither
+ *  backend can skip. */
+export function glazeParallax(material: Material): number {
+  if (!material.texture) return 0;
+  const parallax = material.glaze?.parallax ?? 0;
+  return Number.isFinite(parallax) ? parallax : 0;
+}
+
+/** Whether `Material.settle` has anything to lay on: a wash with no `up` and no
+ *  usable `rise` is an object that costs a normalize and changes nothing.
+ *  Resolved here so both backends agree on which materials skip the branch. */
+export function settleActive(material: Material): boolean {
+  const settle = material.settle;
+  if (!settle) return false;
+  const up = settle.up ?? 0;
+  const rise = settle.rise ?? 0;
+  const riseAmount = settle.riseAmount ?? 0;
+  return up > 0 || (rise > 0 && riseAmount > 0);
 }
 
 /** The fog mode as the shaders see it. Resolved here rather than in each

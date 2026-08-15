@@ -35,7 +35,10 @@ import {
   detailWorldStep,
   fogUniform,
   ghostMaterial,
+  glazeParallax,
+  glazeStrength,
   isVisible,
+  settleActive,
 } from "./scene.js";
 import { triangleCount, vertexCount } from "./mesh.js";
 import type { Camera3D } from "./camera.js";
@@ -146,6 +149,17 @@ uniform sampler2D uDetailMask;
 // means there is no mask — see Material.detailMaskUvScale.
 uniform vec4 uDetailMaskTransform;
 uniform vec3 uRimAlpha; // bias, scale, power — see Material.rimAlpha
+// x strength (0 disables every term), y fresnel exponent, z parallax offset,
+// w scroll phase. See Material.glaze.
+uniform vec4 uGlaze;
+// xyz the faked sky's tint, w ripple frequency in waves per world unit
+uniform vec4 uGlazeTint;
+// x ripple tilt, y sparkle, zw spare
+uniform vec4 uGlazeWave;
+// xyz the colour that has settled, w how much collects on an up-facing face
+uniform vec4 uSettle;
+// x up sharpness, y the ground line's world Y, z rise height, w rise amount
+uniform vec4 uSettle2;
 uniform vec4 uUvTransform;
 uniform int uFogMode; // -1 off, 0 linear, 1 exp, 2 exp squared, 3 layered
 uniform vec3 uFogColor;
@@ -250,6 +264,31 @@ vec3 blendOverlay(vec3 pattern, vec3 surface) {
   return lum < 0.5 ? 2.0 * pattern * surface : 1.0 - 2.0 * (1.0 - pattern) * (1.0 - surface);
 }
 
+/** A wrapped triangle wave smoothed by the 3t^2-2t^3 interpolant a value noise
+ *  uses, on -1..1.
+ *
+ *  Deliberately NOT sin(). Item 66 pins that the two backends draw the same
+ *  frame, and a transcendental is the one thing whose last bits two compilers
+ *  and two drivers are free to round differently — this is fract, abs and four
+ *  multiplies, which they are not. It is also cheaper, which is a bonus rather
+ *  than the reason. */
+float glazeWave(float x) {
+  float t = fract(x);
+  float tri = 1.0 - abs(t * 2.0 - 1.0);
+  return tri * tri * (3.0 - 2.0 * tri) * 2.0 - 1.0;
+}
+
+/** Two octaves of that wave along skewed axes, drifting at rates that share no
+ *  small ratio, so the sum's period is long enough that nobody sees it come
+ *  round. Returns a tilt in the world XZ plane. */
+vec2 glazeRipple(vec2 p, float phase) {
+  float a = glazeWave(p.x * 0.75 + p.y * 0.35 + phase);
+  float b = glazeWave(p.y * 0.85 - p.x * 0.45 - phase * 0.63);
+  float c = glazeWave(p.x * 1.90 - p.y * 1.60 + phase * 1.70);
+  float d = glazeWave(p.y * 2.10 + p.x * 1.40 - phase * 1.30);
+  return vec2(a + c * 0.45, b + d * 0.45);
+}
+
 /** The tangent frame the normal map is read in.
  *
  *  Two ways to get one. If the mesh SHIPS a tangent, use it: it is the frame
@@ -300,6 +339,35 @@ void main() {
     // Blend 2 keeps the base colour's own alpha: the texture decides colour
     // where it is opaque, not whether the surface is there at all.
     base = uTextureBlend == 2 ? vec4(mix(base.rgb, texel.rgb, texel.a), base.a) : base * texel;
+  }
+  // The glaze's normal and its one extra sample are taken HERE, up beside the
+  // base texture read, and not down beside the light where the rest of the coat
+  // is applied.
+  //
+  // WebGL2 does not need the split. WebGPU does: WGSL permits an
+  // implicit-derivative sample only in uniform control flow, applyNormalMap()
+  // can return early inside a branch on a derivative, and a sample placed after
+  // that call therefore fails to COMPILE. The two backends are required to draw
+  // the same frame, and the cheapest way to keep them drawing it is to give
+  // them the same shape rather than to let one take a liberty the other cannot.
+  //
+  // It costs nothing anyway: a reflective coat is a layer OVER the surface, so
+  // it has no business reading the surface's normal map, and the geometric
+  // normal is the one it wants.
+  vec3 glazeNormal = vec3(0.0, 1.0, 0.0);
+  vec3 glazeUnder = vec3(0.0);
+  if (uGlaze.x > 0.0) {
+    vec2 tilt = glazeRipple(vWorldPos.xz * uGlazeTint.w, uGlaze.w);
+    glazeNormal = normalize(normalize(vNormal) + vec3(tilt.x, 0.0, tilt.y) * uGlazeWave.x);
+    if (uGlaze.z != 0.0) {
+      vec3 toEye = normalize(uCameraPos - vWorldPos);
+      // The offset goes on the SOURCE coordinate, before the uv transform, so
+      // it lands in whatever units the projection reads — world units under
+      // planarXZ, uv under the mesh's own unwrap. See Glaze.parallax.
+      vec2 under = (source + reflect(-toEye, glazeNormal).xz * uGlaze.z) * uUvTransform.xy
+        + uUvTransform.zw;
+      glazeUnder = texture(uTexture, under).rgb;
+    }
   }
   // Overlay while base is still in display space; alpha-over in linear light —
   // see Material.detailMap for why the two belong on opposite sides of it.
@@ -361,6 +429,28 @@ void main() {
     } else {
       base.rgb = mix(base.rgb, blendOverlay(pattern.rgb, base.rgb), uDetailStrength);
     }
+  }
+  // What has SETTLED on the surface, which is albedo and therefore belongs here
+  // rather than beside the light: a snow cap that did not take the scene's own
+  // lighting reads as a sticker. See Material.settle.
+  if (uSettle.w > 0.0 || uSettle2.w > 0.0) {
+    vec3 settleN = normalize(vNormal);
+    if (!gl_FrontFacing) settleN = -settleN;
+    // Collects on faces that point at the sky and gives out as one tilts.
+    float top = pow(max(settleN.y, 0.0), uSettle2.x) * uSettle.w;
+    // And climbs from a ground line, strongest at the foot. Everything BELOW
+    // the line is covered outright, which is what a ground line means — the
+    // clamp is what says so, and it is why this is not symmetric.
+    float foot = uSettle2.z > 0.0
+      ? (1.0 - clamp((vWorldPos.y - uSettle2.y) / uSettle2.z, 0.0, 1.0)) * uSettle2.w
+      : 0.0;
+    // max() rather than a sum: a wall's foot and a wall's cap are the same
+    // snow seen twice, and adding them drives the corner past white.
+    float settled = clamp(max(top, foot), 0.0, 1.0);
+    vec3 lay = uToneMap ? srgbToLinear(uSettle.rgb) : uSettle.rgb;
+    base.rgb = uToneMap
+      ? linearToSrgb(mix(srgbToLinear(base.rgb), lay, settled))
+      : mix(base.rgb, uSettle.rgb, settled);
   }
   // Ahead of the cutoff and of the unlit branch, because the ramp is what
   // decides the final alpha: a bias of zero means the face-on fragments are
@@ -455,6 +545,43 @@ void main() {
   // A metal has no diffuse: what it does not reflect, it absorbs.
   vec3 albedo = uToneMap ? base.rgb * (1.0 - uMetallic) : base.rgb;
   vec3 shaded = albedo * lit + spec;
+  // The faked reflective coat, ADDED to the shaded surface and taken before the
+  // fog, because it is light like any other — see Material.glaze.
+  if (uGlaze.x > 0.0) {
+    vec3 toEye = normalize(uCameraPos - vWorldPos);
+    vec3 bounce = reflect(-toEye, glazeNormal);
+    // Weak head-on, strong at a grazing angle. On a low orbit over a flat deck
+    // this is most of what the eye reads. See Glaze.fresnel.
+    float fresnel = pow(1.0 - clamp(dot(glazeNormal, toEye), 0.0, 1.0), uGlaze.y);
+    // The faked sky, looked up by the reflected ray: a two-stop vertical
+    // gradient by its own height...
+    float sky = clamp(bounce.y * 0.5 + 0.5, 0.0, 1.0);
+    vec3 env = uGlazeTint.rgb * (0.25 + 0.75 * sky * sky);
+    // ...plus a tight lobe around the scene's OWN first light, which is what
+    // actually sweeps when the camera turns. Reusing the key light rather than
+    // taking a direction of its own keeps the reflection agreeing with the
+    // scene it is in, and costs no uniform. With no lights there is nothing to
+    // reflect, and straight up is the answer that adds no lobe anywhere.
+    vec3 sun = uLightCount > 0 ? -normalize(uLightDir[0]) : vec3(0.0, 1.0, 0.0);
+    float lobe = max(dot(bounce, sun), 0.0);
+    float lobe2 = lobe * lobe;
+    float lobe8 = lobe2 * lobe2 * lobe2 * lobe2;
+    env += uGlazeTint.rgb * lobe8 * 1.5;
+    // The grain, an octave far above the ripple and gated by that same lobe so
+    // it glitters where the light is instead of everywhere. See Glaze.sparkle.
+    if (uGlazeWave.y > 0.0) {
+      vec2 grain = glazeRipple(vWorldPos.xz * uGlazeTint.w * 9.0, uGlaze.w * 2.3);
+      float g = clamp(grain.x * grain.y, 0.0, 1.0);
+      float g2 = g * g;
+      env += uGlazeTint.rgb * (g2 * g2 * g2) * uGlazeWave.y * (0.25 + lobe8);
+    }
+    if (uToneMap) env = srgbToLinear(env);
+    // The sky takes over at a grazing angle and what is UNDER the ice shows
+    // head-on, which is the right way round and is why the two weights are
+    // complements rather than both riding the Fresnel.
+    vec3 under = uToneMap ? srgbToLinear(glazeUnder) : glazeUnder;
+    shaded += (env * (0.25 + 0.75 * fresnel) + under * (1.0 - fresnel) * 0.5) * uGlaze.x;
+  }
   // Fog before the curve, not after: the fog colour is a colour in the scene
   // like any other, and a distant surface that has faded most of the way into
   // it should reach the shoulder with it rather than be mixed into an
@@ -510,6 +637,11 @@ interface Uniforms {
   detailMask: WebGLUniformLocation | null;
   detailMaskTransform: WebGLUniformLocation | null;
   rimAlpha: WebGLUniformLocation | null;
+  glaze: WebGLUniformLocation | null;
+  glazeTint: WebGLUniformLocation | null;
+  glazeWave: WebGLUniformLocation | null;
+  settle: WebGLUniformLocation | null;
+  settle2: WebGLUniformLocation | null;
   uvTransform: WebGLUniformLocation | null;
   fogMode: WebGLUniformLocation | null;
   fogColor: WebGLUniformLocation | null;
@@ -631,6 +763,11 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     detailMask: gl.getUniformLocation(program, "uDetailMask"),
     detailMaskTransform: gl.getUniformLocation(program, "uDetailMaskTransform"),
     rimAlpha: gl.getUniformLocation(program, "uRimAlpha"),
+    glaze: gl.getUniformLocation(program, "uGlaze"),
+    glazeTint: gl.getUniformLocation(program, "uGlazeTint"),
+    glazeWave: gl.getUniformLocation(program, "uGlazeWave"),
+    settle: gl.getUniformLocation(program, "uSettle"),
+    settle2: gl.getUniformLocation(program, "uSettle2"),
     uvTransform: gl.getUniformLocation(program, "uUvTransform"),
     fogMode: gl.getUniformLocation(program, "uFogMode"),
     fogColor: gl.getUniformLocation(program, "uFogColor"),
@@ -912,6 +1049,32 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     // the pow() entirely.
     const rim = material.rimAlpha;
     gl!.uniform3f(u.rimAlpha, rim?.[0] ?? 1, rim?.[1] ?? 0, rim?.[2] ?? 1);
+
+    // The faked reflective coat. `glazeStrength` is the one test the shader
+    // branches the whole thing on, and `glazeParallax` is what stops a material
+    // with no albedo from re-sampling whatever the last draw left on unit 0 —
+    // both resolved in scene.ts so the two backends cannot disagree about it.
+    const glaze = glazeStrength(material);
+    gl!.uniform4f(u.glaze, glaze, material.glaze?.fresnel ?? 4, glazeParallax(material), material.glaze?.scroll ?? 0);
+    if (glaze > 0) {
+      const tint = material.glaze?.tint ?? WHITE3;
+      gl!.uniform4f(u.glazeTint, tint[0], tint[1], tint[2], material.glaze?.scrollScale ?? 0.25);
+      gl!.uniform4f(u.glazeWave, material.glaze?.ripple ?? 0.08, material.glaze?.sparkle ?? 0, 0, 0);
+    }
+
+    // What has settled on it. Both weights go to zero when `settleActive` says
+    // there is nothing to lay on, which is what keeps the shader's own
+    // `w > 0` test from reaching a half-configured wash.
+    const settle = settleActive(material) ? material.settle : undefined;
+    const laid = settle?.color ?? WHITE3;
+    gl!.uniform4f(u.settle, laid[0], laid[1], laid[2], settle?.up ?? 0);
+    gl!.uniform4f(
+      u.settle2,
+      settle?.upSharpness ?? 4,
+      settle?.baseY ?? 0,
+      settle?.rise ?? 0,
+      settle?.riseAmount ?? 0,
+    );
 
     if (material.doubleSided) gl!.disable(gl!.CULL_FACE);
     else gl!.enable(gl!.CULL_FACE);
