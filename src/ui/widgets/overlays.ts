@@ -45,6 +45,18 @@ import { anchorViewport, fitAnchored } from "@src/ui/core/index.js";
 export interface PopoverOptions extends Omit<PanelFrame, "x" | "y" | "w" | "h"> {
   /** Open state — pass yours in, assign the return value back. */
   open: boolean;
+  /** Escape and gamepad B, exactly as `modal`'s does.
+   *
+   *  A popover already closes on a click outside itself; this is the KEYBOARD
+   *  half of the same intention, and without it a popover was the one
+   *  dismissable overlay in the kit that a keyboard could not close — `modal`
+   *  has answered Escape all along. Reported against a JOIN BY CODE box that
+   *  took a click on CANCEL, on JOIN, or outside, and nothing else.
+   *
+   *  Separate from any click handler for the reason `modal` keeps them
+   *  separate: only a real click may do the things a browser allows only from
+   *  one, and a key press is not one. */
+  onDismiss?: () => void;
   /** Identity across frames. Defaults to the position. */
   id?: string;
   /** Left edge in px. OMIT (with `y`) to ANCHOR to the last placed widget —
@@ -93,6 +105,10 @@ export function popover(opts: PopoverOptions, children: () => void): boolean;
 export function popover(opts: PopoverOptions, children?: () => void): boolean {
   const ctx = uiCtx();
   ensureWired();
+  // BEFORE anything is placed, and only while OPEN: a request consumed by a
+  // closed popover would be taken from whatever else is listening this frame —
+  // an open modal behind it, or the screen's own back handler.
+  if (opts.open && opts.onDismiss && consumeDismissRequest()) opts.onDismiss();
   // Anchored form: no x/y → attach under the last placed widget (the trigger
   // drawn just before this call), flipping above it when the viewport bottom
   // would clip, and clamped inside the viewport horizontally.
