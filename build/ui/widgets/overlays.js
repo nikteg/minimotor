@@ -11,6 +11,11 @@ const popoverWasOpen = sweptCache();
 export function popover(opts, children) {
     const ctx = uiCtx();
     ensureWired();
+    // BEFORE anything is placed, and only while OPEN: a request consumed by a
+    // closed popover would be taken from whatever else is listening this frame —
+    // an open modal behind it, or the screen's own back handler.
+    if (opts.open && opts.onDismiss && consumeDismissRequest())
+        opts.onDismiss();
     // Anchored form: no x/y → attach under the last placed widget (the trigger
     // drawn just before this call), flipping above it when the viewport bottom
     // would clip, and clamped inside the viewport horizontally.
