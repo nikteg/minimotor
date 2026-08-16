@@ -313,23 +313,26 @@ describe("what still falls back to the cache", () => {
       for (let i = 0; i < n; i++) button({ id: `b${i}`, label: `B${i}` });
     });
 
-  it("a bottom-anchored root draws its whole content a frame late, in the wrong place", () => {
+  it("a bottom-anchored root is placed from THIS frame's content, not last frame's", () => {
+    // **This asserted the opposite, and what it pinned was the fault.** The
+    // frame the content grew, the box was still one button tall, so the stack
+    // did not move and the new button hung off the bottom of the viewport; the
+    // NEXT frame it learned its real height and everything jumped up by a
+    // button. That jump is the one-frame pop item 68 is about.
+    //
+    // An anchored root now measures its children before placing itself, so the
+    // placement is made from the content the frame actually holds.
     frame(anchoredCorner(1, "bottomLeft"));
     const before = frame(anchoredCorner(1, "bottomLeft"));
     const changing = frame(anchoredCorner(2, "bottomLeft"));
-    const lagOnChange = layoutLag().map((l) => l.entry.id);
     const settled = frame(anchoredCorner(2, "bottomLeft"));
-    expect(lagOnChange).toContain("corner");
-    // The frame the content grows, the box is still the height of ONE button,
-    // so its top edge has not moved — and the first button is still exactly
-    // where it was before the change.
-    expect(changing.b0.y).toBe(before.b0.y);
-    // Next frame the box knows its real height and the whole stack jumps up by
-    // the button it gained. That jump is the one-frame pop.
-    expect(settled.b0.y).toBe(before.b0.y - before.b0.h);
-    // And for one frame the second button hung off the bottom of the viewport.
-    expect(changing.b1.y + changing.b1.h).toBeGreaterThan(600);
-    expect(settled.b1.y + settled.b1.h).toBeCloseTo(600, 0);
+    // Moved on the frame it grew, not the frame after.
+    expect(changing.b0.y).toBe(before.b0.y - before.b0.h);
+    // And the frame after agrees, so nothing pops between them.
+    expect(settled.b0.y).toBe(changing.b0.y);
+    // The gained button is on the margin immediately.
+    expect(changing.b1.y + changing.b1.h).toBeCloseTo(600, 0);
+    expect(settled.b1).toEqual(changing.b1);
   });
 
   it("the same staleness on a top-anchored root moves nothing", () => {
@@ -338,13 +341,17 @@ describe("what still falls back to the cache", () => {
     const changing = frame(anchoredCorner(2, "topLeft"));
     const lagOnChange = layoutLag().map((l) => l.entry.id);
     const settled = frame(anchoredCorner(2, "topLeft"));
+    // No lag is reported on either anchor now: this used to assert that the
+    // report could not tell a harmless staleness from a visible jump, and the
+    // staleness itself is gone.
+    expect(lagOnChange).not.toContain("corner");
     expect(changing.b0.y).toBe(before.b0.y);
     expect(settled.b0.y).toBe(before.b0.y);
     expect(settled.b1).toEqual(changing.b1);
-    // Same container, same stale height, and the SAME finding — so the report
-    // cannot see the difference the anchor makes. Only the anchor decides
-    // whether that staleness is a jump a player sees or nothing at all.
-    expect(lagOnChange).toContain("corner");
+    // The CONTROL that still holds: a top-anchored box never moved, because its
+    // content grows downwards into space the box was going to occupy anyway. If
+    // `changing` and `settled` ever differ here, the measure pass has begun
+    // disturbing containers it was never meant to touch.
   });
 
   it("stays quiet once a lagging container has settled", () => {

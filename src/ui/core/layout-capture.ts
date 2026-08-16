@@ -15,6 +15,7 @@ import { currentUiScale, uiToScreen } from "./input.js";
 import { ensureWired, onFrameEnd, onReset } from "./lifecycle.js";
 import { armPaint, resetPaintSeq } from "./paint-seq.js";
 import { uiSlot } from "./state.js";
+import { isMeasuring } from "./measure-pass.js";
 
 /** One captured rect: a widget slot or a container box. */
 export interface LayoutEntry {
@@ -205,6 +206,7 @@ export function recordLayout(
   rect: { x: number; y: number; w: number; h: number },
   flags?: { clips?: boolean; pinned?: boolean },
 ): number {
+  if (isMeasuring()) return -1;
   const frame = st().frame;
   // Registering the frame-end hook is not enough on its own: `appFrameEnd` —
   // the thing that RUNS the hooks — is attached to the app by `ensureWired`,

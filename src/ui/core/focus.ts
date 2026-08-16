@@ -12,6 +12,7 @@ import { roundRectPath, theme } from "./theme.js";
 import { isInOverlayPass } from "./lifecycle.js";
 import { uiPointer, uiToScreen } from "./input.js";
 import { allUiApps, currentUiApp, uiGamepads, uiSlot, uiApp, withUiApp } from "./state.js";
+import { isMeasuring } from "./measure-pass.js";
 
 // Focusables register in draw order each frame. Keyboard events happen between
 // frames, so they operate on the last complete registry rather than a retained
@@ -235,6 +236,7 @@ export function registerFocusable(
     blur?: () => void;
   },
 ): boolean {
+  if (isMeasuring()) return false;
   if (!opts.id) return false;
   const s = fs();
   wireFocusCanvas(ctx, currentUiApp());
@@ -340,6 +342,7 @@ export function drawFocusRing(
 }
 
 export function consumeKeyboardActivation(id: string | undefined): boolean {
+  if (isMeasuring()) return false;
   const s = fs();
   if (!id || s.activation !== id) return false;
   s.activation = null;
@@ -357,6 +360,7 @@ export function consumeKeyboardCommand(id: string | undefined): string | null {
 /** Consume the current frame's semantic modal-dismiss request (gamepad B or
  * Escape). Modal owns the close action; focus only owns the input convention. */
 export function consumeDismissRequest(): boolean {
+  if (isMeasuring()) return false;
   const s = fs();
   if (!s.dismissRequested) return false;
   s.dismissRequested = false;

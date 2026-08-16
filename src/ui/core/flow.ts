@@ -18,6 +18,7 @@ import { currentUiScale, uiHeight, uiWidth } from "./input.js";
 import { ANCHOR_H, ANCHOR_V, anchorViewport, type TextAnchor } from "./text.js";
 import { uiSlot } from "./state.js";
 import { theme, themeKey } from "@src/ui/theme.js";
+import { beginMeasure, endMeasure, isMeasuring } from "./measure-pass.js";
 
 export interface UiPadding {
   x?: number;
@@ -1212,9 +1213,47 @@ export function autoContainer<R>(
   children: LayoutChildren<R>,
 ): R {
   const key = containerKey(opts, kind);
-  const cached = cachedContentSize(key);
+  let cached = cachedContentSize(key);
+  const settledBefore = cached !== undefined;
   const reservation = tryReserve(dir, opts, cfg, cached);
   const parent = currentLayout();
+  if (
+    !reservation &&
+    opts.anchor !== undefined &&
+    (opts.w === undefined || opts.h === undefined) &&
+    !isMeasuring()
+  ) {
+    beginMeasure();
+    try {
+      const probe = containerRect(dir, opts, cached);
+      runAutoSized(
+        key,
+        probe,
+        {
+          x: probe.x,
+          y: probe.y + (cfg.top ?? 0),
+          w: probe.w,
+          h: probe.h - (cfg.top ?? 0) - (cfg.bottom ?? 0),
+        },
+        dir,
+        cfg.gap,
+        cfg.pad,
+        cfg.justify,
+        cfg.reverse,
+        cfg.fitCross,
+        children,
+        cfg.wrap ?? false,
+        cached ? (dir === "row" ? cached.ew : cached.eh) : undefined,
+        null,
+        cfg.alignCross ?? "start",
+        false,
+        opts.minW ?? 0,
+      );
+    } finally {
+      endMeasure();
+    }
+    cached = cachedContentSize(key);
+  }
   const rect = reservation ? reservation.slot.rect : containerRect(dir, opts, cached);
   const recorded = layoutCaptureActive ? recordLayout(kind, opts.id, rect) : -1;
   // `rect` is mutated in place further down — by `slot.commit`, by the flex
@@ -1237,7 +1276,7 @@ export function autoContainer<R>(
   // The first pass must hug children so an auto-width column can discover its
   // widest child. Once that size is cached, the same column can stretch every
   // child across the measured cross axis without changing its own width.
-  const stretchingCross = cfg.stretchCross === true && cached !== undefined;
+  const stretchingCross = cfg.stretchCross === true && settledBefore;
   const result = runAutoSized(
     key,
     rect,

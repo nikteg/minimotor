@@ -8,6 +8,7 @@ import { lineMetrics, measureWidth } from "./measure.js";
 // than from `layout-capture.ts`, which reaches `lifecycle.ts` and so back to
 // this file — see the note at the top of `paint-seq.ts`.
 import { notePaint } from "./paint-seq.js";
+import { isMeasuring } from "./measure-pass.js";
 import {
   theme,
   type NineSliceRegion,
@@ -148,6 +149,7 @@ export function drawThemeSprite(
   w?: number,
   h?: number,
 ): boolean {
+  if (isMeasuring()) return false;
   const sprite = theme.skin?.sprites.icons?.[name];
   if (!sprite) return false;
   notePaint();
@@ -302,6 +304,7 @@ export function drawNineSlice(
   w: number,
   h: number,
 ): void {
+  if (isMeasuring()) return;
   notePaint();
   const { left, top, right, bottom } = region.insets;
   const centerW = region.sw - left - right;
@@ -396,6 +399,7 @@ export function drawBox(
     axis?: "x" | "y";
   },
 ): void {
+  if (isMeasuring()) return;
   // Every opaque box in the kit lands here — panel and popover frames, buttons,
   // fields, bars, tabs, toggles, list rows — which makes it the one place the
   // capture has to be told "these pixels went down now".
@@ -500,6 +504,7 @@ export function centeredText(
   cy: number,
   maxW?: number,
 ): void {
+  if (isMeasuring()) return;
   // A label is the other half of what reaches the canvas — item 115's fault was
   // a table's HEADER coming through a popover, not a box. An empty string is
   // not a paint.
@@ -566,6 +571,7 @@ export function centeredSpans(
   cy: number,
   maxW?: number,
 ): void {
+  if (isMeasuring()) return;
   if (runs.length <= 1) {
     const only = runs[0];
     if (only?.color !== undefined) ctx.fillStyle = only.color;
