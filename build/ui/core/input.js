@@ -1,6 +1,7 @@
 import { ensureWired, isInOverlayPass, isOverlayActive, lifecycleOnce, onFrameEnd, onStep, } from "./lifecycle.js";
 import { hasUiApp, uiSlot, uiApp } from "./state.js";
 import { pointInRect } from "../../collision/index.js";
+import { isMeasuring } from "./measure-pass.js";
 export const DEAD_POINTER = {
     x: -1e9,
     y: -1e9,
@@ -431,6 +432,18 @@ export function clearPointerCache() {
  *  and the overlay gate. Cleared each frame-end. */
 export function uiPointer() {
     ensureWired(); // per-frame housekeeping keeps overlay/tooltip state honest
+    // **A measure pass sees no pointer at all**, and returns BEFORE the memo so
+    // nothing computed while measuring can be handed to the real run behind it.
+    // The rects being measured are provisional, so any hit-test against them is a
+    // hit-test on a box that is about to move.
+    //
+    // This is deliberately not `pushPointerOverride`: that writes a module-level
+    // override and drops the memo, and the memo's key does not mention it — under
+    // a `UI.scaled` transform the two disagreed and the real run was handed a
+    // pointer computed during the measure. MEASURED: a click inside a popover on
+    // a scaled screen stopped registering, and only on a scaled one.
+    if (isMeasuring())
+        return DEAD_POINTER;
     const s = st();
     const overlayDead = isOverlayActive() && !isInOverlayPass();
     const inOverlayPass = isInOverlayPass();

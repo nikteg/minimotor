@@ -14,6 +14,7 @@ import { currentUiScale, uiToScreen } from "./input.js";
 import { ensureWired, onFrameEnd, onReset } from "./lifecycle.js";
 import { armPaint, resetPaintSeq } from "./paint-seq.js";
 import { uiSlot } from "./state.js";
+import { isMeasuring } from "./measure-pass.js";
 // Entries recorded so far THIS frame, and the last completed frame's tree.
 // Per app, like every other frame-scoped state.
 const st = uiSlot(() => ({
@@ -83,6 +84,8 @@ const parents = [];
  *  always behind a `layoutCaptureActive` guard. `id` is the raw option value
  *  (stringified here so call sites stay one expression). */
 export function recordLayout(kind, id, rect, flags) {
+    if (isMeasuring())
+        return -1;
     const frame = st().frame;
     // Registering the frame-end hook is not enough on its own: `appFrameEnd` —
     // the thing that RUNS the hooks — is attached to the app by `ensureWired`,

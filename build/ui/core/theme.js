@@ -7,6 +7,7 @@ import { lineMetrics, measureWidth } from "./measure.js";
 // than from `layout-capture.ts`, which reaches `lifecycle.ts` and so back to
 // this file — see the note at the top of `paint-seq.ts`.
 import { notePaint } from "./paint-seq.js";
+import { isMeasuring } from "./measure-pass.js";
 import { theme, } from "../../ui/theme.js";
 export { defaultTheme, getTheme, resolveThemePadding, resolveThemeTextPadding, setTheme, theme, withTheme, } from "../../ui/theme.js";
 export { createTilesetSkin, createTilesetSkinFromManifest, frameFromCell, inspectTilesetSkin, shade, } from "../../ui/theme.js";
@@ -56,6 +57,8 @@ function orientedInsets(frame, rotation) {
  *  atlas region supplies that name. Returns false when the skin has no such
  *  sprite so the caller can use its procedural fallback. */
 export function drawThemeSprite(ctx, name, x, y, w, h) {
+    if (isMeasuring())
+        return false;
     const sprite = theme.skin?.sprites.icons?.[name];
     if (!sprite)
         return false;
@@ -176,6 +179,8 @@ function drawOrientedNineSlice(ctx, image, frame, x, y, w, h, axis) {
 }
 /** Paint a pixel-native nine-slice region, clipping partial repeats. */
 export function drawNineSlice(ctx, image, region, x, y, w, h) {
+    if (isMeasuring())
+        return;
     notePaint();
     const { left, top, right, bottom } = region.insets;
     const centerW = region.sw - left - right;
@@ -206,6 +211,8 @@ export function drawNineSlice(ctx, image, region, x, y, w, h) {
  *  stroked at `theme.borderWidth` inset so the outline stays inside the rect.
  *  `radius`/`border` override the theme for one call. */
 export function drawBox(ctx, x, y, w, h, opts) {
+    if (isMeasuring())
+        return;
     // Every opaque box in the kit lands here — panel and popover frames, buttons,
     // fields, bars, tabs, toggles, list rows — which makes it the one place the
     // capture has to be told "these pixels went down now".
@@ -302,6 +309,8 @@ export function ellipsize(ctx, text, maxW) {
  *  `maxW` clips with an ellipsis (via `ellipsize`) so a label can never spill
  *  out of its widget. */
 export function centeredText(ctx, text, x, cy, maxW) {
+    if (isMeasuring())
+        return;
     // A label is the other half of what reaches the canvas — item 115's fault was
     // a table's HEADER coming through a popover, not a box. An empty string is
     // not a paint.
@@ -353,6 +362,8 @@ export function centeredText(ctx, text, x, cy, maxW) {
  *  A single run is handed straight to `centeredText`, so the overwhelmingly
  *  common case draws through exactly the code it always did. */
 export function centeredSpans(ctx, runs, x, cy, maxW) {
+    if (isMeasuring())
+        return;
     if (runs.length <= 1) {
         const only = runs[0];
         if (only?.color !== undefined)

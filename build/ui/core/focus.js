@@ -11,6 +11,7 @@ import { roundRectPath, theme } from "./theme.js";
 import { isInOverlayPass } from "./lifecycle.js";
 import { uiPointer, uiToScreen } from "./input.js";
 import { allUiApps, currentUiApp, uiGamepads, uiSlot, uiApp, withUiApp } from "./state.js";
+import { isMeasuring } from "./measure-pass.js";
 const navRepeat = () => ({ key: null, elapsed: 0, next: 350, count: 0 });
 const fs = uiSlot(() => ({
     frame: [],
@@ -156,6 +157,8 @@ export function wireFocusCanvas(ctx, app) {
     });
 }
 export function registerFocusable(ctx, opts) {
+    if (isMeasuring())
+        return false;
     if (!opts.id)
         return false;
     const s = fs();
@@ -243,6 +246,8 @@ export function drawFocusRing(ctx, rect) {
     ctx.restore();
 }
 export function consumeKeyboardActivation(id) {
+    if (isMeasuring())
+        return false;
     const s = fs();
     if (!id || s.activation !== id)
         return false;
@@ -260,6 +265,8 @@ export function consumeKeyboardCommand(id) {
 /** Consume the current frame's semantic modal-dismiss request (gamepad B or
  * Escape). Modal owns the close action; focus only owns the input convention. */
 export function consumeDismissRequest() {
+    if (isMeasuring())
+        return false;
     const s = fs();
     if (!s.dismissRequested)
         return false;
