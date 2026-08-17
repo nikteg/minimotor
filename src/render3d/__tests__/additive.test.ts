@@ -45,6 +45,12 @@ describe("additive blending", () => {
   it("never ghosts additively", () => {
     // `occludedAlpha` is a hint about where something is, not a light.
     expect(read("webgpu.ts")).toMatch(/!ghost && !!material\.additive/);
-    expect(read("webgl2.ts")).toMatch(/setBlendMode\(false\);\s*\n\s*for \(const i of occluded\)/);
+    // The ghost pass forces ordinary alpha blending immediately before it runs.
+    // `lastMaterial = null` sits between the two now — every pass clears the
+    // material run so uniforms set for one cannot be assumed by the next — so
+    // the assertion allows it rather than pinning the two lines together.
+    expect(read("webgl2.ts")).toMatch(
+      /setBlendMode\(false\);\s*(\n\s*lastMaterial = null;)?\s*\n\s*for \(const i of occluded\)/,
+    );
   });
 });

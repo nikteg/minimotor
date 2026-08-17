@@ -296,3 +296,122 @@ describe("both backends", () => {
     expect(webgpu).toMatch(/depthWriteEnabled:[^\n]*!occluderDepth/);
   });
 });
+
+describe("a material shared by many nodes", () => {
+  /** How many times the base-colour uniform was written, which stands for the
+   *  whole per-material block: it is set once per material change and never
+   *  otherwise. */
+  function baseColorWrites(nodes: { mesh: MeshData; material: Material }[]): number {
+    const harness = recordingGl();
+    const canvas = document.createElement("canvas");
+    (canvas as unknown as { getContext: () => unknown }).getContext = () => harness.gl;
+    const renderer = createWebGL2Renderer({ canvas });
+    const scene = createScene();
+    for (const n of nodes) addNode(scene, node(n));
+    updateWorldMatrices(scene);
+    renderer.render(scene, createCamera());
+    return harness.calls.filter((call) => call.name === "uniform4f").length;
+  }
+
+  it("sets its uniforms ONCE for the whole run", () => {
+    // A level draws far more nodes than it has materials — 389 draws over 23
+    // materials on one shipped course, one of them taking 84 — and every one of
+    // those draws re-sent the same ~24-40 GL calls. The opaque pass is sorted by
+    // material identity, so they arrive as runs and a run pays once.
+    const shared: Material = { color: [1, 0, 0, 1] };
+    const four = baseColorWrites([
+      { mesh: GROUND, material: shared },
+      { mesh: BALL, material: shared },
+      { mesh: GUIDE, material: shared },
+      { mesh: LABEL, material: shared },
+    ]);
+    const one = baseColorWrites([{ mesh: GROUND, material: shared }]);
+    expect(four).toBe(one);
+  });
+
+  it("still sets them again for a DIFFERENT material", () => {
+    const one = baseColorWrites([{ mesh: GROUND, material: { color: [1, 0, 0, 1] } }]);
+    const two = baseColorWrites([
+      { mesh: GROUND, material: { color: [1, 0, 0, 1] } },
+      { mesh: BALL, material: { color: [0, 1, 0, 1] } },
+    ]);
+    expect(two).toBe(one * 2);
+  });
+
+  it("keeps scene order for materials that do not repeat", () => {
+    // The sort is stable and the keys are handed out as the scene is walked, so
+    // a scene with no shared materials draws in exactly the order it always
+    // did. Only repeats move, and only towards each other.
+    const drawn = drawStates([
+      { mesh: GROUND, material: {} },
+      { mesh: BALL, material: {} },
+      { mesh: GUIDE, material: {} },
+    ]);
+    expect(drawn.map((d) => d.count)).toEqual([3, 6, 9]);
+  });
+});
+
+describe("a mesh rewritten in place", () => {
+  /** Render twice, bumping the version between, and report how many GL objects
+   *  were created and destroyed on the second pass. */
+  function rebuildCost(mutate: (mesh: MeshData) => void) {
+    const harness = recordingGl();
+    const canvas = document.createElement("canvas");
+    (canvas as unknown as { getContext: () => unknown }).getContext = () => harness.gl;
+    const renderer = createWebGL2Renderer({ canvas });
+    const scene = createScene();
+    const mesh: MeshData = {
+      positions: new Float32Array(GROUND.positions),
+      indices: new Uint16Array(GROUND.indices),
+      version: 1,
+    };
+    addNode(scene, node({ mesh, material: {} }));
+    updateWorldMatrices(scene);
+    renderer.render(scene, createCamera());
+    const before = harness.calls.length;
+    mutate(mesh);
+    renderer.render(scene, createCamera());
+    const after = harness.calls.slice(before);
+    return {
+      created: after.filter((c) => c.name === "createBuffer" || c.name === "createVertexArray")
+        .length,
+      destroyed: after.filter((c) => c.name === "deleteBuffer" || c.name === "deleteVertexArray")
+        .length,
+      subData: after.filter((c) => c.name === "bufferSubData").length,
+    };
+  }
+
+  it("reuses its buffers when only the numbers changed", () => {
+    // A particle emitter bumps its version every frame — rewriting vertices is
+    // what it IS — so rebuilding meant deleting a VAO and nine buffers and
+    // creating nine more, sixty times a second per emitter.
+    const cost = rebuildCost((mesh) => {
+      mesh.positions[0] = 5;
+      mesh.version = 2;
+    });
+    expect(cost.created).toBe(0);
+    expect(cost.destroyed).toBe(0);
+    // Positions and indices, and nothing for the attributes it does not carry.
+    expect(cost.subData).toBe(2);
+  });
+
+  it("rebuilds when the SHAPE changed, which the storage cannot absorb", () => {
+    const cost = rebuildCost((mesh) => {
+      mesh.positions = new Float32Array(GROUND.positions.length * 2);
+      mesh.indices = new Uint16Array(GROUND.indices.length * 2);
+      mesh.version = 2;
+    });
+    expect(cost.created).toBeGreaterThan(0);
+    expect(cost.destroyed).toBeGreaterThan(0);
+  });
+
+  it("rebuilds when the mesh GAINS an attribute", () => {
+    // The defaults filled in for a missing attribute are built here, so a mesh
+    // that grows real uvs cannot have them written into a default buffer.
+    const cost = rebuildCost((mesh) => {
+      mesh.uvs = new Float32Array((mesh.positions.length / 3) * 2);
+      mesh.version = 2;
+    });
+    expect(cost.created).toBeGreaterThan(0);
+  });
+});

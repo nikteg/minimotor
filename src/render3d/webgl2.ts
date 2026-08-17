@@ -627,6 +627,29 @@ interface GpuMesh {
   /** The `MeshData.version` these buffers were filled from, so an in-place
    *  edit can be noticed. `undefined` for a mesh that never declared one. */
   version: number | undefined;
+  /** Vertices the buffers were SIZED for, and the index count they hold. A
+   *  rewrite that fits inside both can go in as a sub-update; one that does not
+   *  needs new storage. */
+  vertices: number;
+  indices: number;
+  /** Which optional attributes the mesh had when the buffers were built. A
+   *  mesh that gains or loses one needs its defaults rebuilt, so the cheap path
+   *  refuses to touch it. */
+  attributes: number;
+}
+
+/** A bitmask of the optional attributes a mesh supplies, so a re-upload can
+ *  tell "the same mesh with new numbers" from "a different mesh". */
+function attributeMask(mesh: MeshData): number {
+  return (
+    (mesh.normals ? 1 : 0) |
+    (mesh.uvs ? 2 : 0) |
+    (mesh.colors ? 4 : 0) |
+    (mesh.joints ? 8 : 0) |
+    (mesh.weights ? 16 : 0) |
+    (mesh.uvs1 ? 32 : 0) |
+    (mesh.tangents ? 64 : 0)
+  );
 }
 
 interface Uniforms {
@@ -817,6 +840,22 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
   const viewProj = Mat4.create();
   /** The frustum this frame, rebuilt once per pass from `viewProj`. */
   const planes: Frustum = new Float32Array(24);
+  /** The material whose uniforms are currently loaded, so a run of nodes
+   *  sharing one sets them once. Cleared before every pass — see `drawNode`. */
+  let lastMaterial: Material | null = null;
+  /** A stable number per material object, for sorting the opaque pass into
+   *  runs. A `WeakMap` so a material that goes out of use goes with it. */
+  const materialOrder = new WeakMap<Material, number>();
+  let materialOrderNext = 0;
+  function materialKey(material: Material | undefined): number {
+    if (!material) return -1;
+    let key = materialOrder.get(material);
+    if (key === undefined) {
+      key = materialOrderNext++;
+      materialOrder.set(material, key);
+    }
+    return key;
+  }
   const normalMat = new Float32Array(9);
   const eye: Vec3 = { x: 0, y: 0, z: 0 };
   const lightDirs = new Float32Array(MAX_LIGHTS * 3);
@@ -864,10 +903,25 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
   function uploadMesh(mesh: MeshData): GpuMesh {
     const cached = meshes.get(mesh);
     if (cached && cached.version === mesh.version) return cached;
-    // A version that moved means the arrays were rewritten in place. Drop the
-    // old buffers and build again: re-specifying is what `bufferData` already
-    // does per attribute, and a re-upload of a mesh sized for its worst frame
-    // costs the same whether or not the contents changed shape.
+    // **A rewrite of the same shape goes into the buffers that are already
+    // there.** A particle emitter bumps its version every frame — it rewrites
+    // its vertices every frame by definition — and rebuilding meant deleting a
+    // VAO and nine buffers and creating nine more, sixty times a second per
+    // emitter. That is the allocation pattern drivers punish hardest, because a
+    // deleted buffer may still be referenced by in-flight commands.
+    //
+    // The shape has to match for this to be safe: the same vertex count (the
+    // storage is sized for it), the same index count, and the same set of
+    // optional attributes (the defaults filled in for a missing one are sized
+    // and shaped here, not by the caller).
+    if (
+      cached &&
+      cached.vertices === vertexCount(mesh) &&
+      cached.indices === mesh.indices.length &&
+      cached.attributes === attributeMask(mesh)
+    ) {
+      return refillMesh(cached, mesh);
+    }
     if (cached) releaseMesh(cached);
 
     const vao = gl!.createVertexArray();
@@ -918,8 +972,40 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
       count: mesh.indices.length,
       type: mesh.indices instanceof Uint32Array ? gl!.UNSIGNED_INT : gl!.UNSIGNED_SHORT,
       version: mesh.version,
+      vertices: n,
+      indices: mesh.indices.length,
+      attributes: attributeMask(mesh),
     };
     meshes.set(mesh, gpu);
+    return gpu;
+  }
+
+  /** Write new numbers into buffers that are already the right size.
+   *
+   * Only the attributes the mesh actually supplies are re-sent: the defaults
+   * standing in for the others cannot have changed, because a change to WHICH
+   * attributes exist is what `attributeMask` refuses above. For a particle
+   * batch that is four buffers instead of nine, and no object churn at all. */
+  function refillMesh(gpu: GpuMesh, mesh: MeshData): GpuMesh {
+    const refill = (index: number, data: Float32Array | undefined): void => {
+      if (!data) return;
+      gl!.bindBuffer(gl!.ARRAY_BUFFER, gpu.buffers[index]!);
+      gl!.bufferSubData(gl!.ARRAY_BUFFER, 0, data);
+    };
+    refill(0, mesh.positions);
+    refill(1, mesh.normals);
+    refill(2, mesh.uvs);
+    refill(3, mesh.colors);
+    if (mesh.joints) {
+      gl!.bindBuffer(gl!.ARRAY_BUFFER, gpu.buffers[4]!);
+      gl!.bufferSubData(gl!.ARRAY_BUFFER, 0, mesh.joints);
+    }
+    refill(5, mesh.weights);
+    refill(6, mesh.uvs1);
+    refill(7, mesh.tangents);
+    gl!.bindBuffer(gl!.ELEMENT_ARRAY_BUFFER, gpu.indexBuffer);
+    gl!.bufferSubData(gl!.ELEMENT_ARRAY_BUFFER, 0, mesh.indices);
+    gpu.version = mesh.version;
     return gpu;
   }
 
@@ -975,7 +1061,43 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
       throw new Error(`WebGL2 supports at most ${MAX_JOINTS} skin joints per node.`);
     }
     gl!.uniform1i(u.hasSkin, skin ? 1 : 0);
-    gl!.uniformMatrix4fv(u.jointMatrices, false, skin ?? IDENTITY_JOINTS);
+    // **Only when there IS one.** `MAX_JOINTS` is 64, so the identity fallback
+    // is 1024 floats — 4 KB of driver-side validate-and-copy per draw, for a
+    // uniform the shader never reads: every access is behind `if (uHasSkin)`.
+    // A level's geometry carries no skins at all, so this was the single
+    // largest thing most draws uploaded. Nothing needs a reset when the skin
+    // goes: `hasSkin` is what the shader branches on, so a stale pose left in
+    // the uniform is never read — which is why the identity array is gone
+    // rather than merely unsent.
+    if (skin) gl!.uniformMatrix4fv(u.jointMatrices, false, skin);
+
+    // **Everything below is the MATERIAL's, and a run of nodes sharing one
+    // sets it once.** A level draws far more nodes than it has materials — 389
+    // draws over 23 materials on one shipped course, one of them taking 84 — and
+    // `instantiateGltf` hands the same material OBJECT to every node that shares
+    // it, so identity is a free and exact key. Sorting the opaque pass by it
+    // (see `opaque.sort` below) turns those into runs, and a run costs the
+    // material's ~24-40 GL calls once instead of per node.
+    //
+    // Identity rather than a deep compare, and the run is only ever WITHIN one
+    // pass: `lastMaterial` is cleared before each of them and at every frame,
+    // so a material mutated in place between frames — the hole repaint does
+    // exactly that — is re-read on the next frame's first draw of it. Nothing
+    // mutates a material midway through a pass; the game code that changes one
+    // runs in update, before any of this.
+    if (material === lastMaterial) {
+      gl!.bindVertexArray(gpu.vao);
+      gl!.drawElements(
+        node.mesh.topology === "lines" ? gl!.LINES : gl!.TRIANGLES,
+        gpu.count,
+        gpu.type,
+        0,
+      );
+      stats.drawCalls++;
+      stats.triangles += triangleCount(node.mesh);
+      return;
+    }
+    lastMaterial = material;
 
     const color = material.color ?? WHITE;
     gl!.uniform4f(u.baseColor, color[0], color[1], color[2], color[3]);
@@ -1224,6 +1346,7 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
       }
 
       gl!.useProgram(program);
+      lastMaterial = null;
       viewProjection(camera, width / height, false, viewProj);
       frustumPlanes(viewProj, planes);
       gl!.uniformMatrix4fv(u.viewProj, false, viewProj);
@@ -1311,16 +1434,33 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
           const dz = n.world[14] - eye.z;
           blended.push({ index: i, depth: dx * dx + dy * dy + dz * dz });
         } else {
+          // Keyed HERE rather than inside the comparator, so the numbers follow
+          // scene order: a sort is stable, so materials seen once each keep the
+          // order they were authored in and only repeats are pulled together.
+          // Keyed in the comparator instead, the ids would follow whatever
+          // order the sort happened to compare in and shuffle even a scene with
+          // no repeats at all.
+          materialKey(n.material);
           opaque.push(i);
         }
       });
 
       gl!.disable(gl!.BLEND);
       gl!.depthMask(true);
+      // **Sorted by material, which costs nothing and is pixel-identical.**
+      // Opaque draws are order-independent under the depth test, so grouping
+      // them changes which order the same fragments win in, not which ones do.
+      // The blended pass below is NOT sorted this way and must not be: its
+      // order IS the picture.
+      opaque.sort(
+        (a, b) => materialKey(scene.nodes[a].material) - materialKey(scene.nodes[b].material),
+      );
+      lastMaterial = null;
       for (const i of opaque) drawNode(scene.nodes[i], scene.nodes[i].material ?? {});
 
       if (blended.length > 0) {
         blended.sort((a, b) => b.depth - a.depth); // farthest first
+        lastMaterial = null;
         gl!.enable(gl!.BLEND);
         gl!.depthMask(false);
         // The blend function is per node rather than per pass: `additive`
@@ -1352,6 +1492,7 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
         gl!.depthMask(false);
         gl!.enable(gl!.BLEND);
         setBlendMode(false);
+        lastMaterial = null;
         for (const i of occluded) {
           drawNode(scene.nodes[i], ghostMaterial(scene.nodes[i].material ?? {}));
         }
@@ -1388,6 +1529,7 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
           // waste — but it is one draw per nominated node, and a second program
           // whose only job is to write nothing costs more than it saves.
           gl!.colorMask(false, false, false, false);
+          lastMaterial = null;
           for (const i of overlayOccluders) {
             drawNode(scene.nodes[i], scene.nodes[i].material ?? {});
           }
@@ -1397,6 +1539,7 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
         // Last, and against a depth function that always passes — unless this
         // overlay opted into the prepass above, in which case LEQUAL lets the
         // occluders cut it out.
+        lastMaterial = null;
         for (const i of overlay) {
           const material = scene.nodes[i].material ?? {};
           const gated = gating && material.overlayOccluded === true;
@@ -1448,13 +1591,6 @@ const WHITE3 = [1, 1, 1] as const;
 const UNIT_UV = [1, 1] as const;
 const ZERO_UV = [0, 0] as const;
 const IDENTITY3 = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
-const IDENTITY_JOINTS = new Float32Array(MAX_JOINTS * 16);
-for (let i = 0; i < MAX_JOINTS; i++) {
-  IDENTITY_JOINTS[i * 16] = 1;
-  IDENTITY_JOINTS[i * 16 + 5] = 1;
-  IDENTITY_JOINTS[i * 16 + 10] = 1;
-  IDENTITY_JOINTS[i * 16 + 15] = 1;
-}
 
 function filled(n: number, value: number): Float32Array {
   const a = new Float32Array(n);
