@@ -130,9 +130,7 @@ describe("the two backends' shading maths", () => {
     // rounding error. Both clamps are no-ops for in-range colours, which is
     // everything that does not deliberately pass one over 1.
     expect(webgl2).toMatch(/float opacity = clamp\(base\.a, 0\.0, 1\.0\);/);
-    expect(webgl2).toMatch(
-      /fragColor = vec4\(clamp\(plain, 0\.0, 1\.0\) \* opacity, opacity\);/,
-    );
+    expect(webgl2).toMatch(/fragColor = vec4\(clamp\(plain, 0\.0, 1\.0\) \* opacity, opacity\);/);
     expect(webgpu).toMatch(/let opacity = clamp\(base\.a, 0\.0, 1\.0\);/);
     expect(webgpu).toMatch(
       /return vec4f\(clamp\(plain, vec3f\(0\.0\), vec3f\(1\.0\)\) \* opacity, opacity\);/,

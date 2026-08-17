@@ -864,3 +864,103 @@ describe("localViewer", () => {
     expect(localViewer(undefined, { x: 1, y: 2, z: 3 })).toEqual({ x: 1, y: 2, z: 3 });
   });
 });
+
+describe("sizeOverTime", () => {
+  /** The width of the first particle's quad, which is the pair of x extents
+   *  the billboard writer lays down. */
+  function width(emitter: { mesh: { positions: Float32Array | number[] } }): number {
+    const p = emitter.mesh.positions;
+    let low = Infinity;
+    let high = -Infinity;
+    for (let vertex = 0; vertex < 4; vertex++) {
+      low = Math.min(low, p[vertex * 3]!);
+      high = Math.max(high, p[vertex * 3]!);
+    }
+    return high - low;
+  }
+
+  function popping(curve: (t: number) => number) {
+    return createEmitter({
+      rate: 0,
+      lifetime: 1,
+      capacity: 1,
+      speed: 0,
+      size: { x: 2, y: 2 },
+      bursts: [{ time: 0, count: 1 }],
+      duration: 10,
+      loop: false,
+      sizeOverTime: (t, out) => {
+        out.x = curve(t);
+        out.y = curve(t);
+        out.z = curve(t);
+      },
+      random: middle,
+    });
+  }
+
+  it("scales the authored size rather than replacing it", () => {
+    // Half of an authored 2 is 1, so the curve is a MULTIPLIER — which is how
+    // every authoring tool stores it, and the reason `size` still means the
+    // particle's full size.
+    const emitter = popping(() => 0.5);
+    emitter.update(1 / 60, VIEW);
+    expect(width(emitter)).toBeCloseTo(1, 5);
+  });
+
+  it("is sampled again every frame, not once at birth", () => {
+    // The whole difference between this and `size`: a pop-in that was sampled
+    // at birth would draw its first frame's size for the particle's whole life.
+    const emitter = popping((t) => t);
+    emitter.update(0.1, VIEW);
+    const early = width(emitter);
+    for (let step = 0; step < 5; step++) emitter.update(0.1, VIEW);
+    expect(width(emitter)).toBeGreaterThan(early * 3);
+  });
+
+  it("leaves the size alone when nothing is passed", () => {
+    const emitter = createEmitter({
+      rate: 0,
+      lifetime: 1,
+      capacity: 1,
+      speed: 0,
+      size: { x: 2, y: 2 },
+      bursts: [{ time: 0, count: 1 }],
+      duration: 10,
+      loop: false,
+      random: middle,
+    });
+    emitter.update(1 / 60, VIEW);
+    expect(width(emitter)).toBeCloseTo(2, 5);
+  });
+
+  it("scales each axis on its own", () => {
+    // Separate axes are authored — a burst that stretches as it rises — so one
+    // curve per axis rather than one scalar for all three.
+    const emitter = createEmitter({
+      rate: 0,
+      lifetime: 1,
+      capacity: 1,
+      speed: 0,
+      size: { x: 2, y: 2 },
+      bursts: [{ time: 0, count: 1 }],
+      duration: 10,
+      loop: false,
+      sizeOverTime: (_t, out) => {
+        out.x = 0.5;
+        out.y = 2;
+        out.z = 1;
+      },
+      random: middle,
+    });
+    emitter.update(1 / 60, VIEW);
+    const p = emitter.mesh.positions;
+    let lowY = Infinity;
+    let highY = -Infinity;
+    for (let vertex = 0; vertex < 4; vertex++) {
+      lowY = Math.min(lowY, p[vertex * 3 + 1]!);
+      highY = Math.max(highY, p[vertex * 3 + 1]!);
+    }
+    expect(width(emitter)).toBeCloseTo(1, 5);
+    expect(highY - lowY).toBeCloseTo(4, 5);
+  });
+});

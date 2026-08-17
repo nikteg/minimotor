@@ -150,8 +150,7 @@ function scrollable<R>(
   const maxMain = horiz ? opts.maxW : opts.maxH;
   const cappedMain =
     maxMain === undefined ? undefined : bound(naturalMain, horiz ? opts.minW : opts.minH, maxMain);
-  const estMain =
-    explicitMain ?? cappedMain ?? (horiz ? cachedBox?.w : cachedBox?.h) ?? fitMain;
+  const estMain = explicitMain ?? cappedMain ?? (horiz ? cachedBox?.w : cachedBox?.h) ?? fitMain;
   const estView = horiz ? estMain : estMain - top - bottom;
   const barThick = !clipOnly && (contentMain ?? estView) - estView > 0.5 ? theme.scrollbarW : 0;
   const gutter = barThick ? barThick + theme.scrollbarGap : 0; // room reserved for the bar
@@ -176,8 +175,7 @@ function scrollable<R>(
   // Main size for the box: explicit, else the capped content size, else
   // `undefined` so a nested parent fills it (a root falls back to the fit
   // estimate).
-  const mainForRect =
-    explicitMain ?? cappedMain ?? (isRootContainer(opts) ? fitMain : undefined);
+  const mainForRect = explicitMain ?? cappedMain ?? (isRootContainer(opts) ? fitMain : undefined);
   const rect = containerRect(
     dir,
     horiz ? { ...opts, w: mainForRect, h: boxCross } : { ...opts, w: boxCross, h: mainForRect },

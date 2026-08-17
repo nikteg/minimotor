@@ -1006,10 +1006,10 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
         uploadTexture(material.texture, pixelated, material.textureVersion ?? 0, repeat),
       );
       gl!.uniform1i(u.texture, 0);
-    gl!.uniform1i(
-      u.textureBlend,
-      material.textureBlend === "mask" ? 3 : material.textureBlend === "over" ? 2 : 1,
-    );
+      gl!.uniform1i(
+        u.textureBlend,
+        material.textureBlend === "mask" ? 3 : material.textureBlend === "over" ? 2 : 1,
+      );
     } else {
       gl!.uniform1i(u.textureBlend, 0);
     }

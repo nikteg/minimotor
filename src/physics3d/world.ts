@@ -279,7 +279,11 @@ export async function createPhysics3D(options: Physics3DOptions): Promise<Physic
 
   // One record reused for every contact: a busy world raises hundreds a second,
   // and a listener is expected to read what it wants before returning.
-  const contact = { colliderA: undefined, colliderB: undefined, normal: { x: 0, y: 0, z: 0 } } as unknown as {
+  const contact = {
+    colliderA: undefined,
+    colliderB: undefined,
+    normal: { x: 0, y: 0, z: 0 },
+  } as unknown as {
     colliderA: RAPIER.Collider;
     colliderB: RAPIER.Collider;
     normal: { x: number; y: number; z: number };

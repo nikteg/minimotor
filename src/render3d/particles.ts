@@ -149,6 +149,23 @@ export interface EmitterOptions {
   /** Particle size, sampled once at birth. `z` is used by mesh particles and
    * defaults to `x`; billboards use x/y. */
   size: { x: Range; y: Range; z?: Range };
+  /** How the authored size is scaled as a particle ages, given how far through
+   *  its life it is (0..1).
+   *
+   *  Multiplies `size`, so the authored value stays the particle's full size
+   *  and this is the shape of the pop, the swell or the fade-out around it —
+   *  which is how every authoring tool stores it, and why the two are separate
+   *  here rather than one curve of absolute sizes.
+   *
+   *  Writes into `out` rather than returning, because it is called for every
+   *  live particle every frame and an allocation there is the whole cost. Per
+   *  axis: a burst that stretches as it rises is one curve on `y` and another
+   *  on `x`, and a uniform one writes the same number three times. `z` is used
+   *  by mesh particles alone.
+   *
+   *  Sampled fresh each frame rather than at birth — that is the difference
+   *  between this and `size` — so the curve plays out across the life. */
+  sizeOverTime?: (t: number, out: { x: number; y: number; z: number }) => void;
   /** Multiplied into the material's own colour, per vertex. */
   color?: readonly [number, number, number, number];
   /** Units per second squared, downward. */
@@ -503,6 +520,20 @@ export function createEmitter(opts: EmitterOptions): Emitter {
 
   const worldUp = { x: 0, y: 1, z: 0 };
   const worldRight = { x: 1, y: 0, z: 0 };
+  /** `sizeOverTime`'s answer for the particle being written, reused across
+   *  every particle of every frame. */
+  const sizeScale = { x: 1, y: 1, z: 1 };
+  const sizeOverTime = opts.sizeOverTime;
+  /** Fill `sizeScale` for one particle, or leave it at 1 when nothing was
+   *  passed. */
+  function scaleAt(slot: number): void {
+    if (!sizeOverTime) return;
+    sizeScale.x = 1;
+    sizeScale.y = 1;
+    sizeScale.z = 1;
+    const span = life[slot];
+    sizeOverTime(span > 0 ? Math.min(1, age[slot] / span) : 0, sizeScale);
+  }
   const right = { x: 0, y: 0, z: 0 };
   const up = { x: 0, y: 0, z: 0 };
   const toView = { x: 0, y: 0, z: 0 };
@@ -520,8 +551,9 @@ export function createEmitter(opts: EmitterOptions): Emitter {
     toView.y /= viewLength;
     toView.z /= viewLength;
 
-    let halfWidth = scaleX[slot] / 2;
-    let halfHeight = scaleY[slot] / 2;
+    scaleAt(slot);
+    let halfWidth = (scaleX[slot] * sizeScale.x) / 2;
+    let halfHeight = (scaleY[slot] * sizeScale.y) / 2;
     // How far along `right` the quad's centre is pushed. Zero for every mode
     // but `stretched`, which anchors its head on the particle instead of
     // straddling it — see below.
@@ -585,8 +617,8 @@ export function createEmitter(opts: EmitterOptions): Emitter {
         Vec3.cross(along, helper, up);
       }
       Vec3.normalize(up, up);
-      halfWidth = (scaleY[slot] * lengthScale) / 2;
-      halfHeight = scaleX[slot] / 2;
+      halfWidth = (scaleY[slot] * sizeScale.y * lengthScale) / 2;
+      halfHeight = (scaleX[slot] * sizeScale.x) / 2;
       // A streak shows where a particle has BEEN, so its head sits ON the
       // particle and the tail runs back down the velocity. Centring it instead
       // draws half the trail in front of the thing making it.
@@ -658,6 +690,10 @@ export function createEmitter(opts: EmitterOptions): Emitter {
 
   function writeMesh(slot: number, index: number): void {
     if (!source) return;
+    scaleAt(slot);
+    const meshX = scaleX[slot] * sizeScale.x;
+    const meshY = scaleY[slot] * sizeScale.y;
+    const meshZ = scaleZ[slot] * sizeScale.z;
     let frame = 0;
     if (sheet) {
       const t = age[slot] / life[slot];
@@ -674,9 +710,9 @@ export function createEmitter(opts: EmitterOptions): Emitter {
     for (let vertex = 0; vertex < verticesPerParticle; vertex++) {
       const sourcePosition = vertex * 3;
       rotate(
-        source.positions[sourcePosition] * scaleX[slot],
-        source.positions[sourcePosition + 1] * scaleY[slot],
-        source.positions[sourcePosition + 2] * scaleZ[slot],
+        source.positions[sourcePosition] * meshX,
+        source.positions[sourcePosition + 1] * meshY,
+        source.positions[sourcePosition + 2] * meshZ,
         rotationX[slot],
         rotationY[slot],
         rotationZ[slot],
@@ -689,9 +725,9 @@ export function createEmitter(opts: EmitterOptions): Emitter {
 
       const sourceNormal = source.normals;
       rotate(
-        (sourceNormal?.[sourcePosition] ?? 0) / Math.max(1e-6, Math.abs(scaleX[slot])),
-        (sourceNormal?.[sourcePosition + 1] ?? 1) / Math.max(1e-6, Math.abs(scaleY[slot])),
-        (sourceNormal?.[sourcePosition + 2] ?? 0) / Math.max(1e-6, Math.abs(scaleZ[slot])),
+        (sourceNormal?.[sourcePosition] ?? 0) / Math.max(1e-6, Math.abs(meshX)),
+        (sourceNormal?.[sourcePosition + 1] ?? 1) / Math.max(1e-6, Math.abs(meshY)),
+        (sourceNormal?.[sourcePosition + 2] ?? 0) / Math.max(1e-6, Math.abs(meshZ)),
         rotationX[slot],
         rotationY[slot],
         rotationZ[slot],

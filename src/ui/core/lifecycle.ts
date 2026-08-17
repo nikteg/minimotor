@@ -56,7 +56,6 @@ export function isInOverlayPass(): boolean {
   return overlay().inPass;
 }
 
-
 /** Capture the background while an overlay is being deferred. The overlay's
  *  own controls are not live until `enterOverlay()` runs in the overlay pass. */
 export function captureOverlay(focusVisible = false): void {
