@@ -209,3 +209,36 @@ describe("Scene3D's shading fields", () => {
     expect(scene.ambientGround).toBeUndefined();
   });
 });
+
+describe("mipmaps, on both backends", () => {
+  /** The rule this file exists for: the two backends draw the same frame. A
+   *  filtering option honoured by one and ignored by the other is the plainest
+   *  way to break it, so both are checked for the machinery rather than for the
+   *  identical call — they cannot share one, since WebGPU has no
+   *  `generateMipmap` and builds its chain with a render pass per level. */
+  it("is an option on both", () => {
+    for (const name of ["webgl2.ts", "webgpu.ts"] as const) {
+      expect(read(name), name).toMatch(/mipmaps\?: boolean;/);
+      expect(read(name), name).toMatch(/opts\.mipmaps \?\? false/);
+    }
+  });
+
+  it("exempts a pixelated texture on both, since NEAREST asks not to be filtered", () => {
+    expect(read("webgl2.ts")).toMatch(/mipmaps && !pixelated/);
+    expect(read("webgpu.ts")).toMatch(/mipmaps && !pixelated/);
+  });
+
+  it("drops the chain for a live surface on both", () => {
+    // A canvas the app repaints would otherwise rebuild its chain per upload.
+    for (const name of ["webgl2.ts", "webgpu.ts"] as const) {
+      expect(read(name), name).toMatch(/live\.add\(source as object\)/);
+    }
+  });
+
+  it("asks the sampler to blend levels on WebGPU, which is what reads the chain", () => {
+    // WebGL2 says this with `LINEAR_MIPMAP_LINEAR` on the min filter; WebGPU
+    // says it with a separate `mipmapFilter`. Same trilinear read either way.
+    expect(read("webgl2.ts")).toMatch(/LINEAR_MIPMAP_LINEAR/);
+    expect(read("webgpu.ts")).toMatch(/mipmapFilter: "linear"/);
+  });
+});
