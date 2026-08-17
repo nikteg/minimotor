@@ -1,5 +1,5 @@
 // ---------- button ----------
-import { buttonState, centeredText, consumeKeyboardActivation, dragPayloadHeld, drawBox, drawFocusRing, focusFromPointer, hoverCursor, measureWidth, place, registerFocusable, resolveThemePadding, shade, theme, uiCtx, uiFont, uiPointer, widgetId, } from "../../ui/core/index.js";
+import { buttonState, centeredText, consumeKeyboardActivation, dragPayloadHeld, drawBox, drawFocusRing, focusFromPointer, hoverCursor, measureWidth, place, pointerGestureOwned, registerFocusable, resolveThemePadding, shade, theme, uiCtx, uiFont, uiPointer, widgetId, } from "../../ui/core/index.js";
 import { tooltip } from "./tooltip.js";
 import { pointInRect } from "../../collision/index.js";
 /** Resolve a variant into (idle, hover, active) fills, border and label
@@ -82,7 +82,10 @@ export function button(optsOrLabel, rest) {
     const focusHover = keyboardFocused && theme.focusStyle === "hover";
     const hover = pointerHover || focusHover;
     const active = state.active && !carrying;
-    const clicked = state.clicked || (!opts.disabled && consumeKeyboardActivation(id));
+    // A slider or another drag widget owns the pointer until its release frame
+    // finishes. Do not let the release land on a button underneath the drag;
+    // the drag's origin, not its final position, owns that gesture.
+    const clicked = (!pointerGestureOwned() && state.clicked) || (!opts.disabled && consumeKeyboardActivation(id));
     if (state.clicked)
         focusFromPointer(ctx, id);
     hoverCursor(pointerHover);

@@ -10,6 +10,10 @@ export interface Material {
     /** Base colour as `[r, g, b, a]`, each 0..1. Multiplied with the texture and
      *  with any per-vertex colours. */
     color?: readonly [number, number, number, number];
+    /** Colour multiplied into the sampled texture before `textureBlend`.
+     *  This lets a grayscale mask have its own tint while `color` remains the
+     *  surface's base colour. Defaults to white. */
+    textureColor?: readonly [number, number, number, number];
     /** Surface texture. Any 2D image source the engine already rasterises to —
      *  a sprite, an atlas canvas, an `ImageBitmap`. */
     texture?: TexImageSource;
@@ -342,8 +346,12 @@ export interface Material {
      *  `mesh` (the default) reads the mesh's own TEXCOORD_0. `planarXZ` drops
      *  the world position straight down the Y axis instead, so one tiling
      *  texture runs continuously across a whole environment and no mesh in it
-     *  has to be unwrapped — the standard trick for ground. The seams show on
-     *  vertical faces, which is why it is per-material rather than global.
+     *  has to be unwrapped — the standard trick for ground. `sphere` maps the
+     *  mesh's local surface position to equirectangular coordinates, which is
+     *  useful for a pattern on a round object whose mesh UVs belong to another
+     *  map. The planar seams show on vertical faces, while spherical mapping has
+     *  the usual single seam at the back; that is why this is per-material rather
+     *  than global.
      *
      *  This moves the ALBEDO map only. `normalMap` keeps the mesh's own uv
      *  whatever this says, because a tangent-space normal map is not a picture
@@ -353,7 +361,7 @@ export interface Material {
      *  makes its BUMP LAYOUT visible as if it were albedo — the tell is a
      *  lilac-blue sheet's plate-and-strip pattern showing through a surface it
      *  was never meant to draw on. */
-    uvProjection?: "mesh" | "planarXZ";
+    uvProjection?: "mesh" | "planarXZ" | "sphere";
     /** How `texture` combines with `color`.
      *
      *  `multiply` (the default) tints: the texture darkens the base colour and a

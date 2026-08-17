@@ -45,6 +45,7 @@ const FRAME_BYTES = 288;
  *  + skinParams(16) + uvTransform(16) + rimAlpha(16) + detail(16)
  *  + detailUvTransform(16) + detailMaskTransform(16) + detailFlags(16)
  *  + glaze(16) + glazeTint(16) + glazeWave(16) + settle(16) + settle2(16)
+ *  + textureColor(16)
  *  + joints(4096).
  *
  *  Padded to the 256-byte minimum dynamic-offset alignment. The fields and
@@ -90,7 +91,8 @@ struct DrawData {
   // x: shininess, y: unlit, z: texture blend (0 none, 1 multiply, 2 over),
   // w: specular strength
   params    : vec4f,
-  // x: skinned, y: hasNormalMap, z: normal map strength, w: planar-XZ uvs
+  // x: skinned, y: hasNormalMap, z: normal map strength, w: uv projection
+  // (0 mesh, 1 planar XZ, 2 sphere)
   skinParams: vec4f,
   // xy: uv scale, zw: uv offset
   uvTransform: vec4f,
@@ -123,6 +125,9 @@ struct DrawData {
   // x: up sharpness, y: the ground line's world Y, z: rise height, w: rise
   // amount
   settle2   : vec4f,
+  // Multiplied into the sampled base texture before it is blended with the
+  // material colour. This keeps a mask tint separate from the surface colour.
+  textureColor: vec4f,
   jointMatrices: array<mat4x4f, ${MAX_JOINTS}>,
 };
 
@@ -137,6 +142,7 @@ struct DrawData {
 struct VsOut {
   @builtin(position) clip     : vec4f,
   @location(0)       worldPos : vec3f,
+  @location(6)       localPos  : vec3f,
   @location(1)       normal   : vec3f,
   @location(2)       uv       : vec2f,
   @location(3)       color    : vec4f,
@@ -170,6 +176,7 @@ fn vs(
   }
   let world = draw.model * local;
   out.worldPos = world.xyz;
+  out.localPos = local.xyz;
   let nm = mat3x3f(draw.normal0.xyz, draw.normal1.xyz, draw.normal2.xyz);
   out.normal = nm * localNormal;
   // A tangent lies ALONG the surface, so it takes the model matrix rather
@@ -328,7 +335,16 @@ fn applyNormalMap(n : vec3f, worldPos : vec3f, uv : vec2f, scale : f32, shipped 
 
 @fragment
 fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec4f {
-  let source = select(in.uv, in.worldPos.xz, draw.skinParams.w > 0.5);
+  var source = in.uv;
+  if (draw.skinParams.w > 0.5 && draw.skinParams.w < 1.5) {
+    source = in.worldPos.xz;
+  } else if (draw.skinParams.w > 1.5) {
+    let point = normalize(in.localPos);
+    source = vec2f(
+      atan2(point.z, point.x) / (2.0 * 3.14159265359) + 0.5,
+      asin(clamp(point.y, -1.0, 1.0)) / 3.14159265359 + 0.5,
+    );
+  }
   let uv = source * draw.uvTransform.xy + draw.uvTransform.zw;
   // The normal map keeps the MESH uv under a projection — see
   // Material.uvProjection. Its vectors are expressed in the frame the unwrap
@@ -336,7 +352,7 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
   let normalUv = select(uv, in.uv, draw.skinParams.w > 0.5);
   var base = draw.baseColor * in.color;
   if (draw.params.z > 0.5) {
-    let texel = textureSample(tex, samp, uv);
+    let texel = textureSample(tex, samp, uv) * draw.textureColor;
     // Blend 2 keeps the base colour's own alpha: the texture decides colour
     // where it is opaque, not whether the surface is there at all.
     if (draw.params.z > 1.5) {
@@ -1078,7 +1094,8 @@ export async function createWebGPURenderer(opts = {}) {
         drawData[at + 36] = skin ? 1 : 0;
         drawData[at + 37] = material.normalMap ? 1 : 0;
         drawData[at + 38] = material.normalScale ?? 1;
-        drawData[at + 39] = material.uvProjection === "planarXZ" ? 1 : 0;
+        drawData[at + 39] =
+            material.uvProjection === "planarXZ" ? 1 : material.uvProjection === "sphere" ? 2 : 0;
         const uvScale = material.uvScale ?? UNIT_UV;
         const uvOffset = material.uvOffset ?? ZERO_UV;
         drawData[at + 40] = uvScale[0];
@@ -1149,7 +1166,9 @@ export async function createWebGPURenderer(opts = {}) {
         drawData[at + 81] = settle?.baseY ?? 0;
         drawData[at + 82] = settle?.rise ?? 0;
         drawData[at + 83] = settle?.riseAmount ?? 0;
-        drawData.set(skin ?? IDENTITY_JOINTS, at + 84);
+        const textureColor = material.textureColor ?? WHITE;
+        drawData.set(textureColor, at + 84);
+        drawData.set(skin ?? IDENTITY_JOINTS, at + 88);
     }
     /** Bind one node's mesh, textures and packed uniform slot, and draw it.
      *  Which PIPELINE is the caller's business, because the same node is drawn

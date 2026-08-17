@@ -46,6 +46,12 @@ export interface Viewport3DOptions extends Flowable {
     background?: string;
     /** Stroke a 1px border in this colour. */
     border?: string;
+    /** Called when the viewport is pressed and released on itself. */
+    onClick?: () => void;
+    /** Border used while a clickable viewport is hovered. */
+    hoverBorder?: string;
+    /** Drawn over a clickable viewport while hovered, e.g. a pencil icon. */
+    hoverIcon?: string;
     /** Stable id — for layout capture and for keeping drag state across frames
      *  when several viewports are on screen. */
     id?: string;

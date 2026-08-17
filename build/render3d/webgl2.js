@@ -52,6 +52,7 @@ uniform bool uHasSkin;
 uniform mat4 uJointMatrices[${MAX_JOINTS}];
 
 out vec3 vWorldPos;
+out vec3 vLocalPos;
 out vec3 vNormal;
 out vec2 vUv;
 out vec2 vUv1;
@@ -74,6 +75,7 @@ void main() {
   }
   vec4 world = uModel * localPosition;
   vWorldPos = world.xyz;
+  vLocalPos = localPosition.xyz;
   // The inverse-transpose, so a non-uniformly scaled mesh still lights right.
   vNormal = uNormalMat * localNormal;
   // A tangent is a DIRECTION ALONG the surface, not a normal to it, so it goes
@@ -89,6 +91,7 @@ const FRAGMENT_SHADER = `#version 300 es
 precision highp float;
 
 in vec3 vWorldPos;
+in vec3 vLocalPos;
 in vec3 vNormal;
 in vec2 vUv;
 in vec2 vUv1;
@@ -96,6 +99,7 @@ in vec4 vColor;
 in vec4 vTangent;
 
 uniform vec4 uBaseColor;
+uniform vec4 uTextureColor;
 uniform vec3 uAmbient;
 uniform vec3 uLightDir[${MAX_LIGHTS}];
 uniform vec3 uLightColor[${MAX_LIGHTS}];
@@ -106,7 +110,7 @@ uniform float uSpecular;
 uniform float uMetallic;
 uniform bool uUnlit;
 uniform int uTextureBlend; // 0 none, 1 multiply, 2 over
-uniform bool uUvPlanar;
+uniform int uUvProjection; // 0 mesh, 1 planar XZ, 2 sphere
 uniform sampler2D uTexture;
 uniform bool uHasNormalMap;
 uniform sampler2D uNormalMap;
@@ -303,15 +307,24 @@ vec3 applyNormalMap(vec3 n, vec2 uv) {
 }
 
 void main() {
-  vec2 source = uUvPlanar ? vWorldPos.xz : vUv;
+  vec2 source = vUv;
+  if (uUvProjection == 1) {
+    source = vWorldPos.xz;
+  } else if (uUvProjection == 2) {
+    vec3 point = normalize(vLocalPos);
+    source = vec2(
+      atan(point.z, point.x) / (2.0 * 3.14159265359) + 0.5,
+      asin(clamp(point.y, -1.0, 1.0)) / 3.14159265359 + 0.5
+    );
+  }
   vec2 uv = source * uUvTransform.xy + uUvTransform.zw;
   // The normal map keeps the MESH uv under a projection — see
   // Material.uvProjection. Its vectors are expressed in the frame the unwrap
   // builds, and vTangent still describes that unwrap.
-  vec2 normalUv = uUvPlanar ? vUv : uv;
+  vec2 normalUv = uUvProjection == 0 ? uv : vUv;
   vec4 base = uBaseColor * vColor;
   if (uTextureBlend > 0) {
-    vec4 texel = texture(uTexture, uv);
+    vec4 texel = texture(uTexture, uv) * uTextureColor;
     // Blend 2 keeps the base colour's own alpha: the texture decides colour
     // where it is opaque, not whether the surface is there at all.
     base = uTextureBlend == 2 ? vec4(mix(base.rgb, texel.rgb, texel.a), base.a) : base * texel;
@@ -634,6 +647,7 @@ export function createWebGL2Renderer(opts = {}) {
         model: gl.getUniformLocation(program, "uModel"),
         normalMat: gl.getUniformLocation(program, "uNormalMat"),
         baseColor: gl.getUniformLocation(program, "uBaseColor"),
+        textureColor: gl.getUniformLocation(program, "uTextureColor"),
         ambient: gl.getUniformLocation(program, "uAmbient"),
         lightDir: gl.getUniformLocation(program, "uLightDir"),
         lightColor: gl.getUniformLocation(program, "uLightColor"),
@@ -644,7 +658,7 @@ export function createWebGL2Renderer(opts = {}) {
         metallic: gl.getUniformLocation(program, "uMetallic"),
         unlit: gl.getUniformLocation(program, "uUnlit"),
         textureBlend: gl.getUniformLocation(program, "uTextureBlend"),
-        uvPlanar: gl.getUniformLocation(program, "uUvPlanar"),
+        uvProjection: gl.getUniformLocation(program, "uUvProjection"),
         texture: gl.getUniformLocation(program, "uTexture"),
         hasNormalMap: gl.getUniformLocation(program, "uHasNormalMap"),
         normalMap: gl.getUniformLocation(program, "uNormalMap"),
@@ -838,6 +852,8 @@ export function createWebGL2Renderer(opts = {}) {
         gl.uniformMatrix4fv(u.jointMatrices, false, skin ?? IDENTITY_JOINTS);
         const color = material.color ?? WHITE;
         gl.uniform4f(u.baseColor, color[0], color[1], color[2], color[3]);
+        const textureColor = material.textureColor ?? WHITE;
+        gl.uniform4f(u.textureColor, textureColor[0], textureColor[1], textureColor[2], textureColor[3]);
         gl.uniform1f(u.shininess, material.shininess ?? 0);
         gl.uniform1f(u.specular, material.specular ?? 0.25);
         gl.uniform1f(u.metallic, material.metallic ?? 0);
@@ -847,7 +863,7 @@ export function createWebGL2Renderer(opts = {}) {
         const uvScale = material.uvScale ?? UNIT_UV;
         const uvOffset = material.uvOffset ?? ZERO_UV;
         gl.uniform4f(u.uvTransform, uvScale[0], uvScale[1], uvOffset[0], uvOffset[1]);
-        gl.uniform1i(u.uvPlanar, material.uvProjection === "planarXZ" ? 1 : 0);
+        gl.uniform1i(u.uvProjection, material.uvProjection === "planarXZ" ? 1 : material.uvProjection === "sphere" ? 2 : 0);
         if (material.texture) {
             gl.activeTexture(gl.TEXTURE0);
             gl.bindTexture(gl.TEXTURE_2D, uploadTexture(material.texture, pixelated, material.textureVersion ?? 0, repeat));

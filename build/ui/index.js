@@ -50,6 +50,8 @@ export function createUI(app, { gamepads } = {}) {
         height: bind(UiModule.height),
         idScope: bind(UiModule.idScope),
         ids: bind(UiModule.ids),
+        image: bind(UiModule.image),
+        imageButton: bind(UiModule.imageButton),
         lastRect: bind(UiModule.lastRect),
         layoutCapture: bind(UiModule.layoutCapture),
         layoutIssues: bind(UiModule.layoutIssues),
