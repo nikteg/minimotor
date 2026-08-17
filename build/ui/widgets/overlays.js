@@ -156,6 +156,8 @@ function drawModalBody(opts, id, children, ctx, vp) {
             dir: opts.dir,
             gap: opts.gap,
             pad: opts.pad,
+            bg: opts.bg,
+            border: opts.border,
         }, children);
         // AFTER the panel: an auto-sized dialog does not know its own height until
         // its children have run, and clicking just below a shrink-wrapped dialog

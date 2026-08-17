@@ -109,7 +109,7 @@ uniform float uShininess;
 uniform float uSpecular;
 uniform float uMetallic;
 uniform bool uUnlit;
-uniform int uTextureBlend; // 0 none, 1 multiply, 2 over
+uniform int uTextureBlend; // 0 none, 1 multiply, 2 over, 3 mask tint
 uniform int uUvProjection; // 0 mesh, 1 planar XZ, 2 sphere
 uniform sampler2D uTexture;
 uniform bool uHasNormalMap;
@@ -324,10 +324,20 @@ void main() {
   vec2 normalUv = uUvProjection == 0 ? uv : vUv;
   vec4 base = uBaseColor * vColor;
   if (uTextureBlend > 0) {
-    vec4 texel = texture(uTexture, uv) * uTextureColor;
-    // Blend 2 keeps the base colour's own alpha: the texture decides colour
-    // where it is opaque, not whether the surface is there at all.
-    base = uTextureBlend == 2 ? vec4(mix(base.rgb, texel.rgb, texel.a), base.a) : base * texel;
+    vec4 sampled = texture(uTexture, uv);
+    if (uTextureBlend == 3) {
+      // Built-in ball styles are grayscale masks. Their dark regions receive
+      // the mask tint while white regions retain the base ball colour.
+      float mask = 1.0 - dot(sampled.rgb, vec3(0.299, 0.587, 0.114));
+      base = vec4(mix(base.rgb, uTextureColor.rgb, clamp(mask, 0.0, 1.0)), base.a);
+    } else {
+      vec4 texel = sampled * uTextureColor;
+      // Blend 2 keeps the base colour's own alpha: the texture decides colour
+      // where it is opaque, not whether the surface is there at all.
+      base = uTextureBlend == 2
+        ? vec4(mix(base.rgb, texel.rgb, texel.a), base.a)
+        : base * texel;
+    }
   }
   // The glaze's normal and its one extra sample are taken HERE, up beside the
   // base texture read, and not down beside the light where the rest of the coat
@@ -868,7 +878,7 @@ export function createWebGL2Renderer(opts = {}) {
             gl.activeTexture(gl.TEXTURE0);
             gl.bindTexture(gl.TEXTURE_2D, uploadTexture(material.texture, pixelated, material.textureVersion ?? 0, repeat));
             gl.uniform1i(u.texture, 0);
-            gl.uniform1i(u.textureBlend, material.textureBlend === "over" ? 2 : 1);
+            gl.uniform1i(u.textureBlend, material.textureBlend === "mask" ? 3 : material.textureBlend === "over" ? 2 : 1);
         }
         else {
             gl.uniform1i(u.textureBlend, 0);

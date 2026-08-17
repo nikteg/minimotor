@@ -10,6 +10,24 @@ export declare function captureOverlay(focusVisible?: boolean): void;
 /** Mark that an overlay ran this frame and open its live-input pass — called by
  *  immediate overlays and by deferred overlays when their pass begins. */
 export declare function enterOverlay(focusVisible?: boolean): void;
+/** Capture the background AND keep the live pass shut until `releaseOverlay`.
+ *
+ *  For a caller that knows a further overlay is coming LATER in the frame and
+ *  must be the one that owns it. The kit's overlay model is single-layer —
+ *  background dead, overlay live — and that is exact while a frame has one
+ *  overlay in it. A screen that is ITSELF a modal, with a settings panel opened
+ *  over the top, has two: the screen's own `enterOverlay` ran first and turned
+ *  the pointer back on for the whole rest of the frame, so a press landed on a
+ *  menu button behind the settings panel. Which is the click-through the
+ *  capture exists to stop.
+ *
+ *  The hold says "somebody above you is coming". Everything drawn until the
+ *  release is background, whatever kind of widget it is; the release is the top
+ *  overlay saying it is about to draw. */
+export declare function holdOverlay(focusVisible?: boolean): void;
+/** The overlay that called `holdOverlay` is about to draw — let it, and only
+ *  it, open the live pass. */
+export declare function releaseOverlay(): void;
 type LifecycleHook = () => void;
 /** Register a fixed-step update — aging float-text pools, the spinner phase, … */
 export declare function onStep(fn: LifecycleHook): void;

@@ -74,6 +74,10 @@ export interface ModalOptions {
     gap?: number;
     /** Inner padding (children form). Default `theme.panel.padding`. */
     pad?: number;
+    /** Dialog fill color. Use `"transparent"` for a chrome-free overlay shell. */
+    bg?: string;
+    /** Dialog border color. Use `"transparent"` for a chrome-free overlay shell. */
+    border?: string;
     /** Space kept from every viewport edge while clamping. Default 12. */
     margin?: number;
     /** Close action for the conventional gamepad B / keyboard Escape gesture.

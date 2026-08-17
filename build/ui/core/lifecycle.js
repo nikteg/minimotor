@@ -7,6 +7,7 @@ const overlay = uiSlot(() => ({
     seen: false,
     active: false,
     inPass: false,
+    held: false,
 }));
 /** An overlay is active for the current frame — background widgets must ignore
  *  the pointer. This includes an overlay captured during the ordinary draw
@@ -35,7 +36,35 @@ export function captureOverlay(focusVisible = false) {
 export function enterOverlay(focusVisible = false) {
     const o = overlay();
     captureOverlay(focusVisible);
-    o.inPass = true;
+    // **Not while a later overlay is holding the frame.** See `holdOverlay`: this
+    // is what stops an overlay drawn UNDER the top one — a screen that is itself
+    // a modal, a popover on it — from handing the pointer back to everything
+    // after it.
+    if (!o.held)
+        o.inPass = true;
+}
+/** Capture the background AND keep the live pass shut until `releaseOverlay`.
+ *
+ *  For a caller that knows a further overlay is coming LATER in the frame and
+ *  must be the one that owns it. The kit's overlay model is single-layer —
+ *  background dead, overlay live — and that is exact while a frame has one
+ *  overlay in it. A screen that is ITSELF a modal, with a settings panel opened
+ *  over the top, has two: the screen's own `enterOverlay` ran first and turned
+ *  the pointer back on for the whole rest of the frame, so a press landed on a
+ *  menu button behind the settings panel. Which is the click-through the
+ *  capture exists to stop.
+ *
+ *  The hold says "somebody above you is coming". Everything drawn until the
+ *  release is background, whatever kind of widget it is; the release is the top
+ *  overlay saying it is about to draw. */
+export function holdOverlay(focusVisible = false) {
+    captureOverlay(focusVisible);
+    overlay().held = true;
+}
+/** The overlay that called `holdOverlay` is about to draw — let it, and only
+ *  it, open the live pass. */
+export function releaseOverlay() {
+    overlay().held = false;
 }
 const stepHooks = [];
 const overlayPassHooks = [];
@@ -99,6 +128,7 @@ function appFrameEnd(app) {
         o.active = o.seen;
         o.seen = false;
         o.inPass = false;
+        o.held = false;
         // Widget frame-end cleanup (editor eviction, tooltip stability, drag cancel).
         for (const hook of frameEndHooks)
             hook();

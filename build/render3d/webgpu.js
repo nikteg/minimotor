@@ -126,7 +126,8 @@ struct DrawData {
   // amount
   settle2   : vec4f,
   // Multiplied into the sampled base texture before it is blended with the
-  // material colour. This keeps a mask tint separate from the surface colour.
+  // material colour, or used as the dark-region colour for a mask blend. This
+  // keeps a mask tint separate from the surface colour.
   textureColor: vec4f,
   jointMatrices: array<mat4x4f, ${MAX_JOINTS}>,
 };
@@ -352,13 +353,21 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
   let normalUv = select(uv, in.uv, draw.skinParams.w > 0.5);
   var base = draw.baseColor * in.color;
   if (draw.params.z > 0.5) {
-    let texel = textureSample(tex, samp, uv) * draw.textureColor;
-    // Blend 2 keeps the base colour's own alpha: the texture decides colour
-    // where it is opaque, not whether the surface is there at all.
-    if (draw.params.z > 1.5) {
-      base = vec4f(mix(base.rgb, texel.rgb, texel.a), base.a);
+    let sampled = textureSample(tex, samp, uv);
+    if (draw.params.z > 2.5) {
+      // Built-in ball styles are grayscale masks. Their dark regions receive
+      // the mask tint while white regions retain the base ball colour.
+      let mask = 1.0 - dot(sampled.rgb, vec3f(0.299, 0.587, 0.114));
+      base = vec4f(mix(base.rgb, draw.textureColor.rgb, clamp(mask, 0.0, 1.0)), base.a);
     } else {
-      base = base * texel;
+      let texel = sampled * draw.textureColor;
+      // Blend 2 keeps the base colour's own alpha: the texture decides colour
+      // where it is opaque, not whether the surface is there at all.
+      if (draw.params.z > 1.5) {
+        base = vec4f(mix(base.rgb, texel.rgb, texel.a), base.a);
+      } else {
+        base = base * texel;
+      }
     }
   }
   // The glaze's normal and its one extra sample are taken HERE, up beside the
@@ -1085,7 +1094,13 @@ export async function createWebGPURenderer(opts = {}) {
         drawData.set(color, at + 28);
         drawData[at + 32] = material.shininess ?? 0;
         drawData[at + 33] = material.unlit ? 1 : 0;
-        drawData[at + 34] = material.texture ? (material.textureBlend === "over" ? 2 : 1) : 0;
+        drawData[at + 34] = material.texture
+            ? material.textureBlend === "mask"
+                ? 3
+                : material.textureBlend === "over"
+                    ? 2
+                    : 1
+            : 0;
         drawData[at + 35] = material.specular ?? 0.25;
         const skin = node.skin?.matrices;
         if (skin && skin.length > MAX_JOINTS * 16) {
