@@ -13,6 +13,7 @@ import {
   widgetId,
   type Flowable,
 } from "@src/ui/core/index.js";
+import { tooltip } from "./tooltip.js";
 
 /** A canvas image drawn into an ordinary UI flow slot. */
 export interface ImageOptions extends Flowable {
@@ -36,6 +37,10 @@ export interface ImageButtonOptions extends Omit<ImageOptions, "source"> {
   hoverIcon?: string;
   /** Text shown when no source has been accepted yet. */
   placeholder?: string;
+  /** Held-hover explanation, like `button`'s. An image button is a control
+   *  whose whole label is a picture, so it is the widget that most needs one:
+   *  there is nothing else on it to say what pressing it does. */
+  tooltip?: string;
 }
 
 /** Draw a decoded image as a UI widget. The source is intentionally supplied by
@@ -81,6 +86,7 @@ export function imageButton(opts: ImageButtonOptions): boolean {
     focusFromPointer(ctx, id);
     opts.onClick?.();
   }
+  if (opts.tooltip && state.hover) tooltip(opts.tooltip);
 
   ctx.save();
   if (opts.source) {

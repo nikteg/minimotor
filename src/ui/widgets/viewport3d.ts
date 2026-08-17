@@ -201,8 +201,15 @@ export function viewport3d(opts: Viewport3DOptions): Viewport3DState {
     rect.h,
   );
 
-  const border = hovered && opts.hoverBorder ? opts.hoverBorder : opts.border;
-  if (hovered && opts.hoverIcon) {
+  // **Both hover affordances need something to press**, which is what the two
+  // options already SAY — "while a clickable viewport is hovered", "over a
+  // clickable viewport". The code did not check, so a decorative turntable lit
+  // up and offered a pencil to a pointer that could do nothing with it. Found
+  // in Trash Golf, where a lobby table draws one ball per player and only your
+  // own is yours to edit: every player's ball glowed and grew a pencil.
+  const interactive = Boolean(opts.onClick);
+  const border = hovered && interactive && opts.hoverBorder ? opts.hoverBorder : opts.border;
+  if (hovered && interactive && opts.hoverIcon) {
     ctx.fillStyle = "rgba(24, 33, 63, 0.58)";
     ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
     ctx.font = uiFont(Math.max(12, Math.min(rect.w, rect.h) * 0.45), true);
