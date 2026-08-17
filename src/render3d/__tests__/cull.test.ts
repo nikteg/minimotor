@@ -1,0 +1,176 @@
+/** What the camera can possibly see, and what it is safe to drop. */
+
+import { describe, expect, it } from "vitest";
+import { Mat4 } from "@src/math/mat4.js";
+import { frustumPlanes, inFrustum, meshBounds } from "../cull.js";
+import { createCamera, viewProjection } from "../camera.js";
+import type { Camera3D } from "../camera.js";
+import type { MeshData } from "../mesh.js";
+
+/** A camera AT the origin looking down −Z, which is where yaw 0 points. The
+ *  target is one unit down −Z at distance 1, so the eye lands on the origin. */
+function looking(): Camera3D {
+  return createCamera({
+    target: { x: 0, y: 0, z: -1 },
+    distance: 1,
+    yaw: 0,
+    pitch: 0,
+    fov: Math.PI / 3,
+    near: 0.1,
+    far: 100,
+  });
+}
+
+function planesOf(camera: Camera3D = looking(), aspect = 1) {
+  const viewProj = Mat4.create();
+  viewProjection(camera, aspect, false, viewProj);
+  return frustumPlanes(viewProj);
+}
+
+/** A unit cube centred on the origin. */
+function cube(): MeshData {
+  const corners = [
+    [-0.5, -0.5, -0.5],
+    [0.5, -0.5, -0.5],
+    [0.5, 0.5, -0.5],
+    [-0.5, 0.5, -0.5],
+    [-0.5, -0.5, 0.5],
+    [0.5, -0.5, 0.5],
+    [0.5, 0.5, 0.5],
+    [-0.5, 0.5, 0.5],
+  ].flat();
+  return { positions: new Float32Array(corners) } as MeshData;
+}
+
+describe("a mesh's own box", () => {
+  it("is the middle and the half-size of its positions", () => {
+    const bounds = meshBounds({
+      positions: new Float32Array([0, 0, 0, 2, 4, 6]),
+    } as MeshData)!;
+    expect(bounds.cx).toBe(1);
+    expect(bounds.cy).toBe(2);
+    expect(bounds.cz).toBe(3);
+    expect(bounds.ex).toBe(1);
+    expect(bounds.ey).toBe(2);
+    expect(bounds.ez).toBe(3);
+  });
+
+  it("is computed once and kept, so a static mesh pays nothing per frame", () => {
+    const mesh = cube();
+    expect(meshBounds(mesh)).toBe(meshBounds(mesh));
+  });
+
+  it("is recomputed when the mesh says it changed", () => {
+    // A particle batch rewrites its vertices every frame and bumps `version`.
+    // Bounds cached past that would follow the first frame's particles for the
+    // life of the emitter.
+    const mesh = { positions: new Float32Array([0, 0, 0]), version: 1 } as MeshData;
+    expect(meshBounds(mesh)!.cx).toBe(0);
+    mesh.positions = new Float32Array([10, 10, 10]);
+    mesh.version = 2;
+    expect(meshBounds(mesh)!.cx).toBe(10);
+  });
+
+  it("is null for a mesh with nothing in it", () => {
+    expect(meshBounds({ positions: new Float32Array([]) } as MeshData)).toBeNull();
+  });
+});
+
+describe("the frustum test", () => {
+  const planes = planesOf();
+
+  /** A world matrix that only moves. */
+  function at(x: number, y: number, z: number) {
+    return Mat4.fromTranslation(x, y, z);
+  }
+
+  it("keeps what is in front of the camera", () => {
+    expect(inFrustum(planes, meshBounds(cube()), at(0, 0, -10))).toBe(true);
+  });
+
+  it("drops what is BEHIND it, which is the whole point", () => {
+    expect(inFrustum(planes, meshBounds(cube()), at(0, 0, 10))).toBe(false);
+  });
+
+  it("drops what is off to the side", () => {
+    expect(inFrustum(planes, meshBounds(cube()), at(50, 0, -10))).toBe(false);
+    expect(inFrustum(planes, meshBounds(cube()), at(0, 50, -10))).toBe(false);
+  });
+
+  it("drops what is past the far plane", () => {
+    expect(inFrustum(planes, meshBounds(cube()), at(0, 0, -500))).toBe(false);
+  });
+
+  it("keeps something that only PARTLY overlaps the view", () => {
+    // A wall running out of frame is still on screen, and dropping it would
+    // punch a hole through the middle of the picture.
+    const wide = meshBounds({
+      positions: new Float32Array([-100, -1, -1, 100, 1, 1]),
+    } as MeshData);
+    expect(inFrustum(planes, wide, at(0, 0, -10))).toBe(true);
+  });
+
+  it("accounts for the SIZE of a thing centred out of view", () => {
+    // The centre is far off to the side; the box still reaches into the view.
+    // A test on the centre alone would drop it.
+    const long = meshBounds({
+      positions: new Float32Array([-30, -1, -1, 30, 1, 1]),
+    } as MeshData);
+    expect(inFrustum(planes, long, at(28, 0, -10))).toBe(true);
+  });
+
+  it("accounts for SCALE in the world matrix", () => {
+    // Something small enough to cull, blown up until it is not.
+    const world = Mat4.create();
+    Mat4.compose(
+      world,
+      { x: 40, y: 0, z: -10 },
+      { x: 0, y: 0, z: 0, w: 1 },
+      { x: 100, y: 1, z: 1 },
+    );
+    expect(inFrustum(planes, meshBounds(cube()), at(40, 0, -10))).toBe(false);
+    expect(inFrustum(planes, meshBounds(cube()), world)).toBe(true);
+  });
+
+  it("keeps anything it cannot rule out", () => {
+    // A missing box or a missing matrix is a question this cannot answer, and
+    // the safe answer is to draw: a needless draw costs one call, a wrong drop
+    // is a hole in the world.
+    expect(inFrustum(planes, null, at(0, 0, 100))).toBe(true);
+    expect(inFrustum(planes, meshBounds(cube()), undefined)).toBe(true);
+  });
+});
+
+describe("the depth convention", () => {
+  it("puts the near plane in a different place for a 0..1 range", () => {
+    // WebGPU keeps `0 <= z` where WebGL keeps `-w <= z`, so the near plane is
+    // the z row alone rather than the z row plus the w row. Getting this wrong
+    // culls geometry just in front of the camera.
+    const camera = looking();
+    const gl = Mat4.create();
+    const gpu = Mat4.create();
+    viewProjection(camera, 1, false, gl);
+    viewProjection(camera, 1, true, gpu);
+    const near = frustumPlanes(gl, undefined, false).slice(16, 20);
+    const nearGpu = frustumPlanes(gpu, undefined, true).slice(16, 20);
+    // Both name the same plane in world terms: pointing down −Z, `near` in
+    // front of the camera.
+    expect(near[2]).toBeCloseTo(nearGpu[2]!, 5);
+    expect(near[3]).toBeCloseTo(nearGpu[3]!, 5);
+  });
+
+  it("agrees with the other five planes across both conventions", () => {
+    const camera = looking();
+    const gl = Mat4.create();
+    const gpu = Mat4.create();
+    viewProjection(camera, 1.7, false, gl);
+    viewProjection(camera, 1.7, true, gpu);
+    const a = frustumPlanes(gl, undefined, false);
+    const b = frustumPlanes(gpu, undefined, true);
+    for (const plane of [0, 1, 2, 3]) {
+      for (const axis of [0, 1, 2, 3]) {
+        expect(a[plane * 4 + axis]).toBeCloseTo(b[plane * 4 + axis]!, 5);
+      }
+    }
+  });
+});

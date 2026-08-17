@@ -41,6 +41,7 @@ import {
   settleActive,
 } from "./scene.js";
 import { triangleCount, vertexCount } from "./mesh.js";
+import { frustumPlanes, inFrustum, meshBounds, type Frustum } from "./cull.js";
 import type { Camera3D } from "./camera.js";
 import type { MeshData } from "./mesh.js";
 import type { Material, Node3D, Scene3D } from "./scene.js";
@@ -814,6 +815,8 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
   let dpr = opts.dpr ?? 1;
 
   const viewProj = Mat4.create();
+  /** The frustum this frame, rebuilt once per pass from `viewProj`. */
+  const planes: Frustum = new Float32Array(24);
   const normalMat = new Float32Array(9);
   const eye: Vec3 = { x: 0, y: 0, z: 0 };
   const lightDirs = new Float32Array(MAX_LIGHTS * 3);
@@ -1222,6 +1225,7 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
 
       gl!.useProgram(program);
       viewProjection(camera, width / height, false, viewProj);
+      frustumPlanes(viewProj, planes);
       gl!.uniformMatrix4fv(u.viewProj, false, viewProj);
       cameraPosition(camera, eye);
       gl!.uniform3f(u.cameraPos, eye.x, eye.y, eye.z);
@@ -1273,6 +1277,14 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
       scene.nodes.forEach((n, i) => {
         if (!n.mesh || !n.world) return;
         if (!isVisible(scene, i)) {
+          stats.culled++;
+          return;
+        }
+        // **And whether the camera can see it at all.** Without this every mesh
+        // in the level is drawn every frame, so cost follows the size of the
+        // WORLD rather than the size of the view — see `cull.ts`. Counted as
+        // culled alongside the hidden ones, which is what the stat means.
+        if (!inFrustum(planes, meshBounds(n.mesh), n.world)) {
           stats.culled++;
           return;
         }

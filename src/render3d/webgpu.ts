@@ -44,6 +44,7 @@ import {
   settleActive,
 } from "./scene.js";
 import { triangleCount, vertexCount } from "./mesh.js";
+import { frustumPlanes, inFrustum, meshBounds, type Frustum } from "./cull.js";
 import type { Camera3D } from "./camera.js";
 import type { MeshData } from "./mesh.js";
 import type { Material, Node3D, Scene3D } from "./scene.js";
@@ -1142,6 +1143,10 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
   }
 
   const viewProj = Mat4.create();
+  /** The frustum this frame. Built before the gather loop rather than beside
+   *  the uniform write below, because the gather is what needs it. */
+  const cullProj = Mat4.create();
+  const planes: Frustum = new Float32Array(24);
   const normalMat = new Float32Array(9);
   const eye: Vec3 = { x: 0, y: 0, z: 0 };
   const frameData = new Float32Array(FRAME_BYTES / 4);
@@ -1357,9 +1362,20 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       occluded.length = 0;
       overlayOccluders.length = 0;
       cameraPosition(camera, eye);
+      // `true` for WebGPU's 0..1 depth range, which is the same flag the
+      // projection below is built with and which decides the near plane.
+      viewProjection(camera, width / height, true, cullProj);
+      frustumPlanes(cullProj, planes, true);
       scene.nodes.forEach((n, i) => {
         if (!n.mesh || !n.world) return;
         if (!isVisible(scene, i)) {
+          stats.culled++;
+          return;
+        }
+        // **And whether the camera can see it at all** — see `cull.ts`. Without
+        // this every mesh in the level is drawn every frame, so cost follows
+        // the size of the WORLD rather than the size of the view.
+        if (!inFrustum(planes, meshBounds(n.mesh), n.world)) {
           stats.culled++;
           return;
         }
