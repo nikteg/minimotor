@@ -452,3 +452,51 @@ describe("mipmaps", () => {
     expect(textureCalls(true, true).some((c) => c.name === "generateMipmap")).toBe(false);
   });
 });
+
+describe("a mip chain on a LIVE surface", () => {
+  it("is built once and then dropped, because the surface keeps changing", () => {
+    // A canvas the app repaints — a ground overlay, a minimap — comes back
+    // through `uploadTexture` with a new version. Rebuilding its chain would be
+    // a full downsample per upload, which for a surface repainted as the game
+    // runs is per frame, and it buys nothing: a texture being redrawn every
+    // frame is one being looked at, not one shrinking into the distance.
+    const harness = recordingGl();
+    const canvas = document.createElement("canvas");
+    (canvas as unknown as { getContext: () => unknown }).getContext = () => harness.gl;
+    const renderer = createWebGL2Renderer({ canvas, mipmaps: true });
+    const scene = createScene();
+    const surface = document.createElement("canvas");
+    const material: Material = { texture: surface, pixelated: false, textureVersion: 1 };
+    addNode(scene, node({ mesh: GROUND, material }));
+    updateWorldMatrices(scene);
+
+    renderer.render(scene, createCamera());
+    const first = harness.calls.filter((c) => c.name === "generateMipmap").length;
+    expect(first).toBe(1);
+
+    material.textureVersion = 2;
+    renderer.render(scene, createCamera());
+    material.textureVersion = 3;
+    renderer.render(scene, createCamera());
+    expect(harness.calls.filter((c) => c.name === "generateMipmap").length).toBe(first);
+  });
+
+  it("still mips a texture that never changes", () => {
+    const harness = recordingGl();
+    const canvas = document.createElement("canvas");
+    (canvas as unknown as { getContext: () => unknown }).getContext = () => harness.gl;
+    const renderer = createWebGL2Renderer({ canvas, mipmaps: true });
+    const scene = createScene();
+    addNode(
+      scene,
+      node({
+        mesh: GROUND,
+        material: { texture: document.createElement("canvas"), pixelated: false },
+      }),
+    );
+    updateWorldMatrices(scene);
+    renderer.render(scene, createCamera());
+    renderer.render(scene, createCamera());
+    expect(harness.calls.filter((c) => c.name === "generateMipmap").length).toBe(1);
+  });
+});

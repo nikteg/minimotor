@@ -853,6 +853,9 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     object,
     { texture: WebGLTexture; version: number; repeat: boolean }
   >();
+  /** Sources that have been re-uploaded at least once — a canvas the app is
+   *  repainting rather than an image it loaded. See `uploadTexture`. */
+  const live = new WeakSet<object>();
 
   let width = opts.width ?? 300;
   let height = opts.height ?? 150;
@@ -1044,6 +1047,14 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
   ): WebGLTexture {
     const cached = textures.get(source as object);
     if (cached && cached.version === version && cached.repeat === repeat) return cached.texture;
+    // **A source that comes back with a different version is a LIVE surface,
+    // and a live surface is not worth a mip chain.** Building one costs a
+    // downsample of the whole texture per upload — which for a canvas being
+    // repainted as the game runs is per frame — and buys nothing: a surface
+    // that is redrawn every frame is one being looked at, not one shrinking
+    // into the distance. Latched rather than re-tested, so a texture that
+    // changes once does not flip filters back and forth.
+    if (cached && cached.version !== version) live.add(source as object);
     // Re-uploading into the SAME texture object rather than making a new one:
     // a live surface would otherwise leak one texture per frame.
     const tex = cached?.texture ?? gl!.createTexture();
@@ -1058,7 +1069,7 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     // Mipped only where it was asked for and only where filtering is wanted at
     // all. WebGL2 builds a chain for a non-power-of-two texture too, which
     // WebGL1 could not — so nothing here has to be sized in advance.
-    const mipped = mipmaps && !pixelated;
+    const mipped = mipmaps && !pixelated && !live.has(source as object);
     if (mipped) gl!.generateMipmap(gl!.TEXTURE_2D);
     gl!.texParameteri(
       gl!.TEXTURE_2D,
