@@ -68,6 +68,37 @@ export interface Pointer {
     /** True for the whole rendered frame in which a press began — the
      *  draw-phase counterpart of `pressed` (drag starts in `UI.scrollbar`). */
     readonly framePressed: boolean;
+    /** A press that is held until a fixed STEP has seen it, however many frames
+     *  that takes.
+     *
+     *  `pressed` is consumed after ONE step, so a reader that only becomes
+     *  eligible later in the same frame — a mode that the UI was still holding
+     *  when the press arrived — never sees it. `framePressed` answers that, but
+     *  it is cleared at the end of every rendered frame, and a frame SHORTER
+     *  than one fixed step runs no step at all: at 120 steps a second on a 120 Hz
+     *  display, that is routine rather than exceptional, and the press is gone
+     *  before any `update` could read it.
+     *
+     *  This pair is the one to read in `update` for a gesture that must not be
+     *  dropped. It stays true for every step of the frame it arrived in, and if
+     *  that frame ran none, it survives into the next one. It is NOT cleared per
+     *  frame, so the draw phase should keep reading `framePressed` — a UI button
+     *  that read this could act twice on one press. */
+    readonly stepPressed: boolean;
+    /** The release half of `stepPressed`, with the same rule. */
+    readonly stepReleased: boolean;
+    /** Where the most recent press landed, in the same logical pixels as
+     *  `x`/`y`.
+     *
+     *  `x`/`y` are the LIVE position, which is not where the gesture began: a
+     *  flick moves several pixels inside one frame, and a step that reads the
+     *  press edge can be running a frame after the finger touched down. Anything
+     *  that hit-tests what was pressed — picking an object out of a scene — wants
+     *  this rather than the current position, or it tests a point the player
+     *  never pressed. `-1` before the first press. */
+    readonly pressX: number;
+    /** See `pressX`. */
+    readonly pressY: number;
     /** Wheel scroll this frame in logical px (positive = down). Accumulated
      *  across the frame's wheel events, cleared at frame end. */
     readonly wheel: number;

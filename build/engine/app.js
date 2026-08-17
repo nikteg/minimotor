@@ -168,6 +168,10 @@ function buildRuntime(options) {
         frameDoublePressed: false,
         frameReleased: false,
         framePressed: false,
+        stepPressed: false,
+        stepReleased: false,
+        pressX: -1,
+        pressY: -1,
         wheel: 0,
         secondaryDown: false,
         secondaryPressed: false,
@@ -206,6 +210,18 @@ function buildRuntime(options) {
         },
         get framePressed() {
             return ptr.framePressed;
+        },
+        get stepPressed() {
+            return ptr.stepPressed;
+        },
+        get stepReleased() {
+            return ptr.stepReleased;
+        },
+        get pressX() {
+            return ptr.pressX;
+        },
+        get pressY() {
+            return ptr.pressY;
         },
         get wheel() {
             return ptr.wheel;
@@ -403,6 +419,11 @@ function buildRuntime(options) {
         ptr.down = true;
         ptr.pressed = true;
         ptr.framePressed = true; // survives the steps; cleared at frame end
+        ptr.stepPressed = true; // survives until a STEP has seen it
+        // Where the press landed, which is not where the pointer will be by the
+        // time a step reads it: a flick moves several pixels inside one frame.
+        ptr.pressX = p.x;
+        ptr.pressY = p.y;
     };
     // The browser's `dblclick` respects the OS double-click SPEED and slop — the
     // faithful "same as on my system" window, which no API exposes to read.
@@ -438,6 +459,7 @@ function buildRuntime(options) {
             ptr.down = false;
             ptr.released = true;
             ptr.frameReleased = true; // survives the steps; cleared at frame end
+            ptr.stepReleased = true; // survives until a STEP has seen it
             return;
         }
         if (wasPrimary)
@@ -536,6 +558,9 @@ function buildRuntime(options) {
     // drag source's "grabbing" no matter which draws first.
     let cursorRequest = null;
     let cursorPriority = -1;
+    /** Fixed steps run since the last `endFrame`, which is what says whether the
+     *  frame-latched step edges have been observed yet. */
+    let stepsThisFrame = 0;
     const endFrame = () => {
         for (const h of frameHandlers)
             h();
@@ -547,6 +572,17 @@ function buildRuntime(options) {
         ptr.frameReleased = false;
         ptr.framePressed = false;
         ptr.frameDoublePressed = false;
+        // **Only once a STEP has seen them.** A frame shorter than one fixed step
+        // runs the loop zero times, and clearing here regardless would drop the
+        // press entirely for any reader that runs in `update` — which is every
+        // reader that has to act on the world rather than on the UI. At 120 steps
+        // a second on a 120 Hz display that is not an edge case, it is every other
+        // frame. See `stepPressed`.
+        if (stepsThisFrame > 0) {
+            ptr.stepPressed = false;
+            ptr.stepReleased = false;
+        }
+        stepsThisFrame = 0;
         ptr.wheel = 0;
     };
     // Raw resize events fire continuously during a window drag, and readViewport
@@ -620,8 +656,12 @@ function buildRuntime(options) {
             accumulator = 0;
             frameDelta = 0;
             // No step will consume edge input while paused — drop it so a key pressed
-            // mid-pause doesn't fire pressed() on the first step after resume().
+            // mid-pause doesn't fire pressed() on the first step after resume(). The
+            // frame-latched pair goes with it, for the same reason and by the same
+            // rule: nothing observed it and nothing is going to.
             consumeEdges();
+            ptr.stepPressed = false;
+            ptr.stepReleased = false;
             clearFrame();
             sceneRenderer?.beginFrame();
             drawClipped();
@@ -645,6 +685,7 @@ function buildRuntime(options) {
                 break;
             }
             stepsElapsed += 1;
+            stepsThisFrame += 1;
             for (const h of stepStartHandlers)
                 h(); // poll-only inputs sample here
             callbacks.update();
