@@ -48,6 +48,7 @@ export function createUI(app: App, { gamepads }: Partial<Pick<InputApi, "gamepad
     blur: bind(UiModule.blur),
     button: bind(UiModule.button),
     buttonState: bind(UiModule.buttonState),
+    captureOverlay: bind(UiModule.captureOverlay),
     buttonWidth: bind(UiModule.buttonWidth),
     cancelDrag: bind(UiModule.cancelDrag),
     clearFloatText: bind(UiModule.clearFloatText),

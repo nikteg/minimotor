@@ -42,6 +42,7 @@ export type {
 export {
   blur,
   buttonState,
+  captureOverlay,
   defaultTheme,
   drawLayoutOverlay,
   focus,
