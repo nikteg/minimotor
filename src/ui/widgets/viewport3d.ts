@@ -18,7 +18,19 @@
 // viewports should render them at a lower rate; `redraw: false` exists for
 // exactly that, and re-blits the last frame without re-rendering.
 
-import { Flowable, place, theme, uiCtx } from "@src/ui/core/index.js";
+import {
+  Flowable,
+  buttonState,
+  centeredText,
+  focusFromPointer,
+  place,
+  pointerGestureOwned,
+  registerFocusable,
+  theme,
+  uiCtx,
+  uiFont,
+  widgetId,
+} from "@src/ui/core/index.js";
 import { claimWheel, setCursor, uiPointer } from "@src/ui/core/input.js";
 import { dolly, orbit } from "@src/render3d/camera.js";
 import { updateWorldMatrices } from "@src/render3d/scene.js";
@@ -70,6 +82,12 @@ export interface Viewport3DOptions extends Flowable {
   background?: string;
   /** Stroke a 1px border in this colour. */
   border?: string;
+  /** Called when the viewport is pressed and released on itself. */
+  onClick?: () => void;
+  /** Border used while a clickable viewport is hovered. */
+  hoverBorder?: string;
+  /** Drawn over a clickable viewport while hovered, e.g. a pencil icon. */
+  hoverIcon?: string;
   /** Stable id — for layout capture and for keeping drag state across frames
    *  when several viewports are on screen. */
   id?: string;
@@ -112,12 +130,21 @@ export function viewport3d(opts: Viewport3DOptions): Viewport3DState {
   const ctx = uiCtx();
   const p = uiPointer();
   const hovered = p.x >= rect.x && p.x < rect.x + rect.w && p.y >= rect.y && p.y < rect.y + rect.h;
+  const id = widgetId(opts.id, "viewport3d") ?? "viewport3d";
+  const focused = opts.onClick ? registerFocusable(ctx, { id, rect }) : false;
+  const clickState = opts.onClick ? buttonState(rect, p) : null;
+  const clicked = Boolean(opts.onClick && clickState?.clicked && !pointerGestureOwned());
+  if (clicked) {
+    focusFromPointer(ctx, id);
+    opts.onClick?.();
+  }
+  if (opts.onClick && hovered) setCursor("pointer");
 
-  const id = opts.id ?? "viewport3d";
   let dragging = false;
   if (opts.interactive) {
     if (hovered && p.pressed && !active) active = { id, lastX: p.x, lastY: p.y };
-    if (active?.id === id) {
+    const drag = active;
+    if (drag?.id === id) {
       if (!p.down) {
         active = null;
       } else {
@@ -125,9 +152,9 @@ export function viewport3d(opts: Viewport3DOptions): Viewport3DState {
         // A per-frame DELTA, not the offset from the press point: orbiting is
         // relative, so accumulating from the press would re-apply the whole
         // drag every frame and spin the camera away.
-        orbit(opts.camera, p.x - active.lastX, p.y - active.lastY, opts.sensitivity ?? 0.01);
-        active.lastX = p.x;
-        active.lastY = p.y;
+        orbit(opts.camera, p.x - drag.lastX, p.y - drag.lastY, opts.sensitivity ?? 0.01);
+        drag.lastX = p.x;
+        drag.lastY = p.y;
       }
     }
     if (dragging) setCursor("grabbing", 1);
@@ -174,10 +201,25 @@ export function viewport3d(opts: Viewport3DOptions): Viewport3DState {
     rect.h,
   );
 
-  if (opts.border) {
-    ctx.strokeStyle = opts.border;
+  const border = hovered && opts.hoverBorder ? opts.hoverBorder : opts.border;
+  if (hovered && opts.hoverIcon) {
+    ctx.fillStyle = "rgba(24, 33, 63, 0.58)";
+    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    ctx.font = uiFont(Math.max(12, Math.min(rect.w, rect.h) * 0.45), true);
+    ctx.fillStyle = "#ffffff";
+    ctx.textAlign = "center";
+    centeredText(ctx, opts.hoverIcon, rect.x + rect.w / 2, rect.y + rect.h / 2);
+  }
+  if (border) {
+    ctx.strokeStyle = border;
     ctx.lineWidth = theme.borderWidth;
     ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1);
+  }
+
+  if (focused) {
+    ctx.strokeStyle = theme.accent;
+    ctx.lineWidth = theme.focusStyle === "ring" ? 2 : 1;
+    ctx.strokeRect(rect.x - 1, rect.y - 1, rect.w + 2, rect.h + 2);
   }
 
   return { rect, hovered, dragging };

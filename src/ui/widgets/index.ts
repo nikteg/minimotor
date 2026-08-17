@@ -40,6 +40,7 @@ export * from "./tooltip.js";
 export * from "./world-label.js";
 export * from "./minimap.js";
 export * from "./viewport3d.js";
+export * from "./image.js";
 export { select } from "./select.js";
 export type { SelectGroup, SelectOption, SelectOptions, SelectResult } from "./select.js";
 export { textInput } from "./text-input.js";

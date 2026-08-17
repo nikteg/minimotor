@@ -85,7 +85,7 @@ describe("the triplanar detail projection", () => {
     // unwrap builds. Re-project it and its BUMP LAYOUT draws as if it were
     // albedo — which is exactly how a lilac-blue sheet ends up visible as a
     // pattern of plates and strips on a floor.
-    expect(read("webgl2.ts")).toContain("vec2 normalUv = uUvPlanar ? vUv : uv;");
+    expect(read("webgl2.ts")).toContain("vec2 normalUv = uUvProjection == 0 ? uv : vUv;");
     expect(read("webgl2.ts")).toContain("applyNormalMap(n, normalUv)");
     expect(read("webgpu.ts")).toContain(
       "let normalUv = select(uv, in.uv, draw.skinParams.w > 0.5)",

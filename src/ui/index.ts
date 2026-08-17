@@ -79,6 +79,8 @@ export function createUI(app: App, { gamepads }: Partial<Pick<InputApi, "gamepad
     height: bind(UiModule.height),
     idScope: bind(UiModule.idScope),
     ids: bind(UiModule.ids),
+    image: bind(UiModule.image),
+    imageButton: bind(UiModule.imageButton),
     lastRect: bind(UiModule.lastRect),
     layoutCapture: bind(UiModule.layoutCapture),
     layoutIssues: bind(UiModule.layoutIssues),
