@@ -20,6 +20,10 @@ export interface ImageButtonOptions extends Omit<ImageOptions, "source"> {
     hoverIcon?: string;
     /** Text shown when no source has been accepted yet. */
     placeholder?: string;
+    /** Held-hover explanation, like `button`'s. An image button is a control
+     *  whose whole label is a picture, so it is the widget that most needs one:
+     *  there is nothing else on it to say what pressing it does. */
+    tooltip?: string;
 }
 /** Draw a decoded image as a UI widget. The source is intentionally supplied by
  * the caller: loading, validation and lifecycle belong to the app that owns the

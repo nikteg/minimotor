@@ -1,4 +1,5 @@
 import { buttonState, drawFocusRing, focusFromPointer, hoverCursor, place, pointerGestureOwned, registerFocusable, centeredText, uiCtx, uiFont, uiPointer, widgetId, } from "../../ui/core/index.js";
+import { tooltip } from "./tooltip.js";
 /** Draw a decoded image as a UI widget. The source is intentionally supplied by
  * the caller: loading, validation and lifecycle belong to the app that owns the
  * asset, while this widget only handles layout and canvas painting. */
@@ -35,6 +36,8 @@ export function imageButton(opts) {
         focusFromPointer(ctx, id);
         opts.onClick?.();
     }
+    if (opts.tooltip && state.hover)
+        tooltip(opts.tooltip);
     ctx.save();
     if (opts.source) {
         const source = opts.source;
