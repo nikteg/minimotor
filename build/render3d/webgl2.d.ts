@@ -27,10 +27,10 @@ export interface WebGL2RendererOptions {
      *  `pixelated` textures are exempt: a sprite sheet asking for NEAREST is
      *  asking not to be filtered, and a mip chain is filtering.
      *
-     *  **WebGL2 only.** WebGPU has no `generateMipmap` — a chain there has to be
-     *  produced by a render pass per level — so this backend honours the flag and
-     *  the WebGPU one ignores it. A caller that needs it on both has to say so;
-     *  the flag is not silently promoted to a backend choice. */
+     *  Both backends honour it. WebGPU has no `generateMipmap`, so it builds the
+     *  chain with a render pass per level instead — see `MIP_BLIT_WGSL` there.
+     *  The two are required to draw the same frame, and a flag that only one of
+     *  them read would be the plainest possible way to break that. */
     mipmaps?: boolean;
     /** Collect GPU timer-query samples. Disabled by default because queries add
      *  instrumentation overhead. */

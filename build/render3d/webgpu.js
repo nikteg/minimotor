@@ -620,6 +620,38 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
   if (toneMap) { rgb = linearToSrgb(acesToneMap(rgb)); }
   return vec4f(rgb * base.a, base.a);
 }`;
+/** How to build a WebGPU renderer. */
+/** One full-screen triangle that copies the level above, which is the whole of
+ *  a mip chain builder on this backend.
+ *
+ *  A triangle rather than a quad: three vertices with no buffer at all, their
+ *  positions built from the vertex index, covering the target with one
+ *  primitive and no seam down a diagonal. The filtering is the SAMPLER's — the
+ *  bilinear read of the larger level is what averages four texels into one. */
+const MIP_BLIT_WGSL = /* wgsl */ `
+struct VsOut {
+  @builtin(position) pos: vec4f,
+  @location(0) uv: vec2f,
+};
+
+@vertex fn vs(@builtin(vertex_index) index: u32) -> VsOut {
+  // (-1,-1), (3,-1), (-1,3): a triangle whose inscribed quad is the viewport.
+  let x = f32(i32(index) / 1 % 2) * 4.0 - 1.0;
+  let y = f32(i32(index) / 2) * 4.0 - 1.0;
+  var out: VsOut;
+  out.pos = vec4f(x, y, 0.0, 1.0);
+  // v = 0 at the TOP, as everywhere in this engine.
+  out.uv = vec2f((x + 1.0) * 0.5, 1.0 - (y + 1.0) * 0.5);
+  return out;
+}
+
+@group(0) @binding(0) var samp: sampler;
+@group(0) @binding(1) var src: texture_2d<f32>;
+
+@fragment fn fs(in: VsOut) -> @location(0) vec4f {
+  return textureSample(src, samp, in.uv);
+}
+`;
 /** Whether this browser exposes WebGPU at all. A synchronous, cheap check —
  *  it does not prove an adapter can be acquired, only that asking is worth
  *  the round trip. */
@@ -859,6 +891,10 @@ export async function createWebGPURenderer(opts = {}) {
             found = device.createSampler({
                 magFilter: filter,
                 minFilter: filter,
+                // Trilinear only where a chain exists to read. A sampler asking to
+                // blend levels on a texture with one level reads that one level, so
+                // this is safe for every texture and not only the mipped ones.
+                ...(mipmaps && !pixelated ? { mipmapFilter: "linear" } : {}),
                 addressModeU: address,
                 addressModeV: address,
             });
@@ -888,6 +924,11 @@ export async function createWebGPURenderer(opts = {}) {
     const meshes = new WeakMap();
     const textureGroups = new WeakMap();
     const textures = new WeakMap();
+    /** Sources that have been re-uploaded at least once — a canvas the app is
+     *  repainting rather than an image it loaded. A chain is not rebuilt for one:
+     *  see `textureFor`, and the WebGL2 backend, which latches the same way. */
+    const live = new WeakSet();
+    const mipmaps = opts.mipmaps ?? false;
     let width = opts.width ?? 300;
     let height = opts.height ?? 150;
     let dpr = opts.dpr ?? 1;
@@ -986,20 +1027,35 @@ export async function createWebGPURenderer(opts = {}) {
     /** Upload one image and return its GPU texture, reusing the existing one
      *  when only the pixels changed — a resize has to rebuild, since a
      *  GPUTexture's size is fixed at creation. */
-    function textureFor(source, version) {
+    function textureFor(source, version, pixelated = false) {
         const size = sourceSize(source);
         const cached = textures.get(source);
         if (cached && cached.width === size.width && cached.height === size.height) {
             if (cached.version !== version) {
+                // **A source that changes is a live surface, and a live surface loses
+                // its chain.** Regenerating one is a render pass per level per upload —
+                // for a canvas repainted as the app runs, that is per frame — and buys
+                // nothing on a texture being redrawn rather than receding. Dropped once
+                // and rebuilt flat, which is the same latch the WebGL2 backend keeps.
+                if (cached.mipped) {
+                    live.add(source);
+                    cached.texture.destroy();
+                    textures.delete(source);
+                    return textureFor(source, version, pixelated);
+                }
                 device.queue.copyExternalImageToTexture({ source }, { texture: cached.texture, premultipliedAlpha: false }, [size.width, size.height]);
                 cached.version = version;
             }
             return cached.texture;
         }
         cached?.texture.destroy();
+        const mipped = mipmaps && !pixelated && !live.has(source);
+        // `1 + floor(log2(longest side))`: levels down to a single texel.
+        const mipLevelCount = mipped ? 1 + Math.floor(Math.log2(Math.max(size.width, size.height))) : 1;
         const texture = device.createTexture({
             size: [size.width, size.height],
             format: "rgba8unorm",
+            mipLevelCount,
             usage: GPUTextureUsage.TEXTURE_BINDING |
                 GPUTextureUsage.COPY_DST |
                 GPUTextureUsage.RENDER_ATTACHMENT,
@@ -1008,8 +1064,71 @@ export async function createWebGPURenderer(opts = {}) {
             size.width,
             size.height,
         ]);
-        textures.set(source, { texture, version, width: size.width, height: size.height });
+        if (mipLevelCount > 1)
+            buildMipChain(texture, mipLevelCount);
+        textures.set(source, {
+            texture,
+            version,
+            width: size.width,
+            height: size.height,
+            mipped: mipLevelCount > 1,
+        });
         return texture;
+    }
+    /** Fill levels 1..n by rendering each from the one above it.
+     *
+     * WebGPU has no `generateMipmap`, and this is the shape the API expects
+     * instead: a pipeline that draws one full-screen triangle sampling the
+     * previous level, run once per level with the destination level as the
+     * colour attachment. Built lazily and cached, so a scene with no mipped
+     * texture never compiles it. */
+    function buildMipChain(texture, levels) {
+        const pipeline = mipPipeline();
+        const encoder = device.createCommandEncoder();
+        for (let level = 1; level < levels; level++) {
+            const pass = encoder.beginRenderPass({
+                colorAttachments: [
+                    {
+                        view: texture.createView({ baseMipLevel: level, mipLevelCount: 1 }),
+                        loadOp: "clear",
+                        storeOp: "store",
+                        clearValue: { r: 0, g: 0, b: 0, a: 0 },
+                    },
+                ],
+            });
+            pass.setPipeline(pipeline);
+            pass.setBindGroup(0, device.createBindGroup({
+                layout: pipeline.getBindGroupLayout(0),
+                entries: [
+                    { binding: 0, resource: mipSampler() },
+                    {
+                        binding: 1,
+                        resource: texture.createView({ baseMipLevel: level - 1, mipLevelCount: 1 }),
+                    },
+                ],
+            }));
+            pass.draw(3);
+            pass.end();
+        }
+        device.queue.submit([encoder.finish()]);
+    }
+    let mipPipelineCache = null;
+    function mipPipeline() {
+        if (mipPipelineCache)
+            return mipPipelineCache;
+        const module = device.createShaderModule({ code: MIP_BLIT_WGSL });
+        mipPipelineCache = device.createRenderPipeline({
+            layout: "auto",
+            vertex: { module, entryPoint: "vs" },
+            fragment: { module, entryPoint: "fs", targets: [{ format: "rgba8unorm" }] },
+            primitive: { topology: "triangle-list" },
+        });
+        return mipPipelineCache;
+    }
+    let mipSamplerCache = null;
+    function mipSampler() {
+        mipSamplerCache ?? (mipSamplerCache = device.createSampler({ magFilter: "linear", minFilter: "linear" }));
+        return mipSamplerCache;
     }
     /** One bind group per (base texture, normal map, detail map, detail mask,
      *  sampler) combination. The group has to name all four textures at once, so
@@ -1028,7 +1147,12 @@ export async function createWebGPURenderer(opts = {}) {
             byCombination = new Map();
             textureGroups.set(baseKey, byCombination);
         }
-        const baseTexture = base ? textureFor(base, material.textureVersion ?? 0) : blankTexture;
+        // The base map follows the material's own filter request; the other three
+        // are smooth by nature — a normal map is a vector field, a detail map and
+        // its mask are washes — so they take a chain whatever the base asked for.
+        const baseTexture = base
+            ? textureFor(base, material.textureVersion ?? 0, material.pixelated === true)
+            : blankTexture;
         // A normal map is a vector field, so it is always sampled smoothly.
         const normalTexture = normal
             ? textureFor(normal, material.normalMapVersion ?? 0)
