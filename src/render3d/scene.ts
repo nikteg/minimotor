@@ -385,8 +385,10 @@ export interface Material {
    *  transparent texel makes the surface transparent. `over` composites the
    *  texture on top using its own alpha, leaving the base colour showing
    *  through where the texture is clear — what a decal or line sheet painted
-   *  over a solid colour needs. */
-  textureBlend?: "multiply" | "over";
+   *  over a solid colour needs. `mask` treats the texture as a grayscale mask:
+   *  white leaves `color` alone and black replaces it with `textureColor`, so
+   *  a mask tint cannot recolour the base surface. */
+  textureBlend?: "multiply" | "over" | "mask";
   /** A glassy layer OVER the surface that answers to where the CAMERA is.
    *  Absent, or at zero strength, and not one term of it is computed. */
   glaze?: Glaze;
