@@ -44,17 +44,15 @@ export interface Viewport3DOptions extends Flowable {
      *  alpha decides how much of this shows through — leave the scene
      *  transparent and set this to blend the view into a panel. */
     background?: string;
-    /** Stroke a 1px border in this colour. */
-    border?: string;
     /** Called when the viewport is pressed and released on itself. */
     onClick?: () => void;
-    /** Border used while a clickable viewport is hovered. */
-    hoverBorder?: string;
-    /** Drawn over a clickable viewport while hovered, e.g. a pencil icon. */
-    hoverIcon?: string;
     /** Stable id — for layout capture and for keeping drag state across frames
      *  when several viewports are on screen. */
     id?: string;
+    /** Multiplier for this viewport's GPU backing-store resolution. The logical
+     *  widget rect and camera framing stay unchanged; values below 0.1 are
+     *  clamped. Defaults to 1. */
+    resolutionScale?: number;
 }
 /** What the viewport reports back this frame. */
 export interface Viewport3DState {
@@ -65,8 +63,6 @@ export interface Viewport3DState {
         w: number;
         h: number;
     };
-    /** Pointer is inside. */
-    hovered: boolean;
     /** Pointer is dragging this viewport (only when `interactive`). */
     dragging: boolean;
 }
@@ -74,7 +70,6 @@ export interface Viewport3DState {
  *
  *    const state = UI.viewport3d({
  *      renderer, scene, camera, interactive: true, h: 220,
- *      border: theme.border,
  *    });
  *
  *  Call it in the draw phase, inside whatever container should own the space.

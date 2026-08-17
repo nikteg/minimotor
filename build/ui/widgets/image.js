@@ -71,6 +71,8 @@ export function imageButton(opts) {
         ctx.textAlign = "center";
         centeredText(ctx, opts.hoverIcon, rect.x + rect.w / 2, rect.y + rect.h / 2);
     }
+    if (state.hover && opts.hoverDraw)
+        opts.hoverDraw(ctx, rect);
     ctx.restore();
     hoverCursor(state.hover);
     if (focused)

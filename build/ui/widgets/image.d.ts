@@ -18,6 +18,13 @@ export interface ImageButtonOptions extends Omit<ImageOptions, "source"> {
     onClick?: () => void;
     /** Drawn over the image while hovered, e.g. a pencil icon. */
     hoverIcon?: string;
+    /** Custom hover art, drawn over the image while hovered. */
+    hoverDraw?: (ctx: CanvasRenderingContext2D, rect: {
+        x: number;
+        y: number;
+        w: number;
+        h: number;
+    }) => void;
     /** Text shown when no source has been accepted yet. */
     placeholder?: string;
     /** Held-hover explanation, like `button`'s. An image button is a control

@@ -17,8 +17,8 @@
 // a tenth of a millisecond. It is not free, and a screen with a dozen live
 // viewports should render them at a lower rate; `redraw: false` exists for
 // exactly that, and re-blits the last frame without re-rendering.
-import { buttonState, centeredText, focusFromPointer, place, pointerGestureOwned, registerFocusable, theme, uiCtx, uiFont, widgetId, } from "../../ui/core/index.js";
-import { claimWheel, setCursor, uiPointer } from "../../ui/core/input.js";
+import { buttonState, place, pointerGestureOwned, uiCtx, widgetId, } from "../../ui/core/index.js";
+import { claimWheel, uiPointer } from "../../ui/core/input.js";
 import { dolly, orbit } from "../../render3d/camera.js";
 import { updateWorldMatrices } from "../../render3d/scene.js";
 let active = null;
@@ -26,7 +26,6 @@ let active = null;
  *
  *    const state = UI.viewport3d({
  *      renderer, scene, camera, interactive: true, h: 220,
- *      border: theme.border,
  *    });
  *
  *  Call it in the draw phase, inside whatever container should own the space.
@@ -40,15 +39,10 @@ export function viewport3d(opts) {
     const p = uiPointer();
     const hovered = p.x >= rect.x && p.x < rect.x + rect.w && p.y >= rect.y && p.y < rect.y + rect.h;
     const id = widgetId(opts.id, "viewport3d") ?? "viewport3d";
-    const focused = opts.onClick ? registerFocusable(ctx, { id, rect }) : false;
     const clickState = opts.onClick ? buttonState(rect, p) : null;
     const clicked = Boolean(opts.onClick && clickState?.clicked && !pointerGestureOwned());
-    if (clicked) {
-        focusFromPointer(ctx, id);
+    if (clicked)
         opts.onClick?.();
-    }
-    if (opts.onClick && hovered)
-        setCursor("pointer");
     let dragging = false;
     if (opts.interactive) {
         if (hovered && p.pressed && !active)
@@ -68,10 +62,6 @@ export function viewport3d(opts) {
                 drag.lastY = p.y;
             }
         }
-        if (dragging)
-            setCursor("grabbing", 1);
-        else if (hovered)
-            setCursor("grab", 0);
         // `claimWheel` keeps a viewport inside a scrolling list from stealing the
         // list's scroll — and vice versa. atMin/atMax report the dolly limits, so
         // a fully zoomed-in viewport passes the wheel on rather than swallowing it.
@@ -80,7 +70,7 @@ export function viewport3d(opts) {
             dolly(opts.camera, wheel * 0.0015);
     }
     if (rect.w < 1 || rect.h < 1)
-        return { rect, hovered, dragging };
+        return { rect, dragging };
     if (opts.background) {
         ctx.fillStyle = opts.background;
         ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
@@ -92,7 +82,7 @@ export function viewport3d(opts) {
         // retina screen. The context transform ALREADY carries the app's DPR and
         // letterbox scale as well as any `UI.scaled` block, so it is the whole
         // answer — multiplying by `viewport.dpr` again would double-count it.
-        opts.renderer.resize(rect.w, rect.h, deviceScale(ctx), { retainBackingStore: true });
+        opts.renderer.resize(rect.w, rect.h, deviceScale(ctx) * Math.max(0.1, opts.resolutionScale ?? 1), { retainBackingStore: true });
         updateWorldMatrices(opts.scene);
         opts.renderer.render(opts.scene, opts.camera);
     }
@@ -100,33 +90,7 @@ export function viewport3d(opts) {
     // view. Crop to the region written by this viewport instead of scaling the
     // whole canvas, which would include stale pixels from the larger target.
     ctx.drawImage(opts.renderer.canvas, 0, 0, opts.renderer.renderWidth, opts.renderer.renderHeight, rect.x, rect.y, rect.w, rect.h);
-    // **Both hover affordances need something to press**, which is what the two
-    // options already SAY — "while a clickable viewport is hovered", "over a
-    // clickable viewport". The code did not check, so a decorative turntable lit
-    // up and offered a pencil to a pointer that could do nothing with it. Found
-    // in Trash Golf, where a lobby table draws one ball per player and only your
-    // own is yours to edit: every player's ball glowed and grew a pencil.
-    const interactive = Boolean(opts.onClick);
-    const border = hovered && interactive && opts.hoverBorder ? opts.hoverBorder : opts.border;
-    if (hovered && interactive && opts.hoverIcon) {
-        ctx.fillStyle = "rgba(24, 33, 63, 0.58)";
-        ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
-        ctx.font = uiFont(Math.max(12, Math.min(rect.w, rect.h) * 0.45), true);
-        ctx.fillStyle = "#ffffff";
-        ctx.textAlign = "center";
-        centeredText(ctx, opts.hoverIcon, rect.x + rect.w / 2, rect.y + rect.h / 2);
-    }
-    if (border) {
-        ctx.strokeStyle = border;
-        ctx.lineWidth = theme.borderWidth;
-        ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1);
-    }
-    if (focused) {
-        ctx.strokeStyle = theme.accent;
-        ctx.lineWidth = theme.focusStyle === "ring" ? 2 : 1;
-        ctx.strokeRect(rect.x - 1, rect.y - 1, rect.w + 2, rect.h + 2);
-    }
-    return { rect, hovered, dragging };
+    return { rect, dragging };
 }
 /** How many device pixels one UI unit covers, read back from the context's
  *  own transform — the ground truth for how large this rect lands on the
