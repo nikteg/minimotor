@@ -711,6 +711,27 @@ export interface WebGL2RendererOptions {
   /** Preserve the default framebuffer after compositing. This is expensive;
    *  it remains enabled by default for compatibility. */
   preserveDrawingBuffer?: boolean;
+  /** Build a mip chain for every smooth texture and sample it trilinearly.
+   *
+   *  Off by default, because it CHANGES THE PICTURE: a minified texture stops
+   *  sampling its full-resolution texels and starts sampling a filtered
+   *  average, which is the point — it is what removes the shimmer a texture
+   *  minified across a large surface produces as the camera moves — but it is
+   *  a different image, and softer at distance.
+   *
+   *  Orthogonal to `antialias`, which is multisampling: MSAA resolves GEOMETRY
+   *  edges and does nothing at all for texture minification, since it runs the
+   *  fragment shader once per pixel however many samples that pixel has. The
+   *  two fix different aliasing and neither substitutes for the other.
+   *
+   *  `pixelated` textures are exempt: a sprite sheet asking for NEAREST is
+   *  asking not to be filtered, and a mip chain is filtering.
+   *
+   *  **WebGL2 only.** WebGPU has no `generateMipmap` — a chain there has to be
+   *  produced by a render pass per level — so this backend honours the flag and
+   *  the WebGPU one ignores it. A caller that needs it on both has to say so;
+   *  the flag is not silently promoted to a backend choice. */
+  mipmaps?: boolean;
   /** Collect GPU timer-query samples. Disabled by default because queries add
    *  instrumentation overhead. */
   gpuTiming?: boolean;
@@ -726,6 +747,7 @@ export interface WebGL2RendererOptions {
  *  reports failure instead. */
 export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer3D {
   const canvas = opts.canvas ?? document.createElement("canvas");
+  const mipmaps = opts.mipmaps ?? false;
   const gl = canvas.getContext("webgl2", {
     alpha: true,
     antialias: opts.antialias ?? true,
@@ -1033,7 +1055,18 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     gl!.pixelStorei(gl!.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     gl!.texImage2D(gl!.TEXTURE_2D, 0, gl!.RGBA, gl!.RGBA, gl!.UNSIGNED_BYTE, source);
     const filter = pixelated ? gl!.NEAREST : gl!.LINEAR;
-    gl!.texParameteri(gl!.TEXTURE_2D, gl!.TEXTURE_MIN_FILTER, filter);
+    // Mipped only where it was asked for and only where filtering is wanted at
+    // all. WebGL2 builds a chain for a non-power-of-two texture too, which
+    // WebGL1 could not — so nothing here has to be sized in advance.
+    const mipped = mipmaps && !pixelated;
+    if (mipped) gl!.generateMipmap(gl!.TEXTURE_2D);
+    gl!.texParameteri(
+      gl!.TEXTURE_2D,
+      gl!.TEXTURE_MIN_FILTER,
+      mipped ? gl!.LINEAR_MIPMAP_LINEAR : filter,
+    );
+    // MAGnification has no smaller level to reach for, so it is unchanged: a
+    // mip chain only ever affects the minifying direction.
     gl!.texParameteri(gl!.TEXTURE_2D, gl!.TEXTURE_MAG_FILTER, filter);
     // CLAMP by default, not REPEAT: a non-power-of-two texture is legal in
     // WebGL2 but wrapping one bleeds the opposite edge into a uv that lands

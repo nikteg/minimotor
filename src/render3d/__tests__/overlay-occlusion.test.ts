@@ -415,3 +415,40 @@ describe("a mesh rewritten in place", () => {
     expect(cost.created).toBeGreaterThan(0);
   });
 });
+
+describe("mipmaps", () => {
+  function textureCalls(mipmaps: boolean, pixelated: boolean) {
+    const harness = recordingGl();
+    const canvas = document.createElement("canvas");
+    (canvas as unknown as { getContext: () => unknown }).getContext = () => harness.gl;
+    const renderer = createWebGL2Renderer({ canvas, mipmaps });
+    const scene = createScene();
+    const image = document.createElement("canvas");
+    addNode(scene, node({ mesh: GROUND, material: { texture: image, pixelated } }));
+    updateWorldMatrices(scene);
+    renderer.render(scene, createCamera());
+    return harness.calls;
+  }
+
+  it("builds a chain and samples it trilinearly when asked", () => {
+    const calls = textureCalls(true, false);
+    expect(calls.some((c) => c.name === "generateMipmap")).toBe(true);
+    // The chain is built before the filter that reads it is set, which is the
+    // order the texture has to be left in.
+    const built = calls.findIndex((c) => c.name === "generateMipmap");
+    const filtered = calls.findIndex(
+      (c, at) => at > built && c.name === "texParameteri" && built >= 0,
+    );
+    expect(filtered).toBeGreaterThan(built);
+  });
+
+  it("does nothing unless asked, which keeps the picture as it was", () => {
+    expect(textureCalls(false, false).some((c) => c.name === "generateMipmap")).toBe(false);
+  });
+
+  it("leaves a PIXELATED texture alone even when asked", () => {
+    // A sprite sheet asking for NEAREST is asking not to be filtered, and a mip
+    // chain is filtering.
+    expect(textureCalls(true, true).some((c) => c.name === "generateMipmap")).toBe(false);
+  });
+});
