@@ -540,6 +540,108 @@ describe("input", () => {
     expect(seen.at(-1)).toEqual({ pressed: false, wheel: 0 });
   });
 
+  it("holds a press for the STEPS until one has seen it, however short the frame", () => {
+    // **The hole `framePressed` has.** A frame shorter than one fixed step runs
+    // the loop zero times, and the frame-scoped flags are cleared at frame end
+    // whether or not that happened — so a press could arrive, be cleared, and
+    // never be visible to a single `update`. At 120 steps a second on a 120 Hz
+    // display that is not an edge case: it is every other frame.
+    const canvas = document.createElement("canvas");
+    canvas.id = "step-latch";
+    document.body.appendChild(canvas);
+    const game = createApp("step-latch", { fullscreen: false, stepsPerSecond: 120 });
+    const stepSaw: boolean[] = [];
+    game.Loop.run({ update: () => stepSaw.push(game.Pointer.stepPressed), draw: () => {} });
+
+    tick(16); // settle the clock; the loop treats a zero timestamp as unset
+    game.canvas.dispatchEvent(new MouseEvent("pointerdown", { clientX: 5, clientY: 5 }));
+    // A 4 ms frame: shorter than the 8.333 ms step, so NO step runs.
+    tick(20);
+    expect(stepSaw).toHaveLength(0);
+    expect(game.Pointer.framePressed).toBe(false); // frame-scoped, gone already
+    // The next frame does run one, and it sees the press.
+    tick(28);
+    expect(stepSaw.filter(Boolean)).toHaveLength(1);
+    // And exactly once: a later step must not act on it again.
+    tick(60);
+    expect(stepSaw.filter(Boolean)).toHaveLength(1);
+  });
+
+  it("keeps a press visible to EVERY step of the frame it arrived in", () => {
+    // The other half of what this pair is for: a reader that only becomes
+    // eligible on a later step of the same frame — a mode the UI was still
+    // holding when the press landed — must still see it. `pressed` is consumed
+    // after one step and cannot answer that.
+    const canvas = document.createElement("canvas");
+    canvas.id = "step-latch-multi";
+    document.body.appendChild(canvas);
+    const game = createApp("step-latch-multi", { fullscreen: false, stepsPerSecond: 120 });
+    const latched: boolean[] = [];
+    const consumed: boolean[] = [];
+    game.Loop.run({
+      update: () => {
+        latched.push(game.Pointer.stepPressed);
+        consumed.push(game.Pointer.pressed);
+      },
+      draw: () => {},
+    });
+    tick(16);
+    game.canvas.dispatchEvent(new MouseEvent("pointerdown", { clientX: 5, clientY: 5 }));
+    tick(46); // 30 ms: 3 steps of 8.333 ms
+    expect(latched.filter(Boolean).length).toBeGreaterThan(1);
+    expect(consumed.filter(Boolean)).toHaveLength(1);
+  });
+
+  it("remembers where a press LANDED, not where the pointer went", () => {
+    // A flick moves several pixels inside one frame, and the step that reads
+    // the press can be running a frame after the finger touched down. Anything
+    // picking an object out of a scene has to test the point that was pressed.
+    const { game } = build("press-position");
+    // A real rect, so the two positions map to two different logical points —
+    // jsdom's default is zero-sized and would map everything to the same one.
+    vi.spyOn(game.canvas, "getBoundingClientRect").mockReturnValue({
+      left: 0,
+      top: 0,
+      width: game.viewport.w,
+      height: game.viewport.h,
+      right: game.viewport.w,
+      bottom: game.viewport.h,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    game.Loop.run({ update: () => {}, draw: () => {} });
+    tick(16);
+    game.canvas.dispatchEvent(new MouseEvent("pointerdown", { clientX: 12, clientY: 34 }));
+    // Whatever the canvas rect maps those to — the claim is that the press
+    // position stays there while the live position leaves.
+    const at = { x: game.Pointer.x, y: game.Pointer.y };
+    expect(game.Pointer.pressX).toBe(at.x);
+    expect(game.Pointer.pressY).toBe(at.y);
+    window.dispatchEvent(new MouseEvent("pointermove", { clientX: 200, clientY: 300 }));
+    expect(game.Pointer.x).not.toBe(at.x);
+    expect(game.Pointer.pressX).toBe(at.x);
+    expect(game.Pointer.pressY).toBe(at.y);
+  });
+
+  it("drops a latched press that arrived while paused", () => {
+    // Same rule the other edges follow: nothing observed it and nothing is
+    // going to, so it must not fire on the first step after resuming.
+    const canvas = document.createElement("canvas");
+    canvas.id = "step-latch-paused";
+    document.body.appendChild(canvas);
+    const game = createApp("step-latch-paused", { fullscreen: false, stepsPerSecond: 120 });
+    const stepSaw: boolean[] = [];
+    game.Loop.run({ update: () => stepSaw.push(game.Pointer.stepPressed), draw: () => {} });
+    tick(16);
+    game.Loop.pause();
+    game.canvas.dispatchEvent(new MouseEvent("pointerdown", { clientX: 5, clientY: 5 }));
+    tick(36);
+    game.Loop.resume();
+    tick(80);
+    expect(stepSaw.filter(Boolean)).toHaveLength(0);
+  });
+
   it("setCursor applies for one frame and onFrame runs each rendered frame", () => {
     const { game } = build();
     let frames = 0;
