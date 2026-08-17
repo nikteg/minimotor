@@ -31,6 +31,7 @@ import { Mat4 } from "../math/mat4.js";
 import { cameraPosition, viewProjection } from "./camera.js";
 import { detailProjectionMode, detailWorldStep, fogUniform, ghostMaterial, glazeParallax, glazeStrength, isVisible, settleActive, } from "./scene.js";
 import { triangleCount, vertexCount } from "./mesh.js";
+import { frustumPlanes, inFrustum, meshBounds } from "./cull.js";
 const MAX_LIGHTS = 4;
 const MAX_JOINTS = 64;
 const VERTEX_SHADER = `#version 300 es
@@ -705,6 +706,8 @@ export function createWebGL2Renderer(opts = {}) {
     let height = opts.height ?? 150;
     let dpr = opts.dpr ?? 1;
     const viewProj = Mat4.create();
+    /** The frustum this frame, rebuilt once per pass from `viewProj`. */
+    const planes = new Float32Array(24);
     const normalMat = new Float32Array(9);
     const eye = { x: 0, y: 0, z: 0 };
     const lightDirs = new Float32Array(MAX_LIGHTS * 3);
@@ -1038,6 +1041,7 @@ export function createWebGL2Renderer(opts = {}) {
             }
             gl.useProgram(program);
             viewProjection(camera, width / height, false, viewProj);
+            frustumPlanes(viewProj, planes);
             gl.uniformMatrix4fv(u.viewProj, false, viewProj);
             cameraPosition(camera, eye);
             gl.uniform3f(u.cameraPos, eye.x, eye.y, eye.z);
@@ -1088,6 +1092,14 @@ export function createWebGL2Renderer(opts = {}) {
                 if (!n.mesh || !n.world)
                     return;
                 if (!isVisible(scene, i)) {
+                    stats.culled++;
+                    return;
+                }
+                // **And whether the camera can see it at all.** Without this every mesh
+                // in the level is drawn every frame, so cost follows the size of the
+                // WORLD rather than the size of the view — see `cull.ts`. Counted as
+                // culled alongside the hidden ones, which is what the stat means.
+                if (!inFrustum(planes, meshBounds(n.mesh), n.world)) {
                     stats.culled++;
                     return;
                 }
