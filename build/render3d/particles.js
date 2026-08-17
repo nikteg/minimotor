@@ -297,6 +297,21 @@ export function createEmitter(opts) {
     }
     const worldUp = { x: 0, y: 1, z: 0 };
     const worldRight = { x: 1, y: 0, z: 0 };
+    /** `sizeOverTime`'s answer for the particle being written, reused across
+     *  every particle of every frame. */
+    const sizeScale = { x: 1, y: 1, z: 1 };
+    const sizeOverTime = opts.sizeOverTime;
+    /** Fill `sizeScale` for one particle, or leave it at 1 when nothing was
+     *  passed. */
+    function scaleAt(slot) {
+        if (!sizeOverTime)
+            return;
+        sizeScale.x = 1;
+        sizeScale.y = 1;
+        sizeScale.z = 1;
+        const span = life[slot];
+        sizeOverTime(span > 0 ? Math.min(1, age[slot] / span) : 0, sizeScale);
+    }
     const right = { x: 0, y: 0, z: 0 };
     const up = { x: 0, y: 0, z: 0 };
     const toView = { x: 0, y: 0, z: 0 };
@@ -312,8 +327,9 @@ export function createEmitter(opts) {
         toView.x /= viewLength;
         toView.y /= viewLength;
         toView.z /= viewLength;
-        let halfWidth = scaleX[slot] / 2;
-        let halfHeight = scaleY[slot] / 2;
+        scaleAt(slot);
+        let halfWidth = (scaleX[slot] * sizeScale.x) / 2;
+        let halfHeight = (scaleY[slot] * sizeScale.y) / 2;
         // How far along `right` the quad's centre is pushed. Zero for every mode
         // but `stretched`, which anchors its head on the particle instead of
         // straddling it — see below.
@@ -378,8 +394,8 @@ export function createEmitter(opts) {
                 Vec3.cross(along, helper, up);
             }
             Vec3.normalize(up, up);
-            halfWidth = (scaleY[slot] * lengthScale) / 2;
-            halfHeight = scaleX[slot] / 2;
+            halfWidth = (scaleY[slot] * sizeScale.y * lengthScale) / 2;
+            halfHeight = (scaleX[slot] * sizeScale.x) / 2;
             // A streak shows where a particle has BEEN, so its head sits ON the
             // particle and the tail runs back down the velocity. Centring it instead
             // draws half the trail in front of the thing making it.
@@ -450,6 +466,10 @@ export function createEmitter(opts) {
     function writeMesh(slot, index) {
         if (!source)
             return;
+        scaleAt(slot);
+        const meshX = scaleX[slot] * sizeScale.x;
+        const meshY = scaleY[slot] * sizeScale.y;
+        const meshZ = scaleZ[slot] * sizeScale.z;
         let frame = 0;
         if (sheet) {
             const t = age[slot] / life[slot];
@@ -465,13 +485,13 @@ export function createEmitter(opts) {
         const base = index * verticesPerParticle;
         for (let vertex = 0; vertex < verticesPerParticle; vertex++) {
             const sourcePosition = vertex * 3;
-            rotate(source.positions[sourcePosition] * scaleX[slot], source.positions[sourcePosition + 1] * scaleY[slot], source.positions[sourcePosition + 2] * scaleZ[slot], rotationX[slot], rotationY[slot], rotationZ[slot], turned);
+            rotate(source.positions[sourcePosition] * meshX, source.positions[sourcePosition + 1] * meshY, source.positions[sourcePosition + 2] * meshZ, rotationX[slot], rotationY[slot], rotationZ[slot], turned);
             const target = (base + vertex) * 3;
             positions[target] = px[slot] + turned.x;
             positions[target + 1] = py[slot] + turned.y;
             positions[target + 2] = pz[slot] + turned.z;
             const sourceNormal = source.normals;
-            rotate((sourceNormal?.[sourcePosition] ?? 0) / Math.max(1e-6, Math.abs(scaleX[slot])), (sourceNormal?.[sourcePosition + 1] ?? 1) / Math.max(1e-6, Math.abs(scaleY[slot])), (sourceNormal?.[sourcePosition + 2] ?? 0) / Math.max(1e-6, Math.abs(scaleZ[slot])), rotationX[slot], rotationY[slot], rotationZ[slot], turned);
+            rotate((sourceNormal?.[sourcePosition] ?? 0) / Math.max(1e-6, Math.abs(meshX)), (sourceNormal?.[sourcePosition + 1] ?? 1) / Math.max(1e-6, Math.abs(meshY)), (sourceNormal?.[sourcePosition + 2] ?? 0) / Math.max(1e-6, Math.abs(meshZ)), rotationX[slot], rotationY[slot], rotationZ[slot], turned);
             const normalLength = Math.hypot(turned.x, turned.y, turned.z) || 1;
             normals[target] = turned.x / normalLength;
             normals[target + 1] = turned.y / normalLength;

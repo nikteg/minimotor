@@ -161,6 +161,27 @@ export interface EmitterOptions {
         y: Range;
         z?: Range;
     };
+    /** How the authored size is scaled as a particle ages, given how far through
+     *  its life it is (0..1).
+     *
+     *  Multiplies `size`, so the authored value stays the particle's full size
+     *  and this is the shape of the pop, the swell or the fade-out around it —
+     *  which is how every authoring tool stores it, and why the two are separate
+     *  here rather than one curve of absolute sizes.
+     *
+     *  Writes into `out` rather than returning, because it is called for every
+     *  live particle every frame and an allocation there is the whole cost. Per
+     *  axis: a burst that stretches as it rises is one curve on `y` and another
+     *  on `x`, and a uniform one writes the same number three times. `z` is used
+     *  by mesh particles alone.
+     *
+     *  Sampled fresh each frame rather than at birth — that is the difference
+     *  between this and `size` — so the curve plays out across the life. */
+    sizeOverTime?: (t: number, out: {
+        x: number;
+        y: number;
+        z: number;
+    }) => void;
     /** Multiplied into the material's own colour, per vertex. */
     color?: readonly [number, number, number, number];
     /** Units per second squared, downward. */

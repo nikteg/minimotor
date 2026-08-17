@@ -50,7 +50,11 @@ export async function createPhysics3D(options) {
     const events = new rapier.EventQueue(true);
     // One record reused for every contact: a busy world raises hundreds a second,
     // and a listener is expected to read what it wants before returning.
-    const contact = { colliderA: undefined, colliderB: undefined, normal: { x: 0, y: 0, z: 0 } };
+    const contact = {
+        colliderA: undefined,
+        colliderB: undefined,
+        normal: { x: 0, y: 0, z: 0 },
+    };
     return {
         raw,
         createBody(bodyOptions = {}) {
