@@ -80,6 +80,10 @@ export interface Viewport3DOptions extends Flowable {
   /** Stable id — for layout capture and for keeping drag state across frames
    *  when several viewports are on screen. */
   id?: string;
+  /** Multiplier for this viewport's GPU backing-store resolution. The logical
+   *  widget rect and camera framing stay unchanged; values below 0.1 are
+   *  clamped. Defaults to 1. */
+  resolutionScale?: number;
 }
 
 /** What the viewport reports back this frame. */
@@ -158,7 +162,12 @@ export function viewport3d(opts: Viewport3DOptions): Viewport3DState {
     // retina screen. The context transform ALREADY carries the app's DPR and
     // letterbox scale as well as any `UI.scaled` block, so it is the whole
     // answer — multiplying by `viewport.dpr` again would double-count it.
-    opts.renderer.resize(rect.w, rect.h, deviceScale(ctx), { retainBackingStore: true });
+    opts.renderer.resize(
+      rect.w,
+      rect.h,
+      deviceScale(ctx) * Math.max(0.1, opts.resolutionScale ?? 1),
+      { retainBackingStore: true },
+    );
     updateWorldMatrices(opts.scene);
     opts.renderer.render(opts.scene, opts.camera);
   }
