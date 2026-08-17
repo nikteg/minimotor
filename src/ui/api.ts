@@ -43,6 +43,8 @@ export {
   blur,
   buttonState,
   captureOverlay,
+  holdOverlay,
+  releaseOverlay,
   defaultTheme,
   drawLayoutOverlay,
   focus,
