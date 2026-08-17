@@ -36,7 +36,7 @@ export interface SliderOptions extends Flowable {
      *
      *  A slider's value moves once per frame while it is being dragged, so a
      *  caller that hangs a click, a haptic or a save on "the value changed" fires
-     *  it sixty times a second. Trash Golf's volume sliders played the
+     *  it sixty times a second. A consumer's volume sliders played the
      *  interface's click on every step and machine-gunned across a drag
      *  (31 clips for one sweep of the track). Grab and let-go are the two edges a
      *  gesture actually has, and they are the two the kit had no way to report. */

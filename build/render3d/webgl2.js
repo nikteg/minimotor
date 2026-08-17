@@ -608,6 +608,7 @@ function attributeMask(mesh) {
  *  reports failure instead. */
 export function createWebGL2Renderer(opts = {}) {
     const canvas = opts.canvas ?? document.createElement("canvas");
+    const mipmaps = opts.mipmaps ?? false;
     const gl = canvas.getContext("webgl2", {
         alpha: true,
         antialias: opts.antialias ?? true,
@@ -908,7 +909,15 @@ export function createWebGL2Renderer(opts = {}) {
         gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
         const filter = pixelated ? gl.NEAREST : gl.LINEAR;
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+        // Mipped only where it was asked for and only where filtering is wanted at
+        // all. WebGL2 builds a chain for a non-power-of-two texture too, which
+        // WebGL1 could not — so nothing here has to be sized in advance.
+        const mipped = mipmaps && !pixelated;
+        if (mipped)
+            gl.generateMipmap(gl.TEXTURE_2D);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, mipped ? gl.LINEAR_MIPMAP_LINEAR : filter);
+        // MAGnification has no smaller level to reach for, so it is unchanged: a
+        // mip chain only ever affects the minifying direction.
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
         // CLAMP by default, not REPEAT: a non-power-of-two texture is legal in
         // WebGL2 but wrapping one bleeds the opposite edge into a uv that lands

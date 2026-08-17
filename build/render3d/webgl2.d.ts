@@ -11,6 +11,27 @@ export interface WebGL2RendererOptions {
     /** Preserve the default framebuffer after compositing. This is expensive;
      *  it remains enabled by default for compatibility. */
     preserveDrawingBuffer?: boolean;
+    /** Build a mip chain for every smooth texture and sample it trilinearly.
+     *
+     *  Off by default, because it CHANGES THE PICTURE: a minified texture stops
+     *  sampling its full-resolution texels and starts sampling a filtered
+     *  average, which is the point — it is what removes the shimmer a texture
+     *  minified across a large surface produces as the camera moves — but it is
+     *  a different image, and softer at distance.
+     *
+     *  Orthogonal to `antialias`, which is multisampling: MSAA resolves GEOMETRY
+     *  edges and does nothing at all for texture minification, since it runs the
+     *  fragment shader once per pixel however many samples that pixel has. The
+     *  two fix different aliasing and neither substitutes for the other.
+     *
+     *  `pixelated` textures are exempt: a sprite sheet asking for NEAREST is
+     *  asking not to be filtered, and a mip chain is filtering.
+     *
+     *  **WebGL2 only.** WebGPU has no `generateMipmap` — a chain there has to be
+     *  produced by a render pass per level — so this backend honours the flag and
+     *  the WebGPU one ignores it. A caller that needs it on both has to say so;
+     *  the flag is not silently promoted to a backend choice. */
+    mipmaps?: boolean;
     /** Collect GPU timer-query samples. Disabled by default because queries add
      *  instrumentation overhead. */
     gpuTiming?: boolean;
