@@ -21,17 +21,12 @@
 import {
   Flowable,
   buttonState,
-  centeredText,
-  focusFromPointer,
   place,
   pointerGestureOwned,
-  registerFocusable,
-  theme,
   uiCtx,
-  uiFont,
   widgetId,
 } from "@src/ui/core/index.js";
-import { claimWheel, setCursor, uiPointer } from "@src/ui/core/input.js";
+import { claimWheel, uiPointer } from "@src/ui/core/input.js";
 import { dolly, orbit } from "@src/render3d/camera.js";
 import { updateWorldMatrices } from "@src/render3d/scene.js";
 import type { Camera3D } from "@src/render3d/camera.js";
@@ -80,14 +75,8 @@ export interface Viewport3DOptions extends Flowable {
    *  alpha decides how much of this shows through — leave the scene
    *  transparent and set this to blend the view into a panel. */
   background?: string;
-  /** Stroke a 1px border in this colour. */
-  border?: string;
   /** Called when the viewport is pressed and released on itself. */
   onClick?: () => void;
-  /** Border used while a clickable viewport is hovered. */
-  hoverBorder?: string;
-  /** Drawn over a clickable viewport while hovered, e.g. a pencil icon. */
-  hoverIcon?: string;
   /** Stable id — for layout capture and for keeping drag state across frames
    *  when several viewports are on screen. */
   id?: string;
@@ -97,8 +86,6 @@ export interface Viewport3DOptions extends Flowable {
 export interface Viewport3DState {
   /** The rect it occupied, in UI coords. */
   rect: { x: number; y: number; w: number; h: number };
-  /** Pointer is inside. */
-  hovered: boolean;
   /** Pointer is dragging this viewport (only when `interactive`). */
   dragging: boolean;
 }
@@ -117,7 +104,6 @@ let active: DragState | null = null;
  *
  *    const state = UI.viewport3d({
  *      renderer, scene, camera, interactive: true, h: 220,
- *      border: theme.border,
  *    });
  *
  *  Call it in the draw phase, inside whatever container should own the space.
@@ -131,15 +117,9 @@ export function viewport3d(opts: Viewport3DOptions): Viewport3DState {
   const p = uiPointer();
   const hovered = p.x >= rect.x && p.x < rect.x + rect.w && p.y >= rect.y && p.y < rect.y + rect.h;
   const id = widgetId(opts.id, "viewport3d") ?? "viewport3d";
-  const focused = opts.onClick ? registerFocusable(ctx, { id, rect }) : false;
   const clickState = opts.onClick ? buttonState(rect, p) : null;
   const clicked = Boolean(opts.onClick && clickState?.clicked && !pointerGestureOwned());
-  if (clicked) {
-    focusFromPointer(ctx, id);
-    opts.onClick?.();
-  }
-  if (opts.onClick && hovered) setCursor("pointer");
-
+  if (clicked) opts.onClick?.();
   let dragging = false;
   if (opts.interactive) {
     if (hovered && p.pressed && !active) active = { id, lastX: p.x, lastY: p.y };
@@ -157,9 +137,6 @@ export function viewport3d(opts: Viewport3DOptions): Viewport3DState {
         drag.lastY = p.y;
       }
     }
-    if (dragging) setCursor("grabbing", 1);
-    else if (hovered) setCursor("grab", 0);
-
     // `claimWheel` keeps a viewport inside a scrolling list from stealing the
     // list's scroll — and vice versa. atMin/atMax report the dolly limits, so
     // a fully zoomed-in viewport passes the wheel on rather than swallowing it.
@@ -167,7 +144,7 @@ export function viewport3d(opts: Viewport3DOptions): Viewport3DState {
     if (wheel !== 0) dolly(opts.camera, wheel * 0.0015);
   }
 
-  if (rect.w < 1 || rect.h < 1) return { rect, hovered, dragging };
+  if (rect.w < 1 || rect.h < 1) return { rect, dragging };
 
   if (opts.background) {
     ctx.fillStyle = opts.background;
@@ -201,35 +178,7 @@ export function viewport3d(opts: Viewport3DOptions): Viewport3DState {
     rect.h,
   );
 
-  // **Both hover affordances need something to press**, which is what the two
-  // options already SAY — "while a clickable viewport is hovered", "over a
-  // clickable viewport". The code did not check, so a decorative turntable lit
-  // up and offered a pencil to a pointer that could do nothing with it. Found
-  // in Trash Golf, where a lobby table draws one ball per player and only your
-  // own is yours to edit: every player's ball glowed and grew a pencil.
-  const interactive = Boolean(opts.onClick);
-  const border = hovered && interactive && opts.hoverBorder ? opts.hoverBorder : opts.border;
-  if (hovered && interactive && opts.hoverIcon) {
-    ctx.fillStyle = "rgba(24, 33, 63, 0.58)";
-    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
-    ctx.font = uiFont(Math.max(12, Math.min(rect.w, rect.h) * 0.45), true);
-    ctx.fillStyle = "#ffffff";
-    ctx.textAlign = "center";
-    centeredText(ctx, opts.hoverIcon, rect.x + rect.w / 2, rect.y + rect.h / 2);
-  }
-  if (border) {
-    ctx.strokeStyle = border;
-    ctx.lineWidth = theme.borderWidth;
-    ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1);
-  }
-
-  if (focused) {
-    ctx.strokeStyle = theme.accent;
-    ctx.lineWidth = theme.focusStyle === "ring" ? 2 : 1;
-    ctx.strokeRect(rect.x - 1, rect.y - 1, rect.w + 2, rect.h + 2);
-  }
-
-  return { rect, hovered, dragging };
+  return { rect, dragging };
 }
 
 /** How many device pixels one UI unit covers, read back from the context's
