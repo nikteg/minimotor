@@ -199,7 +199,8 @@ export function popLayoutParent() {
 // the frame-wide `isInOverlayPass()` cannot answer this question at all: it goes
 // true when an immediate `popover` opens and stays true for the rest of the
 // frame, so it would mark everything drawn AFTER the popover as an overlay,
-// which is precisely item 115's fault wearing the exemption meant to excuse it.
+// which is precisely the fault this exists to catch, wearing the exemption
+// meant to excuse it.
 let overlayDepth = 0;
 /** Everything recorded until `popLayoutOverlay` belongs to an overlay and is
  *  entitled to paint over what is beneath it. Called by `popover` and `modal`
@@ -451,7 +452,7 @@ function inSubtree(tree, a, b) {
  *  container that placed it, which catches a box too small for its contents and
  *  nothing else; two rects that never shared a parent can sit straight on top of
  *  each other with `layoutIssues` and `layoutLag` clean the whole time. They did,
- *  twice — a party table painted through an open popover, and a HUD panel and a
+ *  twice — a table painted through an open popover, and a HUD panel and a
  *  status column whose z-order could only be settled by eye.
  *
  *  What is reported: a pair whose visible rects overlap, where the LATER-painted

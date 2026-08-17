@@ -311,9 +311,9 @@ export function ellipsize(ctx, text, maxW) {
 export function centeredText(ctx, text, x, cy, maxW) {
     if (isMeasuring())
         return;
-    // A label is the other half of what reaches the canvas — item 115's fault was
-    // a table's HEADER coming through a popover, not a box. An empty string is
-    // not a paint.
+    // A label is the other half of what reaches the canvas — the reported fault
+    // was a table's HEADER coming through a popover, not a box. An empty string
+    // is not a paint.
     if (text !== "")
         notePaint();
     // measureText's actualBoundingBox values are relative to the CURRENT

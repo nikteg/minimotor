@@ -248,8 +248,7 @@ vec3 blendOverlay(vec3 pattern, vec3 surface) {
 /** A wrapped triangle wave smoothed by the 3t^2-2t^3 interpolant a value noise
  *  uses, on -1..1.
  *
- *  Deliberately NOT sin(). Item 66 pins that the two backends draw the same
- *  frame, and a transcendental is the one thing whose last bits two compilers
+ *  Deliberately NOT sin(). The two backends are pinned to draw the same frame, and a transcendental is the one thing whose last bits two compilers
  *  and two drivers are free to round differently — this is fract, abs and four
  *  multiplies, which they are not. It is also cheaper, which is a bonus rather
  *  than the reason. */
