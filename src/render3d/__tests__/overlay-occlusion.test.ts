@@ -500,3 +500,89 @@ describe("a mip chain on a LIVE surface", () => {
     expect(harness.calls.filter((c) => c.name === "generateMipmap").length).toBe(1);
   });
 });
+
+describe("instancing the opaque pass", () => {
+  function drawsFor(nodes: { mesh: MeshData; material: Material; skin?: unknown }[]) {
+    const harness = recordingGl();
+    const canvas = document.createElement("canvas");
+    (canvas as unknown as { getContext: () => unknown }).getContext = () => harness.gl;
+    const renderer = createWebGL2Renderer({ canvas });
+    const scene = createScene();
+    for (const n of nodes) addNode(scene, node(n as never));
+    updateWorldMatrices(scene);
+    renderer.render(scene, createCamera());
+    return {
+      single: harness.calls.filter((c) => c.name === "drawElements").length,
+      batched: harness.calls.filter((c) => c.name === "drawElementsInstanced").length,
+      instances: harness.calls
+        .filter((c) => c.name === "drawElementsInstanced")
+        .map((c) => c.args[4] as number),
+    };
+  }
+
+  it("folds a run of the same mesh and material into ONE call", () => {
+    const shared: Material = { color: [1, 0, 0, 1] };
+    const out = drawsFor([
+      { mesh: GROUND, material: shared },
+      { mesh: GROUND, material: shared },
+      { mesh: GROUND, material: shared },
+    ]);
+    expect(out.batched).toBe(1);
+    expect(out.instances).toEqual([3]);
+    expect(out.single).toBe(0);
+  });
+
+  it("does not batch a run of one, which would pay an upload to save nothing", () => {
+    const out = drawsFor([{ mesh: GROUND, material: { color: [1, 0, 0, 1] } }]);
+    expect(out.batched).toBe(0);
+    expect(out.single).toBe(1);
+  });
+
+  it("keeps different MESHES apart even under one material", () => {
+    // Same material, two meshes: the sort groups them together and the run
+    // detection has to split them, or the second mesh would be drawn with the
+    // first one's geometry.
+    const shared: Material = { color: [1, 0, 0, 1] };
+    const out = drawsFor([
+      { mesh: GROUND, material: shared },
+      { mesh: GROUND, material: shared },
+      { mesh: BALL, material: shared },
+      { mesh: BALL, material: shared },
+    ]);
+    expect(out.batched).toBe(2);
+    expect(out.instances).toEqual([2, 2]);
+  });
+
+  it("leaves a SKINNED node its own draw", () => {
+    // The pose is a uniform array, so two copies in one call would wear the
+    // same skeleton.
+    const shared: Material = { color: [1, 0, 0, 1] };
+    const skin = {
+      joints: [0],
+      inverseBindMatrices: new Float32Array(16),
+      matrices: new Float32Array(16),
+    };
+    const out = drawsFor([
+      { mesh: GROUND, material: shared, skin },
+      { mesh: GROUND, material: shared, skin },
+    ]);
+    expect(out.batched).toBe(0);
+    expect(out.single).toBe(2);
+  });
+
+  it("counts the triangles it actually drew", () => {
+    // A batch is one call and many copies; a stat that counted the call would
+    // under-report the frame by the size of every batch in it.
+    const shared: Material = { color: [1, 0, 0, 1] };
+    const harness = recordingGl();
+    const canvas = document.createElement("canvas");
+    (canvas as unknown as { getContext: () => unknown }).getContext = () => harness.gl;
+    const renderer = createWebGL2Renderer({ canvas });
+    const scene = createScene();
+    for (let i = 0; i < 4; i++) addNode(scene, node({ mesh: GROUND, material: shared }));
+    updateWorldMatrices(scene);
+    renderer.render(scene, createCamera());
+    expect(renderer.stats.triangles).toBe(4);
+    expect(renderer.stats.drawCalls).toBe(1);
+  });
+});

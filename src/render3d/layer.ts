@@ -51,6 +51,23 @@ export interface SceneLayerOptions {
    *  saving for a small softening; the HUD is unaffected either way, because
    *  it is on the other canvas. Default 1. */
   resolutionScale?: number;
+  /** A ceiling on the display's device pixel ratio, for the backing store only.
+   *
+   *  **The arithmetic this exists for.** A scene's fill cost is
+   *  `(dpr * resolutionScale)^2 * sampleCount` per logical pixel. A phone at
+   *  dpr 3 with 4x multisampling is 36 samples for every logical pixel on
+   *  screen, and every per-pixel cost in the frame — each texture fetch, the
+   *  normal frame, the lighting, the tone curve — is paid against that number.
+   *  Capping at 2 removes 56% of those pixels and leaves the geometry edges to
+   *  MSAA, which is what was resolving them anyway.
+   *
+   *  Distinct from `resolutionScale`, though they multiply into the same
+   *  figure: the scale is a fraction a player chooses, and this is a ceiling on
+   *  a number the DEVICE reports. A desktop at dpr 1 or 2 is unaffected by a
+   *  cap of 2, so this costs nothing where there was nothing to save.
+   *
+   *  Uncapped by default. */
+  maxDpr?: number;
 }
 
 /** Put `renderer`'s canvas directly behind the app's, sized and DPR-matched to
@@ -64,6 +81,7 @@ export function attachSceneLayer(
   opts: SceneLayerOptions = {},
 ): SceneLayer {
   let scale = Math.max(0.1, opts.resolutionScale ?? 1);
+  const maxDpr = Math.max(0.1, opts.maxDpr ?? Infinity);
   const target = app.canvas;
   const layer = renderer.canvas;
 
@@ -104,7 +122,7 @@ export function attachSceneLayer(
     // The renderer's own logical size stays the app's logical size, so a
     // camera's aspect ratio is unaffected by `resolutionScale`; only the
     // backing store shrinks.
-    renderer.resize(vp.w, vp.h, vp.dpr * scale);
+    renderer.resize(vp.w, vp.h, Math.min(vp.dpr, maxDpr) * scale);
   }
   sync();
   const off = app.onResize(sync);

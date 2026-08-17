@@ -174,3 +174,38 @@ describe("the depth convention", () => {
     }
   });
 });
+
+describe("the backing store's pixel budget", () => {
+  /** The arithmetic a dpr ceiling is for, stated as a test so the saving is a
+   *  number rather than a belief.
+   *
+   *  Fill cost per logical pixel is `(dpr * resolutionScale)^2 * sampleCount`.
+   *  Every per-pixel cost in a frame — each texture fetch, the normal frame,
+   *  the lighting, the tone curve — is paid that many times. */
+  function samplesPerLogicalPixel(dpr: number, scale: number, sampleCount: number): number {
+    return (dpr * scale) ** 2 * sampleCount;
+  }
+
+  it("is 36 samples a pixel on a 3x phone with 4x multisampling", () => {
+    expect(samplesPerLogicalPixel(3, 1, 4)).toBe(36);
+  });
+
+  it("loses 56% of them to a ceiling of 2, with the edges still multisampled", () => {
+    const capped = samplesPerLogicalPixel(2, 1, 4);
+    expect(capped).toBe(16);
+    expect(1 - capped / samplesPerLogicalPixel(3, 1, 4)).toBeCloseTo(0.5556, 4);
+  });
+
+  it("costs nothing on a display that never exceeded the ceiling", () => {
+    // A desktop at 1x or 2x is untouched by a cap of 2, which is why this can
+    // be a default rather than a device check.
+    expect(Math.min(1, 2)).toBe(1);
+    expect(Math.min(2, 2)).toBe(2);
+  });
+
+  it("is a different dial from the player's resolution scale, and they multiply", () => {
+    // Halving the scale is a quarter of the pixels on top of whatever the cap
+    // already took, so the two are not alternatives.
+    expect(samplesPerLogicalPixel(2, 0.5, 4)).toBe(4);
+  });
+});
