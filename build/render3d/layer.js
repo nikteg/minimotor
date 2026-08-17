@@ -34,6 +34,7 @@
  *  disposed — it may be serving `UI.viewport3d` widgets as well. */
 export function attachSceneLayer(app, renderer, opts = {}) {
     let scale = Math.max(0.1, opts.resolutionScale ?? 1);
+    const maxDpr = Math.max(0.1, opts.maxDpr ?? Infinity);
     const target = app.canvas;
     const layer = renderer.canvas;
     // Inherit the app canvas's own positioning rather than hard-coding it: a
@@ -73,7 +74,7 @@ export function attachSceneLayer(app, renderer, opts = {}) {
         // The renderer's own logical size stays the app's logical size, so a
         // camera's aspect ratio is unaffected by `resolutionScale`; only the
         // backing store shrinks.
-        renderer.resize(vp.w, vp.h, vp.dpr * scale);
+        renderer.resize(vp.w, vp.h, Math.min(vp.dpr, maxDpr) * scale);
     }
     sync();
     const off = app.onResize(sync);

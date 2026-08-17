@@ -19,6 +19,23 @@ export interface SceneLayerOptions {
      *  saving for a small softening; the HUD is unaffected either way, because
      *  it is on the other canvas. Default 1. */
     resolutionScale?: number;
+    /** A ceiling on the display's device pixel ratio, for the backing store only.
+     *
+     *  **The arithmetic this exists for.** A scene's fill cost is
+     *  `(dpr * resolutionScale)^2 * sampleCount` per logical pixel. A phone at
+     *  dpr 3 with 4x multisampling is 36 samples for every logical pixel on
+     *  screen, and every per-pixel cost in the frame — each texture fetch, the
+     *  normal frame, the lighting, the tone curve — is paid against that number.
+     *  Capping at 2 removes 56% of those pixels and leaves the geometry edges to
+     *  MSAA, which is what was resolving them anyway.
+     *
+     *  Distinct from `resolutionScale`, though they multiply into the same
+     *  figure: the scale is a fraction a player chooses, and this is a ceiling on
+     *  a number the DEVICE reports. A desktop at dpr 1 or 2 is unaffected by a
+     *  cap of 2, so this costs nothing where there was nothing to save.
+     *
+     *  Uncapped by default. */
+    maxDpr?: number;
 }
 /** Put `renderer`'s canvas directly behind the app's, sized and DPR-matched to
  *  it, and keep them in step across resizes and orientation changes.
