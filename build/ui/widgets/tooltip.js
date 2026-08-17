@@ -2,7 +2,7 @@
 // A single hover-stable tooltip: widgets request one for the frame while their
 // hit-area is hovered; `drawTips` paints it near the pointer once the hover has
 // held ~350 ms. Hover stability + reset run off the kernel's frame-end hooks.
-import { fitAnchored, centeredText, currentUiScale, detachPaint, ensureWired, measureWidth, onFrameEnd, onReset, rawPointer, isInOverlayPass, isOverlayActive, uiSlot, theme, uiCtx, uiFont, withTheme, } from "../../ui/core/index.js";
+import { fitAnchored, centeredText, currentUiScale, detachPaint, ensureWired, measureWidth, onFrameEnd, onReset, rawPointer, uiPointer, isInOverlayPass, isOverlayActive, uiSlot, theme, uiCtx, uiFont, withTheme, } from "../../ui/core/index.js";
 import { paintFrame } from "./panel.js";
 const st = uiSlot(() => ({ request: null, scale: 1, theme, shown: null }));
 /** Request a tooltip for this frame (call while your hit-area is hovered —
@@ -16,6 +16,23 @@ export function tooltip(msg) {
     s.request = msg;
     s.scale = currentUiScale();
     s.theme = theme;
+}
+/** Ask for a tooltip only while the pointer is inside `rect`.
+ *
+ *  `tooltip` itself is unconditional — a widget calls it having already decided
+ *  it is hovered. This is for PAINTED content, which has no widget to decide
+ *  that for it: a chip drawn straight onto the surface, an icon in a reserved
+ *  slot, a cell a table filled by hand. Without it the only way to explain such
+ *  a thing is to put a real control under it, which then takes hover and focus
+ *  and does nothing with either.
+ *
+ *  Respects the overlay rules the same way every widget does, because it reads
+ *  the same pointer: painted content under an open modal is not hovered. */
+export function tooltipFor(rect, msg) {
+    const p = uiPointer();
+    if (p.x < rect.x || p.y < rect.y || p.x > rect.x + rect.w || p.y > rect.y + rect.h)
+        return;
+    tooltip(msg);
 }
 /** Draw the pending tooltip near the pointer, clamped to the viewport. Call
  *  LAST in draw (after `drawFloatText`, after any modal) so it sits on top. */
