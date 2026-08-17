@@ -206,7 +206,7 @@ describe("UI.table", () => {
   });
 });
 
-// PLAN item 172. A table with no rows used to leave callers with one option:
+// A table with no rows used to leave callers with one option:
 // skip `UI.table` and draw a sentence instead — which takes the HEADER away
 // with the data, so the block changes shape rather than contents and anything
 // centred around it moves. `empty` is the option that keeps the table.

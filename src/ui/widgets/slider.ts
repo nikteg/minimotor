@@ -62,7 +62,7 @@ export interface SliderOptions extends Flowable {
    *
    *  A slider's value moves once per frame while it is being dragged, so a
    *  caller that hangs a click, a haptic or a save on "the value changed" fires
-   *  it sixty times a second. Trash Golf's volume sliders played the
+   *  it sixty times a second. A consumer's volume sliders played the
    *  interface's click on every step and machine-gunned across a drag
    *  (31 clips for one sweep of the track). Grab and let-go are the two edges a
    *  gesture actually has, and they are the two the kit had no way to report. */
@@ -115,7 +115,7 @@ const MEASURED_STOPS_LIMIT = 64;
 //
 // The ends are not the widest text. `step` turns the range into a fixed set of
 // stops, and a caller that NAMES them can easily put its longest name in the
-// middle: Trash Golf's UI-scale slider steps over 1x, 1.125x, 1.25x, 1.5x,
+// middle: a UI-scale slider stepping over 1x, 1.125x, 1.25x, 1.5x,
 // 1.75x, 2x, where every interior stop is wider than both ends and "1.125x"
 // is three times the width of "1x". Reserving for the ends alone left that one
 // painting over the bar.

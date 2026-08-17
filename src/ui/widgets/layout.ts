@@ -184,7 +184,7 @@ function scrollable<R>(
   // `clips`: this region masks its children, so content extending past the box
   // is the point, not a layout fault (see `layoutIssues`).
   //
-  // ...and OPENED as a parent, which it was not before item 196. A scrolling
+  // ...and OPENED as a parent, which it was not always. A scrolling
   // panel recorded its box and then let the `clip` below — and everything drawn
   // inside it — land as its SIBLINGS, under whatever container held the panel.
   // The tree therefore said a scroll region's own content was not its content,

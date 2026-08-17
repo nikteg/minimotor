@@ -251,7 +251,7 @@ describe("a deferred container's painted rect", () => {
 });
 
 describe("paintIssues reads the painted rect", () => {
-  /** The consequence item 202 was written for. A box sitting in the band the
+  /** The consequence the painted rect was added for. A box sitting in the band the
    * panel painted over but no longer occupies is an overlap on the CANVAS and
    * not in the committed geometry — so the occlusion check has to be looking at
    * the pixels to see it. */
@@ -268,8 +268,8 @@ describe("paintIssues reads the painted rect", () => {
 
   it("reports a rect that only meets the panel where the panel was drawn", () => {
     // The panel's painted band on the changing frame, taken from the capture of
-    // a settled three-row frame — real geometry, the way item 196 sourced its
-    // popover rect.
+    // a settled three-row frame — real geometry, the way the overlay ordinal
+    // sourced its popover rect.
     frame(overlapping(3, { y: 500, h: 20 }));
     const tall = entry("panel", "card")!.rect;
     const probe = { y: tall.y + tall.h - 12, h: 20 };
@@ -298,7 +298,7 @@ describe("the paint ordinal is unchanged by any of this", () => {
   /** The reason the fix is a field and not a reordering. The alternative shape
    * — move `cfg.box` after `slot.commit` — would paint a panel's backdrop after
    * its own children, which is both wrong on the canvas and would invert the
-   * ordinal item 196 added: the panel's own draw would land after every child's
+   * paint ordinal: the panel's own draw would land after every child's
    * instead of before. This is that ordering, asserted, so the alternative
    * cannot be taken by accident. */
   it("still stamps a panel's frame before the widgets inside it", () => {

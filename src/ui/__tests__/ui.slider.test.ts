@@ -68,7 +68,7 @@ function mockCtx(): { ctx: CanvasRenderingContext2D; calls: SliderCalls } {
   return { ctx, calls };
 }
 
-// Trash Golf's UI-scale slider: six ratios, deliberately unevenly spaced, so
+// A UI-scale slider: six ratios, deliberately unevenly spaced, so
 // the control walks the array's INDEX and the format names the ratio at each.
 const UI_SCALES = [1, 1.125, 1.25, 1.5, 1.75, 2];
 const scaleFormat = (index: number): string => `${UI_SCALES[Math.round(index)]}x`;
@@ -162,7 +162,7 @@ describe("UI.slider value readout", () => {
 // ---------- the grab and the let-go ----------
 // A slider's value moves once per drawn frame while it is dragged, so "the
 // value changed" is not an event a caller can hang a sound, a haptic or a
-// network write on: Trash Golf hung its interface click there and one sweep of
+// network write on: a consumer hung its interface click there and one sweep of
 // a volume track played 31 clips. `onPress`/`onRelease` are the two edges the
 // gesture actually has.
 //

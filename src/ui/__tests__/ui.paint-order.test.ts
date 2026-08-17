@@ -167,7 +167,8 @@ describe("what the capture records about when a rect was drawn", () => {
     ).toEqual(["col:bare -", "text painted", "panel:framed painted", "text painted"]);
   });
 
-  /** MEASURED, and it is the answer to the question item 196 asked: in this kit
+  /** MEASURED, and it is the answer to the question the paint ordinal raised:
+   * in this kit
    * the two orders COINCIDE. Every record site is followed immediately by the
    * widget's own draw — `autoContainer` records and then calls `cfg.box`,
    * `place` records and the widget paints into the rect it returned — and
@@ -178,7 +179,7 @@ describe("what the capture records about when a rect was drawn", () => {
    * That is worth an assertion rather than a comment precisely because it is a
    * coincidence of the current call sites and not a property anything enforces.
    * The moment a widget defers a draw without deferring its record — which is
-   * what a real overlay pass or a two-pass measure (item 68) would do — the
+   * what a real overlay pass or a two-pass measure would do — the
    * array stops being the paint order, and the check reads `paint` and carries
    * on. */
   it("hands the ordinals out in the array's own order, today", () => {
@@ -204,7 +205,8 @@ describe("what the capture records about when a rect was drawn", () => {
 });
 
 describe("an overlay covering the screen is the overlay working", () => {
-  /** A popover was INVISIBLE to the capture until item 196: its box is computed
+  /** A popover was INVISIBLE to the capture until the paint ordinal: its box is
+   * computed
    * inside `popover` rather than through `place`/`autoContainer`, so nothing
    * recorded it — and `runAutoSized`'s `pushLayoutParent`, which opens "the most
    * recent entry", therefore hung the popover's children off the TRIGGER drawn
@@ -288,20 +290,20 @@ describe("an overlay covering the screen is the overlay working", () => {
 });
 
 describe("ordinary content painted over an overlay is the fault", () => {
-  /** ITEM 115's SHAPE, reproduced. `popover` paints its frame on the spot rather
+  /** THE REPORTED SHAPE, reproduced. `popover` paints its frame on the spot rather
    * than deferring to an overlay pass, so anything the screen draws AFTER it
-   * paints straight through it — which is what a party table did to an open
+   * paints straight through it — which is what a table did to an open
    * JOIN BY CODE box: its header, a cell and two of its own JOIN buttons came
    * through the frame, one of them on top of CANCEL. `layoutIssues` and
    * `layoutLag` were clean the entire time and still are here, which is the
    * measurement that justifies the new check. */
   it("names both rects, and the escape checks still see nothing", () => {
     settle(fx, () => {
-      popover({ x: 40, y: 40, w: 200, h: 120, open: true, id: "join-by-code" }, () => {
+      popover({ x: 40, y: 40, w: 200, h: 120, open: true, id: "code-entry" }, () => {
         text("PARTY CODE");
       });
       // The table the screen goes on to draw, overlapping the box.
-      panel({ x: 60, y: 100, w: 260, h: 200, id: "party-table" }, () => {
+      panel({ x: 60, y: 100, w: 260, h: 200, id: "roster" }, () => {
         text("PLAYERS");
       });
     });
@@ -311,8 +313,8 @@ describe("ordinary content painted over an overlay is the fault", () => {
     // OWN label is not in the list: it sits above the table's top edge, so those
     // two never met — the check is geometric all the way down.
     expect(pairs()).toEqual([
-      "popover:join-by-code < panel:party-table !overlay",
-      "popover:join-by-code < text !overlay",
+      "popover:code-entry < panel:roster !overlay",
+      "popover:code-entry < text !overlay",
     ]);
     // The assertion a screen should actually carry: nothing may paint through an
     // overlay, whatever else on the screen legitimately overlaps.
@@ -323,21 +325,21 @@ describe("ordinary content painted over an overlay is the fault", () => {
    * check is about the rects meeting, not about a popover existing. */
   it("says nothing when the two do not actually meet", () => {
     settle(fx, () => {
-      popover({ x: 400, y: 40, w: 200, h: 120, open: true, id: "join-by-code" }, () => {
+      popover({ x: 400, y: 40, w: 200, h: 120, open: true, id: "code-entry" }, () => {
         text("PARTY CODE");
       });
-      panel({ x: 60, y: 100, w: 260, h: 200, id: "party-table" }, () => text("PLAYERS"));
+      panel({ x: 60, y: 100, w: 260, h: 200, id: "roster" }, () => text("PLAYERS"));
     });
     expect(pairs()).toEqual([]);
   });
 });
 
 describe("a z-order between two ordinary regions", () => {
-  /** ITEM 191's SHAPE. Two HUD regions that genuinely overlap, neither an
+  /** THE OTHER REPORTED SHAPE. Two HUD regions that genuinely overlap, neither an
    * overlay, where which one is on top is a DESIGN decision and not a fault — so
    * the capture's job is to report the pair with its order and let the screen's
    * own test assert the direction. That assertion used to be impossible
-   * headlessly: item 191 had to settle it by eye and pin it with the mock
+   * headlessly: it had to be settled by eye and pinned with the mock
    * context's `fillText` log, where a word's index in the frame stood in for its
    * depth.
    *

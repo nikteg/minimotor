@@ -125,7 +125,7 @@ function ensureNativePress(ctx: CanvasRenderingContext2D): void {
         // CANVAS, not on the offscreen editor, and a touch browser answers a
         // press outside the focused field by blurring it — so Safari undid this
         // focus a frame later and the field went dead the instant the finger
-        // lifted (trashgolf PLAN 218, measured on device: focus taken inside the
+        // lifted (measured on device: focus taken inside the
         // gesture, then `blur -> BODY` ~34 ms on with the element still in the
         // document). Preventing the default keeps the focus this line is about
         // to set, and costs nothing else: the canvas has no default press

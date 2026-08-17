@@ -75,7 +75,7 @@ export interface LayoutEntry {
    *  deferred container those are the same number by construction: the field is
    *  absent on exactly the frames this one is present. MEASURED on this repo's
    *  own fixture (`ui.painted-rect.test.ts`) and on the consumer's play HUD —
-   *  closing the scorecard leaves 160px of panel frame on the canvas below a
+   *  closing a panel leaves 160px of its frame on the canvas below a
    *  48px `rect`, with `layoutLag` silent throughout.
    *
    *  Occlusion is a question about pixels, so `paintIssues` and
@@ -335,7 +335,8 @@ export function popLayoutParent(): void {
 // the frame-wide `isInOverlayPass()` cannot answer this question at all: it goes
 // true when an immediate `popover` opens and stays true for the rest of the
 // frame, so it would mark everything drawn AFTER the popover as an overlay,
-// which is precisely item 115's fault wearing the exemption meant to excuse it.
+// which is precisely the fault this exists to catch, wearing the exemption
+// meant to excuse it.
 let overlayDepth = 0;
 
 /** Everything recorded until `popLayoutOverlay` belongs to an overlay and is
@@ -652,7 +653,7 @@ function inSubtree(tree: readonly LayoutEntry[], a: number, b: number): boolean 
  *  container that placed it, which catches a box too small for its contents and
  *  nothing else; two rects that never shared a parent can sit straight on top of
  *  each other with `layoutIssues` and `layoutLag` clean the whole time. They did,
- *  twice — a party table painted through an open popover, and a HUD panel and a
+ *  twice — a table painted through an open popover, and a HUD panel and a
  *  status column whose z-order could only be settled by eye.
  *
  *  What is reported: a pair whose visible rects overlap, where the LATER-painted

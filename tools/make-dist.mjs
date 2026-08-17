@@ -15,7 +15,7 @@
  * CONTENTS of build/ at the branch root and rewrite `exports` from
  * `./build/ui/index.js` to `./ui/index.js`. Do not: consumers who symlink
  * node_modules/minimotor at a sibling source checkout for local development
- * (trashgolf's scripts/link-minimotor.mjs does exactly this) would then resolve
+ * (a consumer's link script does exactly this) would then resolve
  * a layout that only the installed copy has, and every import would break the
  * moment they linked. Keeping `build/` in the path is what makes the linked
  * checkout and the installed package interchangeable.

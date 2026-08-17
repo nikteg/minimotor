@@ -101,7 +101,7 @@ describe("a click inside an anchored root", () => {
   // screen inside `UI.scaled` — was written and REMOVED. It failed identically
   // with the measure pass switched off, so it was measuring this file's own
   // click plumbing under a transform rather than anything about the kit. The
-  // real version of that case is `join-by-code-check` in the game, which does
+  // real version of that case lives in a consumer's own suite, which does
   // drive a scaled screen properly and which passes.
 
   it("fires, and fires exactly once", () => {

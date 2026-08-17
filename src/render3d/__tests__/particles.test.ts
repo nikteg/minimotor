@@ -123,7 +123,7 @@ describe("emitting", () => {
   });
 
   it("keeps a once-per-cycle burst alight on a perfectly regular timestep", () => {
-    // The shape the Trash Golf tornado is authored in: one particle per cycle,
+    // The shape a slow swirling effect is authored in: one particle per cycle,
     // living exactly as long as the cycle, so the emitter is never empty and
     // never doubled. Stepped at an exact 1/60 the accumulated emission time
     // lands a hair BELOW each 1.5 s boundary, which used to lose the burst on
@@ -528,7 +528,7 @@ describe("the circle emission shape", () => {
   });
 
   it("turns the disc AND every launch direction with shapeRotation", () => {
-    // The bumper impact's ring is authored in XY and laid flat by a quarter
+    // An impact ring is authored in XY and laid flat by a quarter
     // turn about X. Rotating the spawn points without the directions would
     // draw a flat ring whose sparks all climb out of it.
     const emitter = disc(
@@ -590,7 +590,7 @@ describe("the circle emission shape", () => {
   it("gives a stretched card its length from the particle's own velocity", () => {
     // The reason this shape is not decoration. A stretched billboard draws
     // along the velocity with its head on the particle, so on a ring every
-    // card points out of the ring — the bumper impact's spokes. With one
+    // card points out of the ring — an impact's spokes. With one
     // shared direction they would all lie the same way and read as a comb.
     const emitter = disc(
       2,

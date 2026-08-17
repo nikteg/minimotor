@@ -318,7 +318,7 @@ describe("what still falls back to the cache", () => {
     // frame the content grew, the box was still one button tall, so the stack
     // did not move and the new button hung off the bottom of the viewport; the
     // NEXT frame it learned its real height and everything jumped up by a
-    // button. That jump is the one-frame pop item 68 is about.
+    // button. That jump is the one-frame pop this is about.
     //
     // An anchored root now measures its children before placing itself, so the
     // placement is made from the content the frame actually holds.
