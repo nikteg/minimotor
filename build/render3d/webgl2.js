@@ -45,11 +45,16 @@ layout(location = 4) in uvec4 aJoints;
 layout(location = 5) in vec4 aWeights;
 layout(location = 6) in vec2 aUv1;
 layout(location = 7) in vec4 aTangent;
+// The instance transform, one per COPY rather than per vertex. A mat4 attribute
+// occupies four consecutive slots, so this takes 8 through 11. Unbound on an
+// ordinary draw, where uInstanced is false and uModel answers instead.
+layout(location = 8) in mat4 aInstanceModel;
 
 uniform mat4 uViewProj;
 uniform mat4 uModel;
 uniform mat3 uNormalMat;
 uniform bool uHasSkin;
+uniform bool uInstanced;
 uniform mat4 uJointMatrices[${MAX_JOINTS}];
 
 out vec3 vWorldPos;
@@ -74,15 +79,20 @@ void main() {
     localNormal = mat3(skin) * localNormal;
     localTangent = mat3(skin) * localTangent;
   }
-  vec4 world = uModel * localPosition;
+  mat4 model = uInstanced ? aInstanceModel : uModel;
+  vec4 world = model * localPosition;
   vWorldPos = world.xyz;
   vLocalPos = localPosition.xyz;
   // The inverse-transpose, so a non-uniformly scaled mesh still lights right.
-  vNormal = uNormalMat * localNormal;
+  // Uploaded per draw for a single node; DERIVED here for an instanced one,
+  // because sending it too would take three more attribute slots and WebGL2
+  // guarantees only sixteen. It is the same inverse-transpose Mat4.normalMatrix
+  // computes.
+  vNormal = uInstanced ? transpose(inverse(mat3(model))) * localNormal : uNormalMat * localNormal;
   // A tangent is a DIRECTION ALONG the surface, not a normal to it, so it goes
   // through the model matrix rather than the inverse-transpose. w carries the
   // handedness and rides through untouched.
-  vTangent = vec4(mat3(uModel) * localTangent, aTangent.w);
+  vTangent = vec4(mat3(model) * localTangent, aTangent.w);
   vUv = aUv;
   vUv1 = aUv1;
   vColor = aColor;
@@ -669,6 +679,7 @@ export function createWebGL2Renderer(opts = {}) {
     const u = {
         viewProj: gl.getUniformLocation(program, "uViewProj"),
         model: gl.getUniformLocation(program, "uModel"),
+        instanced: gl.getUniformLocation(program, "uInstanced"),
         normalMat: gl.getUniformLocation(program, "uNormalMat"),
         baseColor: gl.getUniformLocation(program, "uBaseColor"),
         textureColor: gl.getUniformLocation(program, "uTextureColor"),
@@ -724,6 +735,7 @@ export function createWebGL2Renderer(opts = {}) {
     /** The frustum this frame, rebuilt once per pass from `viewProj`. */
     const planes = new Float32Array(24);
     const frustumCulling = opts.frustumCulling ?? true;
+    const instancing = opts.instancing ?? true;
     /** DIAGNOSTIC — see `inFrustum`'s `margin`. */
     const cullMargin = opts.cullMargin ?? 0;
     /** The material whose uniforms and TEXTURE BINDINGS are currently loaded, so
@@ -739,6 +751,20 @@ export function createWebGL2Renderer(opts = {}) {
      *  nothing has touched the bindings since it was set. */
     let textureEpoch = 0;
     let lastMaterialEpoch = -1;
+    /** A stable number per material object, for sorting the opaque pass into
+     *  runs. A `WeakMap` so a material that goes out of use goes with it. */
+    const materialOrder = new WeakMap();
+    let materialOrderNext = 0;
+    function materialKey(material) {
+        if (!material)
+            return -1;
+        let key = materialOrder.get(material);
+        if (key === undefined) {
+            key = materialOrderNext++;
+            materialOrder.set(material, key);
+        }
+        return key;
+    }
     /** Whether `uJointMatrices` currently holds a real pose rather than identity.
      *  Starts true so the first draw writes the array — see `drawNode`. */
     let jointsHoldPose = true;
@@ -865,6 +891,8 @@ export function createWebGL2Renderer(opts = {}) {
             indices: mesh.indices.length,
             attributes: attributeMask(mesh),
             indexBytes: mesh.indices.BYTES_PER_ELEMENT,
+            instances: null,
+            instanceCapacity: 0,
         };
         meshes.set(mesh, gpu);
         return gpu;
@@ -915,6 +943,8 @@ export function createWebGL2Renderer(opts = {}) {
         for (const buffer of gpu.buffers)
             gl.deleteBuffer(buffer);
         gl.deleteBuffer(gpu.indexBuffer);
+        if (gpu.instances)
+            gl.deleteBuffer(gpu.instances);
     }
     function uploadTexture(source, pixelated, version, repeat) {
         const cached = textures.get(source);
@@ -1065,6 +1095,84 @@ export function createWebGL2Renderer(opts = {}) {
             gl.enable(gl.CULL_FACE);
         lastMaterial = material;
         lastMaterialEpoch = textureEpoch;
+    }
+    /** Scratch for the instance transforms, grown to the largest batch seen. */
+    let instanceData = new Float32Array(0);
+    /** The opaque pass, drawing runs of one mesh AND one material as a single
+     *  instanced call.
+     *
+     *  **What is left to save.** The material run already removed the expensive
+     *  part of a draw — the twenty-odd uniform writes — so what remains per node is
+     *  the model matrix, the normal matrix and the call itself. Instancing folds a
+     *  run of those into one buffer upload and one call, and a level repeats its
+     *  geometry heavily, so the runs are long where it matters.
+     *
+     *  **Only where it is free of consequence.** A skinned node keeps its own
+     *  draw: the pose is a uniform array, so two copies in one call would wear the
+     *  same skeleton. A run of one is drawn the ordinary way rather than as a batch
+     *  of one, which would pay an upload to save nothing. The frame is unchanged —
+     *  this is how the same geometry is SUBMITTED, not what is drawn. */
+    function drawOpaque(scene, order) {
+        let at = 0;
+        while (at < order.length) {
+            const first = scene.nodes[order[at]];
+            const material = first.material ?? {};
+            const mesh = first.mesh;
+            let end = at + 1;
+            if (instancing && mesh && !first.skin) {
+                while (end < order.length) {
+                    const next = scene.nodes[order[end]];
+                    if (next.mesh !== mesh || (next.material ?? {}) !== material || next.skin)
+                        break;
+                    end++;
+                }
+            }
+            if (end - at > 1 && mesh)
+                drawInstanced(scene, order, at, end, mesh, material);
+            else
+                for (let i = at; i < end; i++)
+                    drawNode(scene.nodes[order[i]], material);
+            at = end;
+        }
+    }
+    function drawInstanced(scene, order, from, to, mesh, material) {
+        const count = to - from;
+        const gpu = uploadMesh(mesh);
+        if (instanceData.length < count * 16)
+            instanceData = new Float32Array(count * 16);
+        for (let i = 0; i < count; i++) {
+            instanceData.set(scene.nodes[order[from + i]].world, i * 16);
+        }
+        // The VAO first, for `refillMesh`'s reason: the attribute pointers set below
+        // are VAO state and must land on this mesh's own.
+        gl.bindVertexArray(gpu.vao);
+        if (!gpu.instances) {
+            const buffer = gl.createBuffer();
+            if (!buffer)
+                throw new Error("WebGL2: could not create an instance buffer.");
+            gpu.instances = buffer;
+        }
+        gl.bindBuffer(gl.ARRAY_BUFFER, gpu.instances);
+        if (gpu.instanceCapacity < count) {
+            gl.bufferData(gl.ARRAY_BUFFER, count * 16 * 4, gl.DYNAMIC_DRAW);
+            gpu.instanceCapacity = count;
+            // A mat4 attribute is four consecutive vec4 slots, each advancing once per
+            // INSTANCE rather than once per vertex — that divisor is the mechanism.
+            for (let slot = 0; slot < 4; slot++) {
+                const location = 8 + slot;
+                gl.enableVertexAttribArray(location);
+                gl.vertexAttribPointer(location, 4, gl.FLOAT, false, 64, slot * 16);
+                gl.vertexAttribDivisor(location, 1);
+            }
+        }
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, instanceData, 0, count * 16);
+        setMaterial(material);
+        gl.uniform1i(u.instanced, 1);
+        gl.uniform1i(u.hasSkin, 0);
+        gl.drawElementsInstanced(mesh.topology === "lines" ? gl.LINES : gl.TRIANGLES, gpu.count, gpu.type, 0, count);
+        gl.uniform1i(u.instanced, 0);
+        stats.drawCalls++;
+        stats.triangles += triangleCount(mesh) * count;
     }
     function drawNode(node, material) {
         if (!node.mesh || !node.world)
@@ -1271,14 +1379,22 @@ export function createWebGL2Renderer(opts = {}) {
                     blended.push({ index: i, depth: dx * dx + dy * dy + dz * dz });
                 }
                 else {
+                    // Keyed HERE rather than in the comparator, so the numbers follow
+                    // scene order and a stable sort leaves a scene with no repeats alone.
+                    materialKey(n.material);
                     opaque.push(i);
                 }
             });
             gl.disable(gl.BLEND);
             gl.depthMask(true);
             lastMaterial = null;
-            for (const i of opaque)
-                drawNode(scene.nodes[i], scene.nodes[i].material ?? {});
+            // Sorted by material so nodes sharing one arrive as a run — which is what
+            // both the material cache and the instanced batch below consume. Opaque
+            // draws are order-independent under the depth test, so this is
+            // pixel-identical; the keys are handed out as the scene is gathered and
+            // the sort is stable, so a scene with no repeats keeps its authored order.
+            opaque.sort((a, b) => materialKey(scene.nodes[a].material) - materialKey(scene.nodes[b].material));
+            drawOpaque(scene, opaque);
             if (blended.length > 0) {
                 blended.sort((a, b) => b.depth - a.depth); // farthest first
                 lastMaterial = null;

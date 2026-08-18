@@ -28,6 +28,10 @@ export interface WebGL2RendererOptions {
      *  solved: it would be tested against a stale matrix. Nothing in the engine
      *  does that, but a consumer that does has this switch. */
     frustumCulling?: boolean;
+    /** Draw a run of nodes sharing one mesh AND one material as a single
+     *  instanced call. Default ON. Needs the loader to share both, which it does.
+     *  Skinned nodes are never batched — the pose is a uniform. */
+    instancing?: boolean;
     /** DIAGNOSTIC ONLY: world units added to every culled box before testing. A
      *  margin that fixes the picture means the arithmetic is slightly tight; a
      *  margin that does not means the box is in the wrong PLACE. */

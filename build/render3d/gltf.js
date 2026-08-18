@@ -62,6 +62,23 @@ export async function instantiateGltf(asset) {
      *  pose over shared geometry, and one rewritten every frame is one the app
      *  built rather than one out of a file. */
     const meshCache = new Map();
+    /** One `Material` per glTF material index, for the same reason as the mesh
+     *  cache and with one more condition attached: a renderer batching draws by
+     *  identity needs BOTH to be shared before it can group anything.
+     *
+     *  A consumer that mutates a material — a per-area repaint, a palette swap —
+     *  must copy it first, because a write now reaches every node that shares it.
+     *  That is a real obligation and it is the price of the batching. */
+    const materialCache = new Map();
+    const sharedMaterialFor = (index) => {
+        const key = index ?? -1;
+        let found = materialCache.get(key);
+        if (!found) {
+            found = materialFor(document, images, index);
+            materialCache.set(key, found);
+        }
+        return found;
+    };
     const meshFor = (meshIndex, primitiveIndex, primitive) => {
         const key = `${meshIndex}:${primitiveIndex}`;
         let found = meshCache.get(key);
@@ -102,7 +119,7 @@ export async function instantiateGltf(asset) {
                 name: `${source.name ?? originalIndex}:primitive-${primitiveIndex}`,
                 parent: pivot,
                 mesh: meshData,
-                material: materialFor(document, images, primitive.material),
+                material: sharedMaterialFor(primitive.material),
             })));
         }
         visualNodes.set(originalIndex, visuals.length > 0 ? visuals : [pivot]);
