@@ -44,7 +44,6 @@ import {
   settleActive,
 } from "./scene.js";
 import { triangleCount, vertexCount } from "./mesh.js";
-import { frustumPlanes, inFrustum, meshBounds, type Frustum } from "./cull.js";
 import type { Camera3D } from "./camera.js";
 import type { MeshData } from "./mesh.js";
 import type { Material, Node3D, Scene3D } from "./scene.js";
@@ -657,55 +656,7 @@ interface GpuMesh {
 }
 
 /** How to build a WebGPU renderer. */
-/** One full-screen triangle that copies the level above, which is the whole of
- *  a mip chain builder on this backend.
- *
- *  A triangle rather than a quad: three vertices with no buffer at all, their
- *  positions built from the vertex index, covering the target with one
- *  primitive and no seam down a diagonal. The filtering is the SAMPLER's — the
- *  bilinear read of the larger level is what averages four texels into one. */
-const MIP_BLIT_WGSL = /* wgsl */ `
-struct VsOut {
-  @builtin(position) pos: vec4f,
-  @location(0) uv: vec2f,
-};
-
-@vertex fn vs(@builtin(vertex_index) index: u32) -> VsOut {
-  // (-1,-1), (3,-1), (-1,3): a triangle whose inscribed quad is the viewport.
-  let x = f32(i32(index) / 1 % 2) * 4.0 - 1.0;
-  let y = f32(i32(index) / 2) * 4.0 - 1.0;
-  var out: VsOut;
-  out.pos = vec4f(x, y, 0.0, 1.0);
-  // v = 0 at the TOP, as everywhere in this engine.
-  out.uv = vec2f((x + 1.0) * 0.5, 1.0 - (y + 1.0) * 0.5);
-  return out;
-}
-
-@group(0) @binding(0) var samp: sampler;
-@group(0) @binding(1) var src: texture_2d<f32>;
-
-@fragment fn fs(in: VsOut) -> @location(0) vec4f {
-  return textureSample(src, samp, in.uv);
-}
-`;
-
 export interface WebGPURendererOptions {
-  /** Build a mip chain for every smooth texture and sample it trilinearly.
-   *
-   *  The WebGL2 backend's option, honoured here so the two draw the same frame
-   *  — which is a rule this engine holds itself to rather than a nicety. WebGPU
-   *  has no `generateMipmap`, so the chain is produced the way WebGPU expects:
-   *  a render pass per level, each sampling the level above it. That is why the
-   *  textures are created with `RENDER_ATTACHMENT` usage.
-   *
-   *  Off by default, because it changes the picture: a minified texture stops
-   *  sampling full-resolution texels and starts sampling a filtered average,
-   *  which removes shimmer and softens distance. `pixelated` textures are
-   *  exempt — NEAREST is a request not to be filtered. */
-  mipmaps?: boolean;
-  /** See the WebGL2 backend: off by default until the reports of vanishing
-   *  geometry are understood. */
-  frustumCulling?: boolean;
   canvas?: HTMLCanvasElement;
   width?: number;
   height?: number;
@@ -974,10 +925,6 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       found = device.createSampler({
         magFilter: filter,
         minFilter: filter,
-        // Trilinear only where a chain exists to read. A sampler asking to
-        // blend levels on a texture with one level reads that one level, so
-        // this is safe for every texture and not only the mipped ones.
-        ...(mipmaps && !pixelated ? { mipmapFilter: "linear" as const } : {}),
         addressModeU: address,
         addressModeV: address,
       });
@@ -1014,14 +961,8 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
   const textureGroups = new WeakMap<object, Map<string, GPUBindGroup>>();
   const textures = new WeakMap<
     object,
-    { texture: GPUTexture; version: number; width: number; height: number; mipped: boolean }
+    { texture: GPUTexture; version: number; width: number; height: number }
   >();
-  /** Sources that have been re-uploaded at least once — a canvas the app is
-   *  repainting rather than an image it loaded. A chain is not rebuilt for one:
-   *  see `textureFor`, and the WebGL2 backend, which latches the same way. */
-  const live = new WeakSet<object>();
-  const mipmaps = opts.mipmaps ?? false;
-  const frustumCulling = opts.frustumCulling ?? false;
 
   let width = opts.width ?? 300;
   let height = opts.height ?? 150;
@@ -1125,22 +1066,11 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
   /** Upload one image and return its GPU texture, reusing the existing one
    *  when only the pixels changed — a resize has to rebuild, since a
    *  GPUTexture's size is fixed at creation. */
-  function textureFor(source: TexImageSource, version: number, pixelated = false): GPUTexture {
+  function textureFor(source: TexImageSource, version: number): GPUTexture {
     const size = sourceSize(source);
     const cached = textures.get(source as object);
     if (cached && cached.width === size.width && cached.height === size.height) {
       if (cached.version !== version) {
-        // **A source that changes is a live surface, and a live surface loses
-        // its chain.** Regenerating one is a render pass per level per upload —
-        // for a canvas repainted as the app runs, that is per frame — and buys
-        // nothing on a texture being redrawn rather than receding. Dropped once
-        // and rebuilt flat, which is the same latch the WebGL2 backend keeps.
-        if (cached.mipped) {
-          live.add(source as object);
-          cached.texture.destroy();
-          textures.delete(source as object);
-          return textureFor(source, version, pixelated);
-        }
         device.queue.copyExternalImageToTexture(
           { source },
           { texture: cached.texture, premultipliedAlpha: false },
@@ -1151,13 +1081,9 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       return cached.texture;
     }
     cached?.texture.destroy();
-    const mipped = mipmaps && !pixelated && !live.has(source as object);
-    // `1 + floor(log2(longest side))`: levels down to a single texel.
-    const mipLevelCount = mipped ? 1 + Math.floor(Math.log2(Math.max(size.width, size.height))) : 1;
     const texture = device.createTexture({
       size: [size.width, size.height],
       format: "rgba8unorm",
-      mipLevelCount,
       usage:
         GPUTextureUsage.TEXTURE_BINDING |
         GPUTextureUsage.COPY_DST |
@@ -1167,75 +1093,8 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       size.width,
       size.height,
     ]);
-    if (mipLevelCount > 1) buildMipChain(texture, mipLevelCount);
-    textures.set(source as object, {
-      texture,
-      version,
-      width: size.width,
-      height: size.height,
-      mipped: mipLevelCount > 1,
-    });
+    textures.set(source as object, { texture, version, width: size.width, height: size.height });
     return texture;
-  }
-
-  /** Fill levels 1..n by rendering each from the one above it.
-   *
-   * WebGPU has no `generateMipmap`, and this is the shape the API expects
-   * instead: a pipeline that draws one full-screen triangle sampling the
-   * previous level, run once per level with the destination level as the
-   * colour attachment. Built lazily and cached, so a scene with no mipped
-   * texture never compiles it. */
-  function buildMipChain(texture: GPUTexture, levels: number): void {
-    const pipeline = mipPipeline();
-    const encoder = device.createCommandEncoder();
-    for (let level = 1; level < levels; level++) {
-      const pass = encoder.beginRenderPass({
-        colorAttachments: [
-          {
-            view: texture.createView({ baseMipLevel: level, mipLevelCount: 1 }),
-            loadOp: "clear",
-            storeOp: "store",
-            clearValue: { r: 0, g: 0, b: 0, a: 0 },
-          },
-        ],
-      });
-      pass.setPipeline(pipeline);
-      pass.setBindGroup(
-        0,
-        device.createBindGroup({
-          layout: pipeline.getBindGroupLayout(0),
-          entries: [
-            { binding: 0, resource: mipSampler() },
-            {
-              binding: 1,
-              resource: texture.createView({ baseMipLevel: level - 1, mipLevelCount: 1 }),
-            },
-          ],
-        }),
-      );
-      pass.draw(3);
-      pass.end();
-    }
-    device.queue.submit([encoder.finish()]);
-  }
-
-  let mipPipelineCache: GPURenderPipeline | null = null;
-  function mipPipeline(): GPURenderPipeline {
-    if (mipPipelineCache) return mipPipelineCache;
-    const module = device.createShaderModule({ code: MIP_BLIT_WGSL });
-    mipPipelineCache = device.createRenderPipeline({
-      layout: "auto",
-      vertex: { module, entryPoint: "vs" },
-      fragment: { module, entryPoint: "fs", targets: [{ format: "rgba8unorm" }] },
-      primitive: { topology: "triangle-list" },
-    });
-    return mipPipelineCache;
-  }
-
-  let mipSamplerCache: GPUSampler | null = null;
-  function mipSampler(): GPUSampler {
-    mipSamplerCache ??= device.createSampler({ magFilter: "linear", minFilter: "linear" });
-    return mipSamplerCache;
   }
 
   /** One bind group per (base texture, normal map, detail map, detail mask,
@@ -1254,12 +1113,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       byCombination = new Map();
       textureGroups.set(baseKey, byCombination);
     }
-    // The base map follows the material's own filter request; the other three
-    // are smooth by nature — a normal map is a vector field, a detail map and
-    // its mask are washes — so they take a chain whatever the base asked for.
-    const baseTexture = base
-      ? textureFor(base, material.textureVersion ?? 0, material.pixelated === true)
-      : blankTexture;
+    const baseTexture = base ? textureFor(base, material.textureVersion ?? 0) : blankTexture;
     // A normal map is a vector field, so it is always sampled smoothly.
     const normalTexture = normal
       ? textureFor(normal, material.normalMapVersion ?? 0)
@@ -1288,10 +1142,6 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
   }
 
   const viewProj = Mat4.create();
-  /** The frustum this frame. Built before the gather loop rather than beside
-   *  the uniform write below, because the gather is what needs it. */
-  const cullProj = Mat4.create();
-  const planes: Frustum = new Float32Array(24);
   const normalMat = new Float32Array(9);
   const eye: Vec3 = { x: 0, y: 0, z: 0 };
   const frameData = new Float32Array(FRAME_BYTES / 4);
@@ -1507,20 +1357,9 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       occluded.length = 0;
       overlayOccluders.length = 0;
       cameraPosition(camera, eye);
-      // `true` for WebGPU's 0..1 depth range, which is the same flag the
-      // projection below is built with and which decides the near plane.
-      viewProjection(camera, width / height, true, cullProj);
-      frustumPlanes(cullProj, planes, true);
       scene.nodes.forEach((n, i) => {
         if (!n.mesh || !n.world) return;
         if (!isVisible(scene, i)) {
-          stats.culled++;
-          return;
-        }
-        // **And whether the camera can see it at all** — see `cull.ts`. Without
-        // this every mesh in the level is drawn every frame, so cost follows
-        // the size of the WORLD rather than the size of the view.
-        if (frustumCulling && !inFrustum(planes, meshBounds(n.mesh), n.world)) {
           stats.culled++;
           return;
         }
