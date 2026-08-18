@@ -506,10 +506,23 @@ export function createEmitter(opts) {
             uvs[t + 1] = v;
         }
     }
-    function writeMesh(slot, index) {
+    function writeMesh(slot, index, view) {
         if (!source)
             return;
         scaleAt(slot);
+        // The yaw that puts the model's front on the viewer, in place of the
+        // authored one — see `faceCamera`. `toView` is this frame's particle-to-eye
+        // vector, and `atan2(x, z)` is the turn about world up that aims +Z down
+        // it, which is the same convention the rest of this engine reads a heading
+        // in.
+        let yaw = rotationY[slot];
+        if (opts.faceCamera) {
+            const toEyeX = view.x - px[slot];
+            const toEyeZ = view.z - pz[slot];
+            if (Math.abs(toEyeX) > 1e-6 || Math.abs(toEyeZ) > 1e-6) {
+                yaw = Math.atan2(toEyeX, toEyeZ);
+            }
+        }
         const meshX = scaleX[slot] * sizeScale.x;
         const meshY = scaleY[slot] * sizeScale.y;
         const meshZ = scaleZ[slot] * sizeScale.z;
@@ -528,7 +541,7 @@ export function createEmitter(opts) {
         const base = index * verticesPerParticle;
         for (let vertex = 0; vertex < verticesPerParticle; vertex++) {
             const sourcePosition = vertex * 3;
-            rotate(source.positions[sourcePosition] * meshX, source.positions[sourcePosition + 1] * meshY, source.positions[sourcePosition + 2] * meshZ, rotationX[slot], rotationY[slot], rotationZ[slot], turned);
+            rotate(source.positions[sourcePosition] * meshX, source.positions[sourcePosition + 1] * meshY, source.positions[sourcePosition + 2] * meshZ, rotationX[slot], yaw, rotationZ[slot], turned);
             const target = (base + vertex) * 3;
             positions[target] = px[slot] + turned.x;
             positions[target + 1] = py[slot] + turned.y;
@@ -613,7 +626,7 @@ export function createEmitter(opts) {
                 if (Number.isNaN(age[i]))
                     continue;
                 if (source)
-                    writeMesh(i, written);
+                    writeMesh(i, written, view);
                 else
                     writeQuad(i, written, view);
                 written++;

@@ -190,6 +190,17 @@ export interface EmitterOptions {
     /** Geometry copied for every particle in `"mesh"` mode. The source stays
      * untouched; the emitter owns one fixed-capacity dynamic batch. */
     mesh?: MeshData;
+    /** Turn an authored MESH to face the camera, about world up.
+     *
+     *  For `mode: "mesh"` only, and it REPLACES the birth yaw rather than adding
+     *  to it: a mesh that faces the viewer has no use for an authored heading,
+     *  and composing the two would make it face the camera from a random offset.
+     *  Pitch and roll are left alone, so a model authored leaning keeps its lean.
+     *
+     *  A yaw and not a full look-at, deliberately. These are objects standing in
+     *  a world with a ground plane — a question mark, a heart — and tipping one
+     *  back to square up with a high camera reads as the model falling over. */
+    faceCamera?: boolean;
     /** Initial Euler rotation, sampled at birth, in radians.
      *
      *  All three axes turn an authored MESH. For a billboard only `z` means
