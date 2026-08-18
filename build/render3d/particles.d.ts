@@ -190,7 +190,12 @@ export interface EmitterOptions {
     /** Geometry copied for every particle in `"mesh"` mode. The source stays
      * untouched; the emitter owns one fixed-capacity dynamic batch. */
     mesh?: MeshData;
-    /** Initial authored-mesh Euler rotation, sampled at birth, in radians. */
+    /** Initial Euler rotation, sampled at birth, in radians.
+     *
+     *  All three axes turn an authored MESH. For a billboard only `z` means
+     *  anything, and it is the roll about the view axis — the same thing the
+     *  engines that ship this call a particle's rotation, since a camera-facing
+     *  quad has no other axis to turn about that shows. */
     rotation?: {
         x?: Range;
         y?: Range;
