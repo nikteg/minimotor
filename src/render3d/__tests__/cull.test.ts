@@ -232,11 +232,19 @@ describe("what instantiateGltf shares between nodes", () => {
     buffers: [{ byteLength: 42 }],
   };
 
-  it("hands both nodes the SAME mesh, so the GPU uploads it once", async () => {
-    // MEASURED on a consumer's level before this: 416 drawable nodes carrying
-    // 412 distinct meshes, where the file holds 114 — so every vertex buffer in
-    // the level was uploaded three or four times over, and no renderer could
-    // tell the copies apart to batch them.
+  it("gives each node its OWN mesh, and that is a RETREAT rather than a design", async () => {
+    // Sharing them is the obviously right thing, and it is measurably wasteful
+    // not to: 416 drawable nodes on a consumer's level carried 412 distinct
+    // meshes where the file holds 114, so nearly every vertex buffer was
+    // uploaded three or four times over.
+    //
+    // It was tried, and props that shared a mesh rendered black and collapsed —
+    // MEASURED on screen, by turning the cache off and on with nothing else
+    // changed. The cause was never found. So this asserts the wasteful
+    // behaviour ON PURPOSE: some consumer treats a loaded mesh as its own, and
+    // until it is known which one and why, handing two nodes the same object is
+    // a change whose blast radius nobody can state. Whoever picks this up
+    // should start by finding that consumer, not by re-adding the cache.
     const buffer = new ArrayBuffer(42);
     const { scene } = await instantiateGltf({
       document: twoNodesOneMesh as never,
@@ -244,7 +252,7 @@ describe("what instantiateGltf shares between nodes", () => {
     });
     const drawn = scene.nodes.filter((n) => n.mesh);
     expect(drawn).toHaveLength(2);
-    expect(drawn[0]!.mesh).toBe(drawn[1]!.mesh);
+    expect(drawn[0]!.mesh).not.toBe(drawn[1]!.mesh);
   });
 
   it("gives each node its OWN material, which is what a mutating consumer needs", async () => {
