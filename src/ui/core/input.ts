@@ -552,6 +552,29 @@ export function clearPointerCache(): void {
  *  against everything that CAN change mid-frame: the active transform/clip
  *  (reference identity — push/pop swaps the object), the edge-suppression flag
  *  and the overlay gate. Cleared each frame-end. */
+/** True when THIS pass has no claim on the pointer: a measure pass, or the
+ *  background pass of a frame whose overlay owns the input.
+ *
+ *  `uiPointer` hands both of those a `DEAD_POINTER`, and for hit-testing that
+ *  is exactly right — nothing is hovered, nothing is pressed. It is wrong for
+ *  any widget holding a gesture ACROSS frames, because "nothing is pressed"
+ *  and "the finger let go" are the same reading, and only one of them is true.
+ *
+ *  MEASURED, and this is what the predicate is for: a scroll region inside a
+ *  modal is evaluated TWICE a frame — once live in the overlay pass, once dead
+ *  in the background pass — so a body-drag registered by the live pass was torn
+ *  down by the dead one before the next frame could advance it. Every frame.
+ *  The wheel hid it completely, since a wheel needs no state to survive a
+ *  frame, so this only ever showed up on touch, where the wheel is not there to
+ *  paper over it.
+ *
+ *  Deliberately NOT the same question as `uiPointer() === DEAD_POINTER`: that
+ *  is also what a pointer CLIPPED out of the current region returns, and a
+ *  finger leaving a region is a real event a widget is entitled to act on. */
+export function pointerPassInert(): boolean {
+  return isMeasuring() || (isOverlayActive() && !isInOverlayPass());
+}
+
 export function uiPointer() {
   ensureWired(); // per-frame housekeeping keeps overlay/tooltip state honest
   // **A measure pass sees no pointer at all**, and returns BEFORE the memo so

@@ -20,6 +20,7 @@ import {
   onFrameEnd,
   claimPointerGesture,
   pointerGestureOwned,
+  pointerPassInert,
   rawPointer,
   registerFocusable,
   uiSlot,
@@ -250,6 +251,12 @@ export function dragScroll(
   max: number,
 ): number {
   if (max <= 0) return offset;
+  // **A pass that does not own the pointer may not end a gesture.** The
+  // background pass of a frame whose overlay owns input — and a measure pass —
+  // are both handed a `DEAD_POINTER`, whose `down` is false; without this the
+  // release branch below reads that as the finger lifting and drops a drag that
+  // is still very much in progress. See `pointerPassInert`.
+  if (pointerPassInert()) return offset;
   ensureWired(); // frame-end hooks (edge/claim/handoff clearing) must run
   ensureListHooks();
   const bs = bodyScrollSlot();

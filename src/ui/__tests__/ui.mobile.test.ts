@@ -12,6 +12,7 @@ import {
   drawFloatText,
   floatText,
   lastRect,
+  modal,
   popover,
   slider,
   textInput,
@@ -196,6 +197,36 @@ describe("momentum scrolling", () => {
     tick();
   });
 
+  it("a swipe inside a MODAL scrolls — the dead background pass must not end it", () => {
+    // **The bug this pins.** A scroll region inside an overlay is evaluated
+    // twice a frame: live in the overlay pass, and dead in the background pass
+    // behind it. `uiPointer` hands the dead pass a `DEAD_POINTER`, whose `down`
+    // is false — and the release branch read that as the finger lifting, so a
+    // drag registered by the live pass was destroyed before the next frame
+    // could advance it. Every frame, so the region never scrolled by a pixel.
+    //
+    // It was invisible on the desktop because a wheel carries no state across
+    // frames and so was never affected; it only showed up on touch, where the
+    // wheel is not there to hide it. Reported from a phone as "overflow doesn't
+    // scroll in settings".
+    let offset = 0;
+    const { canvas } = build(() => {
+      modal({ w: 300, title: "SETTINGS" }, () => {
+        offset = dragScroll("in-modal", { x: 0, y: 0, w: 300, h: 400 }, "y", offset, 1000);
+      });
+    });
+    tick(); // prime
+    downAt(canvas, 150, 300);
+    tick();
+    for (const y of [280, 260, 240]) {
+      moveTo(150, y);
+      tick();
+    }
+    expect(offset).toBeGreaterThan(0);
+    upAt(150, 240);
+    tick();
+  });
+
   it("a press inside the region catches (stops) a running fling", () => {
     let offset = 0;
     const { canvas } = build(() => {
@@ -324,6 +355,40 @@ describe("mobile text input", () => {
     expect(document.activeElement).toBe(input);
     upAt(60, 36);
     tick();
+  });
+
+  it("never routes focus through the CANVAS when the press lands on a field", () => {
+    // The test above stops at the gesture; the bug was one frame later. The
+    // widget's own press path calls `focusFromPointer`, which focused the
+    // canvas — blurring the editor the press listener had just opened — and
+    // then focused the input straight back.
+    //
+    // **The assertion is the canvas focus call, not the resulting
+    // `activeElement`.** jsdom honours both calls, so the round trip ends with
+    // the input focused there and the end state cannot tell the two versions
+    // apart. iOS is what differs: the re-focus runs from `requestAnimationFrame`
+    // with no user gesture in scope and is refused, so the keyboard came up on
+    // touch and went away on the next frame. What is portable — and what
+    // actually caused it — is that the canvas must not be focused at all while
+    // a native widget holds the caret.
+    let value = "";
+    const { canvas } = build(() => {
+      const r = textInput({ id: "chat", value, x: 20, y: 20, w: 180, h: 32 });
+      value = r.value;
+    });
+    tick();
+    tick();
+    const focusCanvas = vi.spyOn(canvas, "focus");
+    downAt(canvas, 60, 36);
+    const input = document.querySelector("input");
+    expect(document.activeElement).toBe(input);
+    tick(); // the frame that handles the press in immediate mode
+    expect(focusCanvas).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(input);
+    upAt(60, 36);
+    tick();
+    expect(focusCanvas).not.toHaveBeenCalled();
+    focusCanvas.mockRestore();
   });
 
   it("a pointerdown outside every field opens nothing", () => {
