@@ -1062,3 +1062,161 @@ describe("sizeOverTime", () => {
     expect(highY - lowY).toBeCloseTo(4, 5);
   });
 });
+
+describe("colorOverTime", () => {
+  /** The first particle's vertex colour. Uniform across the four corners, so
+   *  one corner is the whole answer — and the test that says so is below. */
+  function rgba(emitter: { mesh: { colors?: Float32Array } }, corner = 0): number[] {
+    const c = emitter.mesh.colors!;
+    return [c[corner * 4], c[corner * 4 + 1], c[corner * 4 + 2], c[corner * 4 + 3]];
+  }
+
+  function fading(curve?: (t: number) => number) {
+    return createEmitter({
+      rate: 0,
+      lifetime: 1,
+      capacity: 1,
+      speed: 0,
+      size: { x: 2, y: 2 },
+      bursts: [{ time: 0, count: 1 }],
+      duration: 10,
+      loop: false,
+      color: [1, 0.5, 0.25, 1],
+      ...(curve
+        ? {
+            colorOverTime: (t: number, out: { r: number; g: number; b: number; a: number }) => {
+              out.r = curve(t);
+              out.g = curve(t);
+              out.b = curve(t);
+              out.a = curve(t);
+            },
+          }
+        : {}),
+      random: middle,
+    });
+  }
+
+  it("scales the authored colour rather than replacing it", () => {
+    // Half of an authored (1, 0.5, 0.25, 1) is (0.5, 0.25, 0.125, 0.5), so the
+    // curve is a MULTIPLIER over `color` — the shape every authoring tool stores
+    // a colour-over-lifetime in, and `sizeOverTime`'s bargain exactly.
+    const emitter = fading(() => 0.5);
+    emitter.update(1 / 60, VIEW);
+    expect(rgba(emitter)).toEqual([0.5, 0.25, 0.125, 0.5]);
+  });
+
+  it("is sampled again every frame, not once at birth", () => {
+    // The whole difference between this and `color`: an alpha fade sampled at
+    // birth would hold its first frame's opacity for the particle's whole life,
+    // which is the ring of hard beads this was written for.
+    const emitter = fading((t) => 1 - t);
+    emitter.update(0.1, VIEW);
+    // The burst fires on the first update, after the ageing pass, so that frame
+    // is age 0 and each later one adds 0.1 of the 1 s life.
+    const early = rgba(emitter)[3]!;
+    for (let step = 0; step < 7; step++) emitter.update(0.1, VIEW);
+    const late = rgba(emitter)[3]!;
+    expect(early).toBeCloseTo(1, 5);
+    expect(late).toBeCloseTo(0.3, 5);
+  });
+
+  it("leaves the colour alone when nothing is passed", () => {
+    const emitter = fading();
+    emitter.update(1 / 60, VIEW);
+    expect(rgba(emitter)).toEqual([1, 0.5, 0.25, 1]);
+    for (let step = 0; step < 10; step++) emitter.update(1 / 60, VIEW);
+    expect(rgba(emitter)).toEqual([1, 0.5, 0.25, 1]);
+  });
+
+  it("scales each channel on its own, on every corner of the quad", () => {
+    // Alpha is the channel a fade usually lives in, and an authored gradient can
+    // cool a spark's colour as well — so one curve per channel rather than one
+    // opacity. All four corners carry it: a colour that varied per corner would
+    // draw a gradient across the sprite.
+    const emitter = createEmitter({
+      rate: 0,
+      lifetime: 1,
+      capacity: 1,
+      speed: 0,
+      size: { x: 2, y: 2 },
+      bursts: [{ time: 0, count: 1 }],
+      duration: 10,
+      loop: false,
+      colorOverTime: (_t, out) => {
+        out.r = 1;
+        out.g = 0.5;
+        out.b = 0.25;
+        out.a = 0.125;
+      },
+      random: middle,
+    });
+    emitter.update(1 / 60, VIEW);
+    for (let corner = 0; corner < 4; corner++) {
+      expect(rgba(emitter, corner)).toEqual([1, 0.5, 0.25, 0.125]);
+    }
+  });
+
+  it("follows the particle into its place in the batch as others die", () => {
+    // Colours are written at the COMPACTED index, the same one the geometry goes
+    // to, and the write loop skips dead slots. A curve indexed by slot instead
+    // would hand a live particle a dead one's colour the moment the batch
+    // shuffled — which is a flicker, not an offset.
+    const emitter = createEmitter({
+      rate: 0,
+      lifetime: [0.05, 1],
+      capacity: 4,
+      speed: 0,
+      size: { x: 1, y: 1 },
+      bursts: [{ time: 0, count: 2 }],
+      duration: 10,
+      loop: false,
+      // Full alpha for the first tenth of a life, then nothing. Whoever is left
+      // alive is young enough to be bright, so a stale colour shows as a zero.
+      colorOverTime: (t, out) => {
+        out.r = 1;
+        out.g = 1;
+        out.b = 1;
+        out.a = t < 0.1 ? 1 : 0;
+      },
+      random: () => 0.999,
+    });
+    emitter.update(0.02, VIEW);
+    expect(emitter.alive).toBe(2);
+    expect(rgba(emitter)[3]).toBe(1);
+    expect(rgba(emitter, 4)[3]).toBe(1);
+  });
+
+  it("multiplies an authored mesh's own vertex colours", () => {
+    // A mesh particle's colours are its geometry's, times `color`, times this.
+    // Both writers therefore need it, which is why it is applied in the write
+    // loop rather than inside either one.
+    const mesh = {
+      positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]),
+      colors: new Float32Array([1, 1, 1, 1, 0.5, 0.5, 0.5, 0.5, 1, 1, 1, 1]),
+      indices: new Uint16Array([0, 1, 2]),
+    };
+    const emitter = createEmitter({
+      rate: 0,
+      lifetime: 1,
+      capacity: 1,
+      speed: 0,
+      size: { x: 1, y: 1 },
+      bursts: [{ time: 0, count: 1 }],
+      duration: 10,
+      loop: false,
+      mode: "mesh",
+      mesh,
+      color: [1, 1, 1, 1],
+      colorOverTime: (_t, out) => {
+        out.r = 1;
+        out.g = 1;
+        out.b = 1;
+        out.a = 0.5;
+      },
+      random: middle,
+    });
+    emitter.update(1 / 60, VIEW);
+    expect(rgba(emitter, 0)).toEqual([1, 1, 1, 0.5]);
+    expect(rgba(emitter, 1)).toEqual([0.5, 0.5, 0.5, 0.25]);
+  });
+});
