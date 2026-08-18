@@ -1,6 +1,9 @@
 import type { Renderer3D } from "./renderer.js";
 /** How to build a WebGPU renderer. */
 export interface WebGPURendererOptions {
+    /** Skip drawing nodes the camera cannot see. Default ON — see the WebGL2
+     *  backend, which carries the reasoning and the measurement. */
+    frustumCulling?: boolean;
     canvas?: HTMLCanvasElement;
     width?: number;
     height?: number;

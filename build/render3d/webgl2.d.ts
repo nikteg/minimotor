@@ -11,6 +11,27 @@ export interface WebGL2RendererOptions {
     /** Preserve the default framebuffer after compositing. This is expensive;
      *  it remains enabled by default for compatibility. */
     preserveDrawingBuffer?: boolean;
+    /** Skip drawing nodes the camera cannot see. Default ON.
+     *
+     *  Cost otherwise follows the size of the WORLD rather than the size of the
+     *  view, so a bigger level is slower everywhere, including in the corner the
+     *  player is looking at. MEASURED on a consumer's level: 416 drawable nodes
+     *  down to 91 draws.
+     *
+     *  **It was once blamed for geometry vanishing in plain sight and it was
+     *  innocent** — the culprit was an element-buffer rebind that repointed one
+     *  mesh's indices at another, shipped in the same batch. Verified since by
+     *  sweeping 32 camera angles over a real level and finding no node dropped
+     *  while any of its own vertices were on screen.
+     *
+     *  The one case this cannot see is a node placed AFTER the world matrices are
+     *  solved: it would be tested against a stale matrix. Nothing in the engine
+     *  does that, but a consumer that does has this switch. */
+    frustumCulling?: boolean;
+    /** DIAGNOSTIC ONLY: world units added to every culled box before testing. A
+     *  margin that fixes the picture means the arithmetic is slightly tight; a
+     *  margin that does not means the box is in the wrong PLACE. */
+    cullMargin?: number;
     /** Build a mip chain for every smooth texture and sample it trilinearly.
      *
      *  Off by default, because it CHANGES THE PICTURE: a minified texture stops

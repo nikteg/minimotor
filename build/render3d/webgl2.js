@@ -31,6 +31,7 @@ import { Mat4 } from "../math/mat4.js";
 import { cameraPosition, viewProjection } from "./camera.js";
 import { detailProjectionMode, detailWorldStep, fogUniform, ghostMaterial, glazeParallax, glazeStrength, isVisible, settleActive, } from "./scene.js";
 import { triangleCount, vertexCount } from "./mesh.js";
+import { frustumPlanes, inFrustum, meshBounds } from "./cull.js";
 const MAX_LIGHTS = 4;
 const MAX_JOINTS = 64;
 const VERTEX_SHADER = `#version 300 es
@@ -720,6 +721,11 @@ export function createWebGL2Renderer(opts = {}) {
     let height = opts.height ?? 150;
     let dpr = opts.dpr ?? 1;
     const viewProj = Mat4.create();
+    /** The frustum this frame, rebuilt once per pass from `viewProj`. */
+    const planes = new Float32Array(24);
+    const frustumCulling = opts.frustumCulling ?? true;
+    /** DIAGNOSTIC — see `inFrustum`'s `margin`. */
+    const cullMargin = opts.cullMargin ?? 0;
     /** The material whose uniforms and TEXTURE BINDINGS are currently loaded, so
      *  a run of nodes sharing one material sets them once. Cleared before every
      *  pass — see `setMaterial`. */
@@ -1180,6 +1186,9 @@ export function createWebGL2Renderer(opts = {}) {
             gl.useProgram(program);
             lastMaterial = null;
             viewProjection(camera, width / height, false, viewProj);
+            // AFTER the projection is built, not before: planes off a stale matrix
+            // would cull against last frame's camera.
+            frustumPlanes(viewProj, planes);
             gl.uniformMatrix4fv(u.viewProj, false, viewProj);
             cameraPosition(camera, eye);
             gl.uniform3f(u.cameraPos, eye.x, eye.y, eye.z);
@@ -1230,6 +1239,10 @@ export function createWebGL2Renderer(opts = {}) {
                 if (!n.mesh || !n.world)
                     return;
                 if (!isVisible(scene, i)) {
+                    stats.culled++;
+                    return;
+                }
+                if (frustumCulling && !inFrustum(planes, meshBounds(n.mesh), n.world, cullMargin)) {
                     stats.culled++;
                     return;
                 }
