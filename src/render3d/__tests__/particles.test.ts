@@ -283,7 +283,7 @@ describe("the mesh it writes", () => {
     expect(corners.every(([, , z]) => Math.abs(z) < 1e-6)).toBe(true);
   });
 
-  it("runs a stretched quad's U axis down the trail, head first", () => {
+  it("runs a stretched quad's U axis down the trail, tail first", () => {
     // The orientation is not a free choice. A streak texture is drawn the way
     // a streak reads — left to right along the image — so its frames are wide
     // and short. Stretching down V instead squeezes a 128x16 line's length
@@ -306,15 +306,28 @@ describe("the mesh it writes", () => {
       emitter.mesh.uvs![corner * 2],
       emitter.mesh.uvs![corner * 2 + 1],
     ]);
-    // u increases with the velocity, so on a particle flying straight up the
-    // u = 1 corners are the higher pair. A frame drawn left to right then
-    // points the way the particle is going rather than back down its trail.
-    const leading = corners.filter((_, at) => uvs[at][0] === 1).map(([, y]) => y);
-    const trailing = corners.filter((_, at) => uvs[at][0] === 0).map(([, y]) => y);
-    expect(Math.min(...leading)).toBeGreaterThan(Math.max(...trailing));
+    // **u DECREASES with the velocity, and that is a correction.** This asserted
+    // the opposite — a frame drawn left to right pointing the way the particle
+    // is going — which is the reasonable-sounding reading and is not what the
+    // sprites are drawn for. Reported from play against the only consumer with
+    // a directional stretched sheet: a course fan and the wind power-up both
+    // blew visibly backwards while every heading in their data was correct, and
+    // the stretch axis is the one thing those two share.
+    //
+    // Cocos stretches along the quad's V rather than its U, so its sprites are
+    // authored against a different axis AND a different sense from the one this
+    // mode was first written to. U is still right for the art — a 2x8 sheet's
+    // cells are wide and short, so U is the line's own length — and which end
+    // of U leads is what was wrong.
+    const atU1 = corners.filter((_, at) => uvs[at][0] === 1).map(([, y]) => y);
+    const atU0 = corners.filter((_, at) => uvs[at][0] === 0).map(([, y]) => y);
+    expect(Math.min(...atU0)).toBeGreaterThan(Math.max(...atU1));
     // Across the trail is V, and it is `size.x` wide rather than the length.
     const acrossAtU1 = corners.filter((_, at) => uvs[at][0] === 1).map(([x]) => x);
     expect(Math.max(...acrossAtU1) - Math.min(...acrossAtU1)).toBeCloseTo(2, 4);
+    // The GEOMETRY is untouched by the flip: the head still sits on the
+    // particle and the tail still runs back down the velocity, which the test
+    // below pins. Only which end of the image lands on which end moved.
   });
 
   it("anchors a stretched quad's head on the particle", () => {
