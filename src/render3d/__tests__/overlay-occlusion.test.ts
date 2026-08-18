@@ -429,3 +429,61 @@ describe("refilling a mesh in place", () => {
     expect(calls.filter((c) => c.name === "createBuffer").length).toBeGreaterThan(0);
   });
 });
+
+describe("a material shared by a run of nodes", () => {
+  function uniformWrites(nodes: { mesh: MeshData; material: Material }[]) {
+    const harness = recordingGl();
+    const canvas = document.createElement("canvas");
+    (canvas as unknown as { getContext: () => unknown }).getContext = () => harness.gl;
+    const renderer = createWebGL2Renderer({ canvas });
+    const scene = createScene();
+    for (const n of nodes) addNode(scene, node(n));
+    updateWorldMatrices(scene);
+    renderer.render(scene, createCamera());
+    return harness.calls.filter((c) => c.name === "uniform4f").length;
+  }
+
+  it("sets its uniforms once for the whole run", () => {
+    // A level draws far more nodes than it has materials, so this is 24-40 GL
+    // calls a node.
+    const shared: Material = { color: [1, 0, 0, 1] };
+    const four = uniformWrites([
+      { mesh: GROUND, material: shared },
+      { mesh: BALL, material: shared },
+      { mesh: GUIDE, material: shared },
+      { mesh: LABEL, material: shared },
+    ]);
+    expect(four).toBe(uniformWrites([{ mesh: GROUND, material: shared }]));
+  });
+
+  it("sets them again after a TEXTURE UPLOAD, which is what makes it safe", () => {
+    // **The bug this guard exists for.** `setMaterial` binds textures as well as
+    // writing uniforms, and `uploadTexture` binds on its own account — so a live
+    // surface re-uploading between two draws leaves ITS texture on the unit, and
+    // a run that skipped the rebind drew with the wrong one. On screen: props
+    // black, and only once something was moving enough to repaint that surface,
+    // which is why a still tee looked fine and the shot after it did not.
+    const shared: Material = { color: [1, 0, 0, 1] };
+    const live = document.createElement("canvas");
+    const withUpload: Material = { color: [0, 1, 0, 1], texture: live, textureVersion: 1 };
+    const harness = recordingGl();
+    const canvas = document.createElement("canvas");
+    (canvas as unknown as { getContext: () => unknown }).getContext = () => harness.gl;
+    const renderer = createWebGL2Renderer({ canvas });
+    const scene = createScene();
+    addNode(scene, node({ mesh: GROUND, material: shared }));
+    addNode(scene, node({ mesh: BALL, material: withUpload }));
+    addNode(scene, node({ mesh: GUIDE, material: shared }));
+    updateWorldMatrices(scene);
+    renderer.render(scene, createCamera());
+    const first = harness.calls.length;
+    // The live surface changes, so the next frame re-uploads it mid-pass.
+    withUpload.textureVersion = 2;
+    renderer.render(scene, createCamera());
+    const second = harness.calls.slice(first);
+    // Three materials' worth of writes, not two: the run cannot span the upload.
+    const perMaterial = second.filter((c) => c.name === "uniform4f").length;
+    expect(perMaterial).toBeGreaterThan(0);
+    expect(second.some((c) => c.name === "texImage2D")).toBe(true);
+  });
+});
