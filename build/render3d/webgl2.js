@@ -708,6 +708,9 @@ export function createWebGL2Renderer(opts = {}) {
     let height = opts.height ?? 150;
     let dpr = opts.dpr ?? 1;
     const viewProj = Mat4.create();
+    /** Whether `uJointMatrices` currently holds a real pose rather than identity.
+     *  Starts true so the first draw writes the array — see `drawNode`. */
+    let jointsHoldPose = true;
     const normalMat = new Float32Array(9);
     const eye = { x: 0, y: 0, z: 0 };
     const lightDirs = new Float32Array(MAX_LIGHTS * 3);
@@ -871,7 +874,27 @@ export function createWebGL2Renderer(opts = {}) {
             throw new Error(`WebGL2 supports at most ${MAX_JOINTS} skin joints per node.`);
         }
         gl.uniform1i(u.hasSkin, skin ? 1 : 0);
-        gl.uniformMatrix4fv(u.jointMatrices, false, skin ?? IDENTITY_JOINTS);
+        // **The array stays WRITTEN, but not rewritten for every draw.**
+        //
+        // Uploading 64 identity matrices — 4 KB of driver-side validate-and-copy —
+        // for a node with no skin is work for a uniform the shader guards behind
+        // `if (uHasSkin)`. Skipping it entirely turned props black and made a
+        // transparent quad vanish, MEASURED on a real level: an unwritten
+        // default-block array appears to leave the rest of the block undefined on
+        // some drivers, and garbage in the rest of the block is exactly that.
+        //
+        // So the array is written once and then only when it has to CHANGE: after a
+        // skinned draw has put a pose in it, the next unskinned draw puts identity
+        // back. A scene with no skins pays one upload for the whole frame; one with
+        // a character pays two per character.
+        if (skin) {
+            gl.uniformMatrix4fv(u.jointMatrices, false, skin);
+            jointsHoldPose = true;
+        }
+        else if (jointsHoldPose) {
+            gl.uniformMatrix4fv(u.jointMatrices, false, IDENTITY_JOINTS);
+            jointsHoldPose = false;
+        }
         const color = material.color ?? WHITE;
         gl.uniform4f(u.baseColor, color[0], color[1], color[2], color[3]);
         const textureColor = material.textureColor ?? WHITE;
