@@ -330,6 +330,53 @@ describe("the mesh it writes", () => {
     // below pins. Only which end of the image lands on which end moved.
   });
 
+  it("turns a faceCamera mesh to the viewer about world up, and only about it", () => {
+    // For an authored MESH there is no billboard to fall back on: the geometry
+    // is a real object — a question mark, a heart — and it keeps whatever
+    // heading it was born with. `faceCamera` replaces that yaw with the one
+    // that puts the model's front on the viewer.
+    //
+    // A yaw and NOT a look-at, deliberately: these things stand on a ground
+    // plane, and tipping one back to square up with a high camera reads as the
+    // model falling over rather than as it turning to you.
+    const quad: MeshData = {
+      positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]),
+      normals: new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]),
+      uvs: new Float32Array([0, 0, 1, 0, 0, 1]),
+      indices: new Uint16Array([0, 1, 2]),
+      version: 0,
+    };
+    const make = (faceCamera: boolean) => {
+      const emitter = createEmitter({
+        rate: 1000,
+        lifetime: 10,
+        capacity: 1,
+        mode: "mesh",
+        mesh: quad,
+        size: { x: 1, y: 1, z: 1 },
+        random: middle,
+        faceCamera,
+      });
+      // A camera off to +X, so facing it is a quarter turn from the authored 0.
+      emitter.update(1 / 60, { x: 100, y: 0, z: 0 });
+      return emitter.mesh;
+    };
+    const free = make(false);
+    const facing = make(true);
+    // The unturned copy keeps the source's own x extent along X; turned to a
+    // camera on +X, that extent moves onto Z.
+    const spanOf = (mesh: MeshData, axis: number) => {
+      const values = [0, 1, 2].map((v) => mesh.positions[v * 3 + axis]!);
+      return Math.max(...values) - Math.min(...values);
+    };
+    expect(spanOf(free, 0)).toBeCloseTo(1, 4);
+    expect(spanOf(free, 2)).toBeCloseTo(0, 4);
+    expect(spanOf(facing, 2)).toBeCloseTo(1, 4);
+    expect(spanOf(facing, 0)).toBeCloseTo(0, 4);
+    // Y is untouched either way: the turn is about world up and nothing else.
+    expect(spanOf(facing, 1)).toBeCloseTo(spanOf(free, 1), 4);
+  });
+
   it("rolls a BILLBOARD by its authored z, which used to reach meshes only", () => {
     // `rotation` was documented as an authored-mesh Euler and wired only into
     // `writeMesh`, so a billboard drawn from a sheet came out square-on however

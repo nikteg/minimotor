@@ -174,6 +174,17 @@ export interface EmitterOptions {
   /** Geometry copied for every particle in `"mesh"` mode. The source stays
    * untouched; the emitter owns one fixed-capacity dynamic batch. */
   mesh?: MeshData;
+  /** Turn an authored MESH to face the camera, about world up.
+   *
+   *  For `mode: "mesh"` only, and it REPLACES the birth yaw rather than adding
+   *  to it: a mesh that faces the viewer has no use for an authored heading,
+   *  and composing the two would make it face the camera from a random offset.
+   *  Pitch and roll are left alone, so a model authored leaning keeps its lean.
+   *
+   *  A yaw and not a full look-at, deliberately. These are objects standing in
+   *  a world with a ground plane — a question mark, a heart — and tipping one
+   *  back to square up with a high camera reads as the model falling over. */
+  faceCamera?: boolean;
   /** Initial Euler rotation, sampled at birth, in radians.
    *
    *  All three axes turn an authored MESH. For a billboard only `z` means
@@ -736,9 +747,26 @@ export function createEmitter(opts: EmitterOptions): Emitter {
     }
   }
 
-  function writeMesh(slot: number, index: number): void {
+  function writeMesh(
+    slot: number,
+    index: number,
+    view: { x: number; y: number; z: number },
+  ): void {
     if (!source) return;
     scaleAt(slot);
+    // The yaw that puts the model's front on the viewer, in place of the
+    // authored one — see `faceCamera`. `toView` is this frame's particle-to-eye
+    // vector, and `atan2(x, z)` is the turn about world up that aims +Z down
+    // it, which is the same convention the rest of this engine reads a heading
+    // in.
+    let yaw = rotationY[slot];
+    if (opts.faceCamera) {
+      const toEyeX = view.x - px[slot];
+      const toEyeZ = view.z - pz[slot];
+      if (Math.abs(toEyeX) > 1e-6 || Math.abs(toEyeZ) > 1e-6) {
+        yaw = Math.atan2(toEyeX, toEyeZ);
+      }
+    }
     const meshX = scaleX[slot] * sizeScale.x;
     const meshY = scaleY[slot] * sizeScale.y;
     const meshZ = scaleZ[slot] * sizeScale.z;
@@ -762,7 +790,7 @@ export function createEmitter(opts: EmitterOptions): Emitter {
         source.positions[sourcePosition + 1] * meshY,
         source.positions[sourcePosition + 2] * meshZ,
         rotationX[slot],
-        rotationY[slot],
+        yaw,
         rotationZ[slot],
         turned,
       );
@@ -860,7 +888,7 @@ export function createEmitter(opts: EmitterOptions): Emitter {
       let written = 0;
       for (let i = 0; i < capacity; i++) {
         if (Number.isNaN(age[i])) continue;
-        if (source) writeMesh(i, written);
+        if (source) writeMesh(i, written, view);
         else writeQuad(i, written, view);
         written++;
       }
