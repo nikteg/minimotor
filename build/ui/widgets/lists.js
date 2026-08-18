@@ -1,6 +1,6 @@
 import { pointInRect } from "../../collision/index.js";
 import { clamp } from "../../math/mathf.js";
-import { buttonState, claimWheel, clearPointerEdges, clearWheelClaim, consumeKeyboardActivation, dragPayloadHeld, dragPointer, drawBox, drawFocusRing, fillRect, focusFromPointer, focusedId, hoverCursor, ensureWired, lifecycleOnce, onFrameEnd, claimPointerGesture, pointerGestureOwned, rawPointer, registerFocusable, uiSlot, suppressPointerEdges, sweptCache, uiApp, theme, uiCtx, uiPointer, widgetId, } from "../../ui/core/index.js";
+import { buttonState, claimWheel, clearPointerEdges, clearWheelClaim, consumeKeyboardActivation, dragPayloadHeld, dragPointer, drawBox, drawFocusRing, fillRect, focusFromPointer, focusedId, hoverCursor, ensureWired, lifecycleOnce, onFrameEnd, claimPointerGesture, pointerGestureOwned, pointerPassInert, rawPointer, registerFocusable, uiSlot, suppressPointerEdges, sweptCache, uiApp, theme, uiCtx, uiPointer, widgetId, } from "../../ui/core/index.js";
 import { tooltip } from "./tooltip.js";
 import { clip } from "./layout.js";
 import { listMetrics } from "./list-metrics.js";
@@ -112,6 +112,13 @@ function focusedRowIndex(key, focused, rowId, count) {
  *  activates the widget the finger lifts over. */
 export function dragScroll(key, rect, axis, offset, max) {
     if (max <= 0)
+        return offset;
+    // **A pass that does not own the pointer may not end a gesture.** The
+    // background pass of a frame whose overlay owns input — and a measure pass —
+    // are both handed a `DEAD_POINTER`, whose `down` is false; without this the
+    // release branch below reads that as the finger lifting and drops a drag that
+    // is still very much in progress. See `pointerPassInert`.
+    if (pointerPassInert())
         return offset;
     ensureWired(); // frame-end hooks (edge/claim/handoff clearing) must run
     ensureListHooks();

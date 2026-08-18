@@ -223,6 +223,25 @@ export function focusFromPointer(ctx, id) {
     const s = fs();
     s.visible = false;
     s.focused = id;
+    // **A native widget owns a real DOM element, and focusing the canvas takes
+    // focus off it.** For everything else the canvas IS where focus belongs —
+    // that is how the kit receives keys at all — but a text field has just put
+    // the caret in an offscreen `<input>`, and moving focus to the canvas blurs
+    // it. The widget then focuses it straight back, so on a desktop the round
+    // trip is invisible and this looked harmless for a long time.
+    //
+    // It is not harmless on a PHONE. iOS only honours a programmatic `focus()`
+    // inside a user gesture: the press listener opens the editor within the
+    // gesture and the keyboard comes up, then this line — running a frame later
+    // from `requestAnimationFrame`, with no gesture in scope — blurs it, and the
+    // re-focus behind it is refused. Reported from an iPhone as the keyboard
+    // opening and closing again on every tap, and it is why a long press that
+    // released on the field was the only thing that worked.
+    //
+    // Registration happens before a widget handles its own press, so the entry
+    // for `id` is already in this frame's list by the time this runs.
+    if (s.frame.some((entry) => entry.id === id && entry.native))
+        return;
     ctx.canvas.focus({ preventScroll: true });
 }
 export function drawFocusRing(ctx, rect) {
