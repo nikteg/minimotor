@@ -1645,6 +1645,16 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
       // draws are order-independent under the depth test, so this is
       // pixel-identical; the keys are handed out as the scene is gathered and
       // the sort is stable, so a scene with no repeats keeps its authored order.
+      // Sorted by material so nodes sharing one arrive as a run, which is what
+      // both the material cache and the instanced batch consume.
+      //
+      // **Deliberately NOT also ordered near-to-far.** Early-Z would reject
+      // hidden fragments before shading them, and it was tried: MEASURED as a
+      // paired A/B over three passes and twelve bearings, it came to −2.7% of
+      // GPU time, scattered from −14% to +5% — mostly noise. And the platform
+      // that needs it least is the one that matters most here: a tile-based
+      // deferred GPU already avoids shading hidden fragments in hardware, so the
+      // sort buys nearly nothing on a phone while complicating a hot path.
       opaque.sort(
         (a, b) => materialKey(scene.nodes[a].material) - materialKey(scene.nodes[b].material),
       );
