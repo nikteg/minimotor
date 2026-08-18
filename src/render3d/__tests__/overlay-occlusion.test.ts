@@ -296,3 +296,70 @@ describe("both backends", () => {
     expect(webgpu).toMatch(/depthWriteEnabled:[^\n]*!occluderDepth/);
   });
 });
+
+describe("the joint-matrix array", () => {
+  function jointUploads(nodes: { mesh: MeshData; material: Material; skin?: unknown }[]) {
+    const harness = recordingGl();
+    const canvas = document.createElement("canvas");
+    (canvas as unknown as { getContext: () => unknown }).getContext = () => harness.gl;
+    const renderer = createWebGL2Renderer({ canvas });
+    const scene = createScene();
+    for (const n of nodes) addNode(scene, node(n as never));
+    updateWorldMatrices(scene);
+    renderer.render(scene, createCamera());
+    // The joint array is the only 4x4 matrix uniform uploaded as an array.
+    return harness.calls.filter(
+      (c) => c.name === "uniformMatrix4fv" && (c.args[2] as ArrayLike<number>)?.length > 16,
+    ).length;
+  }
+
+  // TWO joints, so the pose upload is longer than a single 4x4 and the counter
+  // above can tell it from an ordinary model matrix.
+  const skin = {
+    joints: [0, 1],
+    inverseBindMatrices: new Float32Array(32),
+    matrices: new Float32Array(32),
+  };
+
+  it("is written ONCE for a scene with no skins, not once per draw", () => {
+    // 64 joints is 4 KB of driver-side validate-and-copy, and a level draws
+    // hundreds of nodes that have no skin at all.
+    expect(
+      jointUploads([
+        { mesh: GROUND, material: {} },
+        { mesh: BALL, material: {} },
+        { mesh: GUIDE, material: {} },
+        { mesh: LABEL, material: {} },
+      ]),
+    ).toBe(1);
+  });
+
+  it("is put BACK to identity after a pose, which is what makes it safe", () => {
+    // **The whole finding.** Skipping the upload entirely — the array simply
+    // never written for an unskinned node — turned props black and made a
+    // transparent quad vanish on a real level, though the shader guards every
+    // joint read behind `if (uHasSkin)` and that flag is written either way. An
+    // unwritten default-block array appears to leave the rest of the block
+    // undefined on some drivers.
+    //
+    // So the rule is that the array must always HOLD something, not that it
+    // must be rewritten: a pose goes in for the skinned node and identity goes
+    // back for the next one that has none.
+    expect(
+      jointUploads([
+        { mesh: GROUND, material: {}, skin },
+        { mesh: BALL, material: {} },
+      ]),
+    ).toBe(2);
+  });
+
+  it("does not put identity back twice in a row", () => {
+    expect(
+      jointUploads([
+        { mesh: GROUND, material: {}, skin },
+        { mesh: BALL, material: {} },
+        { mesh: GUIDE, material: {} },
+      ]),
+    ).toBe(2);
+  });
+});
