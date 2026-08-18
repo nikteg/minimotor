@@ -517,3 +517,41 @@ describe("loadGltf scene selection", () => {
     expect(scene.nodes).toHaveLength(0);
   });
 });
+
+describe("what two nodes pointing at one mesh share", () => {
+  /** The shape a level is full of: one authored prop placed many times. */
+  function twoNodesOneMesh(): Record<string, unknown> {
+    return documentWith({
+      scenes: [{ nodes: [0, 1] }],
+      nodes: [{ mesh: 0 }, { mesh: 0, translation: [5, 0, 0] }],
+      materials: [{ pbrMetallicRoughness: { baseColorFactor: [1, 0, 0, 1] } }],
+    });
+  }
+
+  it("share the MESH, so the GPU uploads it once", async () => {
+    // MEASURED on a consumer's level before this: 416 drawable nodes carrying
+    // 412 distinct meshes where the file holds 114, so nearly every vertex
+    // buffer was uploaded three or four times over.
+    //
+    // Reverted once for props rendering black, and innocent: the culprit was an
+    // element-buffer rebind that repointed one mesh's indices at another, and
+    // sharing only made it LOUDER — one VAO serving many nodes means one
+    // clobbered binding takes many props down together, which is how it looked.
+    serve(twoNodesOneMesh());
+    const { scene } = await loadGltf("assets/level.gltf");
+    const drawn = scene.nodes.filter((n) => n.mesh);
+    expect(drawn).toHaveLength(2);
+    expect(drawn[0]!.mesh).toBe(drawn[1]!.mesh);
+  });
+
+  it("do NOT share the material, which is what a mutating consumer needs", async () => {
+    // A per-area repaint collects the material objects standing inside an area
+    // and writes to them; shared, one such write would reach every node that
+    // shares the material wherever it stood.
+    serve(twoNodesOneMesh());
+    const { scene } = await loadGltf("assets/level.gltf");
+    const drawn = scene.nodes.filter((n) => n.mesh);
+    expect(drawn[0]!.material).not.toBe(drawn[1]!.material);
+    expect(drawn[0]!.material).toEqual(drawn[1]!.material);
+  });
+});
