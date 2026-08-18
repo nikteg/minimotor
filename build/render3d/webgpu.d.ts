@@ -13,6 +13,9 @@ export interface WebGPURendererOptions {
      *  which removes shimmer and softens distance. `pixelated` textures are
      *  exempt — NEAREST is a request not to be filtered. */
     mipmaps?: boolean;
+    /** See the WebGL2 backend: off by default until the reports of vanishing
+     *  geometry are understood. */
+    frustumCulling?: boolean;
     canvas?: HTMLCanvasElement;
     width?: number;
     height?: number;

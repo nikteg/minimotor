@@ -32,6 +32,18 @@ export interface WebGL2RendererOptions {
      *  The two are required to draw the same frame, and a flag that only one of
      *  them read would be the plainest possible way to break that. */
     mipmaps?: boolean;
+    /** Skip nodes the camera cannot see, and batch runs of one mesh+material into
+     *  one instanced call.
+     *
+     *  **Both OFF by default, and that is a retreat rather than a design.** They
+     *  were measured to work — 87% of a level's nodes culled, a run of draws
+     *  folded into one — and then reported from play as geometry vanishing in
+     *  plain sight and props turning black. Neither cause is understood yet, and a
+     *  wrong picture is worse than a slow one, so they are behind a flag until
+     *  each is verified against a real scene rather than against a test's idea of
+     *  one. See `cull.ts` and `drawInstanced`. */
+    frustumCulling?: boolean;
+    instancing?: boolean;
     /** Collect GPU timer-query samples. Disabled by default because queries add
      *  instrumentation overhead. */
     gpuTiming?: boolean;

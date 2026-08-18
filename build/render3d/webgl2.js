@@ -620,6 +620,8 @@ function attributeMask(mesh) {
 export function createWebGL2Renderer(opts = {}) {
     const canvas = opts.canvas ?? document.createElement("canvas");
     const mipmaps = opts.mipmaps ?? false;
+    const frustumCulling = opts.frustumCulling ?? false;
+    const instancing = opts.instancing ?? false;
     const gl = canvas.getContext("webgl2", {
         alpha: true,
         antialias: opts.antialias ?? true,
@@ -1103,7 +1105,7 @@ export function createWebGL2Renderer(opts = {}) {
             let end = at + 1;
             // A run is the same mesh object and the same material object, back to
             // back in the sorted order. Identity on both, for `drawNode`'s reason.
-            if (mesh && !first.skin) {
+            if (instancing && mesh && !first.skin) {
                 while (end < order.length) {
                     const next = scene.nodes[order[end]];
                     if (next.mesh !== mesh || (next.material ?? {}) !== material || next.skin)
@@ -1331,7 +1333,7 @@ export function createWebGL2Renderer(opts = {}) {
                 // in the level is drawn every frame, so cost follows the size of the
                 // WORLD rather than the size of the view — see `cull.ts`. Counted as
                 // culled alongside the hidden ones, which is what the stat means.
-                if (!inFrustum(planes, meshBounds(n.mesh), n.world)) {
+                if (frustumCulling && !inFrustum(planes, meshBounds(n.mesh), n.world)) {
                     stats.culled++;
                     return;
                 }
