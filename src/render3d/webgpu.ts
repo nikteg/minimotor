@@ -703,6 +703,9 @@ export interface WebGPURendererOptions {
    *  which removes shimmer and softens distance. `pixelated` textures are
    *  exempt — NEAREST is a request not to be filtered. */
   mipmaps?: boolean;
+  /** See the WebGL2 backend: off by default until the reports of vanishing
+   *  geometry are understood. */
+  frustumCulling?: boolean;
   canvas?: HTMLCanvasElement;
   width?: number;
   height?: number;
@@ -1018,6 +1021,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
    *  see `textureFor`, and the WebGL2 backend, which latches the same way. */
   const live = new WeakSet<object>();
   const mipmaps = opts.mipmaps ?? false;
+  const frustumCulling = opts.frustumCulling ?? false;
 
   let width = opts.width ?? 300;
   let height = opts.height ?? 150;
@@ -1516,7 +1520,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
         // **And whether the camera can see it at all** — see `cull.ts`. Without
         // this every mesh in the level is drawn every frame, so cost follows
         // the size of the WORLD rather than the size of the view.
-        if (!inFrustum(planes, meshBounds(n.mesh), n.world)) {
+        if (frustumCulling && !inFrustum(planes, meshBounds(n.mesh), n.world)) {
           stats.culled++;
           return;
         }

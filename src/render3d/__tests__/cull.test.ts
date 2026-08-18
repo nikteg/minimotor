@@ -238,7 +238,10 @@ describe("what instantiateGltf shares between nodes", () => {
     // the level was uploaded three or four times over, and no renderer could
     // tell the copies apart to batch them.
     const buffer = new ArrayBuffer(42);
-    const { scene } = await instantiateGltf({ document: twoNodesOneMesh as never, buffers: [buffer] });
+    const { scene } = await instantiateGltf({
+      document: twoNodesOneMesh as never,
+      buffers: [buffer],
+    });
     const drawn = scene.nodes.filter((n) => n.mesh);
     expect(drawn).toHaveLength(2);
     expect(drawn[0]!.mesh).toBe(drawn[1]!.mesh);
@@ -250,7 +253,10 @@ describe("what instantiateGltf shares between nodes", () => {
     // the material wherever it stood. Sharing this is worth real draw calls and
     // waits for those consumers to copy first.
     const buffer = new ArrayBuffer(42);
-    const { scene } = await instantiateGltf({ document: twoNodesOneMesh as never, buffers: [buffer] });
+    const { scene } = await instantiateGltf({
+      document: twoNodesOneMesh as never,
+      buffers: [buffer],
+    });
     const drawn = scene.nodes.filter((n) => n.mesh);
     expect(drawn[0]!.material).not.toBe(drawn[1]!.material);
     expect(drawn[0]!.material).toEqual(drawn[1]!.material);

@@ -506,7 +506,7 @@ describe("instancing the opaque pass", () => {
     const harness = recordingGl();
     const canvas = document.createElement("canvas");
     (canvas as unknown as { getContext: () => unknown }).getContext = () => harness.gl;
-    const renderer = createWebGL2Renderer({ canvas });
+    const renderer = createWebGL2Renderer({ canvas, instancing: true });
     const scene = createScene();
     for (const n of nodes) addNode(scene, node(n as never));
     updateWorldMatrices(scene);
@@ -577,7 +577,7 @@ describe("instancing the opaque pass", () => {
     const harness = recordingGl();
     const canvas = document.createElement("canvas");
     (canvas as unknown as { getContext: () => unknown }).getContext = () => harness.gl;
-    const renderer = createWebGL2Renderer({ canvas });
+    const renderer = createWebGL2Renderer({ canvas, instancing: true });
     const scene = createScene();
     for (let i = 0; i < 4; i++) addNode(scene, node({ mesh: GROUND, material: shared }));
     updateWorldMatrices(scene);

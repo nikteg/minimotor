@@ -751,6 +751,18 @@ export interface WebGL2RendererOptions {
    *  The two are required to draw the same frame, and a flag that only one of
    *  them read would be the plainest possible way to break that. */
   mipmaps?: boolean;
+  /** Skip nodes the camera cannot see, and batch runs of one mesh+material into
+   *  one instanced call.
+   *
+   *  **Both OFF by default, and that is a retreat rather than a design.** They
+   *  were measured to work — 87% of a level's nodes culled, a run of draws
+   *  folded into one — and then reported from play as geometry vanishing in
+   *  plain sight and props turning black. Neither cause is understood yet, and a
+   *  wrong picture is worse than a slow one, so they are behind a flag until
+   *  each is verified against a real scene rather than against a test's idea of
+   *  one. See `cull.ts` and `drawInstanced`. */
+  frustumCulling?: boolean;
+  instancing?: boolean;
   /** Collect GPU timer-query samples. Disabled by default because queries add
    *  instrumentation overhead. */
   gpuTiming?: boolean;
@@ -767,6 +779,8 @@ export interface WebGL2RendererOptions {
 export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer3D {
   const canvas = opts.canvas ?? document.createElement("canvas");
   const mipmaps = opts.mipmaps ?? false;
+  const frustumCulling = opts.frustumCulling ?? false;
+  const instancing = opts.instancing ?? false;
   const gl = canvas.getContext("webgl2", {
     alpha: true,
     antialias: opts.antialias ?? true,
@@ -1319,7 +1333,7 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
       let end = at + 1;
       // A run is the same mesh object and the same material object, back to
       // back in the sorted order. Identity on both, for `drawNode`'s reason.
-      if (mesh && !first.skin) {
+      if (instancing && mesh && !first.skin) {
         while (end < order.length) {
           const next = scene.nodes[order[end]]!;
           if (next.mesh !== mesh || (next.material ?? {}) !== material || next.skin) break;
@@ -1569,7 +1583,7 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
         // in the level is drawn every frame, so cost follows the size of the
         // WORLD rather than the size of the view — see `cull.ts`. Counted as
         // culled alongside the hidden ones, which is what the stat means.
-        if (!inFrustum(planes, meshBounds(n.mesh), n.world)) {
+        if (frustumCulling && !inFrustum(planes, meshBounds(n.mesh), n.world)) {
           stats.culled++;
           return;
         }
