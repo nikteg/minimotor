@@ -313,11 +313,16 @@ describe("a material shared by many nodes", () => {
     return harness.calls.filter((call) => call.name === "uniform4f").length;
   }
 
-  it("sets its uniforms ONCE for the whole run", () => {
-    // A level draws far more nodes than it has materials — 389 draws over 23
-    // materials on one shipped course, one of them taking 84 — and every one of
-    // those draws re-sent the same ~24-40 GL calls. The opaque pass is sorted by
-    // material identity, so they arrive as runs and a run pays once.
+  it("sets its uniforms for EVERY draw, which is a retreat rather than a design", () => {
+    // Skipping them for a run of one shared material is worth 24-40 GL calls a
+    // node, and a level draws far more nodes than it has materials — 389 draws
+    // over 23 on a consumer's course, one material taking 84.
+    //
+    // It was done, and props rendered black. MEASURED on screen; the cause was
+    // never found. Some node's picture depends on a uniform the skip would have
+    // left standing from the draw before it, and until that is known every draw
+    // sets its own. This asserts the wasteful behaviour on purpose so the next
+    // person starts by finding that uniform.
     const shared: Material = { color: [1, 0, 0, 1] };
     const four = baseColorWrites([
       { mesh: GROUND, material: shared },
@@ -326,7 +331,7 @@ describe("a material shared by many nodes", () => {
       { mesh: LABEL, material: shared },
     ]);
     const one = baseColorWrites([{ mesh: GROUND, material: shared }]);
-    expect(four).toBe(one);
+    expect(four).toBe(one * 4);
   });
 
   it("still sets them again for a DIFFERENT material", () => {
