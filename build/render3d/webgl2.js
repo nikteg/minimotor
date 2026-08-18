@@ -720,6 +720,19 @@ export function createWebGL2Renderer(opts = {}) {
     let height = opts.height ?? 150;
     let dpr = opts.dpr ?? 1;
     const viewProj = Mat4.create();
+    /** The material whose uniforms and TEXTURE BINDINGS are currently loaded, so
+     *  a run of nodes sharing one material sets them once. Cleared before every
+     *  pass — see `setMaterial`. */
+    let lastMaterial = null;
+    /** Bumped whenever a texture is actually uploaded.
+     *
+     *  `setMaterial` binds textures as well as writing uniforms, and
+     *  `uploadTexture` binds on its own account — a live surface re-uploading
+     *  mid-frame (a ground overlay repainted while something moves over it) leaves
+     *  ITS texture bound to the unit. A run may therefore only skip work while
+     *  nothing has touched the bindings since it was set. */
+    let textureEpoch = 0;
+    let lastMaterialEpoch = -1;
     /** Whether `uJointMatrices` currently holds a real pose rather than identity.
      *  Starts true so the first draw writes the array — see `drawNode`. */
     let jointsHoldPose = true;
@@ -903,6 +916,7 @@ export function createWebGL2Renderer(opts = {}) {
             return cached.texture;
         // Re-uploading into the SAME texture object rather than making a new one:
         // a live surface would otherwise leak one texture per frame.
+        textureEpoch++;
         const tex = cached?.texture ?? gl.createTexture();
         if (!tex)
             throw new Error("WebGL2: could not create a texture.");
@@ -933,42 +947,20 @@ export function createWebGL2Renderer(opts = {}) {
         textures.set(source, { texture: tex, version, repeat });
         return tex;
     }
-    function drawNode(node, material) {
-        if (!node.mesh || !node.world)
+    /** Load one material's uniforms and texture bindings, unless the last draw
+     *  already left exactly those loaded.
+     *
+     *  A level draws far more nodes than it has materials, so a run of them sharing
+     *  one is worth 24-40 GL calls a node. The guard is identity AND the texture
+     *  epoch: identity alone was not enough, because binding is global state that
+     *  an upload between two draws can move.
+     *
+     *  Cleared before each pass by the caller, so a material mutated between
+     *  frames — a per-area repaint does exactly that — is re-read on the next
+     *  frame's first draw of it. */
+    function setMaterial(material) {
+        if (material === lastMaterial && textureEpoch === lastMaterialEpoch)
             return;
-        const gpu = uploadMesh(node.mesh);
-        gl.uniformMatrix4fv(u.model, false, node.world);
-        // A singular model matrix (a zero scale) has no normal matrix; fall back
-        // to the model matrix, which at least renders the silhouette rather than
-        // dropping the node.
-        const nm = Mat4.normalMatrix(node.world, normalMat);
-        gl.uniformMatrix3fv(u.normalMat, false, nm ?? IDENTITY3);
-        const skin = node.skin?.matrices;
-        if (skin && skin.length > MAX_JOINTS * 16) {
-            throw new Error(`WebGL2 supports at most ${MAX_JOINTS} skin joints per node.`);
-        }
-        gl.uniform1i(u.hasSkin, skin ? 1 : 0);
-        // **The array stays WRITTEN, but not rewritten for every draw.**
-        //
-        // Uploading 64 identity matrices — 4 KB of driver-side validate-and-copy —
-        // for a node with no skin is work for a uniform the shader guards behind
-        // `if (uHasSkin)`. Skipping it entirely turned props black and made a
-        // transparent quad vanish, MEASURED on a real level: an unwritten
-        // default-block array appears to leave the rest of the block undefined on
-        // some drivers, and garbage in the rest of the block is exactly that.
-        //
-        // So the array is written once and then only when it has to CHANGE: after a
-        // skinned draw has put a pose in it, the next unskinned draw puts identity
-        // back. A scene with no skins pays one upload for the whole frame; one with
-        // a character pays two per character.
-        if (skin) {
-            gl.uniformMatrix4fv(u.jointMatrices, false, skin);
-            jointsHoldPose = true;
-        }
-        else if (jointsHoldPose) {
-            gl.uniformMatrix4fv(u.jointMatrices, false, IDENTITY_JOINTS);
-            jointsHoldPose = false;
-        }
         const color = material.color ?? WHITE;
         gl.uniform4f(u.baseColor, color[0], color[1], color[2], color[3]);
         const textureColor = material.textureColor ?? WHITE;
@@ -1065,6 +1057,46 @@ export function createWebGL2Renderer(opts = {}) {
             gl.disable(gl.CULL_FACE);
         else
             gl.enable(gl.CULL_FACE);
+        lastMaterial = material;
+        lastMaterialEpoch = textureEpoch;
+    }
+    function drawNode(node, material) {
+        if (!node.mesh || !node.world)
+            return;
+        const gpu = uploadMesh(node.mesh);
+        gl.uniformMatrix4fv(u.model, false, node.world);
+        // A singular model matrix (a zero scale) has no normal matrix; fall back
+        // to the model matrix, which at least renders the silhouette rather than
+        // dropping the node.
+        const nm = Mat4.normalMatrix(node.world, normalMat);
+        gl.uniformMatrix3fv(u.normalMat, false, nm ?? IDENTITY3);
+        const skin = node.skin?.matrices;
+        if (skin && skin.length > MAX_JOINTS * 16) {
+            throw new Error(`WebGL2 supports at most ${MAX_JOINTS} skin joints per node.`);
+        }
+        gl.uniform1i(u.hasSkin, skin ? 1 : 0);
+        // **The array stays WRITTEN, but not rewritten for every draw.**
+        //
+        // Uploading 64 identity matrices — 4 KB of driver-side validate-and-copy —
+        // for a node with no skin is work for a uniform the shader guards behind
+        // `if (uHasSkin)`. Skipping it entirely turned props black and made a
+        // transparent quad vanish, MEASURED on a real level: an unwritten
+        // default-block array appears to leave the rest of the block undefined on
+        // some drivers, and garbage in the rest of the block is exactly that.
+        //
+        // So the array is written once and then only when it has to CHANGE: after a
+        // skinned draw has put a pose in it, the next unskinned draw puts identity
+        // back. A scene with no skins pays one upload for the whole frame; one with
+        // a character pays two per character.
+        if (skin) {
+            gl.uniformMatrix4fv(u.jointMatrices, false, skin);
+            jointsHoldPose = true;
+        }
+        else if (jointsHoldPose) {
+            gl.uniformMatrix4fv(u.jointMatrices, false, IDENTITY_JOINTS);
+            jointsHoldPose = false;
+        }
+        setMaterial(material);
         gl.bindVertexArray(gpu.vao);
         gl.drawElements(node.mesh.topology === "lines" ? gl.LINES : gl.TRIANGLES, gpu.count, gpu.type, 0);
         stats.drawCalls++;
@@ -1146,6 +1178,7 @@ export function createWebGL2Renderer(opts = {}) {
                 return;
             }
             gl.useProgram(program);
+            lastMaterial = null;
             viewProjection(camera, width / height, false, viewProj);
             gl.uniformMatrix4fv(u.viewProj, false, viewProj);
             cameraPosition(camera, eye);
@@ -1230,10 +1263,12 @@ export function createWebGL2Renderer(opts = {}) {
             });
             gl.disable(gl.BLEND);
             gl.depthMask(true);
+            lastMaterial = null;
             for (const i of opaque)
                 drawNode(scene.nodes[i], scene.nodes[i].material ?? {});
             if (blended.length > 0) {
                 blended.sort((a, b) => b.depth - a.depth); // farthest first
+                lastMaterial = null;
                 gl.enable(gl.BLEND);
                 gl.depthMask(false);
                 // The blend function is per node rather than per pass: `additive`
@@ -1264,6 +1299,7 @@ export function createWebGL2Renderer(opts = {}) {
                 gl.depthMask(false);
                 gl.enable(gl.BLEND);
                 setBlendMode(false);
+                lastMaterial = null;
                 for (const i of occluded) {
                     drawNode(scene.nodes[i], ghostMaterial(scene.nodes[i].material ?? {}));
                 }
@@ -1298,6 +1334,7 @@ export function createWebGL2Renderer(opts = {}) {
                     // waste — but it is one draw per nominated node, and a second program
                     // whose only job is to write nothing costs more than it saves.
                     gl.colorMask(false, false, false, false);
+                    lastMaterial = null;
                     for (const i of overlayOccluders) {
                         drawNode(scene.nodes[i], scene.nodes[i].material ?? {});
                     }
@@ -1306,6 +1343,7 @@ export function createWebGL2Renderer(opts = {}) {
                 // Last, and against a depth function that always passes — unless this
                 // overlay opted into the prepass above, in which case LEQUAL lets the
                 // occluders cut it out.
+                lastMaterial = null;
                 for (const i of overlay) {
                     const material = scene.nodes[i].material ?? {};
                     const gated = gating && material.overlayOccluded === true;
