@@ -487,3 +487,85 @@ describe("a material shared by a run of nodes", () => {
     expect(second.some((c) => c.name === "texImage2D")).toBe(true);
   });
 });
+
+describe("instancing a run of nodes", () => {
+  function draws(nodes: { mesh: MeshData; material: Material; skin?: unknown }[]) {
+    const harness = recordingGl();
+    const canvas = document.createElement("canvas");
+    (canvas as unknown as { getContext: () => unknown }).getContext = () => harness.gl;
+    const renderer = createWebGL2Renderer({ canvas });
+    const scene = createScene();
+    for (const n of nodes) addNode(scene, node(n as never));
+    updateWorldMatrices(scene);
+    renderer.render(scene, createCamera());
+    return {
+      single: harness.calls.filter((c) => c.name === "drawElements").length,
+      batched: harness.calls.filter((c) => c.name === "drawElementsInstanced").length,
+      counts: harness.calls
+        .filter((c) => c.name === "drawElementsInstanced")
+        .map((c) => c.args[4] as number),
+    };
+  }
+
+  it("folds a run of one mesh and one material into ONE call", () => {
+    const shared: Material = { color: [1, 0, 0, 1] };
+    const out = draws([
+      { mesh: GROUND, material: shared },
+      { mesh: GROUND, material: shared },
+      { mesh: GROUND, material: shared },
+    ]);
+    expect(out.batched).toBe(1);
+    expect(out.counts).toEqual([3]);
+    expect(out.single).toBe(0);
+  });
+
+  it("keeps different MESHES apart under one material", () => {
+    // The sort groups them by material, so the run detection has to split on
+    // mesh too or the second would draw with the first's geometry.
+    const shared: Material = { color: [1, 0, 0, 1] };
+    const out = draws([
+      { mesh: GROUND, material: shared },
+      { mesh: GROUND, material: shared },
+      { mesh: BALL, material: shared },
+      { mesh: BALL, material: shared },
+    ]);
+    expect(out.counts).toEqual([2, 2]);
+  });
+
+  it("never batches a SKINNED node", () => {
+    // The pose is a uniform array, so two copies in one call would wear one
+    // skeleton.
+    const shared: Material = { color: [1, 0, 0, 1] };
+    const skin = {
+      joints: [0, 1],
+      inverseBindMatrices: new Float32Array(32),
+      matrices: new Float32Array(32),
+    };
+    const out = draws([
+      { mesh: GROUND, material: shared, skin },
+      { mesh: GROUND, material: shared, skin },
+    ]);
+    expect(out.batched).toBe(0);
+    expect(out.single).toBe(2);
+  });
+
+  it("does not batch a run of one, which would pay an upload to save nothing", () => {
+    const out = draws([{ mesh: GROUND, material: { color: [1, 0, 0, 1] } }]);
+    expect(out.batched).toBe(0);
+    expect(out.single).toBe(1);
+  });
+
+  it("counts the triangles it actually drew, not the calls it made", () => {
+    const shared: Material = { color: [1, 0, 0, 1] };
+    const harness = recordingGl();
+    const canvas = document.createElement("canvas");
+    (canvas as unknown as { getContext: () => unknown }).getContext = () => harness.gl;
+    const renderer = createWebGL2Renderer({ canvas });
+    const scene = createScene();
+    for (let i = 0; i < 4; i++) addNode(scene, node({ mesh: GROUND, material: shared }));
+    updateWorldMatrices(scene);
+    renderer.render(scene, createCamera());
+    expect(renderer.stats.drawCalls).toBe(1);
+    expect(renderer.stats.triangles).toBe(4);
+  });
+});

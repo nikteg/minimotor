@@ -544,14 +544,17 @@ describe("what two nodes pointing at one mesh share", () => {
     expect(drawn[0]!.mesh).toBe(drawn[1]!.mesh);
   });
 
-  it("do NOT share the material, which is what a mutating consumer needs", async () => {
-    // A per-area repaint collects the material objects standing inside an area
-    // and writes to them; shared, one such write would reach every node that
-    // shares the material wherever it stood.
+  it("share the MATERIAL too, which is what lets a renderer batch them", async () => {
+    // Batching by identity needs both halves: a run of nodes with one mesh and
+    // one material is one instanced draw, and two materials that merely LOOK
+    // alike cannot be told apart cheaply.
+    //
+    // The obligation this creates is real and is the consumer's: anything that
+    // mutates a material must copy it first, because a write now reaches every
+    // node that shares it. A per-area repaint does exactly that.
     serve(twoNodesOneMesh());
     const { scene } = await loadGltf("assets/level.gltf");
     const drawn = scene.nodes.filter((n) => n.mesh);
-    expect(drawn[0]!.material).not.toBe(drawn[1]!.material);
-    expect(drawn[0]!.material).toEqual(drawn[1]!.material);
+    expect(drawn[0]!.material).toBe(drawn[1]!.material);
   });
 });
