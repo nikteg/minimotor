@@ -31,7 +31,6 @@ import { Mat4 } from "../math/mat4.js";
 import { cameraPosition, viewProjection } from "./camera.js";
 import { detailProjectionMode, detailWorldStep, fogUniform, ghostMaterial, glazeParallax, glazeStrength, isVisible, settleActive, } from "./scene.js";
 import { triangleCount, vertexCount } from "./mesh.js";
-import { frustumPlanes, inFrustum, meshBounds } from "./cull.js";
 const MAX_LIGHTS = 4;
 const MAX_JOINTS = 64;
 const VERTEX_SHADER = `#version 300 es
@@ -45,16 +44,10 @@ layout(location = 4) in uvec4 aJoints;
 layout(location = 5) in vec4 aWeights;
 layout(location = 6) in vec2 aUv1;
 layout(location = 7) in vec4 aTangent;
-// The instance transform, one per COPY rather than per vertex — locations 8
-// through 11, because a mat4 attribute occupies four consecutive slots. Unused
-// and unbound on an ordinary draw, where uInstanced is false and uModel
-// answers instead.
-layout(location = 8) in mat4 aInstanceModel;
 
 uniform mat4 uViewProj;
 uniform mat4 uModel;
 uniform mat3 uNormalMat;
-uniform bool uInstanced;
 uniform bool uHasSkin;
 uniform mat4 uJointMatrices[${MAX_JOINTS}];
 
@@ -80,20 +73,15 @@ void main() {
     localNormal = mat3(skin) * localNormal;
     localTangent = mat3(skin) * localTangent;
   }
-  mat4 model = uInstanced ? aInstanceModel : uModel;
-  vec4 world = model * localPosition;
+  vec4 world = uModel * localPosition;
   vWorldPos = world.xyz;
   vLocalPos = localPosition.xyz;
   // The inverse-transpose, so a non-uniformly scaled mesh still lights right.
-  // Uploaded per draw for a single node; DERIVED here for an instanced one,
-  // because sending it as well would take three more attribute slots and
-  // WebGL2 only guarantees sixteen. An inverse of a 3x3 is a handful of
-  // multiplies, and it is the same answer Mat4.normalMatrix computes.
-  vNormal = uInstanced ? transpose(inverse(mat3(model))) * localNormal : uNormalMat * localNormal;
+  vNormal = uNormalMat * localNormal;
   // A tangent is a DIRECTION ALONG the surface, not a normal to it, so it goes
   // through the model matrix rather than the inverse-transpose. w carries the
   // handedness and rides through untouched.
-  vTangent = vec4(mat3(model) * localTangent, aTangent.w);
+  vTangent = vec4(mat3(uModel) * localTangent, aTangent.w);
   vUv = aUv;
   vUv1 = aUv1;
   vColor = aColor;
@@ -259,7 +247,8 @@ vec3 blendOverlay(vec3 pattern, vec3 surface) {
 /** A wrapped triangle wave smoothed by the 3t^2-2t^3 interpolant a value noise
  *  uses, on -1..1.
  *
- *  Deliberately NOT sin(). The two backends are pinned to draw the same frame, and a transcendental is the one thing whose last bits two compilers
+ *  Deliberately NOT sin(). Item 66 pins that the two backends draw the same
+ *  frame, and a transcendental is the one thing whose last bits two compilers
  *  and two drivers are free to round differently — this is fract, abs and four
  *  multiplies, which they are not. It is also cheaper, which is a bonus rather
  *  than the reason. */
@@ -603,25 +592,12 @@ void main() {
   if (uToneMap) shaded = linearToSrgb(acesToneMap(shaded));
   fragColor = vec4(shaded * base.a, base.a);
 }`;
-/** A bitmask of the optional attributes a mesh supplies, so a re-upload can
- *  tell "the same mesh with new numbers" from "a different mesh". */
-function attributeMask(mesh) {
-    return ((mesh.normals ? 1 : 0) |
-        (mesh.uvs ? 2 : 0) |
-        (mesh.colors ? 4 : 0) |
-        (mesh.joints ? 8 : 0) |
-        (mesh.weights ? 16 : 0) |
-        (mesh.uvs1 ? 32 : 0) |
-        (mesh.tangents ? 64 : 0));
-}
 /** Create a WebGL2 renderer, or throw if the context cannot be created.
  *  Callers that want a graceful fallback should use `createRenderer3D`, which
  *  reports failure instead. */
 export function createWebGL2Renderer(opts = {}) {
     const canvas = opts.canvas ?? document.createElement("canvas");
     const mipmaps = opts.mipmaps ?? false;
-    const frustumCulling = opts.frustumCulling ?? false;
-    const instancing = opts.instancing ?? false;
     const gl = canvas.getContext("webgl2", {
         alpha: true,
         antialias: opts.antialias ?? true,
@@ -680,7 +656,6 @@ export function createWebGL2Renderer(opts = {}) {
     const u = {
         viewProj: gl.getUniformLocation(program, "uViewProj"),
         model: gl.getUniformLocation(program, "uModel"),
-        instanced: gl.getUniformLocation(program, "uInstanced"),
         normalMat: gl.getUniformLocation(program, "uNormalMat"),
         baseColor: gl.getUniformLocation(program, "uBaseColor"),
         textureColor: gl.getUniformLocation(program, "uTextureColor"),
@@ -727,15 +702,12 @@ export function createWebGL2Renderer(opts = {}) {
     };
     const meshes = new WeakMap();
     const textures = new WeakMap();
-    /** Sources that have been re-uploaded at least once — a canvas the app is
-     *  repainting rather than an image it loaded. See `uploadTexture`. */
+    /** Sources re-uploaded at least once — a canvas the app repaints. */
     const live = new WeakSet();
     let width = opts.width ?? 300;
     let height = opts.height ?? 150;
     let dpr = opts.dpr ?? 1;
     const viewProj = Mat4.create();
-    /** The frustum this frame, rebuilt once per pass from `viewProj`. */
-    const planes = new Float32Array(24);
     const normalMat = new Float32Array(9);
     const eye = { x: 0, y: 0, z: 0 };
     const lightDirs = new Float32Array(MAX_LIGHTS * 3);
@@ -783,23 +755,10 @@ export function createWebGL2Renderer(opts = {}) {
         const cached = meshes.get(mesh);
         if (cached && cached.version === mesh.version)
             return cached;
-        // **A rewrite of the same shape goes into the buffers that are already
-        // there.** A particle emitter bumps its version every frame — it rewrites
-        // its vertices every frame by definition — and rebuilding meant deleting a
-        // VAO and nine buffers and creating nine more, sixty times a second per
-        // emitter. That is the allocation pattern drivers punish hardest, because a
-        // deleted buffer may still be referenced by in-flight commands.
-        //
-        // The shape has to match for this to be safe: the same vertex count (the
-        // storage is sized for it), the same index count, and the same set of
-        // optional attributes (the defaults filled in for a missing one are sized
-        // and shaped here, not by the caller).
-        if (cached &&
-            cached.vertices === vertexCount(mesh) &&
-            cached.indices === mesh.indices.length &&
-            cached.attributes === attributeMask(mesh)) {
-            return refillMesh(cached, mesh);
-        }
+        // A version that moved means the arrays were rewritten in place. Drop the
+        // old buffers and build again: re-specifying is what `bufferData` already
+        // does per attribute, and a re-upload of a mesh sized for its worst frame
+        // costs the same whether or not the contents changed shape.
         if (cached)
             releaseMesh(cached);
         const vao = gl.createVertexArray();
@@ -851,42 +810,8 @@ export function createWebGL2Renderer(opts = {}) {
             count: mesh.indices.length,
             type: mesh.indices instanceof Uint32Array ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT,
             version: mesh.version,
-            vertices: n,
-            indices: mesh.indices.length,
-            attributes: attributeMask(mesh),
-            instances: null,
-            instanceCapacity: 0,
         };
         meshes.set(mesh, gpu);
-        return gpu;
-    }
-    /** Write new numbers into buffers that are already the right size.
-     *
-     * Only the attributes the mesh actually supplies are re-sent: the defaults
-     * standing in for the others cannot have changed, because a change to WHICH
-     * attributes exist is what `attributeMask` refuses above. For a particle
-     * batch that is four buffers instead of nine, and no object churn at all. */
-    function refillMesh(gpu, mesh) {
-        const refill = (index, data) => {
-            if (!data)
-                return;
-            gl.bindBuffer(gl.ARRAY_BUFFER, gpu.buffers[index]);
-            gl.bufferSubData(gl.ARRAY_BUFFER, 0, data);
-        };
-        refill(0, mesh.positions);
-        refill(1, mesh.normals);
-        refill(2, mesh.uvs);
-        refill(3, mesh.colors);
-        if (mesh.joints) {
-            gl.bindBuffer(gl.ARRAY_BUFFER, gpu.buffers[4]);
-            gl.bufferSubData(gl.ARRAY_BUFFER, 0, mesh.joints);
-        }
-        refill(5, mesh.weights);
-        refill(6, mesh.uvs1);
-        refill(7, mesh.tangents);
-        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gpu.indexBuffer);
-        gl.bufferSubData(gl.ELEMENT_ARRAY_BUFFER, 0, mesh.indices);
-        gpu.version = mesh.version;
         return gpu;
     }
     function releaseMesh(gpu) {
@@ -894,22 +819,11 @@ export function createWebGL2Renderer(opts = {}) {
         for (const buffer of gpu.buffers)
             gl.deleteBuffer(buffer);
         gl.deleteBuffer(gpu.indexBuffer);
-        if (gpu.instances)
-            gl.deleteBuffer(gpu.instances);
     }
     function uploadTexture(source, pixelated, version, repeat) {
         const cached = textures.get(source);
         if (cached && cached.version === version && cached.repeat === repeat)
             return cached.texture;
-        // **A source that comes back with a different version is a LIVE surface,
-        // and a live surface is not worth a mip chain.** Building one costs a
-        // downsample of the whole texture per upload — which for a canvas being
-        // repainted as the game runs is per frame — and buys nothing: a surface
-        // that is redrawn every frame is one being looked at, not one shrinking
-        // into the distance. Latched rather than re-tested, so a texture that
-        // changes once does not flip filters back and forth.
-        if (cached && cached.version !== version)
-            live.add(source);
         // Re-uploading into the SAME texture object rather than making a new one:
         // a live surface would otherwise leak one texture per frame.
         const tex = cached?.texture ?? gl.createTexture();
@@ -922,15 +836,16 @@ export function createWebGL2Renderer(opts = {}) {
         gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
         const filter = pixelated ? gl.NEAREST : gl.LINEAR;
-        // Mipped only where it was asked for and only where filtering is wanted at
-        // all. WebGL2 builds a chain for a non-power-of-two texture too, which
-        // WebGL1 could not — so nothing here has to be sized in advance.
+        // A source that comes back with a new version is a canvas the app repaints,
+        // and rebuilding its chain per upload buys nothing on a surface being
+        // redrawn rather than receding.
+        if (cached && cached.version !== version)
+            live.add(source);
         const mipped = mipmaps && !pixelated && !live.has(source);
         if (mipped)
             gl.generateMipmap(gl.TEXTURE_2D);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, mipped ? gl.LINEAR_MIPMAP_LINEAR : filter);
-        // MAGnification has no smaller level to reach for, so it is unchanged: a
-        // mip chain only ever affects the minifying direction.
+        // MAGnification has no smaller level to reach for, so it is unchanged.
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
         // CLAMP by default, not REPEAT: a non-power-of-two texture is legal in
         // WebGL2 but wrapping one bleeds the opposite edge into a uv that lands
@@ -941,36 +856,22 @@ export function createWebGL2Renderer(opts = {}) {
         textures.set(source, { texture: tex, version, repeat });
         return tex;
     }
-    /** The opaque pass, with runs of the same mesh AND material drawn as one
-     *  instanced call.
-     *
-     *  **What is left to save, and why this is the shape of it.** Sorting by
-     *  material already removed the expensive part of a draw — the twenty-odd
-     *  uniform writes. What remains per node is the model matrix, the normal
-     *  matrix and the draw itself, and instancing folds a run of those into one
-     *  buffer upload and one call. A level repeats its geometry heavily (four in
-     *  five drawn nodes on a shipped course share a mesh with another), so the
-     *  runs are long where it matters.
-     *
-     *  **Only where it is free of consequence.** A skinned node keeps its own
-     *  draw: the pose is a uniform array, so two copies in one call would wear
-     *  the same skeleton. A run of one is drawn the ordinary way rather than as a
-     *  batch of one, which would pay for a buffer upload to save nothing.
-     *
-     *  The frame is unchanged either way: this is how the same geometry is
-     *  SUBMITTED, not what is drawn. */
-    /** Load one material's uniforms, unless they are already loaded.
-     *
-     * Split out of `drawNode` so the instanced path can share the run cache:
-     * a batch is one material by construction, so it sets them at most once.
-     */
-    function setMaterial(material) {
-        // **Set for every draw, and the run cache that skipped repeats is GONE.**
-        // A level draws far more nodes than it has materials, so setting these once
-        // per run of a shared material is worth 24-40 GL calls a node — and it was
-        // reported from play as props rendering black. The cause was never found.
-        // Some node's picture depends on a uniform this would have skipped, and
-        // until that is known, every draw sets its own.
+    function drawNode(node, material) {
+        if (!node.mesh || !node.world)
+            return;
+        const gpu = uploadMesh(node.mesh);
+        gl.uniformMatrix4fv(u.model, false, node.world);
+        // A singular model matrix (a zero scale) has no normal matrix; fall back
+        // to the model matrix, which at least renders the silhouette rather than
+        // dropping the node.
+        const nm = Mat4.normalMatrix(node.world, normalMat);
+        gl.uniformMatrix3fv(u.normalMat, false, nm ?? IDENTITY3);
+        const skin = node.skin?.matrices;
+        if (skin && skin.length > MAX_JOINTS * 16) {
+            throw new Error(`WebGL2 supports at most ${MAX_JOINTS} skin joints per node.`);
+        }
+        gl.uniform1i(u.hasSkin, skin ? 1 : 0);
+        gl.uniformMatrix4fv(u.jointMatrices, false, skin ?? IDENTITY_JOINTS);
         const color = material.color ?? WHITE;
         gl.uniform4f(u.baseColor, color[0], color[1], color[2], color[3]);
         const textureColor = material.textureColor ?? WHITE;
@@ -1067,103 +968,6 @@ export function createWebGL2Renderer(opts = {}) {
             gl.disable(gl.CULL_FACE);
         else
             gl.enable(gl.CULL_FACE);
-    }
-    function drawOpaque(scene, order) {
-        let at = 0;
-        while (at < order.length) {
-            const first = scene.nodes[order[at]];
-            const material = first.material ?? {};
-            const mesh = first.mesh;
-            let end = at + 1;
-            // A run is the same mesh object and the same material object, back to
-            // back in the sorted order. Identity on both, for `drawNode`'s reason.
-            if (instancing && mesh && !first.skin) {
-                while (end < order.length) {
-                    const next = scene.nodes[order[end]];
-                    if (next.mesh !== mesh || (next.material ?? {}) !== material || next.skin)
-                        break;
-                    end++;
-                }
-            }
-            if (end - at > 1 && mesh)
-                drawInstanced(scene, order, at, end, mesh, material);
-            else
-                for (let i = at; i < end; i++)
-                    drawNode(scene.nodes[order[i]], material);
-            at = end;
-        }
-    }
-    /** Scratch for the instance transforms, grown to the largest batch seen and
-     *  never shrunk — a frame's batches are the same ones the next frame has. */
-    let instanceData = new Float32Array(0);
-    function drawInstanced(scene, order, from, to, mesh, material) {
-        const count = to - from;
-        const gpu = uploadMesh(mesh);
-        if (instanceData.length < count * 16)
-            instanceData = new Float32Array(count * 16);
-        for (let i = 0; i < count; i++) {
-            const world = scene.nodes[order[from + i]].world;
-            instanceData.set(world, i * 16);
-        }
-        gl.bindVertexArray(gpu.vao);
-        if (!gpu.instances) {
-            const buffer = gl.createBuffer();
-            if (!buffer)
-                throw new Error("WebGL2: could not create an instance buffer.");
-            gpu.instances = buffer;
-        }
-        gl.bindBuffer(gl.ARRAY_BUFFER, gpu.instances);
-        if (gpu.instanceCapacity < count) {
-            gl.bufferData(gl.ARRAY_BUFFER, count * 16 * 4, gl.DYNAMIC_DRAW);
-            gpu.instanceCapacity = count;
-            // A mat4 attribute is four consecutive vec4 slots, each advancing once
-            // per INSTANCE rather than once per vertex — that divisor is the whole
-            // mechanism. Set with the buffer bound, and kept on the VAO after.
-            for (let slot = 0; slot < 4; slot++) {
-                const location = 8 + slot;
-                gl.enableVertexAttribArray(location);
-                gl.vertexAttribPointer(location, 4, gl.FLOAT, false, 64, slot * 16);
-                gl.vertexAttribDivisor(location, 1);
-            }
-        }
-        gl.bufferSubData(gl.ARRAY_BUFFER, 0, instanceData, 0, count * 16);
-        // The material's own uniforms, through the same run cache the ordinary path
-        // uses — a batch is one material by construction, so this sets them at most
-        // once and usually not at all.
-        setMaterial(material);
-        gl.uniform1i(u.instanced, 1);
-        gl.bindVertexArray(gpu.vao);
-        gl.drawElementsInstanced(mesh.topology === "lines" ? gl.LINES : gl.TRIANGLES, gpu.count, gpu.type, 0, count);
-        gl.uniform1i(u.instanced, 0);
-        stats.drawCalls++;
-        stats.triangles += triangleCount(mesh) * count;
-    }
-    function drawNode(node, material) {
-        if (!node.mesh || !node.world)
-            return;
-        const gpu = uploadMesh(node.mesh);
-        gl.uniformMatrix4fv(u.model, false, node.world);
-        // A singular model matrix (a zero scale) has no normal matrix; fall back
-        // to the model matrix, which at least renders the silhouette rather than
-        // dropping the node.
-        const nm = Mat4.normalMatrix(node.world, normalMat);
-        gl.uniformMatrix3fv(u.normalMat, false, nm ?? IDENTITY3);
-        const skin = node.skin?.matrices;
-        if (skin && skin.length > MAX_JOINTS * 16) {
-            throw new Error(`WebGL2 supports at most ${MAX_JOINTS} skin joints per node.`);
-        }
-        gl.uniform1i(u.hasSkin, skin ? 1 : 0);
-        // **Only when there IS one.** `MAX_JOINTS` is 64, so the identity fallback
-        // is 1024 floats — 4 KB of driver-side validate-and-copy per draw, for a
-        // uniform the shader never reads: every access is behind `if (uHasSkin)`.
-        // A level's geometry carries no skins at all, so this was the single
-        // largest thing most draws uploaded. Nothing needs a reset when the skin
-        // goes: `hasSkin` is what the shader branches on, so a stale pose left in
-        // the uniform is never read — which is why the identity array is gone
-        // rather than merely unsent.
-        if (skin)
-            gl.uniformMatrix4fv(u.jointMatrices, false, skin);
-        setMaterial(material);
         gl.bindVertexArray(gpu.vao);
         gl.drawElements(node.mesh.topology === "lines" ? gl.LINES : gl.TRIANGLES, gpu.count, gpu.type, 0);
         stats.drawCalls++;
@@ -1246,7 +1050,6 @@ export function createWebGL2Renderer(opts = {}) {
             }
             gl.useProgram(program);
             viewProjection(camera, width / height, false, viewProj);
-            frustumPlanes(viewProj, planes);
             gl.uniformMatrix4fv(u.viewProj, false, viewProj);
             cameraPosition(camera, eye);
             gl.uniform3f(u.cameraPos, eye.x, eye.y, eye.z);
@@ -1300,14 +1103,6 @@ export function createWebGL2Renderer(opts = {}) {
                     stats.culled++;
                     return;
                 }
-                // **And whether the camera can see it at all.** Without this every mesh
-                // in the level is drawn every frame, so cost follows the size of the
-                // WORLD rather than the size of the view — see `cull.ts`. Counted as
-                // culled alongside the hidden ones, which is what the stat means.
-                if (frustumCulling && !inFrustum(planes, meshBounds(n.mesh), n.world)) {
-                    stats.culled++;
-                    return;
-                }
                 // An overlay's depth is not the scene's depth — it was drawn with the
                 // test off — so nominating one as an occluder would mask the overlays
                 // behind a shape that never sorted against anything.
@@ -1338,7 +1133,8 @@ export function createWebGL2Renderer(opts = {}) {
             });
             gl.disable(gl.BLEND);
             gl.depthMask(true);
-            drawOpaque(scene, opaque);
+            for (const i of opaque)
+                drawNode(scene.nodes[i], scene.nodes[i].material ?? {});
             if (blended.length > 0) {
                 blended.sort((a, b) => b.depth - a.depth); // farthest first
                 gl.enable(gl.BLEND);
@@ -1463,6 +1259,13 @@ const WHITE3 = [1, 1, 1];
 const UNIT_UV = [1, 1];
 const ZERO_UV = [0, 0];
 const IDENTITY3 = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+const IDENTITY_JOINTS = new Float32Array(MAX_JOINTS * 16);
+for (let i = 0; i < MAX_JOINTS; i++) {
+    IDENTITY_JOINTS[i * 16] = 1;
+    IDENTITY_JOINTS[i * 16 + 5] = 1;
+    IDENTITY_JOINTS[i * 16 + 10] = 1;
+    IDENTITY_JOINTS[i * 16 + 15] = 1;
+}
 function filled(n, value) {
     const a = new Float32Array(n);
     a.fill(value);

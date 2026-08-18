@@ -1,21 +1,6 @@
 import type { Renderer3D } from "./renderer.js";
+/** How to build a WebGPU renderer. */
 export interface WebGPURendererOptions {
-    /** Build a mip chain for every smooth texture and sample it trilinearly.
-     *
-     *  The WebGL2 backend's option, honoured here so the two draw the same frame
-     *  — which is a rule this engine holds itself to rather than a nicety. WebGPU
-     *  has no `generateMipmap`, so the chain is produced the way WebGPU expects:
-     *  a render pass per level, each sampling the level above it. That is why the
-     *  textures are created with `RENDER_ATTACHMENT` usage.
-     *
-     *  Off by default, because it changes the picture: a minified texture stops
-     *  sampling full-resolution texels and starts sampling a filtered average,
-     *  which removes shimmer and softens distance. `pixelated` textures are
-     *  exempt — NEAREST is a request not to be filtered. */
-    mipmaps?: boolean;
-    /** See the WebGL2 backend: off by default until the reports of vanishing
-     *  geometry are understood. */
-    frustumCulling?: boolean;
     canvas?: HTMLCanvasElement;
     width?: number;
     height?: number;

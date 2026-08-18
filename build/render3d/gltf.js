@@ -76,23 +76,11 @@ export async function instantiateGltf(asset) {
         for (const [primitiveIndex, primitive] of (mesh?.primitives ?? []).entries()) {
             if ((primitive.mode ?? 4) !== 4)
                 continue;
+            const meshData = readPrimitive(document, buffers, primitive);
             visuals.push(addNode(scene, node({
                 name: `${source.name ?? originalIndex}:primitive-${primitiveIndex}`,
                 parent: pivot,
-                // **One MeshData per NODE, and the sharing that seemed obviously
-                // right is REVERTED.** A glTF mesh referenced by twenty nodes is one
-                // set of vertices in the file, and reading it per node produces
-                // twenty GPU uploads of identical data — measured on a consumer's
-                // level, 416 drawable nodes carrying 412 distinct meshes where the
-                // file holds 114.
-                //
-                // Sharing them fixed that and broke the picture: props that share a
-                // mesh rendered black and collapsed. The cause was never found,
-                // which is exactly why this is reverted rather than patched — a
-                // consumer somewhere treats a loaded mesh as its own, and until it
-                // is known which one and why, handing two nodes the same object is
-                // a change whose blast radius nobody can state.
-                mesh: readPrimitive(document, buffers, primitive),
+                mesh: meshData,
                 material: materialFor(document, images, primitive.material),
             })));
         }

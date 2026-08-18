@@ -15,35 +15,17 @@ export interface WebGL2RendererOptions {
      *
      *  Off by default, because it CHANGES THE PICTURE: a minified texture stops
      *  sampling its full-resolution texels and starts sampling a filtered
-     *  average, which is the point — it is what removes the shimmer a texture
-     *  minified across a large surface produces as the camera moves — but it is
-     *  a different image, and softer at distance.
+     *  average, which is what removes the shimmer a texture minified across a
+     *  large surface produces as the camera moves — and it is a different image,
+     *  softer at distance.
      *
      *  Orthogonal to `antialias`, which is multisampling: MSAA resolves GEOMETRY
-     *  edges and does nothing at all for texture minification, since it runs the
-     *  fragment shader once per pixel however many samples that pixel has. The
-     *  two fix different aliasing and neither substitutes for the other.
+     *  edges and does nothing for texture minification, since the fragment shader
+     *  runs once per pixel however many samples that pixel has.
      *
      *  `pixelated` textures are exempt: a sprite sheet asking for NEAREST is
-     *  asking not to be filtered, and a mip chain is filtering.
-     *
-     *  Both backends honour it. WebGPU has no `generateMipmap`, so it builds the
-     *  chain with a render pass per level instead — see `MIP_BLIT_WGSL` there.
-     *  The two are required to draw the same frame, and a flag that only one of
-     *  them read would be the plainest possible way to break that. */
+     *  asking not to be filtered, and a mip chain is filtering. */
     mipmaps?: boolean;
-    /** Skip nodes the camera cannot see, and batch runs of one mesh+material into
-     *  one instanced call.
-     *
-     *  **Both OFF by default, and that is a retreat rather than a design.** They
-     *  were measured to work — 87% of a level's nodes culled, a run of draws
-     *  folded into one — and then reported from play as geometry vanishing in
-     *  plain sight and props turning black. Neither cause is understood yet, and a
-     *  wrong picture is worse than a slow one, so they are behind a flag until
-     *  each is verified against a real scene rather than against a test's idea of
-     *  one. See `cull.ts` and `drawInstanced`. */
-    frustumCulling?: boolean;
-    instancing?: boolean;
     /** Collect GPU timer-query samples. Disabled by default because queries add
      *  instrumentation overhead. */
     gpuTiming?: boolean;
