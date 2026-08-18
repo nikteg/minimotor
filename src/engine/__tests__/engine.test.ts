@@ -448,6 +448,70 @@ describe("input", () => {
     expect(game.Pointer.released).toBe(false);
   });
 
+  it("un-sticks buttons released outside the window, on the next move", () => {
+    // `pointerup` is on the WINDOW, which catches a release anywhere on the
+    // page — and nowhere off it. Press, drag out of the window, let go: no
+    // event arrives and the button stays down for ever. Held buttons drive
+    // drags, so what a player sees is a camera that will not stop turning,
+    // reported as "if both pointers are held down, and then released, the
+    // camera gets stuck in rotate mode".
+    //
+    // Every pointer event carries `buttons`, a live bitmask of what is held
+    // NOW, so the next move over the page says what was missed.
+    /** A `MouseEvent` with the two fields a real `PointerEvent` would carry.
+     * jsdom has no `PointerEvent`, and `reconcileButtons` needs `pointerType`
+     * precisely so it can tell a real pointer from a synthetic one. */
+    const pointer = (type: string, x: number, y: number, buttons: number, button = 0) => {
+      const event = new MouseEvent(type, { clientX: x, clientY: y, button, buttons });
+      Object.defineProperty(event, "pointerType", { value: "mouse" });
+      return event;
+    };
+    const { game, canvas } = build("stuck-buttons");
+    game.Loop.run({ update: vi.fn(), draw: vi.fn() });
+    tick(16);
+
+    canvas.dispatchEvent(pointer("pointerdown", 5, 5, 1, 0));
+    canvas.dispatchEvent(pointer("pointerdown", 5, 5, 3, 2));
+    tick(34);
+    expect(game.Pointer.down).toBe(true);
+    expect(game.Pointer.secondary.down).toBe(true);
+
+    // Both let go off-window: nothing was delivered, so both are still held.
+    // The first move back over the page carries `buttons: 0`.
+    window.dispatchEvent(pointer("pointermove", 40, 40, 0));
+    tick(34);
+    expect(game.Pointer.down).toBe(false);
+    expect(game.Pointer.secondary.down).toBe(false);
+    // And NOT as a click: nobody saw a release, so minting one would fire
+    // whatever was under the pointer.
+    expect(game.Pointer.released).toBe(false);
+  });
+
+  it("ends every gesture when the window loses focus", () => {
+    // The other half, for a gesture interrupted by alt-tab or a system dialog:
+    // reconciling needs a move to arrive, and there may not be one for a long
+    // time while a held button goes on driving whatever it drives.
+    const { game, canvas } = build("blur-buttons");
+    game.Loop.run({ update: vi.fn(), draw: vi.fn() });
+    tick(16);
+
+    canvas.dispatchEvent(
+      new MouseEvent("pointerdown", { clientX: 5, clientY: 5, button: 0, buttons: 1 }),
+    );
+    canvas.dispatchEvent(
+      new MouseEvent("pointerdown", { clientX: 5, clientY: 5, button: 2, buttons: 3 }),
+    );
+    tick(34);
+    expect(game.Pointer.down).toBe(true);
+    expect(game.Pointer.secondary.down).toBe(true);
+
+    window.dispatchEvent(new Event("blur"));
+    tick(34);
+    expect(game.Pointer.down).toBe(false);
+    expect(game.Pointer.secondary.down).toBe(false);
+    expect(game.Pointer.released).toBe(false);
+  });
+
   it("gives the right button its own one-step press and release edges", () => {
     const { game, canvas } = build("secondary-edges");
     const presses: boolean[] = [];

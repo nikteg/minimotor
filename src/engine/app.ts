@@ -616,8 +616,44 @@ function buildRuntime(options: RuntimeOptions & { fitWindow?: boolean }): Runtim
     ptr.doublePressed = true; // one update step (consumed like `pressed`)
     ptr.frameDoublePressed = true; // whole frame, for draw-phase UI
   };
+  /** Believe `buttons` over the events we were given, for a MOUSE.
+   *
+   *  `pointerup` is bound to the window, which catches a release anywhere on
+   *  the page — but not one outside it. Press a button, drag off the window,
+   *  let go: no event ever arrives and the button stays down for ever. Held
+   *  buttons drive drags, so the symptom is a camera that will not stop
+   *  turning, reported from play as *"if both pointers are held down, and then
+   *  released, the camera gets stuck in rotate mode"*.
+   *
+   *  Every pointer event carries `buttons`, a live bitmask of what is held
+   *  right now — 1 primary, 2 secondary — so the next move over the page says
+   *  what was missed. Dropped WITHOUT minting a release edge, exactly as
+   *  `onPointerCancel` does and for the same reason: a release nobody saw must
+   *  not read as a click.
+   *
+   *  Mouse only. A touch pointer reports `buttons: 1` while it is down and
+   *  vanishes when it lifts, so there is nothing to reconcile and a stale
+   *  `buttons` from a lifted finger would drop a live one.
+   *
+   *  Gated on `pointerType` being MOUSE rather than on it not being touch, and
+   *  that is deliberate: `buttons` is 0 both when nothing is held and when the
+   *  event never set it, and those cannot be told apart. A synthetic
+   *  `MouseEvent` — what a page driving the canvas by hand sends, and what most
+   *  of this repo's own tests dispatch — carries neither field, so reading it
+   *  as a mouse with no buttons held would cancel every drag on its first move.
+   *  A real `PointerEvent` always carries both. */
+  const reconcileButtons = (e: PointerEvent): void => {
+    if (e.pointerType !== "mouse") return;
+    const held = e.buttons ?? 0;
+    if (ptr.secondaryDown && (held & 2) === 0) ptr.secondaryDown = false;
+    if (ptr.down && (held & 1) === 0 && touchById.size > 0) {
+      dropAllTouches();
+      ptr.down = false;
+    }
+  };
   const onPointerMove = (e: PointerEvent) => {
     const p = clientToLogical(e);
+    reconcileButtons(e);
     const id = pointerIdOrMouse(e);
     const tracked = touchById.get(id);
     if (tracked) {
@@ -760,6 +796,24 @@ function buildRuntime(options: RuntimeOptions & { fitWindow?: boolean }): Runtim
   canvas.addEventListener("wheel", onWheel, { passive: true });
   window.addEventListener("pointerup", onPointerUp);
   window.addEventListener("pointercancel", onPointerCancel);
+  /** Losing the window ends every gesture in flight.
+   *
+   *  The other half of `reconcileButtons`. That one heals on the next move over
+   *  the page, which is the right answer for a release that happened outside
+   *  the window — but it needs a move to arrive, and a gesture interrupted by
+   *  alt-tab, a system dialog or a notification may get none for a long time.
+   *  Meanwhile a held button is still driving whatever it was driving.
+   *
+   *  Dropped with no release edge, `onPointerCancel`'s rule: the app never saw
+   *  a release and must not act as though it had. Registered unconditionally
+   *  rather than beside the pause handling, which is behind options an app may
+   *  not have asked for — this is correctness, not a policy. */
+  const onWindowBlur = () => {
+    dropAllTouches();
+    ptr.down = false;
+    ptr.secondaryDown = false;
+  };
+  window.addEventListener("blur", onWindowBlur);
   for (const type of ["gesturestart", "gesturechange", "gestureend"]) {
     canvas.addEventListener(type, stopGesture, { passive: false });
   }
@@ -1062,6 +1116,7 @@ function buildRuntime(options: RuntimeOptions & { fitWindow?: boolean }): Runtim
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("pointerup", onPointerUp);
       window.removeEventListener("pointercancel", onPointerCancel);
+      window.removeEventListener("blur", onWindowBlur);
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("scroll", invalidateRect, true);
       window.removeEventListener("resize", handleResize);
