@@ -6,6 +6,7 @@ import { frustumPlanes, inFrustum, meshBounds } from "../cull.js";
 import { createCamera, viewProjection } from "../camera.js";
 import type { Camera3D } from "../camera.js";
 import type { MeshData } from "../mesh.js";
+import { instantiateGltf } from "../gltf.js";
 
 /** A camera AT the origin looking down −Z, which is where yaw 0 points. The
  *  target is one unit down −Z at distance 1, so the eye lands on the origin. */
@@ -207,5 +208,51 @@ describe("the backing store's pixel budget", () => {
     // Halving the scale is a quarter of the pixels on top of whatever the cap
     // already took, so the two are not alternatives.
     expect(samplesPerLogicalPixel(2, 0.5, 4)).toBe(4);
+  });
+});
+
+describe("what instantiateGltf shares between nodes", () => {
+  /** Two nodes pointing at one glTF mesh, which is the shape a level is full
+   *  of: a lamp post placed thirty times is one set of vertices in the file. */
+  const twoNodesOneMesh = {
+    asset: { version: "2.0" },
+    scene: 0,
+    scenes: [{ nodes: [0, 1] }],
+    nodes: [{ mesh: 0 }, { mesh: 0, translation: [5, 0, 0] }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0 }, indices: 1, material: 0 }] }],
+    materials: [{ pbrMetallicRoughness: { baseColorFactor: [1, 0, 0, 1] } }],
+    accessors: [
+      { bufferView: 0, componentType: 5126, count: 3, type: "VEC3" },
+      { bufferView: 1, componentType: 5123, count: 3, type: "SCALAR" },
+    ],
+    bufferViews: [
+      { buffer: 0, byteOffset: 0, byteLength: 36 },
+      { buffer: 0, byteOffset: 36, byteLength: 6 },
+    ],
+    buffers: [{ byteLength: 42 }],
+  };
+
+  it("hands both nodes the SAME mesh, so the GPU uploads it once", async () => {
+    // MEASURED on a consumer's level before this: 416 drawable nodes carrying
+    // 412 distinct meshes, where the file holds 114 — so every vertex buffer in
+    // the level was uploaded three or four times over, and no renderer could
+    // tell the copies apart to batch them.
+    const buffer = new ArrayBuffer(42);
+    const { scene } = await instantiateGltf({ document: twoNodesOneMesh as never, buffers: [buffer] });
+    const drawn = scene.nodes.filter((n) => n.mesh);
+    expect(drawn).toHaveLength(2);
+    expect(drawn[0]!.mesh).toBe(drawn[1]!.mesh);
+  });
+
+  it("gives each node its OWN material, which is what a mutating consumer needs", async () => {
+    // A per-area repaint collects the material objects inside an area and
+    // writes to them; shared, one such write would reach every node that shares
+    // the material wherever it stood. Sharing this is worth real draw calls and
+    // waits for those consumers to copy first.
+    const buffer = new ArrayBuffer(42);
+    const { scene } = await instantiateGltf({ document: twoNodesOneMesh as never, buffers: [buffer] });
+    const drawn = scene.nodes.filter((n) => n.mesh);
+    expect(drawn[0]!.material).not.toBe(drawn[1]!.material);
+    expect(drawn[0]!.material).toEqual(drawn[1]!.material);
   });
 });
