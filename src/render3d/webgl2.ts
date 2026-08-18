@@ -626,6 +626,30 @@ interface GpuMesh {
   /** The `MeshData.version` these buffers were filled from, so an in-place
    *  edit can be noticed. `undefined` for a mesh that never declared one. */
   version: number | undefined;
+  /** What the buffers were SIZED and shaped for, so a rewrite can tell "the
+   *  same mesh with new numbers" from "a different mesh". */
+  vertices: number;
+  indices: number;
+  attributes: number;
+  /** Whether the index buffer holds 16- or 32-bit indices. A rewrite that
+   *  changes width cannot reuse the storage: `gpu.type` is fixed at creation and
+   *  the draw would read the new data with the old stride. */
+  indexBytes: number;
+}
+
+/** A bitmask of the optional attributes a mesh supplies. The defaults filled in
+ *  for a missing one are built at upload time and sized there, so a mesh that
+ *  gains or loses one needs its buffers rebuilt rather than refilled. */
+function attributeMask(mesh: MeshData): number {
+  return (
+    (mesh.normals ? 1 : 0) |
+    (mesh.uvs ? 2 : 0) |
+    (mesh.colors ? 4 : 0) |
+    (mesh.joints ? 8 : 0) |
+    (mesh.weights ? 16 : 0) |
+    (mesh.uvs1 ? 32 : 0) |
+    (mesh.tangents ? 64 : 0)
+  );
 }
 
 interface Uniforms {
@@ -882,6 +906,25 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
   function uploadMesh(mesh: MeshData): GpuMesh {
     const cached = meshes.get(mesh);
     if (cached && cached.version === mesh.version) return cached;
+    // **A rewrite of the same shape refills the buffers already there.** A
+    // particle emitter bumps its version every frame — rewriting its vertices is
+    // what it IS — and rebuilding meant deleting a VAO and nine buffers and
+    // creating nine more, per emitter per frame. That is the allocation pattern
+    // drivers punish hardest, since a deleted buffer may still be referenced by
+    // in-flight commands.
+    //
+    // Everything about the shape has to match, including the INDEX WIDTH: the
+    // draw reads `gpu.type`, fixed at creation, so 32-bit indices written into a
+    // buffer described as 16-bit would draw garbage.
+    if (
+      cached &&
+      cached.vertices === vertexCount(mesh) &&
+      cached.indices === mesh.indices.length &&
+      cached.attributes === attributeMask(mesh) &&
+      cached.indexBytes === mesh.indices.BYTES_PER_ELEMENT
+    ) {
+      return refillMesh(cached, mesh);
+    }
     // A version that moved means the arrays were rewritten in place. Drop the
     // old buffers and build again: re-specifying is what `bufferData` already
     // does per attribute, and a re-upload of a mesh sized for its worst frame
@@ -936,8 +979,53 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
       count: mesh.indices.length,
       type: mesh.indices instanceof Uint32Array ? gl!.UNSIGNED_INT : gl!.UNSIGNED_SHORT,
       version: mesh.version,
+      vertices: n,
+      indices: mesh.indices.length,
+      attributes: attributeMask(mesh),
+      indexBytes: mesh.indices.BYTES_PER_ELEMENT,
     };
     meshes.set(mesh, gpu);
+    return gpu;
+  }
+
+  /** Write new numbers into buffers that are already the right size.
+   *
+   * Only the attributes the mesh actually supplies are re-sent: the defaults
+   * standing in for the others cannot have changed, because a change to WHICH
+   * attributes exist is what `attributeMask` refuses above. */
+  function refillMesh(gpu: GpuMesh, mesh: MeshData): GpuMesh {
+    // **Bind this mesh's own VAO first, and that is not tidiness.**
+    // `ELEMENT_ARRAY_BUFFER` is VAO STATE in WebGL2, and `uploadMesh` runs
+    // before the draw binds anything — so whatever VAO the PREVIOUS draw left
+    // bound is still bound here. Rebinding the element buffer without this
+    // rewrites that other mesh's index binding to point at ours, and it then
+    // draws with indices belonging to a different mesh: garbage triangles,
+    // which read on screen as props going black and thin geometry vanishing.
+    // MEASURED exactly that way before this line existed.
+    //
+    // `ARRAY_BUFFER` is not VAO state and needs no such care; it is bound here
+    // only so `bufferSubData` knows where to write.
+    gl!.bindVertexArray(gpu.vao);
+    const refill = (index: number, data: Float32Array | undefined): void => {
+      if (!data) return;
+      gl!.bindBuffer(gl!.ARRAY_BUFFER, gpu.buffers[index]!);
+      gl!.bufferSubData(gl!.ARRAY_BUFFER, 0, data);
+    };
+    refill(0, mesh.positions);
+    refill(1, mesh.normals);
+    refill(2, mesh.uvs);
+    refill(3, mesh.colors);
+    if (mesh.joints) {
+      gl!.bindBuffer(gl!.ARRAY_BUFFER, gpu.buffers[4]!);
+      gl!.bufferSubData(gl!.ARRAY_BUFFER, 0, mesh.joints);
+    }
+    refill(5, mesh.weights);
+    refill(6, mesh.uvs1);
+    refill(7, mesh.tangents);
+    gl!.bindBuffer(gl!.ELEMENT_ARRAY_BUFFER, gpu.indexBuffer);
+    gl!.bufferSubData(gl!.ELEMENT_ARRAY_BUFFER, 0, mesh.indices);
+    gl!.bindVertexArray(null);
+    gpu.version = mesh.version;
     return gpu;
   }
 

@@ -363,3 +363,69 @@ describe("the joint-matrix array", () => {
     ).toBe(2);
   });
 });
+
+describe("refilling a mesh in place", () => {
+  /** Render twice with a version bump between, and report what the second pass
+   *  did. */
+  function secondPass(mutate: (mesh: MeshData) => void) {
+    const harness = recordingGl();
+    const canvas = document.createElement("canvas");
+    (canvas as unknown as { getContext: () => unknown }).getContext = () => harness.gl;
+    const renderer = createWebGL2Renderer({ canvas });
+    const scene = createScene();
+    const mesh: MeshData = {
+      positions: new Float32Array(GROUND.positions),
+      indices: new Uint16Array(GROUND.indices),
+      version: 1,
+    };
+    // A second mesh drawn FIRST, so a VAO that is not this one is bound when
+    // the refill happens — which is the whole hazard.
+    addNode(scene, node({ mesh: BALL, material: {} }));
+    addNode(scene, node({ mesh, material: {} }));
+    updateWorldMatrices(scene);
+    renderer.render(scene, createCamera());
+    const before = harness.calls.length;
+    mutate(mesh);
+    renderer.render(scene, createCamera());
+    return { calls: harness.calls.slice(before), harness };
+  }
+
+  it("reuses its buffers when only the numbers changed", () => {
+    const { calls } = secondPass((mesh) => {
+      mesh.positions[0] = 5;
+      mesh.version = 2;
+    });
+    expect(calls.filter((c) => c.name === "createBuffer").length).toBe(0);
+    expect(calls.filter((c) => c.name === "deleteBuffer").length).toBe(0);
+    expect(calls.filter((c) => c.name === "bufferSubData").length).toBeGreaterThan(0);
+  });
+
+  it("binds its OWN vertex array before touching the element buffer", () => {
+    // **The bug this test exists for.** `ELEMENT_ARRAY_BUFFER` is VAO state, and
+    // `uploadMesh` runs before the draw binds anything — so the previous mesh's
+    // VAO is still bound. Rebinding the element buffer without switching VAO
+    // first repoints THAT mesh's indices at this one, and it draws with another
+    // mesh's triangles. On screen: props black, thin geometry gone.
+    const { calls, harness } = secondPass((mesh) => {
+      mesh.positions[0] = 5;
+      mesh.version = 2;
+    });
+    const boundVao = calls.findIndex((c) => c.name === "bindVertexArray" && c.args[0] !== null);
+    const boundElements = calls.findIndex(
+      (c) =>
+        c.name === "bindBuffer" && harness.enumName(c.args[0] as number) === "ELEMENT_ARRAY_BUFFER",
+    );
+    expect(boundVao).toBeGreaterThanOrEqual(0);
+    expect(boundElements).toBeGreaterThan(boundVao);
+  });
+
+  it("rebuilds when the index WIDTH changes, which the storage cannot absorb", () => {
+    // `gpu.type` is fixed at creation, so 32-bit indices written into a buffer
+    // the draw reads as 16-bit would draw garbage.
+    const { calls } = secondPass((mesh) => {
+      mesh.indices = new Uint32Array(GROUND.indices);
+      mesh.version = 2;
+    });
+    expect(calls.filter((c) => c.name === "createBuffer").length).toBeGreaterThan(0);
+  });
+});
