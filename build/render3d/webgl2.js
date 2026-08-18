@@ -736,23 +736,6 @@ export function createWebGL2Renderer(opts = {}) {
     const viewProj = Mat4.create();
     /** The frustum this frame, rebuilt once per pass from `viewProj`. */
     const planes = new Float32Array(24);
-    /** The material whose uniforms are currently loaded, so a run of nodes
-     *  sharing one sets them once. Cleared before every pass — see `drawNode`. */
-    let lastMaterial = null;
-    /** A stable number per material object, for sorting the opaque pass into
-     *  runs. A `WeakMap` so a material that goes out of use goes with it. */
-    const materialOrder = new WeakMap();
-    let materialOrderNext = 0;
-    function materialKey(material) {
-        if (!material)
-            return -1;
-        let key = materialOrder.get(material);
-        if (key === undefined) {
-            key = materialOrderNext++;
-            materialOrder.set(material, key);
-        }
-        return key;
-    }
     const normalMat = new Float32Array(9);
     const eye = { x: 0, y: 0, z: 0 };
     const lightDirs = new Float32Array(MAX_LIGHTS * 3);
@@ -982,23 +965,12 @@ export function createWebGL2Renderer(opts = {}) {
      * a batch is one material by construction, so it sets them at most once.
      */
     function setMaterial(material) {
-        // **Everything below is the MATERIAL's, and a run of nodes sharing one
-        // sets it once.** A level draws far more nodes than it has materials — 389
-        // draws over 23 materials on one shipped course, one of them taking 84 — and
-        // `instantiateGltf` hands the same material OBJECT to every node that shares
-        // it, so identity is a free and exact key. Sorting the opaque pass by it
-        // (see `opaque.sort` below) turns those into runs, and a run costs the
-        // material's ~24-40 GL calls once instead of per node.
-        //
-        // Identity rather than a deep compare, and the run is only ever WITHIN one
-        // pass: `lastMaterial` is cleared before each of them and at every frame,
-        // so a material mutated in place between frames — the hole repaint does
-        // exactly that — is re-read on the next frame's first draw of it. Nothing
-        // mutates a material midway through a pass; the game code that changes one
-        // runs in update, before any of this.
-        if (material === lastMaterial)
-            return;
-        lastMaterial = material;
+        // **Set for every draw, and the run cache that skipped repeats is GONE.**
+        // A level draws far more nodes than it has materials, so setting these once
+        // per run of a shared material is worth 24-40 GL calls a node — and it was
+        // reported from play as props rendering black. The cause was never found.
+        // Some node's picture depends on a uniform this would have skipped, and
+        // until that is known, every draw sets its own.
         const color = material.color ?? WHITE;
         gl.uniform4f(u.baseColor, color[0], color[1], color[2], color[3]);
         const textureColor = material.textureColor ?? WHITE;
@@ -1273,7 +1245,6 @@ export function createWebGL2Renderer(opts = {}) {
                 return;
             }
             gl.useProgram(program);
-            lastMaterial = null;
             viewProjection(camera, width / height, false, viewProj);
             frustumPlanes(viewProj, planes);
             gl.uniformMatrix4fv(u.viewProj, false, viewProj);
@@ -1362,29 +1333,14 @@ export function createWebGL2Renderer(opts = {}) {
                     blended.push({ index: i, depth: dx * dx + dy * dy + dz * dz });
                 }
                 else {
-                    // Keyed HERE rather than inside the comparator, so the numbers follow
-                    // scene order: a sort is stable, so materials seen once each keep the
-                    // order they were authored in and only repeats are pulled together.
-                    // Keyed in the comparator instead, the ids would follow whatever
-                    // order the sort happened to compare in and shuffle even a scene with
-                    // no repeats at all.
-                    materialKey(n.material);
                     opaque.push(i);
                 }
             });
             gl.disable(gl.BLEND);
             gl.depthMask(true);
-            // **Sorted by material, which costs nothing and is pixel-identical.**
-            // Opaque draws are order-independent under the depth test, so grouping
-            // them changes which order the same fragments win in, not which ones do.
-            // The blended pass below is NOT sorted this way and must not be: its
-            // order IS the picture.
-            opaque.sort((a, b) => materialKey(scene.nodes[a].material) - materialKey(scene.nodes[b].material));
-            lastMaterial = null;
             drawOpaque(scene, opaque);
             if (blended.length > 0) {
                 blended.sort((a, b) => b.depth - a.depth); // farthest first
-                lastMaterial = null;
                 gl.enable(gl.BLEND);
                 gl.depthMask(false);
                 // The blend function is per node rather than per pass: `additive`
@@ -1415,7 +1371,6 @@ export function createWebGL2Renderer(opts = {}) {
                 gl.depthMask(false);
                 gl.enable(gl.BLEND);
                 setBlendMode(false);
-                lastMaterial = null;
                 for (const i of occluded) {
                     drawNode(scene.nodes[i], ghostMaterial(scene.nodes[i].material ?? {}));
                 }
@@ -1450,7 +1405,6 @@ export function createWebGL2Renderer(opts = {}) {
                     // waste — but it is one draw per nominated node, and a second program
                     // whose only job is to write nothing costs more than it saves.
                     gl.colorMask(false, false, false, false);
-                    lastMaterial = null;
                     for (const i of overlayOccluders) {
                         drawNode(scene.nodes[i], scene.nodes[i].material ?? {});
                     }
@@ -1459,7 +1413,6 @@ export function createWebGL2Renderer(opts = {}) {
                 // Last, and against a depth function that always passes — unless this
                 // overlay opted into the prepass above, in which case LEQUAL lets the
                 // occluders cut it out.
-                lastMaterial = null;
                 for (const i of overlay) {
                     const material = scene.nodes[i].material ?? {};
                     const gated = gating && material.overlayOccluded === true;
