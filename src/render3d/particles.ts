@@ -174,7 +174,12 @@ export interface EmitterOptions {
   /** Geometry copied for every particle in `"mesh"` mode. The source stays
    * untouched; the emitter owns one fixed-capacity dynamic batch. */
   mesh?: MeshData;
-  /** Initial authored-mesh Euler rotation, sampled at birth, in radians. */
+  /** Initial Euler rotation, sampled at birth, in radians.
+   *
+   *  All three axes turn an authored MESH. For a billboard only `z` means
+   *  anything, and it is the roll about the view axis — the same thing the
+   *  engines that ship this call a particle's rotation, since a camera-facing
+   *  quad has no other axis to turn about that shows. */
   rotation?: { x?: Range; y?: Range; z?: Range };
   /** Authored-mesh radians per second about each local axis. */
   angularVelocity?: { x?: Range; y?: Range; z?: Range };
@@ -661,6 +666,29 @@ export function createEmitter(opts: EmitterOptions): Emitter {
       Vec3.normalize(right, right);
       Vec3.cross(toView, right, up);
       Vec3.normalize(up, up);
+      // **The authored ROLL, about the view axis.** `rotation.z` used to reach
+      // authored-mesh particles only, so a billboard drawn from a sheet whose
+      // art is not square-on came out flat however it was authored — a stroke
+      // puff authored at 75 degrees drew at 0 and read as the wrong shape at
+      // the wrong size, because a long sprite laid across the view is not the
+      // same picture as one laid along it.
+      //
+      // Rolled by turning the basis rather than the corners, so the sheet, the
+      // shift and the size all ride along with no second place to keep in step.
+      const roll = rotationZ[slot];
+      if (roll !== 0) {
+        const cos = Math.cos(roll);
+        const sin = Math.sin(roll);
+        const rx = right.x * cos + up.x * sin;
+        const ry = right.y * cos + up.y * sin;
+        const rz = right.z * cos + up.z * sin;
+        up.x = up.x * cos - right.x * sin;
+        up.y = up.y * cos - right.y * sin;
+        up.z = up.z * cos - right.z * sin;
+        right.x = rx;
+        right.y = ry;
+        right.z = rz;
+      }
     }
 
     let frame = 0;

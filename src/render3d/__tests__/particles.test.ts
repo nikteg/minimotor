@@ -330,6 +330,44 @@ describe("the mesh it writes", () => {
     // below pins. Only which end of the image lands on which end moved.
   });
 
+  it("rolls a BILLBOARD by its authored z, which used to reach meshes only", () => {
+    // `rotation` was documented as an authored-mesh Euler and wired only into
+    // `writeMesh`, so a billboard drawn from a sheet came out square-on however
+    // it was authored. The capture's stroke puff authors 75 degrees and drew at
+    // zero: a long sprite laid across the view is not the same picture as one
+    // laid along it, which is why it read as the wrong shape AND the wrong size.
+    const upright = createEmitter({
+      rate: 1000,
+      lifetime: 10,
+      capacity: 1,
+      mode: "billboard",
+      size: { x: 4, y: 1 },
+      random: middle,
+    });
+    upright.update(1 / 60, { x: 0, y: 0, z: 100 });
+    const flat = quadOf(upright.mesh, 0);
+
+    const rolled = createEmitter({
+      rate: 1000,
+      lifetime: 10,
+      capacity: 1,
+      mode: "billboard",
+      size: { x: 4, y: 1 },
+      rotation: { z: Math.PI / 2 },
+      random: middle,
+    });
+    rolled.update(1 / 60, { x: 0, y: 0, z: 100 });
+    const turned = quadOf(rolled.mesh, 0);
+
+    // Unrolled: 4 wide across X, 1 tall up Y. A quarter turn swaps them.
+    const span = (corners: number[][], axis: number) =>
+      Math.max(...corners.map((c) => c[axis])) - Math.min(...corners.map((c) => c[axis]));
+    expect(span(flat, 0)).toBeCloseTo(4, 4);
+    expect(span(flat, 1)).toBeCloseTo(1, 4);
+    expect(span(turned, 0)).toBeCloseTo(1, 4);
+    expect(span(turned, 1)).toBeCloseTo(4, 4);
+  });
+
   it("anchors a stretched quad's head on the particle", () => {
     // A trail shows where a particle has been. Centring it on the particle
     // draws half the trail ahead of the thing making it, which reads as the
