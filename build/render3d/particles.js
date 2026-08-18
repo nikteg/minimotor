@@ -334,6 +334,8 @@ export function createEmitter(opts) {
         // but `stretched`, which anchors its head on the particle instead of
         // straddling it — see below.
         let shift = 0;
+        /** Whether the sprite is laid down reversed along the stretch. */
+        let flipU = false;
         if (mode === "horizontal") {
             right.x = 1;
             right.y = 0;
@@ -380,9 +382,21 @@ export function createEmitter(opts) {
             // its length into the quad's width and smear its 16-pixel thickness over
             // the whole trail. It is also what the engines that ship this mode do.
             //
-            // u increases with the velocity, so a frame drawn left to right points
-            // the way the particle is going: whatever the art does along its length
-            // — taper, arrowhead, a flipbook of a line scrolling — reads forwards.
+            // **u decreases with the velocity, and that is a correction.** This used
+            // to read the other way — u increasing toward the head, on the reasoning
+            // that a frame drawn left to right should point the way the particle is
+            // going. Reported from play against the one consumer with a directional
+            // stretched sheet: both the course fans and the wind power-up blew
+            // visibly backwards while every heading in their data was correct, and
+            // the stretch axis is the only thing those two share.
+            //
+            // Cocos stretches along the quad's V instead — `camUp = velocity *
+            // velocityScale + normalize(velocity) * lengthScale * s.y` — so its
+            // sprites are authored against a different axis AND a different sense
+            // from the one this mode was written to. Stretching along U is still
+            // right for the art (a 2x8 sheet's cells are wide and short, so U is the
+            // line's own length); which END of U leads is what was wrong.
+            flipU = true;
             right.x = along.x;
             right.y = along.y;
             right.z = along.z;
@@ -434,8 +448,14 @@ export function createEmitter(opts) {
         }
         const column = sheet ? frame % sheet.columns : 0;
         const row = sheet ? Math.floor(frame / sheet.columns) : 0;
-        const u0 = sheet ? column / sheet.columns : 0;
-        const u1 = sheet ? (column + 1) / sheet.columns : 1;
+        const uLow = sheet ? column / sheet.columns : 0;
+        const uHigh = sheet ? (column + 1) / sheet.columns : 1;
+        // A stretched quad lays its sprite down reversed along the streak — see
+        // `flipU`. Swapped here rather than by negating `right`, which would take
+        // the shift and the perpendicular with it and turn the quad over instead of
+        // mirroring the image on it.
+        const u0 = flipU ? uHigh : uLow;
+        const u1 = flipU ? uLow : uHigh;
         // `v = 0` is the top of the texture here, as everywhere in this engine, so
         // the sheet reads left to right and top to bottom the way it is drawn.
         const v0 = sheet ? row / sheet.rows : 0;
