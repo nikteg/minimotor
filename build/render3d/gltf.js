@@ -50,6 +50,27 @@ export async function instantiateGltf(asset) {
     const scene = createScene({ background: [0, 0, 0, 0] });
     const nodes = document.nodes ?? [];
     const meshes = document.meshes ?? [];
+    /** One `MeshData` per glTF mesh+primitive, however many nodes point at it.
+     *
+     *  A mesh referenced by thirty nodes is one set of vertices in the file, and
+     *  reading it per node produced thirty of them: thirty GPU uploads of
+     *  identical data. MEASURED on a consumer's level — 416 drawable nodes
+     *  carrying 412 distinct meshes where the file holds 114.
+     *
+     *  Safe to share where a material is not: nothing edits a loaded mesh's
+     *  vertices in place — a mesh that animates is a skin, which is a per-node
+     *  pose over shared geometry, and one rewritten every frame is one the app
+     *  built rather than one out of a file. */
+    const meshCache = new Map();
+    const meshFor = (meshIndex, primitiveIndex, primitive) => {
+        const key = `${meshIndex}:${primitiveIndex}`;
+        let found = meshCache.get(key);
+        if (!found) {
+            found = readPrimitive(document, buffers, primitive);
+            meshCache.set(key, found);
+        }
+        return found;
+    };
     const originalToPivot = new Map();
     const visualNodes = new Map();
     const visiting = new Set();
@@ -76,7 +97,7 @@ export async function instantiateGltf(asset) {
         for (const [primitiveIndex, primitive] of (mesh?.primitives ?? []).entries()) {
             if ((primitive.mode ?? 4) !== 4)
                 continue;
-            const meshData = readPrimitive(document, buffers, primitive);
+            const meshData = meshFor(source.mesh, primitiveIndex, primitive);
             visuals.push(addNode(scene, node({
                 name: `${source.name ?? originalIndex}:primitive-${primitiveIndex}`,
                 parent: pivot,
