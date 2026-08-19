@@ -49,8 +49,158 @@ import { frustumPlanes, inFrustum, meshBounds, type Frustum } from "./cull.js";
 import type { Camera3D } from "./camera.js";
 import type { MeshData } from "./mesh.js";
 import type { Material, Node3D, Scene3D } from "./scene.js";
-import type { RenderFrameStats, RenderOptions, RenderStats, Renderer3D } from "./renderer.js";
+import type {
+  RenderFrameStats,
+  RenderOptions,
+  RenderStats,
+  RenderTarget3D,
+  Renderer3D,
+} from "./renderer.js";
 import type { Vec3 } from "@src/math/vec3.js";
+
+/** An offscreen colour+depth surface — see `RenderTarget3D`.
+ *
+ * Three textures where WebGL2 needs two, and the extra one is multisampling.
+ * This backend draws every pass into a multisampled colour attachment and
+ * RESOLVES it into a single-sampled one, because a sampled texture cannot be
+ * multisampled — the same arrangement the canvas path uses against the swap
+ * chain, and for the same reason. With antialiasing off the sample count is 1
+ * and the resolve target is the only colour texture there is.
+ *
+ * The sample count and the format are the RENDERER's, not choices made here: a
+ * pipeline is compiled against them, and a pass whose attachments disagree with
+ * the pipeline is a validation error rather than a wrong picture.
+ *
+ * `TEXTURE_BINDING` on the resolved texture is what makes a target samplable at
+ * all, and `COPY_SRC` is what lets `readPixels` get at it. */
+function createRenderTarget(
+  device: GPUDevice,
+  format: GPUTextureFormat,
+  sampleCount: number,
+  width: number,
+  height: number,
+): RenderTarget3D {
+  let w = 0;
+  let h = 0;
+  let color: GPUTexture | null = null;
+  let multisampled: GPUTexture | null = null;
+  let depth: GPUTexture | null = null;
+
+  function allocate(nextW: number, nextH: number): void {
+    w = Math.max(1, Math.round(nextW));
+    h = Math.max(1, Math.round(nextH));
+    color?.destroy();
+    multisampled?.destroy();
+    depth?.destroy();
+    color = device.createTexture({
+      size: [w, h],
+      format,
+      usage:
+        GPUTextureUsage.RENDER_ATTACHMENT |
+        GPUTextureUsage.TEXTURE_BINDING |
+        GPUTextureUsage.COPY_SRC,
+    });
+    multisampled =
+      sampleCount === 1
+        ? null
+        : device.createTexture({
+            size: [w, h],
+            format,
+            sampleCount,
+            usage: GPUTextureUsage.RENDER_ATTACHMENT,
+          });
+    depth = device.createTexture({
+      size: [w, h],
+      format: "depth24plus",
+      sampleCount,
+      usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+  }
+  allocate(width, height);
+
+  return {
+    get width() {
+      return w;
+    },
+    get height() {
+      return h;
+    },
+    resize(nextW: number, nextH: number) {
+      const wanted = Math.max(1, Math.round(nextW));
+      const wantedH = Math.max(1, Math.round(nextH));
+      if (wanted === w && wantedH === h) return;
+      allocate(wanted, wantedH);
+    },
+    async readPixels() {
+      // `bytesPerRow` must be a multiple of 256, so a narrow target is copied
+      // into a padded buffer and the padding is dropped on the way out.
+      const stride = w * 4;
+      const padded = Math.ceil(stride / 256) * 256;
+      const staging = device.createBuffer({
+        size: padded * h,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+      });
+      const encoder = device.createCommandEncoder();
+      encoder.copyTextureToBuffer(
+        { texture: color! },
+        { buffer: staging, bytesPerRow: padded, rowsPerImage: h },
+        [w, h],
+      );
+      device.queue.submit([encoder.finish()]);
+      await staging.mapAsync(GPUMapMode.READ);
+      const mapped = new Uint8Array(staging.getMappedRange());
+      const pixels = new Uint8Array(stride * h);
+      // Top row first, which is already this backend's order — a WebGPU
+      // texture's origin is top-left, unlike GL's.
+      for (let row = 0; row < h; row += 1) {
+        pixels.set(mapped.subarray(row * padded, row * padded + stride), row * stride);
+      }
+      staging.unmap();
+      staging.destroy();
+      return pixels;
+    },
+    dispose() {
+      color?.destroy();
+      multisampled?.destroy();
+      depth?.destroy();
+      color = null;
+      multisampled = null;
+      depth = null;
+    },
+    [TARGET_COLOR]: () => color,
+    [TARGET_MULTISAMPLED]: () => multisampled,
+    [TARGET_DEPTH]: () => depth,
+  } as RenderTarget3D;
+}
+
+/** How this backend finds its own textures on a `RenderTarget3D` it made.
+ * Symbols rather than fields, so the public type carries no backend handles and
+ * a target from the other renderer is a miss rather than a crash. Getters
+ * rather than values, because `resize` replaces all three. */
+const TARGET_COLOR = Symbol.for("minimotor.render3d.webgpu.targetColor");
+const TARGET_MULTISAMPLED = Symbol.for("minimotor.render3d.webgpu.targetMultisampled");
+const TARGET_DEPTH = Symbol.for("minimotor.render3d.webgpu.targetDepth");
+
+/** The views one pass needs for a target, in the shape the canvas path uses:
+ * what the pass draws into, what it resolves into, and its depth. */
+function targetViews(target: RenderTarget3D): {
+  colorView: GPUTextureView;
+  resolveView: GPUTextureView | undefined;
+  depthView: GPUTextureView;
+} {
+  const handles = target as unknown as Record<symbol, (() => GPUTexture | null) | undefined>;
+  const color = handles[TARGET_COLOR]?.();
+  const depth = handles[TARGET_DEPTH]?.();
+  if (!color || !depth) {
+    throw new Error("RenderTarget3D belongs to a different renderer — targets are per device.");
+  }
+  const multisampled = handles[TARGET_MULTISAMPLED]?.();
+  return {
+    colorView: (multisampled ?? color).createView(),
+    resolveView: multisampled ? color.createView() : undefined,
+    depthView: depth.createView(),
+  };
+}
 
 const MAX_LIGHTS = 4;
 const MAX_JOINTS = 64;
@@ -1420,6 +1570,12 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     },
 
     render(scene: Scene3D, camera: Camera3D, options: RenderOptions = {}) {
+      // Read once at the top: the projections below are built from the target's
+      // aspect when there is one — a square probe rendered by a wide renderer
+      // must not come out stretched — and the pass further down draws into its
+      // attachments.
+      const offscreen = options.target;
+      const aspect = offscreen ? offscreen.width / offscreen.height : width / height;
       stats.drawCalls = 0;
       stats.triangles = 0;
       stats.culled = 0;
@@ -1438,7 +1594,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       cameraPosition(camera, eye);
       // `true` for WebGPU's 0..1 depth range, the same flag the projection below
       // is built with and the one that decides the near plane.
-      viewProjection(camera, width / height, true, cullProj);
+      viewProjection(camera, aspect, true, cullProj);
       frustumPlanes(cullProj, planes, true);
       scene.nodes.forEach((n, i) => {
         if (!n.mesh || !n.world) return;
@@ -1481,7 +1637,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       const total = opaque.length + blended.length + occluded.length + overlay.length;
       ensureDrawCapacity(Math.max(1, total));
 
-      viewProjection(camera, width / height, true, viewProj);
+      viewProjection(camera, aspect, true, viewProj);
       frameData.set(viewProj, 0);
       frameData.set([eye.x, eye.y, eye.z, 0], 16);
       const toneMap = scene.toneMapping === "aces" ? 1 : 0;
@@ -1546,9 +1702,18 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       // Multisampled: draw into the offscreen target and let the pass resolve
       // it down into the frame the compositor shows. The views are made once,
       // because a gated frame encodes two passes over the same textures.
-      const colorView = (colorTexture ?? context!.getCurrentTexture()).createView();
-      const resolveView = colorTexture ? context!.getCurrentTexture().createView() : undefined;
-      const depthView = depthTexture!.createView();
+      // **Offscreen or on the canvas.** A target owns the same three
+      // attachments the canvas path uses — what the pass draws into, what it
+      // resolves into, and its depth — so everything below this line is
+      // unchanged by which one it got. See `targetViews`.
+      const views = offscreen
+        ? targetViews(offscreen)
+        : {
+            colorView: (colorTexture ?? context!.getCurrentTexture()).createView(),
+            resolveView: colorTexture ? context!.getCurrentTexture().createView() : undefined,
+            depthView: depthTexture!.createView(),
+          };
+      const { colorView, resolveView, depthView } = views;
       let pass = encoder.beginRenderPass({
         colorAttachments: [
           {
@@ -1682,6 +1847,9 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       meshes.delete(mesh);
     },
 
+    createTarget(targetWidth: number, targetHeight: number) {
+      return createRenderTarget(device, format, sampleCount, targetWidth, targetHeight);
+    },
     dispose() {
       depthTexture?.destroy();
       colorTexture?.destroy();

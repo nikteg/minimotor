@@ -64,6 +64,7 @@ export type {
   RenderFrameStats,
   RenderOptions,
   RenderStats,
+  RenderTarget3D,
   Renderer3D,
   ResizeOptions,
 } from "./renderer.js";

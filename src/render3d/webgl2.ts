@@ -50,6 +50,7 @@ import type {
   RenderFrameStats,
   RenderOptions,
   RenderStats,
+  RenderTarget3D,
   Renderer3D,
   ResizeOptions,
 } from "./renderer.js";
@@ -1568,12 +1569,20 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
       const renderStart = performance.now();
       const gpuQuery = beginGpuQuery();
 
-      const targetW = Math.max(1, Math.round(width * dpr));
-      const targetH = Math.max(1, Math.round(height * dpr));
+      // **Offscreen or on the canvas**, and the difference is three things: the
+      // framebuffer bound, the size the viewport covers, and the aspect the
+      // projection is built from. A target owns its own pixels and has no
+      // device ratio — see `RenderTarget3D` — so it is not scaled by `dpr`, and
+      // its rectangle starts at the origin because there is no larger backing
+      // store to align a crop within.
+      const offscreen = opts.target;
+      const targetW = offscreen ? offscreen.width : Math.max(1, Math.round(width * dpr));
+      const targetH = offscreen ? offscreen.height : Math.max(1, Math.round(height * dpr));
       // WebGL's origin is bottom-left, while the 2D crop in viewport3d reads
       // from the canvas's top-left. Keep the active render rectangle aligned
       // with that crop when the backing store is larger than this viewport.
-      const targetY = canvas.height - targetH;
+      const targetY = offscreen ? 0 : canvas.height - targetH;
+      gl!.bindFramebuffer(gl!.FRAMEBUFFER, offscreen ? targetFramebufferOf(offscreen) : null);
       gl!.viewport(0, targetY, targetW, targetH);
       gl!.enable(gl!.DEPTH_TEST);
       gl!.depthFunc(gl!.LEQUAL);
@@ -1595,6 +1604,10 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
         gl!.disable(gl!.SCISSOR_TEST);
       }
       if (scene.nodes.length === 0) {
+        // The target is unbound on THIS exit as well as the one below it: an
+        // empty scene still cleared into it, and leaving a framebuffer bound
+        // would send the next caller's canvas render offscreen.
+        if (offscreen) gl!.bindFramebuffer(gl!.FRAMEBUFFER, null);
         endGpuQuery(gpuQuery);
         frameStats.drawCalls += stats.drawCalls;
         frameStats.triangles += stats.triangles;
@@ -1605,7 +1618,15 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
 
       gl!.useProgram(program);
       lastMaterial = null;
-      viewProjection(camera, width / height, false, viewProj);
+      // The TARGET's aspect when there is one, and the LOGICAL canvas ratio
+      // otherwise — not `targetW / targetH`, whose rounding to whole physical
+      // pixels would shift every existing render by a hair.
+      viewProjection(
+        camera,
+        offscreen ? offscreen.width / offscreen.height : width / height,
+        false,
+        viewProj,
+      );
       // AFTER the projection is built, not before: planes off a stale matrix
       // would cull against last frame's camera.
       frustumPlanes(viewProj, planes);
@@ -1824,6 +1845,7 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
         gl!.depthFunc(gl!.LEQUAL);
       }
       gl!.bindVertexArray(null);
+      if (offscreen) gl!.bindFramebuffer(gl!.FRAMEBUFFER, null);
       endGpuQuery(gpuQuery);
       frameStats.drawCalls += stats.drawCalls;
       frameStats.triangles += stats.triangles;
@@ -1838,6 +1860,9 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
       meshes.delete(mesh);
     },
 
+    createTarget(targetWidth: number, targetHeight: number) {
+      return createRenderTarget(gl!, targetWidth, targetHeight);
+    },
     dispose() {
       gl!.deleteProgram(program);
       // The rest is reachable only through the WeakMaps, which die with this
@@ -1847,6 +1872,115 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
   };
   return renderer;
 }
+
+/** An offscreen colour+depth surface — see `RenderTarget3D`.
+ *
+ * A colour TEXTURE rather than a renderbuffer, because the whole point of a
+ * target is that something samples it afterwards; a renderbuffer can only be
+ * blitted. Depth is the renderbuffer instead, for the mirror of that reason:
+ * nothing samples depth here, and a renderbuffer is the cheaper attachment.
+ *
+ * `RGBA8` and `DEPTH_COMPONENT16`: both are required to be renderable in WebGL2
+ * (`§4.4.2`), so there is no format probe and no fallback path. A float target
+ * would want `EXT_color_buffer_float` and an HDR pipeline to spend it on, and
+ * this engine tone-maps into 8 bits at the end of the fragment shader anyway.
+ *
+ * NEAREST and CLAMP_TO_EDGE: a target is usually sampled at about the same
+ * resolution it was rendered at, and a mirror that bilinearly blurs its own
+ * pixels reads as a smudge rather than as a reflection. A caller that wants it
+ * smooth can render the target larger. */
+function createRenderTarget(
+  gl: WebGL2RenderingContext,
+  width: number,
+  height: number,
+): RenderTarget3D {
+  const framebuffer = gl.createFramebuffer();
+  const texture = gl.createTexture();
+  const depth = gl.createRenderbuffer();
+  let w = 0;
+  let h = 0;
+
+  function allocate(nextW: number, nextH: number): void {
+    w = Math.max(1, Math.round(nextW));
+    h = Math.max(1, Math.round(nextH));
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.bindRenderbuffer(gl.RENDERBUFFER, depth);
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, w, h);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depth);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+  }
+  allocate(width, height);
+
+  return {
+    get width() {
+      return w;
+    },
+    get height() {
+      return h;
+    },
+    resize(nextW: number, nextH: number) {
+      const wanted = Math.max(1, Math.round(nextW));
+      const wantedH = Math.max(1, Math.round(nextH));
+      if (wanted === w && wantedH === h) return;
+      allocate(wanted, wantedH);
+    },
+    readPixels() {
+      const pixels = new Uint8Array(w * h * 4);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+      gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      // GL hands back the BOTTOM row first and the contract says top first, so
+      // the rows are flipped here rather than in every caller. Same reason
+      // `render` flips the viewport for a canvas larger than its viewport.
+      const stride = w * 4;
+      const flipped = new Uint8Array(pixels.length);
+      for (let row = 0; row < h; row += 1) {
+        flipped.set(pixels.subarray((h - 1 - row) * stride, (h - row) * stride), row * stride);
+      }
+      return Promise.resolve(flipped);
+    },
+    dispose() {
+      gl.deleteFramebuffer(framebuffer);
+      gl.deleteTexture(texture);
+      gl.deleteRenderbuffer(depth);
+    },
+    /** The GL texture, for the renderer that made it. Not on `RenderTarget3D`:
+     * a caller has no use for a raw handle, and the two backends' handles are
+     * not the same kind of thing. */
+    [TARGET_TEXTURE]: texture,
+    [TARGET_FRAMEBUFFER]: framebuffer,
+  } as RenderTarget3D;
+}
+
+/** This backend's framebuffer for a target it made.
+ *
+ * Throws rather than drawing nowhere when handed a target from the OTHER
+ * backend: a silent miss here renders the whole frame to the canvas and looks
+ * like the target never worked. */
+function targetFramebufferOf(target: RenderTarget3D): WebGLFramebuffer {
+  const framebuffer = (target as unknown as Record<symbol, WebGLFramebuffer | undefined>)[
+    TARGET_FRAMEBUFFER
+  ];
+  if (!framebuffer) {
+    throw new Error("RenderTarget3D belongs to a different renderer — targets are per context.");
+  }
+  return framebuffer;
+}
+
+/** How this backend finds its own attachments on a `RenderTarget3D` it made.
+ * Symbols rather than fields, so the public type stays free of one backend's
+ * handles and a target from the other renderer is a miss rather than a crash. */
+const TARGET_TEXTURE = Symbol.for("minimotor.render3d.webgl2.targetTexture");
+const TARGET_FRAMEBUFFER = Symbol.for("minimotor.render3d.webgl2.targetFramebuffer");
 
 const WHITE = [1, 1, 1, 1] as const;
 const WHITE3 = [1, 1, 1] as const;

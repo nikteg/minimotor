@@ -165,11 +165,20 @@ describe("the two backends' framebuffers", () => {
     // Made once and handed to every pass in the frame: a gated overlay pass is
     // a second pass over the same textures, and one that forgot to resolve
     // would show the scene resolved and the overlays not.
-    expect(webgpu).toMatch(/resolveView = colorTexture \?/);
+    //
+    // `[:=]` because the render-target work moved this from a bare assignment
+    // into the `views` object literal the canvas and offscreen paths now share,
+    // and the SPELLING is not what this is about. It is the one thing a text
+    // check of a WebGPU frame can be held to on this machine — headless
+    // Chromium here has no `navigator.gpu`, which `e2e/render-target.spec.ts`
+    // records as the reason its own measurements are WebGL2 only.
+    expect(webgpu).toMatch(/resolveView[:=] colorTexture \?/);
     expect(webgpu.match(/^ +resolveTarget: resolveView,$/gm) ?? []).toHaveLength(2);
     // The colour target and the depth target, which a pass rejects unless they
-    // agree.
-    expect(webgpu.match(/^ +sampleCount,$/gm) ?? []).toHaveLength(2);
+    // agree — now once for the CANVAS's pair and once for a render target's own,
+    // which is four and is the claim getting stronger rather than looser: a
+    // target whose attachments disagreed would fail validation the same way.
+    expect(webgpu.match(/^ +sampleCount,$/gm) ?? []).toHaveLength(4);
   });
 });
 
