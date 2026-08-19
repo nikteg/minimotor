@@ -165,3 +165,20 @@ test("an ATLAS: two views in one target, one clear between them", async ({ page 
   // this silhouette to twice as wide as it is tall.
   expect(Math.abs(green!.w - green!.h), `green was ${green!.w}x${green!.h}`).toBeLessThanOrEqual(1);
 });
+
+test("captureFrame copies the canvas into a sampleable texture", async ({ page }) => {
+  // The cheap half of a screen-space reflection: a surface that reflects the scene
+  // needs the scene as an input to itself, and this gets it for one copy instead of a
+  // second render. What a shader then samples is one frame stale, which is the trade.
+  //
+  // Measured against the frame it copied rather than against "something was written":
+  // the canvas last held the RED-box render (step 3 of the harness), so a snapshot
+  // holding green would be a copy of the wrong moment, and one holding the background
+  // would be a copy of nothing.
+  const { snapshot } = await harness(page);
+  expect(snapshot, "the backend can copy its own frame").not.toBeNull();
+  expect(snapshot!.matchesCanvas, "the snapshot is the canvas's own size").toBe(true);
+  const [r, g] = snapshot!.center;
+  expect(r!, "the red box the canvas last drew").toBeGreaterThan(200);
+  expect(g!).toBeLessThan(80);
+});

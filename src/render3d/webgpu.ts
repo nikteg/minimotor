@@ -319,6 +319,11 @@ struct DrawData {
   // keeps a mask tint separate from the surface colour.
   textureColor: vec4f,
   jointMatrices: array<mat4x4f, ${MAX_JOINTS}>,
+  // x: how much of last frame's screen is seen head-on, 0 for no snapshot at
+  // all, y: how far the single tap reaches in screen widths, zw spare. See
+  // Glaze.screen. APPENDED past the joints, in the headroom the stride note
+  // describes, precisely so that no writeDraw index below it moves.
+  glazeScreen : vec4f,
 };
 
 @group(0) @binding(0) var<uniform> frame : Frame;
@@ -331,6 +336,10 @@ struct DrawData {
 // Six 90-degree faces of one point in a 3x2 atlas, +X -X +Y / -Y +Z -Z — see
 // Glaze.environment and cubeProbeViews, whose cameras write this layout.
 @group(1) @binding(5) var glazeEnvTex : texture_2d<f32>;
+// LAST FRAME's picture of the scene — see Glaze.screen. In the CANVAS's format
+// rather than the engine's, since it is a copy of the canvas; texture_2d<f32>
+// reads either.
+@group(1) @binding(6) var glazeScreenTex : texture_2d<f32>;
 
 struct VsOut {
   @builtin(position) clip     : vec4f,
@@ -842,6 +851,9 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
     // Weak head-on, strong at a grazing angle. On a low orbit over a flat deck
     // this is most of what the eye reads. See Glaze.fresnel.
     let fresnel = pow(1.0 - clamp(dot(glazeNormal, toEye), 0.0, 1.0), draw.glaze.y);
+    // How much of the coat is seen. The faked sky is pinned low head-on so that a
+    // gradient over a whole floor does not read as haze; a screen tap raises it below.
+    var coat = 0.25 + 0.75 * fresnel;
     // The faked sky, looked up by the reflected ray: a two-stop vertical
     // gradient by its own height...
     // The PROBE when one is bound, and the faked two-stop gradient otherwise.
@@ -869,6 +881,47 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
     let lobe2 = lobe * lobe;
     let lobe8 = lobe2 * lobe2 * lobe2 * lobe2;
     env += draw.glazeTint.rgb * lobe8 * 1.5;
+    // **One tap of last frame's screen, blended over the probe** — see Glaze.screen.
+    //
+    // The DIRECTION is exact and the DISTANCE is a guess, which is the whole shape of
+    // the cheat. Projecting one world-space step along the reflected ray gives where
+    // that ray goes on screen for this camera, whatever the projection; how FAR to walk
+    // is the part a single tap cannot know without a depth march, so glazeScreen.y
+    // stands in for it and the reflection drifts with height above the surface.
+    //
+    // Off the edge of the frame there is nothing to report, and that is where the probe
+    // answers instead, so the fade is by how far outside the frame the tap landed.
+    //
+    // **v IS flipped here and is not in the WebGL2 backend.** This samples a copy of
+    // the CANVAS, whose row 0 is the top one, while that backend samples a render
+    // target, whose row 0 is the framebuffer's bottom. Same asymmetry as the probe
+    // atlas, and held by render-target.test.ts.
+    if (draw.glazeScreen.x > 0.0) {
+      let hereClip = frame.viewProj * vec4f(in.worldPos, 1.0);
+      let hereNdc = hereClip.xy / max(hereClip.w, 1e-6);
+      let aheadClip = frame.viewProj * vec4f(in.worldPos + bounce, 1.0);
+      let aheadNdc = aheadClip.xy / max(aheadClip.w, 1e-6);
+      let here = vec2f(hereNdc.x * 0.5 + 0.5, 0.5 - hereNdc.y * 0.5);
+      let ahead = vec2f(aheadNdc.x * 0.5 + 0.5, 0.5 - aheadNdc.y * 0.5);
+      let stride = ahead - here;
+      let tap = here + stride / max(length(stride), 1e-5) * draw.glazeScreen.y;
+      // How far outside 0..1 the tap fell, in the worse axis.
+      let outside = max(max(-tap, tap - vec2f(1.0)), vec2f(0.0));
+      let away = clamp(max(outside.x, outside.y) * 12.0, 0.0, 1.0);
+      // textureSampleLevel, not textureSample: a sample under a branch WGSL cannot
+      // prove uniform is a compile error, and level 0 is the whole of what is needed.
+      let sampled = textureSampleLevel(glazeScreenTex, samp, clamp(tap, vec2f(0.0), vec2f(1.0)), 0.0);
+      // How much of the tap is usable, and the ONE weight both halves lerp by, so a
+      // surface never shows a colour at a strength that colour was not given.
+      let take = 1.0 - away;
+      env = mix(env, draw.glazeTint.rgb * sampled.rgb, take);
+      // A real reflection is not haze, so it does not ride the Fresnel down to a
+      // quarter head-on the way the faked sky must — it carries its own head-on
+      // weight and still rises to full at a grazing angle. See Glaze.screenStrength.
+      // MIXED and not maxed: with a max, any strength under the sky's own 0.25 floor
+      // did nothing at all, so the setting was inert over a quarter of its range.
+      coat = mix(coat, mix(draw.glazeScreen.x, 1.0, fresnel), take);
+    }
     // The grain, an octave far above the ripple and gated by that same lobe so
     // it glitters where the light is instead of everywhere. See Glaze.sparkle.
     if (draw.glazeWave.y > 0.0) {
@@ -889,7 +942,7 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
     // head-on, which is the right way round and is why the two weights are
     // complements rather than both riding the Fresnel.
     let under = select(glazeUnder, srgbToLinear(glazeUnder), toneMap);
-    rgb += (env * (0.25 + 0.75 * fresnel) + under * (1.0 - fresnel) * 0.5) * draw.glaze.x;
+    rgb += (env * coat + under * (1.0 - fresnel) * 0.5) * draw.glaze.x;
   }
   // Fog before the curve, not after: the fog colour is a colour in the scene
   // like any other, and a distant surface that has faded most of the way into
@@ -1027,6 +1080,10 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     device,
     format,
     alphaMode: "premultiplied",
+    // **COPY_SRC so the frame can be copied into a texture — see `captureFrame`.**
+    // The default is RENDER_ATTACHMENT alone, and `copyTextureToTexture` refuses a
+    // source without this. It costs nothing to ask for on a swap chain.
+    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
   });
 
   /** 4x or none. Four is the one multisampled count WebGPU guarantees for a
@@ -1056,6 +1113,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: {} },
       { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: {} },
       { binding: 5, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+      { binding: 6, visibility: GPUShaderStage.FRAGMENT, texture: {} },
     ],
   });
   const pipelineLayout = device.createPipelineLayout({
@@ -1226,6 +1284,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       { binding: 3, resource: blankTexture.createView() },
       { binding: 4, resource: blankTexture.createView() },
       { binding: 5, resource: blankTexture.createView() },
+      { binding: 6, resource: blankTexture.createView() },
     ],
   });
 
@@ -1239,6 +1298,12 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
   let width = opts.width ?? 300;
   let height = opts.height ?? 150;
   let dpr = opts.dpr ?? 1;
+  /** The frame's own copy — see `captureFrame`. In the CANVAS's format, which is not
+   * the one `createTarget` uses, which is why the renderer owns it. */
+  let snapshotTexture: GPUTexture | null = null;
+  let snapshot: RenderTarget3D | null = null;
+  let snapshotWidth = 0;
+  let snapshotHeight = 0;
   let depthTexture: GPUTexture | null = null;
   let colorTexture: GPUTexture | null = null;
 
@@ -1383,7 +1448,11 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     const probe = material.glaze?.environment
       ? (targetColorOrNull(material.glaze.environment) ?? undefined)
       : undefined;
-    if (!base && !normal && !detail && !probe) return blankBindGroup;
+    // Last frame's screen, read on the same terms as the probe.
+    const screen = material.glaze?.screen
+      ? (targetColorOrNull(material.glaze.screen) ?? undefined)
+      : undefined;
+    if (!base && !normal && !detail && !probe && !screen) return blankBindGroup;
     const baseKey = (base ?? blankTexture) as object;
     const samplerKey = `${material.pixelated ?? true}|${material.repeat ?? false}|${identity(normal)}|${identity(detail)}|${identity(mask)}`;
     let byCombination = textureGroups.get(baseKey);
@@ -1401,9 +1470,10 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       : blankTexture;
     const maskTexture = mask ? textureFor(mask, material.detailMaskVersion ?? 0) : blankTexture;
     const probeTexture = probe ?? blankTexture;
+    const screenTexture = screen ?? blankTexture;
     // A rebuilt texture invalidates every view of it, so the cached group has
     // to be dropped whenever any upload replaced its GPUTexture.
-    const stamp = `${identity(baseTexture)}|${identity(normalTexture)}|${identity(detailTexture)}|${identity(maskTexture)}|${identity(probeTexture)}|${samplerKey}`;
+    const stamp = `${identity(baseTexture)}|${identity(normalTexture)}|${identity(detailTexture)}|${identity(maskTexture)}|${identity(probeTexture)}|${identity(screenTexture)}|${samplerKey}`;
     const existing = byCombination.get(stamp);
     if (existing) return existing;
     const group = device.createBindGroup({
@@ -1415,6 +1485,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
         { binding: 3, resource: detailTexture.createView() },
         { binding: 4, resource: maskTexture.createView() },
         { binding: 5, resource: probeTexture.createView() },
+        { binding: 6, resource: screenTexture.createView() },
       ],
     });
     byCombination.set(stamp, group);
@@ -1566,6 +1637,10 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     const textureColor = material.textureColor ?? WHITE;
     drawData.set(textureColor, at + 88);
     drawData.set(skin ?? IDENTITY_JOINTS, at + 92);
+    // Past the joints, in the stride's headroom — see the DRAW_BYTES note. The
+    // strength doubles as the flag: no snapshot and no strength mean the same thing.
+    drawData[at + 1116] = material.glaze?.screen ? (material.glaze.screenStrength ?? 0.7) : 0;
+    drawData[at + 1117] = material.glaze?.screenReach ?? 0.25;
   }
 
   /** Bind one node's mesh, textures and packed uniform slot, and draw it.
@@ -1939,6 +2014,51 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
 
     createTarget(targetWidth: number, targetHeight: number) {
       return createRenderTarget(device, format, sampleCount, targetWidth, targetHeight);
+    },
+    captureFrame() {
+      const w = canvas.width;
+      const h = canvas.height;
+      if (w === 0 || h === 0) return null;
+      // **The canvas's own FORMAT and size, both required.** `copyTextureToTexture`
+      // refuses a mismatch of either, and the canvas format is whatever
+      // `getPreferredCanvasFormat` said — bgra8unorm on most machines, not the
+      // rgba8unorm `createTarget` hands out. So the snapshot is built here rather than
+      // by the caller, single-sampled because a copy resolves nothing.
+      if (!snapshotTexture || snapshotWidth !== w || snapshotHeight !== h) {
+        snapshotTexture?.destroy();
+        snapshotTexture = device.createTexture({
+          size: { width: w, height: h },
+          format,
+          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+        });
+        snapshotWidth = w;
+        snapshotHeight = h;
+        const held = snapshotTexture;
+        snapshot = {
+          get width() {
+            return snapshotWidth;
+          },
+          get height() {
+            return snapshotHeight;
+          },
+          resize() {},
+          async readPixels() {
+            throw new Error("captureFrame's snapshot is not readable back to the CPU.");
+          },
+          dispose() {},
+          [TARGET_COLOR]: () => held,
+          [TARGET_MULTISAMPLED]: () => null,
+          [TARGET_DEPTH]: () => null,
+        } as unknown as RenderTarget3D;
+      }
+      const encoder = device.createCommandEncoder();
+      encoder.copyTextureToTexture(
+        { texture: context.getCurrentTexture() },
+        { texture: snapshotTexture },
+        { width: w, height: h },
+      );
+      device.queue.submit([encoder.finish()]);
+      return snapshot;
     },
     dispose() {
       depthTexture?.destroy();

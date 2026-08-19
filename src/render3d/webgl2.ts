@@ -142,6 +142,10 @@ uniform vec3 uLightDir[${MAX_LIGHTS}];
 uniform vec3 uLightColor[${MAX_LIGHTS}];
 uniform int uLightCount;
 uniform vec3 uCameraPos;
+// The same matrix the vertex stage uses — a uniform is per PROGRAM, so declaring it
+// here binds to that one and costs no second upload. The coat's screen tap needs it to
+// find where a reflected ray goes on screen; see Glaze.screen.
+uniform mat4 uViewProj;
 uniform float uShininess;
 uniform float uSpecular;
 uniform float uMetallic;
@@ -176,6 +180,11 @@ uniform vec4 uGlazeWave;
 // Six 90-degree faces of one point in a 3x2 atlas, +X -X +Y / -Y +Z -Z — see
 // Glaze.environment and cubeProbeViews, whose cameras write this layout.
 uniform sampler2D uGlazeEnvMap;
+// LAST FRAME's picture of the scene — see Glaze.screen.
+uniform sampler2D uGlazeScreenMap;
+// x: how much is seen head-on (0 for no snapshot at all), y: how far the single tap
+// reaches along the reflected ray, in screen widths.
+uniform vec2 uGlazeScreen;
 // The coat's BLOCK GRID and the diagonal drawn on it, packed by glazeGrid():
 // x world step (0 for off), y streak amount, z streak period in world units,
 // w how far the reflected ray drags the streak. See Glaze.worldStep.
@@ -676,6 +685,9 @@ void main() {
     // Weak head-on, strong at a grazing angle. On a low orbit over a flat deck
     // this is most of what the eye reads. See Glaze.fresnel.
     float fresnel = pow(1.0 - clamp(dot(glazeNormal, toEye), 0.0, 1.0), uGlaze.y);
+    // How much of the coat is seen. The faked sky is pinned low head-on so that a
+    // gradient over a whole floor does not read as haze; a screen tap raises it below.
+    float coat = 0.25 + 0.75 * fresnel;
     // The faked sky, looked up by the reflected ray: a two-stop vertical
     // gradient by its own height...
     // The PROBE when one is bound, and the faked two-stop gradient otherwise.
@@ -699,6 +711,46 @@ void main() {
     float lobe2 = lobe * lobe;
     float lobe8 = lobe2 * lobe2 * lobe2 * lobe2;
     env += uGlazeTint.rgb * lobe8 * 1.5;
+    // **One tap of last frame's screen, blended over the probe** — see Glaze.screen.
+    //
+    // The DIRECTION is exact and the DISTANCE is a guess, which is the whole shape of
+    // the cheat. Projecting one world-space step along the reflected ray gives where
+    // that ray goes on screen for this camera, whatever the projection; how FAR to walk
+    // is the part a single tap cannot know without a depth march, so uGlazeScreen.y
+    // stands in for it and the reflection drifts with height above the surface.
+    //
+    // Off the edge of the frame there is nothing to report — the horizon, the sky,
+    // anything behind the camera — and that is where the probe answers instead, so the
+    // fade is by how far outside the frame the tap landed and the two meet without a
+    // seam.
+    //
+    // v is NOT flipped: this samples a RENDER TARGET, whose row 0 is the framebuffer's
+    // bottom row, and the clip y this is derived from points the same way. The WebGPU
+    // path flips because it samples a copy of the canvas, top row first. That
+    // difference is measured, in e2e/glaze-screen.spec.ts and render-target.test.ts.
+    if (uGlazeScreen.x > 0.0) {
+      // Re-projecting the fragment costs one mat4 multiply and no varying, and puts
+      // both points through the same matrix, so the two cannot disagree.
+      vec4 hereClip = uViewProj * vec4(vWorldPos, 1.0);
+      vec2 here = hereClip.xy / max(hereClip.w, 1e-6) * 0.5 + 0.5;
+      vec4 aheadClip = uViewProj * vec4(vWorldPos + bounce, 1.0);
+      vec2 ahead = aheadClip.xy / max(aheadClip.w, 1e-6) * 0.5 + 0.5;
+      vec2 stride = ahead - here;
+      vec2 tap = here + stride / max(length(stride), 1e-5) * uGlazeScreen.y;
+      // How far outside 0..1 the tap fell, in the worse axis.
+      vec2 outside = max(max(-tap, tap - 1.0), 0.0);
+      float away = clamp(max(outside.x, outside.y) * 12.0, 0.0, 1.0);
+      // How much of the tap is usable, and the ONE weight both halves lerp by, so a
+      // surface never shows a colour at a strength that colour was not given.
+      float take = 1.0 - away;
+      env = mix(env, uGlazeTint.rgb * texture(uGlazeScreenMap, clamp(tap, 0.0, 1.0)).rgb, take);
+      // A real reflection is not haze, so it does not ride the Fresnel down to a
+      // quarter head-on the way the faked sky must — it carries its own head-on
+      // weight and still rises to full at a grazing angle. See Glaze.screenStrength.
+      // MIXED and not maxed: with a max, any strength under the sky's own 0.25 floor
+      // did nothing at all, so the setting was inert over a quarter of its range.
+      coat = mix(coat, mix(uGlazeScreen.x, 1.0, fresnel), take);
+    }
     // The grain, an octave far above the ripple and gated by that same lobe so
     // it glitters where the light is instead of everywhere. See Glaze.sparkle.
     if (uGlazeWave.y > 0.0) {
@@ -719,7 +771,7 @@ void main() {
     // head-on, which is the right way round and is why the two weights are
     // complements rather than both riding the Fresnel.
     vec3 under = uToneMap ? srgbToLinear(glazeUnder) : glazeUnder;
-    shaded += (env * (0.25 + 0.75 * fresnel) + under * (1.0 - fresnel) * 0.5) * uGlaze.x;
+    shaded += (env * coat + under * (1.0 - fresnel) * 0.5) * uGlaze.x;
   }
   // Fog before the curve, not after: the fog colour is a colour in the scene
   // like any other, and a distant surface that has faded most of the way into
@@ -810,6 +862,8 @@ interface Uniforms {
   glazeTint: WebGLUniformLocation | null;
   glazeWave: WebGLUniformLocation | null;
   glazeEnvMap: WebGLUniformLocation | null;
+  glazeScreenMap: WebGLUniformLocation | null;
+  glazeScreen: WebGLUniformLocation | null;
   glazeGrid: WebGLUniformLocation | null;
   settle: WebGLUniformLocation | null;
   settle2: WebGLUniformLocation | null;
@@ -981,6 +1035,8 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     glazeTint: gl.getUniformLocation(program, "uGlazeTint"),
     glazeWave: gl.getUniformLocation(program, "uGlazeWave"),
     glazeEnvMap: gl.getUniformLocation(program, "uGlazeEnvMap"),
+    glazeScreenMap: gl.getUniformLocation(program, "uGlazeScreenMap"),
+    glazeScreen: gl.getUniformLocation(program, "uGlazeScreen"),
     glazeGrid: gl.getUniformLocation(program, "uGlazeGrid"),
     settle: gl.getUniformLocation(program, "uSettle"),
     settle2: gl.getUniformLocation(program, "uSettle2"),
@@ -1016,6 +1072,9 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
   /** The material whose uniforms and TEXTURE BINDINGS are currently loaded, so
    *  a run of nodes sharing one material sets them once. Cleared before every
    *  pass — see `setMaterial`. */
+  /** The frame's own copy — see `captureFrame`. Allocated on the first capture and
+   * resized with the canvas, because it has to match it exactly. */
+  let snapshot: RenderTarget3D | null = null;
   let lastMaterial: Material | null = null;
   /** Bumped whenever a texture is actually uploaded.
    *
@@ -1427,6 +1486,19 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
         gl!.activeTexture(gl!.TEXTURE4);
         gl!.bindTexture(gl!.TEXTURE_2D, probe);
         gl!.uniform1i(u.glazeEnvMap, 4);
+      }
+      // Unit 5, last frame's screen — see Glaze.screen. The strength doubles as the
+      // flag: no snapshot and no strength mean the same thing.
+      const screen = material.glaze?.screen ? targetTextureOrNull(material.glaze.screen) : null;
+      gl!.uniform2f(
+        u.glazeScreen,
+        screen ? (material.glaze?.screenStrength ?? 0.7) : 0,
+        material.glaze?.screenReach ?? 0.25,
+      );
+      if (screen) {
+        gl!.activeTexture(gl!.TEXTURE5);
+        gl!.bindTexture(gl!.TEXTURE_2D, screen);
+        gl!.uniform1i(u.glazeScreenMap, 5);
       }
       // The block grid and its diagonal, resolved and packed in scene.ts — the
       // streak's period gates its amount there, because the shader divides by
@@ -1944,6 +2016,27 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
 
     createTarget(targetWidth: number, targetHeight: number) {
       return createRenderTarget(gl!, targetWidth, targetHeight);
+    },
+    captureFrame() {
+      // **A resolve blit, and 1:1 because it has to be.** `blitFramebuffer` will
+      // scale, but not from a MULTISAMPLED read buffer — and the canvas is
+      // multisampled whenever `antialias` is on, which is the default. So the
+      // snapshot matches the canvas rather than being the half-resolution one a
+      // caller might ask for; the copy is the cheap part either way.
+      const w = canvas.width;
+      const h = canvas.height;
+      if (w === 0 || h === 0) return null;
+      if (!snapshot) snapshot = createRenderTarget(gl!, w, h);
+      else snapshot.resize(w, h);
+      gl!.bindFramebuffer(gl!.READ_FRAMEBUFFER, null);
+      gl!.bindFramebuffer(gl!.DRAW_FRAMEBUFFER, targetFramebufferOf(snapshot));
+      gl!.blitFramebuffer(0, 0, w, h, 0, 0, w, h, gl!.COLOR_BUFFER_BIT, gl!.NEAREST);
+      // Both bindings back to the canvas, or the next ordinary render draws into the
+      // snapshot — the same hazard `render`'s own unbind exists for, and invisible
+      // from inside the renderer for the same reason.
+      gl!.bindFramebuffer(gl!.READ_FRAMEBUFFER, null);
+      gl!.bindFramebuffer(gl!.DRAW_FRAMEBUFFER, null);
+      return snapshot;
     },
     dispose() {
       gl!.deleteProgram(program);

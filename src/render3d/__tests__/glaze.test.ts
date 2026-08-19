@@ -168,7 +168,11 @@ describe("Material.glaze", () => {
       const source = read(name);
       expect(source, name).toContain("0.25 + 0.75 * sky * sky");
       expect(source, name).toContain("lobe8 * 1.5");
-      expect(source, name).toContain("(env * (0.25 + 0.75 * fresnel) + under * (1.0 - fresnel)");
+      // The coat's weight is a VARIABLE now, because a screen tap raises it — see
+      // Glaze.screenStrength — so the pair is asserted in two halves: what the
+      // weight starts as, and that what is under the ice still takes the complement.
+      expect(source, name).toContain("coat = 0.25 + 0.75 * fresnel;");
+      expect(source, name).toContain("(env * coat + under * (1.0 - fresnel)");
     }
   });
 
@@ -246,6 +250,42 @@ describe("Material.glaze", () => {
     }
   });
 
+  it("taps last frame's screen the same way in both backends, v apart", () => {
+    // `Glaze.screen`, held as text because the real-GPU measurement of it —
+    // `e2e/glaze-screen.spec.ts` — can only run on WebGL2: the headless Chromium
+    // Playwright drives has no `navigator.gpu`. So the WebGPU half is kept to the
+    // WebGL2 half's shape here, and the ONE place they are meant to differ is
+    // named rather than left to be discovered.
+    for (const name of ["webgl2.ts", "webgpu.ts"] as const) {
+      const source = read(name);
+      // The direction comes from projecting a step along the reflected ray, which
+      // is what makes it right for any projection; a hand-rolled screen basis was
+      // the first version and was wrong.
+      expect(source, name).toMatch(/(uViewProj|frame\.viewProj) \* vec4f?\(.*bounce/);
+      // ONE tap. A depth march is the thing this feature is not, and a second
+      // sample is how a cheap effect stops being cheap. The count is the sampler's
+      // every mention: WebGL2 declares it, looks its location up and samples it;
+      // WGSL has no location lookup.
+      const taps = source.match(/uGlazeScreenMap|glazeScreenTex/g) ?? [];
+      expect(taps.length, `${name} samples once`).toBe(name === "webgl2.ts" ? 3 : 2);
+      // The fade to the probe where the tap left the frame, and the strength that
+      // doubles as the feature's own switch.
+      expect(source, name).toMatch(
+        /(float|let) away = clamp\(max\(outside\.x, outside\.y\) \* 12\.0, 0\.0, 1\.0\)/,
+      );
+      expect(source, name).toMatch(/(uGlazeScreen|draw\.glazeScreen)\.x > 0\.0/);
+      expect(source, name).toMatch(/coat = mix\(coat, mix\((uGlazeScreen|draw\.glazeScreen)\.x, 1\.0, fresnel\), take\)/);
+    }
+    // **The one asymmetry.** WebGL2 samples a render target, whose row 0 is the
+    // framebuffer's bottom row, so its uv needs no flip. WebGPU samples a copy of
+    // the canvas, whose row 0 is the top one, so it does. Getting this wrong looks
+    // like a reflection of the wrong part of the scene, which is a plausible
+    // picture — the same trap the probe atlas's row flip sets.
+    expect(read("webgpu.ts")).toContain("0.5 - hereNdc.y * 0.5");
+    expect(read("webgpu.ts")).toContain("0.5 - aheadNdc.y * 0.5");
+    expect(read("webgl2.ts")).not.toMatch(/0\.5 - here.*\.y/);
+  });
+
   it("keeps the WebGPU draw block's field count and its joint offset in step", () => {
     // The failure this catches: `glazeGrid` was INSERTED rather than appended, so
     // four float offsets below it had to move. The header's own byte sum had
@@ -255,15 +295,34 @@ describe("Material.glaze", () => {
     const source = read("webgpu.ts");
     const struct = /struct DrawData \{([\s\S]*?)\n\};/.exec(source);
     expect(struct).not.toBeNull();
-    const vec4s = (struct![1].match(/:\s*vec4f\s*,/g) ?? []).length;
-    const mat4s = (struct![1].match(/:\s*mat4x4f\s*,/g) ?? []).length;
+    // The joint array is no longer the last field — `glazeScreen` is appended PAST
+    // it, in the headroom, exactly so that no index below it moves — so the count
+    // is split at the array rather than taken over the whole struct.
+    const split = struct![1].indexOf("jointMatrices");
+    expect(split).toBeGreaterThan(0);
+    const before = struct![1].slice(0, split);
+    const after = struct![1].slice(split);
+    const vec4s = (before.match(/:\s*vec4f\s*,/g) ?? []).length;
+    const mat4s = (before.match(/:\s*mat4x4f\s*,/g) ?? []).length;
     // Bytes before the joints: one model matrix and every vec4 after it.
     const bytes = mat4s * 64 + vec4s * 16;
     const joints = /drawData\.set\(skin \?\? IDENTITY_JOINTS, at \+ (\d+)\)/.exec(source);
     expect(joints).not.toBeNull();
     expect(Number(joints![1]) * 4).toBe(bytes);
-    // And the whole slot still fits the stride it is padded to.
-    expect(bytes + 64 * 64).toBeLessThanOrEqual(4608);
+    // The joints, and then whatever was appended past them, still fit the stride.
+    const trailing = (after.match(/:\s*vec4f\s*,/g) ?? []).length;
+    expect(bytes + 64 * 64 + trailing * 16).toBeLessThanOrEqual(4608);
+    // And every appended field is written where the struct puts it: 16-byte aligned
+    // straight after the array, which is the one thing a hand-computed index can get
+    // wrong without WGSL ever complaining. It reads a neighbour's floats instead.
+    const trailingWrites = [...source.matchAll(/drawData\[at \+ (\d{4})\]/g)].map((m) =>
+      Number(m[1]),
+    );
+    expect(trailingWrites.length, "an appended field nothing writes is dead").toBeGreaterThan(0);
+    for (const index of trailingWrites) {
+      expect(index).toBeGreaterThanOrEqual(bytes / 4 + 64 * 16);
+      expect(index).toBeLessThan(bytes / 4 + 64 * 16 + trailing * 4);
+    }
   });
 
   it("reflects the scene's OWN first light rather than a direction of its own", () => {

@@ -280,6 +280,25 @@ const faceExtent = (fx: number, hit: (r: number, g: number, b: number) => boolea
 const bright = (v: number) => v > 128;
 const dim = (v: number) => v < 80;
 
+// 6. **The frame's own copy.** `captureFrame` blits the canvas into a texture so a
+// shader can sample the scene without rendering it twice — the cheap half of a
+// screen-space reflection. Verified against the canvas it copied: the last thing drawn
+// to the canvas above was the red-box frame, so the snapshot must hold that and not
+// the green one two renders earlier.
+const snapshot = renderer.captureFrame();
+const snapshotPixels = snapshot ? await snapshot.readPixels() : null;
+const snapshotReading =
+  snapshot && snapshotPixels
+    ? {
+        width: snapshot.width,
+        height: snapshot.height,
+        matchesCanvas:
+          snapshot.width === renderer.renderWidth && snapshot.height === renderer.renderHeight,
+        // The middle of the frame, which is the near box — red by now, see step 3.
+        center: pixelAt(snapshotPixels, snapshot.width, snapshot.width >> 1, snapshot.height >> 1),
+      }
+    : null;
+
 window.__renderTarget = {
   ready: true,
   backend: renderer.backend,
@@ -308,6 +327,7 @@ window.__renderTarget = {
     afterUnbind,
   },
   unboundAfterTargetRender,
+  snapshot: snapshotReading,
   atlas: {
     width: atlas.width,
     height: atlas.height,
@@ -351,6 +371,7 @@ declare global {
         afterUnbind: { digest: string; center: number[] };
       };
       unboundAfterTargetRender: boolean | null;
+      snapshot: { width: number; height: number; matchesCanvas: boolean; center: number[] } | null;
       atlas: {
         width: number;
         height: number;

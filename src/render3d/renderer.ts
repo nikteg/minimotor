@@ -134,6 +134,26 @@ export interface Renderer3D {
    *  Belongs to the renderer that made it: a target is a framebuffer in one
    *  context, and handing it to another renderer draws nothing. */
   createTarget(width: number, height: number): RenderTarget3D;
+  /** Copy the frame just drawn into a texture a material can sample, and hand back
+   *  the target holding it.
+   *
+   *  **What this is for: reflections that cost one copy instead of a second render.**
+   *  A surface that reflects the scene needs the scene as an INPUT to itself, and the
+   *  honest ways to get it are expensive — render the world again from a mirrored
+   *  camera, or render into a target and composite. This is the cheap way: let the
+   *  frame go to the canvas as usual, then copy it. What a shader samples is therefore
+   *  the PREVIOUS frame, one frame stale, which at any interactive rate is invisible
+   *  for a slow-moving camera and is the whole trade.
+   *
+   *  The target is the RENDERER's, not the caller's: it has to match the canvas in
+   *  size and in format — WebGPU's `copyTextureToTexture` refuses a mismatch of
+   *  either, and a multisampled WebGL2 frame can only be resolved 1:1 — so letting a
+   *  caller size it would be letting them break it. The same object every frame; read
+   *  it, do not retain it past a resize.
+   *
+   *  Returns null on a backend or a context that cannot copy its own frame, which a
+   *  caller should read as "no screen-space reflection here" and fall back. */
+  captureFrame(): RenderTarget3D | null;
   /** Release the context and every GPU resource. */
   dispose(): void;
   /** Counts from the LAST `render` call. The same object every frame — read
