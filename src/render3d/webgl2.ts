@@ -89,10 +89,6 @@ out vec2 vUv;
 out vec2 vUv1;
 out vec4 vColor;
 out vec4 vTangent;
-// The clip-space position, for a screen-space sample — see Glaze.planar. A
-// varying rather than gl_FragCoord and a viewport uniform, so it costs no uniform
-// and reads the same on both backends.
-out vec4 vProjected;
 
 void main() {
   vec4 localPosition = vec4(aPosition, 1.0);
@@ -126,7 +122,6 @@ void main() {
   vUv1 = aUv1;
   vColor = aColor;
   gl_Position = uViewProj * world;
-  vProjected = gl_Position;
 }`;
 
 const FRAGMENT_SHADER = `#version 300 es
@@ -139,7 +134,6 @@ in vec2 vUv;
 in vec2 vUv1;
 in vec4 vColor;
 in vec4 vTangent;
-in vec4 vProjected;
 
 uniform vec4 uBaseColor;
 uniform vec4 uTextureColor;
@@ -147,9 +141,6 @@ uniform vec3 uAmbient;
 uniform vec3 uLightDir[${MAX_LIGHTS}];
 uniform vec3 uLightColor[${MAX_LIGHTS}];
 uniform int uLightCount;
-// x: 1 when a clip plane is on, y: the world Y below which fragments are thrown
-// away — see RenderOptions.clipBelowY.
-uniform vec2 uClipBelow;
 uniform vec3 uCameraPos;
 uniform float uShininess;
 uniform float uSpecular;
@@ -185,11 +176,6 @@ uniform vec4 uGlazeWave;
 // Six 90-degree faces of one point in a 3x2 atlas, +X -X +Y / -Y +Z -Z — see
 // Glaze.environment and cubeProbeViews, whose cameras write this layout.
 uniform sampler2D uGlazeEnvMap;
-// A planar reflection of the scene, sampled in SCREEN space — see Glaze.planar.
-// uGlazeGrid is full, so the flag rides uGlaze.w's sign: see setMaterial.
-uniform sampler2D uGlazePlanarMap;
-// x: 1 when a planar mirror is bound, y: how much of it is seen head-on
-uniform vec2 uGlazePlanar;
 // The coat's BLOCK GRID and the diagonal drawn on it, packed by glazeGrid():
 // x world step (0 for off), y streak amount, z streak period in world units,
 // w how far the reflected ray drags the streak. See Glaze.worldStep.
@@ -679,8 +665,6 @@ void main() {
         : uLightColor[i] * uSpecular * pow(noh, uShininess);
     }
   }
-  // The mirrored pass's clip plane — see RenderOptions.clipBelowY.
-  if (uClipBelow.x > 0.5 && vWorldPos.y < uClipBelow.y) discard;
   // A metal has no diffuse: what it does not reflect, it absorbs.
   vec3 albedo = uToneMap ? base.rgb * (1.0 - uMetallic) : base.rgb;
   vec3 shaded = albedo * lit + spec;
@@ -704,34 +688,6 @@ void main() {
     } else {
       float sky = clamp(bounce.y * 0.5 + 0.5, 0.0, 1.0);
       env = uGlazeTint.rgb * (0.25 + 0.75 * sky * sky);
-    }
-    // **The planar reflection over the top of it, where it has any.** Sampled by
-    // this pixel's own projected position, so what lands here is what the mirrored
-    // camera saw behind this very point — the ball, the props and the walls under
-    // themselves rather than a direction's worth of room. Its ALPHA is coverage:
-    // the mirrored pass clears transparent, so the probe or the faked sky still
-    // fills everywhere no mirrored geometry stood. See Glaze.planar.
-    // **Only where the surface is HORIZONTAL.** A reflection mirrored about a level
-    // plane belongs on a level face and nowhere else, and this is not a nicety: a
-    // course shares one material between its deck and the props standing on it, so
-    // the coat lands on both, and without this gate a pickup's own front face shows
-    // the floor's mirror as a veil over itself. MEASURED in the game — the boxes and
-    // the mascot came back washed out, which is what sent this line here.
-    vec4 mirrorSample = vec4(0.0);
-    if (uGlazePlanar.x > 0.5 && glazeNormal.y > 0.9) {
-      // **U is flipped as well as V, and this is not a fudge.** The mirrored view is
-      // built with lookAt, which always produces a RIGHT-handed basis, while a
-      // reflection's basis is left-handed: cross(mirror(a), mirror(b)) is
-      // -mirror(cross(a, b)). So the render comes back laterally inverted from the
-      // true mirror, and undoing it here is exactly one axis of the sample.
-      //
-      // Invisible on anything centred in frame, which is why it survived several
-      // checks — reported from play as the reflection being "locked to the camera in
-      // some weird way", which is what a left-right inversion looks like when the
-      // camera turns.
-      vec2 screenUv = vProjected.xy / max(vProjected.w, 1e-6) * 0.5 + 0.5;
-      screenUv.x = 1.0 - screenUv.x;
-      mirrorSample = texture(uGlazePlanarMap, clamp(screenUv, 0.0, 1.0));
     }
     // ...plus a tight lobe around the scene's OWN first light, which is what
     // actually sweeps when the camera turns. Reusing the key light rather than
@@ -763,33 +719,7 @@ void main() {
     // head-on, which is the right way round and is why the two weights are
     // complements rather than both riding the Fresnel.
     vec3 under = uToneMap ? srgbToLinear(glazeUnder) : glazeUnder;
-    // **The mirror composites HERE, not into env, so the faked sky's Fresnel does not
-    // decide how much of a real reflection is seen** — see Glaze.planarStrength. Its
-    // own coverage times that strength, rising to full at a grazing angle the way
-    // anything reflective does.
     shaded += (env * (0.25 + 0.75 * fresnel) + under * (1.0 - fresnel) * 0.5) * uGlaze.x;
-    // **The mirror REPLACES the surface rather than adding to it, and that is why it
-    // was only visible at a grazing angle before.** The rest of the coat is light
-    // ADDED on top of the shading — a highlight — so the floor's own albedo stayed at
-    // full strength underneath and swamped the reflection everywhere except the band
-    // where under and the faked sky had faded out. Reported as "why is only the
-    // fresnel part or whatever it is called showing the reflection thru the floor?"
-    //
-    // A reflective surface shows LESS of itself where it shows more of the reflection,
-    // so this is a mix and not a sum. Weighted by the mirror's own coverage, by
-    // planarStrength rising to full at a grazing angle, and by the coat's strength —
-    // an ice card halfway through its fade reflects half as much.
-    vec3 mirrorColour = uGlazeTint.rgb * mirrorSample.rgb;
-    if (uToneMap) mirrorColour = srgbToLinear(mirrorColour);
-    shaded = mix(
-      shaded,
-      mirrorColour,
-      clamp(
-        clamp(mirrorSample.a, 0.0, 1.0) * mix(uGlazePlanar.y, 1.0, fresnel) * uGlaze.x,
-        0.0,
-        1.0
-      )
-    );
   }
   // Fog before the curve, not after: the fog colour is a colour in the scene
   // like any other, and a distant surface that has faded most of the way into
@@ -853,7 +783,6 @@ interface Uniforms {
   lightDir: WebGLUniformLocation | null;
   lightColor: WebGLUniformLocation | null;
   lightCount: WebGLUniformLocation | null;
-  clipBelow: WebGLUniformLocation | null;
   cameraPos: WebGLUniformLocation | null;
   shininess: WebGLUniformLocation | null;
   specular: WebGLUniformLocation | null;
@@ -881,8 +810,6 @@ interface Uniforms {
   glazeTint: WebGLUniformLocation | null;
   glazeWave: WebGLUniformLocation | null;
   glazeEnvMap: WebGLUniformLocation | null;
-  glazePlanarMap: WebGLUniformLocation | null;
-  glazePlanar: WebGLUniformLocation | null;
   glazeGrid: WebGLUniformLocation | null;
   settle: WebGLUniformLocation | null;
   settle2: WebGLUniformLocation | null;
@@ -1027,7 +954,6 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     lightDir: gl.getUniformLocation(program, "uLightDir"),
     lightColor: gl.getUniformLocation(program, "uLightColor"),
     lightCount: gl.getUniformLocation(program, "uLightCount"),
-    clipBelow: gl.getUniformLocation(program, "uClipBelow"),
     cameraPos: gl.getUniformLocation(program, "uCameraPos"),
     shininess: gl.getUniformLocation(program, "uShininess"),
     specular: gl.getUniformLocation(program, "uSpecular"),
@@ -1055,8 +981,6 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     glazeTint: gl.getUniformLocation(program, "uGlazeTint"),
     glazeWave: gl.getUniformLocation(program, "uGlazeWave"),
     glazeEnvMap: gl.getUniformLocation(program, "uGlazeEnvMap"),
-    glazePlanarMap: gl.getUniformLocation(program, "uGlazePlanarMap"),
-    glazePlanar: gl.getUniformLocation(program, "uGlazePlanar"),
     glazeGrid: gl.getUniformLocation(program, "uGlazeGrid"),
     settle: gl.getUniformLocation(program, "uSettle"),
     settle2: gl.getUniformLocation(program, "uSettle2"),
@@ -1504,14 +1428,6 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
         gl!.bindTexture(gl!.TEXTURE_2D, probe);
         gl!.uniform1i(u.glazeEnvMap, 4);
       }
-      // Unit 5, the planar mirror — see Glaze.planar.
-      const planar = material.glaze?.planar ? targetTextureOrNull(material.glaze.planar) : null;
-      gl!.uniform2f(u.glazePlanar, planar ? 1 : 0, material.glaze?.planarStrength ?? 0.8);
-      if (planar) {
-        gl!.activeTexture(gl!.TEXTURE5);
-        gl!.bindTexture(gl!.TEXTURE_2D, planar);
-        gl!.uniform1i(u.glazePlanarMap, 5);
-      }
       // The block grid and its diagonal, resolved and packed in scene.ts — the
       // streak's period gates its amount there, because the shader divides by
       // that period and an amount without one is a NaN rather than a faint line.
@@ -1745,13 +1661,9 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
       gl!.viewport(targetX, targetY, targetW, targetH);
       gl!.enable(gl!.DEPTH_TEST);
       gl!.depthFunc(gl!.LEQUAL);
-      // Both sides for a mirrored pass — see `RenderOptions.cullNone`.
-      if (opts.cullNone) gl!.disable(gl!.CULL_FACE);
-      else gl!.enable(gl!.CULL_FACE);
+      gl!.enable(gl!.CULL_FACE);
       gl!.cullFace(gl!.BACK);
-      // **Reversed for a mirrored pass**, because reflecting a camera about a plane
-      // flips every triangle's winding — see `RenderOptions.mirrored`.
-      gl!.frontFace(opts.mirrored ? gl!.CW : gl!.CCW);
+      gl!.frontFace(gl!.CCW);
 
       if (opts.clear !== false) {
         const bg = scene.background;
@@ -1826,7 +1738,6 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
       gl!.uniform3fv(u.lightDir, lightDirs);
       gl!.uniform3fv(u.lightColor, lightColors);
       gl!.uniform1i(u.lightCount, lights.length);
-      gl!.uniform2f(u.clipBelow, opts.clipBelowY === undefined ? 0 : 1, opts.clipBelowY ?? 0);
 
       const fog = scene.fog;
       if (fog) {

@@ -256,8 +256,6 @@ struct Frame {
   // xyz: the ground half; equal to the sky half when no hemisphere was asked
   // for, which makes the shader's mix a no-op
   ambientGround : vec4f,
-  // x: how many lights, y: 1 when a clip plane is on, z: the world Y below which
-  // fragments are thrown away — see RenderOptions.clipBelowY.
   lightCount : vec4f,
   // xyz: see fogUniform() in scene.ts, w: mode (-1 off, 0 linear, 1 exp,
   // 2 exp squared, 3 layered)
@@ -333,8 +331,6 @@ struct DrawData {
 // Six 90-degree faces of one point in a 3x2 atlas, +X -X +Y / -Y +Z -Z — see
 // Glaze.environment and cubeProbeViews, whose cameras write this layout.
 @group(1) @binding(5) var glazeEnvTex : texture_2d<f32>;
-// A planar reflection of the scene, sampled in SCREEN space — see Glaze.planar.
-@group(1) @binding(6) var glazePlanarTex : texture_2d<f32>;
 
 struct VsOut {
   @builtin(position) clip     : vec4f,
@@ -345,10 +341,6 @@ struct VsOut {
   @location(3)       color    : vec4f,
   @location(4)       uv1      : vec2f,
   @location(5)       tangent  : vec4f,
-  // The clip-space position, for a screen-space sample — see Glaze.planar. A
-  // varying rather than @builtin(position) and a viewport size, so it reads the
-  // same on both backends and costs no uniform.
-  @location(7)       projected : vec4f,
 };
 
 @vertex
@@ -390,7 +382,6 @@ fn vs(
   out.uv1 = uv1;
   out.color = color;
   out.clip = frame.viewProj * world;
-  out.projected = out.clip;
   return out;
 }
 
@@ -840,8 +831,6 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
       spec = spec + select(direct, physical, toneMap);
     }
   }
-  // The mirrored pass's clip plane — see RenderOptions.clipBelowY.
-  if (frame.lightCount.y > 0.5 && in.worldPos.y < frame.lightCount.z) { discard; }
   // A metal has no diffuse: what it does not reflect, it absorbs.
   let albedo = select(base.rgb, base.rgb * (1.0 - draw.rimAlpha.w), toneMap);
   var rgb = albedo * lit + spec;
@@ -865,42 +854,6 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
     } else {
       let sky = clamp(bounce.y * 0.5 + 0.5, 0.0, 1.0);
       env = draw.glazeTint.rgb * (0.25 + 0.75 * sky * sky);
-    }
-    // **The planar reflection over the top of it, where it has any.** Its ALPHA is
-    // coverage, so the probe or the faked sky still fills everywhere no mirrored
-    // geometry stood — see Glaze.planar.
-    // **Only where the surface is HORIZONTAL.** A reflection mirrored about a level
-    // plane belongs on a level face and nowhere else, and this is not a nicety: a
-    // course shares one material between its deck and the props standing on it, so
-    // the coat lands on both, and without this gate a pickup's own front face shows
-    // the floor's mirror as a veil over itself. MEASURED in the game — the boxes and
-    // the mascot came back washed out, which is what sent this line here.
-    var mirrorSample = vec4f(0.0);
-    if (draw.glazeWave.w > 0.0 && glazeNormal.y > 0.9) {
-      let screenUv = in.projected.xy / max(in.projected.w, 1e-6) * 0.5 + 0.5;
-      // WGSL samples from the TOP row and a mirrored target holds the frame the
-      // same way up as the canvas, so only the clip-space Y flip applies here —
-      // the same asymmetry glazeEnvUv carries for the atlas.
-      // U as well as V: lookAt builds a right-handed basis and a reflection's is
-      // left-handed, so the mirrored render is laterally inverted from the true
-      // mirror — see the WebGL2 twin. V is the texture-origin flip on top of it.
-      let flipped = vec2f(1.0 - screenUv.x, 1.0 - screenUv.y);
-      // textureSampleLevel and NOT textureSample, because this branch is not
-      // uniform: it turns on the surface's own normal, and WGSL refuses an implicit
-      // implicit-derivative sample under a per-pixel condition:
-      //
-      //     error: 'textureSample' must only be called from uniform control flow
-      //     info: control flow depends on possibly non-uniform value
-      //
-      // which is a rule WebGL2's GLSL does not have, so this is one of the places
-      // the two backends genuinely differ. Level 0 is what a screen-space fetch
-      // wants anyway: a render target carries no mip chain to choose from.
-      mirrorSample = textureSampleLevel(
-        glazePlanarTex,
-        samp,
-        clamp(flipped, vec2f(0.0), vec2f(1.0)),
-        0.0,
-      );
     }
     // ...plus a tight lobe around the scene's OWN first light, which is what
     // actually sweeps when the camera turns. Reusing the key light rather than
@@ -936,32 +889,7 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
     // head-on, which is the right way round and is why the two weights are
     // complements rather than both riding the Fresnel.
     let under = select(glazeUnder, srgbToLinear(glazeUnder), toneMap);
-    // The mirror composites HERE and not into env, so the faked sky's Fresnel does not
-    // decide how much of a real reflection is seen — see Glaze.planarStrength and the
-    // WebGL2 twin.
     rgb += (env * (0.25 + 0.75 * fresnel) + under * (1.0 - fresnel) * 0.5) * draw.glaze.x;
-    // **The mirror REPLACES the surface rather than adding to it, and that is why it
-    // was only visible at a grazing angle before.** The rest of the coat is light
-    // ADDED on top of the shading — a highlight — so the floor's own albedo stayed at
-    // full strength underneath and swamped the reflection everywhere except the band
-    // where under and the faked sky had faded out. Reported as "why is only the
-    // fresnel part or whatever it is called showing the reflection thru the floor?"
-    //
-    // A reflective surface shows LESS of itself where it shows more of the reflection,
-    // so this is a mix and not a sum. Weighted by the mirror's own coverage, by
-    // planarStrength rising to full at a grazing angle, and by the coat's strength —
-    // an ice card halfway through its fade reflects half as much.
-    var mirrorColour = draw.glazeTint.rgb * mirrorSample.rgb;
-    if (toneMap) { mirrorColour = srgbToLinear(mirrorColour); }
-    rgb = mix(
-      rgb,
-      mirrorColour,
-      clamp(
-        clamp(mirrorSample.a, 0.0, 1.0) * mix(draw.glazeWave.w, 1.0, fresnel) * draw.glaze.x,
-        0.0,
-        1.0
-      )
-    );
   }
   // Fog before the curve, not after: the fog colour is a colour in the scene
   // like any other, and a distant surface that has faded most of the way into
@@ -1128,7 +1056,6 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: {} },
       { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: {} },
       { binding: 5, visibility: GPUShaderStage.FRAGMENT, texture: {} },
-      { binding: 6, visibility: GPUShaderStage.FRAGMENT, texture: {} },
     ],
   });
   const pipelineLayout = device.createPipelineLayout({
@@ -1147,14 +1074,6 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
   ];
 
   const pipelines = new Map<string, GPURenderPipeline>();
-  /** Whether the pass being built is mirrored — see `RenderOptions.mirrored`. Set
-   * at the top of `render` and read by `pipelineFor`, because it is the same for
-   * every draw in a pass and the alternative is a tenth positional boolean beside
-   * nine others. */
-  let mirrored = false;
-  /** Whether the pass draws both sides of everything — see `RenderOptions.cullNone`.
-   * A pass-level flag for the same reason `mirrored` is one. */
-  let cullNone = false;
   function pipelineFor(
     blend: boolean,
     doubleSided: boolean,
@@ -1174,7 +1093,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
      *  gated or not, none of them may write into it. */
     occluderDepth = false,
   ): GPURenderPipeline {
-    const key = `${blend}:${doubleSided}:${overlay}:${lines}:${occluded}:${additive}:${depthOnly}:${gatedOverlay}:${occluderDepth}:${mirrored}:${cullNone}`;
+    const key = `${blend}:${doubleSided}:${overlay}:${lines}:${occluded}:${additive}:${depthOnly}:${gatedOverlay}:${occluderDepth}`;
     const cached = pipelines.get(key);
     if (cached) return cached;
     const pipeline = device.createRenderPipeline({
@@ -1210,11 +1129,8 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
         topology: lines ? "line-list" : "triangle-list",
         // A segment has no front and no back, and WebGPU rejects a cull mode on
         // a line topology outright.
-        cullMode: lines || doubleSided || cullNone ? "none" : "back",
-        // Reversed for a mirrored pass — see `RenderOptions.mirrored`. Baked into
-        // the pipeline here, which is why it is a cache dimension rather than a
-        // call like WebGL2's.
-        frontFace: mirrored ? "cw" : "ccw",
+        cullMode: lines || doubleSided ? "none" : "back",
+        frontFace: "ccw",
       },
       depthStencil: {
         format: "depth24plus",
@@ -1310,7 +1226,6 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       { binding: 3, resource: blankTexture.createView() },
       { binding: 4, resource: blankTexture.createView() },
       { binding: 5, resource: blankTexture.createView() },
-      { binding: 6, resource: blankTexture.createView() },
     ],
   });
 
@@ -1468,10 +1383,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     const probe = material.glaze?.environment
       ? (targetColorOrNull(material.glaze.environment) ?? undefined)
       : undefined;
-    const planar = material.glaze?.planar
-      ? (targetColorOrNull(material.glaze.planar) ?? undefined)
-      : undefined;
-    if (!base && !normal && !detail && !probe && !planar) return blankBindGroup;
+    if (!base && !normal && !detail && !probe) return blankBindGroup;
     const baseKey = (base ?? blankTexture) as object;
     const samplerKey = `${material.pixelated ?? true}|${material.repeat ?? false}|${identity(normal)}|${identity(detail)}|${identity(mask)}`;
     let byCombination = textureGroups.get(baseKey);
@@ -1489,10 +1401,9 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       : blankTexture;
     const maskTexture = mask ? textureFor(mask, material.detailMaskVersion ?? 0) : blankTexture;
     const probeTexture = probe ?? blankTexture;
-    const planarTexture = planar ?? blankTexture;
     // A rebuilt texture invalidates every view of it, so the cached group has
     // to be dropped whenever any upload replaced its GPUTexture.
-    const stamp = `${identity(baseTexture)}|${identity(normalTexture)}|${identity(detailTexture)}|${identity(maskTexture)}|${identity(probeTexture)}|${identity(planarTexture)}|${samplerKey}`;
+    const stamp = `${identity(baseTexture)}|${identity(normalTexture)}|${identity(detailTexture)}|${identity(maskTexture)}|${identity(probeTexture)}|${samplerKey}`;
     const existing = byCombination.get(stamp);
     if (existing) return existing;
     const group = device.createBindGroup({
@@ -1504,7 +1415,6 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
         { binding: 3, resource: detailTexture.createView() },
         { binding: 4, resource: maskTexture.createView() },
         { binding: 5, resource: probeTexture.createView() },
-        { binding: 6, resource: planarTexture.createView() },
       ],
     });
     byCombination.set(stamp, group);
@@ -1631,11 +1541,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     // Whether a cube probe is bound at binding 5, which is what gates the sample
     // — the blank 1x1 stands in otherwise and must not be read as a reflection.
     drawData[at + 74] = material.glaze?.environment ? 1 : 0;
-    // Whether a planar mirror is bound at binding 6 — see Glaze.planar.
-    // The planar mirror's head-on strength, and 0 for no mirror: the flag and the
-    // weight are one number because 0 strength and no mirror mean the same thing, and
-    // the draw struct has no spare slot. See Glaze.planarStrength.
-    drawData[at + 75] = material.glaze?.planar ? (material.glaze.planarStrength ?? 0.8) : 0;
+    drawData[at + 75] = 0;
     // The block grid and its diagonal, resolved and packed in scene.ts — the
     // streak's period gates its amount there, because the shader divides by that
     // period and an amount without one is a NaN rather than a faint line.
@@ -1739,9 +1645,6 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       // `RenderOptions.viewport`.** WebGPU's viewport is already top-left, so
       // unlike WebGL2 there is nothing to flip; the projection takes the rect's
       // aspect either way so a square face in a wide atlas comes out square.
-      // The pass's winding, for `pipelineFor` — see `RenderOptions.mirrored`.
-      mirrored = options.mirrored === true;
-      cullNone = options.cullNone === true;
       const rect = options.viewport;
       const aspect = rect
         ? rect.width / rect.height
@@ -1820,8 +1723,6 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       frameData.set([ground[0], ground[1], ground[2], 0], 24);
       const lights = scene.lights.slice(0, MAX_LIGHTS);
       frameData[28] = lights.length;
-      frameData[29] = options.clipBelowY === undefined ? 0 : 1;
-      frameData[30] = options.clipBelowY ?? 0;
       const fog = scene.fog ? fogUniform(scene.fog) : undefined;
       frameData.set(fog ? [...fog.params, fog.mode] : [0, 0, 0, -1], 32);
       frameData.set(
