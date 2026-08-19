@@ -53,6 +53,18 @@ export interface RenderOptions {
    *  clears ONCE and renders every face after it with `clear: false`, which is
    *  the order it wants anyway. */
   viewport?: { x: number; y: number; width: number; height: number };
+  /** Draw with the FRONT FACE reversed, for a mirrored view.
+   *
+   *  Reflecting a camera about a plane is an improper transformation: it flips the
+   *  handedness of the world, so every triangle's winding reverses on screen and
+   *  the ordinary back-face cull throws away exactly the faces that should be
+   *  visible. A planar reflection therefore renders with this on, and it is a
+   *  RENDER option rather than a material one because it is a property of the pass.
+   *
+   *  On WebGPU the winding is baked into the pipeline, so this doubles the pipeline
+   *  cache — see `pipelineFor`. Both backends leave the cull MODE alone: what
+   *  changes is which side is front, not whether culling happens. */
+  mirrored?: boolean;
 }
 
 /** An offscreen surface a scene can be drawn into.

@@ -480,6 +480,28 @@ export interface Glaze {
    *  Sampled with the target's own NEAREST filtering, so adjacent faces cannot
    *  bleed into each other and no inset is needed. */
   environment?: RenderTarget3D;
+  /** A PLANAR reflection of the scene, sampled in SCREEN space — item 356 stage 3.
+   *
+   *  The scene rendered again from a camera mirrored about this surface's own
+   *  plane, into a target the caller refills every frame. Where the cube probe
+   *  answers "what does the room look like in this direction", this answers "what
+   *  is directly behind this pixel in the mirror" — which is the difference between
+   *  a surface that takes the room's colour and one that shows the ball, the props
+   *  and the walls standing under themselves.
+   *
+   *  Sampled by the pixel's own projected position, so the target must hold the
+   *  same view as the frame being drawn. It may be smaller: the sampler normalises,
+   *  and half resolution is the usual trade.
+   *
+   *  **ALPHA is coverage.** Clear the mirrored render to a transparent background
+   *  and the reflection falls back to `environment`, or to the faked sky, wherever
+   *  no mirrored geometry stood. An opaque clear reflects the background colour
+   *  over the whole surface instead.
+   *
+   *  It composites OVER `environment` and under everything else the coat adds, so a
+   *  surface can carry both: the probe fills the sky and the far room, and this
+   *  fills what is actually standing in front of the camera. */
+  planar?: RenderTarget3D;
   /** Grazing-angle exponent. Default 4.
    *
    *  Lower spreads the coat over the whole surface and reads as haze on top of

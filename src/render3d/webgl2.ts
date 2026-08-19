@@ -89,6 +89,10 @@ out vec2 vUv;
 out vec2 vUv1;
 out vec4 vColor;
 out vec4 vTangent;
+// The clip-space position, for a screen-space sample — see Glaze.planar. A
+// varying rather than gl_FragCoord and a viewport uniform, so it costs no uniform
+// and reads the same on both backends.
+out vec4 vProjected;
 
 void main() {
   vec4 localPosition = vec4(aPosition, 1.0);
@@ -122,6 +126,7 @@ void main() {
   vUv1 = aUv1;
   vColor = aColor;
   gl_Position = uViewProj * world;
+  vProjected = gl_Position;
 }`;
 
 const FRAGMENT_SHADER = `#version 300 es
@@ -134,6 +139,7 @@ in vec2 vUv;
 in vec2 vUv1;
 in vec4 vColor;
 in vec4 vTangent;
+in vec4 vProjected;
 
 uniform vec4 uBaseColor;
 uniform vec4 uTextureColor;
@@ -176,6 +182,10 @@ uniform vec4 uGlazeWave;
 // Six 90-degree faces of one point in a 3x2 atlas, +X -X +Y / -Y +Z -Z — see
 // Glaze.environment and cubeProbeViews, whose cameras write this layout.
 uniform sampler2D uGlazeEnvMap;
+// A planar reflection of the scene, sampled in SCREEN space — see Glaze.planar.
+// uGlazeGrid is full, so the flag rides uGlaze.w's sign: see setMaterial.
+uniform sampler2D uGlazePlanarMap;
+uniform float uGlazePlanar;
 // The coat's BLOCK GRID and the diagonal drawn on it, packed by glazeGrid():
 // x world step (0 for off), y streak amount, z streak period in world units,
 // w how far the reflected ray drags the streak. See Glaze.worldStep.
@@ -689,6 +699,23 @@ void main() {
       float sky = clamp(bounce.y * 0.5 + 0.5, 0.0, 1.0);
       env = uGlazeTint.rgb * (0.25 + 0.75 * sky * sky);
     }
+    // **The planar reflection over the top of it, where it has any.** Sampled by
+    // this pixel's own projected position, so what lands here is what the mirrored
+    // camera saw behind this very point — the ball, the props and the walls under
+    // themselves rather than a direction's worth of room. Its ALPHA is coverage:
+    // the mirrored pass clears transparent, so the probe or the faked sky still
+    // fills everywhere no mirrored geometry stood. See Glaze.planar.
+    // **Only where the surface is HORIZONTAL.** A reflection mirrored about a level
+    // plane belongs on a level face and nowhere else, and this is not a nicety: a
+    // course shares one material between its deck and the props standing on it, so
+    // the coat lands on both, and without this gate a pickup's own front face shows
+    // the floor's mirror as a veil over itself. MEASURED in the game — the boxes and
+    // the mascot came back washed out, which is what sent this line here.
+    if (uGlazePlanar > 0.5 && glazeNormal.y > 0.9) {
+      vec2 screenUv = vProjected.xy / max(vProjected.w, 1e-6) * 0.5 + 0.5;
+      vec4 mirrorSample = texture(uGlazePlanarMap, clamp(screenUv, 0.0, 1.0));
+      env = mix(env, uGlazeTint.rgb * mirrorSample.rgb, clamp(mirrorSample.a, 0.0, 1.0));
+    }
     // ...plus a tight lobe around the scene's OWN first light, which is what
     // actually sweeps when the camera turns. Reusing the key light rather than
     // taking a direction of its own keeps the reflection agreeing with the
@@ -810,6 +837,8 @@ interface Uniforms {
   glazeTint: WebGLUniformLocation | null;
   glazeWave: WebGLUniformLocation | null;
   glazeEnvMap: WebGLUniformLocation | null;
+  glazePlanarMap: WebGLUniformLocation | null;
+  glazePlanar: WebGLUniformLocation | null;
   glazeGrid: WebGLUniformLocation | null;
   settle: WebGLUniformLocation | null;
   settle2: WebGLUniformLocation | null;
@@ -981,6 +1010,8 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     glazeTint: gl.getUniformLocation(program, "uGlazeTint"),
     glazeWave: gl.getUniformLocation(program, "uGlazeWave"),
     glazeEnvMap: gl.getUniformLocation(program, "uGlazeEnvMap"),
+    glazePlanarMap: gl.getUniformLocation(program, "uGlazePlanarMap"),
+    glazePlanar: gl.getUniformLocation(program, "uGlazePlanar"),
     glazeGrid: gl.getUniformLocation(program, "uGlazeGrid"),
     settle: gl.getUniformLocation(program, "uSettle"),
     settle2: gl.getUniformLocation(program, "uSettle2"),
@@ -1428,6 +1459,14 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
         gl!.bindTexture(gl!.TEXTURE_2D, probe);
         gl!.uniform1i(u.glazeEnvMap, 4);
       }
+      // Unit 5, the planar mirror — see Glaze.planar.
+      const planar = material.glaze?.planar ? targetTextureOrNull(material.glaze.planar) : null;
+      gl!.uniform1f(u.glazePlanar, planar ? 1 : 0);
+      if (planar) {
+        gl!.activeTexture(gl!.TEXTURE5);
+        gl!.bindTexture(gl!.TEXTURE_2D, planar);
+        gl!.uniform1i(u.glazePlanarMap, 5);
+      }
       // The block grid and its diagonal, resolved and packed in scene.ts — the
       // streak's period gates its amount there, because the shader divides by
       // that period and an amount without one is a NaN rather than a faint line.
@@ -1663,7 +1702,9 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
       gl!.depthFunc(gl!.LEQUAL);
       gl!.enable(gl!.CULL_FACE);
       gl!.cullFace(gl!.BACK);
-      gl!.frontFace(gl!.CCW);
+      // **Reversed for a mirrored pass**, because reflecting a camera about a plane
+      // flips every triangle's winding — see `RenderOptions.mirrored`.
+      gl!.frontFace(opts.mirrored ? gl!.CW : gl!.CCW);
 
       if (opts.clear !== false) {
         const bg = scene.background;
