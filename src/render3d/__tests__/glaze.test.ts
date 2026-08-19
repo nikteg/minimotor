@@ -25,7 +25,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { glazeParallax, glazeStrength, settleActive } from "../scene.js";
+import { glazeGrid, glazeParallax, glazeStrength, settleActive } from "../scene.js";
 import type { Material } from "../scene.js";
 
 const read = (name: string): string =>
@@ -138,7 +138,11 @@ describe("Material.glaze", () => {
     // The mechanical comparison. These two bodies are pure arithmetic over
     // magic numbers, so a drifted 0.63 is invisible to a reader and to every
     // other test in this repo.
-    for (const fn of ["glazeWave", "glazeRipple"] as const) {
+    // `glazeSnap` is in this list for a reason that is not obvious: the natural
+    // way to write it is a GLSL ternary against a WGSL select(), which is two
+    // texts for one calculation and would fail here forever. It is branch-free
+    // in both instead, and this assertion is what holds it that way.
+    for (const fn of ["glazeWave", "glazeRipple", "glazeSnap", "glazeStreakAt"] as const) {
       expect(arithmetic(body(read("webgl2.ts"), fn)), fn).toBe(
         arithmetic(body(read("webgpu.ts"), fn)),
       );
@@ -149,7 +153,7 @@ describe("Material.glaze", () => {
     // Not a style rule. The two backends are required to draw the same frame,
     // and a transcendental is the one thing two compilers and two drivers are
     // free to round differently in the last bits.
-    for (const fn of ["glazeWave", "glazeRipple"] as const) {
+    for (const fn of ["glazeWave", "glazeRipple", "glazeSnap", "glazeStreakAt"] as const) {
       for (const name of ["webgl2.ts", "webgpu.ts"] as const) {
         expect(body(read(name), fn), `${name} ${fn}`).not.toMatch(/\b(sin|cos|tan|exp|log)\s*\(/);
       }
@@ -166,6 +170,100 @@ describe("Material.glaze", () => {
       expect(source, name).toContain("lobe8 * 1.5");
       expect(source, name).toContain("(env * (0.25 + 0.75 * fresnel) + under * (1.0 - fresnel)");
     }
+  });
+
+  it("REFUSES a streak that has no period to divide by", () => {
+    // The gate that matters most in this resolver, and the reason the four
+    // numbers are packed in one place rather than read field by field in each
+    // backend. The shader divides `x + z` by the period, so an amount with no
+    // period is not a faint diagonal: it is a NaN across every pixel of the coat,
+    // on a surface whose whole job is to be looked at.
+    const asked = { glaze: { strength: 1, streak: 0.5 } } as Material;
+    expect(glazeGrid(asked)[1]).toBe(0);
+    expect(glazeGrid(asked)[2]).toBe(0);
+    for (const bad of [0, -3, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const m = { glaze: { strength: 1, streak: 0.5, streakPeriod: bad } } as Material;
+      expect(glazeGrid(m)[1], String(bad)).toBe(0);
+      expect(glazeGrid(m)[2], String(bad)).toBe(0);
+    }
+    const good = {
+      glaze: { strength: 1, streak: 0.5, streakPeriod: 3.125, streakDrag: 2.2 },
+    } as Material;
+    expect(glazeGrid(good)[1]).toBeCloseTo(0.5, 10);
+    expect(glazeGrid(good)[2]).toBeCloseTo(3.125, 10);
+    expect(glazeGrid(good)[3]).toBeCloseTo(2.2, 10);
+    // And the drag is only carried while there is a streak to drag: it is the
+    // one of the four that does nothing on its own, so leaving it set would put
+    // a number in the uniform that no frame can account for.
+    expect(glazeGrid({ glaze: { strength: 1, streakDrag: 2.2 } } as Material)[3]).toBe(0);
+  });
+
+  it("treats every way of not having a block grid as no grid", () => {
+    expect(glazeGrid({} as Material)[0]).toBe(0);
+    // A zero step is the off case and a negative one snaps the wrong way; both
+    // reach a ceil(p / step) that the shader has to be able to survive.
+    for (const bad of [0, -0.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(glazeGrid({ glaze: { worldStep: bad } } as Material)[0], String(bad)).toBe(0);
+    }
+    expect(glazeGrid({ glaze: { worldStep: 0.390625 } } as Material)[0]).toBeCloseTo(0.390625, 10);
+    // The grid is independent of the streak: quantising the ripple and the grain
+    // is worth having on a coat that draws no diagonal at all.
+    expect(glazeGrid({ glaze: { worldStep: 0.5 } } as Material)).toEqual([0.5, 0, 0, 0]);
+  });
+
+  it("puts the diagonal in the faked SKY and nowhere else, in both backends", () => {
+    // The whole of item 334. A pattern added to `env` rides the Fresnel and the
+    // reflected ray, so it slides as the camera orbits and a still surface has
+    // none of it. The same pattern baked into the albedo appears TWICE — once in
+    // the parallax sample and once lying flat on the floor — which is what the
+    // owner saw and disliked.
+    for (const name of ["webgl2.ts", "webgpu.ts"] as const) {
+      const source = read(name);
+      const streak = source.search(/env \+= (u|draw\.)[Gg]lazeTint\.rgb \* glazeStreak;/);
+      expect(streak, name).toBeGreaterThan(-1);
+      // Never into what is UNDER the ice, which is the term that does not fade.
+      expect(source, name).not.toMatch(/glazeUnder \s*[+]?=[^;]*glazeStreak/);
+      // And its position comes off the reflected ray, not off the fragment.
+      expect(source, name).toMatch(
+        /(in\.worldPos|vWorldPos)\.xz \+ bounce \* (u|draw\.)[Gg]lazeGrid\.w/,
+      );
+    }
+  });
+
+  it("snaps the coat's POSITION and never its phase", () => {
+    // Item 325's owner feedback, as an assertion: quantised in SPACE, continuous
+    // in VALUE. A snapped phase reads as a stutter rather than as pixel art, and
+    // it is the one thing that was explicitly rejected. So `glazeSnap` is applied
+    // to the three positions and to no scroll phase anywhere.
+    for (const name of ["webgl2.ts", "webgpu.ts"] as const) {
+      const source = read(name);
+      // The declaration is `vec2 glazeSnap(` in GLSL and `fn glazeSnap(` in WGSL;
+      // everything else is a call site.
+      const calls = source.match(/(?<!(?:vec2|fn) )glazeSnap\(/g) ?? [];
+      // The ripple, the grain and the streak. Not the phase.
+      expect(calls.length, name).toBe(3);
+      expect(source, name).not.toMatch(/glazeSnap\([^)]*glaze\.w/);
+    }
+  });
+
+  it("keeps the WebGPU draw block's field count and its joint offset in step", () => {
+    // The failure this catches: `glazeGrid` was INSERTED rather than appended, so
+    // four float offsets below it had to move. The header's own byte sum had
+    // already drifted 16 bytes light before that — one vec4 the prose had dropped
+    // while the offsets had not — so the prose cannot be the authority here. The
+    // struct is.
+    const source = read("webgpu.ts");
+    const struct = /struct DrawData \{([\s\S]*?)\n\};/.exec(source);
+    expect(struct).not.toBeNull();
+    const vec4s = (struct![1].match(/:\s*vec4f\s*,/g) ?? []).length;
+    const mat4s = (struct![1].match(/:\s*mat4x4f\s*,/g) ?? []).length;
+    // Bytes before the joints: one model matrix and every vec4 after it.
+    const bytes = mat4s * 64 + vec4s * 16;
+    const joints = /drawData\.set\(skin \?\? IDENTITY_JOINTS, at \+ (\d+)\)/.exec(source);
+    expect(joints).not.toBeNull();
+    expect(Number(joints![1]) * 4).toBe(bytes);
+    // And the whole slot still fits the stride it is padded to.
+    expect(bytes + 64 * 64).toBeLessThanOrEqual(4608);
   });
 
   it("reflects the scene's OWN first light rather than a direction of its own", () => {

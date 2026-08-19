@@ -35,6 +35,7 @@ import {
   detailWorldStep,
   fogUniform,
   ghostMaterial,
+  glazeGrid,
   glazeParallax,
   glazeStrength,
   isVisible,
@@ -171,6 +172,10 @@ uniform vec4 uGlaze;
 uniform vec4 uGlazeTint;
 // x ripple tilt, y sparkle, zw spare
 uniform vec4 uGlazeWave;
+// The coat's BLOCK GRID and the diagonal drawn on it, packed by glazeGrid():
+// x world step (0 for off), y streak amount, z streak period in world units,
+// w how far the reflected ray drags the streak. See Glaze.worldStep.
+uniform vec4 uGlazeGrid;
 // xyz the colour that has settled, w how much collects on an up-facing face
 uniform vec4 uSettle;
 // x up sharpness, y the ground line's world Y, z rise height, w rise amount
@@ -304,6 +309,31 @@ vec2 glazeRipple(vec2 p, float phase) {
   return vec2(a + c * 0.45, b + d * 0.45);
 }
 
+/** A world position quantised to blocks of grid units, or left alone when
+ *  grid is 0. ceil rather than round, matching Material.detailWorldStep,
+ *  so a step of one lands on the same lattice the projected secondary map does.
+ *
+ *  Branch-free, and deliberately so: on is 1 for any grid at or above 1e-6
+ *  and 0 for zero or a negative one, and the divisor is clamped rather than
+ *  guarded so the off case never divides by zero on the arm that is discarded.
+ *  Both backends therefore spell this the SAME arithmetic — a ternary here and
+ *  a select() there would be two different texts for one calculation, and this
+ *  helper is compared across the two mechanically. See Glaze.worldStep. */
+vec2 glazeSnap(vec2 p, float grid) {
+  float on = clamp(grid * 1e6, 0.0, 1.0);
+  vec2 blocks = ceil(p / max(grid, 1e-6)) * grid;
+  return mix(p, blocks, on);
+}
+
+/** A 45-degree triangular ramp across period units of p.x + p.y — one unit
+ *  across for one unit down, so under a snapped p the staircase's steps are
+ *  the blocks themselves. Triangular rather than a hard edge, so the line
+ *  arrives as a few blocks of increasing brightness. See Glaze.streak. */
+float glazeStreakAt(vec2 p, float period) {
+  float along = fract((p.x + p.y) / period);
+  return 1.0 - abs(along * 2.0 - 1.0);
+}
+
 /** The tangent frame the normal map is read in.
  *
  *  Two ways to get one. If the mesh SHIPS a tangent, use it: it is the frame
@@ -390,17 +420,33 @@ void main() {
   // normal is the one it wants.
   vec3 glazeNormal = vec3(0.0, 1.0, 0.0);
   vec3 glazeUnder = vec3(0.0);
+  float glazeStreak = 0.0;
   if (uGlaze.x > 0.0) {
-    vec2 tilt = glazeRipple(vWorldPos.xz * uGlazeTint.w, uGlaze.w);
+    // The ripple's own position, snapped to blocks of a chosen world size —
+    // pixelated cannot reach this term, or the grain below, because neither is
+    // a texture fetch. See Glaze.worldStep. Off at zero, and the phase is never
+    // snapped with it: blocky in SPACE, continuous in VALUE.
+    vec2 tilt = glazeRipple(glazeSnap(vWorldPos.xz, uGlazeGrid.x) * uGlazeTint.w, uGlaze.w);
     glazeNormal = normalize(normalize(vNormal) + vec3(tilt.x, 0.0, tilt.y) * uGlazeWave.x);
-    if (uGlaze.z != 0.0) {
+    if (uGlaze.z != 0.0 || uGlazeGrid.y > 0.0) {
       vec3 toEye = normalize(uCameraPos - vWorldPos);
-      // The offset goes on the SOURCE coordinate, before the uv transform, so
-      // it lands in whatever units the projection reads — world units under
-      // planarXZ, uv under the mesh's own unwrap. See Glaze.parallax.
-      vec2 under = (source + reflect(-toEye, glazeNormal).xz * uGlaze.z) * uUvTransform.xy
-        + uUvTransform.zw;
-      glazeUnder = texture(uTexture, under).rgb;
+      vec2 bounce = reflect(-toEye, glazeNormal).xz;
+      if (uGlaze.z != 0.0) {
+        // The offset goes on the SOURCE coordinate, before the uv transform, so
+        // it lands in whatever units the projection reads — world units under
+        // planarXZ, uv under the mesh's own unwrap. See Glaze.parallax.
+        vec2 under = (source + bounce * uGlaze.z) * uUvTransform.xy + uUvTransform.zw;
+        glazeUnder = texture(uTexture, under).rgb;
+      }
+      if (uGlazeGrid.y > 0.0) {
+        // The diagonal, evaluated WHERE THE REFLECTED RAY LANDS and nowhere
+        // else. That is the whole of it: it slides as the camera orbits and a
+        // still surface has none of it, which no pattern baked into the albedo
+        // can manage — parallax re-samples that albedo, so a baked one appears
+        // both here and lying flat on the floor. See Glaze.streak.
+        vec2 lit = vWorldPos.xz + bounce * uGlazeGrid.w;
+        glazeStreak = glazeStreakAt(glazeSnap(lit, uGlazeGrid.x), uGlazeGrid.z) * uGlazeGrid.y;
+      }
     }
   }
   // Overlay while base is still in display space; alpha-over in linear light —
@@ -604,11 +650,18 @@ void main() {
     // The grain, an octave far above the ripple and gated by that same lobe so
     // it glitters where the light is instead of everywhere. See Glaze.sparkle.
     if (uGlazeWave.y > 0.0) {
-      vec2 grain = glazeRipple(vWorldPos.xz * uGlazeTint.w * 9.0, uGlaze.w * 2.3);
+      vec2 grain = glazeRipple(
+        glazeSnap(vWorldPos.xz, uGlazeGrid.x) * uGlazeTint.w * 9.0,
+        uGlaze.w * 2.3
+      );
       float g = clamp(grain.x * grain.y, 0.0, 1.0);
       float g2 = g * g;
       env += uGlazeTint.rgb * (g2 * g2 * g2) * uGlazeWave.y * (0.25 + lobe8);
     }
+    // The diagonal goes into the SKY and not into what is under the ice, so it
+    // fades out with the rest of the reflection instead of staying behind on the
+    // albedo. Its position was taken up beside the coat's other sample.
+    env += uGlazeTint.rgb * glazeStreak;
     if (uToneMap) env = srgbToLinear(env);
     // The sky takes over at a grazing angle and what is UNDER the ice shows
     // head-on, which is the right way round and is why the two weights are
@@ -704,6 +757,7 @@ interface Uniforms {
   glaze: WebGLUniformLocation | null;
   glazeTint: WebGLUniformLocation | null;
   glazeWave: WebGLUniformLocation | null;
+  glazeGrid: WebGLUniformLocation | null;
   settle: WebGLUniformLocation | null;
   settle2: WebGLUniformLocation | null;
   uvTransform: WebGLUniformLocation | null;
@@ -873,6 +927,7 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     glaze: gl.getUniformLocation(program, "uGlaze"),
     glazeTint: gl.getUniformLocation(program, "uGlazeTint"),
     glazeWave: gl.getUniformLocation(program, "uGlazeWave"),
+    glazeGrid: gl.getUniformLocation(program, "uGlazeGrid"),
     settle: gl.getUniformLocation(program, "uSettle"),
     settle2: gl.getUniformLocation(program, "uSettle2"),
     uvTransform: gl.getUniformLocation(program, "uUvTransform"),
@@ -1305,6 +1360,11 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
         0,
         0,
       );
+      // The block grid and its diagonal, resolved and packed in scene.ts — the
+      // streak's period gates its amount there, because the shader divides by
+      // that period and an amount without one is a NaN rather than a faint line.
+      const grid = glazeGrid(material);
+      gl!.uniform4f(u.glazeGrid, grid[0], grid[1], grid[2], grid[3]);
     }
 
     // What has settled on it. Both weights go to zero when `settleActive` says
