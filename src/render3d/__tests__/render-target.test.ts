@@ -60,9 +60,40 @@ describe("both backends' render targets", () => {
     // in node order — a picture that looks plausible until something passes
     // behind something else.
     expect(webgl2).toMatch(/DEPTH_COMPONENT16/);
-    expect(webgl2).toMatch(/framebufferRenderbuffer\(gl\.FRAMEBUFFER, gl\.DEPTH_ATTACHMENT/);
-    expect(webgpu).toMatch(/format: "depth24plus"/);
+    expect(webgl2).toMatch(/gl\.FRAMEBUFFER,\s*gl\.DEPTH_ATTACHMENT,\s*gl\.RENDERBUFFER,/);
+    expect(webgpu).toMatch(/format: sampleDepth \? "depth32float" : "depth24plus"/);
     expect(webgpu).toMatch(/depthStencilAttachment/);
+    // **And a SAMPLEABLE one when the caller asks** — see `TargetOptions.sampleDepth`,
+    // which is what a marched reflection walks against. On WebGL2 that means the depth
+    // becomes a texture rather than a renderbuffer; on WebGPU it means a float format
+    // with `TEXTURE_BINDING`, and one sample, since a multisampled depth texture is a
+    // different WGSL type entirely.
+    expect(webgl2).toMatch(/gl\.DEPTH_COMPONENT24/);
+    expect(webgl2).toMatch(/gl\.FRAMEBUFFER,\s*gl\.DEPTH_ATTACHMENT,\s*gl\.TEXTURE_2D,/);
+    expect(webgpu).toMatch(/GPUTextureUsage\.RENDER_ATTACHMENT \| GPUTextureUsage\.TEXTURE_BINDING/);
+    expect(webgpu).toMatch(/const sampleCount = sampleDepth \? 1 : requestedSamples;/);
+  });
+
+  it("build WebGPU pipelines for the PASS's attachment state, not the canvas's", () => {
+    // The failure this catches was shipped and reported from play: *"I don't see any
+    // reflections and i get this error when using webgpu — Attachment state of
+    // RenderPipeline is not compatible with RenderPassEncoder"*. WebGPU compares the
+    // colour format, the depth format AND the sample count, and refuses `setPipeline`
+    // when any differ — so a depth-readable target, which has a float depth and one
+    // sample, threw the entire pass away and drew nothing at all.
+    //
+    // There is no e2e for it: the headless Chromium the GPU specs run in has no
+    // `navigator.gpu`. So the guard is that the pipeline key and the descriptor both
+    // read the pass's own state rather than the renderer's.
+    expect(webgpu).toMatch(/let passDepthFormat/);
+    expect(webgpu).toMatch(/:\$\{passDepthFormat\}:\$\{passSamples\}`/);
+    expect(webgpu).toMatch(/format: passDepthFormat,/);
+    expect(webgpu).toMatch(/multisample: \{ count: passSamples \}/);
+    // And it is set from the target that is about to be drawn into.
+    expect(webgpu).toMatch(/passDepthFormat = offscreen\?\.sampleDepth \?/);
+    expect(webgpu).toMatch(/passSamples = offscreen \?/);
+    // Nothing left reading the renderer's own numbers where a pass's are meant.
+    expect(webgpu).not.toMatch(/format: "depth24plus",\n\s+depthWriteEnabled/);
   });
 
   it("size the target in physical pixels, at least one of them", () => {
@@ -96,7 +127,10 @@ describe("both backends' render targets", () => {
     // see through.
     expect(webgl2).toMatch(/deleteFramebuffer\(framebuffer\)/);
     expect(webgl2).toMatch(/deleteTexture\(texture\)/);
-    expect(webgl2).toMatch(/deleteRenderbuffer\(depth\)/);
+    expect(webgl2).toMatch(/deleteRenderbuffer\(depth as WebGLRenderbuffer\)/);
+    // The depth texture goes too, and it is a different call — a target that leaked
+    // one per resize would leak a full-frame texture per resize.
+    expect(webgl2).toMatch(/if \(sampleDepth\) gl\.deleteTexture\(depth as WebGLTexture\)/);
     expect(webgpu).toMatch(/color\?\.destroy\(\)/);
     expect(webgpu).toMatch(/depth\?\.destroy\(\)/);
   });

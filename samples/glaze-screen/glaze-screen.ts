@@ -282,6 +282,65 @@ const wallSnapshot = renderer.captureFrame() ?? undefined;
 const wallWithout = wallReadings(undefined);
 const wallWith = wallReadings(wallSnapshot);
 
+// ---------------------------------------------------------------- the march
+
+// **The reading that says a reflection is a MIRROR and not a smear**, asked for as
+// *"shouldn't the mirrored world be flipped vertically?"* A tower with a GREEN foot
+// and a MAGENTA top stands on the floor. In a mirror the foot lands next to the
+// contact line and the top lands further from it, so a column of floor read from the
+// tower's foot toward the camera must go green, then magenta — in that order. A
+// single tap cannot produce that: it copies one neighbouring pixel, so it reads one
+// colour or the other and never both in order.
+const marchScene = room();
+const marchMaterial = coat();
+marchMaterial.glaze!.screenMarch = 24;
+addNode(
+  marchScene,
+  node({
+    name: "floor",
+    mesh: box(80, 0.2, 80),
+    position: { x: 0, y: -0.1, z: 0 },
+    material: marchMaterial,
+  }),
+);
+flat(marchScene, "foot", box(2.6, 2, 1.2), { x: 0, y: 1, z: -7 }, GREEN);
+flat(marchScene, "head", box(2.6, 2, 1.2), { x: 0, y: 3, z: -7 }, MAGENTA);
+flat(marchScene, "sky", box(60, 24, 0.2), { x: 0, y: 15, z: -16 }, BLUE);
+updateWorldMatrices(marchScene);
+
+const marchCamera = createCamera({
+  target: { x: 0, y: 0.2, z: -4.5 },
+  distance: 8,
+  yaw: 0,
+  pitch: 0.3,
+  fov: Math.PI / 3,
+  near: 0.05,
+  far: 200,
+});
+
+// The mirror the march walks: a target with READABLE DEPTH, and the scene drawn into
+// it with the coat's own screen term off — a picture of a deck with no reflection on
+// it, which is the only kind a reflection can be taken from.
+const mirror = renderer.createTarget(SIZE, SIZE, { sampleDepth: true });
+marchMaterial.glaze!.screen = undefined;
+renderer.render(marchScene, marchCamera, { target: mirror, clear: true });
+marchMaterial.glaze!.screen = mirror;
+const marchFrame = shoot(marchScene, marchCamera);
+/** A column down the middle of the frame, every second row, as the raw pixels. The
+ *  test finds the tower and the floor in it rather than being told where they are —
+ *  the layout of this scene is not something to hard-code twice. */
+const marchColumn: { y: number; rgb: number[] }[] = [];
+for (let step = 0; step < 50; step++) {
+  const y = 0.02 + step * 0.0192;
+  marchColumn.push({ y: +y.toFixed(4), rgb: pixel(marchFrame, 0.5, y) });
+}
+// The same column with the march switched off, which is what says a reading came from
+// the march rather than from the ice, the probe or the tower itself.
+marchMaterial.glaze!.screen = undefined;
+const marchOffFrame = shoot(marchScene, marchCamera);
+const marchOffColumn = marchColumn.map(({ y }) => pixel(marchOffFrame, 0.5, y));
+marchMaterial.glaze!.screen = mirror;
+
 window.__glazeScreen = {
   ready: true,
   backend: renderer.backend,
@@ -289,6 +348,9 @@ window.__glazeScreen = {
   cells,
   farReach,
   dim,
+  march: marchColumn,
+  marchOff: marchOffColumn,
+  mirror: { width: mirror.width, height: mirror.height, sampleDepth: mirror.sampleDepth },
   wall: WALL_POINTS.map((at, index) => ({
     ...at,
     with: wallWith[index]!,
@@ -305,6 +367,9 @@ declare global {
       cells: Cell[];
       farReach: number[][];
       dim: number[][];
+      march: { y: number; rgb: number[] }[];
+      marchOff: number[][];
+      mirror: { width: number; height: number; sampleDepth: boolean };
       wall: Cell[];
     };
   }

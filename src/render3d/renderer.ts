@@ -91,8 +91,30 @@ export interface RenderTarget3D {
    *  backends and has no place in a frame loop; the point of a target is that
    *  the GPU keeps the result. */
   readPixels(): Promise<Uint8Array>;
+  /** Whether this target's DEPTH can be sampled by a shader — see
+   *  `TargetOptions.sampleDepth`. False on an ordinary target, whose depth is the
+   *  cheapest attachment the backend can give it. */
+  readonly sampleDepth: boolean;
   /** Free the framebuffer and its attachments. */
   dispose(): void;
+}
+
+/** What kind of target to make — see `Renderer3D.createTarget`. */
+export interface TargetOptions {
+  /** Give the target a depth attachment a shader can READ, not just write.
+   *
+   *  **What it is for: a reflection that knows how far away things are.** A colour
+   *  target alone lets a coat sample a picture; it cannot tell where along a
+   *  reflected ray the thing in that picture actually is, which is the difference
+   *  between a smear under an object and the object mirrored — see `Glaze.screenMarch`.
+   *
+   *  It is off by default because it is not free. On WebGL2 the depth becomes a
+   *  texture rather than a renderbuffer, which is the more expensive attachment. On
+   *  WebGPU it forces the target to ONE SAMPLE: a multisampled depth texture is a
+   *  different type to sample and the engine does not carry both paths, so a target
+   *  asked for readable depth gives up multisampling. For a low-resolution mirror
+   *  that is the right trade; for anything the player looks at directly it is not. */
+  sampleDepth?: boolean;
 }
 
 /** Resize behavior for a renderer serving several UI viewports. */
@@ -133,7 +155,7 @@ export interface Renderer3D {
    *
    *  Belongs to the renderer that made it: a target is a framebuffer in one
    *  context, and handing it to another renderer draws nothing. */
-  createTarget(width: number, height: number): RenderTarget3D;
+  createTarget(width: number, height: number, options?: TargetOptions): RenderTarget3D;
   /** Copy the frame just drawn into a texture a material can sample, and hand back
    *  the target holding it.
    *

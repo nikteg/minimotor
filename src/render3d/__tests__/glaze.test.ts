@@ -250,40 +250,44 @@ describe("Material.glaze", () => {
     }
   });
 
-  it("taps last frame's screen the same way in both backends, v apart", () => {
+  it("reflects the screen the same way in both backends, v and depth apart", () => {
     // `Glaze.screen`, held as text because the real-GPU measurement of it —
     // `e2e/glaze-screen.spec.ts` — can only run on WebGL2: the headless Chromium
     // Playwright drives has no `navigator.gpu`. So the WebGPU half is kept to the
-    // WebGL2 half's shape here, and the ONE place they are meant to differ is
-    // named rather than left to be discovered.
+    // WebGL2 half's shape here, and the places they are MEANT to differ are named
+    // rather than left to be discovered.
     for (const name of ["webgl2.ts", "webgpu.ts"] as const) {
       const source = read(name);
-      // The direction comes from projecting a step along the reflected ray, which
-      // is what makes it right for any projection; a hand-rolled screen basis was
-      // the first version and was wrong.
-      expect(source, name).toMatch(/(uViewProj|frame\.viewProj) \* vec4f?\(.*bounce/);
-      // ONE tap. A depth march is the thing this feature is not, and a second
-      // sample is how a cheap effect stops being cheap. The count is the sampler's
-      // every mention: WebGL2 declares it, looks its location up and samples it;
-      // WGSL has no location lookup.
+      // Both modes project the ray through the same helper, which is what stops the
+      // march and the single tap disagreeing about where the screen is.
+      expect(source, name).toMatch(/(vec3 |fn )glazeRayPoint/);
+      expect(source, name).toMatch(/glazeRayPoint\((in\.worldPos|vWorldPos) \+ bounce \* t\)/);
+      // The march is a CROSSING with a thickness test, and it refines the step it
+      // crossed in. A march that took the first delta above zero would reflect what is
+      // behind a wall onto the floor in front of it.
+      expect(source, name).toContain("if (delta < stride) {");
+      expect(source, name).toMatch(/k < GLAZE_MARCH_REFINE/);
+      // One picture and one depth, and the depth is LOADED rather than sampled — no
+      // sampler, no filtering question.
       const taps = source.match(/uGlazeScreenMap|glazeScreenTex/g) ?? [];
-      expect(taps.length, `${name} samples once`).toBe(name === "webgl2.ts" ? 3 : 2);
-      // The fade to the probe where the tap left the frame, and the strength that
-      // doubles as the feature's own switch.
-      expect(source, name).toMatch(
-        /(float|let) away = clamp\(max\(outside\.x, outside\.y\) \* 12\.0, 0\.0, 1\.0\)/,
-      );
+      expect(taps.length, `${name} samples the picture once`).toBe(name === "webgl2.ts" ? 3 : 2);
+      // The strength that doubles as the feature's switch, and the span that switches
+      // the march on. Both come off the same packed vector.
       expect(source, name).toMatch(/(uGlazeScreen|draw\.glazeScreen)\.x > 0\.0/);
+      expect(source, name).toMatch(/(uGlazeScreen|draw\.glazeScreen)\.z > 0\.0/);
       expect(source, name).toMatch(/coat = mix\(coat, mix\((uGlazeScreen|draw\.glazeScreen)\.x, 1\.0, fresnel\), take\)/);
+      // A march is switched off wherever the picture has no readable depth, in the
+      // backend rather than in the caller: marching against a stand-in finds a surface
+      // at every step.
+      expect(source, name).toContain("targetDepthOrNull");
     }
-    // **The one asymmetry.** WebGL2 samples a render target, whose row 0 is the
-    // framebuffer's bottom row, so its uv needs no flip. WebGPU samples a copy of
-    // the canvas, whose row 0 is the top one, so it does. Getting this wrong looks
-    // like a reflection of the wrong part of the scene, which is a plausible
-    // picture — the same trap the probe atlas's row flip sets.
-    expect(read("webgpu.ts")).toContain("0.5 - hereNdc.y * 0.5");
-    expect(read("webgpu.ts")).toContain("0.5 - aheadNdc.y * 0.5");
-    expect(read("webgl2.ts")).not.toMatch(/0\.5 - here.*\.y/);
+    // **The two asymmetries, both in `glazeRayPoint`.** WebGL2 samples a render target
+    // whose row 0 is the framebuffer's bottom row, and its clip z is -1..1 so window
+    // depth is a remap. WebGPU's row 0 is the top one and its clip z is already 0..1.
+    // Getting either wrong looks like a reflection of the wrong part of the scene,
+    // which is a plausible picture — the same trap the probe atlas's row flip sets.
+    expect(read("webgpu.ts")).toContain("vec3f(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5, ndc.z)");
+    expect(read("webgl2.ts")).toContain("vec3(ndc.xy * 0.5 + 0.5, ndc.z * 0.5 + 0.5)");
   });
 
   it("keeps the WebGPU draw block's field count and its joint offset in step", () => {

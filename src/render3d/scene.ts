@@ -513,8 +513,29 @@ export interface Glaze {
    *  read as haze. A real reflection is not haze, and a camera looking down at a floor
    *  would otherwise see almost none of it. */
   screenStrength?: number;
-  /** How far along the reflected ray the single tap reaches, in screen widths. Default
-   *  0.25.
+  /** How far a MARCHED reflection travels, in world units. 0 (the default) is the
+   *  single tap.
+   *
+   *  **This is what makes the reflection an inverted image rather than a smear.** With
+   *  a march the coat walks along the reflected ray comparing its own depth against the
+   *  depth stored in `screen` — which the target must therefore have, see
+   *  `TargetOptions.sampleDepth` — and stops where the ray passes behind a surface. So
+   *  it samples the point the ray ACTUALLY hits: the underside of a ball, the foot of a
+   *  wall, and a tall thing lands upside down in the floor the way a mirror puts it
+   *  there. The owner asked for exactly this: *"shouldn't the mirrored world be flipped
+   *  vertically?"*
+   *
+   *  It costs the march: up to `SCREEN_MARCH_STEPS` texture loads per fragment of
+   *  coated surface, plus a short refine. Keep it to what the reflection needs to
+   *  cross — a golf deck's worth is a few dozen units, not a whole course — because
+   *  the step length is this over the step count, and a span far longer than the scene
+   *  steps straight over small things.
+   *
+   *  With no depth in the target this is ignored and `screenReach`'s single tap stands
+   *  in, which is also what a ray that hits nothing falls back to. */
+  screenMarch?: number;
+  /** How far along the reflected ray the single tap reaches, in screen widths. Used
+   *  when there is no march — see `screenMarch`. Default 0.25.
    *
    *  This is the distance the tap cannot know without a depth march: larger reaches for
    *  reflections of things further away and smears anything near, smaller keeps contact

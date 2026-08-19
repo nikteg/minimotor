@@ -106,6 +106,41 @@ test("a glazed WALL reflects sideways, in the direction the ray runs", async ({ 
   }
 });
 
+test("a marched reflection is the world INVERTED, not a smear of it", async ({ page }) => {
+  // The question this whole mode exists to answer, asked as *"shouldn't the mirrored
+  // world be flipped vertically?"* A tower with a green foot and a magenta top stands
+  // on the floor; a mirror puts its foot beside the contact line and its top further
+  // away, so the floor read from the tower toward the camera must go GREEN and then
+  // MAGENTA. A single tap cannot make that reading: it copies one neighbouring pixel,
+  // so it answers one colour or the other and never both, in order.
+  const { march, marchOff, mirror } = await harness(page);
+  expect(mirror.sampleDepth, "the mirror carries readable depth").toBe(true);
+
+  // Only rows where the CONTROL is bare floor: the tower itself is its own colour in
+  // both frames, and this is what keeps the test from reading the tower and calling it
+  // a reflection.
+  const onFloor = march
+    .map((cell, at) => ({ ...cell, control: marchOff[at]! }))
+    .filter((cell) => grey(cell.control));
+  expect(onFloor.length, "most of the column is floor").toBeGreaterThan(20);
+
+  const reflected = onFloor.filter((cell) => lead(cell.rgb) !== null);
+  expect(reflected.length, "the floor reflected the tower").toBeGreaterThan(8);
+  // Both halves of the tower are in it. Half a tower is what a march that stops at the
+  // first surface it meets and never leaves it would give.
+  const colours = reflected.map((cell) => lead(cell.rgb));
+  expect(new Set(colours).size, "both halves of the tower").toBe(2);
+  // **And in mirror order: the foot first.** Reading down the frame is reading AWAY
+  // from the tower, and away from a mirror line is further up the thing being
+  // mirrored. Green must therefore run out before magenta begins, with no
+  // interleaving — an un-inverted copy would put the top nearest the foot.
+  const lastGreen = colours.lastIndexOf("green");
+  const firstMagenta = colours.indexOf("magenta");
+  expect(lastGreen, "the foot is reflected").toBeGreaterThanOrEqual(0);
+  expect(firstMagenta, "and so is the top").toBeGreaterThanOrEqual(0);
+  expect(lastGreen, `foot before top: ${colours.join(",")}`).toBeLessThan(firstMagenta);
+});
+
 test("a tap that walks off the frame falls back to the probe's half", async ({ page }) => {
   // The other half of the blend, which fails independently of the direction: a
   // reach of four screen widths cannot land anywhere in the picture, so every
