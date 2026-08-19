@@ -65,6 +65,37 @@ export interface RenderOptions {
    *  cache — see `pipelineFor`. Both backends leave the cull MODE alone: what
    *  changes is which side is front, not whether culling happens. */
   mirrored?: boolean;
+  /** Draw BOTH sides of everything, whatever each material says.
+   *
+   *  For a mirrored pass, where culling is the enemy rather than the saving: the
+   *  scene is full of single-sided things — billboarded particles turned to face the
+   *  real camera, walls whose faces point into the course, pads and bumpers — and a
+   *  mirrored view looks at all of them from the other side. Culled, they are simply
+   *  absent from the reflection, which is what a floor reflecting nothing but the sky
+   *  looks like. MEASURED as exactly that: *"moving colliders, bumpers, jump pads etc
+   *  aren't in the reflection at all. and not the course walls either"*.
+   *
+   *  It costs the back faces of everything solid, which a reflection can afford: it is
+   *  dim, half resolution, and seen through a coat. `mirrored` stays separate because
+   *  the two are different claims — one is about which side is front, this is about
+   *  whether the other side is drawn at all. */
+  cullNone?: boolean;
+  /** Discard every fragment below this world Y — a clip plane for a mirrored pass.
+   *
+   *  **A planar reflection needs one and cannot be got right without it.** The
+   *  mirrored camera sits UNDER the surface looking up, so the floor it is
+   *  reflecting into, and the whole shell the course is built on, stand between it
+   *  and everything worth reflecting. MEASURED: without this the mirror came back
+   *  filled edge to edge with the arena's underside, and the walls, pads, bumpers
+   *  and effects were simply not in it.
+   *
+   *  Done in the FRAGMENT shader rather than with a hardware clip plane, because
+   *  WebGL2 has none to offer and this reads the same on both backends: one compare
+   *  against the interpolated world position, and a `discard`. It costs the fragments
+   *  it throws away, which is the point.
+   *
+   *  Omit for no clipping, which is every ordinary render. */
+  clipBelowY?: number;
 }
 
 /** An offscreen surface a scene can be drawn into.

@@ -256,6 +256,8 @@ struct Frame {
   // xyz: the ground half; equal to the sky half when no hemisphere was asked
   // for, which makes the shader's mix a no-op
   ambientGround : vec4f,
+  // x: how many lights, y: 1 when a clip plane is on, z: the world Y below which
+  // fragments are thrown away — see RenderOptions.clipBelowY.
   lightCount : vec4f,
   // xyz: see fogUniform() in scene.ts, w: mode (-1 off, 0 linear, 1 exp,
   // 2 exp squared, 3 layered)
@@ -838,6 +840,8 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
       spec = spec + select(direct, physical, toneMap);
     }
   }
+  // The mirrored pass's clip plane — see RenderOptions.clipBelowY.
+  if (frame.lightCount.y > 0.5 && in.worldPos.y < frame.lightCount.z) { discard; }
   // A metal has no diffuse: what it does not reflect, it absorbs.
   let albedo = select(base.rgb, base.rgb * (1.0 - draw.rimAlpha.w), toneMap);
   var rgb = albedo * lit + spec;
@@ -1120,6 +1124,9 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
    * every draw in a pass and the alternative is a tenth positional boolean beside
    * nine others. */
   let mirrored = false;
+  /** Whether the pass draws both sides of everything — see `RenderOptions.cullNone`.
+   * A pass-level flag for the same reason `mirrored` is one. */
+  let cullNone = false;
   function pipelineFor(
     blend: boolean,
     doubleSided: boolean,
@@ -1139,7 +1146,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
      *  gated or not, none of them may write into it. */
     occluderDepth = false,
   ): GPURenderPipeline {
-    const key = `${blend}:${doubleSided}:${overlay}:${lines}:${occluded}:${additive}:${depthOnly}:${gatedOverlay}:${occluderDepth}:${mirrored}`;
+    const key = `${blend}:${doubleSided}:${overlay}:${lines}:${occluded}:${additive}:${depthOnly}:${gatedOverlay}:${occluderDepth}:${mirrored}:${cullNone}`;
     const cached = pipelines.get(key);
     if (cached) return cached;
     const pipeline = device.createRenderPipeline({
@@ -1175,7 +1182,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
         topology: lines ? "line-list" : "triangle-list",
         // A segment has no front and no back, and WebGPU rejects a cull mode on
         // a line topology outright.
-        cullMode: lines || doubleSided ? "none" : "back",
+        cullMode: lines || doubleSided || cullNone ? "none" : "back",
         // Reversed for a mirrored pass — see `RenderOptions.mirrored`. Baked into
         // the pipeline here, which is why it is a cache dimension rather than a
         // call like WebGL2's.
@@ -1703,6 +1710,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       // aspect either way so a square face in a wide atlas comes out square.
       // The pass's winding, for `pipelineFor` — see `RenderOptions.mirrored`.
       mirrored = options.mirrored === true;
+      cullNone = options.cullNone === true;
       const rect = options.viewport;
       const aspect = rect
         ? rect.width / rect.height
@@ -1781,6 +1789,8 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       frameData.set([ground[0], ground[1], ground[2], 0], 24);
       const lights = scene.lights.slice(0, MAX_LIGHTS);
       frameData[28] = lights.length;
+      frameData[29] = options.clipBelowY === undefined ? 0 : 1;
+      frameData[30] = options.clipBelowY ?? 0;
       const fog = scene.fog ? fogUniform(scene.fog) : undefined;
       frameData.set(fog ? [...fog.params, fog.mode] : [0, 0, 0, -1], 32);
       frameData.set(

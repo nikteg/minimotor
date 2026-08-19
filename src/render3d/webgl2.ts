@@ -147,6 +147,9 @@ uniform vec3 uAmbient;
 uniform vec3 uLightDir[${MAX_LIGHTS}];
 uniform vec3 uLightColor[${MAX_LIGHTS}];
 uniform int uLightCount;
+// x: 1 when a clip plane is on, y: the world Y below which fragments are thrown
+// away — see RenderOptions.clipBelowY.
+uniform vec2 uClipBelow;
 uniform vec3 uCameraPos;
 uniform float uShininess;
 uniform float uSpecular;
@@ -675,6 +678,8 @@ void main() {
         : uLightColor[i] * uSpecular * pow(noh, uShininess);
     }
   }
+  // The mirrored pass's clip plane — see RenderOptions.clipBelowY.
+  if (uClipBelow.x > 0.5 && vWorldPos.y < uClipBelow.y) discard;
   // A metal has no diffuse: what it does not reflect, it absorbs.
   vec3 albedo = uToneMap ? base.rgb * (1.0 - uMetallic) : base.rgb;
   vec3 shaded = albedo * lit + spec;
@@ -810,6 +815,7 @@ interface Uniforms {
   lightDir: WebGLUniformLocation | null;
   lightColor: WebGLUniformLocation | null;
   lightCount: WebGLUniformLocation | null;
+  clipBelow: WebGLUniformLocation | null;
   cameraPos: WebGLUniformLocation | null;
   shininess: WebGLUniformLocation | null;
   specular: WebGLUniformLocation | null;
@@ -983,6 +989,7 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     lightDir: gl.getUniformLocation(program, "uLightDir"),
     lightColor: gl.getUniformLocation(program, "uLightColor"),
     lightCount: gl.getUniformLocation(program, "uLightCount"),
+    clipBelow: gl.getUniformLocation(program, "uClipBelow"),
     cameraPos: gl.getUniformLocation(program, "uCameraPos"),
     shininess: gl.getUniformLocation(program, "uShininess"),
     specular: gl.getUniformLocation(program, "uSpecular"),
@@ -1700,7 +1707,9 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
       gl!.viewport(targetX, targetY, targetW, targetH);
       gl!.enable(gl!.DEPTH_TEST);
       gl!.depthFunc(gl!.LEQUAL);
-      gl!.enable(gl!.CULL_FACE);
+      // Both sides for a mirrored pass — see `RenderOptions.cullNone`.
+      if (opts.cullNone) gl!.disable(gl!.CULL_FACE);
+      else gl!.enable(gl!.CULL_FACE);
       gl!.cullFace(gl!.BACK);
       // **Reversed for a mirrored pass**, because reflecting a camera about a plane
       // flips every triangle's winding — see `RenderOptions.mirrored`.
@@ -1779,6 +1788,7 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
       gl!.uniform3fv(u.lightDir, lightDirs);
       gl!.uniform3fv(u.lightColor, lightColors);
       gl!.uniform1i(u.lightCount, lights.length);
+      gl!.uniform2f(u.clipBelow, opts.clipBelowY === undefined ? 0 : 1, opts.clipBelowY ?? 0);
 
       const fog = scene.fog;
       if (fog) {
