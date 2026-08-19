@@ -139,3 +139,29 @@ test("the projection takes the TARGET's aspect, not the canvas's", async ({ page
   expect(blue!.w).toBeGreaterThan(green!.w);
   expect(blue!.x).toBeLessThan(green!.x);
 });
+
+test("an ATLAS: two views in one target, one clear between them", async ({ page }) => {
+  // The shape a probe wants and the reason `RenderOptions.viewport` exists — six
+  // faces from one point in one texture, so a material binds one sampler rather
+  // than six. Measured here with two, because two is where every failure of it
+  // already shows.
+  const { atlas } = await harness(page);
+  expect(atlas.width).toBe(128);
+  expect(atlas.height).toBe(64);
+
+  // The LEFT face was rendered square on to the boxes; the right was turned away
+  // from them. Two different pictures out of the same scene, in one texture.
+  expect(atlas.leftCenter[1]!, "the left face saw the green box").toBeGreaterThan(200);
+  expect(atlas.rightCenter[1]!, "and the right face was turned away from it").toBeLessThan(80);
+
+  // **The second face did not wipe the first**, which is `clear: false` plus a
+  // viewport doing what `RenderOptions.viewport` promises. A backend that ignored
+  // either would leave the left face showing the background it cleared to.
+  const green = atlas.leftGreen;
+  expect(green, "the green box is still in the left face").not.toBeNull();
+
+  // And the projection took the FACE's aspect, not the atlas's: the atlas is 2:1
+  // and the face is square, so a face built from the atlas's aspect would stretch
+  // this silhouette to twice as wide as it is tall.
+  expect(Math.abs(green!.w - green!.h), `green was ${green!.w}x${green!.h}`).toBeLessThanOrEqual(1);
+});

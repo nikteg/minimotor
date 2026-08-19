@@ -226,6 +226,57 @@ function defaultFramebufferBound(): boolean | null {
 }
 const unboundAfterTargetRender = defaultFramebufferBound();
 
+// 5. **An ATLAS: one target, one clear, two faces side by side.** The shape a
+// probe wants — six faces from one point in one texture, so a material binds one
+// sampler instead of six — and the reason `RenderOptions.viewport` exists.
+//
+// The first face clears the whole atlas because nothing is in it yet; the second
+// renders with `clear: false`, which is the contract `RenderOptions.viewport`
+// states. A backend that confined the clear to the rect would pass this anyway; a
+// backend that ignored `clear: false` would wipe the first face, and that is what
+// `atlasLeft` measures after both renders are done.
+const ATLAS_FACE = 64;
+const atlas = renderer.createTarget(ATLAS_FACE * 2, ATLAS_FACE);
+// **Green again, because step 3 turned it red** to prove the unbind, and these
+// faces are read for the near box by colour. Set here rather than relied upon so
+// the atlas passes do not depend on what an earlier step left behind — MEASURED
+// the hard way: read as green, this face looks like a renderer drawing the wrong
+// material into a second target.
+near.material!.color = [0, 1, 0, 1];
+// Square on to the boxes, as the main camera is — so the green silhouette is a
+// square in the world, and square in pixels only if the projection took the
+// FACE's 1:1 aspect rather than the atlas's 2:1.
+renderer.render(scene, camera, {
+  target: atlas,
+  viewport: { x: 0, y: 0, width: ATLAS_FACE, height: ATLAS_FACE },
+});
+// Turned to look the other way: nothing is behind the camera, so this face is
+// background. A viewport that leaked would paint that background over the first
+// face as well.
+const away = createCamera({
+  target: { x: 0, y: 0, z: 0 },
+  distance: 8,
+  pitch: 0,
+  yaw: Math.PI,
+  near: 0.1,
+  far: 200,
+});
+renderer.render(scene, away, {
+  target: atlas,
+  clear: false,
+  viewport: { x: ATLAS_FACE, y: 0, width: ATLAS_FACE, height: ATLAS_FACE },
+});
+const atlasPixels = await atlas.readPixels();
+const faceExtent = (fx: number, hit: (r: number, g: number, b: number) => boolean) => {
+  // `extent` scans a whole image, so a face is cropped out of the atlas first.
+  const face = new Uint8Array(ATLAS_FACE * ATLAS_FACE * 4);
+  for (let y = 0; y < ATLAS_FACE; y++) {
+    const from = (y * ATLAS_FACE * 2 + fx) * 4;
+    face.set(atlasPixels.subarray(from, from + ATLAS_FACE * 4), y * ATLAS_FACE * 4);
+  }
+  return extent(face, ATLAS_FACE, ATLAS_FACE, hit);
+};
+
 const bright = (v: number) => v > 128;
 const dim = (v: number) => v < 80;
 
@@ -257,6 +308,24 @@ window.__renderTarget = {
     afterUnbind,
   },
   unboundAfterTargetRender,
+  atlas: {
+    width: atlas.width,
+    height: atlas.height,
+    // The middle of each face. Left saw the boxes; right was turned away from
+    // them, so it is the background — and it is still the background even though
+    // the same scene was handed to both renders.
+    leftCenter: pixelAt(atlasPixels, ATLAS_FACE * 2, ATLAS_FACE >> 1, ATLAS_FACE >> 1),
+    rightCenter: pixelAt(
+      atlasPixels,
+      ATLAS_FACE * 2,
+      ATLAS_FACE + (ATLAS_FACE >> 1),
+      ATLAS_FACE >> 1,
+    ),
+    // The near cube inside the LEFT face, after the right face was rendered:
+    // square if the projection took the face's aspect, and present at all only if
+    // `clear: false` left the first face standing.
+    leftGreen: faceExtent(0, (r, g, b) => bright(g) && dim(r) && dim(b)),
+  },
 };
 
 declare global {
@@ -282,6 +351,13 @@ declare global {
         afterUnbind: { digest: string; center: number[] };
       };
       unboundAfterTargetRender: boolean | null;
+      atlas: {
+        width: number;
+        height: number;
+        leftCenter: number[];
+        rightCenter: number[];
+        leftGreen: { x: number; y: number; w: number; h: number } | null;
+      };
     };
   }
 }

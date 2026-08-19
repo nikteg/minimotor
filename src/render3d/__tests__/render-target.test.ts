@@ -39,9 +39,21 @@ describe("both backends' render targets", () => {
   it("build the projection from the TARGET's aspect when there is one", () => {
     // Otherwise a square probe rendered by a wide renderer comes out stretched,
     // and it is invisible in anything but a shape a test measures.
-    const wanted = /offscreen \? offscreen\.width \/ offscreen\.height : width \/ height/;
+    //
+    // The rect's aspect takes precedence over the target's, which is the atlas
+    // case — see `RenderOptions.viewport`. Both alternatives are named here so
+    // that dropping either arm fails: a backend that forgot the rect stretches
+    // every face of a probe, and one that forgot the target stretches the whole
+    // probe.
+    // Whitespace-tolerant because the ternary is long enough that the formatter
+    // breaks it across lines in one backend and not the other.
+    const wanted = /rect\s*\?\s*rect\.width \/ rect\.height/;
+    const fallback =
+      /offscreen\s*\?\s*offscreen\.width \/ offscreen\.height\s*:\s*width \/ height/;
     expect(webgl2).toMatch(wanted);
     expect(webgpu).toMatch(wanted);
+    expect(webgl2).toMatch(fallback);
+    expect(webgpu).toMatch(fallback);
   });
 
   it("give the target its own depth attachment", () => {

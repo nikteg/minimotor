@@ -35,6 +35,24 @@ export interface RenderOptions {
    *  renderer must not come out stretched. Everything else about the call is
    *  unchanged, `clear` included. */
   target?: RenderTarget3D;
+  /** Draw into a RECTANGLE of the destination instead of all of it, in physical
+   *  pixels from its TOP-LEFT — the same corner `RenderTarget3D.readPixels` reads
+   *  from, so a rect and a readback agree without either backend's origin
+   *  leaking out.
+   *
+   *  **What it is for: several views in one target.** An environment probe needs
+   *  six faces from one point, and six targets means six samplers to bind. One
+   *  target laid out as an atlas needs one. The projection is built from the
+   *  RECT's aspect, so a square face in a wide atlas is square.
+   *
+   *  **`clear` still clears the whole destination, not the rect** — deliberately,
+   *  and it is the one thing to know before laying out an atlas. WebGPU clears in
+   *  the render pass's `loadOp`, which has no notion of a rectangle and cannot be
+   *  confined by a scissor; matching that with a scissored clear on WebGL2 would
+   *  give the same call two meanings on the two backends. So an atlas caller
+   *  clears ONCE and renders every face after it with `clear: false`, which is
+   *  the order it wants anyway. */
+  viewport?: { x: number; y: number; width: number; height: number };
 }
 
 /** An offscreen surface a scene can be drawn into.

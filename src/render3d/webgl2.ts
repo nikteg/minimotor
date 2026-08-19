@@ -1576,14 +1576,22 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
       // its rectangle starts at the origin because there is no larger backing
       // store to align a crop within.
       const offscreen = opts.target;
-      const targetW = offscreen ? offscreen.width : Math.max(1, Math.round(width * dpr));
-      const targetH = offscreen ? offscreen.height : Math.max(1, Math.round(height * dpr));
+      const fullW = offscreen ? offscreen.width : Math.max(1, Math.round(width * dpr));
+      const fullH = offscreen ? offscreen.height : Math.max(1, Math.round(height * dpr));
       // WebGL's origin is bottom-left, while the 2D crop in viewport3d reads
       // from the canvas's top-left. Keep the active render rectangle aligned
       // with that crop when the backing store is larger than this viewport.
-      const targetY = offscreen ? 0 : canvas.height - targetH;
+      const fullY = offscreen ? 0 : canvas.height - fullH;
+      // **A rect within that, for an atlas — see `RenderOptions.viewport`.** Given
+      // from the TOP-LEFT, so the flip lands here rather than in the caller: a
+      // face at `y: 0` is the top row of what `readPixels` hands back.
+      const rect = opts.viewport;
+      const targetW = rect ? Math.max(1, Math.round(rect.width)) : fullW;
+      const targetH = rect ? Math.max(1, Math.round(rect.height)) : fullH;
+      const targetX = rect ? Math.round(rect.x) : 0;
+      const targetY = rect ? fullY + Math.max(0, fullH - Math.round(rect.y) - targetH) : fullY;
       gl!.bindFramebuffer(gl!.FRAMEBUFFER, offscreen ? targetFramebufferOf(offscreen) : null);
-      gl!.viewport(0, targetY, targetW, targetH);
+      gl!.viewport(targetX, targetY, targetW, targetH);
       gl!.enable(gl!.DEPTH_TEST);
       gl!.depthFunc(gl!.LEQUAL);
       gl!.enable(gl!.CULL_FACE);
@@ -1598,7 +1606,10 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
         gl!.clearColor(bg[0] * bg[3], bg[1] * bg[3], bg[2] * bg[3], bg[3]);
         gl!.clearDepth(1);
         gl!.enable(gl!.SCISSOR_TEST);
-        gl!.scissor(0, targetY, targetW, targetH);
+        // The FULL destination, not `rect`. WebGPU's `loadOp` clear cannot be
+        // confined to a rectangle, so confining this one would give `clear` two
+        // meanings on the two backends — see `RenderOptions.viewport`.
+        gl!.scissor(0, fullY, fullW, fullH);
         gl!.depthMask(true);
         gl!.clear(gl!.COLOR_BUFFER_BIT | gl!.DEPTH_BUFFER_BIT);
         gl!.disable(gl!.SCISSOR_TEST);
@@ -1623,7 +1634,11 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
       // pixels would shift every existing render by a hair.
       viewProjection(
         camera,
-        offscreen ? offscreen.width / offscreen.height : width / height,
+        rect
+          ? rect.width / rect.height
+          : offscreen
+            ? offscreen.width / offscreen.height
+            : width / height,
         false,
         viewProj,
       );

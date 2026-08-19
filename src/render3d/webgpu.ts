@@ -1575,7 +1575,16 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       // must not come out stretched — and the pass further down draws into its
       // attachments.
       const offscreen = options.target;
-      const aspect = offscreen ? offscreen.width / offscreen.height : width / height;
+      // **A rect within the destination, for an atlas — see
+      // `RenderOptions.viewport`.** WebGPU's viewport is already top-left, so
+      // unlike WebGL2 there is nothing to flip; the projection takes the rect's
+      // aspect either way so a square face in a wide atlas comes out square.
+      const rect = options.viewport;
+      const aspect = rect
+        ? rect.width / rect.height
+        : offscreen
+          ? offscreen.width / offscreen.height
+          : width / height;
       stats.drawCalls = 0;
       stats.triangles = 0;
       stats.culled = 0;
@@ -1714,7 +1723,22 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
             depthView: depthTexture!.createView(),
           };
       const { colorView, resolveView, depthView } = views;
-      let pass = encoder.beginRenderPass({
+      const openPass = (descriptor: GPURenderPassDescriptor): GPURenderPassEncoder => {
+        const opened = encoder.beginRenderPass(descriptor);
+        // Every pass in the frame, not just the first: an overlay pass reopened
+        // against the same attachments starts back at the full attachment.
+        if (rect) {
+          opened.setViewport(rect.x, rect.y, rect.width, rect.height, 0, 1);
+          opened.setScissorRect(
+            Math.max(0, Math.round(rect.x)),
+            Math.max(0, Math.round(rect.y)),
+            Math.max(1, Math.round(rect.width)),
+            Math.max(1, Math.round(rect.height)),
+          );
+        }
+        return opened;
+      };
+      let pass = openPass({
         colorAttachments: [
           {
             // `storeOp` stays `"store"` rather than the usual `"discard"`,
@@ -1757,7 +1781,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
           // with the colour loaded, so the second paints onto the first's
           // picture rather than starting again.
           pass.end();
-          pass = encoder.beginRenderPass({
+          pass = openPass({
             colorAttachments: [
               {
                 view: colorView,
