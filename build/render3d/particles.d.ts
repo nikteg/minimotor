@@ -184,6 +184,32 @@ export interface EmitterOptions {
     }) => void;
     /** Multiplied into the material's own colour, per vertex. */
     color?: readonly [number, number, number, number];
+    /** How `color` is scaled as a particle ages, given how far through its life
+     *  it is (0..1).
+     *
+     *  `sizeOverTime`'s counterpart, and the same bargain: a MULTIPLIER, so
+     *  `color` stays the particle's full colour and this is the fade, the cool-off
+     *  or the flash around it — which is how every authoring tool stores a
+     *  colour-over-lifetime, as a gradient laid over the start colour.
+     *
+     *  Alpha is the channel that usually carries the effect. A spark that holds
+     *  full opacity to the frame it vanishes reads as a bead; the same spark
+     *  fading to a tenth over its life reads as a flash. On a material with
+     *  `additive` set that fade is the only thing dimming it, because both
+     *  backends premultiply at the render boundary — so an alpha curve really is
+     *  a brightness curve there.
+     *
+     *  Writes into `out` rather than returning, for `sizeOverTime`'s reason: this
+     *  runs for every live particle every frame and an allocation there is the
+     *  whole cost. Sampled fresh each frame, so the curve plays out across the
+     *  life; a particle's own vertex colours are only rewritten when a curve was
+     *  passed, so an emitter without one costs nothing. */
+    colorOverTime?: (t: number, out: {
+        r: number;
+        g: number;
+        b: number;
+        a: number;
+    }) => void;
     /** Units per second squared, downward. */
     gravity?: number;
     mode?: ParticleRenderMode;

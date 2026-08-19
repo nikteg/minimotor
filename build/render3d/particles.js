@@ -153,21 +153,27 @@ export function createEmitter(opts) {
     const indices = capacity * verticesPerParticle > 65535
         ? new Uint32Array(capacity * indicesPerParticle)
         : new Uint16Array(capacity * indicesPerParticle);
+    // One particle's worth of vertex colour: `color` with the source mesh's own
+    // per-vertex colours already multiplied in. Every particle in the batch is
+    // this, and `colorOverTime` scales it — so the product is worked out once here
+    // rather than per particle per frame.
+    const particleColor = new Float32Array(verticesPerParticle * 4);
+    for (let vertex = 0; vertex < verticesPerParticle; vertex++) {
+        const sourceColor = source?.colors;
+        for (let channel = 0; channel < 4; channel++) {
+            particleColor[vertex * 4 + channel] =
+                color[channel] * (sourceColor?.[vertex * 4 + channel] ?? 1);
+        }
+    }
     for (let i = 0; i < capacity; i++) {
         const v = i * verticesPerParticle;
         const o = i * indicesPerParticle;
         for (let at = 0; at < indicesPerParticle; at++)
             indices[o + at] = v + sourceIndices[at];
-        // Colours never vary per corner, so they are written once per particle at
-        // birth rather than every frame.
-        for (let vertex = 0; vertex < verticesPerParticle; vertex++) {
-            const c = (v + vertex) * 4;
-            const sourceColor = source?.colors;
-            colors[c] = color[0] * (sourceColor?.[vertex * 4] ?? 1);
-            colors[c + 1] = color[1] * (sourceColor?.[vertex * 4 + 1] ?? 1);
-            colors[c + 2] = color[2] * (sourceColor?.[vertex * 4 + 2] ?? 1);
-            colors[c + 3] = color[3] * (sourceColor?.[vertex * 4 + 3] ?? 1);
-        }
+        // Colours never vary per corner, and without a `colorOverTime` they never
+        // vary over a life either — so they are written once here rather than every
+        // frame.
+        colors.set(particleColor, v * 4);
     }
     const mesh = { positions, normals, uvs, colors, indices, version: 0 };
     let pending = 0;
@@ -311,6 +317,35 @@ export function createEmitter(opts) {
         sizeScale.z = 1;
         const span = life[slot];
         sizeOverTime(span > 0 ? Math.min(1, age[slot] / span) : 0, sizeScale);
+    }
+    /** `colorOverTime`'s answer for the particle being written, reused for
+     *  `sizeScale`'s reason. */
+    const colorScale = { r: 1, g: 1, b: 1, a: 1 };
+    const colorOverTime = opts.colorOverTime;
+    /** Write one live particle's colour at its place in the batch.
+     *
+     *  Called from the write loop rather than from the two writers, because a
+     *  colour is a colour whichever way the geometry was laid down — and only when
+     *  a curve was passed, since the construction-time fill is already the answer
+     *  without one. */
+    function colorAt(slot, index) {
+        if (!colorOverTime)
+            return;
+        colorScale.r = 1;
+        colorScale.g = 1;
+        colorScale.b = 1;
+        colorScale.a = 1;
+        const span = life[slot];
+        colorOverTime(span > 0 ? Math.min(1, age[slot] / span) : 0, colorScale);
+        const at = index * verticesPerParticle * 4;
+        for (let vertex = 0; vertex < verticesPerParticle; vertex++) {
+            const from = vertex * 4;
+            const target = at + from;
+            colors[target] = particleColor[from] * colorScale.r;
+            colors[target + 1] = particleColor[from + 1] * colorScale.g;
+            colors[target + 2] = particleColor[from + 2] * colorScale.b;
+            colors[target + 3] = particleColor[from + 3] * colorScale.a;
+        }
     }
     const right = { x: 0, y: 0, z: 0 };
     const up = { x: 0, y: 0, z: 0 };
@@ -629,6 +664,7 @@ export function createEmitter(opts) {
                     writeMesh(i, written, view);
                 else
                     writeQuad(i, written, view);
+                colorAt(i, written);
                 written++;
             }
             collapse(written);

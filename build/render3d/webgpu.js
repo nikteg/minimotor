@@ -32,7 +32,7 @@
 // to flip. `copyExternalImageToTexture` also lands top-down by default.
 import { Mat4 } from "../math/mat4.js";
 import { cameraPosition, viewProjection } from "./camera.js";
-import { detailProjectionMode, detailWorldStep, fogUniform, ghostMaterial, glazeParallax, glazeStrength, isVisible, settleActive, } from "./scene.js";
+import { detailProjectionMode, detailWorldStep, fogUniform, ghostMaterial, glazeGrid, glazeParallax, glazeStrength, isVisible, settleActive, } from "./scene.js";
 import { triangleCount, vertexCount } from "./mesh.js";
 import { frustumPlanes, inFrustum, meshBounds } from "./cull.js";
 const MAX_LIGHTS = 4;
@@ -45,20 +45,28 @@ const FRAME_BYTES = 288;
 /** Per-draw: model(64) + normalMat as 3×vec4(48) + baseColor(16) + params(16)
  *  + skinParams(16) + uvTransform(16) + rimAlpha(16) + detail(16)
  *  + detailUvTransform(16) + detailMaskTransform(16) + detailFlags(16)
- *  + glaze(16) + glazeTint(16) + glazeWave(16) + settle(16) + settle2(16)
- *  + textureColor(16)
+ *  + glaze(16) + glazeTint(16) + glazeWave(16) + glazeGrid(16) + settle(16)
+ *  + settle2(16) + textureColor(16)
  *  + joints(4096).
  *
- *  Padded to the 256-byte minimum dynamic-offset alignment. The fields and
- *  joints now occupy 4432 bytes, so the slot is the next multiple of 256.
+ *  Padded to the 256-byte minimum dynamic-offset alignment. The struct is one
+ *  mat4x4 and nineteen vec4s, 64 + 304 = 368 bytes, so the fields and joints
+ *  occupy 4464 and the slot is the next multiple of 256.
  *
- *  **The five `glaze`/`settle` vec4s cost nothing that the first one did not.**
- *  This was 4352 — exactly 17 slots, with the note that the next field added
- *  would take the whole block to 4608. It has, and the quantisation means the
- *  16 bytes a single scalar would have cost and the 80 these five vec4s cost
- *  are the same 256 bytes of stride either way. What that leaves is 176 bytes
- *  of headroom: the NEXT eleven vec4s are free, and the twelfth costs 256
- *  again. */
+ *  **The `glaze`/`settle` vec4s cost nothing that the first one did not.** This
+ *  block was 4096 + 256 before them, with the note that the next field added
+ *  would take the whole thing to 4608. It did, and the quantisation is why the
+ *  16 bytes a single scalar would have cost and the 112 these seven vec4s cost
+ *  are the same 256 bytes of stride either way. What is left is 144 bytes of
+ *  headroom: the NEXT nine vec4s are free, and the tenth costs 256 again.
+ *
+ *  Count the fields, do not trust a running total. The sum written here read
+ *  4432 until `glazeGrid` was added, which was 16 bytes light — one vec4 that
+ *  the prose had dropped while the offsets below had not, so it had been wrong
+ *  since before this note said "eleven vec4s are free". The offsets are the
+ *  authority: `jointMatrices` sits at float 92, which is byte 368, which is the
+ *  368 above. Keep the two in step, and remember that inserting a field rather
+ *  than appending one moves every `writeDraw` index below it. */
 const DRAW_BYTES = 4608;
 const DRAW_FLOATS = DRAW_BYTES / 4;
 const TIMESTAMP_SLOTS = 64;
@@ -120,6 +128,10 @@ struct DrawData {
   glazeTint : vec4f,
   // x: ripple tilt, y: sparkle, zw spare
   glazeWave : vec4f,
+  // The coat's BLOCK GRID and the diagonal drawn on it, packed by glazeGrid():
+  // x world step (0 for off), y streak amount, z streak period in world units,
+  // w how far the reflected ray drags the streak. See Glaze.worldStep.
+  glazeGrid : vec4f,
   // xyz: the colour that has settled, w: how much collects on an up-facing
   // face. See Material.settle.
   settle    : vec4f,
@@ -305,6 +317,31 @@ fn glazeRipple(p : vec2f, phase : f32) -> vec2f {
   return vec2f(a + c * 0.45, b + d * 0.45);
 }
 
+/** A world position quantised to blocks of grid units, or left alone when
+ *  grid is 0. ceil rather than round, matching Material.detailWorldStep,
+ *  so a step of one lands on the same lattice the projected secondary map does.
+ *
+ *  Branch-free, and deliberately so: on is 1 for any grid at or above 1e-6
+ *  and 0 for zero or a negative one, and the divisor is clamped rather than
+ *  guarded so the off case never divides by zero on the arm that is discarded.
+ *  Both backends therefore spell this the SAME arithmetic — a ternary there and
+ *  a select() here would be two different texts for one calculation, and this
+ *  helper is compared across the two mechanically. See Glaze.worldStep. */
+fn glazeSnap(p : vec2f, grid : f32) -> vec2f {
+  let on = clamp(grid * 1e6, 0.0, 1.0);
+  let blocks = ceil(p / max(grid, 1e-6)) * grid;
+  return mix(p, blocks, on);
+}
+
+/** A 45-degree triangular ramp across period units of p.x + p.y — one unit
+ *  across for one unit down, so under a snapped p the staircase's steps are
+ *  the blocks themselves. Triangular rather than a hard edge, so the line
+ *  arrives as a few blocks of increasing brightness. See Glaze.streak. */
+fn glazeStreakAt(p : vec2f, period : f32) -> f32 {
+  let along = fract((p.x + p.y) / period);
+  return 1.0 - abs(along * 2.0 - 1.0);
+}
+
 fn applyNormalMap(n : vec3f, worldPos : vec3f, uv : vec2f, scale : f32, shipped : vec4f) -> vec3f {
   // Sampled up front, BEFORE the branches below. textureSample picks its mip
   // from implicit derivatives, which WGSL only permits in uniform control
@@ -384,17 +421,34 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
   // so it has no business reading the surface's normal map.
   var glazeNormal = vec3f(0.0, 1.0, 0.0);
   var glazeUnder = vec3f(0.0);
+  var glazeStreak = 0.0;
   if (draw.glaze.x > 0.0) {
-    let tilt = glazeRipple(in.worldPos.xz * draw.glazeTint.w, draw.glaze.w);
+    // The ripple's own position, snapped to blocks of a chosen world size —
+    // pixelated cannot reach this term, or the grain below, because neither is
+    // a texture fetch. See Glaze.worldStep. Off at zero, and the phase is never
+    // snapped with it: blocky in SPACE, continuous in VALUE.
+    let tilt = glazeRipple(glazeSnap(in.worldPos.xz, draw.glazeGrid.x) * draw.glazeTint.w, draw.glaze.w);
     glazeNormal = normalize(normalize(in.normal) + vec3f(tilt.x, 0.0, tilt.y) * draw.glazeWave.x);
-    if (draw.glaze.z != 0.0) {
+    if (draw.glaze.z != 0.0 || draw.glazeGrid.y > 0.0) {
       let toEye = normalize(frame.cameraPos.xyz - in.worldPos);
-      // The offset goes on the SOURCE coordinate, before the uv transform, so
-      // it lands in whatever units the projection reads — world units under
-      // planarXZ, uv under the mesh's own unwrap. See Glaze.parallax.
-      let under = (source + reflect(-toEye, glazeNormal).xz * draw.glaze.z)
-        * draw.uvTransform.xy + draw.uvTransform.zw;
-      glazeUnder = textureSample(tex, samp, under).rgb;
+      let bounce = reflect(-toEye, glazeNormal).xz;
+      if (draw.glaze.z != 0.0) {
+        // The offset goes on the SOURCE coordinate, before the uv transform, so
+        // it lands in whatever units the projection reads — world units under
+        // planarXZ, uv under the mesh's own unwrap. See Glaze.parallax.
+        let under = (source + bounce * draw.glaze.z)
+          * draw.uvTransform.xy + draw.uvTransform.zw;
+        glazeUnder = textureSample(tex, samp, under).rgb;
+      }
+      if (draw.glazeGrid.y > 0.0) {
+        // The diagonal, evaluated WHERE THE REFLECTED RAY LANDS and nowhere
+        // else. That is the whole of it: it slides as the camera orbits and a
+        // still surface has none of it, which no pattern baked into the albedo
+        // can manage — parallax re-samples that albedo, so a baked one appears
+        // both here and lying flat on the floor. See Glaze.streak.
+        let lit = in.worldPos.xz + bounce * draw.glazeGrid.w;
+        glazeStreak = glazeStreakAt(glazeSnap(lit, draw.glazeGrid.x), draw.glazeGrid.z) * draw.glazeGrid.y;
+      }
     }
   }
   // Overlay while base is still in display space; alpha-over in linear light —
@@ -596,11 +650,18 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
     // The grain, an octave far above the ripple and gated by that same lobe so
     // it glitters where the light is instead of everywhere. See Glaze.sparkle.
     if (draw.glazeWave.y > 0.0) {
-      let grain = glazeRipple(in.worldPos.xz * draw.glazeTint.w * 9.0, draw.glaze.w * 2.3);
+      let grain = glazeRipple(
+        glazeSnap(in.worldPos.xz, draw.glazeGrid.x) * draw.glazeTint.w * 9.0,
+        draw.glaze.w * 2.3
+      );
       let g = clamp(grain.x * grain.y, 0.0, 1.0);
       let g2 = g * g;
       env += draw.glazeTint.rgb * (g2 * g2 * g2) * draw.glazeWave.y * (0.25 + lobe8);
     }
+    // The diagonal goes into the SKY and not into what is under the ice, so it
+    // fades out with the rest of the reflection instead of staying behind on the
+    // albedo. Its position was taken up beside the coat's other sample.
+    env += draw.glazeTint.rgb * glazeStreak;
     if (toneMap) { env = srgbToLinear(env); }
     // The sky takes over at a grazing angle and what is UNDER the ice shows
     // head-on, which is the right way round and is why the two weights are
@@ -1174,22 +1235,30 @@ export async function createWebGPURenderer(opts = {}) {
         drawData[at + 73] = material.glaze?.sparkle ?? 0;
         drawData[at + 74] = 0;
         drawData[at + 75] = 0;
+        // The block grid and its diagonal, resolved and packed in scene.ts — the
+        // streak's period gates its amount there, because the shader divides by that
+        // period and an amount without one is a NaN rather than a faint line.
+        const grid = glazeGrid(material);
+        drawData[at + 76] = grid[0];
+        drawData[at + 77] = grid[1];
+        drawData[at + 78] = grid[2];
+        drawData[at + 79] = grid[3];
         // What has settled on it. Both weights go to zero when `settleActive` says
         // there is nothing to lay on, which is what keeps the shader's own `w > 0`
         // test from reaching a half-configured wash.
         const settle = settleActive(material) ? material.settle : undefined;
         const laid = settle?.color ?? WHITE3;
-        drawData[at + 76] = laid[0];
-        drawData[at + 77] = laid[1];
-        drawData[at + 78] = laid[2];
-        drawData[at + 79] = settle?.up ?? 0;
-        drawData[at + 80] = settle?.upSharpness ?? 4;
-        drawData[at + 81] = settle?.baseY ?? 0;
-        drawData[at + 82] = settle?.rise ?? 0;
-        drawData[at + 83] = settle?.riseAmount ?? 0;
+        drawData[at + 80] = laid[0];
+        drawData[at + 81] = laid[1];
+        drawData[at + 82] = laid[2];
+        drawData[at + 83] = settle?.up ?? 0;
+        drawData[at + 84] = settle?.upSharpness ?? 4;
+        drawData[at + 85] = settle?.baseY ?? 0;
+        drawData[at + 86] = settle?.rise ?? 0;
+        drawData[at + 87] = settle?.riseAmount ?? 0;
         const textureColor = material.textureColor ?? WHITE;
-        drawData.set(textureColor, at + 84);
-        drawData.set(skin ?? IDENTITY_JOINTS, at + 88);
+        drawData.set(textureColor, at + 88);
+        drawData.set(skin ?? IDENTITY_JOINTS, at + 92);
     }
     /** Bind one node's mesh, textures and packed uniform slot, and draw it.
      *  Which PIPELINE is the caller's business, because the same node is drawn

@@ -411,6 +411,10 @@ export interface Material {
  *    ray. One fetch, of a texture already bound and already in cache, and it is
  *    the term that puts something UNDERNEATH the surface instead of on it.
  *    Without it, ice is a shiny floor.
+ *  - **`streak`**, a diagonal drawn where the reflected ray lands, on the block
+ *    grid `worldStep` sets. Arithmetic, not a map, and it is the answer to
+ *    wanting a PATTERN in the highlight that is not also painted on the floor —
+ *    see `Glaze.streak` for why a baked one always ends up in both.
  *
  *  **No new texture is sampled by any of this, and that is a deliberate
  *  choice rather than a saving.** The parallax re-reads the material's own
@@ -487,6 +491,59 @@ export interface Glaze {
      *  snow and crushed ice have a great deal of it; water and polished stone
      *  have none at all. */
     sparkle?: number;
+    /** Snap the world position to a grid of this many units before `ripple`,
+     *  `sparkle` and `streak` read it — `ceil(p / step) * step`, componentwise,
+     *  exactly as `Material.detailWorldStep` does for a projected secondary map.
+     *
+     *  Default 0, which is off. It is what makes a coat read as PIXEL ART rather
+     *  than as a smooth sheen, and it is not the same thing as `pixelated`: the
+     *  ripple and the grain are computed per fragment from a continuous position,
+     *  so no sampler filter reaches them. Quantizing the position gives blocks of
+     *  a chosen world size, aligned to the world rather than to the mesh or to
+     *  the screen.
+     *
+     *  **Quantized in SPACE, continuous in VALUE, and the distinction is the
+     *  whole point.** The pattern lands in whole blocks, while `scroll` and the
+     *  camera go on moving it smoothly — nothing about this snaps the phase, and
+     *  a coat whose phase steps reads as a stutter rather than as pixel art. */
+    worldStep?: number;
+    /** A DIAGONAL added to the faked sky, and the one term of the coat that
+     *  exists only where the camera puts it. 0..1, default 0.
+     *
+     *  A triangular ramp across `streakPeriod` world units of `x + z`, so it is
+     *  an exact 45-degree staircase — one block across for one block down under
+     *  `worldStep`, which is what keeps its steps the same size as the blocks it
+     *  is drawn on and in phase with them. A diagonal at any other pitch beats
+     *  against them at the difference frequency and reads as a bug.
+     *
+     *  **Why this is not a texture, and why it cannot be baked into one.** The
+     *  obvious way to draw lines on ice is to paint them into the albedo, and
+     *  `parallax` then re-samples that albedo along the reflected ray — so one
+     *  canvas serves both the sliding highlight and the surface's own flat
+     *  colour, the pattern appears TWICE, and the second copy lies motionless on
+     *  the floor. That is what a baked diagonal actually looks like in play, and
+     *  it is what this term exists to avoid: it is evaluated at the point the
+     *  reflected ray lands on and added to the sky, so it slides as the camera
+     *  orbits and there is nothing left of it in a still surface.
+     *
+     *  It samples the world's XZ plane, so it is a FLOOR idea — on a vertical
+     *  face every pixel up one column shares an XZ position, which turns any such
+     *  term into a vertical stripe with no variation along its length. Leave it
+     *  at 0 on walls, the way `ripple` and `sparkle` are left at 0 on them. */
+    streak?: number;
+    /** How many world units between diagonals, and it should be a whole multiple
+     *  of `worldStep` — otherwise the staircase's steps are not the blocks'.
+     *  Default 0, which switches the streak off however much of it was asked for:
+     *  a zero period is a division the shader cannot make. */
+    streakPeriod?: number;
+    /** How far the reflected ray drags the diagonal, in world units. Default 0 —
+     *  at which the streak is a stripe painted on the world rather than a
+     *  highlight, still and unmoving as the camera orbits.
+     *
+     *  This is `parallax`'s idea applied to an analytic pattern, and it is a
+     *  separate number because `parallax` is forced to 0 on a material with no
+     *  texture while the streak needs none. */
+    streakDrag?: number;
 }
 /** A colour laid over a surface by which way it FACES and how high it SITS —
  *  snow on the tops of things, dust on ledges, moss climbing from the ground,
@@ -708,6 +765,25 @@ export declare function glazeStrength(material: Material): number;
  *  place is not enough for it; the resolution has to be somewhere neither
  *  backend can skip. */
 export declare function glazeParallax(material: Material): number;
+/** `Glaze`'s pixel grid and its diagonal, packed as the one vec4 both shaders
+ *  read: `[worldStep, streak, streakPeriod, streakDrag]`.
+ *
+ *  Packed and resolved here rather than in each backend for the reason
+ *  `detailWorldStep` and `glazeParallax` are: these four are gated on each
+ *  other, and a backend that read the gate differently would draw a different
+ *  frame. Two gates, specifically —
+ *
+ *  - a `worldStep` that is not a positive finite number is off, because
+ *    `ceil(p / step)` at zero is a division by zero and at a negative step
+ *    snaps the wrong way;
+ *  - a `streak` with no positive finite `streakPeriod` is off ENTIRELY, and
+ *    that is the one worth stating: the shader divides `x + z` by the period,
+ *    so an amount without a period is not a faint diagonal, it is a NaN across
+ *    every pixel of the coat.
+ *
+ *  Returned rather than written, so the callers stay one `uniform4f` and one
+ *  `drawData.set` and there is nowhere for the order of the four to drift. */
+export declare function glazeGrid(material: Material): [number, number, number, number];
 /** Whether `Material.settle` has anything to lay on: a wash with no `up` and no
  *  usable `rise` is an object that costs a normalize and changes nothing.
  *  Resolved here so both backends agree on which materials skip the branch. */

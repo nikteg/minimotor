@@ -65,6 +65,40 @@ export function glazeParallax(material) {
     const parallax = material.glaze?.parallax ?? 0;
     return Number.isFinite(parallax) ? parallax : 0;
 }
+/** `Glaze`'s pixel grid and its diagonal, packed as the one vec4 both shaders
+ *  read: `[worldStep, streak, streakPeriod, streakDrag]`.
+ *
+ *  Packed and resolved here rather than in each backend for the reason
+ *  `detailWorldStep` and `glazeParallax` are: these four are gated on each
+ *  other, and a backend that read the gate differently would draw a different
+ *  frame. Two gates, specifically —
+ *
+ *  - a `worldStep` that is not a positive finite number is off, because
+ *    `ceil(p / step)` at zero is a division by zero and at a negative step
+ *    snaps the wrong way;
+ *  - a `streak` with no positive finite `streakPeriod` is off ENTIRELY, and
+ *    that is the one worth stating: the shader divides `x + z` by the period,
+ *    so an amount without a period is not a faint diagonal, it is a NaN across
+ *    every pixel of the coat.
+ *
+ *  Returned rather than written, so the callers stay one `uniform4f` and one
+ *  `drawData.set` and there is nowhere for the order of the four to drift. */
+export function glazeGrid(material) {
+    const glaze = material.glaze;
+    const step = glaze?.worldStep ?? 0;
+    const worldStep = Number.isFinite(step) && step > 0 ? step : 0;
+    const asked = glaze?.streak ?? 0;
+    const period = glaze?.streakPeriod ?? 0;
+    const usable = Number.isFinite(period) && period > 0;
+    const streak = usable && Number.isFinite(asked) && asked > 0 ? asked : 0;
+    const drag = glaze?.streakDrag ?? 0;
+    return [
+        worldStep,
+        streak,
+        streak > 0 ? period : 0,
+        streak > 0 && Number.isFinite(drag) ? drag : 0,
+    ];
+}
 /** Whether `Material.settle` has anything to lay on: a wash with no `up` and no
  *  usable `rise` is an object that costs a normalize and changes nothing.
  *  Resolved here so both backends agree on which materials skip the branch. */
