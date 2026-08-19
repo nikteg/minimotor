@@ -17,7 +17,6 @@
 import { Mat4 } from "@src/math/mat4.js";
 import { Quat } from "@src/math/quat.js";
 import type { MeshData } from "./mesh.js";
-import type { RenderTarget3D } from "./renderer.js";
 import type { Vec3 } from "@src/math/vec3.js";
 
 /** How a surface responds to light. Deliberately small: a colour, an optional
@@ -458,90 +457,6 @@ export interface Glaze {
    *  the light lobe, so it is the colour of the whole reflection rather than a
    *  wash over part of it. */
   tint?: readonly [number, number, number];
-  /** A CUBE PROBE of the scene for the coat to reflect, instead of the faked
-   *  gradient — trashgolf's item 356, stage 2.
-   *
-   *  A `RenderTarget3D` holding six 90-degree faces of one point, laid out as a
-   *  3x2 atlas in the order `+X -X +Y / -Y +Z -Z`. `cubeProbeViews` builds the six
-   *  cameras and rectangles that fill it, and the shader's lookup is written
-   *  against that same order — the two are one convention and changing either
-   *  alone scrambles the reflection.
-   *
-   *  **What it replaces is the GRADIENT and nothing else.** `tint` still multiplies
-   *  it, the light lobe, the sparkle and the streak are still added on top, and the
-   *  Fresnel still decides how much of any of it is seen. So a probe makes the coat
-   *  reflect the room it is in without changing how the coat behaves.
-   *
-   *  It costs one texture fetch per glazed pixel, and the SIX RENDERS that fill it
-   *  are the caller's to spend — once when a level loads is what this is designed
-   *  for, and is nearly free. Filling it every frame is a different feature with a
-   *  different price.
-   *
-   *  Sampled with the target's own NEAREST filtering, so adjacent faces cannot
-   *  bleed into each other and no inset is needed. */
-  environment?: RenderTarget3D;
-  /** LAST FRAME's picture of the scene, for a screen-space reflection — item 356.
-   *
-   *  Hand it `Renderer3D.captureFrame`'s target. The coat then reflects what was
-   *  actually on screen a frame ago, so the things standing on a surface appear IN it,
-   *  under themselves, at one copy per frame rather than a second render of the world.
-   *
-   *  **One tap, no depth march, and that is the whole of why it is cheap.** Proper SSR
-   *  walks the depth buffer to find where a reflected ray lands. This offsets the
-   *  fragment's own screen position along that ray and takes a single sample, with
-   *  `screenReach` deciding how far. So a reflection is near-right where an object meets
-   *  the surface and drifts the further up the object you look — which behind a
-   *  translucent coat at a moderate strength reads as a wet floor, and would not survive
-   *  being the whole of a mirror.
-   *
-   *  **It pairs with `environment` rather than replacing it.** A tap that lands off the
-   *  frame has nothing to report — the horizon, the sky, anything behind the camera —
-   *  and the cube probe is exactly what covers that, so the two blend by how far
-   *  outside the frame the tap fell. Give a surface both.
-   *
-   *  Two things to know before turning it up. The snapshot contains last frame's
-   *  reflection, so a surface reflects its own reflection; below full strength that
-   *  decays geometrically and is stable, but it can leave a faint trail on a fast camera
-   *  move. And only what is ON SCREEN can be reflected: a ball just outside the frame
-   *  will not appear in the floor. */
-  screen?: RenderTarget3D;
-  /** How much of `screen` is seen HEAD-ON, 0..1. Default 0.7, and it rises to full at a
-   *  grazing angle like anything reflective.
-   *
-   *  It has a weight of its own because the rest of the coat is a FAKED sky, pinned to
-   *  grazing angles by a Fresnel so that a gradient spread over a whole floor does not
-   *  read as haze. A real reflection is not haze, and a camera looking down at a floor
-   *  would otherwise see almost none of it. */
-  screenStrength?: number;
-  /** How far a MARCHED reflection travels, in world units. 0 (the default) is the
-   *  single tap.
-   *
-   *  **This is what makes the reflection an inverted image rather than a smear.** With
-   *  a march the coat walks along the reflected ray comparing its own depth against the
-   *  depth stored in `screen` — which the target must therefore have, see
-   *  `TargetOptions.sampleDepth` — and stops where the ray passes behind a surface. So
-   *  it samples the point the ray ACTUALLY hits: the underside of a ball, the foot of a
-   *  wall, and a tall thing lands upside down in the floor the way a mirror puts it
-   *  there. The owner asked for exactly this: *"shouldn't the mirrored world be flipped
-   *  vertically?"*
-   *
-   *  It costs the march: up to `SCREEN_MARCH_STEPS` texture loads per fragment of
-   *  coated surface, plus a short refine. Keep it to what the reflection needs to
-   *  cross — a golf deck's worth is a few dozen units, not a whole course — because
-   *  the step length is this over the step count, and a span far longer than the scene
-   *  steps straight over small things.
-   *
-   *  With no depth in the target this is ignored and `screenReach`'s single tap stands
-   *  in, which is also what a ray that hits nothing falls back to. */
-  screenMarch?: number;
-  /** How far along the reflected ray the single tap reaches, in screen widths. Used
-   *  when there is no march — see `screenMarch`. Default 0.25.
-   *
-   *  This is the distance the tap cannot know without a depth march: larger reaches for
-   *  reflections of things further away and smears anything near, smaller keeps contact
-   *  reflections tight and loses the rest. A quarter of the frame suits a camera looking
-   *  across a floor at things standing on it. */
-  screenReach?: number;
   /** Grazing-angle exponent. Default 4.
    *
    *  Lower spreads the coat over the whole surface and reads as haze on top of

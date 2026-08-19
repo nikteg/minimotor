@@ -168,11 +168,7 @@ describe("Material.glaze", () => {
       const source = read(name);
       expect(source, name).toContain("0.25 + 0.75 * sky * sky");
       expect(source, name).toContain("lobe8 * 1.5");
-      // The coat's weight is a VARIABLE now, because a screen tap raises it — see
-      // Glaze.screenStrength — so the pair is asserted in two halves: what the
-      // weight starts as, and that what is under the ice still takes the complement.
-      expect(source, name).toContain("coat = 0.25 + 0.75 * fresnel;");
-      expect(source, name).toContain("(env * coat + under * (1.0 - fresnel)");
+      expect(source, name).toContain("(env * (0.25 + 0.75 * fresnel) + under * (1.0 - fresnel)");
     }
   });
 
@@ -250,46 +246,6 @@ describe("Material.glaze", () => {
     }
   });
 
-  it("reflects the screen the same way in both backends, v and depth apart", () => {
-    // `Glaze.screen`, held as text because the real-GPU measurement of it —
-    // `e2e/glaze-screen.spec.ts` — can only run on WebGL2: the headless Chromium
-    // Playwright drives has no `navigator.gpu`. So the WebGPU half is kept to the
-    // WebGL2 half's shape here, and the places they are MEANT to differ are named
-    // rather than left to be discovered.
-    for (const name of ["webgl2.ts", "webgpu.ts"] as const) {
-      const source = read(name);
-      // Both modes project the ray through the same helper, which is what stops the
-      // march and the single tap disagreeing about where the screen is.
-      expect(source, name).toMatch(/(vec3 |fn )glazeRayPoint/);
-      expect(source, name).toMatch(/glazeRayPoint\((in\.worldPos|vWorldPos) \+ bounce \* t\)/);
-      // The march is a CROSSING with a thickness test, and it refines the step it
-      // crossed in. A march that took the first delta above zero would reflect what is
-      // behind a wall onto the floor in front of it.
-      expect(source, name).toContain("if (delta < stride) {");
-      expect(source, name).toMatch(/k < GLAZE_MARCH_REFINE/);
-      // One picture and one depth, and the depth is LOADED rather than sampled — no
-      // sampler, no filtering question.
-      const taps = source.match(/uGlazeScreenMap|glazeScreenTex/g) ?? [];
-      expect(taps.length, `${name} samples the picture once`).toBe(name === "webgl2.ts" ? 3 : 2);
-      // The strength that doubles as the feature's switch, and the span that switches
-      // the march on. Both come off the same packed vector.
-      expect(source, name).toMatch(/(uGlazeScreen|draw\.glazeScreen)\.x > 0\.0/);
-      expect(source, name).toMatch(/(uGlazeScreen|draw\.glazeScreen)\.z > 0\.0/);
-      expect(source, name).toMatch(/coat = mix\(coat, mix\((uGlazeScreen|draw\.glazeScreen)\.x, 1\.0, fresnel\), take\)/);
-      // A march is switched off wherever the picture has no readable depth, in the
-      // backend rather than in the caller: marching against a stand-in finds a surface
-      // at every step.
-      expect(source, name).toContain("targetDepthOrNull");
-    }
-    // **The two asymmetries, both in `glazeRayPoint`.** WebGL2 samples a render target
-    // whose row 0 is the framebuffer's bottom row, and its clip z is -1..1 so window
-    // depth is a remap. WebGPU's row 0 is the top one and its clip z is already 0..1.
-    // Getting either wrong looks like a reflection of the wrong part of the scene,
-    // which is a plausible picture — the same trap the probe atlas's row flip sets.
-    expect(read("webgpu.ts")).toContain("vec3f(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5, ndc.z)");
-    expect(read("webgl2.ts")).toContain("vec3(ndc.xy * 0.5 + 0.5, ndc.z * 0.5 + 0.5)");
-  });
-
   it("keeps the WebGPU draw block's field count and its joint offset in step", () => {
     // The failure this catches: `glazeGrid` was INSERTED rather than appended, so
     // four float offsets below it had to move. The header's own byte sum had
@@ -299,34 +255,15 @@ describe("Material.glaze", () => {
     const source = read("webgpu.ts");
     const struct = /struct DrawData \{([\s\S]*?)\n\};/.exec(source);
     expect(struct).not.toBeNull();
-    // The joint array is no longer the last field — `glazeScreen` is appended PAST
-    // it, in the headroom, exactly so that no index below it moves — so the count
-    // is split at the array rather than taken over the whole struct.
-    const split = struct![1].indexOf("jointMatrices");
-    expect(split).toBeGreaterThan(0);
-    const before = struct![1].slice(0, split);
-    const after = struct![1].slice(split);
-    const vec4s = (before.match(/:\s*vec4f\s*,/g) ?? []).length;
-    const mat4s = (before.match(/:\s*mat4x4f\s*,/g) ?? []).length;
+    const vec4s = (struct![1].match(/:\s*vec4f\s*,/g) ?? []).length;
+    const mat4s = (struct![1].match(/:\s*mat4x4f\s*,/g) ?? []).length;
     // Bytes before the joints: one model matrix and every vec4 after it.
     const bytes = mat4s * 64 + vec4s * 16;
     const joints = /drawData\.set\(skin \?\? IDENTITY_JOINTS, at \+ (\d+)\)/.exec(source);
     expect(joints).not.toBeNull();
     expect(Number(joints![1]) * 4).toBe(bytes);
-    // The joints, and then whatever was appended past them, still fit the stride.
-    const trailing = (after.match(/:\s*vec4f\s*,/g) ?? []).length;
-    expect(bytes + 64 * 64 + trailing * 16).toBeLessThanOrEqual(4608);
-    // And every appended field is written where the struct puts it: 16-byte aligned
-    // straight after the array, which is the one thing a hand-computed index can get
-    // wrong without WGSL ever complaining. It reads a neighbour's floats instead.
-    const trailingWrites = [...source.matchAll(/drawData\[at \+ (\d{4})\]/g)].map((m) =>
-      Number(m[1]),
-    );
-    expect(trailingWrites.length, "an appended field nothing writes is dead").toBeGreaterThan(0);
-    for (const index of trailingWrites) {
-      expect(index).toBeGreaterThanOrEqual(bytes / 4 + 64 * 16);
-      expect(index).toBeLessThan(bytes / 4 + 64 * 16 + trailing * 4);
-    }
+    // And the whole slot still fits the stride it is padded to.
+    expect(bytes + 64 * 64).toBeLessThanOrEqual(4608);
   });
 
   it("reflects the scene's OWN first light rather than a direction of its own", () => {

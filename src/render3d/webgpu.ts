@@ -55,7 +55,6 @@ import type {
   RenderStats,
   RenderTarget3D,
   Renderer3D,
-  TargetOptions,
 } from "./renderer.js";
 import type { Vec3 } from "@src/math/vec3.js";
 
@@ -77,17 +76,10 @@ import type { Vec3 } from "@src/math/vec3.js";
 function createRenderTarget(
   device: GPUDevice,
   format: GPUTextureFormat,
-  requestedSamples: number,
+  sampleCount: number,
   width: number,
   height: number,
-  options: TargetOptions = {},
 ): RenderTarget3D {
-  // **Readable depth costs the multisampling** — see `TargetOptions.sampleDepth`. A
-  // multisampled depth texture is `texture_depth_multisampled_2d` in WGSL, a
-  // different type with a different load, and carrying both paths through the one
-  // shader buys nothing for the low-resolution mirror this exists for.
-  const sampleDepth = options.sampleDepth === true;
-  const sampleCount = sampleDepth ? 1 : requestedSamples;
   let w = 0;
   let h = 0;
   let color: GPUTexture | null = null;
@@ -119,14 +111,9 @@ function createRenderTarget(
           });
     depth = device.createTexture({
       size: [w, h],
-      // `depth32float` when it will be read: `textureLoad` on a depth texture hands
-      // back an f32 either way, but a float format is the one both backends agree on
-      // and it needs no probe.
-      format: sampleDepth ? "depth32float" : "depth24plus",
+      format: "depth24plus",
       sampleCount,
-      usage: sampleDepth
-        ? GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING
-        : GPUTextureUsage.RENDER_ATTACHMENT,
+      usage: GPUTextureUsage.RENDER_ATTACHMENT,
     });
   }
   allocate(width, height);
@@ -182,9 +169,6 @@ function createRenderTarget(
     },
     [TARGET_COLOR]: () => color,
     [TARGET_MULTISAMPLED]: () => multisampled,
-    get sampleDepth() {
-      return sampleDepth;
-    },
     [TARGET_DEPTH]: () => depth,
   } as RenderTarget3D;
 }
@@ -199,23 +183,6 @@ const TARGET_DEPTH = Symbol.for("minimotor.render3d.webgpu.targetDepth");
 
 /** The views one pass needs for a target, in the shape the canvas path uses:
  * what the pass draws into, what it resolves into, and its depth. */
-/** This backend's colour texture for a target it made, or null for one it did
- * not — see the WebGL2 twin for why a foreign probe is a missing reflection
- * rather than a thrown frame. */
-function targetColorOrNull(target: RenderTarget3D): GPUTexture | null {
-  const handles = target as unknown as Record<symbol, (() => GPUTexture | null) | undefined>;
-  return handles[TARGET_COLOR]?.() ?? null;
-}
-
-/** The target's readable DEPTH texture, or null when it has none — see
- * `TargetOptions.sampleDepth`. Null for an ordinary target and for a target from the
- * other backend alike, and both mean the same thing to a caller: no march. */
-function targetDepthOrNull(target: RenderTarget3D): GPUTexture | null {
-  if (!target.sampleDepth) return null;
-  const handles = target as unknown as Record<symbol, (() => GPUTexture | null) | undefined>;
-  return handles[TARGET_DEPTH]?.() ?? null;
-}
-
 function targetViews(target: RenderTarget3D): {
   colorView: GPUTextureView;
   resolveView: GPUTextureView | undefined;
@@ -344,11 +311,6 @@ struct DrawData {
   // keeps a mask tint separate from the surface colour.
   textureColor: vec4f,
   jointMatrices: array<mat4x4f, ${MAX_JOINTS}>,
-  // x: how much of last frame's screen is seen head-on, 0 for no snapshot at
-  // all, y: how far the single tap reaches in screen widths, zw spare. See
-  // Glaze.screen. APPENDED past the joints, in the headroom the stride note
-  // describes, precisely so that no writeDraw index below it moves.
-  glazeScreen : vec4f,
 };
 
 @group(0) @binding(0) var<uniform> frame : Frame;
@@ -358,16 +320,6 @@ struct DrawData {
 @group(1) @binding(2) var normalTex : texture_2d<f32>;
 @group(1) @binding(3) var detailTex : texture_2d<f32>;
 @group(1) @binding(4) var detailMaskTex : texture_2d<f32>;
-// Six 90-degree faces of one point in a 3x2 atlas, +X -X +Y / -Y +Z -Z — see
-// Glaze.environment and cubeProbeViews, whose cameras write this layout.
-@group(1) @binding(5) var glazeEnvTex : texture_2d<f32>;
-// The PICTURE the coat reflects, and its DEPTH — see Glaze.screen. The picture may
-// be in the canvas's format rather than the engine's (a captureFrame copy is), which
-// texture_2d<f32> reads either way. The depth is a 1x1 stand-in unless the target was
-// made with TargetOptions.sampleDepth, which is what draw.glazeScreen.z being above
-// zero also says.
-@group(1) @binding(6) var glazeScreenTex : texture_2d<f32>;
-@group(1) @binding(7) var glazeDepthTex : texture_depth_2d;
 
 struct VsOut {
   @builtin(position) clip     : vec4f,
@@ -516,65 +468,6 @@ fn blendOverlay(pattern : vec3f, surface : vec3f) -> vec3f {
 /** A wrapped triangle wave smoothed by the 3t^2-2t^3 interpolant a value noise
  *  uses, on -1..1. Deliberately not sin(): see the WebGL2 backend, and the two
  *  have to stay the same arithmetic or they stop drawing the same frame. */
-// Where a direction lands in a 3x2 cube atlas — see Glaze.environment.
-//
-// The face choice is the ordinary cube-map one: the largest component picks the
-// axis, the other two divided by it give the face's own -1..1 coordinates. The
-// ORDER of the cells and the sign of each axis are the half that has to agree
-// with cubeProbeViews, and the e2e measures that agreement by reflecting six
-// differently coloured walls.
-//
-// The same arithmetic as the WebGL2 twin, including v counting UP the atlas: a
-// render target's rows are written the way GL writes them there, and this reads
-// the atlas that produced it either way.
-// How many steps a marched reflection takes, and how many times it then bisects the
-// step it crossed a surface in — held to the WebGL2 backend's own numbers.
-const GLAZE_MARCH_STEPS : i32 = 24;
-const GLAZE_MARCH_REFINE : i32 = 4;
-
-// Where a point on the reflected ray lands, as screen uv and depth.
-//
-// **v IS flipped here and is not in the WebGL2 backend**, because a WebGPU render
-// target's row 0 is the TOP one where a GL framebuffer's is the bottom. The depth is
-// the mirror of that difference and needs no remap: this backend's clip z is already
-// 0..1, so it is what the depth texture holds.
-fn glazeRayPoint(at : vec3f) -> vec3f {
-  let clip = frame.viewProj * vec4f(at, 1.0);
-  let ndc = clip.xyz / max(clip.w, 1e-6);
-  return vec3f(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5, ndc.z);
-}
-
-// One depth sample. textureLoad rather than a sample: it needs no sampler, so the
-// depth texture costs no sampler binding and no filtering question.
-fn glazeDepthAt(uv : vec2f) -> f32 {
-  let size = vec2f(textureDimensions(glazeDepthTex));
-  let at = vec2i(clamp(uv, vec2f(0.0), vec2f(1.0)) * size - vec2f(0.5));
-  return textureLoad(glazeDepthTex, clamp(at, vec2i(0), vec2i(size) - vec2i(1)), 0);
-}
-
-fn glazeEnvUv(d : vec3f) -> vec2f {
-  let a = abs(d);
-  var ma : f32;
-  var uc : vec2f;
-  var face : f32;
-  if (a.x >= a.y && a.x >= a.z) {
-    ma = a.x;
-    uc = select(vec2f(d.z, d.y), vec2f(-d.z, d.y), d.x > 0.0);
-    face = select(1.0, 0.0, d.x > 0.0);
-  } else if (a.y >= a.z) {
-    ma = a.y;
-    uc = select(vec2f(d.x, d.z), vec2f(d.x, -d.z), d.y > 0.0);
-    face = select(3.0, 2.0, d.y > 0.0);
-  } else {
-    ma = a.z;
-    uc = select(vec2f(-d.x, d.y), vec2f(d.x, d.y), d.z > 0.0);
-    face = select(5.0, 4.0, d.z > 0.0);
-  }
-  let f = 0.5 * (uc / max(ma, 1e-6) + vec2f(1.0));
-  let cell = vec2f(face % 3.0, floor(face / 3.0));
-  return (cell + clamp(f, vec2f(0.0), vec2f(1.0))) / vec2f(3.0, 2.0);
-}
-
 fn glazeWave(x : f32) -> f32 {
   let t = fract(x);
   let tri = 1.0 - abs(t * 2.0 - 1.0);
@@ -904,22 +797,10 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
     // Weak head-on, strong at a grazing angle. On a low orbit over a flat deck
     // this is most of what the eye reads. See Glaze.fresnel.
     let fresnel = pow(1.0 - clamp(dot(glazeNormal, toEye), 0.0, 1.0), draw.glaze.y);
-    // How much of the coat is seen. The faked sky is pinned low head-on so that a
-    // gradient over a whole floor does not read as haze; a screen tap raises it below.
-    var coat = 0.25 + 0.75 * fresnel;
     // The faked sky, looked up by the reflected ray: a two-stop vertical
     // gradient by its own height...
-    // The PROBE when one is bound, and the faked two-stop gradient otherwise.
-    // Only the gradient is replaced: the lobe, the sparkle and the streak below
-    // are still added on top, and the tint still multiplies the lot — see
-    // Glaze.environment.
-    var env : vec3f;
-    if (draw.glazeWave.z > 0.5) {
-      env = draw.glazeTint.rgb * textureSample(glazeEnvTex, samp, glazeEnvUv(bounce)).rgb;
-    } else {
-      let sky = clamp(bounce.y * 0.5 + 0.5, 0.0, 1.0);
-      env = draw.glazeTint.rgb * (0.25 + 0.75 * sky * sky);
-    }
+    let sky = clamp(bounce.y * 0.5 + 0.5, 0.0, 1.0);
+    var env = draw.glazeTint.rgb * (0.25 + 0.75 * sky * sky);
     // ...plus a tight lobe around the scene's OWN first light, which is what
     // actually sweeps when the camera turns. Reusing the key light rather than
     // taking a direction of its own keeps the reflection agreeing with the
@@ -934,90 +815,6 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
     let lobe2 = lobe * lobe;
     let lobe8 = lobe2 * lobe2 * lobe2 * lobe2;
     env += draw.glazeTint.rgb * lobe8 * 1.5;
-    // **The reflection of what is actually on screen** — see Glaze.screen. Two modes
-    // share this block, and which one runs is whether the picture came with depth.
-    if (draw.glazeScreen.x > 0.0) {
-      var tap = vec2f(0.0);
-      // How far outside the picture the answer fell: 0 is a usable reflection, 1 is
-      // nothing to report and the probe answers instead.
-      var away = 1.0;
-      let start = glazeRayPoint(in.worldPos);
-      if (draw.glazeScreen.z > 0.0) {
-        // **MARCHED.** Walk the reflected ray, and at each step ask the picture's depth
-        // whether the ray has passed BEHIND whatever is visible there. Where it has,
-        // the ray hit that surface, and the colour there is what the mirror shows — so
-        // a tall thing lands in the floor upside down, which is the whole difference
-        // between a reflection and a smear.
-        //
-        // The test is a CROSSING — in front on the last step, behind on this one —
-        // rather than a threshold, and that is what removes the self-intersection a
-        // bias would otherwise have to fight: a ray leaving a flat deck stays in front
-        // of that deck, so its own surface never registers.
-        let span = draw.glazeScreen.z;
-        var previousT = 0.0;
-        var previousDepth = start.z;
-        for (var i = 1; i <= GLAZE_MARCH_STEPS; i++) {
-          let t = span * f32(i) / f32(GLAZE_MARCH_STEPS);
-          let at = glazeRayPoint(in.worldPos + bounce * t);
-          // Off the picture, and there is nothing further along the ray to find.
-          if (at.x < 0.0 || at.x > 1.0 || at.y < 0.0 || at.y > 1.0) { break; }
-          let delta = at.z - glazeDepthAt(at.xy);
-          // **The thickness test.** A crossing deeper than one step of the ray's own
-          // depth is the ray out the FAR side of something thin, and taking it would
-          // reflect whatever is behind a wall onto the floor in front of it. The unit
-          // is the ray's own depth step rather than a constant because depth is nowhere
-          // near linear. Also unpinned: no scene in the harness has geometry thin
-          // enough to tell the two apart.
-          let stride = abs(at.z - previousDepth) * 4.0 + 1e-6;
-          if (delta > 0.0) {
-            if (delta < stride) {
-              // Bisect the step it crossed in: a step-sized block becomes an edge.
-              var low = previousT;
-              var high = t;
-              for (var k = 0; k < GLAZE_MARCH_REFINE; k++) {
-                let mid = (low + high) * 0.5;
-                let midAt = glazeRayPoint(in.worldPos + bounce * mid);
-                if (midAt.z - glazeDepthAt(midAt.xy) > 0.0) { high = mid; } else { low = mid; }
-              }
-              tap = glazeRayPoint(in.worldPos + bounce * high).xy;
-              away = 0.0;
-            }
-            break;
-          }
-          previousT = t;
-          previousDepth = at.z;
-        }
-      } else {
-        // **ONE TAP, no depth to march.** The direction is exact — one projected step
-        // along the ray — and the DISTANCE is a guess, which is the whole shape of the
-        // cheat: glazeScreen.y stands in for the thing a single sample cannot know, so
-        // the reflection drifts with height above the surface and reads as a wet floor
-        // rather than as a mirror.
-        let ahead = glazeRayPoint(in.worldPos + bounce).xy;
-        let stride = ahead - start.xy;
-        tap = start.xy + stride / max(length(stride), 1e-5) * draw.glazeScreen.y;
-        let outside = max(max(-tap, tap - vec2f(1.0)), vec2f(0.0));
-        away = clamp(max(outside.x, outside.y) * 12.0, 0.0, 1.0);
-      }
-      if (away < 1.0) {
-        // How much of the answer is usable, and the ONE weight both halves lerp by, so
-        // a surface never shows a colour at a strength that colour was not given.
-        let take = 1.0 - away;
-        let sampled = textureSampleLevel(
-          glazeScreenTex,
-          samp,
-          clamp(tap, vec2f(0.0), vec2f(1.0)),
-          0.0,
-        );
-        env = mix(env, draw.glazeTint.rgb * sampled.rgb, take);
-        // A real reflection is not haze, so it does not ride the Fresnel down to a
-        // quarter head-on the way the faked sky must — it carries its own head-on
-        // weight and still rises to full at a grazing angle. See Glaze.screenStrength.
-        // MIXED and not maxed: with a max, any strength under the sky's own 0.25 floor
-        // did nothing at all, so the setting was inert over a quarter of its range.
-        coat = mix(coat, mix(draw.glazeScreen.x, 1.0, fresnel), take);
-      }
-    }
     // The grain, an octave far above the ripple and gated by that same lobe so
     // it glitters where the light is instead of everywhere. See Glaze.sparkle.
     if (draw.glazeWave.y > 0.0) {
@@ -1038,7 +835,7 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
     // head-on, which is the right way round and is why the two weights are
     // complements rather than both riding the Fresnel.
     let under = select(glazeUnder, srgbToLinear(glazeUnder), toneMap);
-    rgb += (env * coat + under * (1.0 - fresnel) * 0.5) * draw.glaze.x;
+    rgb += (env * (0.25 + 0.75 * fresnel) + under * (1.0 - fresnel) * 0.5) * draw.glaze.x;
   }
   // Fog before the curve, not after: the fog colour is a colour in the scene
   // like any other, and a distant surface that has faded most of the way into
@@ -1176,10 +973,6 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     device,
     format,
     alphaMode: "premultiplied",
-    // **COPY_SRC so the frame can be copied into a texture — see `captureFrame`.**
-    // The default is RENDER_ATTACHMENT alone, and `copyTextureToTexture` refuses a
-    // source without this. It costs nothing to ask for on a swap chain.
-    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
   });
 
   /** 4x or none. Four is the one multisampled count WebGPU guarantees for a
@@ -1208,11 +1001,6 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: {} },
       { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: {} },
       { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: {} },
-      { binding: 5, visibility: GPUShaderStage.FRAGMENT, texture: {} },
-      { binding: 6, visibility: GPUShaderStage.FRAGMENT, texture: {} },
-      // A DEPTH sample type, which is a different kind of binding and needs a depth
-      // texture even for the stand-in — see `blankDepth`.
-      { binding: 7, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "depth" } },
     ],
   });
   const pipelineLayout = device.createPipelineLayout({
@@ -1231,23 +1019,6 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
   ];
 
   const pipelines = new Map<string, GPURenderPipeline>();
-  /** The attachment state of the pass being encoded, which every pipeline used in it
-   *  must match exactly — WebGPU checks the colour format, the DEPTH format and the
-   *  sample count, and refuses `setPipeline` outright when any of the three differ.
-   *
-   *  A pass-level pair rather than two more arguments to `pipelineFor`, which already
-   *  takes nine positional booleans: inserting a tenth silently renames every argument
-   *  after it at every call site, and the compiler cannot see it.
-   *
-   *  It is not always the canvas's own state. A target made with
-   *  `TargetOptions.sampleDepth` has a float depth and ONE sample — see
-   *  `createRenderTarget` — and rendering into it with the canvas's pipelines is
-   *  exactly the failure the owner reported: *"Attachment state of RenderPipeline is
-   *  not compatible with RenderPassEncoder"*, and no reflection anywhere, because the
-   *  whole pass was thrown away. */
-  let passDepthFormat: GPUTextureFormat = "depth24plus";
-  let passSamples = sampleCount;
-
   function pipelineFor(
     blend: boolean,
     doubleSided: boolean,
@@ -1267,7 +1038,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
      *  gated or not, none of them may write into it. */
     occluderDepth = false,
   ): GPURenderPipeline {
-    const key = `${blend}:${doubleSided}:${overlay}:${lines}:${occluded}:${additive}:${depthOnly}:${gatedOverlay}:${occluderDepth}:${passDepthFormat}:${passSamples}`;
+    const key = `${blend}:${doubleSided}:${overlay}:${lines}:${occluded}:${additive}:${depthOnly}:${gatedOverlay}:${occluderDepth}`;
     const cached = pipelines.get(key);
     if (cached) return cached;
     const pipeline = device.createRenderPipeline({
@@ -1307,7 +1078,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
         frontFace: "ccw",
       },
       depthStencil: {
-        format: passDepthFormat,
+        format: "depth24plus",
         // Transparent geometry tests against depth but does not write it, so
         // two blended surfaces do not occlude each other. A ghost never writes
         // depth either: a hint that did would occlude the geometry that is
@@ -1322,7 +1093,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
         // prepass, which contains only what it agreed to hide behind.
         depthCompare: occluded ? "greater" : overlay && !gatedOverlay ? "always" : "less-equal",
       },
-      multisample: { count: passSamples },
+      multisample: { count: sampleCount },
     });
     pipelines.set(key, pipeline);
     return pipeline;
@@ -1391,15 +1162,6 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     {},
     [1, 1],
   );
-  // And a 1x1 DEPTH texture, for the same reason and a stricter one: a depth binding
-  // will not accept a colour texture at all, so there is no borrowing `blankTexture`
-  // here. Nothing is ever written into it — a march is switched off wherever there is
-  // no real depth to march against, so this exists to satisfy the layout.
-  const blankDepth = device.createTexture({
-    size: [1, 1],
-    format: "depth32float",
-    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT,
-  });
   const blankBindGroup = device.createBindGroup({
     layout: textureLayout,
     entries: [
@@ -1408,9 +1170,6 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       { binding: 2, resource: blankTexture.createView() },
       { binding: 3, resource: blankTexture.createView() },
       { binding: 4, resource: blankTexture.createView() },
-      { binding: 5, resource: blankTexture.createView() },
-      { binding: 6, resource: blankTexture.createView() },
-      { binding: 7, resource: blankDepth.createView() },
     ],
   });
 
@@ -1424,12 +1183,6 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
   let width = opts.width ?? 300;
   let height = opts.height ?? 150;
   let dpr = opts.dpr ?? 1;
-  /** The frame's own copy — see `captureFrame`. In the CANVAS's format, which is not
-   * the one `createTarget` uses, which is why the renderer owns it. */
-  let snapshotTexture: GPUTexture | null = null;
-  let snapshot: RenderTarget3D | null = null;
-  let snapshotWidth = 0;
-  let snapshotHeight = 0;
   let depthTexture: GPUTexture | null = null;
   let colorTexture: GPUTexture | null = null;
 
@@ -1568,17 +1321,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     const normal = material.normalMap;
     const detail = (material.detailStrength ?? 0) > 0 ? material.detailMap : undefined;
     const mask = detail ? material.detailMask : undefined;
-    // The probe's own GPU texture, or undefined for a target from the other
-    // backend — a probe that cannot be read is the faked gradient, not a thrown
-    // frame, because a material is data and may outlive a context.
-    const probe = material.glaze?.environment
-      ? (targetColorOrNull(material.glaze.environment) ?? undefined)
-      : undefined;
-    // Last frame's screen, read on the same terms as the probe.
-    const screen = material.glaze?.screen
-      ? (targetColorOrNull(material.glaze.screen) ?? undefined)
-      : undefined;
-    if (!base && !normal && !detail && !probe && !screen) return blankBindGroup;
+    if (!base && !normal && !detail) return blankBindGroup;
     const baseKey = (base ?? blankTexture) as object;
     const samplerKey = `${material.pixelated ?? true}|${material.repeat ?? false}|${identity(normal)}|${identity(detail)}|${identity(mask)}`;
     let byCombination = textureGroups.get(baseKey);
@@ -1595,16 +1338,9 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       ? textureFor(detail, material.detailMapVersion ?? 0)
       : blankTexture;
     const maskTexture = mask ? textureFor(mask, material.detailMaskVersion ?? 0) : blankTexture;
-    const probeTexture = probe ?? blankTexture;
-    const screenTexture = screen ?? blankTexture;
-    // The same target's depth, when it has any. A march without it is switched off in
-    // `writeDraw`, so the stand-in is never actually walked.
-    const screenDepthTexture =
-      (screen && material.glaze?.screen ? targetDepthOrNull(material.glaze.screen) : null) ??
-      blankDepth;
     // A rebuilt texture invalidates every view of it, so the cached group has
     // to be dropped whenever any upload replaced its GPUTexture.
-    const stamp = `${identity(baseTexture)}|${identity(normalTexture)}|${identity(detailTexture)}|${identity(maskTexture)}|${identity(probeTexture)}|${identity(screenTexture)}|${identity(screenDepthTexture)}|${samplerKey}`;
+    const stamp = `${identity(baseTexture)}|${identity(normalTexture)}|${identity(detailTexture)}|${identity(maskTexture)}|${samplerKey}`;
     const existing = byCombination.get(stamp);
     if (existing) return existing;
     const group = device.createBindGroup({
@@ -1615,9 +1351,6 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
         { binding: 2, resource: normalTexture.createView() },
         { binding: 3, resource: detailTexture.createView() },
         { binding: 4, resource: maskTexture.createView() },
-        { binding: 5, resource: probeTexture.createView() },
-        { binding: 6, resource: screenTexture.createView() },
-        { binding: 7, resource: screenDepthTexture.createView() },
       ],
     });
     byCombination.set(stamp, group);
@@ -1741,9 +1474,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     drawData[at + 71] = material.glaze?.scrollScale ?? 0.25;
     drawData[at + 72] = material.glaze?.ripple ?? 0.08;
     drawData[at + 73] = material.glaze?.sparkle ?? 0;
-    // Whether a cube probe is bound at binding 5, which is what gates the sample
-    // — the blank 1x1 stands in otherwise and must not be read as a reflection.
-    drawData[at + 74] = material.glaze?.environment ? 1 : 0;
+    drawData[at + 74] = 0;
     drawData[at + 75] = 0;
     // The block grid and its diagonal, resolved and packed in scene.ts — the
     // streak's period gates its amount there, because the shader divides by that
@@ -1769,16 +1500,6 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     const textureColor = material.textureColor ?? WHITE;
     drawData.set(textureColor, at + 88);
     drawData.set(skin ?? IDENTITY_JOINTS, at + 92);
-    // Past the joints, in the stride's headroom — see the DRAW_BYTES note. The
-    // strength doubles as the flag: no snapshot and no strength mean the same thing.
-    drawData[at + 1116] = material.glaze?.screen ? (material.glaze.screenStrength ?? 0.7) : 0;
-    drawData[at + 1117] = material.glaze?.screenReach ?? 0.25;
-    // The march, off unless the picture came with depth to march against — see
-    // `Glaze.screenMarch`. Marching against the 1x1 stand-in would find a surface at
-    // every step.
-    const marchable =
-      material.glaze?.screen && targetDepthOrNull(material.glaze.screen) ? 1 : 0;
-    drawData[at + 1118] = marchable * (material.glaze?.screenMarch ?? 0);
   }
 
   /** Bind one node's mesh, textures and packed uniform slot, and draw it.
@@ -2002,11 +1723,6 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
             depthView: depthTexture!.createView(),
           };
       const { colorView, resolveView, depthView } = views;
-      // **Before the first `pipelineFor` of this pass.** A depth-readable target has a
-      // float depth and one sample, and a pipeline built for the canvas would be
-      // refused against it.
-      passDepthFormat = offscreen?.sampleDepth ? "depth32float" : "depth24plus";
-      passSamples = offscreen ? (offscreen.sampleDepth ? 1 : sampleCount) : sampleCount;
       const openPass = (descriptor: GPURenderPassDescriptor): GPURenderPassEncoder => {
         const opened = encoder.beginRenderPass(descriptor);
         // Every pass in the frame, not just the first: an overlay pass reopened
@@ -2155,53 +1871,8 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       meshes.delete(mesh);
     },
 
-    createTarget(targetWidth: number, targetHeight: number, options?: TargetOptions) {
-      return createRenderTarget(device, format, sampleCount, targetWidth, targetHeight, options);
-    },
-    captureFrame() {
-      const w = canvas.width;
-      const h = canvas.height;
-      if (w === 0 || h === 0) return null;
-      // **The canvas's own FORMAT and size, both required.** `copyTextureToTexture`
-      // refuses a mismatch of either, and the canvas format is whatever
-      // `getPreferredCanvasFormat` said — bgra8unorm on most machines, not the
-      // rgba8unorm `createTarget` hands out. So the snapshot is built here rather than
-      // by the caller, single-sampled because a copy resolves nothing.
-      if (!snapshotTexture || snapshotWidth !== w || snapshotHeight !== h) {
-        snapshotTexture?.destroy();
-        snapshotTexture = device.createTexture({
-          size: { width: w, height: h },
-          format,
-          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-        });
-        snapshotWidth = w;
-        snapshotHeight = h;
-        const held = snapshotTexture;
-        snapshot = {
-          get width() {
-            return snapshotWidth;
-          },
-          get height() {
-            return snapshotHeight;
-          },
-          resize() {},
-          async readPixels() {
-            throw new Error("captureFrame's snapshot is not readable back to the CPU.");
-          },
-          dispose() {},
-          [TARGET_COLOR]: () => held,
-          [TARGET_MULTISAMPLED]: () => null,
-          [TARGET_DEPTH]: () => null,
-        } as unknown as RenderTarget3D;
-      }
-      const encoder = device.createCommandEncoder();
-      encoder.copyTextureToTexture(
-        { texture: context.getCurrentTexture() },
-        { texture: snapshotTexture },
-        { width: w, height: h },
-      );
-      device.queue.submit([encoder.finish()]);
-      return snapshot;
+    createTarget(targetWidth: number, targetHeight: number) {
+      return createRenderTarget(device, format, sampleCount, targetWidth, targetHeight);
     },
     dispose() {
       depthTexture?.destroy();

@@ -48,7 +48,8 @@ describe("both backends' render targets", () => {
     // Whitespace-tolerant because the ternary is long enough that the formatter
     // breaks it across lines in one backend and not the other.
     const wanted = /rect\s*\?\s*rect\.width \/ rect\.height/;
-    const fallback = /offscreen\s*\?\s*offscreen\.width \/ offscreen\.height\s*:\s*width \/ height/;
+    const fallback =
+      /offscreen\s*\?\s*offscreen\.width \/ offscreen\.height\s*:\s*width \/ height/;
     expect(webgl2).toMatch(wanted);
     expect(webgpu).toMatch(wanted);
     expect(webgl2).toMatch(fallback);
@@ -60,40 +61,9 @@ describe("both backends' render targets", () => {
     // in node order — a picture that looks plausible until something passes
     // behind something else.
     expect(webgl2).toMatch(/DEPTH_COMPONENT16/);
-    expect(webgl2).toMatch(/gl\.FRAMEBUFFER,\s*gl\.DEPTH_ATTACHMENT,\s*gl\.RENDERBUFFER,/);
-    expect(webgpu).toMatch(/format: sampleDepth \? "depth32float" : "depth24plus"/);
+    expect(webgl2).toMatch(/framebufferRenderbuffer\(gl\.FRAMEBUFFER, gl\.DEPTH_ATTACHMENT/);
+    expect(webgpu).toMatch(/format: "depth24plus"/);
     expect(webgpu).toMatch(/depthStencilAttachment/);
-    // **And a SAMPLEABLE one when the caller asks** — see `TargetOptions.sampleDepth`,
-    // which is what a marched reflection walks against. On WebGL2 that means the depth
-    // becomes a texture rather than a renderbuffer; on WebGPU it means a float format
-    // with `TEXTURE_BINDING`, and one sample, since a multisampled depth texture is a
-    // different WGSL type entirely.
-    expect(webgl2).toMatch(/gl\.DEPTH_COMPONENT24/);
-    expect(webgl2).toMatch(/gl\.FRAMEBUFFER,\s*gl\.DEPTH_ATTACHMENT,\s*gl\.TEXTURE_2D,/);
-    expect(webgpu).toMatch(/GPUTextureUsage\.RENDER_ATTACHMENT \| GPUTextureUsage\.TEXTURE_BINDING/);
-    expect(webgpu).toMatch(/const sampleCount = sampleDepth \? 1 : requestedSamples;/);
-  });
-
-  it("build WebGPU pipelines for the PASS's attachment state, not the canvas's", () => {
-    // The failure this catches was shipped and reported from play: *"I don't see any
-    // reflections and i get this error when using webgpu — Attachment state of
-    // RenderPipeline is not compatible with RenderPassEncoder"*. WebGPU compares the
-    // colour format, the depth format AND the sample count, and refuses `setPipeline`
-    // when any differ — so a depth-readable target, which has a float depth and one
-    // sample, threw the entire pass away and drew nothing at all.
-    //
-    // There is no e2e for it: the headless Chromium the GPU specs run in has no
-    // `navigator.gpu`. So the guard is that the pipeline key and the descriptor both
-    // read the pass's own state rather than the renderer's.
-    expect(webgpu).toMatch(/let passDepthFormat/);
-    expect(webgpu).toMatch(/:\$\{passDepthFormat\}:\$\{passSamples\}`/);
-    expect(webgpu).toMatch(/format: passDepthFormat,/);
-    expect(webgpu).toMatch(/multisample: \{ count: passSamples \}/);
-    // And it is set from the target that is about to be drawn into.
-    expect(webgpu).toMatch(/passDepthFormat = offscreen\?\.sampleDepth \?/);
-    expect(webgpu).toMatch(/passSamples = offscreen \?/);
-    // Nothing left reading the renderer's own numbers where a pass's are meant.
-    expect(webgpu).not.toMatch(/format: "depth24plus",\n\s+depthWriteEnabled/);
   });
 
   it("size the target in physical pixels, at least one of them", () => {
@@ -127,10 +97,7 @@ describe("both backends' render targets", () => {
     // see through.
     expect(webgl2).toMatch(/deleteFramebuffer\(framebuffer\)/);
     expect(webgl2).toMatch(/deleteTexture\(texture\)/);
-    expect(webgl2).toMatch(/deleteRenderbuffer\(depth as WebGLRenderbuffer\)/);
-    // The depth texture goes too, and it is a different call — a target that leaked
-    // one per resize would leak a full-frame texture per resize.
-    expect(webgl2).toMatch(/if \(sampleDepth\) gl\.deleteTexture\(depth as WebGLTexture\)/);
+    expect(webgl2).toMatch(/deleteRenderbuffer\(depth\)/);
     expect(webgpu).toMatch(/color\?\.destroy\(\)/);
     expect(webgpu).toMatch(/depth\?\.destroy\(\)/);
   });
@@ -144,58 +111,6 @@ describe("the readback's row order", () => {
     expect(webgl2, "GL flips").toMatch(/flipped\.set\(\s*pixels\.subarray\(\(h - 1 - row\)/);
     const gpuReadback = webgpu.slice(webgpu.indexOf("async readPixels()"));
     expect(gpuReadback.slice(0, 1200), "WebGPU does not").not.toMatch(/h - 1 - row/);
-  });
-});
-
-describe("the cube probe's atlas lookup", () => {
-  it("flips the row on WebGL2 and NOT on WebGPU", () => {
-    // **The asymmetry is the whole content of this test**, and it is the same one
-    // the readback carries: `cubeProbeViews` lays the six cells out from the TOP
-    // with the viewport it renders each face into, a GL texture's v counts from the
-    // BOTTOM, and a WGSL texture's does not. So WebGL2's lookup subtracts the row
-    // and WebGPU's must not.
-    //
-    // MEASURED on a real GPU before it was written: without the flip, a ray headed
-    // at the -Z wall came back with the +Y face's colour — the two rows swapped and
-    // nothing else. `e2e/glaze-probe.spec.ts` is that measurement, and it can only
-    // run on WebGL2 here, which is exactly why the WebGPU half needs this line.
-    expect(webgl2).toMatch(/1\.0 - floor\(face \/ 3\.0\)/);
-    expect(webgpu).toMatch(/floor\(face \/ 3\.0\)/);
-    expect(webgpu).not.toMatch(/1\.0 - floor\(face \/ 3\.0\)/);
-  });
-
-  it("picks between six faces on three axes in both", () => {
-    // Three branches, one per major axis, and all six face numbers named. The
-    // ORDER within a branch is not asserted, because the two languages write the
-    // same choice the other way round — GLSL's `a ? b : c` against WGSL's
-    // `select(c, b, a)` — and a test that pinned the spelling would fail on a
-    // faithful translation. What the two backends agreeing really rests on is
-    // `e2e/glaze-probe.spec.ts`, which can only run one of them here.
-    for (const source of [webgl2, webgpu]) {
-      // The lookup's own body, so a face number appearing elsewhere in a
-      // thousand-line shader cannot satisfy this.
-      const body = source.slice(source.indexOf("glazeEnvUv"));
-      const lookup = body.slice(0, body.indexOf("\n}"));
-      const choices = lookup.match(/face = [^;]+;/g) ?? [];
-      expect(choices.length, "one face choice per axis").toBe(3);
-      // DISTINCT, because both languages compare against 0.0 on the way to
-      // choosing, so the raw list carries that constant too.
-      const numbers = new Set(choices.join(" ").match(/\d\.0/g) ?? []);
-      expect([...numbers].sort(), "all six faces are named").toEqual([
-        "0.0",
-        "1.0",
-        "2.0",
-        "3.0",
-        "4.0",
-        "5.0",
-      ]);
-    }
-  });
-
-  it("divides the atlas into three columns and two rows in both", () => {
-    for (const source of [webgl2, webgpu]) {
-      expect(source).toMatch(/vec2f?\(3\.0, 2\.0\)/);
-    }
   });
 });
 

@@ -44,7 +44,6 @@ import {
 import { triangleCount, vertexCount } from "./mesh.js";
 import { frustumPlanes, inFrustum, meshBounds, type Frustum } from "./cull.js";
 import type { Camera3D } from "./camera.js";
-import type { TargetOptions } from "./renderer.js";
 import type { MeshData } from "./mesh.js";
 import type { Material, Node3D, Scene3D } from "./scene.js";
 import type {
@@ -143,10 +142,6 @@ uniform vec3 uLightDir[${MAX_LIGHTS}];
 uniform vec3 uLightColor[${MAX_LIGHTS}];
 uniform int uLightCount;
 uniform vec3 uCameraPos;
-// The same matrix the vertex stage uses — a uniform is per PROGRAM, so declaring it
-// here binds to that one and costs no second upload. The coat's screen tap needs it to
-// find where a reflected ray goes on screen; see Glaze.screen.
-uniform mat4 uViewProj;
 uniform float uShininess;
 uniform float uSpecular;
 uniform float uMetallic;
@@ -176,44 +171,8 @@ uniform vec3 uRimAlpha; // bias, scale, power — see Material.rimAlpha
 uniform vec4 uGlaze;
 // xyz the faked sky's tint, w ripple frequency in waves per world unit
 uniform vec4 uGlazeTint;
-// x ripple tilt, y sparkle, z 1 when a cube probe is bound, w spare
+// x ripple tilt, y sparkle, zw spare
 uniform vec4 uGlazeWave;
-// Six 90-degree faces of one point in a 3x2 atlas, +X -X +Y / -Y +Z -Z — see
-// Glaze.environment and cubeProbeViews, whose cameras write this layout.
-uniform sampler2D uGlazeEnvMap;
-// The PICTURE the coat reflects, and its DEPTH — see Glaze.screen. The depth is a
-// 1x1 stand-in unless the target was made with TargetOptions.sampleDepth, which is
-// what uGlazeScreen.z being above zero also says.
-uniform sampler2D uGlazeScreenMap;
-uniform sampler2D uGlazeDepthMap;
-// x: how much is seen head-on (0 for no picture at all), y: how far the single tap
-// reaches along the reflected ray in screen widths, z: how far a MARCH travels in
-// world units (0 for the single tap).
-uniform vec3 uGlazeScreen;
-
-// How many steps a marched reflection takes, and how many times it then bisects the
-// step it crossed a surface in. Both are compile-time, so the loops unroll and neither
-// is a uniform anyone can set to something ruinous.
-//
-// **These two are picked by eye and are not pinned by a measurement.** The e2e harness
-// measures that the reflection is INVERTED, which is the thing that is either right or
-// wrong; step counts trade cost against how finely the ray lands, and 24 with a
-// 4-step refine is what looked right on this engine's own mirror. Lowering them
-// degrades the reflection rather than breaking it, so nothing here will notice.
-const int GLAZE_MARCH_STEPS = 24;
-const int GLAZE_MARCH_REFINE = 4;
-
-/** Where a point on the reflected ray lands, as screen uv and window-space depth.
- *
- * The uv is NOT v-flipped: a render target's row 0 is the framebuffer's bottom row and
- * the clip y this comes from points the same way. The WebGPU backend flips, because
- * there its row 0 is the top one. The depth likewise: this backend's clip z is -1..1
- * and window depth is 0..1, so it is remapped here and is not there. */
-vec3 glazeRayPoint(vec3 at) {
-  vec4 clip = uViewProj * vec4(at, 1.0);
-  vec3 ndc = clip.xyz / max(clip.w, 1e-6);
-  return vec3(ndc.xy * 0.5 + 0.5, ndc.z * 0.5 + 0.5);
-}
 // The coat's BLOCK GRID and the diagonal drawn on it, packed by glazeGrid():
 // x world step (0 for off), y streak amount, z streak period in world units,
 // w how far the reflected ray drags the streak. See Glaze.worldStep.
@@ -236,45 +195,6 @@ out vec4 fragColor;
  *  shader written against the exact transfer function looks subtly wrong
  *  beside them; the error is under a percent everywhere but the deepest few
  *  values, and it costs a multiply instead of a branch and a pow. */
-// Where a direction lands in a 3x2 cube atlas — see Glaze.environment.
-//
-// The face choice is the ordinary cube-map one: the largest component picks the
-// axis, the other two divided by it give the face's own -1..1 coordinates. The
-// ORDER of the cells and the sign of each axis are the half that has to agree
-// with cubeProbeViews, and the e2e measures that agreement by reflecting six
-// differently coloured walls.
-//
-// v counts UP the atlas because a render target's rows are written the way GL
-// writes them, bottom-first — the same reason readPixels flips.
-vec2 glazeEnvUv(vec3 d) {
-  vec3 a = abs(d);
-  float ma;
-  vec2 uc;
-  float face;
-  if (a.x >= a.y && a.x >= a.z) {
-    ma = a.x;
-    uc = d.x > 0.0 ? vec2(-d.z, d.y) : vec2(d.z, d.y);
-    face = d.x > 0.0 ? 0.0 : 1.0;
-  } else if (a.y >= a.z) {
-    ma = a.y;
-    uc = d.y > 0.0 ? vec2(d.x, -d.z) : vec2(d.x, d.z);
-    face = d.y > 0.0 ? 2.0 : 3.0;
-  } else {
-    ma = a.z;
-    uc = d.z > 0.0 ? vec2(d.x, d.y) : vec2(-d.x, d.y);
-    face = d.z > 0.0 ? 4.0 : 5.0;
-  }
-  vec2 f = 0.5 * (uc / max(ma, 1e-6) + 1.0);
-  // **The row is flipped and WebGPU's is not**, the same asymmetry readPixels
-  // carries: cubeProbeViews lays the cells out from the TOP with the viewport it
-  // renders each face into, and a GL texture's v counts from the BOTTOM. So the
-  // atlas's row 0 is this sampler's row 1. MEASURED: without the flip, a ray
-  // headed at the -Z wall comes back with the +Y face's colour, which is the two
-  // rows swapped and nothing else.
-  vec2 cell = vec2(mod(face, 3.0), 1.0 - floor(face / 3.0));
-  return (cell + clamp(f, 0.0, 1.0)) / vec2(3.0, 2.0);
-}
-
 vec3 srgbToLinear(vec3 c) { return c * c; }
 vec3 linearToSrgb(vec3 c) { return sqrt(c); }
 
@@ -714,22 +634,10 @@ void main() {
     // Weak head-on, strong at a grazing angle. On a low orbit over a flat deck
     // this is most of what the eye reads. See Glaze.fresnel.
     float fresnel = pow(1.0 - clamp(dot(glazeNormal, toEye), 0.0, 1.0), uGlaze.y);
-    // How much of the coat is seen. The faked sky is pinned low head-on so that a
-    // gradient over a whole floor does not read as haze; a screen tap raises it below.
-    float coat = 0.25 + 0.75 * fresnel;
     // The faked sky, looked up by the reflected ray: a two-stop vertical
     // gradient by its own height...
-    // The PROBE when one is bound, and the faked two-stop gradient otherwise.
-    // Only the gradient is replaced: the lobe, the sparkle and the streak below
-    // are still added on top, and the tint still multiplies the lot — see
-    // Glaze.environment.
-    vec3 env;
-    if (uGlazeWave.z > 0.5) {
-      env = uGlazeTint.rgb * texture(uGlazeEnvMap, glazeEnvUv(bounce)).rgb;
-    } else {
-      float sky = clamp(bounce.y * 0.5 + 0.5, 0.0, 1.0);
-      env = uGlazeTint.rgb * (0.25 + 0.75 * sky * sky);
-    }
+    float sky = clamp(bounce.y * 0.5 + 0.5, 0.0, 1.0);
+    vec3 env = uGlazeTint.rgb * (0.25 + 0.75 * sky * sky);
     // ...plus a tight lobe around the scene's OWN first light, which is what
     // actually sweeps when the camera turns. Reusing the key light rather than
     // taking a direction of its own keeps the reflection agreeing with the
@@ -740,88 +648,6 @@ void main() {
     float lobe2 = lobe * lobe;
     float lobe8 = lobe2 * lobe2 * lobe2 * lobe2;
     env += uGlazeTint.rgb * lobe8 * 1.5;
-    // **The reflection of what is actually on screen** — see Glaze.screen. Two modes
-    // share this block, and which one runs is whether the picture came with depth.
-    if (uGlazeScreen.x > 0.0) {
-      vec2 tap = vec2(0.0);
-      // How far outside the picture the answer fell: 0 is a usable reflection, 1 is
-      // nothing to report and the probe answers instead.
-      float away = 1.0;
-      vec3 start = glazeRayPoint(vWorldPos);
-      if (uGlazeScreen.z > 0.0) {
-        // **MARCHED.** Walk the reflected ray, and at each step ask the picture's depth
-        // whether the ray has passed BEHIND whatever is visible there. Where it has,
-        // the ray hit that surface, and the colour there is what the mirror shows — so
-        // a tall thing lands in the floor upside down, which is the whole difference
-        // between a reflection and a smear.
-        //
-        // The test is a CROSSING — in front on the last step, behind on this one —
-        // rather than a threshold, and that is what removes the self-intersection a
-        // bias would otherwise have to fight: a ray leaving a flat deck stays in front
-        // of that deck, so its own surface never registers.
-        float span = uGlazeScreen.z;
-        float previousT = 0.0;
-        float previousDepth = start.z;
-        float behind = -1.0;
-        for (int i = 1; i <= GLAZE_MARCH_STEPS; i++) {
-          float t = span * float(i) / float(GLAZE_MARCH_STEPS);
-          vec3 at = glazeRayPoint(vWorldPos + bounce * t);
-          // Off the picture, and there is nothing further along the ray to find.
-          if (at.x < 0.0 || at.x > 1.0 || at.y < 0.0 || at.y > 1.0) break;
-          float scene = texture(uGlazeDepthMap, at.xy).r;
-          float delta = at.z - scene;
-          // **The thickness test.** A crossing deeper than one step of the ray's own
-          // depth is the ray out the FAR side of something thin, and taking it would
-          // reflect whatever is behind a wall onto the floor in front of it. The unit
-          // is the ray's own depth step rather than a constant because window depth is
-          // nowhere near linear — a fixed tolerance is metres at the far plane and
-          // nothing at the near one. Also unpinned: no scene in the harness has
-          // geometry thin enough to tell the two apart.
-          float stride = abs(at.z - previousDepth) * 4.0 + 1e-6;
-          if (behind < 0.0 && delta > 0.0) {
-            if (delta < stride) {
-              // Bisect the step it crossed in: a step-sized block becomes an edge.
-              float low = previousT;
-              float high = t;
-              for (int k = 0; k < GLAZE_MARCH_REFINE; k++) {
-                float mid = (low + high) * 0.5;
-                vec3 midAt = glazeRayPoint(vWorldPos + bounce * mid);
-                if (midAt.z - texture(uGlazeDepthMap, midAt.xy).r > 0.0) high = mid;
-                else low = mid;
-              }
-              tap = glazeRayPoint(vWorldPos + bounce * high).xy;
-              away = 0.0;
-            }
-            break;
-          }
-          previousT = t;
-          previousDepth = at.z;
-        }
-      } else {
-        // **ONE TAP, no depth to march.** The direction is exact — one projected step
-        // along the ray — and the DISTANCE is a guess, which is the whole shape of the
-        // cheat: uGlazeScreen.y stands in for the thing a single sample cannot know, so
-        // the reflection drifts with height above the surface and reads as a wet floor
-        // rather than as a mirror.
-        vec2 ahead = glazeRayPoint(vWorldPos + bounce).xy;
-        vec2 stride = ahead - start.xy;
-        tap = start.xy + stride / max(length(stride), 1e-5) * uGlazeScreen.y;
-        vec2 outside = max(max(-tap, tap - 1.0), 0.0);
-        away = clamp(max(outside.x, outside.y) * 12.0, 0.0, 1.0);
-      }
-      if (away < 1.0) {
-        // How much of the answer is usable, and the ONE weight both halves lerp by, so
-        // a surface never shows a colour at a strength that colour was not given.
-        float take = 1.0 - away;
-        env = mix(env, uGlazeTint.rgb * texture(uGlazeScreenMap, clamp(tap, 0.0, 1.0)).rgb, take);
-        // A real reflection is not haze, so it does not ride the Fresnel down to a
-        // quarter head-on the way the faked sky must — it carries its own head-on
-        // weight and still rises to full at a grazing angle. See Glaze.screenStrength.
-        // MIXED and not maxed: with a max, any strength under the sky's own 0.25 floor
-        // did nothing at all, so the setting was inert over a quarter of its range.
-        coat = mix(coat, mix(uGlazeScreen.x, 1.0, fresnel), take);
-      }
-    }
     // The grain, an octave far above the ripple and gated by that same lobe so
     // it glitters where the light is instead of everywhere. See Glaze.sparkle.
     if (uGlazeWave.y > 0.0) {
@@ -842,7 +668,7 @@ void main() {
     // head-on, which is the right way round and is why the two weights are
     // complements rather than both riding the Fresnel.
     vec3 under = uToneMap ? srgbToLinear(glazeUnder) : glazeUnder;
-    shaded += (env * coat + under * (1.0 - fresnel) * 0.5) * uGlaze.x;
+    shaded += (env * (0.25 + 0.75 * fresnel) + under * (1.0 - fresnel) * 0.5) * uGlaze.x;
   }
   // Fog before the curve, not after: the fog colour is a colour in the scene
   // like any other, and a distant surface that has faded most of the way into
@@ -932,10 +758,6 @@ interface Uniforms {
   glaze: WebGLUniformLocation | null;
   glazeTint: WebGLUniformLocation | null;
   glazeWave: WebGLUniformLocation | null;
-  glazeEnvMap: WebGLUniformLocation | null;
-  glazeScreenMap: WebGLUniformLocation | null;
-  glazeDepthMap: WebGLUniformLocation | null;
-  glazeScreen: WebGLUniformLocation | null;
   glazeGrid: WebGLUniformLocation | null;
   settle: WebGLUniformLocation | null;
   settle2: WebGLUniformLocation | null;
@@ -1106,10 +928,6 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     glaze: gl.getUniformLocation(program, "uGlaze"),
     glazeTint: gl.getUniformLocation(program, "uGlazeTint"),
     glazeWave: gl.getUniformLocation(program, "uGlazeWave"),
-    glazeEnvMap: gl.getUniformLocation(program, "uGlazeEnvMap"),
-    glazeScreenMap: gl.getUniformLocation(program, "uGlazeScreenMap"),
-    glazeDepthMap: gl.getUniformLocation(program, "uGlazeDepthMap"),
-    glazeScreen: gl.getUniformLocation(program, "uGlazeScreen"),
     glazeGrid: gl.getUniformLocation(program, "uGlazeGrid"),
     settle: gl.getUniformLocation(program, "uSettle"),
     settle2: gl.getUniformLocation(program, "uSettle2"),
@@ -1145,9 +963,6 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
   /** The material whose uniforms and TEXTURE BINDINGS are currently loaded, so
    *  a run of nodes sharing one material sets them once. Cleared before every
    *  pass — see `setMaterial`. */
-  /** The frame's own copy — see `captureFrame`. Allocated on the first capture and
-   * resized with the canvas, because it has to match it exactly. */
-  let snapshot: RenderTarget3D | null = null;
   let lastMaterial: Material | null = null;
   /** Bumped whenever a texture is actually uploaded.
    *
@@ -1539,54 +1354,13 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     if (glaze > 0) {
       const tint = material.glaze?.tint ?? WHITE3;
       gl!.uniform4f(u.glazeTint, tint[0], tint[1], tint[2], material.glaze?.scrollScale ?? 0.25);
-      // The probe's own GL texture, or null when this material has none or the
-      // target came from the other backend — a probe that cannot be read is the
-      // faked gradient, not a thrown frame.
-      const probe = material.glaze?.environment
-        ? targetTextureOrNull(material.glaze.environment)
-        : null;
       gl!.uniform4f(
         u.glazeWave,
         material.glaze?.ripple ?? 0.08,
         material.glaze?.sparkle ?? 0,
-        probe ? 1 : 0,
+        0,
         0,
       );
-      // Unit 4, after the surface, normal, detail and mask textures. Bound only
-      // when there is a probe: the sampler is left pointing at whatever was there
-      // otherwise, and the shader does not read it — `uGlazeWave.z` gates it.
-      if (probe) {
-        gl!.activeTexture(gl!.TEXTURE4);
-        gl!.bindTexture(gl!.TEXTURE_2D, probe);
-        gl!.uniform1i(u.glazeEnvMap, 4);
-      }
-      // Unit 5, last frame's screen — see Glaze.screen. The strength doubles as the
-      // flag: no snapshot and no strength mean the same thing.
-      const screen = material.glaze?.screen ? targetTextureOrNull(material.glaze.screen) : null;
-      // Unit 6, the same target's DEPTH. The march is off unless there is depth to
-      // march against, whatever the material asked for: a march without it would walk
-      // the ray comparing against a blank texture and find a surface everywhere.
-      const screenDepth =
-        screen && material.glaze?.screen ? targetDepthOrNull(material.glaze.screen) : null;
-      gl!.uniform3f(
-        u.glazeScreen,
-        screen ? (material.glaze?.screenStrength ?? 0.7) : 0,
-        material.glaze?.screenReach ?? 0.25,
-        screenDepth ? (material.glaze?.screenMarch ?? 0) : 0,
-      );
-      if (screen) {
-        gl!.activeTexture(gl!.TEXTURE5);
-        gl!.bindTexture(gl!.TEXTURE_2D, screen);
-        gl!.uniform1i(u.glazeScreenMap, 5);
-        // Bound only when there IS depth. An unbound sampler reads as black in GL,
-        // which the march would take for a surface at the near plane — but the march is
-        // switched off in the same breath above, so nothing samples it.
-        if (screenDepth) {
-          gl!.activeTexture(gl!.TEXTURE6);
-          gl!.bindTexture(gl!.TEXTURE_2D, screenDepth);
-          gl!.uniform1i(u.glazeDepthMap, 6);
-        }
-      }
       // The block grid and its diagonal, resolved and packed in scene.ts — the
       // streak's period gates its amount there, because the shader divides by
       // that period and an amount without one is a NaN rather than a faint line.
@@ -2101,29 +1875,8 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
       meshes.delete(mesh);
     },
 
-    createTarget(targetWidth: number, targetHeight: number, options?: TargetOptions) {
-      return createRenderTarget(gl!, targetWidth, targetHeight, options);
-    },
-    captureFrame() {
-      // **A resolve blit, and 1:1 because it has to be.** `blitFramebuffer` will
-      // scale, but not from a MULTISAMPLED read buffer — and the canvas is
-      // multisampled whenever `antialias` is on, which is the default. So the
-      // snapshot matches the canvas rather than being the half-resolution one a
-      // caller might ask for; the copy is the cheap part either way.
-      const w = canvas.width;
-      const h = canvas.height;
-      if (w === 0 || h === 0) return null;
-      if (!snapshot) snapshot = createRenderTarget(gl!, w, h);
-      else snapshot.resize(w, h);
-      gl!.bindFramebuffer(gl!.READ_FRAMEBUFFER, null);
-      gl!.bindFramebuffer(gl!.DRAW_FRAMEBUFFER, targetFramebufferOf(snapshot));
-      gl!.blitFramebuffer(0, 0, w, h, 0, 0, w, h, gl!.COLOR_BUFFER_BIT, gl!.NEAREST);
-      // Both bindings back to the canvas, or the next ordinary render draws into the
-      // snapshot — the same hazard `render`'s own unbind exists for, and invisible
-      // from inside the renderer for the same reason.
-      gl!.bindFramebuffer(gl!.READ_FRAMEBUFFER, null);
-      gl!.bindFramebuffer(gl!.DRAW_FRAMEBUFFER, null);
-      return snapshot;
+    createTarget(targetWidth: number, targetHeight: number) {
+      return createRenderTarget(gl!, targetWidth, targetHeight);
     },
     dispose() {
       gl!.deleteProgram(program);
@@ -2155,17 +1908,10 @@ function createRenderTarget(
   gl: WebGL2RenderingContext,
   width: number,
   height: number,
-  options: TargetOptions = {},
 ): RenderTarget3D {
   const framebuffer = gl.createFramebuffer();
   const texture = gl.createTexture();
-  // **A TEXTURE when the caller wants to read the depth, a renderbuffer otherwise** —
-  // see `TargetOptions.sampleDepth`. `DEPTH_COMPONENT24` with `UNSIGNED_INT` is a
-  // required renderable and sampleable combination in WebGL2 (§3.8.3), so this needs
-  // no extension and no format probe. It is sampled with NEAREST and with compare mode
-  // left at NONE, which is what makes `texelFetch` hand back the raw window-space z.
-  const sampleDepth = options.sampleDepth === true;
-  const depth = sampleDepth ? gl.createTexture() : gl.createRenderbuffer();
+  const depth = gl.createRenderbuffer();
   let w = 0;
   let h = 0;
 
@@ -2178,45 +1924,11 @@ function createRenderTarget(
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    if (sampleDepth) {
-      gl.bindTexture(gl.TEXTURE_2D, depth as WebGLTexture);
-      gl.texImage2D(
-        gl.TEXTURE_2D,
-        0,
-        gl.DEPTH_COMPONENT24,
-        w,
-        h,
-        0,
-        gl.DEPTH_COMPONENT,
-        gl.UNSIGNED_INT,
-        null,
-      );
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    } else {
-      gl.bindRenderbuffer(gl.RENDERBUFFER, depth as WebGLRenderbuffer);
-      gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, w, h);
-    }
+    gl.bindRenderbuffer(gl.RENDERBUFFER, depth);
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, w, h);
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
-    if (sampleDepth) {
-      gl.framebufferTexture2D(
-        gl.FRAMEBUFFER,
-        gl.DEPTH_ATTACHMENT,
-        gl.TEXTURE_2D,
-        depth as WebGLTexture,
-        0,
-      );
-    } else {
-      gl.framebufferRenderbuffer(
-        gl.FRAMEBUFFER,
-        gl.DEPTH_ATTACHMENT,
-        gl.RENDERBUFFER,
-        depth as WebGLRenderbuffer,
-      );
-    }
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depth);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.bindTexture(gl.TEXTURE_2D, null);
     gl.bindRenderbuffer(gl.RENDERBUFFER, null);
@@ -2251,39 +1963,17 @@ function createRenderTarget(
       }
       return Promise.resolve(flipped);
     },
-    get sampleDepth() {
-      return sampleDepth;
-    },
     dispose() {
       gl.deleteFramebuffer(framebuffer);
       gl.deleteTexture(texture);
-      if (sampleDepth) gl.deleteTexture(depth as WebGLTexture);
-      else gl.deleteRenderbuffer(depth as WebGLRenderbuffer);
+      gl.deleteRenderbuffer(depth);
     },
     /** The GL texture, for the renderer that made it. Not on `RenderTarget3D`:
      * a caller has no use for a raw handle, and the two backends' handles are
      * not the same kind of thing. */
     [TARGET_TEXTURE]: texture,
-    // The depth texture, or null when the depth is a renderbuffer nothing can read.
-    [TARGET_DEPTH]: sampleDepth ? (depth as WebGLTexture) : null,
     [TARGET_FRAMEBUFFER]: framebuffer,
   } as RenderTarget3D;
-}
-
-/** This backend's colour texture for a target it made, or null for one it did
- * not — a probe from the other renderer is a missing reflection rather than a
- * thrown frame, because a material is data and may outlive a context. */
-/** The target's DEPTH texture, or null when it has none — see
- * `TargetOptions.sampleDepth`. Null is the answer for an ordinary target and for a
- * target from the other backend alike, and both mean the same thing to a caller: no
- * march, fall back to the single tap. */
-function targetDepthOrNull(target: RenderTarget3D): WebGLTexture | null {
-  const handles = target as unknown as Record<symbol, WebGLTexture | null | undefined>;
-  return handles[TARGET_DEPTH] ?? null;
-}
-
-function targetTextureOrNull(target: RenderTarget3D): WebGLTexture | null {
-  return (target as unknown as Record<symbol, WebGLTexture | undefined>)[TARGET_TEXTURE] ?? null;
 }
 
 /** This backend's framebuffer for a target it made.
@@ -2306,7 +1996,6 @@ function targetFramebufferOf(target: RenderTarget3D): WebGLFramebuffer {
  * handles and a target from the other renderer is a miss rather than a crash. */
 const TARGET_TEXTURE = Symbol.for("minimotor.render3d.webgl2.targetTexture");
 const TARGET_FRAMEBUFFER = Symbol.for("minimotor.render3d.webgl2.targetFramebuffer");
-const TARGET_DEPTH = Symbol.for("minimotor.render3d.webgl2.targetDepth");
 
 const WHITE = [1, 1, 1, 1] as const;
 const WHITE3 = [1, 1, 1] as const;
