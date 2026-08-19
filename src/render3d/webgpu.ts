@@ -880,7 +880,10 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
       // WGSL samples from the TOP row and a mirrored target holds the frame the
       // same way up as the canvas, so only the clip-space Y flip applies here —
       // the same asymmetry glazeEnvUv carries for the atlas.
-      let flipped = vec2f(screenUv.x, 1.0 - screenUv.y);
+      // U as well as V: lookAt builds a right-handed basis and a reflection's is
+      // left-handed, so the mirrored render is laterally inverted from the true
+      // mirror — see the WebGL2 twin. V is the texture-origin flip on top of it.
+      let flipped = vec2f(1.0 - screenUv.x, 1.0 - screenUv.y);
       // textureSampleLevel and NOT textureSample, because this branch is not
       // uniform: it turns on the surface's own normal, and WGSL refuses an implicit
       // implicit-derivative sample under a per-pixel condition:

@@ -717,7 +717,18 @@ void main() {
     // the floor's mirror as a veil over itself. MEASURED in the game — the boxes and
     // the mascot came back washed out, which is what sent this line here.
     if (uGlazePlanar > 0.5 && glazeNormal.y > 0.9) {
+      // **U is flipped as well as V, and this is not a fudge.** The mirrored view is
+      // built with lookAt, which always produces a RIGHT-handed basis, while a
+      // reflection's basis is left-handed: cross(mirror(a), mirror(b)) is
+      // -mirror(cross(a, b)). So the render comes back laterally inverted from the
+      // true mirror, and undoing it here is exactly one axis of the sample.
+      //
+      // Invisible on anything centred in frame, which is why it survived several
+      // checks — reported from play as the reflection being "locked to the camera in
+      // some weird way", which is what a left-right inversion looks like when the
+      // camera turns.
       vec2 screenUv = vProjected.xy / max(vProjected.w, 1e-6) * 0.5 + 0.5;
+      screenUv.x = 1.0 - screenUv.x;
       vec4 mirrorSample = texture(uGlazePlanarMap, clamp(screenUv, 0.0, 1.0));
       env = mix(env, uGlazeTint.rgb * mirrorSample.rgb, clamp(mirrorSample.a, 0.0, 1.0));
     }
