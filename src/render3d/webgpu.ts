@@ -183,6 +183,14 @@ const TARGET_DEPTH = Symbol.for("minimotor.render3d.webgpu.targetDepth");
 
 /** The views one pass needs for a target, in the shape the canvas path uses:
  * what the pass draws into, what it resolves into, and its depth. */
+/** This backend's colour texture for a target it made, or null for one it did
+ * not — see the WebGL2 twin for why a foreign probe is a missing reflection
+ * rather than a thrown frame. */
+function targetColorOrNull(target: RenderTarget3D): GPUTexture | null {
+  const handles = target as unknown as Record<symbol, (() => GPUTexture | null) | undefined>;
+  return handles[TARGET_COLOR]?.() ?? null;
+}
+
 function targetViews(target: RenderTarget3D): {
   colorView: GPUTextureView;
   resolveView: GPUTextureView | undefined;
@@ -320,6 +328,9 @@ struct DrawData {
 @group(1) @binding(2) var normalTex : texture_2d<f32>;
 @group(1) @binding(3) var detailTex : texture_2d<f32>;
 @group(1) @binding(4) var detailMaskTex : texture_2d<f32>;
+// Six 90-degree faces of one point in a 3x2 atlas, +X -X +Y / -Y +Z -Z — see
+// Glaze.environment and cubeProbeViews, whose cameras write this layout.
+@group(1) @binding(5) var glazeEnvTex : texture_2d<f32>;
 
 struct VsOut {
   @builtin(position) clip     : vec4f,
@@ -468,6 +479,40 @@ fn blendOverlay(pattern : vec3f, surface : vec3f) -> vec3f {
 /** A wrapped triangle wave smoothed by the 3t^2-2t^3 interpolant a value noise
  *  uses, on -1..1. Deliberately not sin(): see the WebGL2 backend, and the two
  *  have to stay the same arithmetic or they stop drawing the same frame. */
+// Where a direction lands in a 3x2 cube atlas — see Glaze.environment.
+//
+// The face choice is the ordinary cube-map one: the largest component picks the
+// axis, the other two divided by it give the face's own -1..1 coordinates. The
+// ORDER of the cells and the sign of each axis are the half that has to agree
+// with cubeProbeViews, and the e2e measures that agreement by reflecting six
+// differently coloured walls.
+//
+// The same arithmetic as the WebGL2 twin, including v counting UP the atlas: a
+// render target's rows are written the way GL writes them there, and this reads
+// the atlas that produced it either way.
+fn glazeEnvUv(d : vec3f) -> vec2f {
+  let a = abs(d);
+  var ma : f32;
+  var uc : vec2f;
+  var face : f32;
+  if (a.x >= a.y && a.x >= a.z) {
+    ma = a.x;
+    uc = select(vec2f(d.z, d.y), vec2f(-d.z, d.y), d.x > 0.0);
+    face = select(1.0, 0.0, d.x > 0.0);
+  } else if (a.y >= a.z) {
+    ma = a.y;
+    uc = select(vec2f(d.x, d.z), vec2f(d.x, -d.z), d.y > 0.0);
+    face = select(3.0, 2.0, d.y > 0.0);
+  } else {
+    ma = a.z;
+    uc = select(vec2f(-d.x, d.y), vec2f(d.x, d.y), d.z > 0.0);
+    face = select(5.0, 4.0, d.z > 0.0);
+  }
+  let f = 0.5 * (uc / max(ma, 1e-6) + vec2f(1.0));
+  let cell = vec2f(face % 3.0, floor(face / 3.0));
+  return (cell + clamp(f, vec2f(0.0), vec2f(1.0))) / vec2f(3.0, 2.0);
+}
+
 fn glazeWave(x : f32) -> f32 {
   let t = fract(x);
   let tri = 1.0 - abs(t * 2.0 - 1.0);
@@ -799,8 +844,17 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
     let fresnel = pow(1.0 - clamp(dot(glazeNormal, toEye), 0.0, 1.0), draw.glaze.y);
     // The faked sky, looked up by the reflected ray: a two-stop vertical
     // gradient by its own height...
-    let sky = clamp(bounce.y * 0.5 + 0.5, 0.0, 1.0);
-    var env = draw.glazeTint.rgb * (0.25 + 0.75 * sky * sky);
+    // The PROBE when one is bound, and the faked two-stop gradient otherwise.
+    // Only the gradient is replaced: the lobe, the sparkle and the streak below
+    // are still added on top, and the tint still multiplies the lot — see
+    // Glaze.environment.
+    var env : vec3f;
+    if (draw.glazeWave.z > 0.5) {
+      env = draw.glazeTint.rgb * textureSample(glazeEnvTex, samp, glazeEnvUv(bounce)).rgb;
+    } else {
+      let sky = clamp(bounce.y * 0.5 + 0.5, 0.0, 1.0);
+      env = draw.glazeTint.rgb * (0.25 + 0.75 * sky * sky);
+    }
     // ...plus a tight lobe around the scene's OWN first light, which is what
     // actually sweeps when the camera turns. Reusing the key light rather than
     // taking a direction of its own keeps the reflection agreeing with the
@@ -1001,6 +1055,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: {} },
       { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: {} },
       { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+      { binding: 5, visibility: GPUShaderStage.FRAGMENT, texture: {} },
     ],
   });
   const pipelineLayout = device.createPipelineLayout({
@@ -1170,6 +1225,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       { binding: 2, resource: blankTexture.createView() },
       { binding: 3, resource: blankTexture.createView() },
       { binding: 4, resource: blankTexture.createView() },
+      { binding: 5, resource: blankTexture.createView() },
     ],
   });
 
@@ -1321,7 +1377,13 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     const normal = material.normalMap;
     const detail = (material.detailStrength ?? 0) > 0 ? material.detailMap : undefined;
     const mask = detail ? material.detailMask : undefined;
-    if (!base && !normal && !detail) return blankBindGroup;
+    // The probe's own GPU texture, or undefined for a target from the other
+    // backend — a probe that cannot be read is the faked gradient, not a thrown
+    // frame, because a material is data and may outlive a context.
+    const probe = material.glaze?.environment
+      ? (targetColorOrNull(material.glaze.environment) ?? undefined)
+      : undefined;
+    if (!base && !normal && !detail && !probe) return blankBindGroup;
     const baseKey = (base ?? blankTexture) as object;
     const samplerKey = `${material.pixelated ?? true}|${material.repeat ?? false}|${identity(normal)}|${identity(detail)}|${identity(mask)}`;
     let byCombination = textureGroups.get(baseKey);
@@ -1338,9 +1400,10 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       ? textureFor(detail, material.detailMapVersion ?? 0)
       : blankTexture;
     const maskTexture = mask ? textureFor(mask, material.detailMaskVersion ?? 0) : blankTexture;
+    const probeTexture = probe ?? blankTexture;
     // A rebuilt texture invalidates every view of it, so the cached group has
     // to be dropped whenever any upload replaced its GPUTexture.
-    const stamp = `${identity(baseTexture)}|${identity(normalTexture)}|${identity(detailTexture)}|${identity(maskTexture)}|${samplerKey}`;
+    const stamp = `${identity(baseTexture)}|${identity(normalTexture)}|${identity(detailTexture)}|${identity(maskTexture)}|${identity(probeTexture)}|${samplerKey}`;
     const existing = byCombination.get(stamp);
     if (existing) return existing;
     const group = device.createBindGroup({
@@ -1351,6 +1414,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
         { binding: 2, resource: normalTexture.createView() },
         { binding: 3, resource: detailTexture.createView() },
         { binding: 4, resource: maskTexture.createView() },
+        { binding: 5, resource: probeTexture.createView() },
       ],
     });
     byCombination.set(stamp, group);
@@ -1474,7 +1538,9 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     drawData[at + 71] = material.glaze?.scrollScale ?? 0.25;
     drawData[at + 72] = material.glaze?.ripple ?? 0.08;
     drawData[at + 73] = material.glaze?.sparkle ?? 0;
-    drawData[at + 74] = 0;
+    // Whether a cube probe is bound at binding 5, which is what gates the sample
+    // — the blank 1x1 stands in otherwise and must not be read as a reflection.
+    drawData[at + 74] = material.glaze?.environment ? 1 : 0;
     drawData[at + 75] = 0;
     // The block grid and its diagonal, resolved and packed in scene.ts — the
     // streak's period gates its amount there, because the shader divides by that

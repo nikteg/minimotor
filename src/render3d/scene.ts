@@ -17,6 +17,7 @@
 import { Mat4 } from "@src/math/mat4.js";
 import { Quat } from "@src/math/quat.js";
 import type { MeshData } from "./mesh.js";
+import type { RenderTarget3D } from "./renderer.js";
 import type { Vec3 } from "@src/math/vec3.js";
 
 /** How a surface responds to light. Deliberately small: a colour, an optional
@@ -457,6 +458,28 @@ export interface Glaze {
    *  the light lobe, so it is the colour of the whole reflection rather than a
    *  wash over part of it. */
   tint?: readonly [number, number, number];
+  /** A CUBE PROBE of the scene for the coat to reflect, instead of the faked
+   *  gradient — trashgolf's item 356, stage 2.
+   *
+   *  A `RenderTarget3D` holding six 90-degree faces of one point, laid out as a
+   *  3x2 atlas in the order `+X -X +Y / -Y +Z -Z`. `cubeProbeViews` builds the six
+   *  cameras and rectangles that fill it, and the shader's lookup is written
+   *  against that same order — the two are one convention and changing either
+   *  alone scrambles the reflection.
+   *
+   *  **What it replaces is the GRADIENT and nothing else.** `tint` still multiplies
+   *  it, the light lobe, the sparkle and the streak are still added on top, and the
+   *  Fresnel still decides how much of any of it is seen. So a probe makes the coat
+   *  reflect the room it is in without changing how the coat behaves.
+   *
+   *  It costs one texture fetch per glazed pixel, and the SIX RENDERS that fill it
+   *  are the caller's to spend — once when a level loads is what this is designed
+   *  for, and is nearly free. Filling it every frame is a different feature with a
+   *  different price.
+   *
+   *  Sampled with the target's own NEAREST filtering, so adjacent faces cannot
+   *  bleed into each other and no inset is needed. */
+  environment?: RenderTarget3D;
   /** Grazing-angle exponent. Default 4.
    *
    *  Lower spreads the coat over the whole surface and reads as haze on top of

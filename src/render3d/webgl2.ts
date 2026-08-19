@@ -171,8 +171,11 @@ uniform vec3 uRimAlpha; // bias, scale, power — see Material.rimAlpha
 uniform vec4 uGlaze;
 // xyz the faked sky's tint, w ripple frequency in waves per world unit
 uniform vec4 uGlazeTint;
-// x ripple tilt, y sparkle, zw spare
+// x ripple tilt, y sparkle, z 1 when a cube probe is bound, w spare
 uniform vec4 uGlazeWave;
+// Six 90-degree faces of one point in a 3x2 atlas, +X -X +Y / -Y +Z -Z — see
+// Glaze.environment and cubeProbeViews, whose cameras write this layout.
+uniform sampler2D uGlazeEnvMap;
 // The coat's BLOCK GRID and the diagonal drawn on it, packed by glazeGrid():
 // x world step (0 for off), y streak amount, z streak period in world units,
 // w how far the reflected ray drags the streak. See Glaze.worldStep.
@@ -195,6 +198,45 @@ out vec4 fragColor;
  *  shader written against the exact transfer function looks subtly wrong
  *  beside them; the error is under a percent everywhere but the deepest few
  *  values, and it costs a multiply instead of a branch and a pow. */
+// Where a direction lands in a 3x2 cube atlas — see Glaze.environment.
+//
+// The face choice is the ordinary cube-map one: the largest component picks the
+// axis, the other two divided by it give the face's own -1..1 coordinates. The
+// ORDER of the cells and the sign of each axis are the half that has to agree
+// with cubeProbeViews, and the e2e measures that agreement by reflecting six
+// differently coloured walls.
+//
+// v counts UP the atlas because a render target's rows are written the way GL
+// writes them, bottom-first — the same reason readPixels flips.
+vec2 glazeEnvUv(vec3 d) {
+  vec3 a = abs(d);
+  float ma;
+  vec2 uc;
+  float face;
+  if (a.x >= a.y && a.x >= a.z) {
+    ma = a.x;
+    uc = d.x > 0.0 ? vec2(-d.z, d.y) : vec2(d.z, d.y);
+    face = d.x > 0.0 ? 0.0 : 1.0;
+  } else if (a.y >= a.z) {
+    ma = a.y;
+    uc = d.y > 0.0 ? vec2(d.x, -d.z) : vec2(d.x, d.z);
+    face = d.y > 0.0 ? 2.0 : 3.0;
+  } else {
+    ma = a.z;
+    uc = d.z > 0.0 ? vec2(d.x, d.y) : vec2(-d.x, d.y);
+    face = d.z > 0.0 ? 4.0 : 5.0;
+  }
+  vec2 f = 0.5 * (uc / max(ma, 1e-6) + 1.0);
+  // **The row is flipped and WebGPU's is not**, the same asymmetry readPixels
+  // carries: cubeProbeViews lays the cells out from the TOP with the viewport it
+  // renders each face into, and a GL texture's v counts from the BOTTOM. So the
+  // atlas's row 0 is this sampler's row 1. MEASURED: without the flip, a ray
+  // headed at the -Z wall comes back with the +Y face's colour, which is the two
+  // rows swapped and nothing else.
+  vec2 cell = vec2(mod(face, 3.0), 1.0 - floor(face / 3.0));
+  return (cell + clamp(f, 0.0, 1.0)) / vec2(3.0, 2.0);
+}
+
 vec3 srgbToLinear(vec3 c) { return c * c; }
 vec3 linearToSrgb(vec3 c) { return sqrt(c); }
 
@@ -636,8 +678,17 @@ void main() {
     float fresnel = pow(1.0 - clamp(dot(glazeNormal, toEye), 0.0, 1.0), uGlaze.y);
     // The faked sky, looked up by the reflected ray: a two-stop vertical
     // gradient by its own height...
-    float sky = clamp(bounce.y * 0.5 + 0.5, 0.0, 1.0);
-    vec3 env = uGlazeTint.rgb * (0.25 + 0.75 * sky * sky);
+    // The PROBE when one is bound, and the faked two-stop gradient otherwise.
+    // Only the gradient is replaced: the lobe, the sparkle and the streak below
+    // are still added on top, and the tint still multiplies the lot — see
+    // Glaze.environment.
+    vec3 env;
+    if (uGlazeWave.z > 0.5) {
+      env = uGlazeTint.rgb * texture(uGlazeEnvMap, glazeEnvUv(bounce)).rgb;
+    } else {
+      float sky = clamp(bounce.y * 0.5 + 0.5, 0.0, 1.0);
+      env = uGlazeTint.rgb * (0.25 + 0.75 * sky * sky);
+    }
     // ...plus a tight lobe around the scene's OWN first light, which is what
     // actually sweeps when the camera turns. Reusing the key light rather than
     // taking a direction of its own keeps the reflection agreeing with the
@@ -758,6 +809,7 @@ interface Uniforms {
   glaze: WebGLUniformLocation | null;
   glazeTint: WebGLUniformLocation | null;
   glazeWave: WebGLUniformLocation | null;
+  glazeEnvMap: WebGLUniformLocation | null;
   glazeGrid: WebGLUniformLocation | null;
   settle: WebGLUniformLocation | null;
   settle2: WebGLUniformLocation | null;
@@ -928,6 +980,7 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     glaze: gl.getUniformLocation(program, "uGlaze"),
     glazeTint: gl.getUniformLocation(program, "uGlazeTint"),
     glazeWave: gl.getUniformLocation(program, "uGlazeWave"),
+    glazeEnvMap: gl.getUniformLocation(program, "uGlazeEnvMap"),
     glazeGrid: gl.getUniformLocation(program, "uGlazeGrid"),
     settle: gl.getUniformLocation(program, "uSettle"),
     settle2: gl.getUniformLocation(program, "uSettle2"),
@@ -1354,13 +1407,27 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     if (glaze > 0) {
       const tint = material.glaze?.tint ?? WHITE3;
       gl!.uniform4f(u.glazeTint, tint[0], tint[1], tint[2], material.glaze?.scrollScale ?? 0.25);
+      // The probe's own GL texture, or null when this material has none or the
+      // target came from the other backend — a probe that cannot be read is the
+      // faked gradient, not a thrown frame.
+      const probe = material.glaze?.environment
+        ? targetTextureOrNull(material.glaze.environment)
+        : null;
       gl!.uniform4f(
         u.glazeWave,
         material.glaze?.ripple ?? 0.08,
         material.glaze?.sparkle ?? 0,
-        0,
+        probe ? 1 : 0,
         0,
       );
+      // Unit 4, after the surface, normal, detail and mask textures. Bound only
+      // when there is a probe: the sampler is left pointing at whatever was there
+      // otherwise, and the shader does not read it — `uGlazeWave.z` gates it.
+      if (probe) {
+        gl!.activeTexture(gl!.TEXTURE4);
+        gl!.bindTexture(gl!.TEXTURE_2D, probe);
+        gl!.uniform1i(u.glazeEnvMap, 4);
+      }
       // The block grid and its diagonal, resolved and packed in scene.ts — the
       // streak's period gates its amount there, because the shader divides by
       // that period and an amount without one is a NaN rather than a faint line.
@@ -1974,6 +2041,13 @@ function createRenderTarget(
     [TARGET_TEXTURE]: texture,
     [TARGET_FRAMEBUFFER]: framebuffer,
   } as RenderTarget3D;
+}
+
+/** This backend's colour texture for a target it made, or null for one it did
+ * not — a probe from the other renderer is a missing reflection rather than a
+ * thrown frame, because a material is data and may outlive a context. */
+function targetTextureOrNull(target: RenderTarget3D): WebGLTexture | null {
+  return (target as unknown as Record<symbol, WebGLTexture | undefined>)[TARGET_TEXTURE] ?? null;
 }
 
 /** This backend's framebuffer for a target it made.

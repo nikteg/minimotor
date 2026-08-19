@@ -110,3 +110,5 @@ export async function createRenderer3D(opts: Renderer3DOptions = {}): Promise<Re
     return createWebGL2Renderer(opts);
   }
 }
+export { cubeProbeViews, CUBE_PROBE_COLUMNS, CUBE_PROBE_ROWS } from "./probe.js";
+export type { CubeProbeView } from "./probe.js";
