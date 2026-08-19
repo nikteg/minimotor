@@ -939,13 +939,29 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
     // The mirror composites HERE and not into env, so the faked sky's Fresnel does not
     // decide how much of a real reflection is seen — see Glaze.planarStrength and the
     // WebGL2 twin.
-    var coat = env * (0.25 + 0.75 * fresnel);
-    coat = mix(
-      coat,
-      draw.glazeTint.rgb * mirrorSample.rgb,
-      clamp(mirrorSample.a, 0.0, 1.0) * mix(draw.glazeWave.w, 1.0, fresnel)
+    rgb += (env * (0.25 + 0.75 * fresnel) + under * (1.0 - fresnel) * 0.5) * draw.glaze.x;
+    // **The mirror REPLACES the surface rather than adding to it, and that is why it
+    // was only visible at a grazing angle before.** The rest of the coat is light
+    // ADDED on top of the shading — a highlight — so the floor's own albedo stayed at
+    // full strength underneath and swamped the reflection everywhere except the band
+    // where under and the faked sky had faded out. Reported as "why is only the
+    // fresnel part or whatever it is called showing the reflection thru the floor?"
+    //
+    // A reflective surface shows LESS of itself where it shows more of the reflection,
+    // so this is a mix and not a sum. Weighted by the mirror's own coverage, by
+    // planarStrength rising to full at a grazing angle, and by the coat's strength —
+    // an ice card halfway through its fade reflects half as much.
+    var mirrorColour = draw.glazeTint.rgb * mirrorSample.rgb;
+    if (toneMap) { mirrorColour = srgbToLinear(mirrorColour); }
+    rgb = mix(
+      rgb,
+      mirrorColour,
+      clamp(
+        clamp(mirrorSample.a, 0.0, 1.0) * mix(draw.glazeWave.w, 1.0, fresnel) * draw.glaze.x,
+        0.0,
+        1.0
+      )
     );
-    rgb += (coat + under * (1.0 - fresnel) * 0.5) * draw.glaze.x;
   }
   // Fog before the curve, not after: the fog colour is a colour in the scene
   // like any other, and a distant surface that has faded most of the way into
