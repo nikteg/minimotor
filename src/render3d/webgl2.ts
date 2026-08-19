@@ -188,7 +188,8 @@ uniform sampler2D uGlazeEnvMap;
 // A planar reflection of the scene, sampled in SCREEN space — see Glaze.planar.
 // uGlazeGrid is full, so the flag rides uGlaze.w's sign: see setMaterial.
 uniform sampler2D uGlazePlanarMap;
-uniform float uGlazePlanar;
+// x: 1 when a planar mirror is bound, y: how much of it is seen head-on
+uniform vec2 uGlazePlanar;
 // The coat's BLOCK GRID and the diagonal drawn on it, packed by glazeGrid():
 // x world step (0 for off), y streak amount, z streak period in world units,
 // w how far the reflected ray drags the streak. See Glaze.worldStep.
@@ -716,7 +717,8 @@ void main() {
     // the coat lands on both, and without this gate a pickup's own front face shows
     // the floor's mirror as a veil over itself. MEASURED in the game — the boxes and
     // the mascot came back washed out, which is what sent this line here.
-    if (uGlazePlanar > 0.5 && glazeNormal.y > 0.9) {
+    vec4 mirrorSample = vec4(0.0);
+    if (uGlazePlanar.x > 0.5 && glazeNormal.y > 0.9) {
       // **U is flipped as well as V, and this is not a fudge.** The mirrored view is
       // built with lookAt, which always produces a RIGHT-handed basis, while a
       // reflection's basis is left-handed: cross(mirror(a), mirror(b)) is
@@ -729,8 +731,7 @@ void main() {
       // camera turns.
       vec2 screenUv = vProjected.xy / max(vProjected.w, 1e-6) * 0.5 + 0.5;
       screenUv.x = 1.0 - screenUv.x;
-      vec4 mirrorSample = texture(uGlazePlanarMap, clamp(screenUv, 0.0, 1.0));
-      env = mix(env, uGlazeTint.rgb * mirrorSample.rgb, clamp(mirrorSample.a, 0.0, 1.0));
+      mirrorSample = texture(uGlazePlanarMap, clamp(screenUv, 0.0, 1.0));
     }
     // ...plus a tight lobe around the scene's OWN first light, which is what
     // actually sweeps when the camera turns. Reusing the key light rather than
@@ -762,7 +763,17 @@ void main() {
     // head-on, which is the right way round and is why the two weights are
     // complements rather than both riding the Fresnel.
     vec3 under = uToneMap ? srgbToLinear(glazeUnder) : glazeUnder;
-    shaded += (env * (0.25 + 0.75 * fresnel) + under * (1.0 - fresnel) * 0.5) * uGlaze.x;
+    // **The mirror composites HERE, not into env, so the faked sky's Fresnel does not
+    // decide how much of a real reflection is seen** — see Glaze.planarStrength. Its
+    // own coverage times that strength, rising to full at a grazing angle the way
+    // anything reflective does.
+    vec3 coat = env * (0.25 + 0.75 * fresnel);
+    coat = mix(
+      coat,
+      uGlazeTint.rgb * mirrorSample.rgb,
+      clamp(mirrorSample.a, 0.0, 1.0) * mix(uGlazePlanar.y, 1.0, fresnel)
+    );
+    shaded += (coat + under * (1.0 - fresnel) * 0.5) * uGlaze.x;
   }
   // Fog before the curve, not after: the fog colour is a colour in the scene
   // like any other, and a distant surface that has faded most of the way into
@@ -1479,7 +1490,7 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
       }
       // Unit 5, the planar mirror — see Glaze.planar.
       const planar = material.glaze?.planar ? targetTextureOrNull(material.glaze.planar) : null;
-      gl!.uniform1f(u.glazePlanar, planar ? 1 : 0);
+      gl!.uniform2f(u.glazePlanar, planar ? 1 : 0, material.glaze?.planarStrength ?? 0.8);
       if (planar) {
         gl!.activeTexture(gl!.TEXTURE5);
         gl!.bindTexture(gl!.TEXTURE_2D, planar);

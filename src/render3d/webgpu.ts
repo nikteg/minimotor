@@ -875,7 +875,8 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
     // the coat lands on both, and without this gate a pickup's own front face shows
     // the floor's mirror as a veil over itself. MEASURED in the game — the boxes and
     // the mascot came back washed out, which is what sent this line here.
-    if (draw.glazeWave.w > 0.5 && glazeNormal.y > 0.9) {
+    var mirrorSample = vec4f(0.0);
+    if (draw.glazeWave.w > 0.0 && glazeNormal.y > 0.9) {
       let screenUv = in.projected.xy / max(in.projected.w, 1e-6) * 0.5 + 0.5;
       // WGSL samples from the TOP row and a mirrored target holds the frame the
       // same way up as the canvas, so only the clip-space Y flip applies here —
@@ -894,13 +895,12 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
       // which is a rule WebGL2's GLSL does not have, so this is one of the places
       // the two backends genuinely differ. Level 0 is what a screen-space fetch
       // wants anyway: a render target carries no mip chain to choose from.
-      let mirrorSample = textureSampleLevel(
+      mirrorSample = textureSampleLevel(
         glazePlanarTex,
         samp,
         clamp(flipped, vec2f(0.0), vec2f(1.0)),
         0.0,
       );
-      env = mix(env, draw.glazeTint.rgb * mirrorSample.rgb, clamp(mirrorSample.a, 0.0, 1.0));
     }
     // ...plus a tight lobe around the scene's OWN first light, which is what
     // actually sweeps when the camera turns. Reusing the key light rather than
@@ -936,7 +936,16 @@ fn fs(in : VsOut, @builtin(front_facing) frontFacing : bool) -> @location(0) vec
     // head-on, which is the right way round and is why the two weights are
     // complements rather than both riding the Fresnel.
     let under = select(glazeUnder, srgbToLinear(glazeUnder), toneMap);
-    rgb += (env * (0.25 + 0.75 * fresnel) + under * (1.0 - fresnel) * 0.5) * draw.glaze.x;
+    // The mirror composites HERE and not into env, so the faked sky's Fresnel does not
+    // decide how much of a real reflection is seen — see Glaze.planarStrength and the
+    // WebGL2 twin.
+    var coat = env * (0.25 + 0.75 * fresnel);
+    coat = mix(
+      coat,
+      draw.glazeTint.rgb * mirrorSample.rgb,
+      clamp(mirrorSample.a, 0.0, 1.0) * mix(draw.glazeWave.w, 1.0, fresnel)
+    );
+    rgb += (coat + under * (1.0 - fresnel) * 0.5) * draw.glaze.x;
   }
   // Fog before the curve, not after: the fog colour is a colour in the scene
   // like any other, and a distant surface that has faded most of the way into
@@ -1607,7 +1616,10 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     // — the blank 1x1 stands in otherwise and must not be read as a reflection.
     drawData[at + 74] = material.glaze?.environment ? 1 : 0;
     // Whether a planar mirror is bound at binding 6 — see Glaze.planar.
-    drawData[at + 75] = material.glaze?.planar ? 1 : 0;
+    // The planar mirror's head-on strength, and 0 for no mirror: the flag and the
+    // weight are one number because 0 strength and no mirror mean the same thing, and
+    // the draw struct has no spare slot. See Glaze.planarStrength.
+    drawData[at + 75] = material.glaze?.planar ? (material.glaze.planarStrength ?? 0.8) : 0;
     // The block grid and its diagonal, resolved and packed in scene.ts — the
     // streak's period gates its amount there, because the shader divides by that
     // period and an amount without one is a NaN rather than a faint line.

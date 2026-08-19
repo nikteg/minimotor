@@ -502,6 +502,20 @@ export interface Glaze {
    *  surface can carry both: the probe fills the sky and the far room, and this
    *  fills what is actually standing in front of the camera. */
   planar?: RenderTarget3D;
+  /** How much of `planar` is seen HEAD-ON, 0..1. Default 0.8.
+   *
+   *  **Why the mirror needs a weight of its own.** The rest of the coat is added as
+   *  `env * (0.25 + 0.75 * fresnel)`, and that Fresnel exists to make a FAKED sky
+   *  behave: a gradient you can see face-on reads as haze, so it is pinned to grazing
+   *  angles. A real reflection is not haze. Attenuating it by the same term means a
+   *  camera looking at a floor — which is what a golf camera does — sees a fifth of
+   *  the mirror and the ice looks the same as it did without one. MEASURED: at
+   *  `fresnel` 2.2 a 20-40 degree look put the term at 0.10..0.40.
+   *
+   *  So the mirror composites at the COAT level, weighted by this and its own
+   *  coverage, and rises to full at a grazing angle like anything reflective. The
+   *  faked sky keeps its Fresnel, which is the term it was written for. */
+  planarStrength?: number;
   /** Grazing-angle exponent. Default 4.
    *
    *  Lower spreads the coat over the whole surface and reads as haze on top of

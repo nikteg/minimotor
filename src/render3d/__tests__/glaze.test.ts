@@ -168,7 +168,13 @@ describe("Material.glaze", () => {
       const source = read(name);
       expect(source, name).toContain("0.25 + 0.75 * sky * sky");
       expect(source, name).toContain("lobe8 * 1.5");
-      expect(source, name).toContain("(env * (0.25 + 0.75 * fresnel) + under * (1.0 - fresnel)");
+      // The two weights, read separately rather than as one expression: item 356
+      // split the coat so a PLANAR mirror could be mixed in between them without
+      // being attenuated by the faked sky's Fresnel — see Glaze.planarStrength. The
+      // claim here is unchanged and is about the two weights being complements, not
+      // about them sitting on one line.
+      expect(source, name).toContain("env * (0.25 + 0.75 * fresnel)");
+      expect(source, name).toContain("under * (1.0 - fresnel) * 0.5");
     }
   });
 
