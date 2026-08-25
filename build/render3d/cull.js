@@ -132,12 +132,20 @@ export function frustumPlanes(viewProj, out, zeroToOne = false) {
 export function inFrustum(planes, bounds, world, 
 /** Extra world units added to the box on every axis before testing.
  *
- *  A DIAGNOSTIC, not a tuning knob. Culling once dropped geometry that was
- *  plainly on screen, and a margin separates the two families of cause: if a
- *  generous margin fixes the picture, the box or the plane arithmetic is
- *  slightly wrong; if it does not, the box is in the wrong PLACE — a stale
- *  world matrix on a node placed after the matrices were solved — and no
- *  margin can save it. Left at zero in normal use. */
+ *  Mostly a DIAGNOSTIC. Culling once dropped geometry that was plainly on
+ *  screen, and a margin separates the two families of cause: if a generous
+ *  margin fixes the picture, the box or the plane arithmetic is slightly
+ *  wrong; if it does not, the box is in the wrong PLACE — a stale world
+ *  matrix on a node placed after the matrices were solved — and no margin can
+ *  save it.
+ *
+ *  **It has one honest production use**, and it is the third family: geometry
+ *  that legitimately reaches outside the bounds its mesh declares, so that no
+ *  arithmetic here is wrong and the box is in the right place for something
+ *  the consumer no longer draws exactly. A skinned mesh is the extreme case
+ *  and is exempted outright by both backends; a consumer that displaces
+ *  vertices in a shader, or draws a sprite larger than the quad it is built
+ *  from, is the case a margin is for. Left at zero in normal use. */
 margin = 0) {
     if (!bounds || !world)
         return true;

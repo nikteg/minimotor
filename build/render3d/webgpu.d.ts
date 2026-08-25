@@ -4,6 +4,19 @@ export interface WebGPURendererOptions {
     /** Skip drawing nodes the camera cannot see. Default ON — see the WebGL2
      *  backend, which carries the reasoning and the measurement. */
     frustumCulling?: boolean;
+    /** World units added to every culled box before testing.
+     *
+     *  **Parity with the WebGL2 backend, which has taken this since it was
+     *  written.** This one accepted the option nowhere and passed nothing, so a
+     *  consumer that set it saw it work on one backend and do nothing on the
+     *  other — and WebGPU is the default device.
+     *
+     *  Mostly a diagnostic: a margin that fixes a picture means the box or the
+     *  plane arithmetic is slightly tight, and one that does not means the box is
+     *  in the wrong PLACE. It has one honest production use, which is a consumer
+     *  whose geometry legitimately reaches outside its own bounds — see
+     *  `inFrustum`. */
+    cullMargin?: number;
     canvas?: HTMLCanvasElement;
     width?: number;
     height?: number;

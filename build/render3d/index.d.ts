@@ -12,7 +12,7 @@ export * from "./particles.js";
 export * from "./gltf.js";
 export { isGlb, parseGlb, type GlbContainer } from "./glb.js";
 export { createUiSurface, intersectQuad, pointerRay, type Ray, type UiSurface, type UiSurfaceDrawOptions, type UiSurfaceOptions, } from "./ui-surface.js";
-export type { Backend3D, RenderFrameStats, RenderOptions, RenderStats, Renderer3D, ResizeOptions, } from "./renderer.js";
+export type { Backend3D, RenderFrameStats, RenderOptions, RenderStats, RenderTarget3D, Renderer3D, ResizeOptions, } from "./renderer.js";
 export { createWebGL2Renderer } from "./webgl2.js";
 export type { WebGL2RendererOptions } from "./webgl2.js";
 export { createWebGPURenderer, isWebGPUAvailable } from "./webgpu.js";
