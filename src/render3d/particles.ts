@@ -243,7 +243,11 @@ export interface Emitter {
    *  `localViewer`. It only affects which way the quads face, so an emitter
    *  updated with a stale one simulates correctly and looks wrong, rather than
    *  the other way round. */
-  update(dtSeconds: number, view: { x: number; y: number; z: number }): void;
+  update(
+    dtSeconds: number,
+    view: { x: number; y: number; z: number },
+    up?: { x: number; y: number; z: number },
+  ): void;
   /** Kill every particle and empty the mesh. */
   reset(): void;
   /** Stop emitting new particles. Live ones still run out their lives. */
@@ -279,6 +283,40 @@ export function localViewer(
   out.x = (m[0] * camera.x + m[4] * camera.y + m[8] * camera.z + m[12]) / w;
   out.y = (m[1] * camera.x + m[5] * camera.y + m[9] * camera.z + m[13]) / w;
   out.z = (m[2] * camera.x + m[6] * camera.y + m[10] * camera.z + m[14]) / w;
+  return out;
+}
+
+/** Which way WORLD UP points in a node's local space.
+ *
+ *  The companion to `localViewer`, and needed for the same reason. Three of the
+ *  billboard modes are defined against the world's up — `horizontal` lies in the
+ *  ground plane, `vertical` stands upright, `billboard` keeps its own top as
+ *  near vertical as the view allows — and all three are COMPUTED in the space
+ *  the particles are simulated in. Under a node with any rotation on it those
+ *  are different directions, so an emitter on a node turned a quarter circle
+ *  drew its flat ring standing on edge and its upright cards lying flat.
+ *
+ *  Pass this to `update` alongside `localViewer`. A node with no rotation gives
+ *  `(0, 1, 0)` back and nothing changes, which is the ordinary case.
+ *
+ *  A DIRECTION, so the matrix's translation is not applied: the second column of
+ *  the inverse is `inverse * (0, 1, 0)`. A matrix that cannot be inverted gives
+ *  world up back unchanged, matching `localViewer`'s answer for the same case. */
+export function localUp(
+  world: Mat4 | undefined,
+  out: { x: number; y: number; z: number } = { x: 0, y: 0, z: 0 },
+): { x: number; y: number; z: number } {
+  const inverse = world ? Mat4.invert(world, scratchMatrix) : null;
+  if (!inverse) {
+    out.x = 0;
+    out.y = 1;
+    out.z = 0;
+    return out;
+  }
+  const length = Math.hypot(inverse[4], inverse[5], inverse[6]) || 1;
+  out.x = inverse[4] / length;
+  out.y = inverse[5] / length;
+  out.z = inverse[6] / length;
   return out;
 }
 
@@ -561,8 +599,37 @@ export function createEmitter(opts: EmitterOptions): Emitter {
     }
   }
 
+  /** WORLD up, in the space the particles are simulated in — see `localUp`.
+   *  `(0, 1, 0)` unless `update` is handed something else, which is every node
+   *  that carries no rotation. */
   const worldUp = { x: 0, y: 1, z: 0 };
+  /** Any unit vector square to `worldUp`, for the two cases that need a second
+   *  axis and do not care which: the flat quad's own U, and the fallback for a
+   *  streak flying straight at the camera. Gram-Schmidt against whichever
+   *  cardinal axis `worldUp` leans on least, so the default `(0, 1, 0)` gives
+   *  `(1, 0, 0)` back and the flat quad spans X and Z exactly as it always
+   *  did. */
   const worldRight = { x: 1, y: 0, z: 0 };
+  /** Refill `worldRight` for the current `worldUp`. */
+  function squareToUp(): void {
+    const ax = Math.abs(worldUp.x);
+    const ay = Math.abs(worldUp.y);
+    const az = Math.abs(worldUp.z);
+    let hx = 0;
+    let hy = 0;
+    let hz = 0;
+    if (ax <= ay && ax <= az) hx = 1;
+    else if (ay <= az) hy = 1;
+    else hz = 1;
+    const dot = hx * worldUp.x + hy * worldUp.y + hz * worldUp.z;
+    worldRight.x = hx - worldUp.x * dot;
+    worldRight.y = hy - worldUp.y * dot;
+    worldRight.z = hz - worldUp.z * dot;
+    const length = Math.hypot(worldRight.x, worldRight.y, worldRight.z) || 1;
+    worldRight.x /= length;
+    worldRight.y /= length;
+    worldRight.z /= length;
+  }
   /** `sizeOverTime`'s answer for the particle being written, reused across
    *  every particle of every frame. */
   const sizeScale = { x: 1, y: 1, z: 1 };
@@ -633,12 +700,15 @@ export function createEmitter(opts: EmitterOptions): Emitter {
     let flipU = false;
 
     if (mode === "horizontal") {
-      right.x = 1;
-      right.y = 0;
-      right.z = 0;
-      up.x = 0;
-      up.y = 0;
-      up.z = 1;
+      // The plane square to world up. `worldRight` is that plane's U and
+      // `cross(U, up)` is its V, which for an unrotated node is the X and Z
+      // this used to write out as literals.
+      right.x = worldRight.x;
+      right.y = worldRight.y;
+      right.z = worldRight.z;
+      up.x = worldRight.y * worldUp.z - worldRight.z * worldUp.y;
+      up.y = worldRight.z * worldUp.x - worldRight.x * worldUp.z;
+      up.z = worldRight.x * worldUp.y - worldRight.y * worldUp.x;
     } else if (mode === "vertical") {
       // Yaw only: the horizontal perpendicular to the view, and world up.
       // Taken per particle rather than from one camera basis, so a card close
@@ -649,18 +719,19 @@ export function createEmitter(opts: EmitterOptions): Emitter {
       // `billboard` branch below — see the note there for what the mirrored
       // one costs. Here `up` is world up rather than derived, so the mirror
       // did not turn the quad over; it drew every sprite back to front.
-      right.x = toView.z;
-      right.y = 0;
-      right.z = -toView.x;
-      if (Math.hypot(right.x, right.z) < 1e-6) {
+      right.x = worldUp.y * toView.z - worldUp.z * toView.y;
+      right.y = worldUp.z * toView.x - worldUp.x * toView.z;
+      right.z = worldUp.x * toView.y - worldUp.y * toView.x;
+      if (Math.hypot(right.x, right.y, right.z) < 1e-6) {
         // Directly above or below: no yaw resolves it, so pick one.
-        right.x = 1;
-        right.z = 0;
+        right.x = worldRight.x;
+        right.y = worldRight.y;
+        right.z = worldRight.z;
       }
       Vec3.normalize(right, right);
-      up.x = 0;
-      up.y = 1;
-      up.z = 0;
+      up.x = worldUp.x;
+      up.y = worldUp.y;
+      up.z = worldUp.z;
     } else if (mode === "stretched" && Math.hypot(vx[slot], vy[slot], vz[slot]) > 1e-6) {
       const speedNow = Math.hypot(vx[slot], vy[slot], vz[slot]);
       along.x = vx[slot] / speedNow;
@@ -698,7 +769,8 @@ export function createEmitter(opts: EmitterOptions): Emitter {
       if (Math.hypot(up.x, up.y, up.z) < 1e-6) {
         // Flying straight at the camera: any perpendicular will do, and the
         // quad is edge-on enough that which one is not visible.
-        const helper = Math.abs(along.y) < 0.9 ? worldUp : worldRight;
+        const alongUp = along.x * worldUp.x + along.y * worldUp.y + along.z * worldUp.z;
+        const helper = Math.abs(alongUp) < 0.9 ? worldUp : worldRight;
         Vec3.cross(along, helper, up);
       }
       Vec3.normalize(up, up);
@@ -721,13 +793,14 @@ export function createEmitter(opts: EmitterOptions): Emitter {
       // billboard sheets a consumer ships are radially symmetric — sparks,
       // snow, ring bursts — and a half turn is invisible on those, which is
       // why this stood for so long. It was found on a heart.
-      right.x = toView.z;
-      right.y = 0;
-      right.z = -toView.x;
-      if (Math.hypot(right.x, right.z) < 1e-6) {
+      right.x = worldUp.y * toView.z - worldUp.z * toView.y;
+      right.y = worldUp.z * toView.x - worldUp.x * toView.z;
+      right.z = worldUp.x * toView.y - worldUp.y * toView.x;
+      if (Math.hypot(right.x, right.y, right.z) < 1e-6) {
         // Directly above or below: no yaw resolves it, so pick one.
-        right.x = 1;
-        right.z = 0;
+        right.x = worldRight.x;
+        right.y = worldRight.y;
+        right.z = worldRight.z;
       }
       Vec3.normalize(right, right);
       Vec3.cross(toView, right, up);
@@ -899,7 +972,14 @@ export function createEmitter(opts: EmitterOptions): Emitter {
       collapse(0);
       mesh.version = (mesh.version ?? 0) + 1;
     },
-    update(dtSeconds, view) {
+    update(dtSeconds, view, up) {
+      // Read every frame rather than at construction: a node's rotation can
+      // change, and the caller recomputes this from its world matrix as it
+      // recomputes `view`.
+      worldUp.x = up?.x ?? 0;
+      worldUp.y = up?.y ?? 1;
+      worldUp.z = up?.z ?? 0;
+      squareToUp();
       if (dtSeconds > 0) {
         for (let i = 0; i < capacity; i++) {
           if (Number.isNaN(age[i])) continue;

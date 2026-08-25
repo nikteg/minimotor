@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from "vitest";
 import { Mat4 } from "@src/math/mat4.js";
-import { createEmitter, localViewer, type Emitter } from "@src/render3d/particles.js";
+import { createEmitter, localUp, localViewer, type Emitter } from "@src/render3d/particles.js";
 
 /** A repeatable stand-in for `Math.random`, so a test can say what a particle
  * was born with. Always dead centre: a box spawn lands at the origin and a
@@ -1218,5 +1218,97 @@ describe("colorOverTime", () => {
     emitter.update(1 / 60, VIEW);
     expect(rgba(emitter, 0)).toEqual([1, 1, 1, 0.5]);
     expect(rgba(emitter, 1)).toEqual([0.5, 0.5, 0.5, 0.25]);
+  });
+});
+
+describe("a node with a rotation on it", () => {
+  /** The prefab case this came from: a Cocos effect whose emitter node is
+   *  turned a quarter circle about X, which is what the exporter writes for
+   *  several of the shipped teleport and power-up bursts.
+   *
+   *  Reported against a consumer: *"teleport effect billboard is not angled to
+   *  the camera"*. Three of the four billboard modes are defined against the
+   *  WORLD's up — flat in the ground plane, upright, top-as-near-vertical — and
+   *  all three were computed against the emitter's LOCAL up, which under this
+   *  node points down world +Z. So the flat ring stood on its edge and the
+   *  upright cards lay down flat. */
+  const QUARTER_X = { x: Math.SQRT1_2, y: 0, z: 0, w: Math.SQRT1_2 };
+
+  it("says which way is up in the node's own space", () => {
+    // The node turns its own +Y onto world +Z, so world up arrives as local
+    // -Z — the inverse of the rotation, which is the whole of what the emitter
+    // was missing.
+    const up = localUp(Mat4.fromQuat(QUARTER_X));
+    expect(up.x).toBeCloseTo(0, 6);
+    expect(up.y).toBeCloseTo(0, 6);
+    expect(up.z).toBeCloseTo(-1, 6);
+  });
+
+  it("gives world up back for a node that has no rotation", () => {
+    expect(localUp(Mat4.fromTranslation(3, 4, 5))).toEqual({ x: 0, y: 1, z: 0 });
+    expect(localUp(undefined)).toEqual({ x: 0, y: 1, z: 0 });
+    expect(localUp(Mat4.fromScale(0, 0, 0))).toEqual({ x: 0, y: 1, z: 0 });
+  });
+
+  it("lays a horizontal quad in the GROUND plane, not the node's own", () => {
+    const emitter = createEmitter({
+      rate: 1000,
+      lifetime: 10,
+      capacity: 1,
+      mode: "horizontal",
+      size: { x: 2, y: 2 },
+      random: middle,
+    });
+    const up = localUp(Mat4.fromQuat(QUARTER_X));
+    emitter.update(1 / 60, { x: 50, y: 3, z: -20 }, up);
+    // Flat against the local +Z the world's up became: no spread along it.
+    const corners = quadOf(emitter.mesh, 0);
+    expect(corners.every(([, , z]) => Math.abs(z) < 1e-6)).toBe(true);
+    // Which is to say it is NOT the local XZ plane it used to be laid in.
+    expect(corners.some(([, y]) => Math.abs(y) > 0.5)).toBe(true);
+  });
+
+  it("stands a vertical quad up along world up, and yaws it about that", () => {
+    const emitter = createEmitter({
+      rate: 1000,
+      lifetime: 10,
+      capacity: 1,
+      mode: "vertical",
+      size: { x: 2, y: 2 },
+      random: middle,
+    });
+    const up = localUp(Mat4.fromQuat(QUARTER_X));
+    // A camera off to one side in world terms, brought into the node's space.
+    const view = localViewer(Mat4.fromQuat(QUARTER_X), { x: 0, y: 80, z: 30 });
+    emitter.update(1 / 60, view, up);
+    const corners = quadOf(emitter.mesh, 0);
+    // Two corners a unit "up" and two a unit "down" along local +Z, which is
+    // where world up went — the same claim the unrotated case makes about Y.
+    expect(corners.map(([, , z]) => z).sort()).toEqual([-1, -1, 1, 1]);
+  });
+
+  it("keeps every mode exactly as it was for an unrotated node", () => {
+    // The default is world up, so nothing that was already right moves. Passing
+    // it explicitly and passing nothing have to agree, or every existing caller
+    // is a silent change.
+    for (const mode of ["billboard", "vertical", "horizontal", "stretched"] as const) {
+      const make = () =>
+        createEmitter({
+          rate: 1000,
+          lifetime: 10,
+          capacity: 1,
+          mode,
+          speed: 1,
+          direction: { x: 0, y: 1, z: 0 },
+          lengthScale: 3,
+          size: { x: 2, y: 2 },
+          random: middle,
+        });
+      const implied = make();
+      const stated = make();
+      implied.update(1 / 60, { x: 4, y: 9, z: 30 });
+      stated.update(1 / 60, { x: 4, y: 9, z: 30 }, { x: 0, y: 1, z: 0 });
+      expect(quadOf(stated.mesh, 0), mode).toEqual(quadOf(implied.mesh, 0));
+    }
   });
 });
