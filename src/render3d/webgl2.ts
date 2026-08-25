@@ -804,9 +804,13 @@ export interface WebGL2RendererOptions {
    *  instanced call. Default ON. Needs the loader to share both, which it does.
    *  Skinned nodes are never batched — the pose is a uniform. */
   instancing?: boolean;
-  /** DIAGNOSTIC ONLY: world units added to every culled box before testing. A
-   *  margin that fixes the picture means the arithmetic is slightly tight; a
-   *  margin that does not means the box is in the wrong PLACE. */
+  /** World units added to every culled box before testing.
+   *
+   *  Mostly a diagnostic: a margin that fixes the picture means the box or the
+   *  plane arithmetic is slightly tight, and one that does not means the box is
+   *  in the wrong PLACE. It has one honest production use — a consumer whose
+   *  drawn geometry legitimately reaches outside the bounds its own mesh
+   *  declares. See `inFrustum`. */
   cullMargin?: number;
   /** Build a mip chain for every smooth texture and sample it trilinearly.
    *
@@ -1699,7 +1703,14 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
           stats.culled++;
           return;
         }
-        if (frustumCulling && !inFrustum(planes, meshBounds(n.mesh), n.world, cullMargin)) {
+        // Skinned nodes are exempt — see the WebGPU backend, which carries the
+        // reasoning: `meshBounds` is the REST pose and the palette is what moves
+        // it, so a posed rig is not a tight box but a different one.
+        if (
+          frustumCulling &&
+          !n.skin &&
+          !inFrustum(planes, meshBounds(n.mesh), n.world, cullMargin)
+        ) {
           stats.culled++;
           return;
         }

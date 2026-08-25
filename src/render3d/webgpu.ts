@@ -873,6 +873,19 @@ export interface WebGPURendererOptions {
   /** Skip drawing nodes the camera cannot see. Default ON — see the WebGL2
    *  backend, which carries the reasoning and the measurement. */
   frustumCulling?: boolean;
+  /** World units added to every culled box before testing.
+   *
+   *  **Parity with the WebGL2 backend, which has taken this since it was
+   *  written.** This one accepted the option nowhere and passed nothing, so a
+   *  consumer that set it saw it work on one backend and do nothing on the
+   *  other — and WebGPU is the default device.
+   *
+   *  Mostly a diagnostic: a margin that fixes a picture means the box or the
+   *  plane arithmetic is slightly tight, and one that does not means the box is
+   *  in the wrong PLACE. It has one honest production use, which is a consumer
+   *  whose geometry legitimately reaches outside its own bounds — see
+   *  `inFrustum`. */
+  cullMargin?: number;
   canvas?: HTMLCanvasElement;
   width?: number;
   height?: number;
@@ -1363,6 +1376,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
   const cullProj = Mat4.create();
   const planes: Frustum = new Float32Array(24);
   const frustumCulling = opts.frustumCulling ?? true;
+  const cullMargin = opts.cullMargin ?? 0;
   const normalMat = new Float32Array(9);
   const eye: Vec3 = { x: 0, y: 0, z: 0 };
   const frameData = new Float32Array(FRAME_BYTES / 4);
@@ -1611,7 +1625,22 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
           stats.culled++;
           return;
         }
-        if (frustumCulling && !inFrustum(planes, meshBounds(n.mesh), n.world)) {
+        // **A SKINNED node is not culled against its own mesh.** `meshBounds`
+        // is the mesh's own vertices, and for a skinned mesh those are the REST
+        // pose: the palette in the uniform is what moves them, so a rig that
+        // reaches outside the box it was authored in — an arm, a club, a flag
+        // in the wind — is dropped while it is plainly on screen. The box is not
+        // slightly tight there, it is describing a different pose, and no margin
+        // is the right answer to that.
+        //
+        // Skinned nodes are few by construction (they are never batched either,
+        // for the same reason), so drawing them unconditionally costs a handful
+        // of draws rather than a scene's worth.
+        if (
+          frustumCulling &&
+          !n.skin &&
+          !inFrustum(planes, meshBounds(n.mesh), n.world, cullMargin)
+        ) {
           stats.culled++;
           return;
         }
