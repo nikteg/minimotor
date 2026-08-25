@@ -275,6 +275,10 @@ export interface Emitter {
         x: number;
         y: number;
         z: number;
+    }, up?: {
+        x: number;
+        y: number;
+        z: number;
     }): void;
     /** Kill every particle and empty the mesh. */
     reset(): void;
@@ -298,6 +302,31 @@ export declare function localViewer(world: Mat4 | undefined, camera: {
     y: number;
     z: number;
 }, out?: {
+    x: number;
+    y: number;
+    z: number;
+}): {
+    x: number;
+    y: number;
+    z: number;
+};
+/** Which way WORLD UP points in a node's local space.
+ *
+ *  The companion to `localViewer`, and needed for the same reason. Three of the
+ *  billboard modes are defined against the world's up — `horizontal` lies in the
+ *  ground plane, `vertical` stands upright, `billboard` keeps its own top as
+ *  near vertical as the view allows — and all three are COMPUTED in the space
+ *  the particles are simulated in. Under a node with any rotation on it those
+ *  are different directions, so an emitter on a node turned a quarter circle
+ *  drew its flat ring standing on edge and its upright cards lying flat.
+ *
+ *  Pass this to `update` alongside `localViewer`. A node with no rotation gives
+ *  `(0, 1, 0)` back and nothing changes, which is the ordinary case.
+ *
+ *  A DIRECTION, so the matrix's translation is not applied: the second column of
+ *  the inverse is `inverse * (0, 1, 0)`. A matrix that cannot be inverted gives
+ *  world up back unchanged, matching `localViewer`'s answer for the same case. */
+export declare function localUp(world: Mat4 | undefined, out?: {
     x: number;
     y: number;
     z: number;
