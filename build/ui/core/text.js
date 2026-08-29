@@ -1,6 +1,6 @@
 import { uiCtx } from "./context.js";
 import { currentLayout, place } from "./flow.js";
-import { centeredSpans, resolveThemeTextPadding, theme, uiFont } from "./theme.js";
+import { centeredSpans, resolveThemeTextPadding, theme, uiFont, } from "./theme.js";
 import { currentUiTransform, uiHeight, uiWidth } from "./input.js";
 import { annotateLayoutText, layoutCaptureActive } from "./layout-capture.js";
 import { measureWidth } from "./measure.js";
@@ -308,10 +308,10 @@ export function text(content, rawOpts) {
     if (opts.wrap && maxW !== undefined) {
         const lines = wrapRuns(ctx, runs, maxW);
         const blockTop = by + (bh - lines.length * lineH) / 2;
-        lines.forEach((line, i) => centeredSpans(ctx, line, tx, blockTop + i * lineH + lineH / 2, maxW));
+        lines.forEach((line, i) => centeredSpans(ctx, line, tx, blockTop + i * lineH + lineH / 2, maxW, opts.outline));
     }
     else {
-        centeredSpans(ctx, runs, tx, by + bh / 2, maxW);
+        centeredSpans(ctx, runs, tx, by + bh / 2, maxW, opts.outline);
     }
     ctx.restore();
 }

@@ -1,4 +1,4 @@
-import { type NineSliceRegion, type TilesetButtonVariant } from "../../ui/theme.js";
+import { type NineSliceRegion, type TilesetButtonVariant, type ThemeTextOutline } from "../../ui/theme.js";
 export { defaultTheme, getTheme, resolveThemePadding, resolveThemeTextPadding, setTheme, theme, withTheme, } from "../../ui/theme.js";
 export { createTilesetSkin, createTilesetSkinFromManifest, frameFromCell, inspectTilesetSkin, type NineSliceRegion, type TileRegion, type TilesetFrameRole, type TilesetButtonState, type TilesetButtonVariant, type TilesetButtonVariants, type TilesetSkin, type TilesetSkinOptions, type TilesetSprite, type TilesetCellSource, type TilesetManifestRegion, type TilesetManifestSprite, type TilesetSkinManifest, type TilesetMapping, type TilesetButtonVariantsManifest, type TilesetDebugEntry, type TilesetDebugInfo, type ThemeOverrides, type ThemeButton, type ThemePanel, type ThemePanelTitle, type ThemePadding, type ResolvedThemePadding, type ThemeSpacing, type ThemeTextPadding, type ThemeTextOutline, type ThemeButtonText, type ThemeSelect, type ThemeFocusStyle, shade, } from "../../ui/theme.js";
 export type { Theme } from "../../ui/theme.js";
@@ -37,7 +37,7 @@ export declare function ellipsize(ctx: CanvasRenderingContext2D, text: string, m
  *  "middle" baseline sits visibly high for most fonts. Honors the current textAlign.
  *  `maxW` clips with an ellipsis (via `ellipsize`) so a label can never spill
  *  out of its widget. */
-export declare function centeredText(ctx: CanvasRenderingContext2D, text: string, x: number, cy: number, maxW?: number): void;
+export declare function centeredText(ctx: CanvasRenderingContext2D, text: string, x: number, cy: number, maxW?: number, outlineOverride?: ThemeTextOutline): void;
 /** One run of a line that is drawn in a single colour. `color` is already
  *  RESOLVED to a CSS colour (theme roles are mapped by the caller, which is
  *  what keeps this module below `text.ts`); `undefined` keeps whatever
@@ -61,4 +61,4 @@ export interface TextRun {
  *
  *  A single run is handed straight to `centeredText`, so the overwhelmingly
  *  common case draws through exactly the code it always did. */
-export declare function centeredSpans(ctx: CanvasRenderingContext2D, runs: readonly TextRun[], x: number, cy: number, maxW?: number): void;
+export declare function centeredSpans(ctx: CanvasRenderingContext2D, runs: readonly TextRun[], x: number, cy: number, maxW?: number, outlineOverride?: ThemeTextOutline): void;

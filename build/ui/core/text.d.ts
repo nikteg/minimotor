@@ -1,5 +1,5 @@
 import { Flow } from "./flow.js";
-import { type TextRun } from "./theme.js";
+import { type TextRun, type ThemeTextOutline } from "./theme.js";
 /** Named screen anchors: position HUD text without reading the viewport.
  *  Anchors respect safe-area insets (notches) on the left/top edges. */
 export type TextAnchor = "topLeft" | "top" | "topRight" | "left" | "center" | "right" | "bottomLeft" | "bottom" | "bottomRight";
@@ -87,6 +87,17 @@ export interface TextOptions {
     /** Color. `"dim"` / `"accent"` map to theme roles; any CSS color works.
      *  Default `theme.text`. */
     color?: string;
+    /** A keyline stroked behind the glyphs, overriding `theme.textOutline` for
+     *  this label alone.
+     *
+     *  **Per label, because a theme is the wrong lever for one piece of text.**
+     *  The theme's own `textOutline` is right for a whole screen drawn over
+     *  something busy — a pixel font with a dark keyline, a HUD painted over a
+     *  world. A single wordmark or score readout that has to stay legible over
+     *  moving artwork is not that, and reaching for `withTheme` to get it means
+     *  every widget inside the callback quietly inherits an outline nobody asked
+     *  for. Pass `{ width: 0 }` to turn a themed outline OFF for one label. */
+    outline?: ThemeTextOutline;
     /** Horizontal alignment within the slot. Default `"left"`. */
     align?: "left" | "center" | "right";
     /** Inset the text inside its slot, in px. `pad` sets both axes; `padX`/

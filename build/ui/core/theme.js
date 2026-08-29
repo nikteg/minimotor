@@ -304,11 +304,26 @@ export function ellipsize(ctx, text, maxW) {
     }
     return lo > 0 ? text.slice(0, lo) + ell : ell;
 }
+/** The keyline behind a label, if there is one to draw.
+ *
+ * One place rather than three: the two baselines in `centeredText` and the run
+ * loop in `centeredSpans` all owe the same treatment, and a `width: 0` opt-out
+ * has to mean the same thing in each. */
+function strokeOutline(ctx, outline, str, x, baseline) {
+    if (!outline || outline.width <= 0 || !ctx.strokeText)
+        return;
+    ctx.save();
+    ctx.strokeStyle = outline.color;
+    ctx.lineWidth = outline.width;
+    ctx.lineJoin = "round";
+    ctx.strokeText(str, x, baseline);
+    ctx.restore();
+}
 /** Vertically centered text using stable font line metrics — the canvas
  *  "middle" baseline sits visibly high for most fonts. Honors the current textAlign.
  *  `maxW` clips with an ellipsis (via `ellipsize`) so a label can never spill
  *  out of its widget. */
-export function centeredText(ctx, text, x, cy, maxW) {
+export function centeredText(ctx, text, x, cy, maxW, outlineOverride) {
     if (isMeasuring())
         return;
     // A label is the other half of what reaches the canvas — the reported fault
@@ -330,20 +345,15 @@ export function centeredText(ctx, text, x, cy, maxW) {
     const { asc, desc } = lineMetrics(ctx);
     if (asc || desc) {
         const baseline = cy + (asc - desc) / 2;
-        const outline = theme.textOutline;
-        if (outline && outline.width > 0 && ctx.strokeText) {
-            ctx.save();
-            ctx.strokeStyle = outline.color;
-            ctx.lineWidth = outline.width;
-            ctx.lineJoin = "round";
-            ctx.strokeText(str, x, baseline);
-            ctx.restore();
-        }
+        strokeOutline(ctx, outlineOverride ?? theme.textOutline, str, x, baseline);
         ctx.fillText(str, x, baseline);
     }
     else {
         // Metrics unavailable (mocked ctx) — middle baseline is the best we have.
+        // The outline still applies: it is a property of the LABEL, and a context
+        // that cannot report font metrics is not a reason to drop half of it.
         ctx.textBaseline = "middle";
+        strokeOutline(ctx, outlineOverride ?? theme.textOutline, str, x, cy);
         ctx.fillText(str, x, cy);
     }
 }
@@ -361,14 +371,14 @@ export function centeredText(ctx, text, x, cy, maxW) {
  *
  *  A single run is handed straight to `centeredText`, so the overwhelmingly
  *  common case draws through exactly the code it always did. */
-export function centeredSpans(ctx, runs, x, cy, maxW) {
+export function centeredSpans(ctx, runs, x, cy, maxW, outlineOverride) {
     if (isMeasuring())
         return;
     if (runs.length <= 1) {
         const only = runs[0];
         if (only?.color !== undefined)
             ctx.fillStyle = only.color;
-        centeredText(ctx, only?.text ?? "", x, cy, maxW);
+        centeredText(ctx, only?.text ?? "", x, cy, maxW, outlineOverride);
         return;
     }
     notePaint();
@@ -394,7 +404,7 @@ export function centeredSpans(ctx, runs, x, cy, maxW) {
     const left = align === "center" ? x - width / 2 : align === "right" || align === "end" ? x - width : x;
     const { asc, desc } = lineMetrics(ctx);
     const baseline = asc || desc ? cy + (asc - desc) / 2 : cy;
-    const outline = theme.textOutline;
+    const outline = outlineOverride ?? theme.textOutline;
     const prevAlign = ctx.textAlign;
     const prevFill = ctx.fillStyle;
     // Runs are positioned by hand, so the canvas must not align them as well.
