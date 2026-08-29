@@ -434,3 +434,39 @@ describe("UI.text reports its words to the layout capture", () => {
     expect(layoutTree()).toEqual([]);
   });
 });
+
+describe("a per-label outline", () => {
+  // **The point of the option is that it does NOT leak.** Before it existed the
+  // only way to outline one label was `UI.withTheme({ textOutline })`, which
+  // turns it on for every widget drawn inside the callback — a theme is the
+  // wrong lever for one piece of text. These check the three cases that
+  // distinguish an override from a theme setting.
+  const strokes = (ctx: CanvasRenderingContext2D): number =>
+    (ctx.strokeText as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
+
+  it("strokes a label the theme has no outline for", () => {
+    const ui = setup();
+    text("CURVES", { outline: { color: "#000", width: 3 } });
+    ui.endFrame();
+    expect(strokes(ui.ctx)).toBeGreaterThan(0);
+  });
+
+  it("leaves the label drawn after it alone", () => {
+    // The leak this option exists to avoid: one outlined label must not outline
+    // whatever is drawn next.
+    const ui = setup();
+    text("CURVES", { outline: { color: "#000", width: 3 } });
+    const after = strokes(ui.ctx);
+    text("plain", {});
+    ui.endFrame();
+    expect(strokes(ui.ctx)).toBe(after);
+  });
+
+  it("draws nothing extra when the width is zero", () => {
+    // Which is also how a label opts OUT of an outline the theme has set.
+    const ui = setup();
+    text("quiet", { outline: { color: "#000", width: 0 } });
+    ui.endFrame();
+    expect(strokes(ui.ctx)).toBe(0);
+  });
+});

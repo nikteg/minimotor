@@ -48,8 +48,7 @@ describe("both backends' render targets", () => {
     // Whitespace-tolerant because the ternary is long enough that the formatter
     // breaks it across lines in one backend and not the other.
     const wanted = /rect\s*\?\s*rect\.width \/ rect\.height/;
-    const fallback =
-      /offscreen\s*\?\s*offscreen\.width \/ offscreen\.height\s*:\s*width \/ height/;
+    const fallback = /offscreen\s*\?\s*offscreen\.width \/ offscreen\.height\s*:\s*width \/ height/;
     expect(webgl2).toMatch(wanted);
     expect(webgpu).toMatch(wanted);
     expect(webgl2).toMatch(fallback);
