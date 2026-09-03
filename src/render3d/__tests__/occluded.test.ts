@@ -76,3 +76,33 @@ describe("both backends", () => {
     }
   });
 });
+
+describe("occludedOnly: the ghost pass as a MASK", () => {
+  /** A surface parked just under a floor and drawn only where that floor covers
+   * it is cut out by the floor's own silhouette, per pixel — every edge, hole
+   * and slope of it, with no geometry to deform and no rays to cast. A blob
+   * shadow under a ball at the lip of a ledge is the worked case. */
+  it("drops the ordinary pass in both backends and keeps the ghost", () => {
+    for (const backend of ["webgl2.ts", "webgpu.ts"]) {
+      const source = read(backend);
+      // The ghost is collected first, and the early return that skips the
+      // ordinary pass sits between it and the pass lists — so a masked node is
+      // in `occluded` and in nothing else.
+      const collect = source.indexOf("occluded.push(i)");
+      const skip = source.indexOf("n.material?.occludedOnly");
+      const overlay = source.indexOf("overlay.push(i)");
+      expect(collect, `${backend} collects the ghost`).toBeGreaterThan(0);
+      expect(skip, `${backend} honours the flag`).toBeGreaterThan(collect);
+      expect(skip, `${backend} skips before the pass lists`).toBeLessThan(overlay);
+    }
+  });
+
+  it("is gated on the ghost being there at all", () => {
+    // Without `occludedAlpha` there is no ghost pass to keep, so a node that
+    // asked for the mask alone would simply vanish. Both backends read the two
+    // together.
+    for (const backend of ["webgl2.ts", "webgpu.ts"]) {
+      expect(read(backend)).toMatch(/if \(ghosting && n\.material\?\.occludedOnly\)/);
+    }
+  });
+});
