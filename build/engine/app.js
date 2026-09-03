@@ -579,8 +579,33 @@ function buildRuntime(options) {
         dropAllTouches();
         ptr.down = false;
         ptr.secondaryDown = false;
+        // **And every key that was down — a window that has lost focus gets no
+        // keyup.** Alt+Tab is the case that shows it: the browser hands the app the
+        // `keydown` for Alt and then the OS takes the window, so `Alt` is held for
+        // ever and everything the app draws differently while a modifier is down
+        // stays that way until the player presses and releases it by hand. Reported
+        // from a game built on this: a debug panel stuck in its alt mode after every
+        // task switch.
+        //
+        // Cleared with NO release edge, which is `onPointerCancel`'s rule and the
+        // one the two lines above already follow: the app never saw a release and
+        // must not act as though it had. A key that is genuinely still down when
+        // focus comes back reports itself on its next `keydown` — the browser
+        // repeats one for a held key — and `heldKeys` is a fact about now rather
+        // than a log.
+        heldKeys.clear();
+        heldKeyValues.clear();
+        keyValueByCode.clear();
     };
     window.addEventListener("blur", onWindowBlur);
+    // A tab going to the background does not always blur the window — a
+    // background tab on some platforms keeps focus — so the same clearing runs on
+    // the visibility edge too. Both are idempotent.
+    const onVisibility = () => {
+        if (document.visibilityState === "hidden")
+            onWindowBlur();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
     for (const type of ["gesturestart", "gesturechange", "gestureend"]) {
         canvas.addEventListener(type, stopGesture, { passive: false });
     }
@@ -887,6 +912,7 @@ function buildRuntime(options) {
             window.removeEventListener("pointerup", onPointerUp);
             window.removeEventListener("pointercancel", onPointerCancel);
             window.removeEventListener("blur", onWindowBlur);
+            document.removeEventListener("visibilitychange", onVisibility);
             window.removeEventListener("pointermove", onPointerMove);
             window.removeEventListener("scroll", invalidateRect, true);
             window.removeEventListener("resize", handleResize);
