@@ -1394,6 +1394,8 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
   const overlay: number[] = [];
   /** `occludedAlpha` nodes, drawn a second time where something covers them. */
   const occluded: number[] = [];
+  /** For the frames with no ghosts in them — see `solidAgain`. */
+  const EMPTY_SLOTS: readonly number[] = [];
   /** `occludesOverlays` nodes, re-drawn for their shape alone so an opted-in
    *  overlay has something — and only that something — to be hidden behind. */
   const overlayOccluders: number[] = [];
@@ -1679,7 +1681,18 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       });
       blended.sort((a, b) => b.depth - a.depth);
 
-      const total = opaque.length + blended.length + occluded.length + overlay.length;
+      // **A nominated occluder is SOLID to a ghost.** The ghost pass paints
+      // wherever the scene is in front of the node, and "the scene" includes the
+      // very object a ghost is usually about — a ball whose blob shadow is
+      // masked by the floor is also in front of that shadow, so the shadow was
+      // painted over the ball. `occludesOverlays` already names the objects an
+      // app considers solid to these extra passes, so the same list serves:
+      // each is drawn again, with its own material, after the ghosts and before
+      // the overlays. One draw per nominated node, and only in a frame that has
+      // ghosts in it at all.
+      const solidAgain = occluded.length > 0 ? overlayOccluders : EMPTY_SLOTS;
+      const total =
+        opaque.length + blended.length + occluded.length + solidAgain.length + overlay.length;
       ensureDrawCapacity(Math.max(1, total));
 
       viewProjection(camera, aspect, true, viewProj);
@@ -1713,7 +1726,13 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       // over whatever is covering their node, and an overlay is meant to sit
       // above everything including them. Each carries its own draw slot,
       // because it is the same node with a different alpha.
-      const order = [...opaque, ...blended.map((b) => b.index), ...occluded, ...overlay];
+      const order = [
+        ...opaque,
+        ...blended.map((b) => b.index),
+        ...occluded,
+        ...solidAgain,
+        ...overlay,
+      ];
       const firstGhost = opaque.length + blended.length;
       const firstOverlay = order.length - overlay.length;
       order.forEach((index, slot) => {

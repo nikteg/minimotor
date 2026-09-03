@@ -1815,6 +1815,24 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
         gl!.disable(gl!.BLEND);
         gl!.depthMask(true);
         gl!.depthFunc(gl!.LEQUAL);
+
+        // **And a nominated occluder is SOLID to a ghost.** The pass above
+        // paints wherever the scene is in front of the node, and "the scene"
+        // includes the very object a ghost is usually about — a ball whose blob
+        // shadow is masked by the floor is also in front of that shadow, so the
+        // shadow was painted over the ball. A shadow through the ball casting
+        // it is a picture nobody wants.
+        //
+        // `occludesOverlays` already names the objects an app considers solid to
+        // these extra passes, so the same list serves: each one is redrawn with
+        // its own material, which costs one draw per nominated node and covers
+        // whatever the ghost put on it. Depth is untouched — the node is drawn
+        // at exactly the depth it already wrote, so `LEQUAL` passes and nothing
+        // else in the frame can tell the difference.
+        lastMaterial = null;
+        for (const i of overlayOccluders) {
+          drawNode(scene.nodes[i], scene.nodes[i].material ?? {});
+        }
       }
 
       if (overlay.length > 0) {

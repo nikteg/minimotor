@@ -63,9 +63,36 @@ describe("both backends", () => {
     expect(webgl2.indexOf("if (occluded.length > 0)")).toBeLessThan(
       webgl2.indexOf("if (overlay.length > 0)"),
     );
-    expect(read("webgpu.ts")).toContain(
-      "const order = [...opaque, ...blended.map((b) => b.index), ...occluded, ...overlay];",
-    );
+    // The WebGPU backend has no passes to order — it builds one draw list — so
+    // the order is the list, and the ghosts sit between the blended entries and
+    // the overlays. `solidAgain` is the nominated occluders redrawn after them;
+    // see the next test.
+    const webgpu = read("webgpu.ts");
+    expect(webgpu).toContain("...blended.map((b) => b.index),");
+    const list = webgpu.slice(webgpu.indexOf("const order = ["));
+    expect(list.indexOf("...occluded,")).toBeLessThan(list.indexOf("...overlay,"));
+    expect(list.indexOf("...blended")).toBeLessThan(list.indexOf("...occluded,"));
+  });
+
+  it("let a nominated occluder cover the ghost, in both backends", () => {
+    // The ghost pass paints wherever the scene is in front of the node, and
+    // "the scene" includes the very object a ghost is usually about: a ball
+    // whose blob shadow is masked by the floor is also in front of that shadow,
+    // so the shadow was painted over the ball. `occludesOverlays` already names
+    // what an app considers solid to these extra passes, so each of those is
+    // drawn once more after the ghosts.
+    const webgl2 = read("webgl2.ts");
+    const ghostPass = webgl2.indexOf("if (occluded.length > 0)");
+    const redraw = webgl2.indexOf("for (const i of overlayOccluders) {", ghostPass);
+    expect(redraw).toBeGreaterThan(ghostPass);
+    expect(redraw).toBeLessThan(webgl2.indexOf("if (overlay.length > 0)"));
+
+    const webgpu = read("webgpu.ts");
+    const list = webgpu.slice(webgpu.indexOf("const order = ["));
+    expect(list.indexOf("...solidAgain,")).toBeGreaterThan(list.indexOf("...occluded,"));
+    expect(list.indexOf("...solidAgain,")).toBeLessThan(list.indexOf("...overlay,"));
+    // And only in a frame that has ghosts in it at all.
+    expect(webgpu).toMatch(/const solidAgain = occluded\.length > 0 \? overlayOccluders/);
   });
 
   it("leave an overlay alone, which is already drawn over everything", () => {

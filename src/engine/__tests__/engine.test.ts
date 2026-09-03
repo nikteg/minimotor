@@ -512,6 +512,52 @@ describe("input", () => {
     expect(game.Pointer.released).toBe(false);
   });
 
+  it("lets go of every held KEY when the window loses focus", () => {
+    // Alt+Tab is the case: the browser hands the app the `keydown` for Alt and
+    // then the OS takes the window, so no `keyup` ever arrives and `Alt` reads
+    // as held for ever. Reported from a game built on this — a debug panel stuck
+    // in its alt mode after every task switch.
+    const { game } = build("blur-keys");
+    game.Loop.run({ update: vi.fn(), draw: vi.fn() });
+    tick(16);
+
+    window.dispatchEvent(new KeyboardEvent("keydown", { code: "AltLeft", key: "Alt" }));
+    window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyD", key: "d" }));
+    tick(34);
+    expect(game.Keys.down("AltLeft")).toBe(true);
+    expect(game.Keys.down("KeyD")).toBe(true);
+
+    window.dispatchEvent(new Event("blur"));
+    tick(34);
+    expect(game.Keys.down("AltLeft")).toBe(false);
+    expect(game.Keys.down("KeyD")).toBe(false);
+    // And NOT as a release: nobody let go, so minting the edge would fire
+    // whatever that key does on release — the same rule the pointer follows one
+    // test up.
+    expect(game.Keys.released("AltLeft")).toBe(false);
+  });
+
+  it("lets go of them when the TAB is hidden, which need not blur the window", () => {
+    const { game } = build("hidden-keys");
+    game.Loop.run({ update: vi.fn(), draw: vi.fn() });
+    tick(16);
+
+    window.dispatchEvent(new KeyboardEvent("keydown", { code: "ShiftLeft", key: "Shift" }));
+    tick(34);
+    expect(game.Keys.down("ShiftLeft")).toBe(true);
+
+    const visibility = Object.getOwnPropertyDescriptor(Document.prototype, "visibilityState");
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => "hidden",
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+    tick(34);
+    expect(game.Keys.down("ShiftLeft")).toBe(false);
+    if (visibility) Object.defineProperty(Document.prototype, "visibilityState", visibility);
+    else delete (document as unknown as { visibilityState?: unknown }).visibilityState;
+  });
+
   it("gives the right button its own one-step press and release edges", () => {
     const { game, canvas } = build("secondary-edges");
     const presses: boolean[] = [];
