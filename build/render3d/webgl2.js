@@ -1458,8 +1458,15 @@ export function createWebGL2Renderer(opts = {}) {
                 // the surface still draws normally where it is visible.
                 // An overlay is already drawn over everything, so a ghost of it would
                 // paint the same picture twice.
-                if ((n.material?.occludedAlpha ?? 0) > 0 && n.material?.depthTest !== false) {
+                const ghosting = (n.material?.occludedAlpha ?? 0) > 0 && n.material?.depthTest !== false;
+                if (ghosting) {
                     occluded.push(i);
+                }
+                // `occludedOnly` keeps the ghost and drops the ordinary pass, which
+                // turns the pair into a MASK: the surface is drawn where geometry
+                // covers it and nowhere else. See the flag's own note.
+                if (ghosting && n.material?.occludedOnly) {
+                    return;
                 }
                 // `depthTest: false` opts out of the scene's depth entirely, so it
                 // cannot share a pass with geometry that is still sorting against it.

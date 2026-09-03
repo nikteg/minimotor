@@ -130,6 +130,28 @@ export interface Material {
      *  surface over the scene and lose the cue entirely. It costs one extra draw
      *  call per node that asks for it. */
     occludedAlpha?: number;
+    /** Draw this surface ONLY where something is in front of it, and not where it
+     *  is directly visible — the `occludedAlpha` ghost pass without the ordinary
+     *  one.
+     *
+     *  That is a MASK, and it is the reason this exists: a surface parked just
+     *  under a floor is drawn exactly where that floor covers it and nowhere
+     *  else, so the floor's own silhouette — every edge, hole and slope of it,
+     *  per pixel — cuts the surface out. A blob shadow under a ball at the lip of
+     *  a ledge is the worked case: it stops at the ledge because the ledge is
+     *  what it is being drawn through, with no geometry to deform and no rays to
+     *  cast.
+     *
+     *  Needs `occludedAlpha` to be set — that is the pass this borrows, and its
+     *  fraction is the surface's own alpha in this mode, so 1 draws it at the
+     *  alpha it was authored with. Ignored on a `depthTest: false` material, like
+     *  `occludedAlpha` itself.
+     *
+     *  The one thing to know: "in front of it" is any geometry at all, not just
+     *  the surface it is under. A wall between the camera and a masked surface
+     *  receives it too, so park the surface close under what should mask it and
+     *  keep it small — a shadow disc under a ball is both. */
+    occludedOnly?: boolean;
     /** A view-angle alpha ramp as `[bias, scale, power]`, multiplied into the
      *  surface's own alpha:
      *
