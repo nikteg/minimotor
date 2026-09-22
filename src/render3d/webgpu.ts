@@ -50,6 +50,7 @@ import type { Camera3D } from "./camera.js";
 import type { MeshData } from "./mesh.js";
 import type { Material, Node3D, Scene3D } from "./scene.js";
 import type {
+  BlurOptions,
   RenderFrameStats,
   RenderOptions,
   RenderStats,
@@ -57,6 +58,7 @@ import type {
   Renderer3D,
 } from "./renderer.js";
 import type { Vec3 } from "@src/math/vec3.js";
+import { planBlur, WGSL_BLUR, type BlurPlan } from "./blur.js";
 
 /** An offscreen colour+depth surface — see `RenderTarget3D`.
  *
@@ -986,6 +988,9 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     device,
     format,
     alphaMode: "premultiplied",
+    // COPY_SRC for `blur`, which copies the resolved frame out before it
+    // writes the blurred one back over it.
+    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
   });
 
   /** 4x or none. Four is the one multisampled count WebGPU guarantees for a
@@ -1198,6 +1203,180 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
   let dpr = opts.dpr ?? 1;
   let depthTexture: GPUTexture | null = null;
   let colorTexture: GPUTexture | null = null;
+
+  // ---------- `blur`: the post pass (see `blur.ts`) ----------
+
+  /** Built on the first `blur`, so a renderer that never blurs never compiles
+   *  it. */
+  let blurKit: {
+    layout: GPUBindGroupLayout;
+    copy: GPURenderPipeline;
+    gauss: GPURenderPipeline;
+    composite: GPURenderPipeline;
+    /** One uniform buffer per pass that reads different numbers, because every
+     *  write lands before the single submit. */
+    across: GPUBuffer;
+    down: GPUBuffer;
+    mix: GPUBuffer;
+  } | null = null;
+  /** The pass's textures by role, reallocated when a size changes. */
+  const blurSurfaces = new Map<string, GPUTexture>();
+
+  function blurSurface(role: string, w: number, h: number): GPUTexture {
+    const found = blurSurfaces.get(role);
+    if (found && found.width === w && found.height === h) return found;
+    found?.destroy();
+    const texture = device.createTexture({
+      size: [w, h],
+      format,
+      usage:
+        GPUTextureUsage.RENDER_ATTACHMENT |
+        GPUTextureUsage.TEXTURE_BINDING |
+        GPUTextureUsage.COPY_DST,
+    });
+    blurSurfaces.set(role, texture);
+    return texture;
+  }
+
+  function blurKitFor(): NonNullable<typeof blurKit> {
+    if (blurKit) return blurKit;
+    const blurModule = device.createShaderModule({ code: WGSL_BLUR, label: "render3d-blur" });
+    const layout = device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, buffer: {} },
+      ],
+    });
+    const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [layout] });
+    const pipeline = (entryPoint: string, count: number): GPURenderPipeline =>
+      device.createRenderPipeline({
+        layout: pipelineLayout,
+        vertex: { module: blurModule, entryPoint: "vs" },
+        fragment: { module: blurModule, entryPoint, targets: [{ format }] },
+        primitive: { topology: "triangle-list" },
+        multisample: { count },
+      });
+    const uniform = (): GPUBuffer =>
+      device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    blurKit = {
+      layout,
+      copy: pipeline("copy", 1),
+      gauss: pipeline("gauss", 1),
+      // The composite writes into the canvas's own multisampled target, so a
+      // following `render({ clear: false })` loads the BLURRED samples rather
+      // than the sharp ones it drew before this and resolves them straight
+      // back over the blur.
+      composite: pipeline("composite", sampleCount),
+      across: uniform(),
+      down: uniform(),
+      mix: uniform(),
+    };
+    return blurKit;
+  }
+
+  function runBlur(plan: BlurPlan): void {
+    const kit = blurKitFor();
+    const linear = samplerFor(false, false);
+    const full = plan.sizes[0];
+    const deepest = plan.sizes[plan.level];
+    const canvasTexture = context!.getCurrentTexture();
+    const sharp = blurSurface("sharp", full.width, full.height);
+    const levels = plan.sizes
+      .slice(1)
+      .map((size, i) => blurSurface(`level${i + 1}`, size.width, size.height));
+    const spare = blurSurface("spare", deepest.width, deepest.height);
+    // At level 0 the deepest surface IS the sharp copy, which the composite
+    // still reads, so the Gaussian ends in a full-size surface of its own.
+    const blurred =
+      plan.level === 0 ? blurSurface("full", full.width, full.height) : levels[plan.level - 1];
+
+    device.queue.writeBuffer(
+      kit.across,
+      0,
+      new Float32Array([1 / deepest.width, 0, plan.sigma, plan.reach]),
+    );
+    device.queue.writeBuffer(
+      kit.down,
+      0,
+      new Float32Array([0, 1 / deepest.height, plan.sigma, plan.reach]),
+    );
+    const focus = plan.focus;
+    device.queue.writeBuffer(
+      kit.mix,
+      16,
+      new Float32Array([
+        width,
+        height,
+        plan.dim,
+        focus ? 1 : 0,
+        focus?.x ?? 0,
+        focus?.y ?? 0,
+        focus?.inner ?? 0,
+        focus?.outer ?? 0,
+      ]),
+    );
+
+    const group = (source: GPUTexture, second: GPUTexture, params: GPUBuffer): GPUBindGroup =>
+      device.createBindGroup({
+        layout: kit.layout,
+        entries: [
+          { binding: 0, resource: linear },
+          { binding: 1, resource: source.createView() },
+          { binding: 2, resource: second.createView() },
+          { binding: 3, resource: { buffer: params } },
+        ],
+      });
+    const encoder = device.createCommandEncoder();
+    const fill = (
+      into: GPUTextureView,
+      pipeline: GPURenderPipeline,
+      bindings: GPUBindGroup,
+      resolve?: GPUTextureView,
+    ): void => {
+      const pass = encoder.beginRenderPass({
+        colorAttachments: [
+          {
+            view: into,
+            resolveTarget: resolve,
+            loadOp: "clear",
+            clearValue: [0, 0, 0, 0],
+            storeOp: "store",
+          },
+        ],
+      });
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, bindings);
+      pass.draw(3);
+      pass.end();
+    };
+
+    // 1. The resolved frame, out of the canvas.
+    encoder.copyTextureToTexture({ texture: canvasTexture }, { texture: sharp }, [
+      full.width,
+      full.height,
+    ]);
+    // 2. Halve down to the plan's level.
+    let source = sharp;
+    for (const level of levels.slice(0, plan.level)) {
+      fill(level.createView(), kit.copy, group(source, source, kit.mix));
+      source = level;
+    }
+    // 3. The Gaussian: across into `spare`, down into `blurred`.
+    fill(spare.createView(), kit.gauss, group(source, source, kit.across));
+    fill(blurred.createView(), kit.gauss, group(spare, spare, kit.down));
+    // 4. The composite, into the multisampled target when there is one and
+    // resolved onto the canvas. No depth attachment: the scene's stays as it is.
+    const canvasView = canvasTexture.createView();
+    fill(
+      colorTexture ? colorTexture.createView() : canvasView,
+      kit.composite,
+      group(sharp, blurred, kit.mix),
+      colorTexture ? canvasView : undefined,
+    );
+    device.queue.submit([encoder.finish()]);
+  }
 
   function configureSize(): void {
     const bw = Math.max(1, Math.round(width * dpr));
@@ -1621,8 +1800,10 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       // is built with and the one that decides the near plane.
       viewProjection(camera, aspect, true, cullProj);
       frustumPlanes(cullProj, planes, true);
+      const include = options.include;
       scene.nodes.forEach((n, i) => {
         if (!n.mesh || !n.world) return;
+        if (include && !include(i)) return;
         if (!isVisible(scene, i)) {
           stats.culled++;
           return;
@@ -1919,6 +2100,15 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
       frameStats.cpuMs += performance.now() - renderStart;
     },
 
+    blur(blurOptions: BlurOptions) {
+      configureSize();
+      const plan = planBlur(blurOptions, canvas.width, canvas.height, dpr);
+      if (!plan) return;
+      const start = performance.now();
+      runBlur(plan);
+      frameStats.cpuMs += performance.now() - start;
+    },
+
     release(mesh: object) {
       const gpu = meshes.get(mesh);
       if (!gpu) return;
@@ -1932,6 +2122,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
     dispose() {
       depthTexture?.destroy();
       colorTexture?.destroy();
+      for (const surface of blurSurfaces.values()) surface.destroy();
       drawBuffer?.destroy();
       frameBuffer.destroy();
       blankTexture.destroy();

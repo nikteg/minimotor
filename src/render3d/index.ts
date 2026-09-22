@@ -59,8 +59,10 @@ export {
   type UiSurfaceDrawOptions,
   type UiSurfaceOptions,
 } from "./ui-surface.js";
+export { subtreeOf } from "./blur.js";
 export type {
   Backend3D,
+  BlurOptions,
   RenderFrameStats,
   RenderOptions,
   RenderStats,
