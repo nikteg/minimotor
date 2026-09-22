@@ -55,6 +55,7 @@ export function planBlur(options, width, height, dpr) {
             y: options.focus.y,
             inner: Math.max(0, options.focus.radius),
             outer: Math.max(0, options.focus.radius) + Math.max(1e-3, options.focus.feather ?? 0),
+            curve: Math.max(0.1, options.focus.curve ?? 1),
         }
         : null;
     return { level, sigma, reach, sizes, focus, dim: Math.min(1, Math.max(0, options.dim ?? 0)) };
@@ -112,8 +113,9 @@ void main() {
   outColor = sum / total;
 }`;
 /** The composite. `uCanvas` is the canvas's CSS size, `uFocus` is
- *  (x, y, inner, outer) in CSS pixels from the TOP-left and `uHasFocus` turns
- *  it on. `vUv` is bottom-up, so y flips here. */
+ *  (x, y, inner, outer) in CSS pixels from the TOP-left, `uCurve` is the
+ *  focus's `curve` and `uHasFocus` turns it on. `vUv` is bottom-up, so y flips
+ *  here. */
 export const GLSL_COMPOSITE_FS = /* glsl */ `#version 300 es
 precision highp float;
 in vec2 vUv;
@@ -121,6 +123,7 @@ uniform sampler2D uSharp;
 uniform sampler2D uBlurred;
 uniform vec2 uCanvas;
 uniform vec4 uFocus;
+uniform float uCurve;
 uniform int uHasFocus;
 uniform float uDim;
 out vec4 outColor;
@@ -131,6 +134,7 @@ void main() {
   if (uHasFocus == 1) {
     vec2 at = vec2(vUv.x, 1.0 - vUv.y) * uCanvas;
     mask = smoothstep(uFocus.z, uFocus.w, distance(at, uFocus.xy));
+    mask = 1.0 - pow(1.0 - mask, uCurve);
   }
   outColor = mix(sharp, blurred, mask);
 }`;
@@ -155,6 +159,8 @@ struct Params {
   canvas: vec4f,
   // Composite: focus x, y, inner, outer in CSS pixels from the top-left.
   focus: vec4f,
+  // Composite: the focus's curve (x); yzw unused.
+  shape: vec4f,
 };
 
 @group(0) @binding(0) var linearSampler: sampler;
@@ -191,6 +197,7 @@ struct Params {
   if (params.canvas.w > 0.5) {
     let at = v.uv * params.canvas.xy;
     mask = smoothstep(params.focus.z, params.focus.w, distance(at, params.focus.xy));
+    mask = 1.0 - pow(1.0 - mask, params.shape.x);
   }
   return mix(sharp, blurred, mask);
 }

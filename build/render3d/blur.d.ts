@@ -26,6 +26,7 @@ export interface BlurPlan {
         y: number;
         inner: number;
         outer: number;
+        curve: number;
     } | null;
     dim: number;
 }
@@ -47,9 +48,10 @@ export declare const GLSL_COPY_FS = "#version 300 es\nprecision highp float;\nin
 /** One axis of the separable Gaussian. `uStep` is one texel along that axis. */
 export declare const GLSL_GAUSS_FS: string;
 /** The composite. `uCanvas` is the canvas's CSS size, `uFocus` is
- *  (x, y, inner, outer) in CSS pixels from the TOP-left and `uHasFocus` turns
- *  it on. `vUv` is bottom-up, so y flips here. */
-export declare const GLSL_COMPOSITE_FS = "#version 300 es\nprecision highp float;\nin vec2 vUv;\nuniform sampler2D uSharp;\nuniform sampler2D uBlurred;\nuniform vec2 uCanvas;\nuniform vec4 uFocus;\nuniform int uHasFocus;\nuniform float uDim;\nout vec4 outColor;\nvoid main() {\n  vec4 sharp = texture(uSharp, vUv);\n  vec4 blurred = texture(uBlurred, vUv) * (1.0 - uDim);\n  float mask = 1.0;\n  if (uHasFocus == 1) {\n    vec2 at = vec2(vUv.x, 1.0 - vUv.y) * uCanvas;\n    mask = smoothstep(uFocus.z, uFocus.w, distance(at, uFocus.xy));\n  }\n  outColor = mix(sharp, blurred, mask);\n}";
+ *  (x, y, inner, outer) in CSS pixels from the TOP-left, `uCurve` is the
+ *  focus's `curve` and `uHasFocus` turns it on. `vUv` is bottom-up, so y flips
+ *  here. */
+export declare const GLSL_COMPOSITE_FS = "#version 300 es\nprecision highp float;\nin vec2 vUv;\nuniform sampler2D uSharp;\nuniform sampler2D uBlurred;\nuniform vec2 uCanvas;\nuniform vec4 uFocus;\nuniform float uCurve;\nuniform int uHasFocus;\nuniform float uDim;\nout vec4 outColor;\nvoid main() {\n  vec4 sharp = texture(uSharp, vUv);\n  vec4 blurred = texture(uBlurred, vUv) * (1.0 - uDim);\n  float mask = 1.0;\n  if (uHasFocus == 1) {\n    vec2 at = vec2(vUv.x, 1.0 - vUv.y) * uCanvas;\n    mask = smoothstep(uFocus.z, uFocus.w, distance(at, uFocus.xy));\n    mask = 1.0 - pow(1.0 - mask, uCurve);\n  }\n  outColor = mix(sharp, blurred, mask);\n}";
 /** All three passes in one module, each its own fragment entry point. `uv` has
  *  (0,0) at the TOP-left, WebGPU's texture and framebuffer origin, so no flip. */
 export declare const WGSL_BLUR: string;

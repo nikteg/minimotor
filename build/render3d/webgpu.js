@@ -1124,7 +1124,7 @@ export async function createWebGPURenderer(opts = {}) {
             primitive: { topology: "triangle-list" },
             multisample: { count },
         });
-        const uniform = () => device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+        const uniform = () => device.createBuffer({ size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
         blurKit = {
             layout,
             copy: pipeline("copy", 1),
@@ -1166,6 +1166,10 @@ export async function createWebGPURenderer(opts = {}) {
             focus?.y ?? 0,
             focus?.inner ?? 0,
             focus?.outer ?? 0,
+            focus?.curve ?? 1,
+            0,
+            0,
+            0,
         ]));
         const group = (source, second, params) => device.createBindGroup({
             layout: kit.layout,
