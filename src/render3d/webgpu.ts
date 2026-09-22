@@ -1259,7 +1259,7 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
         multisample: { count },
       });
     const uniform = (): GPUBuffer =>
-      device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+      device.createBuffer({ size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     blurKit = {
       layout,
       copy: pipeline("copy", 1),
@@ -1315,6 +1315,10 @@ export async function createWebGPURenderer(opts: WebGPURendererOptions = {}): Pr
         focus?.y ?? 0,
         focus?.inner ?? 0,
         focus?.outer ?? 0,
+        focus?.curve ?? 1,
+        0,
+        0,
+        0,
       ]),
     );
 

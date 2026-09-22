@@ -1176,6 +1176,7 @@ export function createWebGL2Renderer(opts: WebGL2RendererOptions = {}): Renderer
     gl!.uniform1i(at("uHasFocus"), plan.focus ? 1 : 0);
     if (plan.focus) {
       gl!.uniform4f(at("uFocus"), plan.focus.x, plan.focus.y, plan.focus.inner, plan.focus.outer);
+      gl!.uniform1f(at("uCurve"), plan.focus.curve);
     }
     gl!.activeTexture(gl!.TEXTURE1);
     gl!.bindTexture(gl!.TEXTURE_2D, blurred.texture);

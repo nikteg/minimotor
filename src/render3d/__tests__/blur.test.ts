@@ -98,11 +98,23 @@ describe("planBlur", () => {
       400,
       1,
     )!;
-    expect(plan.focus).toEqual({ x: 5, y: 6, inner: 40, outer: 60 });
+    expect(plan.focus).toEqual({ x: 5, y: 6, inner: 40, outer: 60, curve: 1 });
     expect(plan.dim, "clamped").toBe(1);
     // No feather is a hard edge, not a division by zero in the smoothstep.
     const hard = planBlur({ radius: 10, focus: { x: 0, y: 0, radius: 40 } }, 800, 400, 1)!;
     expect(hard.focus!.outer).toBeGreaterThan(hard.focus!.inner);
+  });
+
+  it("carries the edge's curve, 1 by default and never zero", () => {
+    const eased = planBlur(
+      { radius: 10, focus: { x: 0, y: 0, radius: 4, curve: 3 } },
+      800,
+      400,
+      1,
+    )!;
+    expect(eased.focus!.curve).toBe(3);
+    const flat = planBlur({ radius: 10, focus: { x: 0, y: 0, radius: 4, curve: 0 } }, 800, 400, 1)!;
+    expect(flat.focus!.curve).toBeGreaterThan(0);
   });
 });
 
@@ -173,6 +185,8 @@ describe("the two backends' blur is the same blur", () => {
       expect(source).toMatch(/smoothstep\([^)]*\.z, [^)]*\.w, distance/);
       expect(source).toMatch(/\(1\.0 - [^)]*\)/);
       expect(source).toMatch(/mix\(sharp, blurred, mask\)/);
+      // The curve, the same in both: 1 - (1 - s)^curve.
+      expect(source).toMatch(/mask = 1\.0 - pow\(1\.0 - mask, [^)]+\);/);
     }
   });
 });

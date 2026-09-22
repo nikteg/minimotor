@@ -73,8 +73,15 @@ export interface BlurOptions {
   radius: number;
   /** A circle the blur leaves sharp, in CSS pixels from the canvas's top-left:
    *  tunnel vision. Sharp inside `radius`, fully blurred past
-   *  `radius + feather`, and smoothstepped in between. */
-  focus?: { x: number; y: number; radius: number; feather?: number };
+   *  `radius + feather`, and smoothstepped in between.
+   *
+   *  `curve` shapes that edge: the blur's weight is `1 - (1 - s)^curve` of the
+   *  smoothstep `s`. 1, the default, is the plain smoothstep, which stays
+   *  nearly sharp for the first quarter of the feather — so a wide, soft
+   *  feather also reads as a WIDE sharp spot. Above 1 the blur takes hold
+   *  soon after `radius` and the rest of it eases in over the whole feather: a
+   *  small sharp spot with a long, soft edge. */
+  focus?: { x: number; y: number; radius: number; feather?: number; curve?: number };
   /** Darken the BLURRED part, 0 (not at all, the default) to 1 (black). Weighted
    *  by the same mask as the blur, so a focus circle stays at full brightness. */
   dim?: number;
