@@ -46,6 +46,7 @@ export * from "./particles.js";
 export * from "./gltf.js";
 export { isGlb, parseGlb } from "./glb.js";
 export { createUiSurface, intersectQuad, pointerRay, } from "./ui-surface.js";
+export { subtreeOf } from "./blur.js";
 export { createWebGL2Renderer } from "./webgl2.js";
 export { createWebGPURenderer, isWebGPUAvailable } from "./webgpu.js";
 /** Create the best available 3D renderer.

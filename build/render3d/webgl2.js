@@ -32,6 +32,7 @@ import { cameraPosition, viewProjection } from "./camera.js";
 import { detailProjectionMode, detailWorldStep, fogUniform, ghostMaterial, glazeGrid, glazeParallax, glazeStrength, isVisible, settleActive, } from "./scene.js";
 import { triangleCount, vertexCount } from "./mesh.js";
 import { frustumPlanes, inFrustum, meshBounds } from "./cull.js";
+import { GLSL_COMPOSITE_FS, GLSL_COPY_FS, GLSL_FULLSCREEN_VS, GLSL_GAUSS_FS, planBlur, } from "./blur.js";
 const MAX_LIGHTS = 4;
 const MAX_JOINTS = 64;
 const VERTEX_SHADER = `#version 300 es
@@ -853,6 +854,125 @@ export function createWebGL2Renderer(opts = {}) {
         else
             gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     }
+    // ---------- `blur`: the post pass (see `blur.ts`) ----------
+    /** Built on the first `blur`, so a renderer that never blurs never compiles
+     *  them. */
+    let blurKit = null;
+    function blurSurface(w, h, previous) {
+        if (previous && previous.width === w && previous.height === h)
+            return previous;
+        if (previous) {
+            gl.deleteTexture(previous.texture);
+            gl.deleteFramebuffer(previous.framebuffer);
+        }
+        const texture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        // LINEAR is the whole downsample: one tap at a shared corner is a 2×2 box.
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        // CLAMP, so the edge of the frame blurs into itself rather than into black.
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        const framebuffer = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+        return { texture, framebuffer, width: w, height: h };
+    }
+    function runBlur(plan, fullW, fullH, fullY, cssW, cssH) {
+        if (!blurKit) {
+            blurKit = {
+                copy: link(gl, GLSL_FULLSCREEN_VS, GLSL_COPY_FS),
+                gauss: link(gl, GLSL_FULLSCREEN_VS, GLSL_GAUSS_FS),
+                composite: link(gl, GLSL_FULLSCREEN_VS, GLSL_COMPOSITE_FS),
+                vao: gl.createVertexArray(),
+                sharp: null,
+                levels: [],
+                spare: null,
+                full: null,
+            };
+        }
+        const kit = blurKit;
+        kit.sharp = blurSurface(fullW, fullH, kit.sharp);
+        for (let i = 1; i <= plan.level; i++) {
+            kit.levels[i - 1] = blurSurface(plan.sizes[i].width, plan.sizes[i].height, kit.levels[i - 1] ?? null);
+        }
+        const deepest = plan.sizes[plan.level];
+        kit.spare = blurSurface(deepest.width, deepest.height, kit.spare);
+        // 1. Resolve the canvas into `sharp`. A blit, because the canvas is
+        // multisampled and a copy cannot read a multisampled buffer; same size on
+        // both sides, which is the one rectangle a resolving blit accepts.
+        gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+        gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, kit.sharp.framebuffer);
+        gl.blitFramebuffer(0, fullY, fullW, fullY + fullH, 0, 0, fullW, fullH, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+        gl.disable(gl.DEPTH_TEST);
+        gl.disable(gl.CULL_FACE);
+        gl.disable(gl.BLEND);
+        gl.disable(gl.SCISSOR_TEST);
+        gl.depthMask(false);
+        gl.bindVertexArray(kit.vao);
+        gl.activeTexture(gl.TEXTURE0);
+        const draw = (into, w, h, y = 0) => {
+            gl.bindFramebuffer(gl.FRAMEBUFFER, into ? into.framebuffer : null);
+            gl.viewport(0, y, w, h);
+            gl.drawArrays(gl.TRIANGLES, 0, 3);
+        };
+        // 2. Halve down to the plan's level.
+        gl.useProgram(kit.copy);
+        gl.uniform1i(gl.getUniformLocation(kit.copy, "uSource"), 0);
+        let source = kit.sharp;
+        for (const level of kit.levels.slice(0, plan.level)) {
+            gl.bindTexture(gl.TEXTURE_2D, source.texture);
+            draw(level, level.width, level.height);
+            source = level;
+        }
+        // 3. The Gaussian at that level: across into `spare`, then down back into
+        // `source`. At level 0 `source` is the sharp copy the composite still
+        // needs, so a level-0 blur ends in a full-size surface of its own.
+        gl.useProgram(kit.gauss);
+        gl.uniform1i(gl.getUniformLocation(kit.gauss, "uSource"), 0);
+        gl.uniform1f(gl.getUniformLocation(kit.gauss, "uSigma"), plan.sigma);
+        gl.uniform1i(gl.getUniformLocation(kit.gauss, "uReach"), plan.reach);
+        const step = gl.getUniformLocation(kit.gauss, "uStep");
+        const spare = kit.spare;
+        let blurred;
+        if (plan.level === 0)
+            kit.full = blurSurface(fullW, fullH, kit.full);
+        const into = plan.level === 0 ? kit.full : source;
+        gl.bindTexture(gl.TEXTURE_2D, source.texture);
+        gl.uniform2f(step, 1 / deepest.width, 0);
+        draw(spare, deepest.width, deepest.height);
+        gl.bindTexture(gl.TEXTURE_2D, spare.texture);
+        gl.uniform2f(step, 0, 1 / deepest.height);
+        draw(into, deepest.width, deepest.height);
+        blurred = into;
+        // 4. Composite onto the canvas. Colour only — depth is the scene's and a
+        // following `render({ clear: false })` sorts against it.
+        gl.useProgram(kit.composite);
+        const at = (name) => gl.getUniformLocation(kit.composite, name);
+        gl.uniform1i(at("uSharp"), 0);
+        gl.uniform1i(at("uBlurred"), 1);
+        gl.uniform2f(at("uCanvas"), cssW, cssH);
+        gl.uniform1f(at("uDim"), plan.dim);
+        gl.uniform1i(at("uHasFocus"), plan.focus ? 1 : 0);
+        if (plan.focus) {
+            gl.uniform4f(at("uFocus"), plan.focus.x, plan.focus.y, plan.focus.inner, plan.focus.outer);
+        }
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, blurred.texture);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, kit.sharp.texture);
+        draw(null, fullW, fullH, fullY);
+        // Put back what `render` assumes: its own VAO binding per draw, the depth
+        // test, and texture units that no longer hold what `setMaterial` bound.
+        gl.bindVertexArray(null);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        gl.depthMask(true);
+        gl.enable(gl.DEPTH_TEST);
+        gl.useProgram(program);
+        textureEpoch++;
+        lastMaterial = null;
+    }
     function applyCanvasSize(retainBackingStore = false) {
         const bw = Math.max(1, Math.round(width * dpr));
         const bh = Math.max(1, Math.round(height * dpr));
@@ -1432,8 +1552,11 @@ export function createWebGL2Renderer(opts = {}) {
             overlay.length = 0;
             occluded.length = 0;
             overlayOccluders.length = 0;
+            const include = opts.include;
             scene.nodes.forEach((n, i) => {
                 if (!n.mesh || !n.world)
+                    return;
+                if (include && !include(i))
                     return;
                 if (!isVisible(scene, i)) {
                     stats.culled++;
@@ -1631,6 +1754,16 @@ export function createWebGL2Renderer(opts = {}) {
             frameStats.triangles += stats.triangles;
             frameStats.culled += stats.culled;
             frameStats.cpuMs += performance.now() - renderStart;
+        },
+        blur(options) {
+            const fullW = Math.max(1, Math.round(width * dpr));
+            const fullH = Math.max(1, Math.round(height * dpr));
+            const plan = planBlur(options, fullW, fullH, dpr);
+            if (!plan)
+                return;
+            const start = performance.now();
+            runBlur(plan, fullW, fullH, canvas.height - fullH, width, height);
+            frameStats.cpuMs += performance.now() - start;
         },
         release(mesh) {
             const gpu = meshes.get(mesh);

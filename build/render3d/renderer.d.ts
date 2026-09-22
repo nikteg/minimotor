@@ -38,6 +38,35 @@ export interface RenderOptions {
         width: number;
         height: number;
     };
+    /** Draw only the nodes this accepts. Default: every node.
+     *
+     *  **What it is for: drawing part of a scene after a `blur`.** Render the
+     *  scene without the nodes that must stay sharp, blur it, then render again
+     *  with `clear: false` and only those nodes — they depth-test against the
+     *  scene the first pass left behind, so they are still hidden by the walls in
+     *  front of them. `sharpAfterBlur` builds the predicate for a subtree.
+     *
+     *  A rejected node is skipped exactly as a hidden one is: it is not drawn,
+     *  not counted, and not an occluder for anything. */
+    include?: (index: number) => boolean;
+}
+/** A screen-space blur of what is already on the canvas — `Renderer3D.blur`. */
+export interface BlurOptions {
+    /** Gaussian standard deviation in CSS pixels, like CSS `filter: blur()`.
+     *  Zero or less does nothing. */
+    radius: number;
+    /** A circle the blur leaves sharp, in CSS pixels from the canvas's top-left:
+     *  tunnel vision. Sharp inside `radius`, fully blurred past
+     *  `radius + feather`, and smoothstepped in between. */
+    focus?: {
+        x: number;
+        y: number;
+        radius: number;
+        feather?: number;
+    };
+    /** Darken the BLURRED part, 0 (not at all, the default) to 1 (black). Weighted
+     *  by the same mask as the blur, so a focus circle stays at full brightness. */
+    dim?: number;
 }
 /** An offscreen surface a scene can be drawn into.
  *
@@ -107,6 +136,16 @@ export interface Renderer3D {
      *  `node.world` and does not compute it, so that a caller animating a
      *  hierarchy pays for the walk once even when drawing it several times. */
     render(scene: Scene3D, camera: Camera3D, opts?: RenderOptions): void;
+    /** Blur what the canvas holds right now, in place — see `BlurOptions`.
+     *
+     *  A POST pass over the last canvas render: it reads the colour that render
+     *  resolved, blurs it at a fraction of the resolution (so a radius of tens of
+     *  pixels costs about what a small one does), and writes it back. Depth is
+     *  left exactly as the render wrote it, which is what lets a following
+     *  `render(..., { clear: false, include })` draw sharp nodes that still sort
+     *  against the blurred scene. The canvas only: a `RenderTarget3D` is not
+     *  touched. */
+    blur(options: BlurOptions): void;
     /** Drop a mesh's GPU buffers. Optional housekeeping: meshes are cached
      *  weakly, so a mesh that becomes unreachable is collected on its own. Call
      *  it when a large mesh is replaced and the collection should not wait. */
